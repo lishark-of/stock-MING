@@ -100,8 +100,8 @@ else:
                     with st.spinner("Gemini 正在调取宏观与基本面矩阵..."):
                         if gemini_key:
                             genai.configure(api_key=gemini_key)
-                            # 已修改为 latest 模型，解决 404 报错
-                            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+                            # 【核心修复点】：替换为最基础稳定的通用名称
+                            model = genai.GenerativeModel('gemini-pro')
                             st.markdown("### 🔵 Gemini 宏观洞察")
                             st.write(model.generate_content(us_prompt).text)
                         else:
@@ -156,8 +156,8 @@ else:
                     with st.spinner("Gemini 正在调取政策预期与宏观周期..."):
                         if gemini_key:
                             genai.configure(api_key=gemini_key)
-                            # 已修改为 latest 模型，解决 404 报错
-                            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+                            # 【核心修复点】：替换为最基础稳定的通用名称
+                            model = genai.GenerativeModel('gemini-pro')
                             st.markdown("### 🔵 Gemini 宏观洞察")
                             st.write(model.generate_content(a_prompt).text)
                         else:
