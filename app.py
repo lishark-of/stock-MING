@@ -100,7 +100,7 @@ else:
                     with st.spinner("Gemini 正在调取宏观与基本面矩阵..."):
                         if gemini_key:
                             genai.configure(api_key=gemini_key)
-                            model = genai.GenerativeModel('gemini-1.5-pro')
+                        model = genai.GenerativeModel('gemini-1.5-pro-latest')
                             st.markdown("### 🔵 Gemini 宏观洞察")
                             st.write(model.generate_content(us_prompt).text)
                         else:
