@@ -5,15 +5,17 @@ from openai import OpenAI
 import pandas as pd
 
 # --- 1. Apple Style UI (极简美学) ---
-st.set_page_config(page_title="量化交易终端 V12", page_icon="🍏", layout="wide")
+st.set_page_config(page_title="量化交易终端 V12.1", page_icon="🍏", layout="wide")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
     .stApp { background-color: #F5F5F7; color: #1D1D1F; font-family: -apple-system, sans-serif; }
     .stButton>button { background-color: #0071E3; color: white; border-radius: 980px; border: none; width: 100%; font-weight: 500; }
-    .stTab { background-color: transparent; }
+    .stButton>button:hover { background-color: #0077ED; color: white; }
     .stMetric { background-color: white; padding: 15px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
+    .stTabs [data-baseweb="tab"] { background-color: transparent; border: none; font-size: 1.1rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -27,6 +29,7 @@ if st.session_state.user_role is None:
         pwd = st.text_input("", type="password", placeholder="Access Key", label_visibility="collapsed")
         if st.button("进入系统"):
             if pwd == "888888": st.session_state.user_role = "Admin"; st.rerun()
+            elif pwd == "guest": st.session_state.user_role = "Guest"; st.rerun()
 else:
     # 读取 Secrets
     try:
@@ -34,94 +37,117 @@ else:
         gm_key = st.secrets["GEMINI_API_KEY"]
     except: ds_key = gm_key = None
 
-    # --- 3. 核心工具函数 ---
+    # --- 3. 核心 AI 调用函数 ---
     def call_ai(engine, prompt):
         if engine == "DeepSeek":
             try:
                 client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
-                res = client.chat.completions.create(model="deepseek-chat", messages=[{"role": "user", "content": f"【深度研报模式】{prompt}"}])
+                res = client.chat.completions.create(model="deepseek-chat", messages=[{"role": "user", "content": f"【深度审计模式】{prompt}"}])
                 return res.choices[0].message.content
-            except: return "❌ DeepSeek 算力节点连接超时"
+            except: return "❌ DeepSeek 节点繁忙"
         elif engine == "Gemini":
             try:
                 genai.configure(api_key=gm_key)
                 for m in ['gemini-1.5-flash', 'gemini-pro']:
                     try: return genai.GenerativeModel(m).generate_content(prompt).text
                     except: continue
-                return "⚠️ Gemini 引擎受地理围栏限制，已自动切回 DeepSeek。"
-            except: return "⚠️ 引擎连接异常"
+                return "⚠️ Gemini 暂时不可用，已自动切换为 DeepSeek 单核推演。"
+            except: return "⚠️ 引擎连接失败"
 
     st.title("机构级资产指挥台")
     t1, t2, t3 = st.tabs(["🇺🇸 美股穿透", "🇨🇳 A股博弈", "🐳 聪明资金雷达"])
 
-    # 共享状态：存储当前搜索的 Ticker
+    # 共享状态
     if 'current_ticker' not in st.session_state: st.session_state.current_ticker = "LITE"
 
-    # --- 端口 1 & 2 保持逻辑并同步更新状态 ---
+    # ==========================================
+    # 端口 1：美股硬核价值区
+    # ==========================================
     with t1:
-        c1, c2 = st.columns([3, 1])
-        with c1: 
-            st.session_state.current_ticker = st.text_input("美股代码", st.session_state.current_ticker).upper()
+        c1, c2, c3 = st.columns([2, 1, 1])
+        with c1: st.session_state.current_ticker = st.text_input("美股代码", st.session_state.current_ticker, key="us_in").upper()
         with c2:
             try:
-                price = round(yf.Ticker(st.session_state.current_ticker).history(period='1d')['Close'].iloc[0], 2)
-                st.metric("Price", f"$ {price}")
-            except: price = "N/A"
+                p = round(yf.Ticker(st.session_state.current_ticker).history(period='1d')['Close'].iloc[0], 2)
+                st.metric("实时价格", f"$ {p}")
+            except: p = "N/A"; st.metric("实时价格", "--")
+        with c3:
+            st.write("")
+            st.write("")
+            engine_us = st.radio("算力", ["DeepSeek", "Gemini", "双擎"], horizontal=True, key="en_us")
         
         if st.button(f"启动 Deep Research：{st.session_state.current_ticker}"):
-            p_text = f"分析{st.session_state.current_ticker}，价{price}。需含算力瓶颈、错杀剥离及盈利管理建议。"
-            st.markdown(f"### 🔴 DeepSeek 深度研报\n{call_ai('DeepSeek', p_text)}")
-
-    with t2:
-        # A股逻辑保持不变...
-        st.write("A股端口已锁定，请输入带后缀的代码 (如 002008.SZ)")
+            if st.session_state.user_role == "Admin":
+                prompt = f"分析美股标的{st.session_state.current_ticker}，价{p}。结合AI算力物理瓶颈、价值错杀进行推演，给出阶梯式止盈与底仓管理建议。"
+                if engine_us in ["DeepSeek", "双擎"]: st.markdown(f"### 🔴 DeepSeek 深度研报\n{call_ai('DeepSeek', prompt)}")
+                if engine_us in ["Gemini", "双擎"]: st.markdown(f"### 🔵 Gemini 宏观洞察\n{call_ai('Gemini', prompt)}")
+            else: st.error("访客权限受限")
 
     # ==========================================
-    # 🆕 端口 3：动态聪明资金雷达 (终极进化)
+    # 端口 2：A 股政策博弈区 (已全面解锁)
+    # ==========================================
+    with t2:
+        c4, c5, c6 = st.columns([2, 1, 1])
+        with c4:
+            a_ticker = st.text_input("A股代码 (后缀: .SZ 或 .SS)", "002008.SZ").upper()
+            st.session_state.current_ticker = a_ticker # A股搜索同样联动资金雷达
+        with c5:
+            try:
+                pa = round(yf.Ticker(a_ticker).history(period='1d')['Close'].iloc[0], 2)
+                st.metric("实时价格", f"¥ {pa}")
+            except: pa = "N/A"; st.metric("实时价格", "--")
+        with c6:
+            st.write("")
+            st.write("")
+            engine_a = st.radio("算力 ", ["DeepSeek", "Gemini", "双擎"], horizontal=True, key="en_a")
+                
+        if st.button(f"启动量化穿透：{a_ticker}"):
+            if st.session_state.user_role == "Admin":
+                prompt_a = f"分析A股标的{a_ticker}，价{pa}。分析筹码断层、主力/游资博弈痕迹、做T空间，并给出精确到小数点的止盈止损建议。"
+                if engine_a in ["DeepSeek", "双擎"]: st.markdown(f"### 🔴 DeepSeek 量化演算\n{call_ai('DeepSeek', prompt_a)}")
+                if engine_a in ["Gemini", "双擎"]: st.markdown(f"### 🔵 Gemini 政策解读\n{call_ai('Gemini', prompt_a)}")
+            else: st.error("访客权限受限")
+
+    # ==========================================
+    # 端口 3：聪明资金雷达 (支持排序与 AI 审计)
     # ==========================================
     with t3:
-        st.markdown(f"### 正在审计：{st.session_state.current_ticker} 的聪明资金动向")
+        st.markdown(f"### 正在审计：{st.session_state.current_ticker} 的持仓分布")
         
-        # 利用 yfinance 抓取真实的机构持仓
-        ticker_obj = yf.Ticker(st.session_state.current_ticker)
-        
+        tick = yf.Ticker(st.session_state.current_ticker)
         col_l, col_r = st.columns([1, 1])
         
         with col_l:
-            st.markdown("**顶级机构持仓分布 (Top Holders)**")
+            st.markdown("**顶级机构持仓 (点击表头可排序)**")
             try:
-                holders = ticker_obj.institutional_holders
+                holders = tick.institutional_holders
                 if holders is not None:
-                    # 格式化表格显示
+                    # 将百分比转为数字方便排序
+                    holders['% Out'] = holders['% Out'].astype(float) 
                     st.dataframe(holders, use_container_width=True, hide_index=True)
-                else:
-                    st.write("暂无公开机构持仓披露数据")
-            except:
-                st.write("数据源抓取限制，请稍后再试")
+                else: st.write("暂无公开持仓披露数据")
+            except: st.write("持仓数据暂不可用")
 
         with col_r:
-            st.markdown("**AI 持仓质量审计 (Token 消耗中)**")
-            if st.button("🧠 启动 AI 资金深度建模"):
+            st.markdown("**AI 持仓质量审计 (Deep Research)**")
+            if st.button("🧠 消耗 Token 启动持仓关联分析"):
                 if holders is not None:
-                    # 把真实的持仓数据发给 AI 分析
-                    holders_list = holders['Holder'].tolist()
-                    audit_prompt = f"""
-                    以下是股票 {st.session_state.current_ticker} 的前几大机构持仓列表：{holders_list}。
-                    作为顶级量化分析师，请执行以下审计：
-                    1. 辨别这些持仓中哪些是“被动型指数基金”（如 Vanguard, BlackRock），哪些是具有方向性指导意义的“主动型对冲基金”。
-                    2. 根据这些顶级基金的近期调仓调性（可结合你已有的知识库），判断该股票目前的筹码是处于“散户化”还是“机构化”。
-                    3. 给出该标的的'聪明资金信任等级'（1-10级）。
+                    h_list = holders['Holder'].tolist()
+                    audit_p = f"""
+                    以下是标的 {st.session_state.current_ticker} 的主要机构：{h_list}。
+                    请审计：
+                    1. 哪些是‘僵尸指数基金’，哪些是‘嗅觉敏锐的主动基金’。
+                    2. 当前筹码是否正在从散户向顶级机构集中？
+                    3. 该标的的‘聪明资金信任等级’。
                     """
-                    st.info(call_ai("DeepSeek", audit_prompt))
-                else:
-                    st.write("缺少持仓数据，无法执行 AI 审计。")
+                    st.info(call_ai("DeepSeek", audit_p))
+                else: st.warning("未检测到有效持仓数据")
 
         st.markdown("---")
-        st.markdown("**💡 聪明资金全局监控 (全市场追踪)**")
-        # 这里你可以自由增加你想关注的“聪明人”标签
-        whale_radar = pd.DataFrame({
-            "监控标签": ["AI 大佬关联持仓", "硅谷前员工离职创业流向", "华尔街科技股之神 (Druckenmiller)", "国资背景长线金"],
-            "重点关注标的": ["LITE, AAOI", "WDC, NVDA", "LITE, TSLA", "002008.SZ"],
-            "AI 活跃度建议": ["高关注：算力基建回踩", "中：关注存储芯片拐点", "高：顶级机构增持", "低：政策等待期"]
+        st.markdown("**🐳 聪明人动向实时监控**")
+        whale_data = pd.DataFrame({
+            "标签": ["AI 大佬关联", "硅谷离职员工创业流向", "顶级对冲基金 (Duquesne)", "国资背景"],
+            "重点标的": ["LITE, AAOI", "WDC, NVDA", "LITE, TSLA", "002008.SZ"],
+            "AI 诊断建议": ["关注光模块回踩", "存储芯片拐点已至", "顶级机构持续增仓", "政策主线稳定"]
         })
-        st.table(whale_radar)
+        st.dataframe(whale_data, use_container_width=True, hide_index=True)
