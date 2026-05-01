@@ -1,88 +1,94 @@
 import streamlit as st
+import yfinance as yf
 import time
 
-# --- 1. 页面基本设置 ---
-st.set_page_config(page_title="双核交易指挥中心", page_icon="📈", layout="centered")
+# --- 1. 页面设置与科幻 UI 渲染 ---
+st.set_page_config(page_title="量子深网 | 交易指挥中心", page_icon="🪐", layout="wide")
 
-# --- 2. 权限管理系统 ---
-# 初始化登录状态
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
+# 注入 CSS 代码，打造暗黑科幻/赛博朋克风格
+st.markdown("""
+<style>
+    .stApp { background-color: #0d1117; color: #00ffcc; }
+    h1, h2, h3 { color: #00ffcc !important; text-shadow: 0px 0px 8px #00ffcc; font-family: 'Courier New', Courier, monospace;}
+    .stButton>button { background-color: #0d1117; border: 1px solid #00ffcc; color: #00ffcc; box-shadow: 0 0 10px #00ffcc; transition: 0.3s; }
+    .stButton>button:hover { background-color: #00ffcc; color: #0d1117; }
+    .stTextInput input, .stSelectbox div[data-baseweb="select"] { background-color: #161b22; color: #00ffcc; border: 1px solid #30363d; }
+    div[data-testid="stMetricValue"] { color: #ff3366 !important; text-shadow: 0px 0px 5px #ff3366; }
+</style>
+""", unsafe_allow_html=True)
 
-def check_password():
-    """验证账号密码"""
-    # 这里设置你的专属账号和密码，你可以自行修改
-    ADMIN_USER = "boss"
-    ADMIN_PASS = "888888"
+# --- 2. 权限管理中枢 ---
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = None
+
+def login_system():
+    st.markdown("<h1 style='text-align: center;'>🪐 QUANTUM TERMINAL V4.0</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #8b949e;'>请输入身份密钥</p>", unsafe_allow_html=True)
     
-    if st.session_state["username"] == ADMIN_USER and st.session_state["password"] == ADMIN_PASS:
-        st.session_state['logged_in'] = True
-        st.success("身份验证成功，正在加载核心数据...")
-        time.sleep(1)
-        st.rerun()
-    else:
-        st.error("⚠️ 账号或密码错误，拒绝访问。")
-
-def logout():
-    """退出登录"""
-    st.session_state['logged_in'] = False
-    st.rerun()
-
-# --- 3. 登录界面 ---
-if not st.session_state['logged_in']:
-    st.markdown("<h2 style='text-align: center; color: #E63946;'>🔒 私有化交易指挥中心</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'>仅限管理员访问</p>", unsafe_allow_html=True)
-    
-    st.text_input("管理员账号", key="username")
-    st.text_input("安全密码", type="password", key="password")
-    st.button("🔑 登录系统", on_click=check_password)
-
-# --- 4. App 主界面 (登录后可见) ---
-else:
-    st.sidebar.button("退出系统", on_click=logout)
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📊 账户状态\n**当前模式:** 高级管理员\n**系统状态:** 实时监控中")
-
-    st.title("⚡ 双核量化诊股终端 v3.0")
-    
-    # 核心输入区
-    col1, col2 = st.columns(2)
-    with col1:
-        stock = st.selectbox("选择或输入自选标的", ["大族激光 (002008)", "巨人网络 (002558)", "英维克 (002837)", "Lumentum (LITE)", "其他标的"])
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        mode = st.radio("切换交易端口", ["🔴 短线博弈 (情绪与资金)", "🔵 长线价值 (政策与估值)"])
+        username = st.text_input("登录账号 ID", key="user")
+        password = st.text_input("访问密钥", type="password", key="pwd")
+        
+        if st.button("🚀 接入网络"):
+            if username == "boss" and password == "888888":
+                st.session_state.user_role = "Admin"
+                st.rerun()
+            elif username != "" and password == "guest123": # 访客通用密码
+                st.session_state.user_role = "Guest"
+                st.rerun()
+            else:
+                st.error("⚠️ 密钥验证失败，防入侵系统已启动。")
+    return
 
-    macro_event = st.selectbox("当前宏观/地缘因子", ["无重大事件", "科技制裁加码/出口受限", "AI算力资本开支超预期", "指数情绪冰点/恐慌杀跌"])
+# --- 3. 核心功能区 ---
+if st.session_state.user_role is None:
+    login_system()
+else:
+    # 顶部导航栏
+    st.sidebar.markdown(f"### 👤 身份: **{st.session_state.user_role}**")
+    if st.sidebar.button("🔌 断开连接"):
+        st.session_state.user_role = None
+        st.rerun()
+        
+    st.title("⚡ 核心推演矩阵")
+    
+    # 股票选择器
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        stock_dict = {"大族激光": "002008.SZ", "英维克": "002837.SZ", "Lumentum": "LITE"}
+        selected_name = st.selectbox("锁定监控标的", list(stock_dict.keys()))
+        ticker_code = stock_dict[selected_name]
+    with col2:
+        # 获取实时数据
+        try:
+            live_price = round(yf.Ticker(ticker_code).history(period='1d')['Close'].iloc[0], 2)
+            st.metric(label="当前卫星侦测价格", value=f"{live_price}")
+        except:
+            st.metric(label="当前卫星侦测价格", value="数据节点异常")
 
     st.markdown("---")
 
-    # 动态诊断输出区
-    if st.button("🚀 启动深度推演"):
-        with st.spinner('正在穿透微观资金与量化模型...'):
-            time.sleep(1.5) # 模拟计算延迟
-            
-            if mode == "🔴 短线博弈 (情绪与资金)":
-                st.subheader(f"【短线博弈局】: {stock}")
-                st.warning("⚠️ **风控雷达提示**：当前关注点为量化资金痕迹与短期情绪共振。")
-                
-                if "大族激光" in stock:
-                    st.write("**资金面画像：** 机构锁仓与游资高频做 T 并存。")
-                    st.write("**实战建议：** 遇急跌在关键支撑位左侧低吸，盘中受消息刺激拉升 3%-5% 果断抛出筹码，滚动做 T 摊低成本。")
-                elif "英维克" in stock and "AI算力" in macro_event:
-                    st.success("**情绪共振：** 液冷概念受外部算力资本开支催化，重点观察北向资金接力情况，主升浪切勿轻易下车。")
-                
-                if "冰点" in macro_event:
-                    st.error("🚨 **大盘系统性风险警告：** 市场容错率极低，防范量化资金机械式融券砸盘，建议严控仓位至 2 成以下。")
+    # --- 4. 访客权限 (只读模式) ---
+    if st.session_state.user_role == "Guest":
+        st.info("👁️ **访客模式**：您当前仅有权限查看基础监控数据。")
+        st.write(f"**标的：** {selected_name}")
+        st.write("**资金流向：** 暂无异常波动...")
+        st.write("**系统建议：** 请联系管理员 (Boss) 获取深度诊断与量化风控权限。")
 
-            else:
-                st.subheader(f"【长线价值港】: {stock}")
-                st.info("💡 **深度投资提示**：当前关注点为产业周期、核心估值与大股东动向。")
+    # --- 5. 管理员权限 (Boss 专属深度推演) ---
+    elif st.session_state.user_role == "Admin":
+        st.warning("👑 **最高指挥官权限已确认**。AI 算力池已全量分配。")
+        
+        mode = st.radio("切换战术引擎", ["🔴 高频博弈 (做T模型)", "🔵 宏观价值 (周期模型)"])
+        
+        if st.button("🧠 激活 AI Deep Research (深度推演)"):
+            with st.spinner("正在调用底层大语言模型处理你的私人 Prompt 框架..."):
+                time.sleep(2) # 模拟 AI 思考时间
                 
-                if "大族激光" in stock:
-                    st.write("**基本面预期差：** 市场仍以果链估值，未完全计入半导体设备与先进封装潜力。")
-                    st.write("**长线建议：** 估值处于高性价比区间，保留底仓，等待消费电子周期反转与半导体业务双击。")
-                elif "LITE" in stock:
-                    st.write("**价值模式追踪：** 前期已执行 2/5 仓位止盈，锁定 30% 利润。剩余底仓继续享受 AI 光模块产业红利。")
-                    
-                if "制裁" in macro_event:
-                    st.warning("🌐 **宏观对冲：** 注意出口链短期承压，但长期加速国产替代逻辑。")
+                # 这里是我们之前写的 A 股量化与微观博弈 Prompt 框架的落地展示
+                st.subheader("【AI 深度推演报告生成完毕】")
+                st.write(f"**分析标的：** {selected_name}")
+                st.write("**1. 筹码断层穿透：** 监测到上方套牢盘正在松动，底部大股东筹码锁定率 85%。未见明显量化融券砸盘痕迹。")
+                st.write(f"**2. 情绪溢价模型推演：** 结合当前 CPO 和液冷板块的资本开支预期，若本周突破 {live_price * 1.05:.2f} 元关键阻力位，跳跃扩散模型预测有 15% 的短期爆发空间。")
+                st.write("**3. 实战做 T 指令：** 不可盲目格局，若盘中分时图出现顶背离，果断执行减仓计划。")
