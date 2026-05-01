@@ -1,11 +1,11 @@
 import streamlit as st
 import yfinance as yf
+import google.generativeai as genai
 import time
 
 # --- 1. 页面设置与科幻 UI 渲染 ---
 st.set_page_config(page_title="量子深网 | 交易指挥中心", page_icon="🪐", layout="wide")
 
-# 注入 CSS 代码，打造暗黑科幻/赛博朋克风格
 st.markdown("""
 <style>
     .stApp { background-color: #0d1117; color: #00ffcc; }
@@ -22,7 +22,7 @@ if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
 def login_system():
-    st.markdown("<h1 style='text-align: center;'>🪐 QUANTUM TERMINAL V4.0</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🪐 QUANTUM TERMINAL V5.0 (AI 内核)</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #8b949e;'>请输入身份密钥</p>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -34,61 +34,77 @@ def login_system():
             if username == "boss" and password == "888888":
                 st.session_state.user_role = "Admin"
                 st.rerun()
-            elif username != "" and password == "guest123": # 访客通用密码
+            elif username != "" and password == "guest123":
                 st.session_state.user_role = "Guest"
                 st.rerun()
             else:
-                st.error("⚠️ 密钥验证失败，防入侵系统已启动。")
-    return
+                st.error("⚠️ 密钥验证失败。")
 
 # --- 3. 核心功能区 ---
 if st.session_state.user_role is None:
     login_system()
 else:
-    # 顶部导航栏
     st.sidebar.markdown(f"### 👤 身份: **{st.session_state.user_role}**")
     if st.sidebar.button("🔌 断开连接"):
         st.session_state.user_role = None
         st.rerun()
         
-    st.title("⚡ 核心推演矩阵")
+    st.title("⚡ AI 核心推演矩阵")
     
-    # 股票选择器
     col1, col2 = st.columns([1, 1])
     with col1:
         stock_dict = {"大族激光": "002008.SZ", "英维克": "002837.SZ", "Lumentum": "LITE"}
         selected_name = st.selectbox("锁定监控标的", list(stock_dict.keys()))
         ticker_code = stock_dict[selected_name]
     with col2:
-        # 获取实时数据
         try:
             live_price = round(yf.Ticker(ticker_code).history(period='1d')['Close'].iloc[0], 2)
             st.metric(label="当前卫星侦测价格", value=f"{live_price}")
         except:
+            live_price = "数据读取中"
             st.metric(label="当前卫星侦测价格", value="数据节点异常")
 
     st.markdown("---")
 
     # --- 4. 访客权限 (只读模式) ---
     if st.session_state.user_role == "Guest":
-        st.info("👁️ **访客模式**：您当前仅有权限查看基础监控数据。")
-        st.write(f"**标的：** {selected_name}")
-        st.write("**资金流向：** 暂无异常波动...")
-        st.write("**系统建议：** 请联系管理员 (Boss) 获取深度诊断与量化风控权限。")
+        st.info("👁️ **访客模式**：您当前仅有权限查看基础监控数据。如需调动 AI 算力进行深度推演，请联系 Boss。")
 
-    # --- 5. 管理员权限 (Boss 专属深度推演) ---
+    # --- 5. 管理员权限 (真正的 AI 接入) ---
     elif st.session_state.user_role == "Admin":
-        st.warning("👑 **最高指挥官权限已确认**。AI 算力池已全量分配。")
+        st.warning("👑 **最高指挥官权限已确认**。脑机接口已就绪。")
         
-        mode = st.radio("切换战术引擎", ["🔴 高频博弈 (做T模型)", "🔵 宏观价值 (周期模型)"])
+        # 让你在界面上输入刚才获取的 API Key
+        user_api_key = st.text_input("🔑 请输入您的 Gemini API Key (供能神经元)", type="password")
         
-        if st.button("🧠 激活 AI Deep Research (深度推演)"):
-            with st.spinner("正在调用底层大语言模型处理你的私人 Prompt 框架..."):
-                time.sleep(2) # 模拟 AI 思考时间
-                
-                # 这里是我们之前写的 A 股量化与微观博弈 Prompt 框架的落地展示
-                st.subheader("【AI 深度推演报告生成完毕】")
-                st.write(f"**分析标的：** {selected_name}")
-                st.write("**1. 筹码断层穿透：** 监测到上方套牢盘正在松动，底部大股东筹码锁定率 85%。未见明显量化融券砸盘痕迹。")
-                st.write(f"**2. 情绪溢价模型推演：** 结合当前 CPO 和液冷板块的资本开支预期，若本周突破 {live_price * 1.05:.2f} 元关键阻力位，跳跃扩散模型预测有 15% 的短期爆发空间。")
-                st.write("**3. 实战做 T 指令：** 不可盲目格局，若盘中分时图出现顶背离，果断执行减仓计划。")
+        if st.button("🧠 激活真实 AI Deep Research"):
+            if not user_api_key:
+                st.error("🚨 秘书警报：老板，你还没插上电源！请先输入 API Key。")
+            else:
+                with st.spinner("📡 正在连接我的核心大脑... 正在运用量化博弈框架进行深度推演..."):
+                    try:
+                        # 配置大模型
+                        genai.configure(api_key=user_api_key)
+                        model = genai.GenerativeModel('gemini-1.5-pro')
+                        
+                        # 把你的专属诊股逻辑写进 Prompt 发给我
+                        prompt = f"""
+                        你现在是一位精通A股和美股市场生态的顶尖量化游资操盘手。
+                        请运用“宏观政策共振 + 微观资金博弈 + 量化数学演算”的综合框架，对【{selected_name}】({ticker_code}) 进行深度拆解。
+                        该股票当前最新价为 {live_price}。
+                        请在分析中必须包含：
+                        1. 基本面核心催化剂及市场预期差解构。
+                        2. 微观资金流向与筹码断层穿透分析。
+                        3. A股/美股特化数学演算与目标定价（包含保守/狂热两种情绪下的推演）。
+                        请用极具专业感、冷酷理性的交易员口吻输出报告。
+                        """
+                        
+                        # 接收我传回的真实思考结果
+                        response = model.generate_content(prompt)
+                        
+                        st.subheader(f"【{selected_name} | AI 深度演算报告】")
+                        st.write(response.text)
+                        st.success("运算完成。老板，以上就是我的真实思考。")
+                        
+                    except Exception as e:
+                        st.error(f"❌ 脑机接口连接失败，请检查 API Key 或网络：{e}")
