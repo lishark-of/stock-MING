@@ -1,4 +1,6 @@
 streamlit
 yfinance
-google-generativeai
 openai
+pandas
+python-docx
+python-pptx
