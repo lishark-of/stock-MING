@@ -225,18 +225,44 @@ else:
                         except Exception as e: st.error(f"云端记录失败: {e}")
 
     # ------------------------------------------
-    # 模块 C：主干量化推演 (带 云端外脑注入)
+    # 模块 C：主干量化推演 (带 云端外脑逻辑隔离 + 智能甄别注入)
     # ------------------------------------------
     with tab_main:
         st.markdown(f"### 📈 实时量化穿透：{target}")
         if st.button("🚀 启动深度推演", key="btn_main"):
-            with st.spinner("正在从云端调取量化纪律..."):
-                db = load_cloud_knowledge() # ✨ 从云端读取
-                rules = "\n".join(db["strategies"] + db["reflections"])
-                sys_inject = f"\n\n【⚠️必须遵守的系统云端纪律】：请严格结合以下规则进行评判：\n{rules}" if rules else "\n\n(当前系统云端外脑为空，执行标准推演)"
+            with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
+                db = load_cloud_knowledge() 
+                all_rules = db["strategies"] + db["reflections"]
+                
+                is_a_share = target.endswith(('.SZ', '.SS', '.sz', '.ss'))
+                
+                filtered_rules = []
+                for rule in all_rules:
+                    if is_a_share and "🇺🇸" in rule: continue
+                    if not is_a_share and "🇨🇳" in rule: continue
+                    filtered_rules.append(rule)
+
+                rules_text = "\n".join(filtered_rules)
+                sys_inject = f"\n\n【系统外脑记忆库】：\n{rules_text}" if rules_text else "\n\n(当前市场云端外脑为空)"
             
             p_val = price if price else "未知"
-            call_deepseek_stream(f"分析标的 {target}，最新价 {p_val}。结合基本面、资金博弈与以下纪律给出精确的操作建议。{sys_inject}")
+            
+            # ✨ 核心升级：给予 AI 智能甄别与豁免权，防止过度拟合
+            improved_prompt = f"""
+            你是一位杀伐果断的顶级量化基金经理。请分析标的 {target}，最新价 {p_val}。
+            
+            【你的原生任务】：
+            请务必优先基于你自身庞大的金融知识库，对该标的进行深度的基本面拆解、筹码断层分析以及主力资金博弈推演。
+            
+            【外脑调用原则（至关重要）】：
+            下方提供了我个人总结的【系统外脑记忆库】。请你像人类基金经理一样进行“智能甄别”：
+            1. 匹配度过滤：如果外脑中的某条纪律是针对特定板块（如存储芯片、CPO等），且与 {target} 的主营业务毫无关系，请**直接在脑内屏蔽该条纪律，绝对不要在你的输出报告中提及其“不匹配”或“错配”**。不要浪费篇幅！
+            2. 核心融合：只有当外脑纪律（如通用买卖红线、形态破位原则，或恰好匹配的板块逻辑）完全契合该标的时，才将其作为核心操作建议的依据。
+            
+            {sys_inject}
+            """
+            
+            call_deepseek_stream(improved_prompt)
 
     # ------------------------------------------
     # 模块 D：策略外脑数据中心 (V19.0 云端全解析版)
