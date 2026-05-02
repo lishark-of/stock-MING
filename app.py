@@ -252,20 +252,30 @@ else:
         # --- 方式 2：文档自动榨取 (新功能) ---
         with c_feed2:
             st.markdown("**📂 2. 机构研报/课件投喂**")
-            uploaded_file = st.file_uploader("支持 .docx, .pptx, .txt 格式", type=['docx', 'pptx', 'txt'])
+            uploaded_file = st.file_uploader("支持 .pdf, .docx, .pptx, .txt 格式", type=['pdf', 'docx', 'pptx', 'txt'])
             
             if st.button("🧬 启动文档深度榨取", key="btn_doc_feed"):
                 if uploaded_file is not None and st.session_state.ds_key:
                     with st.spinner("正在强行破译文档排版，提取底层文字..."):
                         extracted_text = ""
                         try:
-                            # 1. 解析 Word
-                            if uploaded_file.name.endswith('.docx'):
+                            # 1. 解析 PDF (✨ 新增武功)
+                            if uploaded_file.name.endswith('.pdf'):
+                                import PyPDF2
+                                pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                                # 遍历所有页面提取文字
+                                for page in pdf_reader.pages:
+                                    text = page.extract_text()
+                                    if text:
+                                        extracted_text += text + "\n"
+
+                            # 2. 解析 Word
+                            elif uploaded_file.name.endswith('.docx'):
                                 import docx
                                 doc = docx.Document(uploaded_file)
                                 extracted_text = "\n".join([p.text for p in doc.paragraphs if p.text])
                             
-                            # 2. 解析 PPT
+                            # 3. 解析 PPT
                             elif uploaded_file.name.endswith('.pptx'):
                                 import pptx
                                 ppt = pptx.Presentation(uploaded_file)
@@ -274,10 +284,9 @@ else:
                                         if hasattr(shape, "text"):
                                             extracted_text += shape.text + "\n"
                             
-                            # 3. 解析 TXT
+                            # 4. 解析 TXT
                             elif uploaded_file.name.endswith('.txt'):
                                 extracted_text = uploaded_file.getvalue().decode("utf-8")
-
                             # --- 交给 DeepSeek 榨取 ---
                             if not extracted_text.strip():
                                 st.warning("文档似乎是空的或全是图片，无法提取文字。")
