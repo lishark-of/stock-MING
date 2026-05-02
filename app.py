@@ -1,8 +1,8 @@
 import streamlit as st
 import yfinance as yf
 from openai import OpenAI
+from supabase import create_client, Client # ✨ 新增：云端数据库引擎
 import datetime
-import json
 import os
 import time
 import io
@@ -10,7 +10,7 @@ import io
 # ==========================================
 # 1. 全局配置与极简美学 UI
 # ==========================================
-st.set_page_config(page_title="量化交易终端 V17.0", page_icon="🦈", layout="wide")
+st.set_page_config(page_title="量化交易终端 V19.0 云端版", page_icon="🦈", layout="wide")
 
 st.markdown("""
 <style>
@@ -25,28 +25,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 策略外脑 (RAG 本地数据库) 初始化
+# 2. 核心功能与缓存提速优化 
 # ==========================================
-KNOWLEDGE_FILE = "strategy_knowledge.json"
-
-def init_knowledge_base():
-    if not os.path.exists(KNOWLEDGE_FILE):
-        with open(KNOWLEDGE_FILE, 'w', encoding='utf-8') as f:
-            json.dump({"reflections": [], "strategies": []}, f)
-
-def load_knowledge():
-    with open(KNOWLEDGE_FILE, 'r', encoding='utf-8') as f: return json.load(f)
-
-def save_knowledge(data):
-    with open(KNOWLEDGE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-init_knowledge_base()
-
-# ==========================================
-# 3. 核心功能与缓存提速优化 (Logic Optimization)
-# ==========================================
-# 优化点：缓存股票基础数据，避免频繁呼叫API导致卡顿或封禁
 @st.cache_data(ttl=300)
 def get_current_price(ticker):
     try:
@@ -76,13 +56,13 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
         st.error(f"⚠️ 算力节点连接异常，请稍后再试。详细原因: {e}")
 
 # ==========================================
-# 4. 权限认证与系统登录
+# 3. 权限认证与 Supabase 云端连线
 # ==========================================
 if 'user_role' not in st.session_state: 
     st.session_state.user_role = None
 
 if st.session_state.user_role is None:
-    st.markdown("<h1 style='text-align: center; margin-top: 10vh;'>Terminal V17</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; margin-top: 10vh;'>Terminal V19 (Cloud)</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         pwd = st.text_input("", type="password", placeholder="输入访问密钥", label_visibility="collapsed")
@@ -91,14 +71,40 @@ if st.session_state.user_role is None:
             elif pwd == "guest": st.session_state.user_role = "Guest"; st.rerun()
             else: st.error("密钥验证失败")
 else:
-    # 挂载密钥到 session_state 供全局调用
+    # ✨ 挂载所有密钥并初始化 Supabase 云端
     try:
         st.session_state.ds_key = st.secrets["DEEPSEEK_API_KEY"]
-    except:
+        sb_url = st.secrets["SUPABASE_URL"]
+        sb_key = st.secrets["SUPABASE_KEY"]
+        supabase: Client = create_client(sb_url, sb_key)
+    except Exception as e:
         st.session_state.ds_key = None
+        supabase = None
+        st.error(f"⚠️ 云端配置缺失，请检查 Secrets。详细报错: {e}")
+
+    # ✨ 云端增删改查函数 (彻底替代旧版 JSON)
+    def load_cloud_knowledge():
+        if not supabase: return {"strategies": [], "reflections": []}
+        try:
+            res = supabase.table("brain_memory").select("*").execute()
+            data = res.data
+            return {
+                "strategies": [d['content'] for d in data if d['memory_type'] == 'strategy'],
+                "reflections": [d['content'] for d in data if d['memory_type'] == 'reflection']
+            }
+        except Exception as e:
+            st.error(f"云端读取异常: {e}")
+            return {"strategies": [], "reflections": []}
+
+    def insert_cloud_memory(m_type, content):
+        if not supabase: return
+        try:
+            supabase.table("brain_memory").insert({"memory_type": m_type, "content": content}).execute()
+        except Exception as e:
+            st.error(f"云端写入异常: {e}")
 
     # ==========================================
-    # 5. 全局指挥部 (主界面)
+    # 4. 全局指挥部 (主界面)
     # ==========================================
     st.title("机构级资产指挥台")
     top_c1, top_c2 = st.columns([3, 1])
@@ -111,12 +117,11 @@ else:
 
     st.markdown("---")
 
-    # 分区面板
     tab_risk, tab_rl, tab_main, tab_brain = st.tabs([
         "🛡️ 天眼风控 (排雷)", 
         "⏳ 炼丹炉 (强化学习)", 
         "📈 量化推演 (主干)", 
-        "🧠 策略外脑 (数据中心)"
+        "☁️ 云端外脑 (数据中心)"
     ])
 
     # ------------------------------------------
@@ -158,7 +163,6 @@ else:
 
         if st.button("🔥 启动闭门军演", key="btn_rl"):
             with st.spinner("正在切割历史时间线..."):
-                # 彻底修复 TypeError：强制转换为 yfinance 信任的格式
                 s_str = start_d.strftime('%Y-%m-%d')
                 e_str = end_d.strftime('%Y-%m-%d')
                 
@@ -170,7 +174,6 @@ else:
                     start_p = round(hist['Close'].iloc[0], 2)
                     end_p = round(hist['Close'].iloc[-1], 2)
                     
-                    # 未来 30 天验证
                     future_d = end_d + datetime.timedelta(days=30)
                     f_str = future_d.strftime('%Y-%m-%d')
                     future = get_historical_data(target, e_str, f_str)
@@ -189,7 +192,7 @@ else:
                     st.markdown("### 🔴 历史左右互搏流")
                     call_deepseek_stream(rl_prompt)
                     
-                    # 静默提取纪律并写入JSON
+                    # ✨ 静默提取纪律并极速写入 Supabase 云端
                     if st.session_state.ds_key:
                         try:
                             client = OpenAI(api_key=st.session_state.ds_key, base_url="https://api.deepseek.com/v1")
@@ -198,33 +201,30 @@ else:
                                 messages=[{"role": "user", "content": rl_prompt + "请只输出最后那条40字以内的纪律本身，不要其他解释。"}]
                             ).choices[0].message.content
                             
-                            db = load_knowledge()
-                            db["reflections"].append(f"【时光机验证 - {target}】: {res}")
-                            save_knowledge(db)
-                            st.success(f"✅ 思想钢印已自动写入外脑库：{res}")
-                        except: pass
+                            insert_cloud_memory("reflection", f"【时光机验证 - {target}】: {res}")
+                            st.success(f"✅ 思想钢印已自动写入云端数据库：{res}")
+                        except Exception as e: st.error(f"云端记录失败: {e}")
 
     # ------------------------------------------
-    # 模块 C：主干量化推演 (带 RAG 外脑注入)
+    # 模块 C：主干量化推演 (带 云端外脑注入)
     # ------------------------------------------
     with tab_main:
         st.markdown(f"### 📈 实时量化穿透：{target}")
         if st.button("🚀 启动深度推演", key="btn_main"):
-            db = load_knowledge()
-            rules = "\n".join(db["strategies"] + db["reflections"])
-            sys_inject = f"\n\n【⚠️必须遵守的系统外脑纪律】：请严格结合以下规则进行评判：\n{rules}" if rules else "\n\n(当前系统外脑为空，执行标准推演)"
+            with st.spinner("正在从云端调取量化纪律..."):
+                db = load_cloud_knowledge() # ✨ 从云端读取
+                rules = "\n".join(db["strategies"] + db["reflections"])
+                sys_inject = f"\n\n【⚠️必须遵守的系统云端纪律】：请严格结合以下规则进行评判：\n{rules}" if rules else "\n\n(当前系统云端外脑为空，执行标准推演)"
             
             p_val = price if price else "未知"
             call_deepseek_stream(f"分析标的 {target}，最新价 {p_val}。结合基本面、资金博弈与以下纪律给出精确的操作建议。{sys_inject}")
 
     # ------------------------------------------
-    # 模块 D：策略外脑数据中心
-   # ------------------------------------------
-    # 模块 D：策略外脑数据中心 (V18.0 文档投喂版)
+    # 模块 D：策略外脑数据中心 (V19.0 云端全解析版)
     # ------------------------------------------
     with tab_brain:
-        st.markdown("### 🧬 RAG 向量记忆中心")
-        st.caption("支持手动喂养，或直接上传 Word/PPT 研报，AI将自动榨取核心量化战法。")
+        st.markdown("### ☁️ 云端 RAG 向量记忆中心 (Supabase驱动)")
+        st.caption("支持手动喂养，或直接上传 PDF/Word/PPT 研报，AI将自动榨取战法并永久保存在加州的服务器上。")
         
         c_feed1, c_feed2 = st.columns([1, 1])
         
@@ -232,24 +232,22 @@ else:
         with c_feed1:
             st.markdown("**📝 1. 碎片战法投喂 (纯文本)**")
             feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：CPO板块连续三天缩量阴跌后，第四天早盘急杀可捞底...")
-            if st.button("🧠 提炼文本并刻入外脑", key="btn_text_feed"):
+            if st.button("🧠 提炼文本并刻入云端", key="btn_text_feed"):
                 if feed_text and st.session_state.ds_key:
-                    with st.spinner("正在提炼规则..."):
+                    with st.spinner("正在提炼规则并连接数据库..."):
                         client = OpenAI(api_key=st.session_state.ds_key, base_url="https://api.deepseek.com/v1")
                         res = client.chat.completions.create(
                             model="deepseek-chat", 
                             messages=[{"role": "user", "content": f"将以下内容转化为一条极其精简、冷酷的量化纪律(不超过50字)：{feed_text}"}]
                         ).choices[0].message.content
                         
-                        db = load_knowledge()
-                        db["strategies"].append(f"【手动植入】: {res}")
-                        save_knowledge(db)
-                        st.success("✅ 战法已永久写入系统底层！")
+                        insert_cloud_memory("strategy", f"【手动植入】: {res}") # ✨ 写入云端
+                        st.success("✅ 战法已永久写入云端底层！")
                         time.sleep(1)
                         st.rerun()
                 elif not st.session_state.ds_key: st.error("缺少 API Key。")
 
-        # --- 方式 2：文档自动榨取 (新功能) ---
+        # --- 方式 2：文档自动榨取 ---
         with c_feed2:
             st.markdown("**📂 2. 机构研报/课件投喂**")
             uploaded_file = st.file_uploader("支持 .pdf, .docx, .pptx, .txt 格式", type=['pdf', 'docx', 'pptx', 'txt'])
@@ -259,15 +257,13 @@ else:
                     with st.spinner("正在强行破译文档排版，提取底层文字..."):
                         extracted_text = ""
                         try:
-                            # 1. 解析 PDF (✨ 新增武功)
+                            # 1. 解析 PDF
                             if uploaded_file.name.endswith('.pdf'):
                                 import PyPDF2
                                 pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                                # 遍历所有页面提取文字
                                 for page in pdf_reader.pages:
                                     text = page.extract_text()
-                                    if text:
-                                        extracted_text += text + "\n"
+                                    if text: extracted_text += text + "\n"
 
                             # 2. 解析 Word
                             elif uploaded_file.name.endswith('.docx'):
@@ -287,12 +283,12 @@ else:
                             # 4. 解析 TXT
                             elif uploaded_file.name.endswith('.txt'):
                                 extracted_text = uploaded_file.getvalue().decode("utf-8")
+                                
                             # --- 交给 DeepSeek 榨取 ---
                             if not extracted_text.strip():
                                 st.warning("文档似乎是空的或全是图片，无法提取文字。")
                             else:
                                 st.info(f"成功提取 {len(extracted_text)} 字情报，正在呼叫 DeepSeek 进行降维打击...")
-                                # 为防止研报太长爆 Token，截取前 20000 字
                                 safe_text = extracted_text[:20000] 
                                 
                                 client = OpenAI(api_key=st.session_state.ds_key, base_url="https://api.deepseek.com/v1")
@@ -309,29 +305,26 @@ else:
                                     messages=[{"role": "user", "content": prompt}]
                                 ).choices[0].message.content
                                 
-                                # 写入外脑
-                                db = load_knowledge()
+                                # ✨ 写入云端
                                 new_rules = [r.strip() for r in res.split('\n') if r.strip() and len(r)>5]
                                 for rule in new_rules:
-                                    # 自动打上文件名标签，方便以后追溯
-                                    db["strategies"].append(f"【研报-{uploaded_file.name[:6]}】: {rule}")
-                                save_knowledge(db)
+                                    insert_cloud_memory("strategy", f"【研报-{uploaded_file.name[:6]}】: {rule}")
                                 
-                                st.success(f"✅ 成功榨取并写入 {len(new_rules)} 条硬核战法！")
+                                st.success(f"✅ 成功榨取并写入 {len(new_rules)} 条硬核战法至云端！")
                                 time.sleep(1.5)
                                 st.rerun()
 
                         except Exception as e:
-                            st.error(f"文档解析失败: {e} (提示：请确保已在 requirements.txt 中安装 python-docx 和 python-pptx)")
+                            st.error(f"文档解析或云端传输失败: {e} (提示：请确保已安装 PyPDF2, python-docx, python-pptx)")
                 elif not st.session_state.ds_key: st.error("缺少 API Key。")
                 else: st.warning("请先上传文件！")
         
         st.markdown("---")
-        st.markdown("**📚 当前系统脑容量 (已掌握的纪律)**")
-        db = load_knowledge()
+        st.markdown("**📚 云端数据库容量监控 (实时同步)**")
+        db = load_cloud_knowledge() # ✨ 实时调取云端
         all_rules = db["strategies"] + db["reflections"]
         if all_rules:
             for rule in all_rules:
-                st.markdown(f"<div class='knowledge-card'>⚙️ {rule}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='knowledge-card'>☁️ {rule}</div>", unsafe_allow_html=True)
         else:
-            st.info("当前系统外脑是一张白纸。")
+            st.info("当前云端外脑是一张白纸。快去喂养数据吧！")
