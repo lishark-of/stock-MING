@@ -123,16 +123,34 @@ else:
             st.error(f"云端抹除异常: {e}")
 
     # ==========================================
-    # 4. 全局指挥部 (主界面)
+    # ==========================================
+    # 4. 全局指挥部 (主界面) - V21.0 智能识别版
     # ==========================================
     st.title("机构级资产指挥台")
+    
     top_c1, top_c2 = st.columns([3, 1])
     with top_c1: 
-        target = st.text_input("输入全局侦测代码 (如 LITE, POET, 002008.SZ)", "LITE", label_visibility="collapsed").upper()
+        # 用户现在只需要输入纯数字或纯字母
+        raw_target = st.text_input("🎯 锁定目标 (支持纯数字如 600459，或美股 LITE)", "LITE", label_visibility="collapsed").upper().strip()
+        
+        # ✨ 智能后缀补全引擎
+        target = raw_target
+        market_badge = "🇺🇸 美股/其他"
+        if raw_target.isdigit() and len(raw_target) == 6:
+            if raw_target.startswith('6'):
+                target = f"{raw_target}.SS"
+                market_badge = "🇨🇳 A股 (沪)"
+            elif raw_target.startswith(('0', '3')):
+                target = f"{raw_target}.SZ"
+                market_badge = "🇨🇳 A股 (深)"
+
     with top_c2:
         price = get_current_price(target)
-        p_display = f"$ {price}" if price and not target.endswith(('.SZ', '.SS')) else (f"¥ {price}" if price else "--")
-        st.metric("卫星侦测价格", p_display)
+        if price:
+            p_display = f"¥ {price}" if "🇨🇳" in market_badge else f"$ {price}"
+            st.metric(f"📡 卫星报价 ({market_badge})", p_display)
+        else:
+            st.metric(f"📡 信号丢失 ({market_badge})", "未查找到该标的")
 
     st.markdown("---")
 
@@ -225,46 +243,68 @@ else:
                         except Exception as e: st.error(f"云端记录失败: {e}")
 
     # ------------------------------------------
-    # 模块 C：主干量化推演 (带 云端外脑逻辑隔离 + 智能甄别注入)
+   # ------------------------------------------
+    # 模块 C：主干量化推演 & 巨鲸追踪 (V21.0 双引擎版)
     # ------------------------------------------
     with tab_main:
-        st.markdown(f"### 📈 实时量化穿透：{target}")
-        if st.button("🚀 启动深度推演", key="btn_main"):
+        st.markdown(f"### 📈 实时穿透：{target}")
+        
+        # 增加并排的两个控制按钮
+        col_main1, col_main2 = st.columns(2)
+        
+        # 按钮一：常规推演
+        with col_main1:
+            btn_normal = st.button("🚀 启动外脑深度推演", use_container_width=True)
+            
+        # 按钮二：资金追踪 (消耗 Token)
+        with col_main2:
+            btn_whale = st.button("🐳 巨鲸资金嗅探 (深度算力)", type="primary", use_container_width=True)
+
+        # --- 逻辑 1：外脑常规推演 ---
+        if btn_normal:
             with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
                 db = load_cloud_knowledge() 
                 all_rules = db["strategies"] + db["reflections"]
-                
                 is_a_share = target.endswith(('.SZ', '.SS', '.sz', '.ss'))
                 
-                filtered_rules = []
-                for rule in all_rules:
-                    if is_a_share and "🇺🇸" in rule: continue
-                    if not is_a_share and "🇨🇳" in rule: continue
-                    filtered_rules.append(rule)
-
+                filtered_rules = [r for r in all_rules if not (is_a_share and "🇺🇸" in r) and not (not is_a_share and "🇨🇳" in r)]
                 rules_text = "\n".join(filtered_rules)
                 sys_inject = f"\n\n【系统外脑记忆库】：\n{rules_text}" if rules_text else "\n\n(当前市场云端外脑为空)"
             
             p_val = price if price else "未知"
-            
-            # ✨ 核心升级：给予 AI 智能甄别与豁免权，防止过度拟合
             improved_prompt = f"""
-            你是一位杀伐果断的顶级量化基金经理。请分析标的 {target}，最新价 {p_val}。
-            
-            【你的原生任务】：
-            请务必优先基于你自身庞大的金融知识库，对该标的进行深度的基本面拆解、筹码断层分析以及主力资金博弈推演。
-            
-            【外脑调用原则（至关重要）】：
-            下方提供了我个人总结的【系统外脑记忆库】。请你像人类基金经理一样进行“智能甄别”：
-            1. 匹配度过滤：如果外脑中的某条纪律是针对特定板块（如存储芯片、CPO等），且与 {target} 的主营业务毫无关系，请**直接在脑内屏蔽该条纪律，绝对不要在你的输出报告中提及其“不匹配”或“错配”**。不要浪费篇幅！
-            2. 核心融合：只有当外脑纪律（如通用买卖红线、形态破位原则，或恰好匹配的板块逻辑）完全契合该标的时，才将其作为核心操作建议的依据。
-            
+            你是一位杀伐果断的顶级量化基金经理。分析标的 {target}，最新价 {p_val}。
+            请优先基于基本面拆解与筹码断层分析。
+            下方是【系统外脑记忆库】，请智能甄别：与 {target} 无关的板块纪律直接屏蔽（切勿提及不匹配），完全契合的作为核心操作依据。
             {sys_inject}
             """
-            
             call_deepseek_stream(improved_prompt)
 
-    # ------------------------------------------
+        # --- 逻辑 2：巨鲸资金追踪 ---
+        if btn_whale:
+            with st.spinner("正在调动高阶算力，穿透交易异动与主力底牌..."):
+                # 抓取最近 5 天的量价数据，作为 AI 分析资金的饲料
+                hist_5d = get_historical_data(target, (datetime.datetime.now() - datetime.timedelta(days=10)).strftime('%Y-%m-%d'), datetime.datetime.now().strftime('%Y-%m-%d'))
+                volume_data = "近期无数据"
+                if not hist_5d.empty:
+                    # 提取最后几天的量价关系
+                    recent_data = hist_5d[['Close', 'Volume']].tail(5)
+                    volume_data = recent_data.to_string()
+                
+                p_val = price if price else "未知"
+                whale_prompt = f"""
+                你现在是华尔街最顶级的“资金流向嗅探犬”与盘口破解专家。
+                标的：{target}。当前价：{p_val}。
+                以下是该标的最近 5 个交易日的【收盘价与成交量】真实数据：
+                {volume_data}
+                
+                请你消耗最大算力，执行【巨鲸追踪】：
+                1. 结合以上量价数据，结合大盘宏观环境，推演是否存在机构建仓、洗盘或游资出逃的痕迹？（是否存在放量滞涨、缩量企稳等盘口特征？）
+                2. 穿透财务表象，直击该标的近期的主力博弈核心逻辑。
+                3. 给出极其冷血的买卖/观望建议，不带任何感情色彩。
+                """
+                st.markdown("<div class='risk-alert' style='border-left-color: #007AFF; color: #007AFF;'>🐳 已锁定巨鲸声呐信号，正在解码主力意图...</div>", unsafe_allow_html=True)
+                call_deepseek_stream(whale_prompt, system_role="作为一台没有感情的盘口资金解剖机器。")
     # 模块 D：策略外脑数据中心 (V19.0 云端全解析版)
     # ------------------------------------------
     with tab_brain:
