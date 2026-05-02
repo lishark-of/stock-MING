@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import time
+import io
 
 # ==========================================
 # 1. 全局配置与极简美学 UI
@@ -218,29 +219,103 @@ else:
 
     # ------------------------------------------
     # 模块 D：策略外脑数据中心
+   # ------------------------------------------
+    # 模块 D：策略外脑数据中心 (V18.0 文档投喂版)
     # ------------------------------------------
     with tab_brain:
         st.markdown("### 🧬 RAG 向量记忆中心")
-        st.caption("系统会自动读取这里的纪律用于日常推演。你可以手动喂养战法，或在‘炼丹炉’中让系统自动生成。")
+        st.caption("支持手动喂养，或直接上传 Word/PPT 研报，AI将自动榨取核心量化战法。")
         
-        feed_text = st.text_area("手动喂养私域战法 (支持直接粘贴大白话)", placeholder="例如：CPO板块连续三天缩量阴跌后，第四天早盘急杀可尝试轻仓捞底...")
-        if st.button("🧠 提炼为量化纪律并刻入外脑"):
-            if feed_text and st.session_state.ds_key:
-                with st.spinner("正在提炼规则..."):
-                    client = OpenAI(api_key=st.session_state.ds_key, base_url="https://api.deepseek.com/v1")
-                    res = client.chat.completions.create(
-                        model="deepseek-chat", 
-                        messages=[{"role": "user", "content": f"将以下内容转化为一条极其精简、冷酷的量化纪律(不超过50字)：{feed_text}"}]
-                    ).choices[0].message.content
-                    
-                    db = load_knowledge()
-                    db["strategies"].append(f"【手动植入】: {res}")
-                    save_knowledge(db)
-                    st.success("✅ 战法已永久写入系统底层！")
-                    time.sleep(1)
-                    st.rerun()
-            elif not st.session_state.ds_key:
-                st.error("缺少 API Key。")
+        c_feed1, c_feed2 = st.columns([1, 1])
+        
+        # --- 方式 1：手动文本投喂 ---
+        with c_feed1:
+            st.markdown("**📝 1. 碎片战法投喂 (纯文本)**")
+            feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：CPO板块连续三天缩量阴跌后，第四天早盘急杀可捞底...")
+            if st.button("🧠 提炼文本并刻入外脑", key="btn_text_feed"):
+                if feed_text and st.session_state.ds_key:
+                    with st.spinner("正在提炼规则..."):
+                        client = OpenAI(api_key=st.session_state.ds_key, base_url="https://api.deepseek.com/v1")
+                        res = client.chat.completions.create(
+                            model="deepseek-chat", 
+                            messages=[{"role": "user", "content": f"将以下内容转化为一条极其精简、冷酷的量化纪律(不超过50字)：{feed_text}"}]
+                        ).choices[0].message.content
+                        
+                        db = load_knowledge()
+                        db["strategies"].append(f"【手动植入】: {res}")
+                        save_knowledge(db)
+                        st.success("✅ 战法已永久写入系统底层！")
+                        time.sleep(1)
+                        st.rerun()
+                elif not st.session_state.ds_key: st.error("缺少 API Key。")
+
+        # --- 方式 2：文档自动榨取 (新功能) ---
+        with c_feed2:
+            st.markdown("**📂 2. 机构研报/课件投喂**")
+            uploaded_file = st.file_uploader("支持 .docx, .pptx, .txt 格式", type=['docx', 'pptx', 'txt'])
+            
+            if st.button("🧬 启动文档深度榨取", key="btn_doc_feed"):
+                if uploaded_file is not None and st.session_state.ds_key:
+                    with st.spinner("正在强行破译文档排版，提取底层文字..."):
+                        extracted_text = ""
+                        try:
+                            # 1. 解析 Word
+                            if uploaded_file.name.endswith('.docx'):
+                                import docx
+                                doc = docx.Document(uploaded_file)
+                                extracted_text = "\n".join([p.text for p in doc.paragraphs if p.text])
+                            
+                            # 2. 解析 PPT
+                            elif uploaded_file.name.endswith('.pptx'):
+                                import pptx
+                                ppt = pptx.Presentation(uploaded_file)
+                                for slide in ppt.slides:
+                                    for shape in slide.shapes:
+                                        if hasattr(shape, "text"):
+                                            extracted_text += shape.text + "\n"
+                            
+                            # 3. 解析 TXT
+                            elif uploaded_file.name.endswith('.txt'):
+                                extracted_text = uploaded_file.getvalue().decode("utf-8")
+
+                            # --- 交给 DeepSeek 榨取 ---
+                            if not extracted_text.strip():
+                                st.warning("文档似乎是空的或全是图片，无法提取文字。")
+                            else:
+                                st.info(f"成功提取 {len(extracted_text)} 字情报，正在呼叫 DeepSeek 进行降维打击...")
+                                # 为防止研报太长爆 Token，截取前 20000 字
+                                safe_text = extracted_text[:20000] 
+                                
+                                client = OpenAI(api_key=st.session_state.ds_key, base_url="https://api.deepseek.com/v1")
+                                prompt = f"""
+                                你是一个冷酷的量化策略提取器。请从以下券商研报/游资课件中，榨取出最核心的、带有触发条件的【量化纪律/交易规则】。
+                                要求：
+                                1. 提炼为 2-4 条最硬核的规则。
+                                2. 每条严格控制在 50 字以内。
+                                3. 不要任何废话，直接按行输出结果。
+                                文档内容：{safe_text}
+                                """
+                                res = client.chat.completions.create(
+                                    model="deepseek-chat", 
+                                    messages=[{"role": "user", "content": prompt}]
+                                ).choices[0].message.content
+                                
+                                # 写入外脑
+                                db = load_knowledge()
+                                new_rules = [r.strip() for r in res.split('\n') if r.strip() and len(r)>5]
+                                for rule in new_rules:
+                                    # 自动打上文件名标签，方便以后追溯
+                                    db["strategies"].append(f"【研报-{uploaded_file.name[:6]}】: {rule}")
+                                save_knowledge(db)
+                                
+                                st.success(f"✅ 成功榨取并写入 {len(new_rules)} 条硬核战法！")
+                                time.sleep(1.5)
+                                st.rerun()
+
+                        except Exception as e:
+                            st.error(f"文档解析失败: {e} (提示：请确保已在 requirements.txt 中安装 python-docx 和 python-pptx)")
+                elif not st.session_state.ds_key: st.error("缺少 API Key。")
+                else: st.warning("请先上传文件！")
         
         st.markdown("---")
         st.markdown("**📚 当前系统脑容量 (已掌握的纪律)**")
