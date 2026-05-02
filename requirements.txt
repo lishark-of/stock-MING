@@ -6,3 +6,5 @@ python-docx
 python-pptx
 PyPDF2
 supabase
++ pandas_ta>=0.3.14b0
++ numpy
