@@ -260,7 +260,7 @@ else:
         with col_main2:
             btn_whale = st.button("🐳 巨鲸资金嗅探 (深度算力)", type="primary", use_container_width=True)
 
-        # --- 逻辑 1：外脑常规推演 ---
+        # --- 逻辑 1：外脑常规推演 (深度扩容版) ---
         if btn_normal:
             with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
                 db = load_cloud_knowledge() 
@@ -272,39 +272,55 @@ else:
                 sys_inject = f"\n\n【系统外脑记忆库】：\n{rules_text}" if rules_text else "\n\n(当前市场云端外脑为空)"
             
             p_val = price if price else "未知"
+            # ✨ 升级点 1：强制要求字数、结构，强制展开四大维度
             improved_prompt = f"""
-            你是一位杀伐果断的顶级量化基金经理。分析标的 {target}，最新价 {p_val}。
-            请优先基于基本面拆解与筹码断层分析。
-            下方是【系统外脑记忆库】，请智能甄别：与 {target} 无关的板块纪律直接屏蔽（切勿提及不匹配），完全契合的作为核心操作依据。
+            你是一位杀伐果断的顶级量化基金经理。请对标的 {target}（最新价 {p_val}）出具一份【极度详尽、深度穿透】的量化研报（要求不少于800字，分点论述）。
+            
+            【你的原生任务】：
+            请务必优先基于你自身庞大的金融知识库，按以下四大模块进行极其深度的拆解：
+            1. 核心基本面与产业链地位（核心业务逻辑是什么？当前处于什么周期拐点？）
+            2. 宏观与大面情绪共振（结合当前大盘情绪，该股是否存在错杀或估值溢价？）
+            3. 筹码断层与微观技术面（强支撑位、阻力位、做T空间在哪里？）
+            4. 极度精确的量化操作指令（必须包含明确的操作建议和精确到小数点的止损止盈位）。
+            
+            【外脑调用原则（至关重要）】：
+            下方是【系统外脑记忆库】。请智能甄别：与 {target} 核心业务无关的板块纪律直接在脑内屏蔽（切勿在报告中提及不匹配），完全契合的作为核心操作依据并在报告中加粗。
             {sys_inject}
             """
             call_deepseek_stream(improved_prompt)
 
-        # --- 逻辑 2：巨鲸资金追踪 ---
+        # --- 逻辑 2：巨鲸资金追踪 (机构+盘口双引擎版) ---
         if btn_whale:
-            with st.spinner("正在调动高阶算力，穿透交易异动与主力底牌..."):
-                # 抓取最近 5 天的量价数据，作为 AI 分析资金的饲料
+            with st.spinner("正在调动高阶算力，穿透明星机构底牌与交易异动..."):
                 hist_5d = get_historical_data(target, (datetime.datetime.now() - datetime.timedelta(days=10)).strftime('%Y-%m-%d'), datetime.datetime.now().strftime('%Y-%m-%d'))
                 volume_data = "近期无数据"
                 if not hist_5d.empty:
-                    # 提取最后几天的量价关系
                     recent_data = hist_5d[['Close', 'Volume']].tail(5)
                     volume_data = recent_data.to_string()
                 
                 p_val = price if price else "未知"
+                # ✨ 升级点 2：强制要求挖掘公募、游资、明星基金经理的宏观动向
                 whale_prompt = f"""
-                你现在是华尔街最顶级的“资金流向嗅探犬”与盘口破解专家。
+                你现在是华尔街与陆家嘴最顶级的“巨鲸资金流向嗅探犬”。
                 标的：{target}。当前价：{p_val}。
-                以下是该标的最近 5 个交易日的【收盘价与成交量】真实数据：
-                {volume_data}
                 
-                请你消耗最大算力，执行【巨鲸追踪】：
-                1. 结合以上量价数据，结合大盘宏观环境，推演是否存在机构建仓、洗盘或游资出逃的痕迹？（是否存在放量滞涨、缩量企稳等盘口特征？）
-                2. 穿透财务表象，直击该标的近期的主力博弈核心逻辑。
-                3. 给出极其冷血的买卖/观望建议，不带任何感情色彩。
+                请你消耗最大算力，执行【宏观机构与微观盘口双重穿透】：
+                
+                第一部分：【宏观机构底牌深挖】
+                请立刻调动你的全网知识库，深挖该标的背后的机构博弈逻辑。
+                指出该标的通常受哪些“明星基金经理”、“国家队/社保/公募机构”或“顶级游资/外资（北向）”的青睐？
+                结合它近期的资本动作，推演这些顶流大资金目前是在潜伏建仓、锁仓不动，还是在逢高派发？
+                
+                第二部分：【微观盘口解剖】
+                以下是该标的最近 5 个交易日的【收盘价与成交量】真实微观数据：
+                {volume_data}
+                结合以上量价数据，验证你第一部分的推演。是否存在放量滞涨、缩量企稳等盘口特征？主力资金近几天是在洗盘还是恐慌出逃？
+                
+                第三部分：【巨鲸追踪结论】
+                给出极其冷血的跟庄或避险建议。
                 """
-                st.markdown("<div class='risk-alert' style='border-left-color: #007AFF; color: #007AFF;'>🐳 已锁定巨鲸声呐信号，正在解码主力意图...</div>", unsafe_allow_html=True)
-                call_deepseek_stream(whale_prompt, system_role="作为一台没有感情的盘口资金解剖机器。")
+                st.markdown("<div class='risk-alert' style='border-left-color: #007AFF; color: #007AFF;'>🐳 已锁定巨鲸声呐信号，正在解码机构大户意图...</div>", unsafe_allow_html=True)
+                call_deepseek_stream(whale_prompt, system_role="作为一台拥有全网视野、没有感情的盘口与机构解剖机器。")
     # 模块 D：策略外脑数据中心 (V19.0 云端全解析版)
     # ------------------------------------------
     with tab_brain:
