@@ -102,6 +102,25 @@ else:
             supabase.table("brain_memory").insert({"memory_type": m_type, "content": content}).execute()
         except Exception as e:
             st.error(f"云端写入异常: {e}")
+            # ✨ 新增：带 ID 读取的云端查询（为了精准删除）
+    def get_all_cloud_memories():
+        if not supabase: return []
+        try:
+            # 按照写入时间倒序排列，最新的在最上面
+            res = supabase.table("brain_memory").select("id, memory_type, content").order("id", desc=True).execute()
+            return res.data
+        except Exception as e:
+            st.error(f"云端读取异常: {e}")
+            return []
+
+    # ✨ 新增：云端抹除函数
+    def delete_cloud_memories(ids_to_delete):
+        if not supabase or not ids_to_delete: return
+        try:
+            # 使用 in_ 方法批量删除选中的 ID
+            supabase.table("brain_memory").delete().in_("id", ids_to_delete).execute()
+        except Exception as e:
+            st.error(f"云端抹除异常: {e}")
 
     # ==========================================
     # 4. 全局指挥部 (主界面)
@@ -320,11 +339,37 @@ else:
                 else: st.warning("请先上传文件！")
         
         st.markdown("---")
-        st.markdown("**📚 云端数据库容量监控 (实时同步)**")
-        db = load_cloud_knowledge() # ✨ 实时调取云端
-        all_rules = db["strategies"] + db["reflections"]
-        if all_rules:
-            for rule in all_rules:
-                st.markdown(f"<div class='knowledge-card'>☁️ {rule}</div>", unsafe_allow_html=True)
+        st.markdown("**🗑️ 外脑记忆管理中心 (圈选并物理抹除)**")
+        
+        # 获取所有带 ID 的记忆记录
+        all_records = get_all_cloud_memories()
+        
+        if all_records:
+            # 构建一个字典，把记录的 ID 映射到它的具体内容上，方便在多选框里展示
+            options_dict = {record['id']: record['content'] for record in all_records}
+            
+            # 圈选多选框
+            selected_ids = st.multiselect(
+                "请选择需要从云端剔除的过期纪律：",
+                options=list(options_dict.keys()),
+                format_func=lambda x: options_dict[x], # 让选项显示具体文字，而不是冷冰冰的数字ID
+                placeholder="点击下拉框查看并圈选..."
+            )
+            
+            # 删除按钮
+            if st.button("🔥 彻底抹除选中的记忆", type="primary"):
+                if selected_ids:
+                    with st.spinner("正在向云端发送物理擦除指令..."):
+                        delete_cloud_memories(selected_ids)
+                        st.success("✅ 记忆已彻底从云端矩阵中剔除！")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    st.warning("⚠️ 请先圈选你要删除的纪律。")
+            
+            st.markdown("---")
+            st.markdown("**📚 当前生效的系统脑容量**")
+            for record in all_records:
+                st.markdown(f"<div class='knowledge-card'>{record['content']}</div>", unsafe_allow_html=True)
         else:
-            st.info("当前云端外脑是一张白纸。快去喂养数据吧！")
+            st.info("当前云端外脑是一张白纸，快去喂养数据吧！")
