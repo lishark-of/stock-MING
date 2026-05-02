@@ -1,14 +1,13 @@
 import streamlit as st
 import yfinance as yf
-import google.generativeai as genai
 from openai import OpenAI
-import pandas as pd
-import time
+import datetime
 import json
 import os
+import time
 
 # --- 1. Apple Style UI ---
-st.set_page_config(page_title="量化交易终端 V15.0", page_icon="🍏", layout="wide")
+st.set_page_config(page_title="量化交易终端 V16.0", page_icon="🍏", layout="wide")
 
 st.markdown("""
 <style>
@@ -17,159 +16,143 @@ st.markdown("""
     .stButton>button { background-color: #1D1D1F; color: white; border-radius: 8px; border: none; width: 100%; font-weight: 500; transition: 0.2s; }
     .stButton>button:hover { background-color: #434343; color: white; }
     .stMetric { background-color: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: 1px solid #E5E5EA; }
-    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
-    .stTabs [data-baseweb="tab"] { background-color: transparent; border: none; font-size: 1.1rem; }
-    .status-text { font-family: 'Courier New', monospace; color: #0071E3; font-size: 0.9rem; }
-    .knowledge-card { background-color: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #0071E3; margin-bottom: 10px; font-size: 0.9rem;}
+    .risk-alert { background-color: #FFF0F0; padding: 15px; border-radius: 8px; border-left: 4px solid #FF3B30; margin-bottom: 10px; color: #FF3B30; font-weight: 600;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 策略外脑（本地微型数据库）初始化 ---
+# --- 2. 策略外脑初始化 ---
 KNOWLEDGE_FILE = "strategy_knowledge.json"
+if not os.path.exists(KNOWLEDGE_FILE):
+    with open(KNOWLEDGE_FILE, 'w', encoding='utf-8') as f:
+        json.dump({"reflections": []}, f)
 
-def init_knowledge_base():
-    if not os.path.exists(KNOWLEDGE_FILE):
-        with open(KNOWLEDGE_FILE, 'w', encoding='utf-8') as f:
-            json.dump({"strategies": [], "reflections": []}, f)
-
-def load_knowledge():
+def save_lesson(lesson):
     with open(KNOWLEDGE_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-def save_knowledge(data):
+        data = json.load(f)
+    data["reflections"].append(lesson)
     with open(KNOWLEDGE_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-init_knowledge_base()
+# --- 3. 密钥与基础设置 ---
+try:
+    ds_key = st.secrets["DEEPSEEK_API_KEY"]
+except:
+    ds_key = None
 
-# --- 3. 权限与密钥 ---
-if 'user_role' not in st.session_state: st.session_state.user_role = None
-
-if st.session_state.user_role is None:
-    st.markdown("<h1 style='text-align: center; margin-top: 10vh;'>Terminal</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        pwd = st.text_input("", type="password", placeholder="Access Key", label_visibility="collapsed")
-        if st.button("进入系统"):
-            if pwd == "888888": st.session_state.user_role = "Admin"; st.rerun()
-            elif pwd == "guest": st.session_state.user_role = "Guest"; st.rerun()
-else:
+def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"):
+    if not ds_key: return st.error("缺少 DeepSeek 密钥")
     try:
-        ds_key = st.secrets["DEEPSEEK_API_KEY"]
-        gm_key = st.secrets["GEMINI_API_KEY"]
-    except: ds_key = gm_key = None
+        client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "system", "content": system_role}, {"role": "user", "content": prompt}],
+            stream=True
+        )
+        st.write_stream((chunk.choices[0].delta.content or "") for chunk in response)
+    except Exception as e:
+        st.error(f"连接异常: {e}")
 
-    # --- 4. 核心工具函数 ---
-    def run_quant_progress():
-        bar = st.progress(0)
-        status = st.empty()
-        steps = ["📡 接入数据源...", "🧠 加载策略外脑库...", "🧮 注入蒙特卡洛模型...", "⚡ 生成最终作战策略..."]
-        for i in range(100):
-            bar.progress(i + 1)
-            if i % 25 == 0: status.markdown(f"<p class='status-text'>{steps[i//25]}</p>", unsafe_allow_html=True)
-            time.sleep(0.015)
-        status.empty(); bar.empty()
+st.title("机构级资产指挥台 - 纪元版")
+st.markdown("### 🎯 全局目标锁定")
+top_c1, top_c2 = st.columns([3, 1])
+with top_c1: 
+    target = st.text_input("输入监控代码 (如 LITE, POET, 600481.SS)", "LITE", label_visibility="collapsed").upper()
+with top_c2:
+    try:
+        p = round(yf.Ticker(target).history(period='1d')['Close'].iloc[0], 2)
+        st.metric("卫星侦测价格", f"{p}")
+    except: 
+        p = "N/A"
+        st.metric("卫星侦测价格", "--")
 
-    def call_deepseek_stream(prompt):
-        if not ds_key: return st.error("缺少 DeepSeek 密钥")
-        try:
-            client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                stream=True
-            )
-            st.write_stream((chunk.choices[0].delta.content or "") for chunk in response)
-        except: st.error("DeepSeek 连接异常。")
+st.markdown("---")
 
-    # ==========================================
-    # 全局目标锁定架构
-    # ==========================================
-    st.title("机构级资产指挥台")
-    st.markdown("### 🎯 全局目标锁定")
-    top_c1, top_c2, top_c3 = st.columns([2, 1, 2])
-    with top_c1: target = st.text_input("输入监控代码", "LITE", label_visibility="collapsed").upper()
-    with top_c2:
-        try:
-            p = round(yf.Ticker(target).history(period='1d')['Close'].iloc[0], 2)
-            st.metric("卫星侦测价格", f"{p}")
-        except: p = "N/A"; st.metric("卫星侦测价格", "--")
-    with top_c3:
-        global_engine = st.radio("全局算力调度", ["DeepSeek", "双擎验证"], horizontal=True, label_visibility="collapsed")
+tab_risk, tab_rl, tab_main = st.tabs(["🛡️ 天眼风控 (防雷)", "⏳ 炼丹炉 (强化学习)", "🇺🇸/🇨🇳 常规量化穿透"])
+
+# ==========================================
+# 模块 1：天眼风控 (合规与信息泄露排雷)
+# ==========================================
+with tab_risk:
+    st.markdown(f"### 🛡️ 极高权限合规审计：{target}")
+    st.info("消耗 Token 扫描内幕交易、消息抢跑、监管问询等治理风险，防范类似双良/POET的暴雷。")
+    
+    if st.button("🚨 启动全网风控雷达", key="btn_risk"):
+        with st.spinner("正在扫描监管函件与舆情异动..."):
+            try:
+                # 抓取近期新闻标题作为情报源 
+                news_data = yf.Ticker(target).news
+                headlines = [n['title'] for n in news_data][:5] if news_data else "无公开实时新闻"
+                
+                risk_prompt = f"""
+                你现在是 SEC 和中国证监会的顶级稽查员。标的：{target}。
+                最新接口抓取到的舆情线索：{headlines}。
+                请调动全网知识库，排查：
+                1. 是否存在‘公告前股价已提前异动’的内幕泄露特征？
+                2. 是否收到过监管关注函或遭到知名机构做空？
+                3. 若存在类似双良或POET的信息违规风险，请在开头用【一票否决】做出严厉警告。
+                """
+                st.markdown("<div class='risk-alert'>正在执行深度排雷协议...</div>", unsafe_allow_html=True)
+                call_deepseek_stream(risk_prompt, system_role="作为无情的金融监管稽查机器。")
+            except Exception as e:
+                st.error("数据抓取受限，建议手动补充舆情。")
+
+# ==========================================
+# 模块 2：炼丹炉 (历史回测与自我进化)
+# ==========================================
+with tab_rl:
+    st.markdown(f"### ⏳ 强化学习时光机：{target}")
+    st.caption("截断历史数据让AI盲猜，然后用未来数据打脸，逼迫其生成量化纪律，永久写入外脑。")
+    
+    col1, col2 = st.columns(2)
+    with col1: start_d = st.date_input("盲测起点", datetime.date(2023, 1, 1))
+    with col2: end_d = st.date_input("盲测终点(截断点)", datetime.date(2023, 6, 1))
+
+    if st.button("🔥 启动闭门军演与自我进化", key="btn_rl"):
+        with st.spinner("正在切割历史时间线..."):
+            hist = yf.Ticker(target).history(start=start_d, end=end_d)
+            if hist.empty:
+                st.error("该时间段无数据")
+            else:
+                start_p = round(hist['Close'].iloc[0], 2)
+                end_p = round(hist['Close'].iloc[-1], 2)
+                
+                # 抓取盲测终点之后 30 天的真实数据 (用于打脸验证)
+                future = yf.Ticker(target).history(start=end_d, periods=30)
+                future_p = round(future['Close'].iloc[-1], 2) if not future.empty else "未知"
+                
+                st.markdown(f"**📈 喂养数据**：{start_d} 至 {end_d}，股价从 {start_p} 变动至 {end_p}。")
+                st.markdown(f"**🔮 现实毒打**：截断点后一个月，股价实际走到了 {future_p}。")
+                
+                rl_prompt = f"""
+                在 {start_d} 到 {end_d}，{target} 股价从 {start_p} 到 {end_p}。
+                你作为量化模型，如果当时在 {end_p} 这个位置，你会怎么操作？
+                随后现实走势是：接下来的一个月股价来到了 {future_p}。
+                请反思预测与现实的差距，并强制提炼一条不超过40个字的【硬核量化纪律】。最后请明确输出这条纪律。
+                """
+                
+                st.markdown("### 🔴 DeepSeek 历史左右互搏流")
+                # 这里我们先让流式显示出来
+                call_deepseek_stream(rl_prompt)
+                
+                # 后台静默抓取纪律写入 JSON
+                client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
+                res = client.chat.completions.create(
+                    model="deepseek-chat", 
+                    messages=[{"role": "user", "content": rl_prompt + "请只输出最后那条40字以内的纪律本身，不要其他任何废话。"}]
+                ).choices[0].message.content
+                
+                save_lesson(f"【时光机验证 - {target}】: {res}")
+                st.success(f"✅ 思想钢印已自动写入外脑库：{res}")
+
+# ==========================================
+# 模块 3：常规穿透 (带外脑读取)
+# ==========================================
+with tab_main:
+    st.info("读取外脑数据进行常规分析...")
+    if st.button(f"🚀 启动深度推演：{target}", key="btn_main"):
+        with open(KNOWLEDGE_FILE, 'r', encoding='utf-8') as f:
+            db = json.load(f)
+        rules = "\n".join(db["reflections"])
+        sys_inject = f"\n\n【必须遵守的系统外脑纪律】：\n{rules}" if rules else ""
         
-    st.markdown("---")
-
-    t1, t2, t3, t4 = st.tabs(["🇺🇸 美股深度", "🇨🇳 A股量化", "🐳 资金雷达", "🧠 策略外脑 (进化中心)"])
-
-    # 获取当前的知识库，注入到 Prompt 中 (RAG 技术)
-    db = load_knowledge()
-    custom_rules = "\n".join(db["strategies"] + db["reflections"])
-    system_injection = f"\n\n【⚠️ 核心强制指令】：你必须严格结合以下'私有量化规则库'对当前标的进行分析，如果当前标的触发了规则库中的止损或做T条件，必须在报告最开头红色加粗警告：\n{custom_rules}" if custom_rules else ""
-
-    # --- 端口 1 & 2: 推演 (带外脑注入) ---
-    with t1:
-        if st.button(f"🚀 启动 Deep Research：{target}", key="btn_us"):
-            prompt = f"分析美股{target}，价{p}。结合AI算力物理瓶颈推演阶梯止盈。{system_injection}"
-            run_quant_progress()
-            st.markdown("### 🔴 DeepSeek 深度推演流 (外脑辅助)")
-            call_deepseek_stream(prompt)
-
-    with t2:
-        if st.button(f"🚀 启动量化穿透：{target}", key="btn_a"):
-            prompt_a = f"分析A股{target}，价{p}。分析筹码断层及博弈痕迹。{system_injection}"
-            run_quant_progress()
-            st.markdown("### 🔴 DeepSeek 量化推演流 (外脑辅助)")
-            call_deepseek_stream(prompt_a)
-
-    with t3:
-        st.info("资金雷达逻辑已就绪，自动跟随全局目标。")
-
-    # ==========================================
-    # 🆕 端口 4：🧠 策略外脑 (软件自我升级区)
-    # ==========================================
-    with t4:
-        st.markdown("### 🧬 RAG 向量记忆注入中心")
-        st.caption("在这里消耗 Token，将外部经验转化为 App 的永久量化纪律。")
-        
-        c_left, c_right = st.columns([1, 1])
-        
-        with c_left:
-            st.markdown("**1. 喂养私域战法 (理论吸收)**")
-            strategy_text = st.text_area("粘贴游资语录/研报片段", placeholder="例如：当CPO概念股高位爆量换手超20%且尾盘抢筹时，次日跳空高开概率达80%...")
-            if st.button("🧠 消耗 Token 提炼量化规则", key="feed_strat"):
-                if strategy_text:
-                    with st.spinner("DeepSeek 正在拆解逻辑..."):
-                        client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
-                        res = client.chat.completions.create(
-                            model="deepseek-chat",
-                            messages=[{"role": "user", "content": f"请将以下大白话转化为极其简练的'机器量化条件规则'（不超过50字）：{strategy_text}"}]
-                        ).choices[0].message.content
-                        db["strategies"].append(res)
-                        save_knowledge(db)
-                        st.success("✅ 战法已成功写入 App 永久外脑！")
-                        st.rerun()
-
-        with c_right:
-            st.markdown("**2. 实盘交易复盘 (自我纠偏)**")
-            trade_ticker = st.text_input("交易标的", placeholder="例如：贵研铂业 / 大族激光 / LITE")
-            trade_result = st.text_area("交易结果与情绪", placeholder="例如：重仓买入后遇到美股闪崩，未遵守 97.8 元的极限止损纪律，导致回撤扩大，当时心态有赌徒心理。")
-            if st.button("🩸 消耗 Token 凝练血泪纪律", key="feed_reflect"):
-                if trade_result:
-                    with st.spinner("DeepSeek 正在剖析失误..."):
-                        client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
-                        res = client.chat.completions.create(
-                            model="deepseek-chat",
-                            messages=[{"role": "user", "content": f"作为无情的量化机器，请基于以下失败的实盘记录，总结出一条铁血量化止损纪律（必须带有明确的数字底线，不超过50字）：标的{trade_ticker}，情况：{trade_result}"}]
-                        ).choices[0].message.content
-                        db["reflections"].append(f"【血泪纪律 - {trade_ticker}】: {res}")
-                        save_knowledge(db)
-                        st.success("✅ 血泪纪律已刻入系统底层！")
-                        st.rerun()
-
-        st.markdown("---")
-        st.markdown("**📚 当前 App 脑容量 (已掌握的量化规则)**")
-        if db["strategies"] or db["reflections"]:
-            for rule in db["strategies"] + db["reflections"]:
-                st.markdown(f"<div class='knowledge-card'>⚙️ {rule}</div>", unsafe_allow_html=True)
-        else:
-            st.info("当前外脑为空。请开始喂养数据。")
+        call_deepseek_stream(f"分析标的{target}，最新价{p}。结合基本面与以下纪律给出操作建议。{sys_inject}")
