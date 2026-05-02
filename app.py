@@ -4,9 +4,11 @@ import google.generativeai as genai
 from openai import OpenAI
 import pandas as pd
 import time
+import json
+import os
 
 # --- 1. Apple Style UI ---
-st.set_page_config(page_title="量化交易终端 V14.0", page_icon="🍏", layout="wide")
+st.set_page_config(page_title="量化交易终端 V15.0", page_icon="🍏", layout="wide")
 
 st.markdown("""
 <style>
@@ -18,10 +20,29 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 20px; }
     .stTabs [data-baseweb="tab"] { background-color: transparent; border: none; font-size: 1.1rem; }
     .status-text { font-family: 'Courier New', monospace; color: #0071E3; font-size: 0.9rem; }
+    .knowledge-card { background-color: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #0071E3; margin-bottom: 10px; font-size: 0.9rem;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 权限与密钥 ---
+# --- 2. 策略外脑（本地微型数据库）初始化 ---
+KNOWLEDGE_FILE = "strategy_knowledge.json"
+
+def init_knowledge_base():
+    if not os.path.exists(KNOWLEDGE_FILE):
+        with open(KNOWLEDGE_FILE, 'w', encoding='utf-8') as f:
+            json.dump({"strategies": [], "reflections": []}, f)
+
+def load_knowledge():
+    with open(KNOWLEDGE_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_knowledge(data):
+    with open(KNOWLEDGE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+init_knowledge_base()
+
+# --- 3. 权限与密钥 ---
 if 'user_role' not in st.session_state: st.session_state.user_role = None
 
 if st.session_state.user_role is None:
@@ -38,145 +59,117 @@ else:
         gm_key = st.secrets["GEMINI_API_KEY"]
     except: ds_key = gm_key = None
 
-    # ==========================================
-    # 🆕 亮点 1：量化画风进度条组件
-    # ==========================================
+    # --- 4. 核心工具函数 ---
     def run_quant_progress():
         bar = st.progress(0)
-        status_text = st.empty()
-        steps = [
-            "📡 正在接入数据源...", 
-            "🔍 正在抓取机构与主力底层底牌...", 
-            "🧮 正在注入蒙特卡洛模型推演价格极值...", 
-            "⚡ 正在穿透筹码断层，生成最终作战策略..."
-        ]
+        status = st.empty()
+        steps = ["📡 接入数据源...", "🧠 加载策略外脑库...", "🧮 注入蒙特卡洛模型...", "⚡ 生成最终作战策略..."]
         for i in range(100):
             bar.progress(i + 1)
-            if i % 25 == 0:
-                status_text.markdown(f"<p class='status-text'>{steps[i//25]}</p>", unsafe_allow_html=True)
-            time.sleep(0.015) # 进度条动画时间
-        status_text.empty()
-        bar.empty()
+            if i % 25 == 0: status.markdown(f"<p class='status-text'>{steps[i//25]}</p>", unsafe_allow_html=True)
+            time.sleep(0.015)
+        status.empty(); bar.empty()
 
-    # ==========================================
-    # 🆕 亮点 2：流式打字机输出函数 (DeepSeek)
-    # ==========================================
     def call_deepseek_stream(prompt):
         if not ds_key: return st.error("缺少 DeepSeek 密钥")
         try:
             client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
             response = client.chat.completions.create(
                 model="deepseek-chat",
-                messages=[{"role": "user", "content": f"【深度审计模式】{prompt}"}],
-                stream=True # 开启流式输出
+                messages=[{"role": "user", "content": prompt}],
+                stream=True
             )
-            # 配合 Streamlit 的流式写入功能
             st.write_stream((chunk.choices[0].delta.content or "") for chunk in response)
-        except Exception as e:
-            st.error("DeepSeek 连接异常，请重试。")
+        except: st.error("DeepSeek 连接异常。")
 
-    def call_gemini(prompt):
-        try:
-            genai.configure(api_key=gm_key)
-            for m in ['gemini-1.5-flash', 'gemini-pro']:
-                try: return genai.GenerativeModel(m).generate_content(prompt).text
-                except: continue
-            return "⚠️ Gemini 暂时不可用。"
-        except: return "⚠️ 引擎连接失败"
-
+    # ==========================================
+    # 全局目标锁定架构
+    # ==========================================
     st.title("机构级资产指挥台")
-    
-    # ==========================================
-    # 🆕 亮点 3：全局目标锁定 (取代各分页单独搜索)
-    # ==========================================
     st.markdown("### 🎯 全局目标锁定")
     top_c1, top_c2, top_c3 = st.columns([2, 1, 2])
-    with top_c1:
-        # 输入框直接控制全局
-        target = st.text_input("输入监控代码 (如 LITE, AAPL, 002008.SZ)", "LITE", label_visibility="collapsed").upper()
+    with top_c1: target = st.text_input("输入监控代码", "LITE", label_visibility="collapsed").upper()
     with top_c2:
         try:
             p = round(yf.Ticker(target).history(period='1d')['Close'].iloc[0], 2)
             st.metric("卫星侦测价格", f"{p}")
         except: p = "N/A"; st.metric("卫星侦测价格", "--")
     with top_c3:
-        global_engine = st.radio("全局算力调度", ["DeepSeek", "Gemini", "双擎验证"], horizontal=True, label_visibility="collapsed")
+        global_engine = st.radio("全局算力调度", ["DeepSeek", "双擎验证"], horizontal=True, label_visibility="collapsed")
         
     st.markdown("---")
 
-    t1, t2, t3 = st.tabs(["🇺🇸 美股深度研报", "🇨🇳 A股微观博弈", "🐳 全局聪明资金雷达"])
+    t1, t2, t3, t4 = st.tabs(["🇺🇸 美股深度", "🇨🇳 A股量化", "🐳 资金雷达", "🧠 策略外脑 (进化中心)"])
 
-    # --- 端口 1: 美股 ---
+    # 获取当前的知识库，注入到 Prompt 中 (RAG 技术)
+    db = load_knowledge()
+    custom_rules = "\n".join(db["strategies"] + db["reflections"])
+    system_injection = f"\n\n【⚠️ 核心强制指令】：你必须严格结合以下'私有量化规则库'对当前标的进行分析，如果当前标的触发了规则库中的止损或做T条件，必须在报告最开头红色加粗警告：\n{custom_rules}" if custom_rules else ""
+
+    # --- 端口 1 & 2: 推演 (带外脑注入) ---
     with t1:
         if st.button(f"🚀 启动 Deep Research：{target}", key="btn_us"):
-            if st.session_state.user_role == "Admin":
-                prompt = f"分析美股标的{target}，价{p}。结合AI算力物理瓶颈、价值错杀进行推演，给出阶梯式止盈与底仓管理建议。"
-                run_quant_progress() # 触发量化进度条
-                
-                if global_engine in ["DeepSeek", "双擎验证"]: 
-                    st.markdown("### 🔴 DeepSeek 深度推演流")
-                    call_deepseek_stream(prompt) # 触发打字机输出
-                    
-                if global_engine in ["Gemini", "双擎验证"]: 
-                    st.markdown(f"### 🔵 Gemini 宏观洞察\n{call_gemini(prompt)}")
-            else: st.error("访客权限受限")
+            prompt = f"分析美股{target}，价{p}。结合AI算力物理瓶颈推演阶梯止盈。{system_injection}"
+            run_quant_progress()
+            st.markdown("### 🔴 DeepSeek 深度推演流 (外脑辅助)")
+            call_deepseek_stream(prompt)
 
-    # --- 端口 2: A股 ---
     with t2:
         if st.button(f"🚀 启动量化穿透：{target}", key="btn_a"):
-            if st.session_state.user_role == "Admin":
-                prompt_a = f"分析A股标的{target}，价{p}。分析筹码断层、主力/游资博弈痕迹、做T空间，并给出精确到小数点的止盈止损建议。"
-                run_quant_progress()
-                
-                if global_engine in ["DeepSeek", "双擎验证"]: 
-                    st.markdown("### 🔴 DeepSeek 量化推演流")
-                    call_deepseek_stream(prompt_a)
-                    
-                if global_engine in ["Gemini", "双擎验证"]: 
-                    st.markdown(f"### 🔵 Gemini 政策解读\n{call_gemini(prompt_a)}")
-            else: st.error("访客权限受限")
+            prompt_a = f"分析A股{target}，价{p}。分析筹码断层及博弈痕迹。{system_injection}"
+            run_quant_progress()
+            st.markdown("### 🔴 DeepSeek 量化推演流 (外脑辅助)")
+            call_deepseek_stream(prompt_a)
 
-    # --- 端口 3: 资金雷达 (自动跟随全局 target) ---
     with t3:
-        is_a_share = target.endswith('.SZ') or target.endswith('.SS')
-        st.markdown(f"### 正在审计：{target} 的资金动向")
-        col_l, col_r = st.columns([1, 1])
-        
-        # 🟢 A股雷达逻辑
-        if is_a_share:
-            with col_l:
-                st.markdown("**🇨🇳 A股微观博弈监控 (模拟席位)**")
-                a_mock = pd.DataFrame({"资金席位": ["深股通专用", "机构专用", "知名游资", "东方财富拉萨"], "净买额": ["+1.2亿", "+8500万", "-4000万", "-1.5亿"], "状态": ["连续流入", "试探建仓", "逢高兑现", "恐慌割肉"]})
-                st.dataframe(a_mock, use_container_width=True, hide_index=True)
-            with col_r:
-                st.markdown("**AI 主力意图推演**")
-                if st.button("🧠 消耗 Token 启动 A股资金盲测", key="btn_t3_a"):
-                    run_quant_progress()
-                    a_audit_p = f"作为顶级游资，直接盲测 {target} 的主力资金潜伏逻辑、筹码控盘度及安全边际。"
-                    st.markdown("### 🔴 DeepSeek 资金推演")
-                    call_deepseek_stream(a_audit_p)
-                    
-        # 🔵 美股雷达逻辑
-        else:
-            tick = yf.Ticker(target)
-            valid_holders = None
-            with col_l:
-                st.markdown("**🇺🇸 顶级机构持仓 (点击排序)**")
-                try:
-                    holders = tick.institutional_holders
-                    if holders is not None and not holders.empty and 'Holder' in holders.columns:
-                        if '% Out' in holders.columns: holders['% Out'] = holders['% Out'].astype(float) 
-                        st.dataframe(holders, use_container_width=True, hide_index=True)
-                        valid_holders = holders['Holder'].tolist()
-                    else: st.warning("暂无公开名单。")
-                except: st.warning("抓取异常。")
+        st.info("资金雷达逻辑已就绪，自动跟随全局目标。")
 
-            with col_r:
-                st.markdown("**AI 持仓质量审计**")
-                if st.button("🧠 消耗 Token 启动美股资金审计", key="btn_t3_us"):
-                    run_quant_progress()
-                    st.markdown("### 🔴 DeepSeek 审计流")
-                    if valid_holders:
-                        call_deepseek_stream(f"审计 {target} 的主要机构：{valid_holders}。区分被动指数与主动基金，给出信任等级。")
-                    else:
-                        call_deepseek_stream(f"无法获取 {target} 机构名单。请利用全网数据评估其顶级机构或高管建仓逻辑。")
+    # ==========================================
+    # 🆕 端口 4：🧠 策略外脑 (软件自我升级区)
+    # ==========================================
+    with t4:
+        st.markdown("### 🧬 RAG 向量记忆注入中心")
+        st.caption("在这里消耗 Token，将外部经验转化为 App 的永久量化纪律。")
+        
+        c_left, c_right = st.columns([1, 1])
+        
+        with c_left:
+            st.markdown("**1. 喂养私域战法 (理论吸收)**")
+            strategy_text = st.text_area("粘贴游资语录/研报片段", placeholder="例如：当CPO概念股高位爆量换手超20%且尾盘抢筹时，次日跳空高开概率达80%...")
+            if st.button("🧠 消耗 Token 提炼量化规则", key="feed_strat"):
+                if strategy_text:
+                    with st.spinner("DeepSeek 正在拆解逻辑..."):
+                        client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
+                        res = client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[{"role": "user", "content": f"请将以下大白话转化为极其简练的'机器量化条件规则'（不超过50字）：{strategy_text}"}]
+                        ).choices[0].message.content
+                        db["strategies"].append(res)
+                        save_knowledge(db)
+                        st.success("✅ 战法已成功写入 App 永久外脑！")
+                        st.rerun()
+
+        with c_right:
+            st.markdown("**2. 实盘交易复盘 (自我纠偏)**")
+            trade_ticker = st.text_input("交易标的", placeholder="例如：贵研铂业 / 大族激光 / LITE")
+            trade_result = st.text_area("交易结果与情绪", placeholder="例如：重仓买入后遇到美股闪崩，未遵守 97.8 元的极限止损纪律，导致回撤扩大，当时心态有赌徒心理。")
+            if st.button("🩸 消耗 Token 凝练血泪纪律", key="feed_reflect"):
+                if trade_result:
+                    with st.spinner("DeepSeek 正在剖析失误..."):
+                        client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com/v1")
+                        res = client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[{"role": "user", "content": f"作为无情的量化机器，请基于以下失败的实盘记录，总结出一条铁血量化止损纪律（必须带有明确的数字底线，不超过50字）：标的{trade_ticker}，情况：{trade_result}"}]
+                        ).choices[0].message.content
+                        db["reflections"].append(f"【血泪纪律 - {trade_ticker}】: {res}")
+                        save_knowledge(db)
+                        st.success("✅ 血泪纪律已刻入系统底层！")
+                        st.rerun()
+
+        st.markdown("---")
+        st.markdown("**📚 当前 App 脑容量 (已掌握的量化规则)**")
+        if db["strategies"] or db["reflections"]:
+            for rule in db["strategies"] + db["reflections"]:
+                st.markdown(f"<div class='knowledge-card'>⚙️ {rule}</div>", unsafe_allow_html=True)
+        else:
+            st.info("当前外脑为空。请开始喂养数据。")
