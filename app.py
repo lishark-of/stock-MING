@@ -117,7 +117,8 @@ with tab_rl:
                 end_p = round(hist['Close'].iloc[-1], 2)
                 
                 # 抓取盲测终点之后 30 天的真实数据 (用于打脸验证)
-                future = yf.Ticker(target).history(start=end_d, periods=30)
+                future_end_d = end_d + datetime.timedelta(days=30)
+                future = yf.Ticker(target).history(start=end_d, end=future_end_d)
                 future_p = round(future['Close'].iloc[-1], 2) if not future.empty else "未知"
                 
                 st.markdown(f"**📈 喂养数据**：{start_d} 至 {end_d}，股价从 {start_p} 变动至 {end_p}。")
