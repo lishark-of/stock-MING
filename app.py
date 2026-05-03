@@ -778,26 +778,28 @@ else:
         
         c_feed1, c_feed2 = st.columns([1, 1])
         
-        with c_feed1:
-    st.markdown("**📝 1. 碎片战法投喂**")
-    feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：MACD 金叉 + RSI < 30 是美股黄���买点...", key="feed_text")
-    if st.button("🧠 提炼文本并刻入云端", key="btn_text_feed"):
-        if feed_text and st.session_state.ds_key:
-            with st.spinner("正在提炼规则..."):
-                # 安全调用 DeepSeek（非流式），并把用户文本传进去
-                prompt = (
-                    "将以下内容转化为一条极其精简、冷酷的量化纪律(不超过50字)，"
-                    "并在末尾标注市场标签：A股(🇨🇳) / 美股(🇺🇸) / 港股(🇭🇰) / 日股(🇯🇵)。\n\n"
-                    f"原文：{feed_text}"
-                )
-                res = call_deepseek_non_stream(prompt, max_tokens=300)
-                if res:
-                    insert_cloud_memory("strategy", f"【手动植入】: {res}")
-                    st.success("✅ 战法已写入云端！")
-                    time.sleep(1)
-                    st.rerun()
-        elif not st.session_state.ds_key:
-            st.error("缺少 API Key。")
+   with c_feed1:
+            st.markdown("**📝 1. 碎片战法投喂**")
+            feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：MACD 金叉 + RSI < 30 是美股黄金买点...", key="feed_text")
+            
+            if st.button("🧠 提炼文本并刻入云端", key="btn_text_feed"):
+                if feed_text and st.session_state.ds_key:
+                    with st.spinner("正在提炼规则..."):
+                        # 安全调用 DeepSeek（非流式），并把用户文本传进去
+                        prompt = (
+                            "将以下内容转化为一条极其精简、冷酷的量化纪律(不超过50字)，"
+                            "并在末尾标注市场标签：A股(🇨🇳) / 美股(🇺🇸) / 港股(🇭🇰) / 日股(🇯🇵)。\n\n"
+                            f"原文：{feed_text}"
+                        )
+                        res = call_deepseek_non_stream(prompt, max_tokens=300)
+                        
+                        if res:
+                            insert_cloud_memory("strategy", f"【手动植入】: {res}")
+                            st.success("✅ 战法已写入云端！")
+                            time.sleep(1)
+                            st.rerun()
+                elif not st.session_state.ds_key:
+                    st.error("缺少 API Key。")
 
         with c_feed2:
             st.markdown("**📂 2. 文档自动榨取**")
@@ -813,7 +815,8 @@ else:
                                 pdf_reader = PyPDF2.PdfReader(uploaded_file)
                                 for page in pdf_reader.pages:
                                     text = page.extract_text()
-                                    if text: extracted_text += text + "\n"
+                                    if text: 
+                                        extracted_text += text + "\n"
                             elif uploaded_file.name.endswith('.docx'):
                                 import docx
                                 doc = docx.Document(uploaded_file)
