@@ -735,150 +735,82 @@ else:
             st.info("当前云端外脑是一张白纸，快去喂养数据吧！")
 
     # ------------------------------------------
-    # 模块 E：超级函数库（新增）
+    # 模块 E：超级函数库 (V21.1 灵魂注入补丁版)
     # ------------------------------------------
     with tab_extra:
-        st.markdown("### ⚡ 超级函数库（Token 无限消耗模式）")
+        st.markdown("### ⚡ 超级函数库 (已注入云端外脑 + 财务真数据)")
         
-        st.info("这里是高级分析工具库，每个功能都会大量消耗 DeepSeek Token。你既然有无限预算，就尽情使用吧！")
+        # --- 统一的前置逻辑：获取当前市场的云端外脑 ---
+        def get_scoped_knowledge():
+            db = load_cloud_knowledge()
+            all_rules = db["strategies"] + db["reflections"]
+            # 过滤当前市场标签
+            scoped_rules = [r for r in all_rules if (is_us_market and "🇺🇸" in r) or (not is_us_market and "🇨🇳" in r) or ("通用" in r)]
+            return "\n".join(scoped_rules) if scoped_rules else "暂无匹配纪律"
+
+        st.info("已完成数据隔离与纪律注入。每次分析将消耗约 4000-6000 Tokens。")
         
-        # 功能 1：完整的行业对标分析
-        if st.button("📊 行业对标分析 (该股 vs 行业平均)", use_container_width=True, key="btn_industry"):
-            with st.spinner("正在分析该股在行业中的位置..."):
-                industry_prompt = f"""
-                你是一位资深的行业分析师。请对 {target}（当前价 ${price if is_us_market else '¥' + str(price)}）进行详细的【行业对标分析】。
+        # 1. 行业对标分析
+        if st.button("📊 行业对标深度分析", use_container_width=True, key="btn_industry_v2"):
+            with st.spinner("正在对比行业矩阵..."):
+                rules = get_scoped_knowledge()
+                prompt = f"分析 {target} 行业地位。请务必结合以下【系统外脑纪律】进行价值判定：\n{rules}\n\n分析维度：行业地位、估值对标、增速、盈利能力、投资结论。"
+                call_deepseek_stream(prompt, system_role="资深行业分析师")
+
+        # 2. 基金持仓追踪
+        if st.button("🏛️ 基金持仓与机构博弈", use_container_width=True, key="btn_fund_v2"):
+            with st.spinner("正在追踪大资金动向..."):
+                rules = get_scoped_knowledge()
+                prompt = f"分析 {target} 的明星基金持仓与机构博弈。结合以下【外脑纪律】判定机构行为：\n{rules}\n\n分析维度：明星基金、增减仓动向、北向/机构占比、跟仓建议。"
+                call_deepseek_stream(prompt, system_role="基金研究专家")
+
+        # 3. 目标价预测 (✨核心修复：喂入真实财务数据防止幻觉)
+        if st.button("🎯 多周期目标价预测 (基于真数据)", use_container_width=True, key="btn_target_v2"):
+            with st.spinner("正在调取财务报表并进行 DCF 建模..."):
+                # 强行抓取真实财务摘要
+                stock_obj = yf.Ticker(target)
+                info = stock_obj.info
+                financials = stock_obj.financials.iloc[:, :2].to_string() # 最近两年的利润表
                 
-                分析维度（每个维度 200-300 字）：
-                1. 【行业地位】该公司在行业中的排名、市场份额、竞争��评估
-                2. 【估值对标】P/E、P/S、PEG 与行业平均值、龙头企业的对比
-                3. 【增速对标】营收增速、利润增速与行业平均水平的对比
-                4. 【盈利能力】毛利率、净利率、ROE、ROIC 与竞争对手的对比
-                5. 【风险对标】债务比率、现金流充裕度与行业水平的对比
-                6. 【投资结论】基于以上对标分析，该股现在是买入、持有还是卖出？为什么？
-                """
-                
-                st.markdown("### 📊 行业对标深度分析")
-                call_deepseek_stream(industry_prompt, system_role="你是一位资深的行业分析师，对各行各业的竞争格局、估值体系、增长前景有深刻的理解。")
-        
-        # 功能 2：基金持仓追踪分析
-        if st.button("🏛️ 基金持仓追踪 (机构博弈解读)", use_container_width=True, key="btn_fund"):
-            with st.spinner("正在分析基金持仓动向..."):
-                fund_prompt = f"""
-                你是一位基金研究专家。请分析 {target} 被哪些明星基金经理关注、他们最近的操作意向是什么。
-                
-                分析维度（每个维度 150-200 字）：
-                1. 【明星基金关注】该股被哪些 5A 级基金经理持有（如果是美股，指明是哪些大型基金如 Berkshire、Vanguard 等）
-                2. 【最新操作】这些基金最近一个季度是在增仓、减仓还是保持不变
-                3. 【持仓占比】该股在这些基金中的权重有多大
-                4. 【机构博弈】从基金的操作来看，他们对该股的态度是什么
-                5. 【反向操作】有没有知名做空机构在做空该股
-                6. 【跟仓建议】作为散户，你是应该跟着机构进，还是应该警惕机构的套路
-                """
-                
-                st.markdown("### 🏛️ 基金持仓追踪分析")
-                call_deepseek_stream(fund_prompt, system_role="你是一位资深的基金研究专家，对各大基金公司的持仓、操作风格、投资理念了如指掌。")
-        
-        # 功能 3：风险预警系统
-        if st.button("⚠️ 深度风险预警系统", use_container_width=True, key="btn_risk_warn"):
-            with st.spinner("正在扫描潜在风险..."):
-                risk_prompt = f"""
-                你现在是一位极度谨慎的风险管理专家。请对 {target} 进行全面的【深度风险预警】。
-                
-                必须分析以下所有维度（每个维度 150-200 字）：
-                1. 【财务风险】
-                   - 债务是否过高？现金流是否充裕？
-                   - 近期是否有减值风险或坏账风险？
-                   - 关键财务比率是否在恶化？
-                
-                2. 【业务风险】
-                   - 主要客户是否过于集中？
-                   - 核心产品是否面临替代风险？
-                   - 供应链是否存在瓶颈或断层风险？
-                
-                3. 【政策风险】
-                   - 是否面临新的监管政策风险？（如科技股的反垄断、教育股的政策风险）
-                   - 行业是否面临政策扶持或打压？
-                
-                4. 【市场风险】
-                   - 该股是否已经严重透支了利好预期？
-                   - 现在的估值是否合理还是有泡沫？
-                   - 是否存在业绩变脸的风险？
-                
-                5. 【技术风险】
-                   - 该股是否面临被技术颠覆的风险？
-                   - R&D 投入是否足够来维持竞争力？
-                
-                6. 【黑天鹅风险】
-                   - 该股还存在什么其他隐藏的黑天鹅风险？
-                   - 如果这些风险爆发，股价会跌多少？
-                
-                7. 【最终风险等级】
-                   请在最后给出一个明确的风险等级：L1（极低）、L2（低）、L3（中）、L4（高）、L5（极高）
-                """
-                
-                st.markdown("### ⚠️ 深度风险预警分析")
-                call_deepseek_stream(risk_prompt, system_role="你是一位极度谨慎、近乎偏执的风险管理专家。你的工作就是找出每一个可能的风险点，即使是最小的风险也要指出来。")
-        
-        # 功能 4：3/6/12 个月目标价预测
-        if st.button("🎯 多周期目标价预测（3/6/12个月）", use_container_width=True, key="btn_target"):
-            with st.spinner("正在计算多周期目标价..."):
+                rules = get_scoped_knowledge()
                 target_prompt = f"""
-                你是一位投行出身的资深证券分析师，曾经做过无数���企业估值。
-                请对 {target}（当前价 ${price if is_us_market else '¥' + str(price)}）给出精确的目标价预测。
+                你是一位投行估值专家。基于以下【真实财务数据】和【系统纪律】进行建模。
                 
-                要求：
-                1. 使用至少 3 种估值方法（DCF、相对估值 P/E、EV/EBITDA 等）
-                2. 为每种方法都给出具体的计算逻辑和假设
-                3. 最后综合多种方法，给出以下时间点的目标价：
-                   - 3 个月目标价（短期）
-                   - 6 个月目标价（中期）
-                   - 12 个月目标价（长期）
-                4. 为每个目标价都标注假设条件和风险
-                5. 给出建议操作策略：现在应该在什么价位买入、什么价位卖出
+                【真实数据摘要】：
+                市值: {info.get('marketCap')} | P/E: {info.get('trailingPE')} | 营收增长: {info.get('revenueGrowth')}
+                最近财报数据：
+                {financials}
                 
-                分析要求：
-                - 字数不少于 1500 字
-                - 每一个数字都要有依据，不要凭空猜测
-                - 要体现出你的专业度和严谨性
+                【系统外脑纪律】：
+                {rules}
+                
+                指令：使用 DCF 和相对估值法，给出 3/6/12 个月精确目标价。严禁伪造财务数字！
                 """
+                call_deepseek_stream(target_prompt, system_role="投行估值专家")
+
+        # 4. 深度风险预警
+        if st.button("⚠️ 深度风险预警 (偏执模式)", use_container_width=True, key="btn_risk_v2"):
+            with st.spinner("正在扫描黑天鹅..."):
+                rules = get_scoped_knowledge()
+                prompt = f"对 {target} 进行全维度风险扫描。结合【外脑纪律】中的避险准则：\n{rules}\n\n维度：财务、业务、政策、市场黑天鹅。给出最后风险等级 L1-L5。"
+                call_deepseek_stream(prompt, system_role="极度偏执的风险管理专家")
+
+        # 5. 最新财报解读 (✨核心修复：喂入最新季报数据)
+        if st.button("📈 最新季度财报深度解剖", use_container_width=True, key="btn_earnings_v2"):
+            with st.spinner("正在拆解最新季报文字与数字..."):
+                stock_obj = yf.Ticker(target)
+                quarterly_results = stock_obj.quarterly_financials.iloc[:, :1].to_string() # 最新一季报数据
                 
-                st.markdown("### 🎯 多周期目标价预测分析")
-                call_deepseek_stream(target_prompt, system_role="你是一位在投行做过 15 年估值分析的资深分析师。你的目标价预测必须精确、可信，每一个假设都要说明理由。")
-        
-        # 功能 5：季度财报解读（如适用）
-        if st.button("📈 最新季度财报深度解读", use_container_width=True, key="btn_earnings"):
-            with st.spinner("正在分析最新财报..."):
+                rules = get_scoped_knowledge()
                 earnings_prompt = f"""
-                你是一位资深的财务分析师。请对 {target} 的最新季度财报进行深度解读。
+                你是一位财务审计专家。请拆解 {target} 的最新季度财报。
                 
-                分析维度（每个维度 200-300 字）：
-                1. 【收入分析】
-                   - 总收入同比/环比增长情况如何？
-                   - 各业务板块的增速差异大吗？
-                   - 有没有新客户或新市场的贡献？
+                【本季真实数字】：
+                {quarterly_results}
                 
-                2. 【利润分析】
-                   - 毛利率是在提升还是下降？
-                   - 净利率的变化原因是什么？
-                   - 有没有一次性收益或损失？
+                【系统外脑纪律】：
+                {rules}
                 
-                3. 【现金流分析】
-                   - 经营现金流是否健康？
-                   - 是否存在"虚假繁荣"（利润好看但现金流差）的情况？
-                
-                4. 【指引与展望】
-                   - 管理层对下一个季度的指引如何？
-                   - 这个指引是激进还是保守？
-                   - 有没有对全年的指引更新？
-                
-                5. 【市场反应】
-                   - 这份财报公布后股价的反应是什么？
-                   - 这个反应是合理还是过度反应？
-                
-                6. 【投资结论】
-                   - 从财报看，该公司的基本面是在改善还是恶化？
-                   - 现在是不是买入该股的好时机？
+                指令：分析收入/利润质量、现金流健康度、管理层指引。判断是基本面反转还是陷阱。
                 """
-                
-                st.markdown("### 📈 最新季度财报深度解读")
-                call_deepseek_stream(earnings_prompt, system_role="你是一位资深的财务分析师，对财报的每一行数据都能看出端倪。你的分析必须精准、有见地。")
+                call_deepseek_stream(earnings_prompt, system_role="财务审计专家")
