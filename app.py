@@ -702,7 +702,7 @@ else:
                     us_inject = "\n".join(us_rules) if us_rules else "(美股外脑为空)"
                     
                     us_prompt = f"""
-                    你是华尔街 25 年的老牌对冲基金经理。
+                    你是华尔街的老牌对冲基金经理。
                     {target}（当前价 ${price}）现在该不该买？三个月目标价？
                     
                     请给出 800+ 字的冷酷、精确的交易建议。
@@ -712,8 +712,8 @@ else:
                     参考纪律：{us_inject}
                     """
                     
-                    st.markdown("### 🎯 华尔街老兵的冷血建议")
-                    call_deepseek_stream(us_prompt, system_role="你是华尔街 25 年的资深操盘手，分析必须精确、冷酷。")
+                    st.markdown("### 🎯 华尔街交易者的冷血建议")
+                    call_deepseek_stream(us_prompt, system_role="你是华尔街资深操盘手，分析必须精确、冷酷。")
         
         elif market_type == "HK_STOCK":
             st.markdown("""
@@ -770,7 +770,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
             display_cn_stock_analysis(target, price)
-
     # 模块 D：云端外脑
     with tab_brain:
         st.markdown("### ☁️ 云端 RAG 向量记忆中心")
@@ -778,7 +777,7 @@ else:
         
         c_feed1, c_feed2 = st.columns([1, 1])
         
-   with c_feed1:
+        with c_feed1:
             st.markdown("**📝 1. 碎片战法投喂**")
             feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：MACD 金叉 + RSI < 30 是美股黄金买点...", key="feed_text")
             
@@ -863,7 +862,7 @@ else:
             options_dict = {record['id']: record['content'] for record in all_records}
             selected_ids = st.multiselect("圈选要删除的纪律：", options=list(options_dict.keys()), format_func=lambda x: options_dict[x])
             
-            if st.button("�� 彻底抹除", type="primary"):
+            if st.button("🗑️ 彻底抹除", type="primary"):
                 if selected_ids:
                     delete_cloud_memories(selected_ids)
                     st.success("✅ 删除成功！")
