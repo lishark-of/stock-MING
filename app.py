@@ -364,6 +364,35 @@ else:
         except Exception as e:
             st.warning(f"⚠️ 读取大师规则失败: {e}")
             return []
+    def load_manager_names():
+        """
+        从 manager_rules 表自动读取所有已经投喂过的基金经理名字。
+        以后新增经理，不用改代码，只要往 Supabase 插入规则即可。
+        """
+        if not supabase:
+            return []
+
+        try:
+            res = (
+                supabase
+                .table("manager_rules")
+                .select("manager_name")
+                .execute()
+            )
+
+            data = res.data or []
+
+            names = []
+            for item in data:
+                name = item.get("manager_name")
+                if name and name not in names:
+                    names.append(name)
+
+            return names
+
+        except Exception as e:
+            st.warning(f"⚠️ 读取基金经理名单失败: {e}")
+            return []
     def load_manager_rules(manager_name, limit=30):
         """
         专门读取基金经理规则。
@@ -1109,21 +1138,16 @@ else:
         st.markdown("### 🎯 大师选股雷达")
         st.caption("这个模块已经和诊股外脑分离：只读取 manager_rules，不再读取 brain_memory。")
 
-        manager_display_map = {
-            "聚鸣 刘晓龙": "刘晓龙",
-            "中庚 丘栋荣": "丘栋荣",
-            "易方达 张坤": "张坤",
-            "聚鸣 王文祥": "王文祥",
-            "聚鸣 惠博文": "惠博文",
-            "游资 龙头战法": "龙头战法"
-        }
+        manager_names = load_manager_names()
 
-        manager_choice = st.selectbox(
+        if not manager_names:
+            st.warning("⚠️ manager_rules 表里还没有基金经理规则。请先在 Supabase 添加至少一条规则。")
+            st.stop()
+
+        manager_name = st.selectbox(
             "🧠 选择基金经理模型",
-            list(manager_display_map.keys())
+            manager_names
         )
-
-        manager_name = manager_display_map[manager_choice]
 
         scan_sector = st.text_input(
             "🔍 输入要扫描的板块或主线",
