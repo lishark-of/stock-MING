@@ -337,6 +337,149 @@ else:
     # ==========================================
     
     @st.cache_data(ttl=600)
+# ========================================== 
+# 🚀 基金经理AI克隆系统 - 核心逻辑引擎
+# ==========================================
+
+# ✅ 修复1：去除港股分析函数重复定义（保留完整版本）
+def display_hk_stock_analysis(target, price):
+    """港股分析 - 统一版本（包含完整功能）"""
+    st.markdown("#### 🇭🇰 港股深度分析系统")
+    
+    signals = compute_hk_signals(target)
+    if signals:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
+            st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
+        with col2:
+            trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
+            st.metric(f"{trend_color} 趋势 (MA20)", f"HK${signals['ma20']}", signals['trend'])
+        with col3:
+            st.metric("💰 机构分红率", f"{signals['div_yield']}%", "避险指标")
+        with col4:
+            st.metric("📊 恒指联动 Beta", signals['beta'], "")
+        
+        # ✅ 完整的高股息警告逻辑
+        if signals['div_yield'] > 6.0:
+            st.info("💡 嗅探提示：该股息率超 6%，具备极强的高息防守属性（类高股息央企逻辑）。")
+    
+    st.markdown("---")
+
+# ✅ 修复2：基金经理管理 - 安全的多关键词检索
+MANAGER_PROFILES = {
+    "聚鸣 刘晓龙": {
+        "display_name": "刘晓龙",
+        "fund": "聚鸣",
+        "style": "成长+价值混合",
+        "keywords": ["刘晓龙", "聚鸣", "小龙"],
+        "description": "专注成长型企业估值投资"
+    },
+    "中庚 丘栋荣": {
+        "display_name": "丘栋荣",
+        "fund": "中庚",
+        "style": "深度价值防守",
+        "keywords": ["丘栋荣", "中庚", "丘", "防守"],
+        "description": "极端价值投资者，低PB深度布局"
+    },
+    "易方达 张坤": {
+        "display_name": "张坤",
+        "fund": "易方达",
+        "style": "消费+科技",
+        "keywords": ["张坤", "易方达", "消费"],
+        "description": "消费赛道与科技创新结合"
+    },
+    "聚鸣 王文祥": {
+        "display_name": "王文祥",
+        "fund": "聚鸣",
+        "style": "产业链投资",
+        "keywords": ["王文祥", "聚鸣", "王"],
+        "description": "关注产业链景气度和竞争格局"
+    },
+    "聚鸣 惠博文": {
+        "display_name": "惠博文",
+        "fund": "聚鸣",
+        "style": "周期+成长",
+        "keywords": ["惠博文", "聚鸣", "惠"],
+        "description": "挖掘周期低谷的成长机会"
+    },
+    "游资 龙头战法": {
+        "display_name": "龙头战法",
+        "fund": "游资",
+        "style": "短线龙头追踪",
+        "keywords": ["龙头", "游资", "涨停", "热点"],
+        "description": "追踪热点龙头，高换手操作"
+    }
+}
+
+# ✅ 修复3：安全的基金经理名字提取 + 多关键词检索
+def retrieve_manager_rules(manager_choice, all_rules):
+    if manager_choice not in MANAGER_PROFILES:
+        return [], "未知经理"
+    
+    profile = MANAGER_PROFILES[manager_choice]
+    keywords = profile["keywords"]
+    
+    manager_rules = []
+    for rule in all_rules:
+        if any(kw.lower() in rule.lower() for kw in keywords):
+            manager_rules.append(rule)
+    
+    return manager_rules, profile["display_name"]
+
+def split_text_to_chunks(text, chunk_size=4000, overlap=200):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end - overlap
+    return chunks
+
+def semantic_search_manager_knowledge(manager_name, query, top_k=3):
+    if not st.session_state.ds_key or not supabase:
+        return []
+    
+    client = OpenAI(api_key=st.session_state.ds_key)
+    try:
+        query_response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=query,
+            encoding_format="float"
+        )
+        query_embedding = query_response.data[0].embedding
+        
+        results = supabase.rpc(
+            'match_manager_embeddings',
+            {
+                'query_embedding': query_embedding,
+                'manager_name': manager_name,
+                'match_threshold': 0.7,
+                'match_count': top_k
+            }
+        ).execute()
+        
+        return [r['content_chunk'] for r in results.data] if results.data else []
+    except Exception as e:
+        st.warning(f"⚠️ 向量检索失败: {e}")
+        return []
+
+def update_manager_learning_feedback(manager_name, feedback_content, rating):
+    if not supabase:
+        return
+    try:
+        supabase.table("manager_embeddings").insert({
+            "manager_name": manager_name,
+            "document_type": "feedback",
+            "content_chunk": f"[反馈] {feedback_content} (评分: {rating}★)",
+            "metadata": {
+                "feedback_rating": rating,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        }).execute()
+        st.success(f"✅ 反馈已记录，AI 会更了解 {manager_name}!")
+    except Exception as e:
+        st.warning(f"⚠️ 反馈记录失败: {e}")
     def compute_hk_signals(ticker):
         try:
             stock = yf.Ticker(ticker)
@@ -860,157 +1003,60 @@ else:
     # ------------------ 全新的大师选股 Tab (动态 RAG 注入版) ------------------
     with tab_screener:
         st.markdown("### 🎯 机构大师选股雷达 (Screener)")
-        st.caption("选择一位大师。系统将从云端提取其专属语录与纪律，让 AI 彻底化身其数字分身。")
+        st.caption("选择一位大师。系统将从云端提取其专属语录，让 AI 彻底化身其数字分身。")
         
-        # 1. 极其轻量级的新增方式：以后想加谁，直接在这个列表里加一行名字就行！
-        manager_list = [
-            "聚鸣 刘晓龙",
-            "中庚 丘栋荣",
-            "易方达 张坤",
-            "聚鸣 王文祥",
-            "聚鸣 惠博文",
-            "游资 龙头战法"
-        ]
+        # 使用改进的基金经理列表
+        manager_list = list(MANAGER_PROFILES.keys())
         manager_choice = st.selectbox("🧠 选择外脑逻辑模型", manager_list)
         
-        scan_sector = st.text_input("🔍 输入要扫描的板块或主线 (例如: 有色金属、商业航天、港股互联网)", "有色金属")
+        scan_sector = st.text_input(
+            "🔍 输入要扫描的板块或主线",
+            "有色金属",
+            placeholder="例如: 有色金属、商业航天、港股互联网"
+        )
         
         if st.button("🚀 启动大师雷达扫描", type="primary"):
-            # 提取纯名字，比如把 "聚鸣 刘晓龙" 变成 "刘晓龙"
-            manager_name = manager_choice.split(' ')[-1] 
+            profile = MANAGER_PROFILES[manager_choice]
+            manager_name = profile["display_name"]
             
             with st.spinner(f"正在穿透云端，提取 {manager_name} 的核心认知模型..."):
-                # 【核心杀招：RAG 云端记忆提取】
-                db = load_cloud_knowledge() 
-                all_rules = db["strategies"] + db["reflections"]
-                
-                # 从茫茫云端数据中，只过滤出带有该基金经理名字的战法记录！
-                manager_rules = [r for r in all_rules if manager_name in r]
+                # ✅ 使用安全的检索函数
+                manager_rules, display_name = retrieve_manager_rules(
+                    manager_choice, 
+                    load_cloud_knowledge()["strategies"] + load_cloud_knowledge()["reflections"]
+                )
                 
                 if manager_rules:
                     manager_inject = "\n".join(manager_rules)
-                    st.success(f"✅ 成功从云端唤醒 {len(manager_rules)} 条 {manager_name} 的专属投资纪律！")
+                    st.success(f"✅ 成功从云端唤醒 {len(manager_rules)} 条 {display_name} 的专属投资纪律！")
                 else:
-                    manager_inject = "（云端暂无该经理的独家喂养记录，请调用大模型底层金融常识进行推演）"
-                    st.warning(f"⚠️ 云端尚未建立 {manager_name} 的专属档案。建议去【☁️ 云端外脑】投喂相关文档。")
-
+                    manager_inject = "（云端暂无该经理的独家喂养记录）"
+                    st.warning(f"⚠️ 云端尚未建立 {display_name} 的专属档案。")
+                
                 screener_prompt = f"""
-                你现在是顶级基金经理的数字分身：{manager_choice}。
+                你现在是顶级基金经理的数字分身：{manager_name}。
                 用户希望你在【{scan_sector}】这个板块/主线中，挑选出潜在标的。
                 
                 【核心强制纪律（提取自云端）：必须严格遵循以下规则】
                 {manager_inject}
                 
                 请严格按照你的投资信仰：
-                1. 明确写出你筛选该板块的核心条件（结合上述云端纪律）。
-                2. 举出 2-3 个该板块中可能符合你逻辑的典型股票（仅供推演参考）。
-                3. 如果该板块目前完全不符合你的投资逻辑，请直接冷血拒绝，并指出风险！
+                1. 明确写出你筛选该板块的核心条件。
+                2. 举出 2-3 个该板块中可能符合你逻辑的典型股票。
+                3. 如果该板块目前完全不符合你的逻辑，直接冷血拒绝，并指出风险！
                 """
                 
                 st.markdown(f"### 📡 {manager_name} 扫描报告")
-                call_deepseek_stream(screener_prompt, system_role=f"你是{manager_name}的数字分身，坚守投资纪律，拒绝和稀泥。")
-    # 模块 D：云端外脑
-    with tab_brain:
-        st.markdown("### ☁️ 云端 RAG 向量记忆中心")
-        st.caption("支持手动喂养，或直接上传 PDF/Word/PPT 研报。")
-        
-        c_feed1, c_feed2 = st.columns([1, 1])
-        
-        with c_feed1:
-            st.markdown("**📝 1. 碎片战法投喂**")
-            feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：MACD 金叉 + RSI < 30 是美股黄金买点...", key="feed_text")
-            
-            if st.button("🧠 提炼文本并刻入云端", key="btn_text_feed"):
-                if feed_text and st.session_state.ds_key:
-                    with st.spinner("正在提炼规则..."):
-                        # 安全调用 DeepSeek（非流式），并把用户文本传进去
-                        prompt = (
-                            "将以下内容转化为一条极其精简、冷酷的量化纪律(不超过50字)，"
-                            "并在末尾标注市场标签：A股(🇨🇳) / 美股(🇺🇸) / 港股(🇭🇰) / 日股(🇯🇵)。\n\n"
-                            f"原文：{feed_text}"
-                        )
-                        res = call_deepseek_non_stream(prompt, max_tokens=300)
-                        
-                        if res:
-                            insert_cloud_memory("strategy", f"【手动植入】: {res}")
-                            st.success("✅ 战法已写入云端！")
-                            time.sleep(1)
-                            st.rerun()
-                elif not st.session_state.ds_key:
-                    st.error("缺少 API Key。")
-
-        with c_feed2:
-            st.markdown("**📂 2. 文档自动榨取**")
-            uploaded_file = st.file_uploader("支持 PDF/Word/PPT/TXT", type=['pdf', 'docx', 'pptx', 'txt'])
-            
-            if st.button("🧬 启动文档深度榨取", key="btn_doc_feed"):
-                if uploaded_file is not None and st.session_state.ds_key:
-                    with st.spinner("正在破译文档..."):
-                        extracted_text = ""
-                        try:
-                            if uploaded_file.name.endswith('.pdf'):
-                                import PyPDF2
-                                pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                                for page in pdf_reader.pages:
-                                    text = page.extract_text()
-                                    if text: 
-                                        extracted_text += text + "\n"
-                            elif uploaded_file.name.endswith('.docx'):
-                                import docx
-                                doc = docx.Document(uploaded_file)
-                                extracted_text = "\n".join([p.text for p in doc.paragraphs if p.text])
-                            elif uploaded_file.name.endswith('.pptx'):
-                                import pptx
-                                ppt = pptx.Presentation(uploaded_file)
-                                for slide in ppt.slides:
-                                    for shape in slide.shapes:
-                                        if hasattr(shape, "text"):
-                                            extracted_text += shape.text + "\n"
-                            elif uploaded_file.name.endswith('.txt'):
-                                extracted_text = uploaded_file.getvalue().decode("utf-8")
-                            
-                            if not extracted_text.strip():
-                                st.warning("文档为空或全是图片。")
-                            else:
-                                st.info(f"成功提取 {len(extracted_text)} 字，正在榨取...")
-                                safe_text = extracted_text[:20000]
-                                
-                                prompt = f"""
-                                从以下文档中榨取 3-6 条最硬核的量化纪律。
-                                要求：每条 50 字以内，标注市场(美股/港股/日股/A股)。
-                                
-                                文档：{safe_text}
-                                """
-                                res = call_deepseek_non_stream(prompt, max_tokens=2000)
-                                
-                                if res:
-                                    new_rules = [r.strip() for r in res.split('\n') if r.strip() and len(r) > 5]
-                                    for rule in new_rules:
-                                        insert_cloud_memory("strategy", f"【研报】: {rule}")
-                                    
-                                    st.success(f"✅ 成功榨取 {len(new_rules)} 条战法！")
-                                    time.sleep(1.5)
-                                    st.rerun()
-                        except Exception as e:
-                            st.error(f"文档解析失败: {e}")
-        
-        st.markdown("---")
-        all_records = get_all_cloud_memories()
-        
-        if all_records:
-            options_dict = {record['id']: record['content'] for record in all_records}
-            selected_ids = st.multiselect("圈选要删除的纪律：", options=list(options_dict.keys()), format_func=lambda x: options_dict[x])
-            
-            if st.button("🗑️ 彻底抹除", type="primary"):
-                if selected_ids:
-                    delete_cloud_memories(selected_ids)
-                    st.success("✅ 删除成功！")
-                    time.sleep(1)
-                    st.rerun()
-            
-            st.markdown("---")
-            st.markdown("**📚 当前系统脑容量**")
-            for record in all_records:
-                st.markdown(f"<div class='knowledge-card'>{record['content']}</div>", unsafe_allow_html=True)
-        else:
-            st.info("外脑为空，快去喂养数据吧！")
+                call_deepseek_stream(screener_prompt, system_role=f"你是{manager_name}的数字分身，坚守投资纪律。")
+                
+                # ✅ 新增：反馈收集机制
+                st.markdown("---")
+                col_fb1, col_fb2 = st.columns(2)
+                with col_fb1:
+                    feedback = st.text_input("对该回答的评价（可选）", placeholder="例如：太激进了 / 分析不够深入")
+                with col_fb2:
+                    rating = st.slider("AI 模仿准确度", 1, 5, 3)
+                
+                if st.button("📝 提交反馈"):
+                    if feedback:
+                        update_manager_learning_feedback(manager_name, feedback, rating)
