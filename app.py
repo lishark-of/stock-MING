@@ -668,11 +668,12 @@ else:
 
     st.markdown("---")
 
-    tab_risk, tab_rl, tab_main, tab_brain = st.tabs([
+    tab_risk, tab_rl, tab_main, tab_brain, tab_screener = st.tabs([
         "🛡️ 天眼风控 (排雷)", 
         "⏳ 炼丹炉 (强化学习)", 
         "📈 量化推演 (多市场)", 
-        "☁️ 云端外脑 (数据中心)"
+        "☁️ 云端外脑 (数据中心)",
+        "🎯 大师选股 (策略雷达)"
     ])
 
     # 模块 A：天眼风控
@@ -787,58 +788,127 @@ else:
         elif market_type == "HK_STOCK":
             st.markdown("""
             <div class="hk-card">
-            <h4>🇭🇰 港股深度分析系统</h4>
+            <h4>🇭🇰 港股深度分析与资金嗅探系统</h4>
             </div>
             """, unsafe_allow_html=True)
             display_hk_stock_analysis(target, price)
             
-            if st.button("💡 启动 AI 港股策略顾问", use_container_width=True, key="btn_hk_ai"):
-                with st.spinner("正在分析港股..."):
+            # 引入 A 股同款的双轨制按钮
+            col_hk1, col_hk2 = st.columns(2)
+            with col_hk1: btn_hk_ai = st.button("💡 启动 AI 港股策略顾问", use_container_width=True)
+            with col_hk2: btn_hk_whale = st.button("🐳 离岸巨鲸资金嗅探", type="primary", use_container_width=True)
+            
+            if btn_hk_ai:
+                with st.spinner("正在加载香港投行估值模型..."):
                     hk_prompt = f"""
-                    你是香港投资银行的首席分析师。
-                    {target}（当前价 HK${price}）现在该不该买？
-                    
-                    请给出 800+ 字的分析，包括：
-                    1. 香港市场的流动性情况（北向资金、港资情绪）
-                    2. 该股相对 H 股指数的位置
-                    3. 与 A 股同步股的对标（如果有）
-                    4. 明确的操作建议
+                    你是香港顶级外资投行的首席分析师。请对 {target}（当前价 HK${price}）进行冷血剖析：
+                    1. 离岸流动性：当前宏观环境下，外资是在撤退还是回流？
+                    2. 估值底线：结合 AH 股溢价（若有）和股息率，判断是否跌入“丘栋荣式”的深度价值防守区。
+                    3. 给出冷酷、明确的未来三个月操作指令。
                     """
-                    
                     st.markdown("### 🎯 香港投行的专业建议")
-                    call_deepseek_stream(hk_prompt, system_role="你是香港投资银行的首席分析师，对港股市场了如指掌。")
+                    call_deepseek_stream(hk_prompt, system_role="你是香港顶级投行分析师，对港股流动性了如指掌。")
+
+            if btn_hk_whale:
+                with st.spinner("正在穿透南向资金与沽空盘口..."):
+                    whale_hk_prompt = f"""
+                    你是中环最狠的“港股巨鲸嗅探犬”。标的：{target}。当前价：HK${price}。
+                    请强制执行【离岸市场盘口与资金博弈穿透】：
+                    1. 南水定价权：近期内资（南向资金/险资）是否在大举买入该股抢夺定价权？
+                    2. 逼空预警：该股目前的沽空情绪如何？是否存在被机构暴力逼空的潜在爆点？
+                    3. 给出“跟庄”、“抢反弹”或“坚决回避”的实战指令。
+                    """
+                    st.markdown("### 🐳 离岸巨鲸资金嗅探")
+                    call_deepseek_stream(whale_hk_prompt, system_role="你是港股资金盘口解剖机器，洞悉南水与做空机构的底牌。")
         
         elif market_type == "JP_STOCK":
             st.markdown("""
             <div class="jp-card">
-            <h4>🇯🇵 日股深度分析系统</h4>
+            <h4>🇯🇵 日股深度分析与财阀穿透系统</h4>
             </div>
             """, unsafe_allow_html=True)
             display_jp_stock_analysis(target, price)
             
-            if st.button("💡 启动 AI 日股策略顾问", use_container_width=True, key="btn_jp_ai"):
-                with st.spinner("正在分析日股..."):
+            col_jp1, col_jp2 = st.columns(2)
+            with col_jp1: btn_jp_ai = st.button("💡 启动 AI 日股策略顾问", use_container_width=True)
+            with col_jp2: btn_jp_whale = st.button("🐳 华尔街/日银外资嗅探", type="primary", use_container_width=True)
+            
+            if btn_jp_ai:
+                with st.spinner("正在加载东京券商估值模型..."):
                     jp_prompt = f"""
-                    你是东京大型券商的首席分析师。
-                    {target}（当前价 ¥{price}）现在该不该买？
-                    
-                    请给出 800+ 字的分析，包括：
-                    1. 日本市场的宏观环境（日银政策、日经走势）
-                    2. 该股的基本面与增长前景
-                    3. 汇率对该股的影响
-                    4. 明确的操作建议
+                    你是东京大型券商的首席分析师。请对 {target}（当前价 ¥{price}）出具研报。
+                    必须强制带入以下宏观视角：
+                    1. 汇率杠杆：当前 USD/JPY 汇率波动对该公司财报利润是放大还是反噬？
+                    2. “日特估”驱动：评估其 ROE 与 PB 现状，判断是否存在被迫“提高分红/天量回购”的预期。
+                    3. 给出精确的操作建议。
                     """
-                    
                     st.markdown("### 🎯 东京券商的专业建议")
-                    call_deepseek_stream(jp_prompt, system_role="你是东京大型券商的首席分析师，对日股市场深有研究。")
+                    call_deepseek_stream(jp_prompt, system_role="你是东京大型券商首席分析师，深刻理解日特估与汇率博弈。")
+
+            if btn_jp_whale:
+                with st.spinner("正在穿透外资套利与信用盘口..."):
+                    whale_jp_prompt = f"""
+                    你是驻扎在东京的“外资流向嗅探犬”。标的：{target}。当前价：¥{price}。
+                    请强制执行【日股资金流与套利穿透】：
+                    1. 华尔街套利追踪：是否符合“巴菲特式”的低息日元借贷买入高息/现金流资产的逻辑？
+                    2. 日本散户信用盘口：日本国内散户的信用买残/卖残情绪如何？有无踩踏风险？
+                    3. 给出指令。
+                    """
+                    st.markdown("### 🐳 外资套利与信用盘口嗅探")
+                    call_deepseek_stream(whale_jp_prompt, system_role="你是日股外资嗅探机器，看透华尔街资本在日本的套利路线。")
+
+    # ------------------ 全新的大师选股 Tab (动态 RAG 注入版) ------------------
+    with tab_screener:
+        st.markdown("### 🎯 机构大师选股雷达 (Screener)")
+        st.caption("选择一位大师。系统将从云端提取其专属语录与纪律，让 AI 彻底化身其数字分身。")
         
-        else:
-            st.markdown("""
-            <div class="cn-card">
-            <h4>🇨🇳 A股专业机构分析系统</h4>
-            </div>
-            """, unsafe_allow_html=True)
-            display_cn_stock_analysis(target, price)
+        # 1. 极其轻量级的新增方式：以后想加谁，直接在这个列表里加一行名字就行！
+        manager_list = [
+            "聚鸣 刘晓龙",
+            "中庚 丘栋荣",
+            "易方达 张坤",
+            "聚鸣 王文祥",
+            "聚鸣 惠博文",
+            "游资 龙头战法"
+        ]
+        manager_choice = st.selectbox("🧠 选择外脑逻辑模型", manager_list)
+        
+        scan_sector = st.text_input("🔍 输入要扫描的板块或主线 (例如: 有色金属、商业航天、港股互联网)", "有色金属")
+        
+        if st.button("🚀 启动大师雷达扫描", type="primary"):
+            # 提取纯名字，比如把 "聚鸣 刘晓龙" 变成 "刘晓龙"
+            manager_name = manager_choice.split(' ')[-1] 
+            
+            with st.spinner(f"正在穿透云端，提取 {manager_name} 的核心认知模型..."):
+                # 【核心杀招：RAG 云端记忆提取】
+                db = load_cloud_knowledge() 
+                all_rules = db["strategies"] + db["reflections"]
+                
+                # 从茫茫云端数据中，只过滤出带有该基金经理名字的战法记录！
+                manager_rules = [r for r in all_rules if manager_name in r]
+                
+                if manager_rules:
+                    manager_inject = "\n".join(manager_rules)
+                    st.success(f"✅ 成功从云端唤醒 {len(manager_rules)} 条 {manager_name} 的专属投资纪律！")
+                else:
+                    manager_inject = "（云端暂无该经理的独家喂养记录，请调用大模型底层金融常识进行推演）"
+                    st.warning(f"⚠️ 云端尚未建立 {manager_name} 的专属档案。建议去【☁️ 云端外脑】投喂相关文档。")
+
+                screener_prompt = f"""
+                你现在是顶级基金经理的数字分身：{manager_choice}。
+                用户希望你在【{scan_sector}】这个板块/主线中，挑选出潜在标的。
+                
+                【核心强制纪律（提取自云端）：必须严格遵循以下规则】
+                {manager_inject}
+                
+                请严格按照你的投资信仰：
+                1. 明确写出你筛选该板块的核心条件（结合上述云端纪律）。
+                2. 举出 2-3 个该板块中可能符合你逻辑的典型股票（仅供推演参考）。
+                3. 如果该板块目前完全不符合你的投资逻辑，请直接冷血拒绝，并指出风险！
+                """
+                
+                st.markdown(f"### 📡 {manager_name} 扫描报告")
+                call_deepseek_stream(screener_prompt, system_role=f"你是{manager_name}的数字分身，坚守投资纪律，拒绝和稀泥。")
     # 模块 D：云端外脑
     with tab_brain:
         st.markdown("### ☁️ 云端 RAG 向量记忆中心")
