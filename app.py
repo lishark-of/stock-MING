@@ -331,7 +331,40 @@ else:
         try:
             supabase.table("brain_memory").delete().in_("id", ids_to_delete).execute()
         except: pass
+    def load_manager_rules(manager_name, limit=30):
+        """
+        专门读取基金经理规则。
+        大师选股只读 manager_rules，不再读 brain_memory。
+        """
+        if not supabase:
+            return []
 
+        try:
+            res = (
+                supabase
+                .table("manager_rules")
+                .select("rule_type, content, source, created_at")
+                .eq("manager_name", manager_name)
+                .order("id", desc=True)
+                .limit(limit)
+                .execute()
+            )
+
+            data = res.data or []
+
+            rules = []
+            for item in data:
+                rule_type = item.get("rule_type", "其他")
+                content = item.get("content", "")
+                if content:
+                    rules.append(f"【{rule_type}】{content}")
+
+            return rules
+
+        except Exception as e:
+            st.warning(f"⚠️ 读取大师规则失败: {e}")
+            return []
+            
    # ==========================================
     # ✨✨✨ A股专业数据补充（重装抗震版）✨✨✨
     # ==========================================
@@ -1037,65 +1070,92 @@ else:
         elif market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
             # A股的核心按钮和逻辑已经内嵌在这个函数里了
             display_cn_stock_analysis(target, price)
-
-    # ------------------ 全新的大师选股 Tab (动态 RAG 注入版) ------------------
+    # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
     with tab_screener:
-        st.markdown("### 🎯 机构大师选股雷达 (Screener)")
-        st.caption("选择一位大师。系统将从云端提取其专属语录，让 AI 彻底化身其数字分身。")
-        
-        manager_list = list(MANAGER_PROFILES.keys())
-        manager_choice = st.selectbox("🧠 选择外脑逻辑模型", manager_list)
-        
+        st.markdown("### 🎯 大师选股雷达")
+        st.caption("这个模块已经和诊股外脑分离：只读取 manager_rules，不再读取 brain_memory。")
+
+        manager_display_map = {
+            "聚鸣 刘晓龙": "刘晓龙",
+            "中庚 丘栋荣": "丘栋荣",
+            "易方达 张坤": "张坤",
+            "聚鸣 王文祥": "王文祥",
+            "聚鸣 惠博文": "惠博文",
+            "游资 龙头战法": "龙头战法"
+        }
+
+        manager_choice = st.selectbox(
+            "🧠 选择基金经理模型",
+            list(manager_display_map.keys())
+        )
+
+        manager_name = manager_display_map[manager_choice]
+
         scan_sector = st.text_input(
             "🔍 输入要扫描的板块或主线",
             "有色金属",
-            placeholder="例如: 有色金属、商业航天、港股互联网"
+            placeholder="例如：有色金属、商业航天、港股互联网、AI算力"
         )
-        
-        if st.button("🚀 启动大师雷达扫描", type="primary"):
-            profile = MANAGER_PROFILES[manager_choice]
-            manager_name = profile["display_name"]
-            
-            with st.spinner(f"正在穿透云端，提取 {manager_name} 的核心认知模型..."):
-                manager_rules, display_name = retrieve_manager_rules(
-                    manager_choice, 
-                    load_cloud_knowledge()["strategies"] + load_cloud_knowledge()["reflections"]
-                )
-                
-                if manager_rules:
-                    manager_inject = "\n".join(manager_rules)
-                    st.success(f"✅ 成功从云端唤醒 {len(manager_rules)} 条 {display_name} 的专属投资纪律！")
-                else:
-                    manager_inject = "（云端暂无该经理的独家喂养记录）"
-                    st.warning(f"⚠️ 云端尚未建立 {display_name} 的专属档案。")
-                
-                screener_prompt = f"""
-                你现在是顶级基金经理的数字分身：{manager_name}。
-                用户希望你在【{scan_sector}】这个板块/主线中，挑选出潜在标的。
-                
-                【核心强制纪律（提取自云端）：必须严格遵循以下规则】
-                {manager_inject}
-                
-                请严格按照你的投资信仰：
-                1. 明确写出你筛选该板块的核心条件。
-                2. 举出 2-3 个该板块中可能符合你逻辑的典型股票。
-                3. 如果该板块目前完全不符合你的逻辑，直接冷血拒绝，并指出风险！
-                """
-                
-                st.markdown(f"### 📡 {manager_name} 扫描报告")
-                call_deepseek_stream(screener_prompt, system_role=f"你是{manager_name}的数字分身，坚守投资纪律。")
-                
-                st.markdown("---")
-                col_fb1, col_fb2 = st.columns(2)
-                with col_fb1:
-                    feedback = st.text_input("对该回答的评价（可选）", placeholder="例如：太激进了 / 分析不够深入")
-                with col_fb2:
-                    rating = st.slider("AI 模仿准确度", 1, 5, 3)
-                
-                if st.button("📝 提交反馈"):
-                    if feedback:
-                        update_manager_learning_feedback(manager_name, feedback, rating)
 
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            run_scan = st.button("🚀 启动大师选股", type="primary", use_container_width=True)
+
+        with col_b:
+            show_rules = st.button("📚 查看该大师规则库", use_container_width=True)
+
+        if show_rules:
+            rules = load_manager_rules(manager_name, limit=50)
+
+            if rules:
+                st.success(f"已读取 {len(rules)} 条 {manager_name} 的规则")
+                for r in rules:
+                    st.markdown(f"""
+                    <div class='knowledge-card'>
+                        {r}
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.warning(f"⚠️ 暂时没有找到 {manager_name} 的规则。请先投喂资料。")
+
+        if run_scan:
+            rules = load_manager_rules(manager_name, limit=30)
+
+            if rules:
+                manager_inject = "\n".join(rules)
+                st.success(f"✅ 已读取 {len(rules)} 条 {manager_name} 的独立规则")
+            else:
+                manager_inject = "暂无该基金经理的规则库。请根据公开投资风格进行保守分析。"
+                st.warning(f"⚠️ 暂时没有找到 {manager_name} 的规则，将使用 DeepSeek 通用知识分析。")
+
+            screener_prompt = f"""
+你现在扮演基金经理【{manager_name}】的投研助手。
+
+用户想扫描的板块/主线是：【{scan_sector}】
+
+以下是该基金经理的独立规则库：
+{manager_inject}
+
+请根据这些规则，输出一份大师选股报告。
+
+要求：
+1. 先总结【{manager_name}】看这个板块时最关心什么。
+2. 判断【{scan_sector}】是否符合他的风格。
+3. 给出 2-3 个可能符合逻辑的股票方向或典型标的。
+4. 每个标的必须说明：为什么符合、风险是什么、什么情况下不能买。
+5. 如果这个板块不符合他的风格，要直接拒绝，不要硬选。
+6. 最后给出一句冷静操作结论。
+
+注意：
+你是投研助手，重点是筛选逻辑和风险控制。
+"""
+
+            st.markdown(f"### 📡 {manager_name} 选股报告")
+            call_deepseek_stream(
+                screener_prompt,
+                system_role=f"你是{manager_name}的投研助手，必须严格遵守他的投资纪律。"
+            )
     # 模块 D：云端外脑
     with tab_brain:
         st.markdown("### ☁️ 云端 RAG 向量记忆中心")
