@@ -10,6 +10,149 @@ import pandas as pd
 import numpy as np
 
 # ==========================================
+# 🚀 基金经理AI克隆系统 - 核心逻辑引擎
+# ==========================================
+
+# ✅ 修复1：去除港股分析函数重复定义（保留完整版本）
+def display_hk_stock_analysis(target, price):
+    """港股分析 - 统一版本（包含完整功能）"""
+    st.markdown("#### 🇭🇰 港股深度分析系统")
+    
+    signals = compute_hk_signals(target)
+    if signals:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
+            st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
+        with col2:
+            trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
+            st.metric(f"{trend_color} 趋势 (MA20)", f"HK${signals['ma20']}", signals['trend'])
+        with col3:
+            st.metric("💰 机构分红率", f"{signals['div_yield']}%", "避险指标")
+        with col4:
+            st.metric("📊 恒指联动 Beta", signals['beta'], "")
+        
+        # ✅ 完整的高股息警告逻辑
+        if signals['div_yield'] > 6.0:
+            st.info("💡 嗅探提示：该股息率超 6%，具备极强的高息防守属性（类高股息央企逻辑）。")
+    
+    st.markdown("---")
+
+# ✅ 修复2：基金经理管理 - 安全的多关键词检索
+MANAGER_PROFILES = {
+    "聚鸣 刘晓龙": {
+        "display_name": "刘晓龙",
+        "fund": "聚鸣",
+        "style": "成长+价值混合",
+        "keywords": ["刘晓龙", "聚鸣", "小龙"],
+        "description": "专注成长型企业估值投资"
+    },
+    "中庚 丘栋荣": {
+        "display_name": "丘栋荣",
+        "fund": "中庚",
+        "style": "深度价值防守",
+        "keywords": ["丘栋荣", "中庚", "丘", "防守"],
+        "description": "极端价值投资者，低PB深度布局"
+    },
+    "易方达 张坤": {
+        "display_name": "张坤",
+        "fund": "易方达",
+        "style": "消费+科技",
+        "keywords": ["张坤", "易方达", "消费"],
+        "description": "消费赛道与科技创新结合"
+    },
+    "聚鸣 王文祥": {
+        "display_name": "王文祥",
+        "fund": "聚鸣",
+        "style": "产业链投资",
+        "keywords": ["王文祥", "聚鸣", "王"],
+        "description": "关注产业链景气度和竞争格局"
+    },
+    "聚鸣 惠博文": {
+        "display_name": "惠博文",
+        "fund": "聚鸣",
+        "style": "周期+成长",
+        "keywords": ["惠博文", "聚鸣", "惠"],
+        "description": "挖掘周期低谷的成长机会"
+    },
+    "游资 龙头战法": {
+        "display_name": "龙头战法",
+        "fund": "游资",
+        "style": "短线龙头追踪",
+        "keywords": ["龙头", "游资", "涨停", "热点"],
+        "description": "追踪热点龙头，高换手操作"
+    }
+}
+
+# ✅ 修复3：安全的基金经理名字提取 + 多关键词检索
+def retrieve_manager_rules(manager_choice, all_rules):
+    if manager_choice not in MANAGER_PROFILES:
+        return [], "未知经理"
+    
+    profile = MANAGER_PROFILES[manager_choice]
+    keywords = profile["keywords"]
+    
+    manager_rules = []
+    for rule in all_rules:
+        if any(kw.lower() in rule.lower() for kw in keywords):
+            manager_rules.append(rule)
+    
+    return manager_rules, profile["display_name"]
+
+def split_text_to_chunks(text, chunk_size=4000, overlap=200):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end - overlap
+    return chunks
+
+def semantic_search_manager_knowledge(manager_name, query, top_k=3):
+    if not st.session_state.ds_key or not supabase:
+        return []
+    
+    client = OpenAI(api_key=st.session_state.ds_key)
+    try:
+        query_response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=query,
+            encoding_format="float"
+        )
+        query_embedding = query_response.data[0].embedding
+        
+        results = supabase.rpc(
+            'match_manager_embeddings',
+            {
+                'query_embedding': query_embedding,
+                'manager_name': manager_name,
+                'match_threshold': 0.7,
+                'match_count': top_k
+            }
+        ).execute()
+        
+        return [r['content_chunk'] for r in results.data] if results.data else []
+    except Exception as e:
+        st.warning(f"⚠️ 向量检索失败: {e}")
+        return []
+
+def update_manager_learning_feedback(manager_name, feedback_content, rating):
+    if not supabase:
+        return
+    try:
+        supabase.table("manager_embeddings").insert({
+            "manager_name": manager_name,
+            "document_type": "feedback",
+            "content_chunk": f"[反馈] {feedback_content} (评分: {rating}★)",
+            "metadata": {
+                "feedback_rating": rating,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        }).execute()
+        st.success(f"✅ 反馈已记录，AI 会更了解 {manager_name}!")
+    except Exception as e:
+        st.warning(f"⚠️ 反馈记录失败: {e}")
+# ==========================================
 # 1. 全局配置与极简美学 UI
 # ==========================================
 st.set_page_config(page_title="量化交易终端 V23.0 GLOBAL", page_icon="🦈", layout="wide")
@@ -337,149 +480,6 @@ else:
     # ==========================================
     
     @st.cache_data(ttl=600)
-# ========================================== 
-# 🚀 基金经理AI克隆系统 - 核心逻辑引擎
-# ==========================================
-
-# ✅ 修复1：去除港股分析函数重复定义（保留完整版本）
-def display_hk_stock_analysis(target, price):
-    """港股分析 - 统一版本（包含完整功能）"""
-    st.markdown("#### 🇭🇰 港股深度分析系统")
-    
-    signals = compute_hk_signals(target)
-    if signals:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
-            st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
-        with col2:
-            trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
-            st.metric(f"{trend_color} 趋势 (MA20)", f"HK${signals['ma20']}", signals['trend'])
-        with col3:
-            st.metric("💰 机构分红率", f"{signals['div_yield']}%", "避险指标")
-        with col4:
-            st.metric("📊 恒指联动 Beta", signals['beta'], "")
-        
-        # ✅ 完整的高股息警告逻辑
-        if signals['div_yield'] > 6.0:
-            st.info("💡 嗅探提示：该股息率超 6%，具备极强的高息防守属性（类高股息央企逻辑）。")
-    
-    st.markdown("---")
-
-# ✅ 修复2：基金经理管理 - 安全的多关键词检索
-MANAGER_PROFILES = {
-    "聚鸣 刘晓龙": {
-        "display_name": "刘晓龙",
-        "fund": "聚鸣",
-        "style": "成长+价值混合",
-        "keywords": ["刘晓龙", "聚鸣", "小龙"],
-        "description": "专注成长型企业估值投资"
-    },
-    "中庚 丘栋荣": {
-        "display_name": "丘栋荣",
-        "fund": "中庚",
-        "style": "深度价值防守",
-        "keywords": ["丘栋荣", "中庚", "丘", "防守"],
-        "description": "极端价值投资者，低PB深度布局"
-    },
-    "易方达 张坤": {
-        "display_name": "张坤",
-        "fund": "易方达",
-        "style": "消费+科技",
-        "keywords": ["张坤", "易方达", "消费"],
-        "description": "消费赛道与科技创新结合"
-    },
-    "聚鸣 王文祥": {
-        "display_name": "王文祥",
-        "fund": "聚鸣",
-        "style": "产业链投资",
-        "keywords": ["王文祥", "聚鸣", "王"],
-        "description": "关注产业链景气度和竞争格局"
-    },
-    "聚鸣 惠博文": {
-        "display_name": "惠博文",
-        "fund": "聚鸣",
-        "style": "周期+成长",
-        "keywords": ["惠博文", "聚鸣", "惠"],
-        "description": "挖掘周期低谷的成长机会"
-    },
-    "游资 龙头战法": {
-        "display_name": "龙头战法",
-        "fund": "游资",
-        "style": "短线龙头追踪",
-        "keywords": ["龙头", "游资", "涨停", "热点"],
-        "description": "追踪热点龙头，高换手操作"
-    }
-}
-
-# ✅ 修复3：安全的基金经理名字提取 + 多关键词检索
-def retrieve_manager_rules(manager_choice, all_rules):
-    if manager_choice not in MANAGER_PROFILES:
-        return [], "未知经理"
-    
-    profile = MANAGER_PROFILES[manager_choice]
-    keywords = profile["keywords"]
-    
-    manager_rules = []
-    for rule in all_rules:
-        if any(kw.lower() in rule.lower() for kw in keywords):
-            manager_rules.append(rule)
-    
-    return manager_rules, profile["display_name"]
-
-def split_text_to_chunks(text, chunk_size=4000, overlap=200):
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start = end - overlap
-    return chunks
-
-def semantic_search_manager_knowledge(manager_name, query, top_k=3):
-    if not st.session_state.ds_key or not supabase:
-        return []
-    
-    client = OpenAI(api_key=st.session_state.ds_key)
-    try:
-        query_response = client.embeddings.create(
-            model="text-embedding-3-small",
-            input=query,
-            encoding_format="float"
-        )
-        query_embedding = query_response.data[0].embedding
-        
-        results = supabase.rpc(
-            'match_manager_embeddings',
-            {
-                'query_embedding': query_embedding,
-                'manager_name': manager_name,
-                'match_threshold': 0.7,
-                'match_count': top_k
-            }
-        ).execute()
-        
-        return [r['content_chunk'] for r in results.data] if results.data else []
-    except Exception as e:
-        st.warning(f"⚠️ 向量检索失败: {e}")
-        return []
-
-def update_manager_learning_feedback(manager_name, feedback_content, rating):
-    if not supabase:
-        return
-    try:
-        supabase.table("manager_embeddings").insert({
-            "manager_name": manager_name,
-            "document_type": "feedback",
-            "content_chunk": f"[反馈] {feedback_content} (评分: {rating}★)",
-            "metadata": {
-                "feedback_rating": rating,
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-        }).execute()
-        st.success(f"✅ 反馈已记录，AI 会更了解 {manager_name}!")
-    except Exception as e:
-        st.warning(f"⚠️ 反馈记录失败: {e}")
     def compute_hk_signals(ticker):
         try:
             stock = yf.Ticker(ticker)
