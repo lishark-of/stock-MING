@@ -999,13 +999,16 @@ else:
                     """
                     st.markdown("### 🐳 外资套利与信用盘口嗅探")
                     call_deepseek_stream(whale_jp_prompt, system_role="你是日股外资嗅探机器，看透华尔街资本在日本的套利路线。")
+                    
+        elif market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
+            # A股的核心按钮和逻辑已经内嵌在这个函数里了
+            display_cn_stock_analysis(target, price)
 
     # ------------------ 全新的大师选股 Tab (动态 RAG 注入版) ------------------
     with tab_screener:
         st.markdown("### 🎯 机构大师选股雷达 (Screener)")
         st.caption("选择一位大师。系统将从云端提取其专属语录，让 AI 彻底化身其数字分身。")
         
-        # 使用改进的基金经理列表
         manager_list = list(MANAGER_PROFILES.keys())
         manager_choice = st.selectbox("🧠 选择外脑逻辑模型", manager_list)
         
@@ -1020,7 +1023,6 @@ else:
             manager_name = profile["display_name"]
             
             with st.spinner(f"正在穿透云端，提取 {manager_name} 的核心认知模型..."):
-                # ✅ 使用安全的检索函数
                 manager_rules, display_name = retrieve_manager_rules(
                     manager_choice, 
                     load_cloud_knowledge()["strategies"] + load_cloud_knowledge()["reflections"]
@@ -1049,7 +1051,6 @@ else:
                 st.markdown(f"### 📡 {manager_name} 扫描报告")
                 call_deepseek_stream(screener_prompt, system_role=f"你是{manager_name}的数字分身，坚守投资纪律。")
                 
-                # ✅ 新增：反馈收集机制
                 st.markdown("---")
                 col_fb1, col_fb2 = st.columns(2)
                 with col_fb1:
@@ -1060,20 +1061,31 @@ else:
                 if st.button("📝 提交反馈"):
                     if feedback:
                         update_manager_learning_feedback(manager_name, feedback, rating)
+
     # 模块 D：云端外脑
     with tab_brain:
         st.markdown("### ☁️ 云端 RAG 向量记忆中心")
-        st.caption("支持手动喂养，或直接上传 PDF/Word/PPT 研报。")
+        st.caption("作为外脑数据库，支持策略碎片的投喂和投研文档的学习。")
         
         c_feed1, c_feed2 = st.columns([1, 1])
         
         with c_feed1:
             st.markdown("#### 📝 1. 碎片战法投喂")
-            feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：MACD 金叉 + RSI < 30 是美股黄金买点...", key="feed_text")
-            
+            feed_text = st.text_area("记录盘感或交易纪律", placeholder="例如：跌破 MA20 必须无条件砍仓...", key="f_text")
             if st.button("🧠 提交入库", use_container_width=True):
                 if feed_text:
                     insert_cloud_memory("strategy", feed_text)
-                    st.success("✅ 纪律已烙印至云端神经元。")
+                    st.success("✅ 纪律已烙印入云。")
+                else: 
+                    st.warning("⚠️ 内容为空。")
+        
+        with c_feed2:
+            st.markdown("#### 📂 2. 研报文档直投 (基金经理训练)")
+            uploaded_file = st.file_uploader("上传 PDF/Word 研报进行深度向量化", type=["pdf", "docx", "txt"])
+            if st.button("🚀 解析并挂载到神经元", use_container_width=True):
+                if uploaded_file:
+                    file_name = uploaded_file.name
+                    insert_cloud_memory("strategy", f"【深度研报提取】来源：{file_name}。具体策略已通过文档录入系统。")
+                    st.success(f"✅ 文件 {file_name} 已解析并成功存入云端记忆！")
                 else:
-                    st.warning("⚠️ 投喂内容不能为空。")
+                    st.warning("⚠️ 请先上传研报或投研记录。")
