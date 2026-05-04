@@ -15,6 +15,97 @@
       ]
     },
     {
+  "managers": [
+    {
+      "manager_name": "李澄清",
+      "keywords": ["李澄清", "东方红", "李澄清 天花板与斜率", "东方红多元策略混合", "李澄清 新能源估值"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/李澄清",
+        "https://rss.sina.com.cn/finance/"
+      ]
+    },
+    {
+      "manager_name": "曲少杰",
+      "keywords": ["曲少杰", "长城基金", "QDII", "智能驾驶芯片", "护城河", "全球宏观 卖水人"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/曲少杰",
+        "https://rsshub.app/gelonghui/home/fund",
+        "https://rsshub.app/fastbull/news"
+      ]
+    },
+    {
+      "manager_name": "郑希",
+      "keywords": ["郑希", "易方达信息产业", "产业周期", "光模块 半导体", "科技股 中观视角"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/郑希",
+        "https://rsshub.app/eastmoney/report/industry"
+      ]
+    },
+    {
+      "manager_name": "蔡麟琳",
+      "keywords": ["蔡麟琳", "灏霁投资", "信用指数", "固收 宏观流动性 蔡麟琳"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/蔡麟琳",
+        "https://rsshub.app/eastmoney/report/macresearch"
+      ]
+    },
+    {
+      "manager_name": "惠博闻",
+      "keywords": ["惠博闻", "易方达", "调研记录", "机构动向"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/惠博闻",
+        "https://rsshub.app/eastmoney/report/strategyreport"
+      ]
+    },
+    {
+      "manager_name": "Leopold Aschenbrenner",
+      "keywords": ["Leopold Aschenbrenner", "Situational Awareness LP", "AGI 投资", "AI基础设施", "算力中心", "卖水人逻辑", "CoreWeave", "Bloom Energy"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Leopold+Aschenbrenner",
+        "https://rsshub.app/fastbull/news"
+      ]
+    },
+    {
+      "manager_name": "Chris Hohn",
+      "keywords": ["Chris Hohn", "TCI Fund Management", "集中持仓", "激进主义 (Activism)", "价值投资", "股票回购干预"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Chris+Hohn+TCI",
+        "https://rsshub.app/gelonghui/home/fund"
+      ]
+    },
+    {
+      "manager_name": "Ken Griffin",
+      "keywords": ["Ken Griffin", "Citadel (城堡投资)", "Citadel Securities (城堡证券)", "多策略平台 (Multi-Strategy Pods)", "宏观对冲"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Ken+Griffin+Citadel",
+        "https://rsshub.app/eastmoney/search/Ken+Griffin"
+      ]
+    },
+    {
+      "manager_name": "Steven Cohen",
+      "keywords": ["Steven Cohen", "Point72 Asset Management", "多策略 (Multi-strategy)", "严格风控", "独立核算团队 (Pods)"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Steven+Cohen+Point72",
+        "https://rsshub.app/fastbull/express-news"
+      ]
+    },
+    {
+      "manager_name": "Ray Dalio",
+      "keywords": ["Ray Dalio", "Bridgewater Associates (桥水基金)", "全球宏观 (Global Macro)", "风险平价 (Risk Parity)", "全天候策略 (All Weather)"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Ray+Dalio+Bridgewater",
+        "https://rsshub.app/eastmoney/report/macresearch"
+      ]
+    },
+    {
+      "manager_name": "Jim Simons",
+      "keywords": ["Jim Simons", "Renaissance Technologies (文艺复兴科技)", "大奖章基金 (Medallion Fund)", "量化交易 (Quantitative Trading)", "统计套利"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Renaissance+Technologies"
+      ]
+    }
+  ]
+}
       "manager_name": "张坤",
       "keywords": ["张坤", "易方达", "消费", "长期主义", "基金经理访谈"],
       "rss_feeds": [
