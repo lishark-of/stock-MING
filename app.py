@@ -704,10 +704,33 @@ else:
         with col_a2:
             st.markdown("**💰 融资融券监测**")
             margin_data = get_cn_margin_data(stock_code)
-            if margin_data:
-                st.metric("融资余额(亿)", f"¥{margin_data['financing_balance']:.2f}", "")
-                if margin_data['financing_ratio'] > 50:
-                    st.warning("⚠️ 融资占比超 50%")
+            
+            # ==========================================
+            # 🛡️ 融资融券数据安全渲染装甲 (防断流设计)
+            # ==========================================
+            if margin_data and isinstance(margin_data, dict):
+                raw_balance = margin_data.get('financing_balance')
+                raw_ratio = margin_data.get('financing_ratio')
+                
+                # 1. 默认降级显示
+                safe_margin_display = "暂无数据"
+                
+                # 2. 强行清洗融资余额数据
+                if raw_balance is not None:
+                    try:
+                        safe_margin_display = f"¥{float(raw_balance):.2f}"
+                    except (ValueError, TypeError):
+                        safe_margin_display = "数据异常"
+                
+                st.metric("融资余额(亿)", safe_margin_display, "")
+                
+                # 3. 强行清洗融资占比数据（防止占比指标也引发崩溃）
+                if raw_ratio is not None:
+                    try:
+                        if float(raw_ratio) > 50:
+                            st.warning("⚠️ 融资占比超 **50%**")
+                    except (ValueError, TypeError):
+                        pass  # 数据脏则静默，不显示警告
             else:
                 st.info("暂无融资数据")
         
