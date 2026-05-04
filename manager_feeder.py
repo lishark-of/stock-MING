@@ -1,17 +1,13 @@
 import os
 import time
+import hashlib
 from openai import OpenAI
 from supabase import create_client, Client
 
 
-# ==============================
-# 从环境变量读取密钥
-# 不要把真实 key 写进 GitHub
-# ==============================
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
 
 if not DEEPSEEK_API_KEY:
     raise ValueError("缺少 DEEPSEEK_API_KEY")
@@ -31,14 +27,16 @@ client = OpenAI(
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def split_text_to_chunks(text, chunk_size=5000, overlap=500):
+def split_text_to_chunks(text, chunk_size=6000, overlap=500):
     chunks = []
     start = 0
 
     while start < len(text):
         end = start + chunk_size
-        chunk = text[start:end]
-        chunks.append(chunk)
+        chunk = text[start:end].strip()
+
+        if chunk:
+            chunks.append(chunk)
 
         start = end - overlap
 
@@ -48,17 +46,15 @@ def split_text_to_chunks(text, chunk_size=5000, overlap=500):
     return chunks
 
 
-def extract_rules_with_deepseek(manager_name, text_chunk):
+def extract_rules_with_deepseek(manager_name, text_chunk, source_url=""):
     prompt = f"""
 你是一个基金经理研究员。
 
-请从下面资料中，提炼基金经理【{manager_name}】的投资规则。
+请从下面资料中，提炼基金经理的投资规则。
 
-要求：
-1. 只提炼对选股有用的信息。
-2. 不要写废话。
-3. 每条规则一行。
-4. 必须严格使用这个格式：
+这不是普通摘要，你要提炼“可用于选股系统”的规则。
+
+必须输出为多行，每行格式如下：
 
 规则类型|规则内容
 
@@ -72,10 +68,23 @@ def extract_rules_with_deepseek(manager_name, text_chunk):
 仓位纪律
 市场适应期
 失效风险
+风格变化
+当前关注
 典型语录
 其他
 
-资料如下：
+提炼要求：
+1. 只保留对选股、择时、行业选择、风险控制有用的信息。
+2. 如果资料显示他的风格发生变化，必须用【风格变化】标出。
+3. 如果资料提到当前市场更适合或不适合他，必须用【市场适应期】标出。
+4. 如果资料只是新闻噪音、重复介绍、无实质投资信息，可以只输出：其他|无有效规则。
+5. 不要编造资料里没有的内容。
+6. 每条规则不超过 80 字。
+
+资料来源：
+{source_url}
+
+资料正文：
 {text_chunk}
 """
 
@@ -84,15 +93,15 @@ def extract_rules_with_deepseek(manager_name, text_chunk):
         messages=[
             {
                 "role": "system",
-                "content": "你是专业基金经理研究员，擅长从访谈、研报、持仓说明中提炼投资规则。"
+                "content": "你是专业基金经理研究员，擅长从访谈、季报、新闻、持仓说明中提炼投资规则。"
             },
             {
                 "role": "user",
                 "content": prompt
             }
         ],
-        temperature=0.2,
-        max_tokens=2000
+        temperature=0.15,
+        max_tokens=2200
     )
 
     return response.choices[0].message.content
@@ -105,21 +114,34 @@ def save_rules_to_supabase(manager_name, extracted_text, source):
     for line in lines:
         line = line.strip()
 
-        if not line:
-            continue
-
-        if "|" not in line:
+        if not line or "|" not in line:
             continue
 
         rule_type, content = line.split("|", 1)
-
         rule_type = rule_type.strip()
         content = content.strip()
 
-        if not content:
+        if not content or content == "无有效规则":
             continue
 
+        rule_hash = hashlib.sha256(
+            f"{manager_name}|{rule_type}|{content}".encode("utf-8")
+        ).hexdigest()
+
         try:
+            existed = (
+                supabase
+                .table("manager_rules")
+                .select("id")
+                .eq("manager_name", manager_name)
+                .eq("content", content)
+                .limit(1)
+                .execute()
+            )
+
+            if existed.data:
+                continue
+
             supabase.table("manager_rules").insert({
                 "manager_name": manager_name,
                 "rule_type": rule_type,
@@ -135,11 +157,15 @@ def save_rules_to_supabase(manager_name, extracted_text, source):
     return saved_count
 
 
-def feed_manager_from_text(manager_name, raw_text, source="手动投喂"):
-    print(f"开始投喂基金经理：{manager_name}")
+def feed_manager_from_text(manager_name, raw_text, source="自动抓取"):
+    print(f"\n开始投喂基金经理：{manager_name}")
+    print(f"资料来源：{source}")
+
+    if not raw_text or len(raw_text.strip()) < 200:
+        print("资料太短，跳过。")
+        return 0
 
     chunks = split_text_to_chunks(raw_text)
-
     print(f"资料已切成 {len(chunks)} 段")
 
     total_saved = 0
@@ -147,33 +173,26 @@ def feed_manager_from_text(manager_name, raw_text, source="手动投喂"):
     for i, chunk in enumerate(chunks):
         print(f"正在处理第 {i + 1}/{len(chunks)} 段...")
 
-        extracted = extract_rules_with_deepseek(manager_name, chunk)
+        try:
+            extracted = extract_rules_with_deepseek(
+                manager_name=manager_name,
+                text_chunk=chunk,
+                source_url=source
+            )
 
-        saved = save_rules_to_supabase(
-            manager_name=manager_name,
-            extracted_text=extracted,
-            source=source
-        )
+            saved = save_rules_to_supabase(
+                manager_name=manager_name,
+                extracted_text=extracted,
+                source=source
+            )
 
-        total_saved += saved
+            total_saved += saved
+            print(f"本段写入 {saved} 条规则")
 
-        print(f"本段写入 {saved} 条规则")
+            time.sleep(1)
 
-        time.sleep(1)
+        except Exception as e:
+            print(f"本段处理失败：{e}")
 
     print(f"完成！总共写入 {total_saved} 条规则。")
-
-
-if __name__ == "__main__":
-    manager_name = "刘晓龙"
-
-    text = """
-    这里粘贴基金经理资料。
-    例如访谈、文章、持仓说明、基金季报里面关于投资思路的文字。
-    """
-
-    feed_manager_from_text(
-        manager_name=manager_name,
-        raw_text=text,
-        source="本地测试"
-    )
+    return total_saved
