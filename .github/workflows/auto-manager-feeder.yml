@@ -3,7 +3,7 @@ name: Auto Manager Feeder
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 1 * * *"  # 每天 UTC 01:00 运行
+    - cron: "*/15 * * * *"  # 每 15 分钟运行一次
 
 jobs:
   feed:
