@@ -334,6 +334,39 @@ else:
     def load_manager_rules(manager_name, limit=30):
         """
         专门读取基金经理规则。
+        大师选股只读 manager_rules，不再读取 brain_memory。
+        """
+        if not supabase:
+            return []
+
+        try:
+            res = (
+                supabase
+                .table("manager_rules")
+                .select("rule_type, content, source, created_at")
+                .eq("manager_name", manager_name)
+                .order("id", desc=True)
+                .limit(limit)
+                .execute()
+            )
+
+            data = res.data or []
+
+            rules = []
+            for item in data:
+                rule_type = item.get("rule_type", "其他")
+                content = item.get("content", "")
+                if content:
+                    rules.append(f"【{rule_type}】{content}")
+
+            return rules
+
+        except Exception as e:
+            st.warning(f"⚠️ 读取大师规则失败: {e}")
+            return []
+    def load_manager_rules(manager_name, limit=30):
+        """
+        专门读取基金经理规则。
         大师选股只读 manager_rules，不再读 brain_memory。
         """
         if not supabase:
@@ -1071,6 +1104,7 @@ else:
             # A股的核心按钮和逻辑已经内嵌在这个函数里了
             display_cn_stock_analysis(target, price)
     # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
+       # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
     with tab_screener:
         st.markdown("### 🎯 大师选股雷达")
         st.caption("这个模块已经和诊股外脑分离：只读取 manager_rules，不再读取 brain_memory。")
@@ -1117,7 +1151,7 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
             else:
-                st.warning(f"⚠️ 暂时没有找到 {manager_name} 的规则。请先投喂资料。")
+                st.warning(f"⚠️ 暂时没有找到 {manager_name} 的规则。请先在 Supabase 的 manager_rules 表里添加。")
 
         if run_scan:
             rules = load_manager_rules(manager_name, limit=30)
