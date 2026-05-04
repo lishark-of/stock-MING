@@ -12,7 +12,7 @@ import numpy as np
 # ==========================================
 # 1. 全局配置与极简美学 UI
 # ==========================================
-st.set_page_config(page_title="量化交易终端 V22.0 全球三市场版", page_icon="🦈", layout="wide")
+st.set_page_config(page_title="量化交易终端 V23.0 GLOBAL", page_icon="🦈", layout="wide")
 
 st.markdown("""
 <style>
@@ -332,13 +332,14 @@ else:
         except:
             return None
 
-    # ==========================================
-    # 港股技术面分析
+# ==========================================
+    # 港股深度技术与基本面分析 (升级版)
     # ==========================================
     
     @st.cache_data(ttl=600)
     def compute_hk_signals(ticker):
         try:
+            stock = yf.Ticker(ticker)
             hist = get_historical_data(ticker, 
                 (datetime.datetime.now() - datetime.timedelta(days=120)).strftime('%Y-%m-%d'),
                 datetime.datetime.now().strftime('%Y-%m-%d'))
@@ -356,22 +357,52 @@ else:
             ma20 = hist['Close'].rolling(window=20).mean().iloc[-1]
             latest_close = hist['Close'].iloc[-1]
             
+            # 港股核心基本面提取
+            info = stock.info
+            div_yield = info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0
+            beta = info.get('beta', 1.0)
+            
             return {
                 'rsi': round(latest_rsi, 2),
                 'ma20': round(ma20, 2),
                 'latest_close': round(latest_close, 2),
                 'trend': 'UPTREND' if latest_close > ma20 else 'DOWNTREND',
+                'div_yield': round(div_yield, 2),
+                'beta': round(beta, 2) if beta else "未知"
             }
         except:
             return None
 
+    def display_hk_stock_analysis(target, price):
+        st.markdown("#### 🇭🇰 港股机构级穿透系统")
+        
+        signals = compute_hk_signals(target)
+        if signals:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
+                st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
+            with col2:
+                trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
+                st.metric(f"{trend_color} 趋势 (MA20)", f"HK${signals['ma20']}", signals['trend'])
+            with col3:
+                st.metric("💰 机构分红率", f"{signals['div_yield']}%", "避险指标")
+            with col4:
+                st.metric("📊 恒指联动 Beta", signals['beta'], "")
+                
+            if signals['div_yield'] > 6.0:
+                st.info("💡 嗅探提示：该股息率超 6%，具备极强的高息防守属性（类高股息央企逻辑）。")
+        st.markdown("---")
+
+
     # ==========================================
-    # 日股技术面分析
+    # 日股深度技术与基本面分析 (升级版)
     # ==========================================
     
     @st.cache_data(ttl=600)
     def compute_jp_signals(ticker):
         try:
+            stock = yf.Ticker(ticker)
             hist = get_historical_data(ticker, 
                 (datetime.datetime.now() - datetime.timedelta(days=120)).strftime('%Y-%m-%d'),
                 datetime.datetime.now().strftime('%Y-%m-%d'))
@@ -389,14 +420,52 @@ else:
             ma20 = hist['Close'].rolling(window=20).mean().iloc[-1]
             volatility = hist['Close'].pct_change().std() * 100
             
+            # 日股核心提取：日特估(PB) 与 宏观汇率
+            info = stock.info
+            pb_ratio = info.get('priceToBook', 0)
+            
+            # 获取 USD/JPY 近期走势 (日元贬值利好出口股)
+            jpy_hist = yf.Ticker("JPY=X").history(period="5d")
+            jpy_trend = "未知"
+            if not jpy_hist.empty:
+                if jpy_hist['Close'].iloc[-1] > jpy_hist['Close'].iloc[0]:
+                    jpy_trend = "贬值 (利好出口)"
+                else:
+                    jpy_trend = "升值 (利好内需)"
+            
             return {
                 'rsi': round(latest_rsi, 2),
                 'ma20': round(ma20, 2),
                 'volatility': round(volatility, 2),
                 'trend': 'UPTREND' if hist['Close'].iloc[-1] > ma20 else 'DOWNTREND',
+                'pb_ratio': round(pb_ratio, 2) if pb_ratio else "N/A",
+                'jpy_trend': jpy_trend
             }
         except:
             return None
+
+    def display_jp_stock_analysis(target, price):
+        st.markdown("#### 🇯🇵 日股（日特估/汇率）穿透系统")
+        
+        signals = compute_jp_signals(target)
+        if signals:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
+                st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
+            with col2:
+                trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
+                st.metric(f"{trend_color} 趋势", signals['trend'], f"MA20: ¥{signals['ma20']}")
+            with col3:
+                pb = signals['pb_ratio']
+                pb_status = "破净(日特估概念)" if (isinstance(pb, float) and pb < 1) else "正常"
+                st.metric("🏢 P/B 市净率", pb, pb_status)
+            with col4:
+                st.metric("💴 宏观汇率环境", "USD/JPY", signals['jpy_trend'])
+                
+            if isinstance(signals['pb_ratio'], float) and signals['pb_ratio'] < 1.0:
+                st.warning("⚠️ 破净警告：该股 PB < 1，极可能触发东京证券交易所强制企业提升市值的监管压力（回购/增加分红预期极强）。")
+        st.markdown("---")
 
     # ==========================================
     # UI 展示函数
