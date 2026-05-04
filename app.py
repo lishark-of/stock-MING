@@ -1060,3 +1060,20 @@ def update_manager_learning_feedback(manager_name, feedback_content, rating):
                 if st.button("📝 提交反馈"):
                     if feedback:
                         update_manager_learning_feedback(manager_name, feedback, rating)
+    # 模块 D：云端外脑
+    with tab_brain:
+        st.markdown("### ☁️ 云端 RAG 向量记忆中心")
+        st.caption("支持手动喂养，或直接上传 PDF/Word/PPT 研报。")
+        
+        c_feed1, c_feed2 = st.columns([1, 1])
+        
+        with c_feed1:
+            st.markdown("#### 📝 1. 碎片战法投喂")
+            feed_text = st.text_area("粘贴聊天记录或大白话", placeholder="例如：MACD 金叉 + RSI < 30 是美股黄金买点...", key="feed_text")
+            
+            if st.button("🧠 提交入库", use_container_width=True):
+                if feed_text:
+                    insert_cloud_memory("strategy", feed_text)
+                    st.success("✅ 纪律已烙印至云端神经元。")
+                else:
+                    st.warning("⚠️ 投喂内容不能为空。")
