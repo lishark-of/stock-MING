@@ -27,5 +27,3 @@ jobs:
         env:
           DEEPSEEK_TOKEN_1: ${{ secrets.DEEPSEEK_TOKEN_1 }}
           DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
-        run: |
-          python auto_manager_feeder.py
