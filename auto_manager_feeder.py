@@ -5,15 +5,22 @@ import requests
 import feedparser
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
-import os
+iimport os
 
-from manager_feeder import feed_manager_from_text
+TOKENS = [
+    os.environ.get("DEEPSEEK_TOKEN_1"),
+    os.environ.get("DEEPSEEK_TOKEN_2")
+]
 
+if not all(TOKENS):
+    raise ValueError("缺少 DEEPSEEK_API_KEY，请检查 GitHub Secrets 是否设置正确")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+current_token_index = 0
+def get_next_token():
+    global current_token_index
+    token = TOKENS[current_token_index]
+    current_token_index = (current_token_index + 1) % len(TOKENS)
+    return token
 
 
 def ensure_processed_sources_table():
