@@ -23,9 +23,9 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run auto manager feeder
+        run: python auto_manager_feeder.py
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DEEPSEEK_TOKEN_1: ${{ secrets.DEEPSEEK_TOKEN_1 }}
+          DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
         run: |
           python auto_manager_feeder.py
