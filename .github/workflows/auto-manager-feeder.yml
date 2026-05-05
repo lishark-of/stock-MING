@@ -3,7 +3,7 @@ name: Auto Manager Feeder
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"  # 每 15 分钟运行一次
+    - cron: "*/30 * * * *"  # 每 30 分钟运行一次，先稳定跑通
 
 jobs:
   feed:
@@ -23,7 +23,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run auto manager feeder
-        run: python auto_manager_feeder.py
         env:
           DEEPSEEK_TOKEN_1: ${{ secrets.DEEPSEEK_TOKEN_1 }}
           DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python auto_manager_feeder.py
