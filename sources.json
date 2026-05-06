@@ -13,6 +13,41 @@
       "rss_feeds": [
         "https://rsshub.app/eastmoney/search/曲少杰"
       ]
+    },
+    {
+      "manager_name": "郑希",
+      "keywords": ["郑希", "易方达信息产业", "产业周期", "光模块", "半导体", "科技股"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/郑希"
+      ]
+    },
+    {
+      "manager_name": "蔡麟琳",
+      "keywords": ["蔡麟琳", "易方达成长领航", "信用指数", "固收", "宏观流动性"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/蔡麟琳"
+      ]
+    },
+    {
+      "manager_name": "惠博闻",
+      "keywords": ["惠博闻", "易方达", "调研记录", "机构动向"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/惠博闻"
+      ]
+    },
+    {
+      "manager_name": "Ray Dalio",
+      "keywords": ["Ray Dalio", "Bridgewater", "Bridgewater Associates", "Global Macro", "Risk Parity", "All Weather"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Ray+Dalio+Bridgewater"
+      ]
+    },
+    {
+      "manager_name": "Chris Hohn",
+      "keywords": ["Chris Hohn", "TCI Fund Management", "Activism", "value investing", "share buyback"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Chris+Hohn+TCI"
+      ]
     }
   ]
 }
