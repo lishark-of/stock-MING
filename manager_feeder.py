@@ -100,7 +100,8 @@ def extract_rules_with_deepseek(manager_name, text_chunk, source_url=""):
 资料正文：
 {text_chunk}
 """
-
+    client = get_deepseek_client()
+    
     response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[
