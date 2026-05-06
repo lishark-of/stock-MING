@@ -232,11 +232,28 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
         client = OpenAI(api_key=st.session_state.ds_key, base_url="https://api.deepseek.com/v1")
         response = client.chat.completions.create(
             model="deepseek-chat",
-            messages=[{"role": "system", "content": system_role}, {"role": "user", "content": prompt}],
-            stream=False,
-            temperature=0.5,
-            max_tokens=max_tokens
-        )
+today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+time_guard = f"""
+【当前系统时间】：{today_str}
+【强制要求】：
+1. 你必须以当前系统时间为准。
+2. 如果资料不是最新的，必须明确说“该信息可能过时”。
+3. 不允许把几年前的信息描述成“近期”或“最新”。
+4. 不允许编造实时新闻、实时持仓、实时公告。
+5. 如果缺少最新舆情或公告，请直接说明缺少数据。
+"""
+
+response = client.chat.completions.create(
+    model="deepseek-chat",
+    messages=[
+        {"role": "system", "content": system_role + "\n" + time_guard},
+        {"role": "user", "content": prompt}
+    ],
+    stream=True,
+    temperature=0.7,
+    max_tokens=10000
+)
         return response.choices[0].message.content
     except Exception as e:
         st.error(f"⚠️ DeepSeek 调用失败: {e}")
