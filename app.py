@@ -519,6 +519,35 @@ else:
         except Exception as e:
             st.warning(f"⚠️ 本地舆情库读取失败: {e}")
             return []
+    def fetch_market_news_from_supabase(keyword, limit=10):
+        """
+        从 market_news 表读取股票/市场舆情。
+        天眼风控优先使用这个表。
+        """
+        if not supabase:
+            return []
+
+        if not keyword:
+            return []
+
+        try:
+            res = (
+                supabase
+                .table("market_news")
+                .select("keyword, title, url, summary, risk_tag, sentiment, created_at")
+                .or_(
+                    f"keyword.ilike.%{keyword}%,title.ilike.%{keyword}%,summary.ilike.%{keyword}%"
+                )
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+
+            return res.data or []
+
+        except Exception as e:
+            st.warning(f"⚠️ market_news 读取失败: {e}")
+            return []
     def load_manager_names():
         """
         从 manager_rules 表自动读取所有已经投喂过的基金经理名字。
