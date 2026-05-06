@@ -5,30 +5,21 @@ import requests
 import feedparser
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
-iimport os
+import os
 
-TOKENS = [
-    os.environ.get("DEEPSEEK_TOKEN_1"),
-    os.environ.get("DEEPSEEK_TOKEN_2")
-]
-
-if not all(TOKENS):
-    raise ValueError("缺少 DEEPSEEK_API_KEY，请检查 GitHub Secrets 是否设置正确")
-
-current_token_index = 0
-def get_next_token():
-    global current_token_index
-    token = TOKENS[current_token_index]
-    current_token_index = (current_token_index + 1) % len(TOKENS)
-    return token
+from manager_feeder import feed_manager_from_text
 
 
-def ensure_processed_sources_table():
-    """
-    记录已经处理过的链接，避免每天重复烧 token。
-    第一次运行前建议你在 Supabase SQL 里手动建表。
-    """
-    pass
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL:
+    raise ValueError("缺少 SUPABASE_URL，请检查 GitHub Secrets")
+
+if not SUPABASE_KEY:
+    raise ValueError("缺少 SUPABASE_KEY，请检查 GitHub Secrets")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 def url_hash(url):
@@ -68,7 +59,7 @@ def mark_processed(manager_name, url, title=""):
         print(f"记录已处理链接失败：{e}")
 
 
-def fetch_rss_items(rss_url, limit=5):
+def fetch_rss_items(rss_url, limit=3):
     feed = feedparser.parse(rss_url)
     items = []
 
@@ -103,7 +94,7 @@ def fetch_page_text(url):
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         clean_text = "\n".join(lines)
 
-        return clean_text[:30000]
+        return clean_text[:20000]
 
     except Exception as e:
         print(f"抓取页面失败：{url}，原因：{e}")
@@ -114,13 +105,11 @@ def manager_keyword_hit(text, keywords):
     if not text:
         return False
 
-    hit_count = 0
-
     for kw in keywords:
         if kw in text:
-            hit_count += 1
+            return True
 
-    return hit_count >= 1
+    return False
 
 
 def run_auto_feed():
@@ -139,7 +128,11 @@ def run_auto_feed():
         for rss_url in rss_feeds:
             print(f"读取 RSS：{rss_url}")
 
-            items = fetch_rss_items(rss_url, limit=5)
+            items = fetch_rss_items(rss_url, limit=3)
+
+            if not items:
+                print("这个 RSS 暂时没有抓到内容，跳过。")
+                continue
 
             for item in items:
                 title = item["title"]
@@ -160,6 +153,11 @@ def run_auto_feed():
                     continue
 
                 text = fetch_page_text(link)
+
+                if not text:
+                    print("正文为空，跳过。")
+                    mark_processed(manager_name, link, title)
+                    continue
 
                 if not manager_keyword_hit(text + title, keywords):
                     print("正文关键词不匹配，跳过。")
