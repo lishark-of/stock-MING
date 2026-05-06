@@ -1,16 +1,21 @@
 import os
 import time
-import hashlib
 from openai import OpenAI
 from supabase import create_client, Client
 
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_TOKENS = [
+    os.getenv("DEEPSEEK_TOKEN_1"),
+    os.getenv("DEEPSEEK_TOKEN_2")
+]
+
+DEEPSEEK_TOKENS = [t for t in DEEPSEEK_TOKENS if t]
+
+if not DEEPSEEK_TOKENS:
+    raise ValueError("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not DEEPSEEK_API_KEY:
-    raise ValueError("缺少 DEEPSEEK_API_KEY")
 
 if not SUPABASE_URL:
     raise ValueError("缺少 SUPABASE_URL")
@@ -18,14 +23,22 @@ if not SUPABASE_URL:
 if not SUPABASE_KEY:
     raise ValueError("缺少 SUPABASE_KEY")
 
+_token_index = 0
 
-client = OpenAI(
-    api_key=DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com/v1"
-)
+
+def get_deepseek_client():
+    global _token_index
+
+    token = DEEPSEEK_TOKENS[_token_index]
+    _token_index = (_token_index + 1) % len(DEEPSEEK_TOKENS)
+
+    return OpenAI(
+        api_key=token,
+        base_url="https://api.deepseek.com/v1"
+    )
+
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 
 def split_text_to_chunks(text, chunk_size=6000, overlap=500):
     chunks = []
