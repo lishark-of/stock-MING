@@ -207,7 +207,7 @@ def get_historical_data(ticker, start_str, end_str):
     except:
         return pd.DataFrame()
 
-ddef call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"):
+def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"):
     if 'ds_key' not in st.session_state or not st.session_state.ds_key: 
         return st.error("❌ 缺少 DeepSeek 密钥")
     try:
@@ -475,6 +475,33 @@ else:
 
         except Exception as e:
             st.warning(f"⚠️ 读取大师规则失败: {e}")
+            return []
+    def fetch_local_news_from_supabase(keyword, limit=10):
+        """
+        从 Supabase 的 processed_sources 表里查已经抓过的资讯标题。
+        用作 yfinance.news 抓取失败时的备用舆情源。
+        """
+        if not supabase:
+            return []
+
+        if not keyword:
+            return []
+
+        try:
+            res = (
+                supabase
+                .table("processed_sources")
+                .select("title, url, manager_name, created_at")
+                .ilike("title", f"%{keyword}%")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+
+            return res.data or []
+
+        except Exception as e:
+            st.warning(f"⚠️ 本地舆情库读取失败: {e}")
             return []
     def load_manager_names():
         """
@@ -1048,14 +1075,24 @@ else:
 
     st.markdown("---")
 
-    tab_risk, tab_rl, tab_main, tab_brain, tab_screener = st.tabs([
-        "🛡️ 天眼风控 (排雷)", 
-        "⏳ 炼丹炉 (强化学习)", 
-        "📈 量化推演 (多市场)", 
-        "☁️ 云端外脑 (数据中心)",
-        "🎯 大师选股 (策略雷达)"
-    ])
+    tab_home, tab_risk, tab_rl, tab_main, tab_brain, tab_screener = st.tabs([
+    "🏠 今日关注池",
+    "🛡️ 天眼风控 (排雷)", 
+    "⏳ 炼丹炉 (强化学习)", 
+    "📈 量化推演 (多市场)", 
+    "☁️ 云端外脑 (数据中心)",
+    "🎯 大师选股 (策略雷达)"
+])
+    with tab_home:
+        st.markdown("### 🏠 今日关注池 / 投研驾驶舱")
+        st.caption("先判断今天该看什么，再决定用哪个大师人格和哪个诊股模块。")
 
+        if st.button("🚀 生成今日关注池", type="primary", use_container_width=True):
+            prompt = build_today_watchlist_prompt()
+            call_deepseek_stream(
+                prompt,
+                system_role="你是冷静的投研总控台，负责生成今日关注池和风险分层。"
+            )
     # 模块 A：天眼风控
     with tab_risk:
         st.markdown(f"### 🛡️ 极高权限合规审计：{target}")
@@ -1063,21 +1100,67 @@ else:
         
         if st.button("🚨 启动全网舆情风控网", key="btn_risk"):
             with st.spinner("正在渗透舆情数据源..."):
-                try:
-                    news_data = yf.Ticker(target).news
-                    headlines = [n['title'] for n in news_data][:6] if news_data else "暂无舆情"
-                    
+                                try:
+                    # 1. 优先查你自己的 Supabase 舆情库
+                    local_news = fetch_local_news_from_supabase(raw_target, limit=8)
+
+                    # 如果 raw_target 查不到，再用识别后的 target 查一次
+                    if not local_news:
+                        local_news = fetch_local_news_from_supabase(target, limit=8)
+
+                    local_headlines = []
+                    if local_news:
+                        for item in local_news:
+                            title = item.get("title", "")
+                            url = item.get("url", "")
+                            created_at = item.get("created_at", "")
+                            if title:
+                                local_headlines.append(f"{title}｜{created_at}｜{url}")
+
+                    # 2. 再尝试 yfinance.news 作为备用
+                    yf_headlines = []
+                    try:
+                        news_data = yf.Ticker(target).news
+                        if news_data:
+                            yf_headlines = [n.get("title", "") for n in news_data[:6] if n.get("title")]
+                    except Exception as e:
+                        yf_headlines = []
+                        st.info(f"yfinance 舆情接口受限，已切换本地舆情库。原因：{e}")
+
+                    # 3. 合并舆情线索
+                    all_headlines = local_headlines + yf_headlines
+
+                    if not all_headlines:
+                        all_headlines = ["暂无可用舆情。请注意：当前没有抓到最新新闻，以下分析只能基于有限信息。"]
+
                     risk_prompt = f"""
-                    你是顶级稽查员。标��：{target}。舆情线索：{headlines}。
-                    请排查：
-                    1. 是否存在'公告前股价提前异动'或'利好出尽暴跌'的劣迹？
-                    2. 是否收到过监管问询函？
-                    3. 若存在严重风险，请用【一票否决】警告。
-                    """
+当前分析标的：{target}
+用户原始输入：{raw_target}
+当前价格：{price}
+
+以下是系统抓取到的舆情线索：
+{chr(10).join(all_headlines)}
+
+请执行风控排雷：
+
+1. 这些舆情是否可能影响该标的？
+2. 是否存在“公告前股价异动”“利好出尽”“监管问询”“大股东减持”“业绩暴雷”等风险？
+3. 如果舆情不足，请明确说“当前舆情数据不足，不能下确定结论”。
+4. 不允许编造没有出现的新闻。
+5. 请给出：
+   - 风险等级：低 / 中 / 高
+   - 是否触发一票否决
+   - 如果继续观察，应该盯哪些信号
+"""
+
                     st.markdown("<div class='risk-alert'>正在执行深度排雷协议，请留意红色警告...</div>", unsafe_allow_html=True)
-                    call_deepseek_stream(risk_prompt, system_role="作为无情的金融监管稽查机器。")
-                except:
-                    st.error("舆情接口抓取受限。")
+                    call_deepseek_stream(
+                        risk_prompt,
+                        system_role="你是无情的金融风控稽查员，只能基于已给出的舆情线索判断，不得编造新闻。"
+                    )
+
+                except Exception as e:
+                    st.error(f"舆情风控模块运行失败: {e}")
 
     # 模块 B：炼丹炉
     with tab_rl:
