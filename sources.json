@@ -1,52 +1,129 @@
 {
   "managers": [
     {
-      "manager_name": "李澄清",
-      "keywords": ["李澄清", "东方红", "东方红多元策略混合", "新能源估值"],
-      "rss_feeds": [
-        "https://rsshub.app/eastmoney/search/李澄清"
-      ]
-    },
-    {
-      "manager_name": "曲少杰",
-      "keywords": ["曲少杰", "长城基金", "QDII", "智能驾驶芯片", "全球宏观"],
-      "rss_feeds": [
-        "https://rsshub.app/eastmoney/search/曲少杰"
-      ]
-    },
-    {
       "manager_name": "郑希",
+      "category": "科技成长",
+      "role": "科技产业周期判断",
+      "weight": 9,
+      "use_case": ["AI", "半导体", "光模块", "信息产业", "科技股"],
       "keywords": ["郑希", "易方达信息产业", "产业周期", "光模块", "半导体", "科技股"],
       "rss_feeds": [
         "https://rsshub.app/eastmoney/search/郑希"
       ]
     },
     {
-      "manager_name": "蔡麟琳",
-      "keywords": ["蔡麟琳", "易方达成长领航", "信用指数", "固收", "宏观流动性"],
+      "manager_name": "刘晓龙",
+      "category": "科技成长",
+      "role": "成长价值结合",
+      "weight": 8,
+      "use_case": ["成长股", "新能源", "高质量成长", "产业趋势"],
+      "keywords": ["刘晓龙", "聚鸣", "成长价值", "投资框架", "基金经理访谈"],
       "rss_feeds": [
-        "https://rsshub.app/eastmoney/search/蔡麟琳"
+        "https://rsshub.app/eastmoney/search/刘晓龙"
       ]
     },
     {
-      "manager_name": "惠博闻",
-      "keywords": ["惠博闻", "易方达", "调研记录", "机构动向"],
+      "manager_name": "Leopold Aschenbrenner",
+      "category": "AI基础设施",
+      "role": "AGI与算力基础设施趋势判断",
+      "weight": 9,
+      "use_case": ["AI基础设施", "算力中心", "电力", "CoreWeave", "Bloom Energy", "卖水人逻辑"],
+      "keywords": ["Leopold Aschenbrenner", "Situational Awareness", "AGI", "AI infrastructure", "compute", "CoreWeave", "Bloom Energy"],
       "rss_feeds": [
-        "https://rsshub.app/eastmoney/search/惠博闻"
+        "https://rsshub.app/google/news/search/Leopold+Aschenbrenner",
+        "https://rsshub.app/fastbull/news"
       ]
     },
     {
-      "manager_name": "Ray Dalio",
-      "keywords": ["Ray Dalio", "Bridgewater", "Bridgewater Associates", "Global Macro", "Risk Parity", "All Weather"],
+      "manager_name": "曲少杰",
+      "category": "QDII港股出海",
+      "role": "全球资产与港股产业趋势",
+      "weight": 9,
+      "use_case": ["港股", "QDII", "出海", "智能驾驶", "港股高股息", "新能源车"],
+      "keywords": ["曲少杰", "长城基金", "QDII", "智能驾驶芯片", "全球宏观", "港股"],
       "rss_feeds": [
-        "https://rsshub.app/google/news/search/Ray+Dalio+Bridgewater"
+        "https://rsshub.app/eastmoney/search/曲少杰"
+      ]
+    },
+    {
+      "manager_name": "丘栋荣",
+      "category": "深度价值",
+      "role": "低估值和小盘价值判断",
+      "weight": 9,
+      "use_case": ["低PB", "高股息", "周期底部", "小盘价值", "深度价值"],
+      "keywords": ["丘栋荣", "中庚", "低估值", "价值投资", "小盘价值", "深度价值"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/丘栋荣"
       ]
     },
     {
       "manager_name": "Chris Hohn",
+      "category": "激进价值",
+      "role": "高质量公司与股东回报",
+      "weight": 8,
+      "use_case": ["回购", "现金流", "治理改善", "高质量龙头", "价值投资"],
       "keywords": ["Chris Hohn", "TCI Fund Management", "Activism", "value investing", "share buyback"],
       "rss_feeds": [
-        "https://rsshub.app/google/news/search/Chris+Hohn+TCI"
+        "https://rsshub.app/google/news/search/Chris+Hohn+TCI",
+        "https://rsshub.app/gelonghui/home/fund"
+      ]
+    },
+    {
+      "manager_name": "张坤",
+      "category": "消费长期主义",
+      "role": "消费品牌和长期ROE判断",
+      "weight": 7,
+      "use_case": ["消费", "白酒", "品牌护城河", "长期主义", "现金流"],
+      "keywords": ["张坤", "易方达", "消费", "长期主义", "白酒", "优质公司"],
+      "rss_feeds": [
+        "https://rsshub.app/eastmoney/search/张坤"
+      ]
+    },
+    {
+      "manager_name": "Ray Dalio",
+      "category": "全球宏观",
+      "role": "宏观周期与资产配置",
+      "weight": 8,
+      "use_case": ["美元", "利率", "黄金", "债券", "通胀", "全球宏观"],
+      "keywords": ["Ray Dalio", "Bridgewater", "Global Macro", "Risk Parity", "All Weather"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Ray+Dalio+Bridgewater",
+        "https://rsshub.app/eastmoney/report/macresearch"
+      ]
+    },
+    {
+      "manager_name": "Ken Griffin",
+      "category": "多策略平台",
+      "role": "市场结构与宏观流动性",
+      "weight": 6,
+      "use_case": ["流动性", "宏观对冲", "量化平台", "市场结构"],
+      "keywords": ["Ken Griffin", "Citadel", "Citadel Securities", "multi-strategy", "macro hedge"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Ken+Griffin+Citadel",
+        "https://rsshub.app/eastmoney/search/Ken+Griffin"
+      ]
+    },
+    {
+      "manager_name": "Steven Cohen",
+      "category": "多策略风控",
+      "role": "交易纪律与多经理平台风控",
+      "weight": 6,
+      "use_case": ["仓位", "风控", "交易纪律", "多策略"],
+      "keywords": ["Steven Cohen", "Point72", "multi-strategy", "risk management", "pods"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Steven+Cohen+Point72",
+        "https://rsshub.app/fastbull/express-news"
+      ]
+    },
+    {
+      "manager_name": "Jim Simons / Renaissance Technologies",
+      "category": "量化纪律",
+      "role": "统计套利与反故事风控",
+      "weight": 7,
+      "use_case": ["量化", "胜率", "赔率", "统计套利", "反过拟合"],
+      "keywords": ["Jim Simons", "Renaissance Technologies", "Medallion Fund", "quantitative trading", "statistical arbitrage"],
+      "rss_feeds": [
+        "https://rsshub.app/google/news/search/Renaissance+Technologies"
       ]
     }
   ]
