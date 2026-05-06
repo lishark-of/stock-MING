@@ -1116,7 +1116,7 @@ else:
         
         if st.button("🚨 启动全网舆情风控网", key="btn_risk"):
             with st.spinner("正在渗透舆情数据源..."):
-                                try:
+                try:
                     # 1. 优先查你自己的 Supabase 舆情库
                     local_news = fetch_local_news_from_supabase(raw_target, limit=8)
 
