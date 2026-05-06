@@ -33,14 +33,6 @@
       ]
     },
     {
-      "manager_name": "惠博闻",
-      "keywords": ["惠博闻", "易方达", "调研记录", "机构动向"],
-      "rss_feeds": [
-        "https://rsshub.app/eastmoney/search/惠博闻",
-        "https://rsshub.app/eastmoney/report/strategyreport"
-      ]
-    },
-    {
       "manager_name": "Leopold Aschenbrenner",
       "keywords": ["Leopold Aschenbrenner", "Situational Awareness LP", "AGI 投资", "AI基础设施", "算力中心", "卖水人逻辑", "CoreWeave", "Bloom Energy"],
       "rss_feeds": [
@@ -85,14 +77,6 @@
       "keywords": ["Jim Simons", "Renaissance Technologies (文艺复兴科技)", "大奖章基金 (Medallion Fund)", "量化交易 (Quantitative Trading)", "统计套利"],
       "rss_feeds": [
         "https://rsshub.app/google/news/search/Renaissance+Technologies"
-      ]
-    }
-  ]
-}
-      "manager_name": "张坤",
-      "keywords": ["张坤", "易方达", "消费", "长期主义", "基金经理访谈"],
-      "rss_feeds": [
-        "https://news.google.com/rss/search?q=%E5%BC%A0%E5%9D%A4+%E6%98%93%E6%96%B9%E8%BE%BE+%E5%9F%BA%E9%87%91%E7%BB%8F%E7%90%86&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
       ]
     }
   ]
