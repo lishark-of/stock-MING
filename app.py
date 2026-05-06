@@ -1146,7 +1146,29 @@ else:
         if st.button("🚨 启动全网舆情风控网", key="btn_risk"):
             with st.spinner("正在渗透舆情数据源..."):
                 try:
-                    # 1. 优先查你自己的 Supabase 舆情库
+                    # 1. 优先查 market_news 股票/市场舆情库
+                    market_news = fetch_market_news_from_supabase(raw_target, limit=8)
+
+                    # 如果 raw_target 查不到，再用识别后的 target 查一次
+                    if not market_news:
+                        market_news = fetch_market_news_from_supabase(target, limit=8)
+
+                    market_headlines = []
+                    if market_news:
+                        for item in market_news:
+                            title = item.get("title", "")
+                            summary = item.get("summary", "")
+                            risk_tag = item.get("risk_tag", "")
+                            sentiment = item.get("sentiment", "")
+                            created_at = item.get("created_at", "")
+                            url = item.get("url", "")
+
+                            if title:
+                                market_headlines.append(
+                                    f"{title}｜情绪:{sentiment}｜风险:{risk_tag}｜摘要:{summary}｜时间:{created_at}｜链接:{url}"
+                                )
+
+                    # 2. 再查 processed_sources，也就是你自动投喂抓到的资讯源
                     local_news = fetch_local_news_from_supabase(raw_target, limit=8)
 
                     # 如果 raw_target 查不到，再用识别后的 target 查一次
@@ -1159,46 +1181,72 @@ else:
                             title = item.get("title", "")
                             url = item.get("url", "")
                             created_at = item.get("created_at", "")
-                            if title:
-                                local_headlines.append(f"{title}｜{created_at}｜{url}")
+                            manager_name = item.get("manager_name", "")
 
-                    # 2. 再尝试 yfinance.news 作为备用
+                            if title:
+                                local_headlines.append(
+                                    f"{title}｜来源人格:{manager_name}｜时间:{created_at}｜链接:{url}"
+                                )
+
+                    # 3. 最后尝试 yfinance.news 作为备用
                     yf_headlines = []
                     try:
                         news_data = yf.Ticker(target).news
                         if news_data:
-                            yf_headlines = [n.get("title", "") for n in news_data[:6] if n.get("title")]
+                            yf_headlines = [
+                                n.get("title", "") for n in news_data[:6] 
+                                if n.get("title")
+                            ]
                     except Exception as e:
                         yf_headlines = []
                         st.info(f"yfinance 舆情接口受限，已切换本地舆情库。原因：{e}")
 
-                    # 3. 合并舆情线索
-                    all_headlines = local_headlines + yf_headlines
+                    # 4. 合并舆情线索，优先级：market_news > processed_sources > yfinance
+                    all_headlines = market_headlines + local_headlines + yf_headlines
 
                     if not all_headlines:
-                        all_headlines = ["暂无可用舆情。请注意：当前没有抓到最新新闻，以下分析只能基于有限信息。"]
+                        all_headlines = [
+                            "暂无可用舆情。请注意：当前没有抓到最新新闻，以下分析只能基于有限信息。"
+                        ]
 
                     risk_prompt = f"""
 当前分析标的：{target}
 用户原始输入：{raw_target}
 当前价格：{price}
 
-以下是系统抓取到的舆情线索：
+以下是系统抓取到的舆情线索，优先级为：
+1. market_news 股票舆情库
+2. processed_sources 自动投喂资讯库
+3. yfinance.news 备用接口
+
+舆情线索如下：
 {chr(10).join(all_headlines)}
 
 请执行风控排雷：
 
 1. 这些舆情是否可能影响该标的？
-2. 是否存在“公告前股价异动”“利好出尽”“监管问询”“大股东减持”“业绩暴雷”等风险？
-3. 如果舆情不足，请明确说“当前舆情数据不足，不能下确定结论”。
-4. 不允许编造没有出现的新闻。
+2. 是否存在以下风险：
+   - 公告前股价异动
+   - 利好出尽
+   - 监管问询
+   - 大股东减持
+   - 财报暴雷
+   - 产业逻辑反转
+   - 资金踩踏
+3. 如果舆情不足，请明确说：“当前舆情数据不足，不能下确定结论”。
+4. 不允许编造没有出现在舆情线索里的新闻。
 5. 请给出：
    - 风险等级：低 / 中 / 高
    - 是否触发一票否决
-   - 如果继续观察，应该盯哪些信号
+   - 继续观察要盯哪些信号
+   - 当前是否适合买入、持有、减仓、回避
 """
 
-                    st.markdown("<div class='risk-alert'>正在执行深度排雷协议，请留意红色警告...</div>", unsafe_allow_html=True)
+                    st.markdown(
+                        "<div class='risk-alert'>正在执行深度排雷协议，请留意红色警告...</div>",
+                        unsafe_allow_html=True
+                    )
+
                     call_deepseek_stream(
                         risk_prompt,
                         system_role="你是无情的金融风控稽查员，只能基于已给出的舆情线索判断，不得编造新闻。"
