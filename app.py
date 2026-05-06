@@ -366,6 +366,83 @@ else:
         try:
             supabase.table("brain_memory").delete().in_("id", ids_to_delete).execute()
         except: pass
+    def build_today_watchlist_prompt():
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        db = load_cloud_knowledge()
+        brain_rules = "\n".join((db["strategies"] + db["reflections"])[-20:])
+
+        try:
+            manager_res = (
+                supabase
+                .table("manager_rules")
+                .select("manager_name, rule_type, content")
+                .order("id", desc=True)
+                .limit(80)
+                .execute()
+            )
+            manager_data = manager_res.data or []
+        except:
+            manager_data = []
+
+        manager_text = "\n".join([
+            f"{m.get('manager_name')}｜{m.get('rule_type')}｜{m.get('content')}"
+            for m in manager_data
+        ])
+
+        prompt = f"""
+当前时间：{today_str}
+
+你是我的个人投研总控台。请基于以下两类资料生成【今日关注池】：
+
+【我的交易外脑 brain_memory】
+{brain_rules}
+
+【基金经理人格规则 manager_rules】
+{manager_text}
+
+请输出以下五类关注池：
+
+1. 进攻型
+- 当前适合看的方向
+- 适配的基金经理人格
+- 观察标的方向
+- 触发条件
+- 风险
+
+2. 防守型
+- 当前适合看的方向
+- 适配的基金经理人格
+- 观察标的方向
+- 触发条件
+- 风险
+
+3. 港股反弹型
+- 当前适合看的方向
+- 适配的基金经理人格
+- 观察标的方向
+- 触发条件
+- 风险
+
+4. 美股 AI 型
+- 当前适合看的方向
+- 适配的基金经理人格
+- 观察标的方向
+- 触发条件
+- 风险
+
+5. 只观察不买型
+- 为什么只观察
+- 哪些信号出现前不能买
+- 风险红线
+
+强制要求：
+1. 不要编造实时新闻。
+2. 如果缺少今天最新行情或新闻，必须明确说明。
+3. 结论要偏交易实用，不要写空话。
+4. 每类最多给 3 个方向。
+"""
+        return prompt
     def load_manager_rules(manager_name, limit=30):
         """
         专门读取基金经理规则。
