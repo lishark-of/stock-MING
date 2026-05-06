@@ -1,0 +1,53 @@
+{
+  "targets": [
+    {
+      "keyword": "工业富联",
+      "aliases": ["工业富联", "601138", "富士康工业互联网"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=%E5%B7%A5%E4%B8%9A%E5%AF%8C%E8%81%94+601138&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+      ]
+    },
+    {
+      "keyword": "双良节能",
+      "aliases": ["双良节能", "600481"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=%E5%8F%8C%E8%89%AF%E8%8A%82%E8%83%BD+600481&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+      ]
+    },
+    {
+      "keyword": "英伟达",
+      "aliases": ["英伟达", "Nvidia", "NVDA"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=NVDA+Nvidia+AI&hl=en-US&gl=US&ceid=US:en"
+      ]
+    },
+    {
+      "keyword": "台积电",
+      "aliases": ["台积电", "TSMC", "TSM"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=TSMC+semiconductor&hl=en-US&gl=US&ceid=US:en"
+      ]
+    },
+    {
+      "keyword": "AI算力",
+      "aliases": ["AI算力", "AI infrastructure", "data center", "GPU", "算力中心"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=AI+infrastructure+data+center+GPU&hl=en-US&gl=US&ceid=US:en"
+      ]
+    },
+    {
+      "keyword": "光模块",
+      "aliases": ["光模块", "CPO", "硅光", "optical module"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=%E5%85%89%E6%A8%A1%E5%9D%97+CPO+%E7%A1%85%E5%85%89&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+      ]
+    },
+    {
+      "keyword": "黄金",
+      "aliases": ["黄金", "gold", "金价"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=gold+price+market&hl=en-US&gl=US&ceid=US:en"
+      ]
+    }
+  ]
+}
