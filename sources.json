@@ -5,11 +5,36 @@
       "category": "科技成长",
       "role": "科技产业周期判断",
       "weight": 9,
-      "use_case": ["AI", "半导体", "光模块", "信息产业", "科技股"],
-      "keywords": ["郑希", "易方达", "信息产业", "半导体", "科技"],
+      "use_case": [
+        "AI",
+        "半导体",
+        "光模块",
+        "信息产业",
+        "科技股"
+      ],
+      "keywords": [
+        "郑希",
+        "易方达",
+        "信息产业",
+        "半导体",
+        "科技"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=%E9%83%91%E5%B8%8C+%E6%98%93%E6%96%B9%E8%BE%BE+%E4%BF%A1%E6%81%AF%E4%BA%A7%E4%B8%9A+%E5%8D%8A%E5%AF%BC%E4%BD%93&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
         "https://rsshub.app/gelonghui/keyword/郑希"
+      ],
+      "search_queries": [
+        "郑希",
+        "郑希 基金经理",
+        "郑希 持仓",
+        "郑希 季报",
+        "郑希 调仓",
+        "郑希 访谈",
+        "郑希 投资框架",
+        "郑希 最新观点",
+        "郑希 一季报",
+        "郑希 年报",
+        "郑希 四季报"
       ]
     },
     {
@@ -17,12 +42,38 @@
       "category": "QDII港股出海",
       "role": "全球资产与港股产业趋势",
       "weight": 9,
-      "use_case": ["港股", "QDII", "出海", "智能驾驶", "港股高股息", "新能源车"],
-      "keywords": ["曲少杰", "长城基金", "QDII", "港股", "全球"],
+      "use_case": [
+        "港股",
+        "QDII",
+        "出海",
+        "智能驾驶",
+        "港股高股息",
+        "新能源车"
+      ],
+      "keywords": [
+        "曲少杰",
+        "长城基金",
+        "QDII",
+        "港股",
+        "全球"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=%E6%9B%B2%E5%B0%91%E6%9D%B0+%E9%95%BF%E5%9F%8E%E5%9F%BA%E9%87%91+QDII+%E6%B8%AF%E8%82%A1&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
         "https://rsshub.app/gelonghui/keyword/曲少杰",
         "https://rsshub.app/gelonghui/home/fund"
+      ],
+      "search_queries": [
+        "曲少杰",
+        "曲少杰 基金经理",
+        "曲少杰 持仓",
+        "曲少杰 季报",
+        "曲少杰 调仓",
+        "曲少杰 访谈",
+        "曲少杰 投资框架",
+        "曲少杰 最新观点",
+        "曲少杰 一季报",
+        "曲少杰 年报",
+        "曲少杰 四季报"
       ]
     },
     {
@@ -30,11 +81,35 @@
       "category": "消费长期主义",
       "role": "消费品牌和长期ROE判断",
       "weight": 7,
-      "use_case": ["消费", "白酒", "品牌护城河", "长期主义", "现金流"],
-      "keywords": ["张坤", "易方达", "消费", "基金经理"],
+      "use_case": [
+        "消费",
+        "白酒",
+        "品牌护城河",
+        "长期主义",
+        "现金流"
+      ],
+      "keywords": [
+        "张坤",
+        "易方达",
+        "消费",
+        "基金经理"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=%E5%BC%A0%E5%9D%A4+%E6%98%93%E6%96%B9%E8%BE%BE+%E6%B6%88%E8%B4%B9+%E5%9F%BA%E9%87%91%E7%BB%8F%E7%90%86&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
         "https://rsshub.app/gelonghui/keyword/张坤"
+      ],
+      "search_queries": [
+        "张坤",
+        "张坤 基金经理",
+        "张坤 持仓",
+        "张坤 季报",
+        "张坤 调仓",
+        "张坤 访谈",
+        "张坤 投资框架",
+        "张坤 最新观点",
+        "张坤 一季报",
+        "张坤 年报",
+        "张坤 四季报"
       ]
     },
     {
@@ -42,11 +117,36 @@
       "category": "深度价值",
       "role": "低估值和小盘价值判断",
       "weight": 9,
-      "use_case": ["低PB", "高股息", "周期底部", "小盘价值", "深度价值"],
-      "keywords": ["丘栋荣", "中庚", "低估值", "价值投资", "基金经理"],
+      "use_case": [
+        "低PB",
+        "高股息",
+        "周期底部",
+        "小盘价值",
+        "深度价值"
+      ],
+      "keywords": [
+        "丘栋荣",
+        "中庚",
+        "低估值",
+        "价值投资",
+        "基金经理"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=%E4%B8%98%E6%A0%8B%E8%8D%A3+%E4%B8%AD%E5%BA%9A+%E4%BD%8E%E4%BC%B0%E5%80%BC+%E5%9F%BA%E9%87%91%E7%BB%8F%E7%90%86&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
         "https://rsshub.app/gelonghui/keyword/丘栋荣"
+      ],
+      "search_queries": [
+        "丘栋荣",
+        "丘栋荣 基金经理",
+        "丘栋荣 持仓",
+        "丘栋荣 季报",
+        "丘栋荣 调仓",
+        "丘栋荣 访谈",
+        "丘栋荣 投资框架",
+        "丘栋荣 最新观点",
+        "丘栋荣 一季报",
+        "丘栋荣 年报",
+        "丘栋荣 四季报"
       ]
     },
     {
@@ -54,11 +154,34 @@
       "category": "科技成长",
       "role": "成长价值结合",
       "weight": 8,
-      "use_case": ["成长股", "新能源", "高质量成长", "产业趋势"],
-      "keywords": ["刘晓龙", "聚鸣", "基金经理", "投资框架"],
+      "use_case": [
+        "成长股",
+        "新能源",
+        "高质量成长",
+        "产业趋势"
+      ],
+      "keywords": [
+        "刘晓龙",
+        "聚鸣",
+        "基金经理",
+        "投资框架"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=%E5%88%98%E6%99%93%E9%BE%99+%E8%81%9A%E9%B8%A3+%E5%9F%BA%E9%87%91%E7%BB%8F%E7%90%86+%E6%8A%95%E8%B5%84%E6%A1%86%E6%9E%B6&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
         "https://rsshub.app/gelonghui/keyword/刘晓龙"
+      ],
+      "search_queries": [
+        "刘晓龙",
+        "刘晓龙 基金经理",
+        "刘晓龙 持仓",
+        "刘晓龙 季报",
+        "刘晓龙 调仓",
+        "刘晓龙 访谈",
+        "刘晓龙 投资框架",
+        "刘晓龙 最新观点",
+        "刘晓龙 一季报",
+        "刘晓龙 年报",
+        "刘晓龙 四季报"
       ]
     },
     {
@@ -66,11 +189,36 @@
       "category": "AI基础设施",
       "role": "AGI与算力基础设施趋势判断",
       "weight": 9,
-      "use_case": ["AI基础设施", "算力中心", "电力", "CoreWeave", "Bloom Energy", "卖水人逻辑"],
-      "keywords": ["Leopold Aschenbrenner", "Situational Awareness", "AGI", "AI infrastructure", "compute", "CoreWeave", "Bloom Energy"],
+      "use_case": [
+        "AI基础设施",
+        "算力中心",
+        "电力",
+        "CoreWeave",
+        "Bloom Energy",
+        "卖水人逻辑"
+      ],
+      "keywords": [
+        "Leopold Aschenbrenner",
+        "Situational Awareness",
+        "AGI",
+        "AI infrastructure",
+        "compute",
+        "CoreWeave",
+        "Bloom Energy"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=Leopold+Aschenbrenner+Situational+Awareness+AI+infrastructure&hl=en-US&gl=US&ceid=US:en",
         "https://rsshub.app/fastbull/news"
+      ],
+      "search_queries": [
+        "Leopold Aschenbrenner",
+        "Leopold Aschenbrenner portfolio",
+        "Leopold Aschenbrenner holdings",
+        "Leopold Aschenbrenner 13F",
+        "Leopold Aschenbrenner interview",
+        "Leopold Aschenbrenner market outlook",
+        "Leopold Aschenbrenner AI stocks",
+        "Leopold Aschenbrenner hedge fund"
       ]
     },
     {
@@ -78,11 +226,33 @@
       "category": "激进价值",
       "role": "高质量公司与股东回报",
       "weight": 8,
-      "use_case": ["回购", "现金流", "治理改善", "高质量龙头", "价值投资"],
-      "keywords": ["Chris Hohn", "TCI", "TCI Fund Management", "Activism", "value investing"],
+      "use_case": [
+        "回购",
+        "现金流",
+        "治理改善",
+        "高质量龙头",
+        "价值投资"
+      ],
+      "keywords": [
+        "Chris Hohn",
+        "TCI",
+        "TCI Fund Management",
+        "Activism",
+        "value investing"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=Chris+Hohn+TCI+Fund+Management&hl=en-US&gl=US&ceid=US:en",
         "https://rsshub.app/gelonghui/home/fund"
+      ],
+      "search_queries": [
+        "Chris Hohn",
+        "Chris Hohn portfolio",
+        "Chris Hohn holdings",
+        "Chris Hohn 13F",
+        "Chris Hohn interview",
+        "Chris Hohn market outlook",
+        "Chris Hohn AI stocks",
+        "Chris Hohn hedge fund"
       ]
     },
     {
@@ -90,11 +260,34 @@
       "category": "全球宏观",
       "role": "宏观周期与资产配置",
       "weight": 8,
-      "use_case": ["美元", "利率", "黄金", "债券", "通胀", "全球宏观"],
-      "keywords": ["Ray Dalio", "Bridgewater", "macro", "markets", "All Weather"],
+      "use_case": [
+        "美元",
+        "利率",
+        "黄金",
+        "债券",
+        "通胀",
+        "全球宏观"
+      ],
+      "keywords": [
+        "Ray Dalio",
+        "Bridgewater",
+        "macro",
+        "markets",
+        "All Weather"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=Ray+Dalio+Bridgewater+markets&hl=en-US&gl=US&ceid=US:en",
         "https://rsshub.app/fastbull/news"
+      ],
+      "search_queries": [
+        "Ray Dalio",
+        "Ray Dalio portfolio",
+        "Ray Dalio holdings",
+        "Ray Dalio 13F",
+        "Ray Dalio interview",
+        "Ray Dalio market outlook",
+        "Ray Dalio AI stocks",
+        "Ray Dalio hedge fund"
       ]
     },
     {
@@ -102,10 +295,31 @@
       "category": "多策略平台",
       "role": "市场结构与宏观流动性",
       "weight": 6,
-      "use_case": ["流动性", "宏观对冲", "量化平台", "市场结构"],
-      "keywords": ["Ken Griffin", "Citadel", "Citadel Securities", "multi-strategy", "macro hedge"],
+      "use_case": [
+        "流动性",
+        "宏观对冲",
+        "量化平台",
+        "市场结构"
+      ],
+      "keywords": [
+        "Ken Griffin",
+        "Citadel",
+        "Citadel Securities",
+        "multi-strategy",
+        "macro hedge"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=Ken+Griffin+Citadel+markets&hl=en-US&gl=US&ceid=US:en"
+      ],
+      "search_queries": [
+        "Ken Griffin",
+        "Ken Griffin portfolio",
+        "Ken Griffin holdings",
+        "Ken Griffin 13F",
+        "Ken Griffin interview",
+        "Ken Griffin market outlook",
+        "Ken Griffin AI stocks",
+        "Ken Griffin hedge fund"
       ]
     },
     {
@@ -113,11 +327,32 @@
       "category": "多策略风控",
       "role": "交易纪律与多经理平台风控",
       "weight": 6,
-      "use_case": ["仓位", "风控", "交易纪律", "多策略"],
-      "keywords": ["Steven Cohen", "Point72", "multi-strategy", "risk management", "pods"],
+      "use_case": [
+        "仓位",
+        "风控",
+        "交易纪律",
+        "多策略"
+      ],
+      "keywords": [
+        "Steven Cohen",
+        "Point72",
+        "multi-strategy",
+        "risk management",
+        "pods"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=Steven+Cohen+Point72+markets&hl=en-US&gl=US&ceid=US:en",
         "https://rsshub.app/fastbull/news"
+      ],
+      "search_queries": [
+        "Steven Cohen",
+        "Steven Cohen portfolio",
+        "Steven Cohen holdings",
+        "Steven Cohen 13F",
+        "Steven Cohen interview",
+        "Steven Cohen market outlook",
+        "Steven Cohen AI stocks",
+        "Steven Cohen hedge fund"
       ]
     },
     {
@@ -125,10 +360,32 @@
       "category": "量化纪律",
       "role": "统计套利与反故事风控",
       "weight": 7,
-      "use_case": ["量化", "胜率", "赔率", "统计套利", "反过拟合"],
-      "keywords": ["Jim Simons", "Renaissance Technologies", "Medallion Fund", "quantitative trading", "statistical arbitrage"],
+      "use_case": [
+        "量化",
+        "胜率",
+        "赔率",
+        "统计套利",
+        "反过拟合"
+      ],
+      "keywords": [
+        "Jim Simons",
+        "Renaissance Technologies",
+        "Medallion Fund",
+        "quantitative trading",
+        "statistical arbitrage"
+      ],
       "rss_feeds": [
         "https://news.google.com/rss/search?q=Renaissance+Technologies+Jim+Simons+Medallion&hl=en-US&gl=US&ceid=US:en"
+      ],
+      "search_queries": [
+        "Jim Simons / Renaissance Technologies",
+        "Jim Simons / Renaissance Technologies portfolio",
+        "Jim Simons / Renaissance Technologies holdings",
+        "Jim Simons / Renaissance Technologies 13F",
+        "Jim Simons / Renaissance Technologies interview",
+        "Jim Simons / Renaissance Technologies market outlook",
+        "Jim Simons / Renaissance Technologies AI stocks",
+        "Jim Simons / Renaissance Technologies hedge fund"
       ]
     }
   ]
