@@ -176,9 +176,9 @@ def feed_manager_from_text(manager_name, raw_text, source="自动抓取"):
     print(f"\n开始投喂基金经理：{manager_name}")
     print(f"资料来源：{source}")
 
-    if not raw_text or len(raw_text.strip()) < 60:
-        print("资料太短，跳过。")
-        return 0
+    if not raw_text or not raw_text.strip():
+    print("资料为空，跳过。")
+    return 0
 
     chunks = split_text_to_chunks(raw_text)
     print(f"资料已切成 {len(chunks)} 段")
