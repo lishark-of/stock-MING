@@ -2,6 +2,7 @@ import os
 import json
 import time
 import hashlib
+import datetime
 import requests
 import feedparser
 from bs4 import BeautifulSoup
@@ -29,16 +30,13 @@ DEEPSEEK_TOKENS = [
 DEEPSEEK_TOKENS = [t for t in DEEPSEEK_TOKENS if t]
 
 if not DEEPSEEK_TOKENS:
-    print("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2，将只保存新闻标题和RSS摘要。")
+    raise ValueError("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2")
 
 _token_index = 0
 
 
 def get_deepseek_client():
     global _token_index
-
-    if not DEEPSEEK_TOKENS:
-        raise RuntimeError("缺少 DeepSeek Token")
 
     token = DEEPSEEK_TOKENS[_token_index]
     _token_index = (_token_index + 1) % len(DEEPSEEK_TOKENS)
@@ -178,62 +176,69 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
 3. 不要输出多余内容。
 """
 
-    try:
-        client = get_deepseek_client()
+    retry_delays = [3, 6, 10]
 
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是严谨的股票舆情风控分析员，只能基于给定新闻判断。"
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.1,
-            max_tokens=500
-        )
+    for attempt, delay in enumerate(retry_delays, start=1):
+        try:
+            client = get_deepseek_client()
 
-        content = response.choices[0].message.content or ""
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是严谨的股票舆情风控分析员，只能基于给定新闻判断。"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=500
+            )
 
-        result = {
-            "summary": "",
-            "risk_tag": "未知",
-            "sentiment": "不确定"
-        }
+            content = response.choices[0].message.content or ""
 
-        for line in content.splitlines():
-            line = line.strip()
+            break
 
-            normalized = line.replace("：", ":", 1)
+        except Exception as e:
+            print(f"DeepSeek 舆情分析失败，第 {attempt} 次重试：{e}")
+            time.sleep(delay)
 
-            if normalized.startswith("summary:"):
-                result["summary"] = normalized.replace("summary:", "", 1).strip()
-
-            elif normalized.startswith("risk_tag:"):
-                result["risk_tag"] = normalized.replace("risk_tag:", "", 1).strip()
-
-            elif normalized.startswith("sentiment:"):
-                result["sentiment"] = normalized.replace("sentiment:", "", 1).strip()
-
-        if not result["summary"]:
-            result["summary"] = content[:200]
-
-        return result
-
-    except Exception as e:
-        print(f"DeepSeek 舆情分析失败：{e}")
+    else:
         return {
             "summary": rss_summary[:300] if rss_summary else "DeepSeek 分析失败，仅保存原始标题。",
             "risk_tag": "未知",
             "sentiment": "不确定"
         }
 
+    result = {
+        "summary": "",
+        "risk_tag": "未知",
+        "sentiment": "不确定"
+    }
 
-def save_market_news(keyword, title, url, source, analysis, published=""):
+    for line in content.splitlines():
+        line = line.strip()
+        normalized = line.replace("：", ":", 1)
+
+        if normalized.startswith("summary:"):
+            result["summary"] = normalized.replace("summary:", "", 1).strip()
+
+        elif normalized.startswith("risk_tag:"):
+            result["risk_tag"] = normalized.replace("risk_tag:", "", 1).strip()
+
+        elif normalized.startswith("sentiment:"):
+            result["sentiment"] = normalized.replace("sentiment:", "", 1).strip()
+
+    if not result["summary"]:
+        result["summary"] = content[:200] or rss_summary[:300]
+
+    return result
+
+
+def save_market_news(keyword, title, url, source, analysis):
     payload = {
         "keyword": keyword,
         "title": title,
@@ -242,29 +247,24 @@ def save_market_news(keyword, title, url, source, analysis, published=""):
         "source": source,
         "summary": analysis.get("summary", ""),
         "risk_tag": analysis.get("risk_tag", ""),
-        "sentiment": analysis.get("sentiment", "")
+        "sentiment": analysis.get("sentiment", ""),
+        "created_at": datetime.datetime.utcnow().isoformat()
     }
 
-    payload_with_published = dict(payload)
-    if published:
-        payload_with_published["published_at"] = published
-
     try:
-        supabase.table("market_news").insert(payload_with_published).execute()
+        supabase.table("market_news").insert(payload).execute()
 
         print(f"已写入 market_news：{keyword}｜{title}")
 
     except Exception as e:
-        if published:
-            print(f"写入 published_at 失败，尝试兼容旧表结构：{e}")
-            try:
-                supabase.table("market_news").insert(payload).execute()
-                print(f"已写入 market_news：{keyword}｜{title}")
-                return
-            except Exception as retry_error:
-                print(f"写入 market_news 失败：{retry_error}")
-        else:
-            print(f"写入 market_news 失败：{e}")
+        print(f"写入 market_news 失败：{e}")
+        try:
+            fallback_payload = dict(payload)
+            fallback_payload.pop("created_at", None)
+            supabase.table("market_news").insert(fallback_payload).execute()
+            print(f"已兼容旧表结构写入 market_news：{keyword}｜{title}")
+        except Exception as retry_error:
+            print(f"兼容写入 market_news 仍失败：{retry_error}")
 
 
 def run_auto_market_news():
@@ -286,45 +286,51 @@ def run_auto_market_news():
             items = fetch_rss_items(rss_url, limit=5)
 
             for item in items:
-                title = item["title"]
-                link = item["link"]
-                summary = item.get("summary", "")
-                published = item.get("published", "")
+                try:
+                    title = item["title"]
+                    link = item["link"]
+                    summary = item.get("summary", "")
+                    published = item.get("published", "")
 
-                print(f"\n发现新闻：{title}")
-                print(link)
+                    print(f"\n发现新闻：{title}")
+                    print(link)
+                    if published:
+                        print(f"发布时间：{published}")
 
-                if already_saved(link):
-                    print("已保存过，跳过。")
+                    if already_saved(link):
+                        print("已保存过，跳过。")
+                        continue
+
+                    if not keyword_hit(title + " " + summary + " " + link, aliases):
+                        print("标题关键词不匹配，跳过。")
+                        continue
+
+                    text = fetch_page_text(link)
+
+                    if text and not keyword_hit(text + title + summary, aliases):
+                        print("正文关键词不匹配，跳过。")
+                        continue
+
+                    analysis = analyze_news_with_deepseek(
+                        keyword=keyword,
+                        title=title,
+                        text=text,
+                        rss_summary=summary
+                    )
+
+                    save_market_news(
+                        keyword=keyword,
+                        title=title,
+                        url=link,
+                        source=rss_url,
+                        analysis=analysis
+                    )
+
+                    time.sleep(1)
+
+                except Exception as e:
+                    print(f"处理单条市场新闻失败，继续下一条：{e}")
                     continue
-
-                if not keyword_hit(title + " " + summary + " " + link, aliases):
-                    print("标题关键词不匹配，跳过。")
-                    continue
-
-                text = fetch_page_text(link)
-
-                if text and not keyword_hit(text + title + summary, aliases):
-                    print("正文关键词不匹配，跳过。")
-                    continue
-
-                analysis = analyze_news_with_deepseek(
-                    keyword=keyword,
-                    title=title,
-                    text=text,
-                    rss_summary=summary
-                )
-
-                save_market_news(
-                    keyword=keyword,
-                    title=title,
-                    url=link,
-                    source=rss_url,
-                    analysis=analysis,
-                    published=published
-                )
-
-                time.sleep(1)
 
 
 if __name__ == "__main__":

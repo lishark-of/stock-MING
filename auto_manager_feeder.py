@@ -48,8 +48,8 @@ def already_processed(url):
 
 
 def mark_processed(manager_name, url, title=""):
-    # 只有 manager_rules 真正写入成功后才记录 processed_sources。
-    # saved = 0 的链接保留为“未处理”，方便后续优化 prompt 后自动重试。
+    # 只有 manager_rules 真正写入成功(saved > 0)后才记录 processed_sources。
+    # saved = 0 的链接保留为未处理，方便 prompt 或抓取逻辑优化后继续重试。
     try:
         supabase.table("processed_sources").insert({
             "manager_name": manager_name,
@@ -130,9 +130,8 @@ def manager_keyword_hit(text, keywords):
 
 def is_targeted_rss(rss_url, manager_name, keywords):
     """
-    判断 RSS 是否是为某个经理定向配置的。
-    Google News URL 往往是百分号编码，先解码再匹配。
-    泛资讯源如 gelonghui/home、fastbull/news 仍需要后续关键词过滤。
+    定向 RSS 的 URL/query 里通常已经包含 manager_name 或关键词。
+    Google News 的 query 是 URL 编码，先解码再判断；泛资讯源仍做关键词过滤。
     """
     decoded_url = unquote_plus(rss_url).lower()
     manager_name_l = manager_name.lower()
@@ -149,6 +148,7 @@ def is_targeted_rss(rss_url, manager_name, keywords):
         "/news",
         "fastbull/news",
     ]
+
     if any(hint in decoded_url for hint in generic_hints):
         return False
 
@@ -181,21 +181,22 @@ def run_auto_feed():
                 continue
 
             for item in items:
-                title = item["title"]
-                link = item["link"]
-                summary = item.get("summary", "")
-                published = item.get("published", "")
+                try:
+                    title = item["title"]
+                    link = item["link"]
+                    summary = item.get("summary", "")
+                    published = item.get("published", "")
 
-                print(f"\n发现文章：{title}")
-                print(link)
+                    print(f"\n发现文章：{title}")
+                    print(link)
 
-                if already_processed(link):
-                    print("已处理过，跳过。")
-                    continue
+                    if already_processed(link):
+                        print("已处理过，跳过。")
+                        continue
 
-                text = fetch_page_text(link)
+                    text = fetch_page_text(link)
 
-                combined_text = f"""
+                    combined_text = f"""
 标题：{title}
 发布时间：{published}
 链接：{link}
@@ -210,27 +211,31 @@ RSS摘要：
 如果网页正文为空，也请基于标题和RSS摘要提炼可能的投资信息。
 """
 
-                is_targeted_feed = is_targeted_rss(rss_url, manager_name, keywords)
+                    is_targeted_feed = is_targeted_rss(rss_url, manager_name, keywords)
 
-                if not is_targeted_feed:
-                    keyword_text = title + "\n" + summary + "\n" + text + "\n" + link
-                    if not manager_keyword_hit(keyword_text, keywords):
-                        print("泛资讯源关键词不匹配，跳过。")
-                        continue
+                    if not is_targeted_feed:
+                        keyword_text = title + "\n" + summary + "\n" + text + "\n" + link
+                        if not manager_keyword_hit(keyword_text, keywords):
+                            print("泛资讯源关键词不匹配，跳过。")
+                            continue
 
-                saved = feed_manager_from_text(
-                    manager_name=manager_name,
-                    raw_text=combined_text,
-                    source=link
-                )
+                    saved = feed_manager_from_text(
+                        manager_name=manager_name,
+                        raw_text=combined_text,
+                        source=link
+                    )
 
-                if saved > 0:
-                    mark_processed(manager_name, link, title)
-                    print(f"文章处理完成，新增规则：{saved}，已记录为处理成功。")
-                else:
-                    print("文章处理完成，但新增规则为 0。暂不记录 processed_sources，下次仍可重试。")
+                    if saved > 0:
+                        mark_processed(manager_name, link, title)
+                        print(f"文章处理完成，新增规则：{saved}，已记录为处理成功。")
+                    else:
+                        print("文章处理完成，但新增规则为 0。暂不记录 processed_sources，下次仍可重试。")
 
-                time.sleep(2)
+                    time.sleep(2)
+
+                except Exception as e:
+                    print(f"处理单篇文章失败，继续下一篇：{e}")
+                    continue
 
 
 if __name__ == "__main__":
