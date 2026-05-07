@@ -13,31 +13,6 @@ import numpy as np
 # 🚀 基金经理AI克隆系统 - 核心逻辑引擎
 # ==========================================
 
-# ✅ 修复1：去除港股分析函数重复定义（保留完整版本）
-def display_hk_stock_analysis(target, price):
-    """港股分析 - 统一版本（包含完整功能）"""
-    st.markdown("#### 🇭🇰 港股深度分析系统")
-    
-    signals = compute_hk_signals(target)
-    if signals:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
-            st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
-        with col2:
-            trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
-            st.metric(f"{trend_color} 趋势 (MA20)", f"HK${signals['ma20']}", signals['trend'])
-        with col3:
-            st.metric("💰 机构分红率", f"{signals['div_yield']}%", "避险指标")
-        with col4:
-            st.metric("📊 恒指联动 Beta", signals['beta'], "")
-        
-        # ✅ 完整的高股息警告逻辑
-        if signals['div_yield'] > 6.0:
-            st.info("💡 嗅探提示：该股息率超 6%，具备极强的高息防守属性（类高股息央企逻辑）。")
-    
-    st.markdown("---")
-
 # ✅ 修复2：基金经理管理 - 安全的多关键词检索
 MANAGER_PROFILES = {
     "聚鸣 刘晓龙": {
@@ -186,6 +161,22 @@ if 'token_usage' not in st.session_state:
 def log_token_usage(prompt_tokens_estimate=2000, completion_tokens_estimate=1500):
     st.session_state.token_usage['deepseek_calls'] += 1
     st.session_state.token_usage['estimated_tokens'] += (prompt_tokens_estimate + completion_tokens_estimate)
+
+def get_secret_or_env(*names):
+    for name in names:
+        value = None
+        try:
+            value = st.secrets.get(name)
+        except Exception:
+            value = None
+
+        if not value:
+            value = os.getenv(name)
+
+        if value:
+            return value
+
+    return None
 
 # ==========================================
 # 2. 核心功能与缓存提速优化
@@ -344,9 +335,17 @@ if st.session_state.user_role is None:
             else: st.error("密钥验证失败")
 else:
     try:
-        st.session_state.ds_key = st.secrets["DEEPSEEK_API_KEY"]
-        sb_url = st.secrets["SUPABASE_URL"]
-        sb_key = st.secrets["SUPABASE_KEY"]
+        st.session_state.ds_key = get_secret_or_env("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1")
+        sb_url = get_secret_or_env("SUPABASE_URL")
+        sb_key = get_secret_or_env("SUPABASE_KEY")
+
+        if not st.session_state.ds_key:
+            raise ValueError("缺少 DEEPSEEK_API_KEY 或 DEEPSEEK_TOKEN_1")
+        if not sb_url:
+            raise ValueError("缺少 SUPABASE_URL")
+        if not sb_key:
+            raise ValueError("缺少 SUPABASE_KEY")
+
         supabase: Client = create_client(sb_url, sb_key)
     except Exception as e:
         st.session_state.ds_key = None
@@ -382,7 +381,7 @@ else:
         try:
             supabase.table("brain_memory").delete().in_("id", ids_to_delete).execute()
         except: pass
-    def build_today_watchlist_prompt():
+    def build_today_watchlist_prompt(user_preference=""):
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
         db = load_cloud_knowledge()
@@ -406,16 +405,47 @@ else:
             for m in manager_data
         ])
 
+        try:
+            news_res = (
+                supabase
+                .table("market_news")
+                .select("keyword, title, summary, risk_tag, sentiment, created_at")
+                .order("created_at", desc=True)
+                .limit(80)
+                .execute()
+            )
+            market_news_data = news_res.data or []
+        except:
+            market_news_data = []
+
+        if market_news_data:
+            market_text = "\n".join([
+                (
+                    f"{n.get('created_at')}｜{n.get('keyword')}｜{n.get('title')}"
+                    f"｜情绪:{n.get('sentiment')}｜风险:{n.get('risk_tag')}"
+                    f"｜摘要:{n.get('summary')}"
+                )
+                for n in market_news_data
+            ])
+        else:
+            market_text = "（market_news 暂无可用数据。生成时必须明确说明最新市场舆情不足。）"
+
         prompt = f"""
 当前时间：{today_str}
 
-你是我的个人投研总控台。请基于以下两类资料生成【今日关注池】：
+你是我的个人投研总控台。请基于以下资料生成【今日关注池】：
+
+【用户今日偏好方向】
+{user_preference or "未填写"}
 
 【我的交易外脑 brain_memory】
 {brain_rules}
 
 【基金经理人格规则 manager_rules】
 {manager_text}
+
+【最新市场/股票舆情 market_news】
+{market_text}
 
 请输出以下五类关注池：
 
@@ -457,41 +487,9 @@ else:
 2. 如果缺少今天最新行情或新闻，必须明确说明。
 3. 结论要偏交易实用，不要写空话。
 4. 每类最多给 3 个方向。
+5. 不要承诺收益。
 """
         return prompt
-    def load_manager_rules(manager_name, limit=30):
-        """
-        专门读取基金经理规则。
-        大师选股只读 manager_rules，不再读取 brain_memory。
-        """
-        if not supabase:
-            return []
-
-        try:
-            res = (
-                supabase
-                .table("manager_rules")
-                .select("rule_type, content, source, created_at")
-                .eq("manager_name", manager_name)
-                .order("id", desc=True)
-                .limit(limit)
-                .execute()
-            )
-
-            data = res.data or []
-
-            rules = []
-            for item in data:
-                rule_type = item.get("rule_type", "其他")
-                content = item.get("content", "")
-                if content:
-                    rules.append(f"【{rule_type}】{content}")
-
-            return rules
-
-        except Exception as e:
-            st.warning(f"⚠️ 读取大师规则失败: {e}")
-            return []
     def fetch_local_news_from_supabase(keyword, limit=10):
         """
         从 Supabase 的 processed_sources 表里查已经抓过的资讯标题。
@@ -650,15 +648,6 @@ else:
             }
         except:
             return None
-
-    @st.cache_data(ttl=300)
-    def get_cn_north_bound_data():
-        """获取北向资金 (适配最新交易所盲盒规则)"""
-        return {
-            'date': "最新监管规则",
-            'net_flow': "盘中已屏蔽",
-            'status': "交易所已关闭盘中实时披露，请关注收盘总额"
-        }
 
     @st.cache_data(ttl=3600)
     def get_cn_fund_holdings(stock_code):
@@ -922,42 +911,6 @@ else:
         
         st.markdown("---")
 
-    def display_hk_stock_analysis(target, price):
-        st.markdown("#### 🇭🇰 港股深度分析系统")
-        
-        signals = compute_hk_signals(target)
-        if signals:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
-                st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
-            with col2:
-                st.metric("📊 MA20", f"HK${signals['ma20']}", "")
-            with col3:
-                trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
-                st.metric(f"{trend_color} 趋势", signals['trend'], "")
-        
-        st.markdown("---")
-
-    def display_jp_stock_analysis(target, price):
-        st.markdown("#### 🇯🇵 日股深度分析系统")
-        
-        signals = compute_jp_signals(target)
-        if signals:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                rsi_color = "🔴" if signals['rsi'] > 70 else ("🟢" if signals['rsi'] < 30 else "🟡")
-                st.metric(f"{rsi_color} RSI-14", signals['rsi'], "")
-            with col2:
-                st.metric("📊 MA20", f"¥{signals['ma20']}", "")
-            with col3:
-                st.metric("📈 波动率", f"{signals['volatility']}%", "")
-            with col4:
-                trend_color = "🟢" if signals['trend'] == "UPTREND" else "🔴"
-                st.metric(f"{trend_color} 趋势", signals['trend'], "")
-        
-        st.markdown("---")
-
     def display_cn_stock_analysis(target, price):
         """A股深度分析 - 集成 akshare 专业数据"""
         
@@ -1131,9 +1084,14 @@ else:
     with tab_home:
         st.markdown("### 🏠 今日关注池 / 投研驾驶舱")
         st.caption("先判断今天该看什么，再决定用哪个大师人格和哪个诊股模块。")
+        user_preference = st.text_input(
+            "今日偏好方向（可选）",
+            "",
+            placeholder="例如：港股互联网、AI算力、高股息、黄金，只填你今天想重点看的方向"
+        )
 
         if st.button("🚀 生成今日关注池", type="primary", use_container_width=True):
-            prompt = build_today_watchlist_prompt()
+            prompt = build_today_watchlist_prompt(user_preference)
             call_deepseek_stream(
                 prompt,
                 system_role="你是冷静的投研总控台，负责生成今日关注池和风险分层。"
@@ -1405,6 +1363,8 @@ else:
 3. 资金定性博弈：当前外资更倾向于将其视作“价值避险资产”还是“高弹性成长资产”？
 4. 操作指令：拒绝废话，基于客观产业逻辑给出方向性建议。
 """
+                    st.markdown("### 🎯 东京市场策略建议")
+                    call_deepseek_stream(jp_prompt, system_role="你是顶尖全球宏观对冲基金分析师，擅长用美股科技成长框架解剖亚洲资产。")
             if btn_jp_whale:
                 with st.spinner("正在穿透外资套利与信用盘口..."):
                     whale_jp_prompt = f"""
@@ -1415,7 +1375,7 @@ else:
                     3. 给出指令。
                     """
                     st.markdown("### 🐳 外资套利与信用盘口嗅探")
-                    call_deepseek_stream(jp_prompt, system_role="你是顶尖全球宏观对冲基金分析师，擅长用美股科技成长框架解剖亚洲资产。")
+                    call_deepseek_stream(whale_jp_prompt, system_role="你是日股资金盘口与外资流向分析员，只能基于可得信息谨慎判断。")
                     
         elif market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
             # A股的核心按钮和逻辑已经内嵌在这个函数里了

@@ -6,6 +6,7 @@ import feedparser
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
 import os
+from urllib.parse import unquote_plus
 
 from manager_feeder import feed_manager_from_text
 
@@ -47,6 +48,8 @@ def already_processed(url):
 
 
 def mark_processed(manager_name, url, title=""):
+    # 只有 manager_rules 真正写入成功后才记录 processed_sources。
+    # saved = 0 的链接保留为“未处理”，方便后续优化 prompt 后自动重试。
     try:
         supabase.table("processed_sources").insert({
             "manager_name": manager_name,
@@ -59,6 +62,14 @@ def mark_processed(manager_name, url, title=""):
         print(f"记录已处理链接失败：{e}")
 
 
+def clean_html_text(text):
+    if not text:
+        return ""
+
+    soup = BeautifulSoup(text, "html.parser")
+    return soup.get_text(" ", strip=True)
+
+
 def fetch_rss_items(rss_url, limit=5):
     feed = feedparser.parse(rss_url)
     items = []
@@ -66,7 +77,7 @@ def fetch_rss_items(rss_url, limit=5):
     for entry in feed.entries[:limit]:
         title = getattr(entry, "title", "")
         link = getattr(entry, "link", "")
-        summary = getattr(entry, "summary", "")
+        summary = clean_html_text(getattr(entry, "summary", ""))
         published = getattr(entry, "published", "")
 
         if title and link:
@@ -82,7 +93,8 @@ def fetch_rss_items(rss_url, limit=5):
 
 def fetch_page_text(url):
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; ManagerFeederBot/1.0)"
+        "User-Agent": "Mozilla/5.0 (compatible; ManagerFeederBot/1.0)",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     }
 
     try:
@@ -116,6 +128,33 @@ def manager_keyword_hit(text, keywords):
     return False
 
 
+def is_targeted_rss(rss_url, manager_name, keywords):
+    """
+    判断 RSS 是否是为某个经理定向配置的。
+    Google News URL 往往是百分号编码，先解码再匹配。
+    泛资讯源如 gelonghui/home、fastbull/news 仍需要后续关键词过滤。
+    """
+    decoded_url = unquote_plus(rss_url).lower()
+    manager_name_l = manager_name.lower()
+    keyword_l = [kw.lower() for kw in keywords if kw]
+
+    if manager_name_l in decoded_url:
+        return True
+
+    if any(kw in decoded_url for kw in keyword_l):
+        return True
+
+    generic_hints = [
+        "/home/",
+        "/news",
+        "fastbull/news",
+    ]
+    if any(hint in decoded_url for hint in generic_hints):
+        return False
+
+    return False
+
+
 def run_auto_feed():
     with open("sources.json", "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -124,7 +163,7 @@ def run_auto_feed():
 
     for manager in managers:
         manager_name = manager["manager_name"]
-        keywords = manager.get("keywords", [])
+        keywords = list(manager.get("keywords", []))
         rss_feeds = manager.get("rss_feeds", [])
 
         if manager_name not in keywords:
@@ -171,13 +210,12 @@ RSS摘要：
 如果网页正文为空，也请基于标题和RSS摘要提炼可能的投资信息。
 """
 
-                is_targeted_rss = manager_name in rss_url or any(
-                    kw and kw in rss_url for kw in keywords
-                )
+                is_targeted_feed = is_targeted_rss(rss_url, manager_name, keywords)
 
-                if not is_targeted_rss:
-                    if not manager_keyword_hit(title + "\n" + text + "\n" + link, keywords):
-                        print("标题和正文关键词都不匹配，跳过。")
+                if not is_targeted_feed:
+                    keyword_text = title + "\n" + summary + "\n" + text + "\n" + link
+                    if not manager_keyword_hit(keyword_text, keywords):
+                        print("泛资讯源关键词不匹配，跳过。")
                         continue
 
                 saved = feed_manager_from_text(

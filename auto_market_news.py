@@ -29,13 +29,16 @@ DEEPSEEK_TOKENS = [
 DEEPSEEK_TOKENS = [t for t in DEEPSEEK_TOKENS if t]
 
 if not DEEPSEEK_TOKENS:
-    raise ValueError("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2")
+    print("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2，将只保存新闻标题和RSS摘要。")
 
 _token_index = 0
 
 
 def get_deepseek_client():
     global _token_index
+
+    if not DEEPSEEK_TOKENS:
+        raise RuntimeError("缺少 DeepSeek Token")
 
     token = DEEPSEEK_TOKENS[_token_index]
     _token_index = (_token_index + 1) % len(DEEPSEEK_TOKENS)
@@ -77,19 +80,32 @@ def fetch_rss_items(rss_url, limit=5):
     for entry in feed.entries[:limit]:
         title = getattr(entry, "title", "")
         link = getattr(entry, "link", "")
+        summary = clean_html_text(getattr(entry, "summary", ""))
+        published = getattr(entry, "published", "")
 
         if title and link:
             items.append({
                 "title": title,
-                "link": link
+                "link": link,
+                "summary": summary,
+                "published": published
             })
 
     return items
 
 
+def clean_html_text(text):
+    if not text:
+        return ""
+
+    soup = BeautifulSoup(text, "html.parser")
+    return soup.get_text(" ", strip=True)
+
+
 def fetch_page_text(url):
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; MarketNewsBot/1.0)"
+        "User-Agent": "Mozilla/5.0 (compatible; MarketNewsBot/1.0)",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     }
 
     try:
@@ -123,8 +139,16 @@ def keyword_hit(text, aliases):
     return False
 
 
-def analyze_news_with_deepseek(keyword, title, text):
-    if not text:
+def analyze_news_with_deepseek(keyword, title, text, rss_summary=""):
+    material = f"""
+RSS摘要：
+{rss_summary}
+
+网页正文：
+{text}
+""".strip()
+
+    if not material:
         return {
             "summary": "正文抓取为空，仅保留标题。",
             "risk_tag": "未知",
@@ -139,8 +163,8 @@ def analyze_news_with_deepseek(keyword, title, text):
 新闻标题：
 {title}
 
-新闻正文：
-{text[:8000]}
+新闻材料：
+{material[:8000]}
 
 请严格输出三行，格式如下：
 
@@ -184,14 +208,16 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
         for line in content.splitlines():
             line = line.strip()
 
-            if line.startswith("summary:"):
-                result["summary"] = line.replace("summary:", "", 1).strip()
+            normalized = line.replace("：", ":", 1)
 
-            elif line.startswith("risk_tag:"):
-                result["risk_tag"] = line.replace("risk_tag:", "", 1).strip()
+            if normalized.startswith("summary:"):
+                result["summary"] = normalized.replace("summary:", "", 1).strip()
 
-            elif line.startswith("sentiment:"):
-                result["sentiment"] = line.replace("sentiment:", "", 1).strip()
+            elif normalized.startswith("risk_tag:"):
+                result["risk_tag"] = normalized.replace("risk_tag:", "", 1).strip()
+
+            elif normalized.startswith("sentiment:"):
+                result["sentiment"] = normalized.replace("sentiment:", "", 1).strip()
 
         if not result["summary"]:
             result["summary"] = content[:200]
@@ -201,29 +227,44 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
     except Exception as e:
         print(f"DeepSeek 舆情分析失败：{e}")
         return {
-            "summary": "DeepSeek 分析失败，仅保存原始标题。",
+            "summary": rss_summary[:300] if rss_summary else "DeepSeek 分析失败，仅保存原始标题。",
             "risk_tag": "未知",
             "sentiment": "不确定"
         }
 
 
-def save_market_news(keyword, title, url, source, analysis):
+def save_market_news(keyword, title, url, source, analysis, published=""):
+    payload = {
+        "keyword": keyword,
+        "title": title,
+        "url": url,
+        "url_hash": url_hash(url),
+        "source": source,
+        "summary": analysis.get("summary", ""),
+        "risk_tag": analysis.get("risk_tag", ""),
+        "sentiment": analysis.get("sentiment", "")
+    }
+
+    payload_with_published = dict(payload)
+    if published:
+        payload_with_published["published_at"] = published
+
     try:
-        supabase.table("market_news").insert({
-            "keyword": keyword,
-            "title": title,
-            "url": url,
-            "url_hash": url_hash(url),
-            "source": source,
-            "summary": analysis.get("summary", ""),
-            "risk_tag": analysis.get("risk_tag", ""),
-            "sentiment": analysis.get("sentiment", "")
-        }).execute()
+        supabase.table("market_news").insert(payload_with_published).execute()
 
         print(f"已写入 market_news：{keyword}｜{title}")
 
     except Exception as e:
-        print(f"写入 market_news 失败：{e}")
+        if published:
+            print(f"写入 published_at 失败，尝试兼容旧表结构：{e}")
+            try:
+                supabase.table("market_news").insert(payload).execute()
+                print(f"已写入 market_news：{keyword}｜{title}")
+                return
+            except Exception as retry_error:
+                print(f"写入 market_news 失败：{retry_error}")
+        else:
+            print(f"写入 market_news 失败：{e}")
 
 
 def run_auto_market_news():
@@ -247,6 +288,8 @@ def run_auto_market_news():
             for item in items:
                 title = item["title"]
                 link = item["link"]
+                summary = item.get("summary", "")
+                published = item.get("published", "")
 
                 print(f"\n发现新闻：{title}")
                 print(link)
@@ -255,20 +298,21 @@ def run_auto_market_news():
                     print("已保存过，跳过。")
                     continue
 
-                if not keyword_hit(title + " " + link, aliases):
+                if not keyword_hit(title + " " + summary + " " + link, aliases):
                     print("标题关键词不匹配，跳过。")
                     continue
 
                 text = fetch_page_text(link)
 
-                if text and not keyword_hit(text + title, aliases):
+                if text and not keyword_hit(text + title + summary, aliases):
                     print("正文关键词不匹配，跳过。")
                     continue
 
                 analysis = analyze_news_with_deepseek(
                     keyword=keyword,
                     title=title,
-                    text=text
+                    text=text,
+                    rss_summary=summary
                 )
 
                 save_market_news(
@@ -276,7 +320,8 @@ def run_auto_market_news():
                     title=title,
                     url=link,
                     source=rss_url,
-                    analysis=analysis
+                    analysis=analysis,
+                    published=published
                 )
 
                 time.sleep(1)
