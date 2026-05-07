@@ -1,6 +1,5 @@
 import os
 import time
-import hashlib
 from openai import OpenAI
 from supabase import create_client, Client
 
@@ -41,20 +40,6 @@ def get_deepseek_client():
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-ALLOWED_RULE_TYPES = {
-    "当前关注",
-    "风格变化",
-    "持仓变化",
-    "行业判断",
-    "买入条件",
-    "风险厌恶",
-    "宏观判断",
-    "市场适应期",
-    "典型语录",
-    "其他",
-}
-
-
 def split_text_to_chunks(text, chunk_size=6000, overlap=500):
     chunks = []
     start = 0
@@ -81,26 +66,29 @@ def extract_rules_with_deepseek(manager_name, text_chunk, source_url=""):
 请从下面资料中，提炼基金经理的投资规则。
 
 这不是普通摘要，你要提炼“可用于选股系统”的规则。
-资料可能只有标题、RSS摘要和发布时间；只要其中包含投资含义，也必须提炼。
 
 必须输出为多行，每行格式如下：
 
 规则类型|规则内容
 
 规则类型只能从下面选择：
-当前关注
-风格变化
-持仓变化
-行业判断
+风格
+偏好行业
 买入条件
+卖出条件
 风险厌恶
-宏观判断
+估值标准
+仓位纪律
 市场适应期
+失效风险
+风格变化
+当前关注
 典型语录
 其他
 
 提炼要求：
-1. 即使资料只有标题、摘要、发布时间或很短，也必须尝试提炼。
+提炼要求：
+1. 即使资料只有标题、摘要或很短，也必须尝试提炼。
 2. 如果标题或摘要包含基金经理观点、持仓变化、行业判断、市场判断，必须输出规则。
 3. 不要因为资料短就直接输出“无有效规则”。
 4. 只保留对选股、择时、行业选择、风险控制有用的信息。
@@ -112,12 +100,6 @@ def extract_rules_with_deepseek(manager_name, text_chunk, source_url=""):
 10. 如果资料只是新闻噪音、重复介绍、无实质投资信息，才可以输出：其他|无有效规则。
 11. 不要编造资料里没有的内容。
 12. 每条规则不超过 80 字。
-
-示例：
-当前关注|曲少杰认为港股估值进入放心区间，高毛利优质资产仍稀缺
-持仓变化|张坤一季度增持阿斯麦和SK海力士，框架外扩至全球科技资产
-行业判断|Leopold更关注AI算力、电力、数据中心和基础设施链条
-风险厌恶|丘栋荣提示高股息策略并非低风险，需警惕拥挤交易
 
 资料来源：
 {source_url}
@@ -132,7 +114,7 @@ def extract_rules_with_deepseek(manager_name, text_chunk, source_url=""):
         messages=[
             {
                 "role": "system",
-                "content": "你是专业基金经理研究员，擅长从访谈、季报、新闻标题、RSS摘要、持仓说明中提炼投资规则；不得编造资料外信息。"
+                "content": "你是专业基金经理研究员，擅长从访谈、季报、新闻、持仓说明中提炼投资规则。"
             },
             {
                 "role": "user",
@@ -156,15 +138,11 @@ def save_rules_to_supabase(manager_name, extracted_text, source):
         if not line or "|" not in line:
             continue
 
-        line = line.lstrip("-*0123456789.、 ")
         rule_type, content = line.split("|", 1)
         rule_type = rule_type.strip()
         content = content.strip()
 
-        if rule_type not in ALLOWED_RULE_TYPES:
-            rule_type = "其他"
-
-        if not content or "无有效规则" in content:
+        if not content or content == "无有效规则":
             continue
 
         rule_hash = hashlib.sha256(
