@@ -6,7 +6,7 @@ import feedparser
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
 import os
-from urllib.parse import unquote_plus
+from urllib.parse import quote_plus, unquote_plus
 
 from manager_feeder import feed_manager_from_text
 
@@ -70,7 +70,7 @@ def clean_html_text(text):
     return soup.get_text(" ", strip=True)
 
 
-def fetch_rss_items(rss_url, limit=5):
+def fetch_rss_items(rss_url, limit=8):
     feed = feedparser.parse(rss_url)
     items = []
 
@@ -89,6 +89,15 @@ def fetch_rss_items(rss_url, limit=5):
             })
 
     return items
+
+
+def build_google_news_rss(query, lang="zh-CN", region="CN"):
+    encoded_query = quote_plus(query)
+
+    if lang == "en-US" or region == "US":
+        return f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+
+    return f"https://news.google.com/rss/search?q={encoded_query}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
 
 
 def fetch_page_text(url):
@@ -155,7 +164,7 @@ def is_targeted_rss(rss_url, manager_name, keywords):
     return False
 
 
-def run_auto_feed():
+def run_auto_feed(max_articles_per_manager=5, per_rss_limit=8):
     with open("sources.json", "r", encoding="utf-8") as f:
         config = json.load(f)
 
@@ -164,23 +173,49 @@ def run_auto_feed():
     for manager in managers:
         manager_name = manager["manager_name"]
         keywords = list(manager.get("keywords", []))
-        rss_feeds = manager.get("rss_feeds", [])
+        base_rss_feeds = list(manager.get("rss_feeds", []))
+        search_queries = list(manager.get("search_queries", []))
 
         if manager_name not in keywords:
             keywords.append(manager_name)
 
+        lang = "en-US" if all(ord(c) < 128 for c in manager_name) else "zh-CN"
+        region = "US" if lang == "en-US" else "CN"
+
+        generated_rss = [build_google_news_rss(q, lang=lang, region=region) for q in search_queries if q]
+
+        rss_feeds = []
+        seen_feed = set()
+        for feed in base_rss_feeds + generated_rss:
+            if feed and feed not in seen_feed:
+                seen_feed.add(feed)
+                rss_feeds.append(feed)
+
         print(f"\n========== 开始扫描：{manager_name} ==========")
+        print(f"search_queries({len(search_queries)}): {search_queries}")
+
+        manager_found = 0
+        manager_skipped = 0
+        manager_saved_rules = 0
+        manager_processed_articles = 0
 
         for rss_url in rss_feeds:
-            print(f"读取 RSS：{rss_url}")
+            if manager_processed_articles >= max_articles_per_manager:
+                print(f"已达到经理文章处理上限 {max_articles_per_manager}，停止本轮。")
+                break
 
-            items = fetch_rss_items(rss_url, limit=5)
+            print(f"读取 RSS：{rss_url}")
+            items = fetch_rss_items(rss_url, limit=per_rss_limit)
+            manager_found += len(items)
 
             if not items:
                 print("这个 RSS 暂时没有抓到内容，跳过。")
                 continue
 
             for item in items:
+                if manager_processed_articles >= max_articles_per_manager:
+                    break
+
                 try:
                     title = item["title"]
                     link = item["link"]
@@ -191,6 +226,7 @@ def run_auto_feed():
                     print(link)
 
                     if already_processed(link):
+                        manager_skipped += 1
                         print("已处理过，跳过。")
                         continue
 
@@ -216,6 +252,7 @@ RSS摘要：
                     if not is_targeted_feed:
                         keyword_text = title + "\n" + summary + "\n" + text + "\n" + link
                         if not manager_keyword_hit(keyword_text, keywords):
+                            manager_skipped += 1
                             print("泛资讯源关键词不匹配，跳过。")
                             continue
 
@@ -224,6 +261,9 @@ RSS摘要：
                         raw_text=combined_text,
                         source=link
                     )
+
+                    manager_processed_articles += 1
+                    manager_saved_rules += saved
 
                     if saved > 0:
                         mark_processed(manager_name, link, title)
@@ -234,8 +274,14 @@ RSS摘要：
                     time.sleep(2)
 
                 except Exception as e:
+                    manager_skipped += 1
                     print(f"处理单篇文章失败，继续下一篇：{e}")
                     continue
+
+        print(
+            f"扫描完成：经理={manager_name}，发现文章={manager_found}，跳过={manager_skipped}，"
+            f"处理文章={manager_processed_articles}，成功写入规则={manager_saved_rules}"
+        )
 
 
 if __name__ == "__main__":
