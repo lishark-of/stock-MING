@@ -66,11 +66,15 @@ def fetch_rss_items(rss_url, limit=5):
     for entry in feed.entries[:limit]:
         title = getattr(entry, "title", "")
         link = getattr(entry, "link", "")
+        summary = getattr(entry, "summary", "")
+        published = getattr(entry, "published", "")
 
         if title and link:
             items.append({
                 "title": title,
-                "link": link
+                "link": link,
+                "summary": summary,
+                "published": published
             })
 
     return items
@@ -140,6 +144,8 @@ def run_auto_feed():
             for item in items:
                 title = item["title"]
                 link = item["link"]
+                summary = item.get("summary", "")
+                published = item.get("published", "")
 
                 print(f"\n发现文章：{title}")
                 print(link)
@@ -152,9 +158,17 @@ def run_auto_feed():
 
                 combined_text = f"""
 标题：{title}
+发布时间：{published}
 链接：{link}
-正文：
+
+RSS摘要：
+{summary}
+
+网页正文：
 {text}
+
+说明：
+如果网页正文为空，也请基于标题和RSS摘要提炼可能的投资信息。
 """
 
                 is_targeted_rss = manager_name in rss_url or any(
