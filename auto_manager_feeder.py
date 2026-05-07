@@ -59,7 +59,7 @@ def mark_processed(manager_name, url, title=""):
         print(f"记录已处理链接失败：{e}")
 
 
-def fetch_rss_items(rss_url, limit=3):
+def fetch_rss_items(rss_url, limit=5):
     feed = feedparser.parse(rss_url)
     items = []
 
@@ -106,7 +106,7 @@ def manager_keyword_hit(text, keywords):
         return False
 
     for kw in keywords:
-        if kw in text:
+        if kw and kw.lower() in text.lower():
             return True
 
     return False
@@ -123,7 +123,6 @@ def run_auto_feed():
         keywords = manager.get("keywords", [])
         rss_feeds = manager.get("rss_feeds", [])
 
-        # 自动把 manager_name 加进关键词，避免忘写名字导致过滤失败
         if manager_name not in keywords:
             keywords.append(manager_name)
 
@@ -149,10 +148,8 @@ def run_auto_feed():
                     print("已处理过，跳过。")
                     continue
 
-                # 先抓正文，不要只靠标题判断
                 text = fetch_page_text(link)
 
-                # 如果正文抓不到，就用标题 + 链接也尝试投喂
                 combined_text = f"""
 标题：{title}
 链接：{link}
@@ -160,29 +157,29 @@ def run_auto_feed():
 {text}
 """
 
-                # 判断是否是“定向 RSS”
-                # 如果 RSS 链接里本身包含经理名字，说明这个源就是专门搜这个经理的，可以放宽
-                is_targeted_rss = manager_name in rss_url or any(kw in rss_url for kw in keywords)
+                is_targeted_rss = manager_name in rss_url or any(
+                    kw and kw in rss_url for kw in keywords
+                )
 
-                # 普通泛资讯源才需要关键词过滤
                 if not is_targeted_rss:
                     if not manager_keyword_hit(title + "\n" + text + "\n" + link, keywords):
                         print("标题和正文关键词都不匹配，跳过。")
-                        # 注意：这里不要 mark_processed，避免以后关键词改好后无法重新处理
                         continue
 
-                # 如果正文太短，也不要直接放弃，交给 manager_feeder 判断
                 saved = feed_manager_from_text(
                     manager_name=manager_name,
                     raw_text=combined_text,
                     source=link
                 )
 
-                # 只有处理过的文章才记录，避免无效链接占坑
-                mark_processed(manager_name, link, title)
-
-                print(f"文章处理完成，新增规则：{saved}")
+                if saved > 0:
+                    mark_processed(manager_name, link, title)
+                    print(f"文章处理完成，新增规则：{saved}，已记录为处理成功。")
+                else:
+                    print("文章处理完成，但新增规则为 0。暂不记录 processed_sources，下次仍可重试。")
 
                 time.sleep(2)
-                if __name__ == "__main__":
+
+
+if __name__ == "__main__":
     run_auto_feed()
