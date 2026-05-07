@@ -123,12 +123,16 @@ def run_auto_feed():
         keywords = manager.get("keywords", [])
         rss_feeds = manager.get("rss_feeds", [])
 
+        # 自动把 manager_name 加进关键词，避免忘写名字导致过滤失败
+        if manager_name not in keywords:
+            keywords.append(manager_name)
+
         print(f"\n========== 开始扫描：{manager_name} ==========")
 
         for rss_url in rss_feeds:
             print(f"读取 RSS：{rss_url}")
 
-            items = fetch_rss_items(rss_url, limit=3)
+            items = fetch_rss_items(rss_url, limit=5)
 
             if not items:
                 print("这个 RSS 暂时没有抓到内容，跳过。")
@@ -145,37 +149,40 @@ def run_auto_feed():
                     print("已处理过，跳过。")
                     continue
 
-                combined_preview = title + " " + link
-
-                if not manager_keyword_hit(combined_preview, keywords):
-                    print("标题关键词不匹配，跳过。")
-                    mark_processed(manager_name, link, title)
-                    continue
-
+                # 先抓正文，不要只靠标题判断
                 text = fetch_page_text(link)
 
-                if not text:
-                    print("正文为空，跳过。")
-                    mark_processed(manager_name, link, title)
-                    continue
+                # 如果正文抓不到，就用标题 + 链接也尝试投喂
+                combined_text = f"""
+标题：{title}
+链接：{link}
+正文：
+{text}
+"""
 
-                if not manager_keyword_hit(text + title, keywords):
-                    print("正文关键词不匹配，跳过。")
-                    mark_processed(manager_name, link, title)
-                    continue
+                # 判断是否是“定向 RSS”
+                # 如果 RSS 链接里本身包含经理名字，说明这个源就是专门搜这个经理的，可以放宽
+                is_targeted_rss = manager_name in rss_url or any(kw in rss_url for kw in keywords)
 
+                # 普通泛资讯源才需要关键词过滤
+                if not is_targeted_rss:
+                    if not manager_keyword_hit(title + "\n" + text + "\n" + link, keywords):
+                        print("标题和正文关键词都不匹配，跳过。")
+                        # 注意：这里不要 mark_processed，避免以后关键词改好后无法重新处理
+                        continue
+
+                # 如果正文太短，也不要直接放弃，交给 manager_feeder 判断
                 saved = feed_manager_from_text(
                     manager_name=manager_name,
-                    raw_text=text,
+                    raw_text=combined_text,
                     source=link
                 )
 
+                # 只有处理过的文章才记录，避免无效链接占坑
                 mark_processed(manager_name, link, title)
 
                 print(f"文章处理完成，新增规则：{saved}")
 
                 time.sleep(2)
-
-
-if __name__ == "__main__":
+                if __name__ == "__main__":
     run_auto_feed()
