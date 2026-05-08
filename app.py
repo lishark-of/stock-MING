@@ -9,6 +9,16 @@ import io
 import pandas as pd
 import numpy as np
 
+def get_config_value(name, default=""):
+    env_value = os.getenv(name)
+    if env_value:
+        return env_value
+
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
+
 # ==========================================
 # 🚀 基金经理AI克隆系统 - 核心逻辑引擎
 # ==========================================
@@ -108,11 +118,22 @@ def split_text_to_chunks(text, chunk_size=4000, overlap=200):
         start = end - overlap
     return chunks
 
+def get_deepseek_api_key():
+    keys = st.session_state.get("ds_keys") or []
+    if not keys:
+        return None
+
+    index = st.session_state.get("ds_key_index", 0) % len(keys)
+    st.session_state.ds_key_index = index + 1
+    st.session_state.ds_key = keys[index]
+    return keys[index]
+
 def semantic_search_manager_knowledge(manager_name, query, top_k=3):
-    if not st.session_state.ds_key or not supabase:
+    api_key = get_deepseek_api_key()
+    if not api_key or not supabase:
         return []
     
-    client = OpenAI(api_key=st.session_state.ds_key)
+    client = OpenAI(api_key=api_key)
     try:
         query_response = client.embeddings.create(
             model="text-embedding-3-small",
@@ -187,6 +208,9 @@ def log_token_usage(prompt_tokens_estimate=2000, completion_tokens_estimate=1500
     st.session_state.token_usage['deepseek_calls'] += 1
     st.session_state.token_usage['estimated_tokens'] += (prompt_tokens_estimate + completion_tokens_estimate)
 
+def estimate_tokens(text):
+    return max(1, int(len(str(text)) / 1.7))
+
 # ==========================================
 # 2. 核心功能与缓存提速优化
 # ==========================================
@@ -207,13 +231,134 @@ def get_historical_data(ticker, start_str, end_str):
     except:
         return pd.DataFrame()
 
+def compute_rsi_series(close, period=14):
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def calc_max_drawdown(close):
+    if close.empty:
+        return 0.0
+    peak = close.cummax()
+    drawdown = close / peak - 1
+    return round(float(drawdown.min() * 100), 2)
+
+def format_replay_case(case):
+    return (
+        f"{case['start_date']}->{case['end_date']} | "
+        f"窗口涨跌 {case['window_return']}% | "
+        f"回撤 {case['max_drawdown']}% | "
+        f"波动 {case['volatility']}% | "
+        f"量能 {case['volume_ratio']}x | "
+        f"RSI {case['rsi']} | "
+        f"MA20偏离 {case['ma20_gap']}% | "
+        f"MA60状态 {case['ma60_state']} | "
+        f"未来20日 {case['future_20d_return']}% | "
+        f"未来60日 {case['future_60d_return']}% | "
+        f"结果 {case['outcome']}"
+    )
+
+@st.cache_data(ttl=1800)
+def build_auto_replay_cases(ticker, lookback_days=760, window_days=60, future_days=60, case_count=10):
+    today = datetime.date.today()
+    start = today - datetime.timedelta(days=lookback_days + 180)
+    end = today + datetime.timedelta(days=1)
+    hist = get_historical_data(ticker, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+
+    if hist.empty or len(hist) < window_days + future_days + 80:
+        return [], pd.DataFrame()
+
+    hist = hist.copy()
+    hist = hist.dropna(subset=["Close"])
+    hist["MA20"] = hist["Close"].rolling(20).mean()
+    hist["MA60"] = hist["Close"].rolling(60).mean()
+    hist["RSI"] = compute_rsi_series(hist["Close"], 14)
+    hist["VolumeMA20"] = hist["Volume"].rolling(20).mean() if "Volume" in hist.columns else 0
+
+    min_date = pd.Timestamp(today - datetime.timedelta(days=lookback_days)).tz_localize(None)
+    dates = pd.Series(hist.index).apply(lambda x: pd.Timestamp(x).tz_localize(None))
+    candidate_positions = [
+        i for i, d in enumerate(dates)
+        if d >= min_date and i >= window_days + 60 and i <= len(hist) - future_days - 1
+    ]
+
+    if not candidate_positions:
+        return [], hist
+
+    case_count = max(4, min(int(case_count), 16, len(candidate_positions)))
+    selected_positions = np.linspace(0, len(candidate_positions) - 1, case_count, dtype=int)
+    end_positions = [candidate_positions[i] for i in selected_positions]
+
+    cases = []
+    for end_pos in end_positions:
+        start_pos = end_pos - window_days
+        future_20_pos = min(end_pos + 20, len(hist) - 1)
+        future_60_pos = min(end_pos + future_days, len(hist) - 1)
+
+        window = hist.iloc[start_pos:end_pos + 1]
+        end_row = hist.iloc[end_pos]
+        start_close = float(window["Close"].iloc[0])
+        end_close = float(window["Close"].iloc[-1])
+        future_20_close = float(hist["Close"].iloc[future_20_pos])
+        future_60_close = float(hist["Close"].iloc[future_60_pos])
+
+        window_return = (end_close / start_close - 1) * 100 if start_close else 0
+        future_20_return = (future_20_close / end_close - 1) * 100 if end_close else 0
+        future_60_return = (future_60_close / end_close - 1) * 100 if end_close else 0
+        volatility = float(window["Close"].pct_change().std() * 100) if len(window) > 2 else 0
+
+        volume_ratio = 0.0
+        volume_ma20 = end_row.get("VolumeMA20", 0)
+        if "Volume" in hist.columns and pd.notna(volume_ma20) and volume_ma20:
+            volume_ratio = float(end_row.get("Volume", 0) / volume_ma20)
+
+        ma20_raw = end_row.get("MA20", 0)
+        ma60_raw = end_row.get("MA60", 0)
+        rsi_raw = end_row.get("RSI", 0)
+        ma20 = float(ma20_raw) if pd.notna(ma20_raw) else 0
+        ma60 = float(ma60_raw) if pd.notna(ma60_raw) else 0
+        rsi = float(rsi_raw) if pd.notna(rsi_raw) else 0
+        ma20_gap = (end_close / ma20 - 1) * 100 if ma20 else 0
+        ma60_state = "站上MA60" if ma60 and end_close >= ma60 else "低于MA60"
+
+        if future_60_return >= 12:
+            outcome = "大幅上涨"
+        elif future_60_return >= 4:
+            outcome = "温和上涨"
+        elif future_60_return <= -12:
+            outcome = "大幅下跌"
+        elif future_60_return <= -4:
+            outcome = "温和下跌"
+        else:
+            outcome = "震荡"
+
+        cases.append({
+            "start_date": window.index[0].strftime("%Y-%m-%d"),
+            "end_date": window.index[-1].strftime("%Y-%m-%d"),
+            "start_close": round(start_close, 2),
+            "end_close": round(end_close, 2),
+            "window_return": round(window_return, 2),
+            "max_drawdown": calc_max_drawdown(window["Close"]),
+            "volatility": round(volatility, 2),
+            "volume_ratio": round(volume_ratio, 2),
+            "rsi": round(rsi, 2),
+            "ma20_gap": round(ma20_gap, 2),
+            "ma60_state": ma60_state,
+            "future_20d_return": round(future_20_return, 2),
+            "future_60d_return": round(future_60_return, 2),
+            "outcome": outcome,
+        })
+
+    return cases, hist
+
 def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"):
-    if 'ds_key' not in st.session_state or not st.session_state.ds_key:
+    api_key = get_deepseek_api_key()
+    if not api_key:
         return st.error("❌ 缺少 DeepSeek 密钥")
 
     try:
-        log_token_usage()
-
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
         time_guard = f"""
@@ -227,9 +372,10 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
 """
 
         final_system_role = system_role + "\n" + time_guard
+        log_token_usage(estimate_tokens(final_system_role + prompt), 4000)
 
         client = OpenAI(
-            api_key=st.session_state.ds_key,
+            api_key=api_key,
             base_url="https://api.deepseek.com/v1"
         )
 
@@ -251,12 +397,11 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
 
 
 def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理。", max_tokens=2000):
-    if 'ds_key' not in st.session_state or not st.session_state.ds_key:
+    api_key = get_deepseek_api_key()
+    if not api_key:
         return None
 
     try:
-        log_token_usage()
-
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
         time_guard = f"""
@@ -270,9 +415,10 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
 """
 
         final_system_role = system_role + "\n" + time_guard
+        log_token_usage(estimate_tokens(final_system_role + prompt), max_tokens)
 
         client = OpenAI(
-            api_key=st.session_state.ds_key,
+            api_key=api_key,
             base_url="https://api.deepseek.com/v1"
         )
 
@@ -344,11 +490,30 @@ if st.session_state.user_role is None:
             else: st.error("密钥验证失败")
 else:
     try:
-        st.session_state.ds_key = st.secrets["DEEPSEEK_API_KEY"]
-        sb_url = st.secrets["SUPABASE_URL"]
-        sb_key = st.secrets["SUPABASE_KEY"]
+        raw_ds_keys = [
+            get_config_value("DEEPSEEK_API_KEY"),
+            get_config_value("DEEPSEEK_TOKEN_1"),
+            get_config_value("DEEPSEEK_TOKEN_2"),
+        ]
+        ds_keys = []
+        for key in raw_ds_keys:
+            key = str(key).strip()
+            if key and key not in ds_keys:
+                ds_keys.append(key)
+
+        st.session_state.ds_keys = ds_keys
+        st.session_state.ds_key = ds_keys[0] if ds_keys else None
+        if "ds_key_index" not in st.session_state:
+            st.session_state.ds_key_index = 0
+
+        sb_url = get_config_value("SUPABASE_URL")
+        sb_key = get_config_value("SUPABASE_KEY")
+        if not sb_url or not sb_key:
+            raise ValueError("缺少 SUPABASE_URL 或 SUPABASE_KEY")
+
         supabase: Client = create_client(sb_url, sb_key)
     except Exception as e:
+        st.session_state.ds_keys = []
         st.session_state.ds_key = None
         supabase = None
         st.error(f"⚠️ 云端配置缺失: {e}")
@@ -382,11 +547,203 @@ else:
         try:
             supabase.table("brain_memory").delete().in_("id", ids_to_delete).execute()
         except: pass
+
+    def _fmt_pct(value):
+        if value is None:
+            return "N/A"
+        sign = "+" if value > 0 else ""
+        return f"{sign}{value:.2f}%"
+
+    @st.cache_data(ttl=900)
+    def fetch_market_snapshot():
+        symbols = [
+            ("A股上证", "000001.SS"),
+            ("A股深成", "399001.SZ"),
+            ("港股恒生", "^HSI"),
+            ("美股纳指", "^IXIC"),
+            ("美股标普", "^GSPC"),
+            ("USD/JPY", "JPY=X"),
+            ("黄金", "GC=F"),
+            ("半导体ETF", "SMH"),
+            ("新能源ETF", "ICLN"),
+            ("有色金属ETF", "COPX"),
+            ("中概互联网ETF", "KWEB"),
+        ]
+
+        snapshot = []
+        for name, symbol in symbols:
+            try:
+                hist = yf.Ticker(symbol).history(period="7d", interval="1d")
+                close = hist["Close"].dropna() if not hist.empty else pd.Series(dtype=float)
+                if len(close) < 2:
+                    snapshot.append(f"{name}({symbol})：暂无足够行情")
+                    continue
+
+                latest = float(close.iloc[-1])
+                previous = float(close.iloc[-2])
+                change_pct = (latest / previous - 1) * 100 if previous else None
+                snapshot.append(
+                    f"{name}({symbol})：最新 {latest:.2f}，近一日 {_fmt_pct(change_pct)}"
+                )
+            except Exception as e:
+                snapshot.append(f"{name}({symbol})：行情抓取失败，原因 {e}")
+
+        return snapshot
+
+    def fetch_recent_market_context(limit=18):
+        if not supabase:
+            return []
+
+        context = []
+
+        try:
+            res = (
+                supabase
+                .table("market_news")
+                .select("keyword, title, summary, risk_tag, sentiment, created_at")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            for item in res.data or []:
+                title = item.get("title", "")
+                if not title:
+                    continue
+                context.append(
+                    f"market_news｜{item.get('keyword', '')}｜{title}"
+                    f"｜情绪:{item.get('sentiment', '')}"
+                    f"｜风险:{item.get('risk_tag', '')}"
+                    f"｜摘要:{item.get('summary', '')}"
+                    f"｜时间:{item.get('created_at', '')}"
+                )
+        except Exception as e:
+            context.append(f"market_news 读取失败：{e}")
+
+        try:
+            res = (
+                supabase
+                .table("processed_sources")
+                .select("manager_name, title, url, created_at")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            for item in res.data or []:
+                title = item.get("title", "")
+                if not title:
+                    continue
+                context.append(
+                    f"processed_sources｜{item.get('manager_name', '')}｜{title}"
+                    f"｜时间:{item.get('created_at', '')}"
+                    f"｜链接:{item.get('url', '')}"
+                )
+        except Exception as e:
+            context.append(f"processed_sources 读取失败：{e}")
+
+        return context[:limit]
+
+    def summarize_context_trends(context_lines):
+        trend_terms = {
+            "AI算力/数据中心": ["ai算力", "算力", "gpu", "data center", "数据中心", "ai infrastructure"],
+            "半导体/光模块": ["半导体", "光模块", "cpo", "硅光", "semiconductor", "tsmc", "nvidia"],
+            "机器人/具身智能": ["机器人", "具身智能", "robotics", "humanoid"],
+            "创新药/GLP-1": ["创新药", "glp-1", "biotech", "药明", "恒瑞", "康方"],
+            "黄金/有色/资源": ["黄金", "金价", "有色", "铜", "copper", "gold", "uranium"],
+            "低空经济/军工": ["低空经济", "无人机", "军工", "defense tech", "defense"],
+            "高股息/防守": ["高股息", "红利", "dividend", "utility", "银行", "煤炭"],
+            "港股互联网/回购": ["港股", "恒生科技", "互联网", "回购", "hsi"],
+            "加密/稳定币": ["stablecoin", "bitcoin", "crypto", "比特币", "稳定币"],
+        }
+
+        text = "\n".join(context_lines or []).lower()
+        hits = []
+        for theme, keywords in trend_terms.items():
+            score = 0
+            for keyword in keywords:
+                score += text.count(keyword.lower())
+            if score > 0:
+                hits.append((score, theme))
+
+        hits.sort(reverse=True)
+        if not hits:
+            return "暂无明显新趋势命中，按市场快照和经理规则判断。"
+
+        return "\n".join([f"{theme}：近期线索命中 {score} 次" for score, theme in hits[:6]])
+
+    def load_auto_feed_feedback(limit=8):
+        feedback = {
+            "market_news": [],
+            "processed_sources": [],
+            "manager_rules": [],
+            "manager_scores": [],
+        }
+
+        if not supabase:
+            return feedback
+
+        try:
+            feedback["market_news"] = (
+                supabase
+                .table("market_news")
+                .select("keyword, title, risk_tag, sentiment, created_at")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data or []
+            )
+        except Exception as e:
+            feedback["market_news_error"] = str(e)
+
+        try:
+            feedback["processed_sources"] = (
+                supabase
+                .table("processed_sources")
+                .select("manager_name, title, url, created_at")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data or []
+            )
+        except Exception as e:
+            feedback["processed_sources_error"] = str(e)
+
+        try:
+            feedback["manager_rules"] = (
+                supabase
+                .table("manager_rules")
+                .select("manager_name, rule_type, content, source, created_at")
+                .order("id", desc=True)
+                .limit(limit)
+                .execute()
+                .data or []
+            )
+        except Exception as e:
+            feedback["manager_rules_error"] = str(e)
+
+        try:
+            feedback["manager_scores"] = (
+                supabase
+                .table("manager_scores")
+                .select("manager_name, market_fit_score, style_clarity_score, recent_activity_score, risk_control_score, created_at")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data or []
+            )
+        except Exception as e:
+            feedback["manager_scores_error"] = str(e)
+
+        return feedback
+
     def build_today_watchlist_prompt():
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
         db = load_cloud_knowledge()
         brain_rules = "\n".join((db["strategies"] + db["reflections"])[-20:])
+        market_snapshot = "\n".join(fetch_market_snapshot())
+        market_context_lines = fetch_recent_market_context()
+        market_context = "\n".join(market_context_lines)
+        emerging_trends = summarize_context_trends(market_context_lines)
 
         try:
             manager_res = (
@@ -409,7 +766,16 @@ else:
         prompt = f"""
 当前时间：{today_str}
 
-你是我的个人投研总控台。请基于以下两类资料生成【今日关注池】：
+你是我的个人投研总控台。请基于以下四类资料生成【今日关注池】：
+
+【今日市场快照】
+{market_snapshot}
+
+【近期市场/经理资讯线索】
+{market_context if market_context else "暂无可用新闻线索。"}
+
+【新趋势候选】
+{emerging_trends}
 
 【我的交易外脑 brain_memory】
 {brain_rules}
@@ -453,10 +819,11 @@ else:
 - 风险红线
 
 强制要求：
-1. 不要编造实时新闻。
-2. 如果缺少今天最新行情或新闻，必须明确说明。
-3. 结论要偏交易实用，不要写空话。
-4. 每类最多给 3 个方向。
+1. 必须优先使用【今日市场快照】和【近期市场/经理资讯线索】，不要开头写“缺少实时行情/新闻”这种笼统免责声明。
+2. 如果某个具体数据源显示“抓取失败”或“暂无足够行情”，只说明该源缺失，不要否定全部实时数据。
+3. 不要编造没有出现在材料里的实时新闻、公告、资金流或持仓。
+4. 结论要偏交易实用，不要写空话。
+5. 每类最多给 3 个方向。
 """
         return prompt
     def load_manager_rules(manager_name, limit=30):
@@ -1174,6 +1541,48 @@ else:
                 prompt,
                 system_role="你是冷静的投研总控台，负责生成今日关注池和风险分层。"
             )
+
+        with st.expander("🔎 自动投喂反馈 / 最近入库", expanded=False):
+            feedback = load_auto_feed_feedback(limit=8)
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("市场新闻", len(feedback.get("market_news", [])))
+            c2.metric("已处理来源", len(feedback.get("processed_sources", [])))
+            c3.metric("新增经理规则", len(feedback.get("manager_rules", [])))
+            c4.metric("经理评分", len(feedback.get("manager_scores", [])))
+
+            st.caption("GitHub Actions 每 30 分钟跑一次自动投喂；这里显示最近写入 Supabase 的记录。")
+
+            feed_tab1, feed_tab2, feed_tab3, feed_tab4 = st.tabs([
+                "市场新闻",
+                "经理来源",
+                "经理规则",
+                "经理评分",
+            ])
+
+            with feed_tab1:
+                if feedback.get("market_news"):
+                    st.dataframe(pd.DataFrame(feedback["market_news"]), use_container_width=True)
+                else:
+                    st.info("暂时没有最近市场新闻入库。")
+
+            with feed_tab2:
+                if feedback.get("processed_sources"):
+                    st.dataframe(pd.DataFrame(feedback["processed_sources"]), use_container_width=True)
+                else:
+                    st.info("暂时没有最近处理成功的经理来源。")
+
+            with feed_tab3:
+                if feedback.get("manager_rules"):
+                    st.dataframe(pd.DataFrame(feedback["manager_rules"]), use_container_width=True)
+                else:
+                    st.info("暂时没有最近新增的经理规则。")
+
+            with feed_tab4:
+                if feedback.get("manager_scores"):
+                    st.dataframe(pd.DataFrame(feedback["manager_scores"]), use_container_width=True)
+                else:
+                    st.info("暂时没有最近经理评分。")
     # 模块 A：天眼风控
     with tab_risk:
         st.markdown(f"### 🛡️ 极高权限合规审计：{target}")
@@ -1306,56 +1715,165 @@ else:
     # 模块 B：炼丹炉
     with tab_rl:
         st.markdown(f"### ⏳ 强化学习时光机：{target}")
-        st.caption("截断历史数据让AI盲猜，用未来数据打脸，逼迫其生成量化纪律。")
-        
-        col1, col2 = st.columns(2)
-        with col1: start_d = st.date_input("盲测起点", datetime.date(2023, 1, 1), key="rl_start")
-        with col2: end_d = st.date_input("盲测终点", datetime.date(2023, 6, 1), key="rl_end")
+        st.caption("自动从近两年抽取多个历史窗口，用后续走势反向校验，提炼这只票自己的交易规范。")
 
-        if st.button("🔥 启动闭门军演", key="btn_rl"):
-            with st.spinner("正在切割历史时间线..."):
-                s_str = start_d.strftime('%Y-%m-%d')
-                e_str = end_d.strftime('%Y-%m-%d')
-                
-                hist = get_historical_data(target, s_str, e_str)
-                
-                if hist.empty:
-                    st.warning("⚠️ 该时间段无数据。")
+        auto_tab, manual_tab = st.tabs(["自动多段复盘", "手动单段盲测"])
+
+        with auto_tab:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                case_count = st.slider("抽样段数", 6, 14, 10, key="rl_case_count")
+            with c2:
+                window_days = st.selectbox("观察窗口", [40, 60, 90], index=1, key="rl_window_days")
+            with c3:
+                future_days = st.selectbox("验证窗口", [20, 40, 60], index=2, key="rl_future_days")
+
+            st.caption("默认会把提示词和回答控制在 20,000 token 以内；段数越多，越接近该票的真实性格。")
+
+            if st.button("🧪 自动炼丹：生成该票交易规范", key="btn_auto_rl", type="primary"):
+                with st.spinner("正在回放近两年历史片段..."):
+                    cases, hist = build_auto_replay_cases(
+                        target,
+                        lookback_days=760,
+                        window_days=window_days,
+                        future_days=future_days,
+                        case_count=case_count,
+                    )
+
+                if not cases:
+                    st.warning("⚠️ 历史数据不足，无法做多段复盘。可以换成上市更久的标的，或缩短观察窗口。")
                 else:
-                    start_p = round(hist['Close'].iloc[0], 2)
-                    end_p = round(hist['Close'].iloc[-1], 2)
-                    
-                    future_d = end_d + datetime.timedelta(days=30)
-                    f_str = future_d.strftime('%Y-%m-%d')
-                    future = get_historical_data(target, e_str, f_str)
-                    future_p = round(future['Close'].iloc[-1], 2) if not future.empty else "未知"
-                    
-                    st.markdown(f"**📈 喂养数据**：从 {start_p} 至 {end_p}。")
-                    st.markdown(f"**🔮 现实毒打**：一个月后走到 {future_p}。")
-                    
-                    rl_prompt = f"""
-                    背景：{s_str} 到 {e_str}，{target} 从 {start_p} 至 {end_p}。
-                    现实：后续一个月到了 {future_p}。
-                    指令：提炼一条不超过 40 字的硬核量化纪律。
-                    """
-                    
-                    st.markdown("### 🔴 历史左右互搏流")
-                    call_deepseek_stream(rl_prompt)
-                    
-                    if st.session_state.ds_key:
-                        try:
-                            res = call_deepseek_non_stream(rl_prompt + "请只输出那条 40 字以内的纪律本身。")
-                            if res:
-                                market_tag = {
-                                    "US_STOCK": "🇺🇸",
-                                    "HK_STOCK": "🇭🇰",
-                                    "JP_STOCK": "🇯🇵",
-                                    "A_SHARE_SH": "🇨🇳",
-                                    "A_SHARE_SZ": "🇨🇳",
-                                }.get(market_type, "🌍")
-                                insert_cloud_memory("reflection", f"【时光机 - {target}】{market_tag}: {res}")
-                                st.success(f"✅ 纪律已写入云端：{res}")
-                        except: pass
+                    case_df = pd.DataFrame(cases)
+                    st.markdown("#### 历史切片样本")
+                    st.dataframe(case_df, use_container_width=True)
+
+                    case_lines = "\n".join(format_replay_case(case) for case in cases)
+                    latest_close = round(float(hist["Close"].dropna().iloc[-1]), 2) if not hist.empty else "未知"
+                    market_tag = {
+                        "US_STOCK": "美股",
+                        "HK_STOCK": "港股",
+                        "JP_STOCK": "日股",
+                        "A_SHARE_SH": "A股",
+                        "A_SHARE_SZ": "A股",
+                    }.get(market_type, "全球市场")
+
+                    auto_prompt = f"""
+标的：{target}
+市场：{market_tag}
+最新价格：{currency} {latest_close}
+复盘范围：近两年
+观察窗口：每段 {window_days} 个交易日
+验证窗口：每段后续 {future_days} 个交易日
+
+以下是系统自动抽取的历史切片。每个切片只给你当时窗口内可见的量价状态，并附上事后验证结果：
+{case_lines}
+
+请在不超过 2 万 token 总预算内，输出这只票的【交易规范 v1】：
+
+1. 这只票的性格画像
+   - 顺周期/逆周期
+   - 趋势型/震荡型/消息驱动型
+   - 对均线、量能、回撤、RSI 的敏感点
+
+2. 胜率更高的买入场景
+   - 必须给出可执行触发条件
+   - 不要写“看情况”
+
+3. 失败率更高的追买场景
+   - 哪些上涨不能追
+   - 哪些下跌不是机会
+
+4. 卖出和风控规范
+   - 止损条件
+   - 止盈/减仓条件
+   - 失效条件
+
+5. 仓位规范
+   - 试错仓
+   - 加仓条件
+   - 禁止重仓条件
+
+6. 下一次实盘检查清单
+   - 只列 8 条以内
+
+要求：
+- 只能基于历史切片和当前价格提炼规律。
+- 不要编造新闻、公告、资金流或基本面信息。
+- 每条规则必须能被价格、涨跌幅、均线、量能、回撤或 RSI 验证。
+- 最后给一段 80 字以内的硬核纪律，方便写入交易外脑。
+"""
+
+                    estimated_total = estimate_tokens(auto_prompt) + 3600
+                    st.info(f"本次预计 token 消耗约 {estimated_total:,}，目标上限 20,000。")
+
+                    if estimated_total > 20000:
+                        st.warning("当前样本过多，建议把抽样段数调低后再跑。")
+                    else:
+                        result = call_deepseek_non_stream(
+                            auto_prompt,
+                            system_role="你是严格的量化复盘教练，只能从历史切片中归纳交易规范。",
+                            max_tokens=3600,
+                        )
+
+                        if result:
+                            st.markdown("### 该票交易规范")
+                            st.markdown(result)
+                            insert_cloud_memory(
+                                "reflection",
+                                f"【自动炼丹 - {target}】{market_tag}：{result[:1200]}"
+                            )
+                            st.success("✅ 自动炼丹结果已写入云端外脑。")
+
+        with manual_tab:
+            st.caption("保留原来的单段盲测，适合你想专门检查某一个历史阶段。")
+            col1, col2 = st.columns(2)
+            with col1: start_d = st.date_input("盲测起点", datetime.date(2023, 1, 1), key="rl_start")
+            with col2: end_d = st.date_input("盲测终点", datetime.date(2023, 6, 1), key="rl_end")
+
+            if st.button("🔥 启动闭门军演", key="btn_rl"):
+                with st.spinner("正在切割历史时间线..."):
+                    s_str = start_d.strftime('%Y-%m-%d')
+                    e_str = end_d.strftime('%Y-%m-%d')
+
+                    hist = get_historical_data(target, s_str, e_str)
+
+                    if hist.empty:
+                        st.warning("⚠️ 该时间段无数据。")
+                    else:
+                        start_p = round(hist['Close'].iloc[0], 2)
+                        end_p = round(hist['Close'].iloc[-1], 2)
+
+                        future_d = end_d + datetime.timedelta(days=30)
+                        f_str = future_d.strftime('%Y-%m-%d')
+                        future = get_historical_data(target, e_str, f_str)
+                        future_p = round(future['Close'].iloc[-1], 2) if not future.empty else "未知"
+
+                        st.markdown(f"**📈 喂养数据**：从 {start_p} 至 {end_p}。")
+                        st.markdown(f"**🔮 现实毒打**：一个月后走到 {future_p}。")
+
+                        rl_prompt = f"""
+                        背景：{s_str} 到 {e_str}，{target} 从 {start_p} 至 {end_p}。
+                        现实：后续一个月到了 {future_p}。
+                        指令：提炼一条不超过 40 字的硬核量化纪律。
+                        """
+
+                        st.markdown("### 🔴 历史左右互搏流")
+                        call_deepseek_stream(rl_prompt)
+
+                        if st.session_state.get("ds_keys"):
+                            try:
+                                res = call_deepseek_non_stream(rl_prompt + "请只输出那条 40 字以内的纪律本身。")
+                                if res:
+                                    market_tag = {
+                                        "US_STOCK": "🇺🇸",
+                                        "HK_STOCK": "🇭🇰",
+                                        "JP_STOCK": "🇯🇵",
+                                        "A_SHARE_SH": "🇨🇳",
+                                        "A_SHARE_SZ": "🇨🇳",
+                                    }.get(market_type, "🌍")
+                                    insert_cloud_memory("reflection", f"【时光机 - {target}】{market_tag}: {res}")
+                                    st.success(f"✅ 纪律已写入云端：{res}")
+                            except: pass
 
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:
