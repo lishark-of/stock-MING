@@ -1,5 +1,6 @@
 import datetime
 import json
+import math
 
 import pandas as pd
 import yfinance as yf
@@ -17,6 +18,43 @@ def infer_market_type(ticker):
     if ticker.endswith(".HK"):
         return "HK_STOCK"
     return "US_STOCK"
+
+
+def json_safe(value):
+    if value is None:
+        return ""
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    if isinstance(value, float):
+        return "" if math.isnan(value) or math.isinf(value) else value
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(v) for v in value]
+
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+
+    if hasattr(value, "item"):
+        try:
+            return json_safe(value.item())
+        except Exception:
+            pass
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    return value
+
+
+def frame_records(df, limit=8):
+    if df is None or df.empty:
+        return []
+    return json_safe(df.head(limit).where(pd.notna(df), "").to_dict("records"))
 
 
 def collect_money_flow_snapshot(ticker, market_type=None):
@@ -44,14 +82,14 @@ def collect_us_money_flow(ticker):
     try:
         holders = stock.institutional_holders
         if holders is not None and not holders.empty:
-            result["institutional_holders"] = holders.head(8).fillna("").to_dict("records")
+            result["institutional_holders"] = frame_records(holders, 8)
     except Exception as e:
         result["warnings"].append(f"13F/institutional_holders unavailable: {e}")
 
     try:
         insiders = stock.insider_transactions
         if insiders is not None and not insiders.empty:
-            result["insider_transactions"] = insiders.head(8).fillna("").to_dict("records")
+            result["insider_transactions"] = frame_records(insiders, 8)
     except Exception as e:
         result["warnings"].append(f"insider_transactions unavailable: {e}")
 
@@ -105,7 +143,7 @@ def collect_a_share_money_flow(ticker):
             if "代码" in flow_df.columns:
                 flow_df = flow_df[flow_df["代码"].astype(str) == code]
         if flow_df is not None and not flow_df.empty:
-            result["individual_fund_flow"] = flow_df.head(8).fillna("").to_dict("records")
+            result["individual_fund_flow"] = frame_records(flow_df, 8)
     except Exception as e:
         result["warnings"].append(f"stock_fund_flow_individual unavailable: {e}")
 
@@ -115,7 +153,7 @@ def collect_a_share_money_flow(ticker):
         lhb_df = ak.stock_lhb_detail_em(start_date=today, end_date=today)
         if lhb_df is not None and not lhb_df.empty and "代码" in lhb_df.columns:
             lhb_df = lhb_df[lhb_df["代码"].astype(str) == code]
-            result["dragon_tiger"] = lhb_df.head(8).fillna("").to_dict("records")
+            result["dragon_tiger"] = frame_records(lhb_df, 8)
     except Exception as e:
         result["warnings"].append(f"stock_lhb_detail_em unavailable: {e}")
 
@@ -126,7 +164,7 @@ def collect_a_share_money_flow(ticker):
             code_cols = [c for c in block_df.columns if "代码" in c]
             if code_cols:
                 block_df = block_df[block_df[code_cols[0]].astype(str) == code]
-            result["block_trade"] = block_df.head(8).fillna("").to_dict("records")
+            result["block_trade"] = frame_records(block_df, 8)
     except Exception as e:
         result["warnings"].append(f"block_trade unavailable: {e}")
 
@@ -168,7 +206,7 @@ def summarize_money_flow(flow):
         negatives.append("期权Put活跃度偏高")
 
     if flow.get("insider_transactions"):
-        text = json.dumps(flow.get("insider_transactions", [])[:5], ensure_ascii=False).lower()
+        text = json.dumps(json_safe(flow.get("insider_transactions", [])[:5]), ensure_ascii=False).lower()
         if "sale" in text or "sell" in text or "出售" in text:
             negatives.append("近期存在内部人卖出线索")
         if "purchase" in text or "buy" in text or "买入" in text:
@@ -197,8 +235,8 @@ def _top_strikes(df):
     if df is None or df.empty or "openInterest" not in df.columns:
         return []
     cols = [c for c in ["strike", "lastPrice", "volume", "openInterest", "impliedVolatility"] if c in df.columns]
-    return df.sort_values("openInterest", ascending=False).head(5)[cols].fillna("").to_dict("records")
+    return frame_records(df.sort_values("openInterest", ascending=False)[cols], 5)
 
 
 def money_flow_text(flow):
-    return json.dumps(flow, ensure_ascii=False, default=str)[:6000]
+    return json.dumps(json_safe(flow), ensure_ascii=False, default=str)[:6000]
