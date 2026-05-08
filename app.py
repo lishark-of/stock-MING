@@ -8,28 +8,117 @@ import time
 import io
 import pandas as pd
 import numpy as np
-from analysis_engine import build_ai_context_packet, build_counter_argument_prompt, build_position_aware_prompt, build_strict_risk_decision
-from data_fetcher import (
-    build_peer_snapshot,
-    build_recent_news_context,
-    compute_portfolio_health,
-    deep_research_queries,
-    get_supply_chain_profile,
-    get_valuation_snapshot,
-    institutional_signal_queries,
-    normalize_ticker,
-)
-from money_flow_tracker import collect_money_flow_snapshot, money_flow_text
-from visualizer import (
-    render_money_flow_module,
-    render_peer_snapshot,
-    render_portfolio_health_module,
-    render_recent_sentiment_module,
-    render_research_links,
-    render_risk_decision,
-    render_supply_chain_module,
-    render_valuation_module,
-)
+
+try:
+    from analysis_engine import (
+        build_ai_context_packet,
+        build_counter_argument_prompt,
+        build_position_aware_prompt,
+        build_strict_risk_decision,
+    )
+except Exception as module_error:
+    ANALYSIS_MODULE_ERROR = module_error
+
+    def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules, peer_rows=None, research_links=None):
+        return f"分析模块降级：{ANALYSIS_MODULE_ERROR}\n{supply_chain}\n{valuation}\n{news_rows}\n{replay_rules}"
+
+    def build_counter_argument_prompt(ticker, bull_case, context):
+        return f"请反驳 {ticker} 的看多理由：{bull_case}\n材料：{context}"
+
+    def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block):
+        return f"标的：{ticker}，价格：{price}，状态：{position_status}，本金：{capital_plan}\n{base_context}\n{strict_decision}\n{money_flow_text_block}"
+
+    def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None, money_flow=None, position_status="未买入 (观望/找买点)"):
+        return {"risk_score": 0, "action": "分析模块降级", "reasons": [str(ANALYSIS_MODULE_ERROR)]}
+
+try:
+    from data_fetcher import (
+        build_peer_snapshot,
+        build_recent_news_context,
+        compute_portfolio_health,
+        deep_research_queries,
+        get_supply_chain_profile,
+        get_valuation_snapshot,
+        institutional_signal_queries,
+        normalize_ticker,
+    )
+except Exception as module_error:
+    DATA_FETCHER_MODULE_ERROR = module_error
+
+    def normalize_ticker(ticker):
+        return (ticker or "").upper().strip()
+
+    def get_supply_chain_profile(ticker):
+        return {"name": normalize_ticker(ticker), "theme": "模块降级", "position": "待恢复", "a_share_links": [], "risk_transmission": str(DATA_FETCHER_MODULE_ERROR)}
+
+    def get_valuation_snapshot(ticker):
+        return {"ticker": normalize_ticker(ticker), "valuation_flag": f"估值模块降级：{DATA_FETCHER_MODULE_ERROR}"}
+
+    def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12):
+        return []
+
+    def compute_portfolio_health(target, related_tickers=None):
+        return {"tickers": [normalize_ticker(target)], "correlation": pd.DataFrame(), "metrics": {}}
+
+    def institutional_signal_queries(ticker, company_name=""):
+        return []
+
+    def deep_research_queries(ticker, company_name=""):
+        return []
+
+    def build_peer_snapshot(ticker, supply_profile=None):
+        return []
+
+try:
+    from money_flow_tracker import collect_money_flow_snapshot, money_flow_text
+except Exception as module_error:
+    MONEY_FLOW_MODULE_ERROR = module_error
+
+    def collect_money_flow_snapshot(ticker, market_type=None):
+        return {"ticker": ticker, "summary": {"positive": [], "negative": [f"资金流模块降级：{MONEY_FLOW_MODULE_ERROR}"], "stance": "中性"}, "warnings": [str(MONEY_FLOW_MODULE_ERROR)]}
+
+    def money_flow_text(flow):
+        return str(flow)
+
+try:
+    from visualizer import (
+        render_money_flow_module,
+        render_peer_snapshot,
+        render_portfolio_health_module,
+        render_recent_sentiment_module,
+        render_research_links,
+        render_risk_decision,
+        render_supply_chain_module,
+        render_valuation_module,
+    )
+except Exception as module_error:
+    VISUALIZER_MODULE_ERROR = module_error
+
+    def render_supply_chain_module(profile, portfolio_health):
+        st.warning(f"可视化模块降级：{VISUALIZER_MODULE_ERROR}")
+        st.json(profile)
+
+    def render_valuation_module(valuation):
+        st.json(valuation)
+
+    def render_recent_sentiment_module(news_rows):
+        st.dataframe(pd.DataFrame(news_rows)) if news_rows else st.info("暂无舆情")
+
+    def render_portfolio_health_module(portfolio_health):
+        st.json(portfolio_health)
+
+    def render_risk_decision(decision):
+        st.json(decision)
+
+    def render_money_flow_module(flow):
+        st.json(flow)
+
+    def render_peer_snapshot(peer_rows):
+        st.dataframe(pd.DataFrame(peer_rows)) if peer_rows else st.info("暂无同行对比")
+
+    def render_research_links(links):
+        for link in links or []:
+            st.markdown(f"- [公开检索]({link})")
 
 def get_config_value(name, default=""):
     env_value = os.getenv(name)
