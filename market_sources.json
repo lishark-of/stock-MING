@@ -70,6 +70,15 @@
       "rss_feeds": [
         "https://news.google.com/rss/search?q=AI+agents+OR+robotics+OR+nuclear+energy+OR+uranium+OR+stablecoin+OR+semiconductor+OR+data+center+OR+defense+tech+OR+GLP-1&hl=en-US&gl=US&ceid=US:en"
       ]
+    },
+    {
+      "keyword": "机构游资调仓",
+      "aliases": ["机构调仓", "基金持仓", "龙虎榜", "游资", "大宗交易", "融资融券", "股东户数", "北向资金", "增持", "减持", "回购"],
+      "rss_feeds": [
+        "https://news.google.com/rss/search?q=%E6%9C%BA%E6%9E%84%E8%B0%83%E4%BB%93+OR+%E5%9F%BA%E9%87%91%E6%8C%81%E4%BB%93+OR+%E9%BE%99%E8%99%8E%E6%A6%9C+OR+%E6%B8%B8%E8%B5%84+OR+%E5%A4%A7%E5%AE%97%E4%BA%A4%E6%98%93+OR+%E8%9E%8D%E8%B5%84%E8%9E%8D%E5%88%B8&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+        "https://news.google.com/rss/search?q=site%3Aeastmoney.com+%E9%BE%99%E8%99%8E%E6%A6%9C+%E6%9C%BA%E6%9E%84+%E6%B8%B8%E8%B5%84&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+        "https://news.google.com/rss/search?q=site%3Afinance.sina.com.cn+%E5%A4%A7%E5%AE%97%E4%BA%A4%E6%98%93+%E6%9C%BA%E6%9E%84+%E5%A2%9E%E6%8C%81+%E5%87%8F%E6%8C%81&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+      ]
     }
   ]
 }

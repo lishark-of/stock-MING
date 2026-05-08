@@ -8,6 +8,22 @@ import time
 import io
 import pandas as pd
 import numpy as np
+from analysis_engine import build_ai_context_packet, build_counter_argument_prompt, build_strict_risk_decision
+from data_fetcher import (
+    build_recent_news_context,
+    compute_portfolio_health,
+    get_supply_chain_profile,
+    get_valuation_snapshot,
+    institutional_signal_queries,
+    normalize_ticker,
+)
+from visualizer import (
+    render_portfolio_health_module,
+    render_recent_sentiment_module,
+    render_risk_decision,
+    render_supply_chain_module,
+    render_valuation_module,
+)
 
 def get_config_value(name, default=""):
     env_value = os.getenv(name)
@@ -736,6 +752,7 @@ else:
             "processed_sources": [],
             "manager_rules": [],
             "manager_scores": [],
+            "auto_runs": [],
         }
 
         if not supabase:
@@ -792,6 +809,21 @@ else:
             )
         except Exception as e:
             feedback["manager_scores_error"] = str(e)
+
+        try:
+            feedback["auto_runs"] = (
+                supabase
+                .table("stock_reports")
+                .select("report_content, created_at")
+                .eq("ticker", "SYSTEM")
+                .eq("report_type", "auto_run_status")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data or []
+            )
+        except Exception as e:
+            feedback["auto_runs_error"] = str(e)
 
         return feedback
 
@@ -1608,19 +1640,21 @@ else:
         with st.expander("🔎 自动投喂反馈 / 最近入库", expanded=False):
             feedback = load_auto_feed_feedback(limit=8)
 
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("市场新闻", len(feedback.get("market_news", [])))
             c2.metric("已处理来源", len(feedback.get("processed_sources", [])))
             c3.metric("新增经理规则", len(feedback.get("manager_rules", [])))
             c4.metric("经理评分", len(feedback.get("manager_scores", [])))
+            c5.metric("自动心跳", len(feedback.get("auto_runs", [])))
 
             st.caption("GitHub Actions 每 30 分钟跑一次自动投喂；这里显示最近写入 Supabase 的记录。")
 
-            feed_tab1, feed_tab2, feed_tab3, feed_tab4 = st.tabs([
+            feed_tab1, feed_tab2, feed_tab3, feed_tab4, feed_tab5 = st.tabs([
                 "市场新闻",
                 "经理来源",
                 "经理规则",
                 "经理评分",
+                "自动心跳",
             ])
 
             with feed_tab1:
@@ -1646,6 +1680,12 @@ else:
                     st.dataframe(pd.DataFrame(feedback["manager_scores"]), use_container_width=True)
                 else:
                     st.info("暂时没有最近经理评分。")
+
+            with feed_tab5:
+                if feedback.get("auto_runs"):
+                    st.dataframe(pd.DataFrame(feedback["auto_runs"]), use_container_width=True)
+                else:
+                    st.warning("还没有看到自动任务心跳。可去 GitHub Actions 手动 Run workflow 验证 secrets 和权限。")
     # 模块 A：天眼风控
     with tab_risk:
         st.markdown(f"### 🛡️ 极高权限合规审计：{target}")
@@ -1952,6 +1992,67 @@ else:
             f"\n\n【{target} 自动炼丹专属规则】\n{stock_logic_rules}"
             if stock_logic_rules else ""
         )
+        normalized_target = normalize_ticker(target)
+        supply_profile = get_supply_chain_profile(normalized_target)
+        aliases = [raw_target, target, normalized_target, supply_profile.get("name", "")]
+
+        with st.spinner("正在合并产业链、估值、近48小时舆情和炼丹炉规则..."):
+            valuation_snapshot = get_valuation_snapshot(normalized_target)
+            recent_news_rows = build_recent_news_context(
+                supabase,
+                normalized_target,
+                aliases=aliases,
+                days=2,
+                limit=12,
+            )
+            portfolio_health = compute_portfolio_health(
+                normalized_target,
+                related_tickers=supply_profile.get("a_share_links", []),
+            )
+            strict_decision = build_strict_risk_decision(
+                valuation_snapshot,
+                recent_news_rows,
+                replay_rules=stock_logic_rules,
+            )
+            ai_context_packet = build_ai_context_packet(
+                supply_profile,
+                valuation_snapshot,
+                recent_news_rows,
+                stock_logic_rules,
+            )
+
+        with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
+            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5 = st.tabs([
+                "产业链联动",
+                "估值回归",
+                "近48小时舆情",
+                "持仓体检",
+                "禁止买入",
+            ])
+            with base_tab1:
+                render_supply_chain_module(supply_profile, portfolio_health)
+            with base_tab2:
+                render_valuation_module(valuation_snapshot)
+            with base_tab3:
+                render_recent_sentiment_module(recent_news_rows)
+            with base_tab4:
+                render_portfolio_health_module(portfolio_health)
+            with base_tab5:
+                render_risk_decision(strict_decision)
+
+        with st.expander("🏦 机构/游资信息接入口", expanded=False):
+            st.caption("这些是公开信息入口：机构调仓、龙虎榜、游资席位、大宗交易、融资融券。自动任务也会逐步从这些关键词补充 market_news。")
+            for url in institutional_signal_queries(normalized_target, supply_profile.get("name", "")):
+                st.markdown(f"- [公开搜索源]({url})")
+
+        with st.expander("🧨 反方专家：输入看多理由，让 DeepSeek 找利空", expanded=False):
+            bull_case = st.text_area("你的看多理由", height=90, placeholder="例如：AI服务器订单好、估值回落、产业链景气...")
+            if st.button("启动反方审查", key=f"counter_{normalized_target}"):
+                counter_prompt = build_counter_argument_prompt(normalized_target, bull_case, ai_context_packet)
+                call_deepseek_stream(
+                    counter_prompt,
+                    system_role="你是冷酷的反方投研专家，专门找看多逻辑中的漏洞。",
+                )
         
         if market_type == "US_STOCK":
             st.markdown("""
@@ -1975,9 +2076,10 @@ else:
                     
                     维度：技术面、期权市场、基本面、宏观风险、机构动向、操作指令
                     
-	                    参考纪律：{us_inject}
-	                    {stock_logic_inject}
-	                    """
+                    参考纪律：{us_inject}
+                    {stock_logic_inject}
+                    {ai_context_packet}
+		                    """
                     
                     st.markdown("### 🎯 华尔街交易者的冷血建议")
                     call_deepseek_stream(us_prompt, system_role="你是华尔街资深操盘手，分析必须精确、冷酷。")
@@ -2003,7 +2105,8 @@ else:
                     2. 估值底线：结合 AH 股溢价（若有）和股息率，判断是否跌入“丘栋荣式”的深度价值防守区。
 3. 给出冷酷、明确的未来三个月操作指令。
 {stock_logic_inject}
-	                    """
+{ai_context_packet}
+		                    """
                     st.markdown("### 🎯 香港投行的专业建议")
                     call_deepseek_stream(hk_prompt, system_role="你是香港顶级投行分析师，对港股流动性了如指掌。")
 
@@ -2016,7 +2119,8 @@ else:
                     2. 逼空预警：该股目前的沽空情绪如何？是否存在被机构暴力逼空的潜在爆点？
 3. 给出“跟庄”、“抢反弹”或“坚决回避”的实战指令。
 {stock_logic_inject}
-	                    """
+{ai_context_packet}
+		                    """
                     st.markdown("### 🐳 离岸巨鲸资金嗅探")
                     call_deepseek_stream(whale_hk_prompt, system_role="你是港股资金盘口解剖机器，洞悉南水与做空机构的底牌。")
         
@@ -2048,6 +2152,7 @@ else:
 3. 资金定性博弈：当前外资更倾向于将其视作“价值避险资产”还是“高弹性成长资产”？
 4. 操作指令：拒绝废话，基于客观产业逻辑给出方向性建议。
 {stock_logic_inject}
+{ai_context_packet}
 	"""
             if btn_jp_whale:
                 with st.spinner("正在穿透外资套利与信用盘口..."):
@@ -2058,7 +2163,8 @@ else:
                     2. 日本散户信用盘口：日本国内散户的信用买残/卖残情绪如何？有无踩踏风险？
 3. 给出指令。
 {stock_logic_inject}
-	                    """
+{ai_context_packet}
+		                    """
                     st.markdown("### 🐳 外资套利与信用盘口嗅探")
                     call_deepseek_stream(jp_prompt, system_role="你是顶尖全球宏观对冲基金分析师，擅长用美股科技成长框架解剖亚洲资产。")
                     

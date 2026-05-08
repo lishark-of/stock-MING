@@ -558,6 +558,26 @@ def update_manager_score(manager, items=None, saved_rules_count=0, market_style=
     return score
 
 
+def save_run_status(status, detail):
+    payload = {
+        "ticker": "SYSTEM",
+        "market_type": "AUTO",
+        "report_type": "auto_run_status",
+        "report_content": json.dumps({
+            "job": "auto_manager_feeder",
+            "status": status,
+            "detail": detail,
+            "run_at_utc": datetime.utcnow().isoformat()
+        }, ensure_ascii=False),
+        "created_at": datetime.utcnow().isoformat()
+    }
+
+    try:
+        supabase.table("stock_reports").insert(payload).execute()
+    except Exception as e:
+        print(f"写入 auto_manager_feeder 心跳失败：{e}")
+
+
 def get_cached_stock_report(ticker, market_type="", report_type="stock_diagnosis", cache_hours=6):
     try:
         query = (
@@ -874,6 +894,10 @@ def run_auto_feed(max_articles_per_manager=max_articles_per_manager, per_rss_lim
 
     managers = config.get("managers", [])
     today_market_style = get_today_market_style()
+    total_found = 0
+    total_skipped = 0
+    total_processed_articles = 0
+    total_saved_rules = 0
 
     for manager in managers:
         manager_name = manager["manager_name"]
@@ -888,6 +912,7 @@ def run_auto_feed(max_articles_per_manager=max_articles_per_manager, per_rss_lim
 
         items = collect_manager_items(manager)
         manager_found = len(items)
+        total_found += manager_found
         manager_skipped = 0
         manager_saved_rules = 0
         manager_processed_articles = 0
@@ -923,6 +948,7 @@ def run_auto_feed(max_articles_per_manager=max_articles_per_manager, per_rss_lim
 
                 if already_processed(link):
                     manager_skipped += 1
+                    total_skipped += 1
                     print("已处理过，跳过。")
                     continue
 
@@ -962,6 +988,7 @@ RSS摘要：
                     keyword_text = title + "\n" + summary + "\n" + text + "\n" + link
                     if not manager_keyword_hit(keyword_text, keywords):
                         manager_skipped += 1
+                        total_skipped += 1
                         print("泛资讯源关键词不匹配，跳过。")
                         continue
 
@@ -973,6 +1000,8 @@ RSS摘要：
 
                 manager_processed_articles += 1
                 manager_saved_rules += saved
+                total_processed_articles += 1
+                total_saved_rules += saved
 
                 if saved > 0:
                     mark_processed(manager_name, link, title)
@@ -984,6 +1013,7 @@ RSS摘要：
 
             except Exception as e:
                 manager_skipped += 1
+                total_skipped += 1
                 print(f"处理单篇文章失败，继续下一篇：{e}")
                 continue
 
@@ -998,6 +1028,16 @@ RSS摘要：
             saved_rules_count=manager_saved_rules,
             market_style=today_market_style,
         )
+
+    detail = {
+        "managers": len(managers),
+        "found": total_found,
+        "skipped": total_skipped,
+        "processed_articles": total_processed_articles,
+        "saved_rules": total_saved_rules,
+    }
+    print(f"auto_manager_feeder 运行完成：{detail}")
+    save_run_status("ok", detail)
 
 
 if __name__ == "__main__":

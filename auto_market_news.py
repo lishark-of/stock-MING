@@ -267,11 +267,34 @@ def save_market_news(keyword, title, url, source, analysis):
             print(f"兼容写入 market_news 仍失败：{retry_error}")
 
 
+def save_run_status(status, detail):
+    payload = {
+        "ticker": "SYSTEM",
+        "market_type": "AUTO",
+        "report_type": "auto_run_status",
+        "report_content": json.dumps({
+            "job": "auto_market_news",
+            "status": status,
+            "detail": detail,
+            "run_at_utc": datetime.datetime.utcnow().isoformat()
+        }, ensure_ascii=False),
+        "created_at": datetime.datetime.utcnow().isoformat()
+    }
+
+    try:
+        supabase.table("stock_reports").insert(payload).execute()
+    except Exception as e:
+        print(f"写入 auto_market_news 心跳失败：{e}")
+
+
 def run_auto_market_news():
     with open("market_sources.json", "r", encoding="utf-8") as f:
         config = json.load(f)
 
     targets = config.get("targets", [])
+    total_found = 0
+    total_saved = 0
+    total_skipped = 0
 
     for target in targets:
         keyword = target.get("keyword", "")
@@ -284,6 +307,7 @@ def run_auto_market_news():
             print(f"读取 RSS：{rss_url}")
 
             items = fetch_rss_items(rss_url, limit=5)
+            total_found += len(items)
 
             for item in items:
                 try:
@@ -299,16 +323,19 @@ def run_auto_market_news():
 
                     if already_saved(link):
                         print("已保存过，跳过。")
+                        total_skipped += 1
                         continue
 
                     if not keyword_hit(title + " " + summary + " " + link, aliases):
                         print("标题关键词不匹配，跳过。")
+                        total_skipped += 1
                         continue
 
                     text = fetch_page_text(link)
 
                     if text and not keyword_hit(text + title + summary, aliases):
                         print("正文关键词不匹配，跳过。")
+                        total_skipped += 1
                         continue
 
                     analysis = analyze_news_with_deepseek(
@@ -325,12 +352,23 @@ def run_auto_market_news():
                         source=rss_url,
                         analysis=analysis
                     )
+                    total_saved += 1
 
                     time.sleep(1)
 
                 except Exception as e:
                     print(f"处理单条市场新闻失败，继续下一条：{e}")
+                    total_skipped += 1
                     continue
+
+    detail = {
+        "targets": len(targets),
+        "found": total_found,
+        "saved": total_saved,
+        "skipped": total_skipped
+    }
+    print(f"auto_market_news 运行完成：{detail}")
+    save_run_status("ok", detail)
 
 
 if __name__ == "__main__":
