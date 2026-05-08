@@ -19,28 +19,31 @@ try:
 except Exception as module_error:
     ANALYSIS_MODULE_ERROR = module_error
 
-    def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules, peer_rows=None, research_links=None):
+    def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules, peer_rows=None, research_links=None, technical=None, scenario=None, data_quality=None, money_flow=None):
         return f"分析模块降级：{ANALYSIS_MODULE_ERROR}\n{supply_chain}\n{valuation}\n{news_rows}\n{replay_rules}"
 
     def build_counter_argument_prompt(ticker, bull_case, context):
         return f"请反驳 {ticker} 的看多理由：{bull_case}\n材料：{context}"
 
-    def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block):
+    def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block, technical=None, scenario=None, data_quality=None):
         return f"标的：{ticker}，价格：{price}，状态：{position_status}，本金：{capital_plan}\n{base_context}\n{strict_decision}\n{money_flow_text_block}"
 
-    def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None, money_flow=None, position_status="未买入 (观望/找买点)"):
+    def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None, money_flow=None, position_status="未买入 (观望/找买点)", data_quality=None, scenario=None):
         return {"risk_score": 0, "action": "分析模块降级", "reasons": [str(ANALYSIS_MODULE_ERROR)]}
 
 try:
     from data_fetcher import (
+        build_data_quality_report,
         build_peer_snapshot,
         build_recent_news_context,
+        compute_technical_snapshot,
         compute_portfolio_health,
         deep_research_queries,
         get_supply_chain_profile,
         get_valuation_snapshot,
         institutional_signal_queries,
         normalize_ticker,
+        simulate_monte_carlo_range,
     )
 except Exception as module_error:
     DATA_FETCHER_MODULE_ERROR = module_error
@@ -54,8 +57,17 @@ except Exception as module_error:
     def get_valuation_snapshot(ticker):
         return {"ticker": normalize_ticker(ticker), "valuation_flag": f"估值模块降级：{DATA_FETCHER_MODULE_ERROR}"}
 
-    def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12):
+    def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, market_type=None):
         return []
+
+    def compute_technical_snapshot(ticker, period="2y"):
+        return {"ticker": normalize_ticker(ticker), "missing": ["技术模块降级"], "confidence": 0}
+
+    def simulate_monte_carlo_range(ticker, days=63, simulations=1500, period="2y", seed=42):
+        return {"ticker": normalize_ticker(ticker), "missing": ["情景模块降级"], "confidence": 0}
+
+    def build_data_quality_report(technical=None, valuation=None, news_rows=None, money_flow=None, scenario=None):
+        return {"score": 0, "grade": "低", "missing": [str(DATA_FETCHER_MODULE_ERROR)], "warnings": [], "instruction": "数据模块降级，只能观察。"}
 
     def compute_portfolio_health(target, related_tickers=None):
         return {"tickers": [normalize_ticker(target)], "correlation": pd.DataFrame(), "metrics": {}}
@@ -88,7 +100,10 @@ try:
         render_recent_sentiment_module,
         render_research_links,
         render_risk_decision,
+        render_data_quality_module,
+        render_scenario_module,
         render_supply_chain_module,
+        render_technical_module,
         render_valuation_module,
     )
 except Exception as module_error:
@@ -119,6 +134,15 @@ except Exception as module_error:
     def render_research_links(links):
         for link in links or []:
             st.markdown(f"- [公开检索]({link})")
+
+    def render_technical_module(technical):
+        st.json(technical)
+
+    def render_scenario_module(scenario):
+        st.json(scenario)
+
+    def render_data_quality_module(report):
+        st.json(report)
 
 def get_config_value(name, default=""):
     env_value = os.getenv(name)
@@ -2110,10 +2134,12 @@ else:
         )
         normalized_target = normalize_ticker(target)
         supply_profile = get_supply_chain_profile(normalized_target)
-        aliases = [raw_target, target, normalized_target, supply_profile.get("name", "")]
+        aliases = [raw_target, target, normalized_target, supply_profile.get("name", ""), *supply_profile.get("aliases", [])]
 
         with st.spinner("正在合并产业链、估值、近48小时舆情和炼丹炉规则..."):
             valuation_snapshot = get_valuation_snapshot(normalized_target)
+            technical_snapshot = compute_technical_snapshot(normalized_target)
+            scenario_snapshot = simulate_monte_carlo_range(normalized_target)
             money_flow_snapshot = collect_money_flow_snapshot(normalized_target, market_type=market_type)
             recent_news_rows = build_recent_news_context(
                 supabase,
@@ -2121,17 +2147,28 @@ else:
                 aliases=aliases,
                 days=2,
                 limit=12,
+                market_type=market_type,
             )
             portfolio_health = compute_portfolio_health(
                 normalized_target,
                 related_tickers=supply_profile.get("a_share_links", []),
             )
+            data_quality_report = build_data_quality_report(
+                technical=technical_snapshot,
+                valuation=valuation_snapshot,
+                news_rows=recent_news_rows,
+                money_flow=money_flow_snapshot,
+                scenario=scenario_snapshot,
+            )
             strict_decision = build_strict_risk_decision(
                 valuation_snapshot,
                 recent_news_rows,
                 replay_rules=stock_logic_rules,
+                technical=technical_snapshot,
                 money_flow=money_flow_snapshot,
                 position_status=position_status,
+                data_quality=data_quality_report,
+                scenario=scenario_snapshot,
             )
             peer_rows = build_peer_snapshot(normalized_target, supply_profile)
             research_links = deep_research_queries(normalized_target, supply_profile.get("name", ""))
@@ -2142,35 +2179,48 @@ else:
                 stock_logic_rules,
                 peer_rows=peer_rows,
                 research_links=research_links,
+                technical=technical_snapshot,
+                scenario=scenario_snapshot,
+                data_quality=data_quality_report,
+                money_flow=money_flow_snapshot,
             )
 
         with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
-            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8 = st.tabs([
+            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8, base_tab9, base_tab10, base_tab11 = st.tabs([
                 "产业链联动",
                 "估值回归",
+                "实时指标",
+                "情景推演",
                 "近48小时舆情",
                 "持仓体检",
                 "资金面",
                 "同行对比",
                 "深度挖掘",
                 "禁止买入",
+                "可信度",
             ])
             with base_tab1:
                 render_supply_chain_module(supply_profile, portfolio_health)
             with base_tab2:
                 render_valuation_module(valuation_snapshot)
             with base_tab3:
-                render_recent_sentiment_module(recent_news_rows)
+                render_technical_module(technical_snapshot)
             with base_tab4:
-                render_portfolio_health_module(portfolio_health)
+                render_scenario_module(scenario_snapshot)
             with base_tab5:
-                render_money_flow_module(money_flow_snapshot)
+                render_recent_sentiment_module(recent_news_rows)
             with base_tab6:
-                render_peer_snapshot(peer_rows)
+                render_portfolio_health_module(portfolio_health)
             with base_tab7:
-                render_research_links(research_links)
+                render_money_flow_module(money_flow_snapshot)
             with base_tab8:
+                render_peer_snapshot(peer_rows)
+            with base_tab9:
+                render_research_links(research_links)
+            with base_tab10:
                 render_risk_decision(strict_decision)
+            with base_tab11:
+                render_data_quality_module(data_quality_report)
 
         with st.expander("🏦 机构/游资信息接入口", expanded=False):
             st.caption("这些是公开信息入口：机构调仓、龙虎榜、游资席位、大宗交易、融资融券。自动任务也会逐步从这些关键词补充 market_news。")
@@ -2195,6 +2245,9 @@ else:
                 ai_context_packet,
                 strict_decision,
                 money_flow_text(money_flow_snapshot),
+                technical=technical_snapshot,
+                scenario=scenario_snapshot,
+                data_quality=data_quality_report,
             )
             call_deepseek_stream(
                 assistant_prompt,
@@ -2218,15 +2271,17 @@ else:
                     us_prompt = f"""
                     你是华尔街的老牌对冲基金经理。
                     {target}（当前价 ${price}）现在该不该买？三个月目标价？
-                    
+
                     请给出 800+ 字的冷酷、精确的交易建议。
-                    
-                    维度：技术面、期权市场、基本面、宏观风险、机构动向、操作指令
-                    
+
+                    维度：技术面、期权市场、基本面、宏观风险、机构动向、操作指令。
+                    三个月目标价必须先参考 Monte Carlo 的 p10/p50/p90；缺失数据必须降权，不能用主观概率硬凑。
+                    若近48小时舆情为空或资金面覆盖度低，请明确写“实时验证不足”，不要编造电话会、研报或机构持仓。
+
                     参考纪律：{us_inject}
                     {stock_logic_inject}
                     {ai_context_packet}
-		                    """
+                    """
                     
                     st.markdown("### 🎯 华尔街交易者的冷血建议")
                     call_deepseek_stream(us_prompt, system_role="你是华尔街资深操盘手，分析必须精确、冷酷。")

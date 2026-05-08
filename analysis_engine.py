@@ -1,4 +1,13 @@
-def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None, money_flow=None, position_status="未买入 (观望/找买点)"):
+def build_strict_risk_decision(
+    valuation,
+    news_rows,
+    replay_rules="",
+    technical=None,
+    money_flow=None,
+    position_status="未买入 (观望/找买点)",
+    data_quality=None,
+    scenario=None,
+):
     reasons = []
     action = "允许继续分析"
 
@@ -12,10 +21,17 @@ def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=
             reasons.append(f"舆情风险：{row.get('title', '')[:60]}")
 
     if technical:
-        if technical.get("rsi", 0) >= 78:
+        rsi = technical.get("rsi")
+        drawdown = technical.get("drawdown")
+        volume_vs_20d = technical.get("volume_vs_20d")
+        if rsi is not None and rsi >= 78:
             reasons.append("技术风险：RSI高位，追买胜率下降")
-        if technical.get("drawdown", 0) <= -18:
+        if drawdown is not None and drawdown <= -18:
             reasons.append("技术风险：近期回撤过深，需确认止跌")
+        if technical.get("ma60_state") == "低于MA60":
+            reasons.append("技术风险：仍在MA60下方，趋势确认不足")
+        if volume_vs_20d is not None and volume_vs_20d < 0.55:
+            reasons.append("技术风险：量能明显低于20日均量，买盘确认不足")
 
     if replay_rules and any(word in replay_rules for word in ["禁止", "不能追", "高位", "止损", "回撤"]):
         reasons.append("炼丹炉规则提示：该票已有历史纪律约束，需优先遵守")
@@ -23,6 +39,18 @@ def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=
     flow_summary = (money_flow or {}).get("summary") or {}
     for item in flow_summary.get("negative", []):
         reasons.append(f"资金面风险：{item}")
+
+    if scenario:
+        if scenario.get("probability_down_10_pct", 0) >= 28:
+            reasons.append(f"情景风险：Monte Carlo显示未来区间下跌10%以上概率约 {scenario.get('probability_down_10_pct')}%")
+        if scenario.get("p10") and valuation and valuation.get("latest"):
+            reasons.append(f"风控锚：悲观10分位价格约 {scenario.get('p10')}")
+
+    if data_quality:
+        if data_quality.get("score", 100) < 55:
+            reasons.append(f"数据可信度风险：{data_quality.get('grade')}，{data_quality.get('instruction')}")
+        elif data_quality.get("missing"):
+            reasons.append(f"数据缺口提示：{'; '.join(data_quality.get('missing', [])[:3])}")
 
     if position_status.startswith("已持有") and any("减持" in r or "卖出" in r or "出逃" in r for r in reasons):
         reasons.append("持仓状态风险：已持有时负面资金信号需优先处理")
@@ -39,7 +67,18 @@ def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=
     }
 
 
-def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block):
+def build_position_aware_prompt(
+    ticker,
+    price,
+    position_status,
+    capital_plan,
+    base_context,
+    strict_decision,
+    money_flow_text_block,
+    technical=None,
+    scenario=None,
+    data_quality=None,
+):
     if position_status.startswith("已持有"):
         task_focus = """
 用户已经持有该标的。请优先回答：
@@ -74,6 +113,15 @@ def build_position_aware_prompt(ticker, price, position_status, capital_plan, ba
 【资金面结构化数据】
 {money_flow_text_block}
 
+【实时技术指标】
+{technical or '技术指标缺失'}
+
+【Monte Carlo 情景区间】
+{scenario or '情景推演缺失'}
+
+【数据可信度】
+{data_quality or '未生成数据可信度报告'}
+
 【统一诊股底座】
 {base_context}
 
@@ -88,6 +136,8 @@ def build_position_aware_prompt(ticker, price, position_status, capital_plan, ba
 要求：
 - 不得编造没有出现在材料中的新闻、电话会、持仓或资金流。
 - 若资金面数据为空，要明确说“资金面公开数据不足”，但仍基于已有量价/估值/舆情判断。
+- 若数据可信度为“低”，禁止给确定买入结论，只能给等待条件。
+- 三个月目标价必须优先参考 Monte Carlo 的 p10/p50/p90 区间，不允许纯主观分配概率。
 - 对减持、监管、业绩不及预期、Put放量、大宗折价、龙虎榜负反馈要高度敏感。
 """
 
@@ -112,7 +162,18 @@ def build_counter_argument_prompt(ticker, bull_case, context):
 """
 
 
-def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules, peer_rows=None, research_links=None):
+def build_ai_context_packet(
+    supply_chain,
+    valuation,
+    news_rows,
+    replay_rules,
+    peer_rows=None,
+    research_links=None,
+    technical=None,
+    scenario=None,
+    data_quality=None,
+    money_flow=None,
+):
     news_text = "\n".join(
         f"- {row.get('title', '')}｜情绪:{row.get('sentiment', '')}｜风险:{row.get('risk_tag', '')}｜相关:{row.get('relevance_score', '')}"
         for row in (news_rows or [])[:8]
@@ -125,6 +186,18 @@ def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules, pe
 
 【估值】
 {valuation}
+
+【实时技术面】
+{technical or '暂无实时技术面'}
+
+【量化情景区间】
+{scenario or '暂无情景推演'}
+
+【数据可信度】
+{data_quality or '暂无可信度报告'}
+
+【资金面】
+{money_flow or '暂无资金面结构化数据'}
 
 【近48小时高相关舆情】
 {news_text or '暂无高相关舆情'}

@@ -74,6 +74,7 @@ def collect_us_money_flow(ticker):
         "institutional_holders": [],
         "insider_transactions": [],
         "options_signal": {},
+        "etf_proxy_flow": [],
         "warnings": [],
     }
 
@@ -83,6 +84,8 @@ def collect_us_money_flow(ticker):
         holders = stock.institutional_holders
         if holders is not None and not holders.empty:
             result["institutional_holders"] = frame_records(holders, 8)
+        else:
+            result["warnings"].append("13F/institutional_holders empty from public source")
     except Exception as e:
         result["warnings"].append(f"13F/institutional_holders unavailable: {e}")
 
@@ -90,6 +93,8 @@ def collect_us_money_flow(ticker):
         insiders = stock.insider_transactions
         if insiders is not None and not insiders.empty:
             result["insider_transactions"] = frame_records(insiders, 8)
+        else:
+            result["warnings"].append("insider_transactions empty from public source")
     except Exception as e:
         result["warnings"].append(f"insider_transactions unavailable: {e}")
 
@@ -114,11 +119,44 @@ def collect_us_money_flow(ticker):
                 "top_call_strikes": _top_strikes(calls),
                 "top_put_strikes": _top_strikes(puts),
             }
+        else:
+            result["warnings"].append("options chain empty from public source")
     except Exception as e:
         result["warnings"].append(f"options unavailable: {e}")
 
+    result["etf_proxy_flow"] = collect_us_etf_proxy_flow(ticker)
+    result["coverage"] = money_flow_coverage(result)
+
     result["summary"] = summarize_money_flow(result)
     return result
+
+
+def collect_us_etf_proxy_flow(ticker):
+    proxies = ["QQQ", "XLK", "SMH", "SOXX"]
+    rows = []
+    for proxy in proxies:
+        try:
+            hist = yf.Ticker(proxy).history(period="2mo")
+            if hist is None or hist.empty or len(hist) < 22:
+                continue
+            close = hist["Close"].dropna()
+            volume = hist["Volume"].fillna(0)
+            rows.append({
+                "proxy": proxy,
+                "role": {
+                    "QQQ": "纳指风险偏好",
+                    "XLK": "大型科技ETF",
+                    "SMH": "半导体ETF",
+                    "SOXX": "半导体ETF",
+                }.get(proxy, "ETF proxy"),
+                "return_5d_pct": round(float((close.iloc[-1] / close.iloc[-6] - 1) * 100), 2) if len(close) >= 6 else "",
+                "return_20d_pct": round(float((close.iloc[-1] / close.iloc[-21] - 1) * 100), 2) if len(close) >= 21 else "",
+                "volume_vs_20d": round(float(volume.iloc[-1] / max(volume.tail(20).mean(), 1)), 2) if len(volume) >= 20 else "",
+                "data_asof": str(close.index[-1].date()),
+            })
+        except Exception:
+            continue
+    return rows
 
 
 def collect_a_share_money_flow(ticker):
@@ -221,6 +259,18 @@ def summarize_money_flow(flow):
     if volume_signal.get("volume_vs_20d", 1) >= 2:
         positives.append("成交量显著放大")
 
+    for row in flow.get("etf_proxy_flow", [])[:4]:
+        role = row.get("role", row.get("proxy", "ETF"))
+        ret_5d = row.get("return_5d_pct")
+        volume_ratio = row.get("volume_vs_20d")
+        try:
+            if ret_5d != "" and float(ret_5d) >= 3 and volume_ratio != "" and float(volume_ratio) >= 1.2:
+                positives.append(f"{role} 5日放量走强")
+            if ret_5d != "" and float(ret_5d) <= -3 and volume_ratio != "" and float(volume_ratio) >= 1.2:
+                negatives.append(f"{role} 5日放量走弱")
+        except Exception:
+            pass
+
     if flow.get("warnings") and not positives and not negatives:
         negatives.append("资金面公开接口不完整，需人工复核")
 
@@ -228,6 +278,22 @@ def summarize_money_flow(flow):
         "positive": positives,
         "negative": negatives,
         "stance": "偏多" if len(positives) > len(negatives) else ("偏空/谨慎" if negatives else "中性"),
+    }
+
+
+def money_flow_coverage(flow):
+    checks = {
+        "institutional_holders": bool(flow.get("institutional_holders")),
+        "insider_transactions": bool(flow.get("insider_transactions")),
+        "options_signal": bool(flow.get("options_signal")),
+        "etf_proxy_flow": bool(flow.get("etf_proxy_flow")),
+    }
+    available = sum(1 for ok in checks.values() if ok)
+    missing = [key for key, ok in checks.items() if not ok]
+    return {
+        "score": int(available / max(len(checks), 1) * 100),
+        "available": [key for key, ok in checks.items() if ok],
+        "missing": missing,
     }
 
 

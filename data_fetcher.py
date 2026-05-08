@@ -1,4 +1,5 @@
 import datetime
+import re
 from urllib.parse import quote_plus
 
 import numpy as np
@@ -9,6 +10,7 @@ import yfinance as yf
 SUPPLY_CHAIN_MAP = {
     "NVDA": {
         "name": "Nvidia",
+        "aliases": ["NVDA", "Nvidia", "英伟达"],
         "theme": "AI算力/数据中心",
         "position": "GPU核心算力平台",
         "upstream": ["HBM", "先进封装", "晶圆代工", "高端PCB"],
@@ -27,6 +29,7 @@ SUPPLY_CHAIN_MAP = {
     },
     "TSM": {
         "name": "TSMC",
+        "aliases": ["TSM", "TSMC", "台积电"],
         "theme": "半导体制造",
         "position": "先进制程晶圆代工核心",
         "upstream": ["半导体设备", "材料", "EDA/IP"],
@@ -39,6 +42,22 @@ SUPPLY_CHAIN_MAP = {
             {"ticker": "002371.SZ", "name": "北方华创", "role": "半导体设备"},
         ],
         "risk_transmission": "先进制程资本开支变化会传导到设备、材料、封装和AI芯片链。",
+    },
+    "INTC": {
+        "name": "Intel",
+        "aliases": ["INTC", "Intel", "英特尔"],
+        "theme": "半导体/晶圆制造/PC与服务器CPU",
+        "position": "IDM制造与CPU平台，兼具先进制程追赶和代工转型逻辑",
+        "upstream": ["半导体设备", "先进封装", "EDA/IP", "晶圆材料"],
+        "core_modules": ["CPU", "数据中心芯片", "晶圆制造", "Foundry代工"],
+        "downstream": ["PC换机周期", "服务器资本开支", "AI PC", "美国半导体政策"],
+        "a_share_links": [
+            {"ticker": "688012.SS", "name": "中微公司", "role": "半导体设备映射"},
+            {"ticker": "002371.SZ", "name": "北方华创", "role": "半导体设备映射"},
+            {"ticker": "688126.SS", "name": "沪硅产业", "role": "硅片材料映射"},
+            {"ticker": "688256.SS", "name": "寒武纪", "role": "AI芯片估值映射"},
+        ],
+        "risk_transmission": "INTC重点看数据中心份额、制程追赶、Foundry资本开支和毛利率修复；若指引下修，会压制半导体设备与AI芯片链风险偏好。",
     },
     "601138.SS": {
         "name": "工业富联",
@@ -80,6 +99,21 @@ def normalize_ticker(ticker):
         if ticker.startswith(("0", "3")):
             return f"{ticker}.SZ"
     return ticker
+
+
+def infer_market_type(ticker):
+    normalized = normalize_ticker(ticker)
+    if normalized.endswith(".SZ") or normalized.endswith(".SS"):
+        return "A_SHARE"
+    if normalized.endswith(".HK"):
+        return "HK_STOCK"
+    if normalized.endswith(".T"):
+        return "JP_STOCK"
+    return "US_STOCK"
+
+
+def ticker_core(ticker):
+    return normalize_ticker(ticker).replace(".SZ", "").replace(".SS", "").replace(".HK", "").replace(".T", "")
 
 
 def build_google_news_rss(query, lang="zh-CN", region="CN"):
@@ -125,6 +159,126 @@ def fetch_price_history(ticker, period="2y"):
         return data.dropna(subset=["Close"])
     except Exception:
         return pd.DataFrame()
+
+
+def compute_rsi(close, period=14):
+    if close is None or len(close) < period + 2:
+        return None
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    latest = rsi.dropna()
+    if latest.empty:
+        return None
+    return round(float(latest.iloc[-1]), 2)
+
+
+def compute_technical_snapshot(ticker, period="2y"):
+    normalized = normalize_ticker(ticker)
+    hist = fetch_price_history(normalized, period=period)
+    missing = []
+    if hist.empty or "Close" not in hist.columns:
+        return {
+            "ticker": normalized,
+            "data_asof": "",
+            "missing": ["price_history", "MA60", "RSI", "volume"],
+            "confidence": 0,
+        }
+
+    close = hist["Close"].dropna()
+    latest = float(close.iloc[-1]) if len(close) else None
+    ma20 = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
+    ma60 = float(close.rolling(60).mean().iloc[-1]) if len(close) >= 60 else None
+    rsi = compute_rsi(close, 14)
+    if ma60 is None:
+        missing.append("MA60")
+    if rsi is None:
+        missing.append("RSI")
+
+    volume_vs_20d = None
+    if "Volume" in hist.columns and hist["Volume"].fillna(0).sum() > 0 and len(hist) >= 20:
+        latest_volume = float(hist["Volume"].iloc[-1])
+        avg_volume = float(hist["Volume"].tail(20).mean())
+        volume_vs_20d = round(latest_volume / max(avg_volume, 1), 2)
+    else:
+        missing.append("volume")
+
+    returns = close.pct_change().dropna()
+    drawdown = None
+    volatility_20d = None
+    if len(close) > 20:
+        peak = close.cummax()
+        drawdown = round(float((close / peak - 1).iloc[-1] * 100), 2)
+        volatility_20d = round(float(returns.tail(20).std() * np.sqrt(252) * 100), 2) if len(returns) >= 20 else None
+
+    confidence = max(0, 100 - len(missing) * 22)
+    return {
+        "ticker": normalized,
+        "data_asof": str(close.index[-1].date()) if len(close) else "",
+        "latest_close": round(latest, 2) if latest else None,
+        "ma20": round(ma20, 2) if ma20 else None,
+        "ma60": round(ma60, 2) if ma60 else None,
+        "ma60_state": "站上MA60" if latest and ma60 and latest >= ma60 else ("低于MA60" if latest and ma60 else "未知"),
+        "rsi": rsi,
+        "volume_vs_20d": volume_vs_20d,
+        "return_20d": round(float((close.iloc[-1] / close.iloc[-21] - 1) * 100), 2) if len(close) >= 21 else None,
+        "return_60d": round(float((close.iloc[-1] / close.iloc[-61] - 1) * 100), 2) if len(close) >= 61 else None,
+        "drawdown": drawdown,
+        "annualized_vol_20d": volatility_20d,
+        "missing": missing,
+        "confidence": confidence,
+    }
+
+
+def simulate_monte_carlo_range(ticker, days=63, simulations=1500, period="2y", seed=42):
+    normalized = normalize_ticker(ticker)
+    hist = fetch_price_history(normalized, period=period)
+    if hist.empty or "Close" not in hist.columns or len(hist) < 80:
+        return {
+            "ticker": normalized,
+            "horizon_days": days,
+            "missing": ["insufficient_price_history"],
+            "confidence": 0,
+        }
+
+    close = hist["Close"].dropna()
+    log_returns = np.log(close / close.shift(1)).dropna()
+    if len(log_returns) < 60:
+        return {
+            "ticker": normalized,
+            "horizon_days": days,
+            "missing": ["insufficient_return_series"],
+            "confidence": 0,
+        }
+
+    rng = np.random.default_rng(seed)
+    sampled = rng.choice(log_returns.tail(504).values, size=(simulations, days), replace=True)
+    terminal = float(close.iloc[-1]) * np.exp(sampled.sum(axis=1))
+    p10, p25, p50, p75, p90 = np.percentile(terminal, [10, 25, 50, 75, 90])
+    down_10 = float((terminal <= float(close.iloc[-1]) * 0.9).mean() * 100)
+    up_10 = float((terminal >= float(close.iloc[-1]) * 1.1).mean() * 100)
+    positive = float((terminal > float(close.iloc[-1])).mean() * 100)
+
+    return {
+        "ticker": normalized,
+        "data_asof": str(close.index[-1].date()),
+        "base_price": round(float(close.iloc[-1]), 2),
+        "horizon_days": days,
+        "simulations": simulations,
+        "p10": round(float(p10), 2),
+        "p25": round(float(p25), 2),
+        "p50": round(float(p50), 2),
+        "p75": round(float(p75), 2),
+        "p90": round(float(p90), 2),
+        "probability_positive_pct": round(positive, 1),
+        "probability_down_10_pct": round(down_10, 1),
+        "probability_up_10_pct": round(up_10, 1),
+        "annualized_volatility_pct": round(float(log_returns.std() * np.sqrt(252) * 100), 2),
+        "missing": [],
+        "confidence": 85,
+    }
 
 
 def get_valuation_snapshot(ticker):
@@ -236,6 +390,55 @@ def score_news_relevance(text, aliases):
     return min(score, 100)
 
 
+def has_primary_alias(text, aliases):
+    text = (text or "").lower()
+    for alias in aliases or []:
+        alias = str(alias or "").strip().lower()
+        if len(alias) < 2:
+            continue
+        if alias.isdigit():
+            if re.search(rf"(?<!\d){re.escape(alias)}(?!\d)", text):
+                return True
+        elif len(alias) <= 5 and alias.isascii():
+            if re.search(rf"\b{re.escape(alias)}\b", text):
+                return True
+        elif alias in text:
+            return True
+    return False
+
+
+def looks_like_a_share_noise(text):
+    text = text or ""
+    cn_stock_code = re.search(r"\b(60|68|00|30)\d{4}\b", text)
+    cn_terms = ["A股", "沪深", "涨停", "跌停", "龙虎榜", "北向资金", "融资融券", "股吧", "东方财富", "证券时报", "券商中国"]
+    return bool(cn_stock_code or any(term in text for term in cn_terms))
+
+
+def looks_like_us_noise_for_cn(text):
+    text = (text or "").lower()
+    us_terms = ["nasdaq", "nyse", "sec", "13f", "earnings call", "options", "insider trading"]
+    return any(term in text for term in us_terms)
+
+
+def should_keep_news_row(row, normalized, aliases, market_type):
+    blob = " ".join(str(row.get(k, "")) for k in ["keyword", "title", "summary", "url"])
+    primary_hit = has_primary_alias(blob, aliases)
+    if market_type == "US_STOCK":
+        if looks_like_a_share_noise(blob) and not primary_hit:
+            return False, "过滤：美股标的排除A股泛新闻"
+        if not primary_hit:
+            return False, "过滤：未命中美股ticker/公司名"
+    elif market_type in ["A_SHARE", "A_SHARE_SH", "A_SHARE_SZ"]:
+        if looks_like_us_noise_for_cn(blob) and not primary_hit:
+            return False, "过滤：A股标的排除美股泛新闻"
+        if not primary_hit and score_news_relevance(blob, aliases) < 45:
+            return False, "过滤：未命中A股代码/公司名"
+    elif market_type == "HK_STOCK":
+        if not primary_hit and score_news_relevance(blob, aliases) < 40:
+            return False, "过滤：未命中港股代码/公司名"
+    return True, "命中标的别名/高相关关键词"
+
+
 def parse_created_at(value):
     if not value:
         return None
@@ -245,12 +448,13 @@ def parse_created_at(value):
         return None
 
 
-def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12):
+def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, market_type=None):
     if not supabase:
         return []
 
     normalized = normalize_ticker(ticker)
-    aliases = list(dict.fromkeys([normalized, normalized.replace(".SZ", "").replace(".SS", ""), *(aliases or [])]))
+    market_type = market_type or infer_market_type(normalized)
+    aliases = list(dict.fromkeys([normalized, ticker_core(normalized), *(aliases or [])]))
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
     rows = []
 
@@ -273,9 +477,12 @@ def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12):
             continue
         blob = " ".join(str(row.get(k, "")) for k in ["keyword", "title", "summary"])
         relevance = score_news_relevance(blob, aliases)
-        if relevance >= 25:
+        keep, filter_reason = should_keep_news_row(row, normalized, aliases, market_type)
+        if keep and relevance >= 25:
             row = dict(row)
             row["relevance_score"] = relevance
+            row["market_filter"] = market_type
+            row["filter_reason"] = filter_reason
             filtered.append(row)
 
     filtered.sort(key=lambda x: (x.get("relevance_score", 0), x.get("created_at", "")), reverse=True)
@@ -286,6 +493,13 @@ def institutional_signal_queries(ticker, company_name=""):
     normalized = normalize_ticker(ticker)
     raw = normalized.replace(".SZ", "").replace(".SS", "")
     base = f"{company_name or raw} {raw}".strip()
+    if infer_market_type(normalized) == "US_STOCK":
+        return [
+            build_google_news_rss(f"{base} 13F institutional ownership increased decreased", lang="en-US", region="US"),
+            build_google_news_rss(f"{base} insider trading sale purchase Form 4", lang="en-US", region="US"),
+            build_google_news_rss(f"{base} unusual options activity call put volume", lang="en-US", region="US"),
+            f"https://www.sec.gov/edgar/search/#/q={quote_plus(raw)}",
+        ]
     return [
         build_google_news_rss(f"{base} 机构 调仓 持仓 增持 减持"),
         build_google_news_rss(f"{base} 龙虎榜 游资 席位"),
@@ -309,9 +523,12 @@ def deep_research_queries(ticker, company_name=""):
         ]
     return [
         build_google_news_rss(f"{base} earnings call transcript risk guidance", lang="en-US", region="US"),
+        build_google_news_rss(f"{base} 10-Q risk factors gross margin inventory capex", lang="en-US", region="US"),
+        build_google_news_rss(f"{base} conference call transcript management commentary", lang="en-US", region="US"),
         build_google_news_rss(f"{base} peers comparison margin revenue risk", lang="en-US", region="US"),
         build_google_news_rss(f"{base} analyst report risks downside", lang="en-US", region="US"),
         build_google_news_rss(f"{base} insider selling guidance cut earnings miss", lang="en-US", region="US"),
+        f"https://www.sec.gov/edgar/search/#/q={quote_plus(raw)}&forms=10-K%2C10-Q%2C8-K",
     ]
 
 
@@ -333,3 +550,60 @@ def build_peer_snapshot(ticker, supply_profile=None):
             "valuation_flag": valuation.get("valuation_flag"),
         })
     return rows
+
+
+def build_data_quality_report(technical=None, valuation=None, news_rows=None, money_flow=None, scenario=None):
+    missing = []
+    warnings = []
+    score = 100
+
+    for field in (technical or {}).get("missing", []):
+        missing.append(f"技术面缺失：{field}")
+        score -= 12
+    if not (technical or {}).get("data_asof"):
+        missing.append("技术面缺失：行情日期")
+        score -= 15
+
+    valuation = valuation or {}
+    for field in ["trailing_pe", "pb", "fcf_yield"]:
+        if valuation.get(field) in [None, ""]:
+            missing.append(f"估值缺失：{field}")
+            score -= 6
+
+    if not news_rows:
+        missing.append("舆情缺失：近48小时无高相关新闻")
+        score -= 14
+
+    money_flow = money_flow or {}
+    for item in money_flow.get("warnings", []):
+        warnings.append(str(item))
+        score -= 5
+    if not money_flow.get("institutional_holders") and money_flow.get("market_type") == "US_STOCK":
+        missing.append("资金面缺失：13F/机构持仓")
+        score -= 8
+    if not money_flow.get("options_signal") and money_flow.get("market_type") == "US_STOCK":
+        missing.append("资金面缺失：期权链")
+        score -= 8
+
+    if (scenario or {}).get("confidence", 0) <= 0:
+        missing.append("情景推演缺失：历史波动样本不足")
+        score -= 10
+
+    score = max(0, min(100, int(score)))
+    if score >= 80:
+        grade = "高"
+        instruction = "可以输出明确观点，但仍需标注实时数据来源。"
+    elif score >= 55:
+        grade = "中"
+        instruction = "只能给条件式结论，仓位建议需要保守。"
+    else:
+        grade = "低"
+        instruction = "禁止给确定买卖结论，只能列触发条件和待验证清单。"
+
+    return {
+        "score": score,
+        "grade": grade,
+        "missing": list(dict.fromkeys(missing)),
+        "warnings": warnings[:8],
+        "instruction": instruction,
+    }
