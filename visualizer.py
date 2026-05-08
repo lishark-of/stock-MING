@@ -68,6 +68,60 @@ def render_risk_decision(decision):
         st.caption(f"- {reason}")
 
 
+def render_money_flow_module(flow):
+    st.markdown("#### 资金面深度调查")
+    if not flow:
+        st.info("暂无资金面数据。")
+        return
+
+    summary = flow.get("summary") or {}
+    c1, c2, c3 = st.columns(3)
+    c1.metric("资金面倾向", summary.get("stance", "中性"))
+    c2.metric("正面信号", len(summary.get("positive", [])))
+    c3.metric("负面信号", len(summary.get("negative", [])))
+
+    for item in summary.get("positive", []):
+        st.success(item)
+    for item in summary.get("negative", []):
+        st.warning(item)
+
+    for key, label in [
+        ("institutional_holders", "13F/机构持仓"),
+        ("insider_transactions", "内部交易"),
+        ("individual_fund_flow", "A股个股资金流"),
+        ("dragon_tiger", "龙虎榜"),
+        ("block_trade", "大宗交易"),
+    ]:
+        rows = flow.get(key)
+        if rows:
+            with st.expander(label, expanded=False):
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    if flow.get("options_signal"):
+        with st.expander("期权异动", expanded=False):
+            st.json(flow["options_signal"])
+
+    for warning in flow.get("warnings", []):
+        st.caption(f"数据提示：{warning}")
+
+
+def render_peer_snapshot(peer_rows):
+    st.markdown("#### 同行公司数据对比")
+    if not peer_rows:
+        st.info("暂无可用同行估值对比。")
+        return
+    st.dataframe(pd.DataFrame(peer_rows), use_container_width=True, hide_index=True)
+
+
+def render_research_links(links):
+    st.markdown("#### 深度信息挖掘入口")
+    if not links:
+        st.info("暂无深度信息入口。")
+        return
+    for link in links:
+        st.markdown(f"- [公开检索]({link})")
+
+
 def _fmt(value):
     try:
         if value is None:

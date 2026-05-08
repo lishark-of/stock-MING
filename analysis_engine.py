@@ -1,4 +1,4 @@
-def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None):
+def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None, money_flow=None, position_status="未买入 (观望/找买点)"):
     reasons = []
     action = "允许继续分析"
 
@@ -20,6 +20,13 @@ def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=
     if replay_rules and any(word in replay_rules for word in ["禁止", "不能追", "高位", "止损", "回撤"]):
         reasons.append("炼丹炉规则提示：该票已有历史纪律约束，需优先遵守")
 
+    flow_summary = (money_flow or {}).get("summary") or {}
+    for item in flow_summary.get("negative", []):
+        reasons.append(f"资金面风险：{item}")
+
+    if position_status.startswith("已持有") and any("减持" in r or "卖出" in r or "出逃" in r for r in reasons):
+        reasons.append("持仓状态风险：已持有时负面资金信号需优先处理")
+
     if len(reasons) >= 2:
         action = "禁止开仓/只观察"
     elif reasons:
@@ -30,6 +37,59 @@ def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=
         "action": action,
         "reasons": reasons or ["未触发硬性否决，但仍需结合实时盘口确认"],
     }
+
+
+def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block):
+    if position_status.startswith("已持有"):
+        task_focus = """
+用户已经持有该标的。请优先回答：
+1. 是否继续持有，还是减仓/清仓
+2. 核心护城河是否仍成立
+3. 机构资金是否有出逃迹象
+4. 高管减持、龙虎榜、大宗交易、期权Put等负面信号
+5. 明确止损位、止盈位、减仓条件
+"""
+    else:
+        task_focus = """
+用户尚未买入，正在找买点。请优先回答：
+1. 当前是否有安全边际
+2. 潜在催化剂是否足够强
+3. 是否存在禁止开仓信号
+4. 分批建仓计划，最多三档
+5. 首次试错仓位和失效条件
+"""
+
+    return f"""
+标的：{ticker}
+当前价格：{price}
+用户状态：{position_status}
+本金/计划仓位：{capital_plan}
+
+【任务侧重】
+{task_focus}
+
+【系统严格风控结论】
+{strict_decision}
+
+【资金面结构化数据】
+{money_flow_text_block}
+
+【统一诊股底座】
+{base_context}
+
+请输出：
+1. 结论：可买 / 分批低吸 / 继续持有 / 减仓 / 禁止开仓
+2. 主要风险提示，负面信号优先
+3. 止损点：给出价格或条件
+4. 止盈/减仓点：给出价格或条件
+5. 分批建仓或持仓调整方案，必须结合本金/计划仓位
+6. 接下来 3 个交易日必须盯的信号
+
+要求：
+- 不得编造没有出现在材料中的新闻、电话会、持仓或资金流。
+- 若资金面数据为空，要明确说“资金面公开数据不足”，但仍基于已有量价/估值/舆情判断。
+- 对减持、监管、业绩不及预期、Put放量、大宗折价、龙虎榜负反馈要高度敏感。
+"""
 
 
 def build_counter_argument_prompt(ticker, bull_case, context):
@@ -52,7 +112,7 @@ def build_counter_argument_prompt(ticker, bull_case, context):
 """
 
 
-def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules):
+def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules, peer_rows=None, research_links=None):
     news_text = "\n".join(
         f"- {row.get('title', '')}｜情绪:{row.get('sentiment', '')}｜风险:{row.get('risk_tag', '')}｜相关:{row.get('relevance_score', '')}"
         for row in (news_rows or [])[:8]
@@ -71,4 +131,10 @@ def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules):
 
 【炼丹炉专属规则】
 {replay_rules or '暂无该票专属规则'}
+
+【同行估值对比】
+{peer_rows or '暂无同行对比'}
+
+【深度信息挖掘入口】
+{research_links or '暂无深度信息入口'}
 """

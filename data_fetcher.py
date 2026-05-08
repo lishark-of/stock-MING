@@ -293,3 +293,43 @@ def institutional_signal_queries(ticker, company_name=""):
         build_google_news_rss(f"{base} site:finance.sina.com.cn 机构"),
         build_google_news_rss(f"{base} site:eastmoney.com 龙虎榜"),
     ]
+
+
+def deep_research_queries(ticker, company_name=""):
+    normalized = normalize_ticker(ticker)
+    raw = normalized.replace(".SZ", "").replace(".SS", "").replace(".HK", "")
+    base = f"{company_name or raw} {raw}".strip()
+    has_cn = normalized.endswith(".SZ") or normalized.endswith(".SS") or normalized.endswith(".HK")
+    if has_cn:
+        return [
+            build_google_news_rss(f"{base} 财报 电话会 业绩说明会 问答 风险"),
+            build_google_news_rss(f"{base} 同行业 对比 毛利率 订单 风险"),
+            build_google_news_rss(f"{base} 研报 风险提示 不及预期"),
+            build_google_news_rss(f"{base} 公告 减持 回购 业绩预告"),
+        ]
+    return [
+        build_google_news_rss(f"{base} earnings call transcript risk guidance", lang="en-US", region="US"),
+        build_google_news_rss(f"{base} peers comparison margin revenue risk", lang="en-US", region="US"),
+        build_google_news_rss(f"{base} analyst report risks downside", lang="en-US", region="US"),
+        build_google_news_rss(f"{base} insider selling guidance cut earnings miss", lang="en-US", region="US"),
+    ]
+
+
+def build_peer_snapshot(ticker, supply_profile=None):
+    rows = []
+    profile = supply_profile or get_supply_chain_profile(ticker)
+    for peer in profile.get("a_share_links", [])[:6]:
+        peer_ticker = peer.get("ticker")
+        if not peer_ticker:
+            continue
+        valuation = get_valuation_snapshot(peer_ticker)
+        rows.append({
+            "ticker": peer_ticker,
+            "name": peer.get("name", ""),
+            "role": peer.get("role", ""),
+            "pe": valuation.get("trailing_pe"),
+            "pb": valuation.get("pb"),
+            "price_percentile_1y": valuation.get("price_percentile_1y"),
+            "valuation_flag": valuation.get("valuation_flag"),
+        })
+    return rows

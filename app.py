@@ -8,18 +8,24 @@ import time
 import io
 import pandas as pd
 import numpy as np
-from analysis_engine import build_ai_context_packet, build_counter_argument_prompt, build_strict_risk_decision
+from analysis_engine import build_ai_context_packet, build_counter_argument_prompt, build_position_aware_prompt, build_strict_risk_decision
 from data_fetcher import (
+    build_peer_snapshot,
     build_recent_news_context,
     compute_portfolio_health,
+    deep_research_queries,
     get_supply_chain_profile,
     get_valuation_snapshot,
     institutional_signal_queries,
     normalize_ticker,
 )
+from money_flow_tracker import collect_money_flow_snapshot, money_flow_text
 from visualizer import (
+    render_money_flow_module,
+    render_peer_snapshot,
     render_portfolio_health_module,
     render_recent_sentiment_module,
+    render_research_links,
     render_risk_decision,
     render_supply_chain_module,
     render_valuation_module,
@@ -829,6 +835,8 @@ else:
 
     def build_today_watchlist_prompt():
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        position_status_for_prompt = st.session_state.get("position_status", "未买入 (观望/找买点)")
+        capital_plan_for_prompt = st.session_state.get("capital_plan", 0)
 
         db = load_cloud_knowledge()
         brain_rules = "\n".join((db["strategies"] + db["reflections"])[-20:])
@@ -857,6 +865,8 @@ else:
 
         prompt = f"""
 当前时间：{today_str}
+用户当前状态：{position_status_for_prompt}
+本金/计划仓位：{capital_plan_for_prompt}
 
 你是我的个人投研总控台。请基于以下四类资料生成【今日关注池】：
 
@@ -916,6 +926,7 @@ else:
 3. 不要编造没有出现在材料里的实时新闻、公告、资金流或持仓。
 4. 结论要偏交易实用，不要写空话。
 5. 每类最多给 3 个方向。
+6. 如果用户已持有，优先给止损/止盈/减仓规则；如果用户未买入，优先给安全边际和分批建仓规则。
 """
         return prompt
     def load_manager_rules(manager_name, limit=30):
@@ -1602,6 +1613,22 @@ else:
         else:
             st.metric(f"📡 信号丢��� ({market_badge})", "未查找到该标的")
 
+    pos_c1, pos_c2 = st.columns([2, 1])
+    with pos_c1:
+        position_status = st.selectbox(
+            "持仓状态",
+            ["未买入 (观望/找买点)", "已持有 (持仓/找卖点)"],
+            key="position_status",
+        )
+    with pos_c2:
+        capital_plan = st.number_input(
+            "本金/计划仓位（元）",
+            min_value=0.0,
+            value=0.0,
+            step=1000.0,
+            key="capital_plan",
+        )
+
     st.markdown("---")
 
     # Token 使用情况显示
@@ -1998,6 +2025,7 @@ else:
 
         with st.spinner("正在合并产业链、估值、近48小时舆情和炼丹炉规则..."):
             valuation_snapshot = get_valuation_snapshot(normalized_target)
+            money_flow_snapshot = collect_money_flow_snapshot(normalized_target, market_type=market_type)
             recent_news_rows = build_recent_news_context(
                 supabase,
                 normalized_target,
@@ -2013,20 +2041,29 @@ else:
                 valuation_snapshot,
                 recent_news_rows,
                 replay_rules=stock_logic_rules,
+                money_flow=money_flow_snapshot,
+                position_status=position_status,
             )
+            peer_rows = build_peer_snapshot(normalized_target, supply_profile)
+            research_links = deep_research_queries(normalized_target, supply_profile.get("name", ""))
             ai_context_packet = build_ai_context_packet(
                 supply_profile,
                 valuation_snapshot,
                 recent_news_rows,
                 stock_logic_rules,
+                peer_rows=peer_rows,
+                research_links=research_links,
             )
 
         with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
-            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5 = st.tabs([
+            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8 = st.tabs([
                 "产业链联动",
                 "估值回归",
                 "近48小时舆情",
                 "持仓体检",
+                "资金面",
+                "同行对比",
+                "深度挖掘",
                 "禁止买入",
             ])
             with base_tab1:
@@ -2038,6 +2075,12 @@ else:
             with base_tab4:
                 render_portfolio_health_module(portfolio_health)
             with base_tab5:
+                render_money_flow_module(money_flow_snapshot)
+            with base_tab6:
+                render_peer_snapshot(peer_rows)
+            with base_tab7:
+                render_research_links(research_links)
+            with base_tab8:
                 render_risk_decision(strict_decision)
 
         with st.expander("🏦 机构/游资信息接入口", expanded=False):
@@ -2053,6 +2096,21 @@ else:
                     counter_prompt,
                     system_role="你是冷酷的反方投研专家，专门找看多逻辑中的漏洞。",
                 )
+
+        if st.button("🧠 生成私人交易助手建议", key=f"private_assistant_{normalized_target}", type="primary"):
+            assistant_prompt = build_position_aware_prompt(
+                normalized_target,
+                price,
+                position_status,
+                capital_plan,
+                ai_context_packet,
+                strict_decision,
+                money_flow_text(money_flow_snapshot),
+            )
+            call_deepseek_stream(
+                assistant_prompt,
+                system_role="你是私人交易助手，必须先处理风险，再给建仓或持仓动作。",
+            )
         
         if market_type == "US_STOCK":
             st.markdown("""
