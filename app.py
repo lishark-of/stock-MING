@@ -261,7 +261,7 @@ def format_replay_case(case):
     )
 
 @st.cache_data(ttl=1800)
-def build_auto_replay_cases(ticker, lookback_days=760, window_days=60, future_days=60, case_count=10):
+def build_auto_replay_cases(ticker, lookback_days=730, window_days=60, future_days=60, case_count=16):
     today = datetime.date.today()
     start = today - datetime.timedelta(days=lookback_days + 180)
     end = today + datetime.timedelta(days=1)
@@ -287,7 +287,7 @@ def build_auto_replay_cases(ticker, lookback_days=760, window_days=60, future_da
     if not candidate_positions:
         return [], hist
 
-    case_count = max(4, min(int(case_count), 16, len(candidate_positions)))
+    case_count = max(6, min(int(case_count), 30, len(candidate_positions)))
     selected_positions = np.linspace(0, len(candidate_positions) - 1, case_count, dtype=int)
     end_positions = [candidate_positions[i] for i in selected_positions]
 
@@ -376,7 +376,8 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
 
         client = OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com/v1"
+            base_url="https://api.deepseek.com/v1",
+            timeout=120.0,
         )
 
         response = client.chat.completions.create(
@@ -397,14 +398,12 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
 
 
 def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理。", max_tokens=2000):
-    api_key = get_deepseek_api_key()
-    if not api_key:
+    if not st.session_state.get("ds_keys"):
         return None
 
-    try:
-        today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-        time_guard = f"""
+    time_guard = f"""
 【当前系统时间】：{today_str}
 【强制时间规则】：
 1. 你必须以当前系统时间为准。
@@ -414,30 +413,44 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
 5. 如果缺少最新舆情、公告或行情，请直接说明“缺少最新数据”。
 """
 
-        final_system_role = system_role + "\n" + time_guard
-        log_token_usage(estimate_tokens(final_system_role + prompt), max_tokens)
+    final_system_role = system_role + "\n" + time_guard
+    log_token_usage(estimate_tokens(final_system_role + prompt), max_tokens)
+    last_error = None
 
-        client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com/v1"
-        )
+    for attempt in range(2):
+        api_key = get_deepseek_api_key()
+        if not api_key:
+            return None
 
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": final_system_role},
-                {"role": "user", "content": prompt}
-            ],
-            stream=False,
-            temperature=0.5,
-            max_tokens=max_tokens
-        )
+        try:
+            if attempt:
+                st.info("DeepSeek 首次响应超时，正在自动换 key 重试一次。")
 
-        return response.choices[0].message.content
+            timeout_seconds = 180.0 if max_tokens >= 3000 else 120.0
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://api.deepseek.com/v1",
+                timeout=timeout_seconds,
+            )
 
-    except Exception as e:
-        st.error(f"⚠️ DeepSeek 调用失败: {e}")
-        return None
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": final_system_role},
+                    {"role": "user", "content": prompt}
+                ],
+                stream=False,
+                temperature=0.5,
+                max_tokens=max_tokens
+            )
+
+            return response.choices[0].message.content
+
+        except Exception as e:
+            last_error = e
+
+    st.error(f"⚠️ DeepSeek 调用失败: {last_error}")
+    return None
 
 # ==========================================
 # ✨ 多交易所智能识别引擎 ✨
@@ -547,6 +560,53 @@ else:
         try:
             supabase.table("brain_memory").delete().in_("id", ids_to_delete).execute()
         except: pass
+
+    def save_stock_logic_rule(ticker, market_type, content):
+        if not supabase or not content:
+            return False
+
+        try:
+            supabase.table("stock_reports").insert({
+                "ticker": ticker,
+                "market_type": market_type,
+                "report_type": "auto_replay_rules",
+                "report_content": content,
+            }).execute()
+            return True
+        except Exception as e:
+            st.warning(f"股票专属规则写入失败：{e}")
+            return False
+
+    def load_stock_logic_rules(ticker, limit=3):
+        if not supabase:
+            return ""
+
+        try:
+            res = (
+                supabase
+                .table("stock_reports")
+                .select("report_content, created_at")
+                .eq("ticker", ticker)
+                .eq("report_type", "auto_replay_rules")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            rows = res.data or []
+        except Exception:
+            return ""
+
+        if not rows:
+            return ""
+
+        chunks = []
+        for row in rows:
+            content = (row.get("report_content") or "").strip()
+            created_at = row.get("created_at", "")
+            if content:
+                chunks.append(f"【{created_at} 自动炼丹规则】\n{content[:1600]}")
+
+        return "\n\n".join(chunks)
 
     def _fmt_pct(value):
         if value is None:
@@ -1446,6 +1506,8 @@ else:
                 filtered_rules = [r for r in all_rules if "🇨🇳" in r or "A股" in r]
                 rules_text = "\n".join(filtered_rules)
                 sys_inject = f"\n\n【A股专用外脑记忆库】：\n{rules_text}" if rules_text else ""
+                stock_logic = load_stock_logic_rules(target)
+                stock_logic_inject = f"\n\n【{target} 自动炼丹专属规则】：\n{stock_logic}" if stock_logic else ""
             
             p_val = price if price else "未知"
             
@@ -1457,6 +1519,7 @@ else:
             2. 从四大维度深度拆解：基本面、情绪共振、技术面、操作指令
             3. 明确的买入/卖出信号和止损止盈位
             {sys_inject}
+            {stock_logic_inject}
             """
             
             st.markdown("### 📋 A股专用深度研报")
@@ -1720,21 +1783,23 @@ else:
         auto_tab, manual_tab = st.tabs(["自动多段复盘", "手动单段盲测"])
 
         with auto_tab:
-            c1, c2, c3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
-                case_count = st.slider("抽样段数", 6, 14, 10, key="rl_case_count")
+                replay_years = st.selectbox("复盘范围", [1, 2, 3], index=1, key="rl_replay_years")
             with c2:
-                window_days = st.selectbox("观察窗口", [40, 60, 90], index=1, key="rl_window_days")
+                case_count = st.slider("抽样段数", 8, 28, 16, key="rl_case_count")
             with c3:
+                window_days = st.selectbox("观察窗口", [40, 60, 90], index=1, key="rl_window_days")
+            with c4:
                 future_days = st.selectbox("验证窗口", [20, 40, 60], index=2, key="rl_future_days")
 
-            st.caption("默认会把提示词和回答控制在 20,000 token 以内；段数越多，越接近该票的真实性格。")
+            st.caption("默认覆盖近两年，抽样段数可拉高；系统仍会把提示词和回答控制在 20,000 token 以内。")
 
             if st.button("🧪 自动炼丹：生成该票交易规范", key="btn_auto_rl", type="primary"):
                 with st.spinner("正在回放近两年历史片段..."):
                     cases, hist = build_auto_replay_cases(
                         target,
-                        lookback_days=760,
+                        lookback_days=365 * replay_years,
                         window_days=window_days,
                         future_days=future_days,
                         case_count=case_count,
@@ -1761,7 +1826,7 @@ else:
 标的：{target}
 市场：{market_tag}
 最新价格：{currency} {latest_close}
-复盘范围：近两年
+复盘范围：近 {replay_years} 年
 观察窗口：每段 {window_days} 个交易日
 验证窗口：每段后续 {future_days} 个交易日
 
@@ -1818,11 +1883,15 @@ else:
                         if result:
                             st.markdown("### 该票交易规范")
                             st.markdown(result)
+                            saved_stock_rule = save_stock_logic_rule(target, market_type, result)
                             insert_cloud_memory(
                                 "reflection",
                                 f"【自动炼丹 - {target}】{market_tag}：{result[:1200]}"
                             )
-                            st.success("✅ 自动炼丹结果已写入云端外脑。")
+                            if saved_stock_rule:
+                                st.success("✅ 自动炼丹结果已写入该股票专属规则，并同步到云端外脑。")
+                            else:
+                                st.success("✅ 自动炼丹结果已同步到云端外脑。")
 
         with manual_tab:
             st.caption("保留原来的单段盲测，适合你想专门检查某一个历史阶段。")
@@ -1878,6 +1947,11 @@ else:
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:
         st.markdown(f"### 📈 实时穿透：{target} ({market_badge})")
+        stock_logic_rules = load_stock_logic_rules(target)
+        stock_logic_inject = (
+            f"\n\n【{target} 自动炼丹专属规则】\n{stock_logic_rules}"
+            if stock_logic_rules else ""
+        )
         
         if market_type == "US_STOCK":
             st.markdown("""
@@ -1901,8 +1975,9 @@ else:
                     
                     维度：技术面、期权市场、基本面、宏观风险、机构动向、操作指令
                     
-                    参考纪律：{us_inject}
-                    """
+	                    参考纪律：{us_inject}
+	                    {stock_logic_inject}
+	                    """
                     
                     st.markdown("### 🎯 华尔街交易者的冷血建议")
                     call_deepseek_stream(us_prompt, system_role="你是华尔街资深操盘手，分析必须精确、冷酷。")
@@ -1926,8 +2001,9 @@ else:
                     你是香港顶级外资投行的首席分析师。请对 {target}（当前价 HK${price}）进行冷血剖析：
                     1. 离岸流动性：当前宏观环境下，外资是在撤退还是回流？
                     2. 估值底线：结合 AH 股溢价（若有）和股息率，判断是否跌入“丘栋荣式”的深度价值防守区。
-                    3. 给出冷酷、明确的未来三个月操作指令。
-                    """
+3. 给出冷酷、明确的未来三个月操作指令。
+{stock_logic_inject}
+	                    """
                     st.markdown("### 🎯 香港投行的专业建议")
                     call_deepseek_stream(hk_prompt, system_role="你是香港顶级投行分析师，对港股流动性了如指掌。")
 
@@ -1938,8 +2014,9 @@ else:
                     请强制执行【离岸市场盘口与资金博弈穿透】：
                     1. 南水定价权：近期内资（南向资金/险资）是否在大举买入该股抢夺定价权？
                     2. 逼空预警：该股目前的沽空情绪如何？是否存在被机构暴力逼空的潜在爆点？
-                    3. 给出“跟庄”、“抢反弹”或“坚决回避”的实战指令。
-                    """
+3. 给出“跟庄”、“抢反弹”或“坚决回避”的实战指令。
+{stock_logic_inject}
+	                    """
                     st.markdown("### 🐳 离岸巨鲸资金嗅探")
                     call_deepseek_stream(whale_hk_prompt, system_role="你是港股资金盘口解剖机器，洞悉南水与做空机构的底牌。")
         
@@ -1970,7 +2047,8 @@ else:
 2. 全球产业链溢价：如果是科技/半导体股，请评估其在全球AI算力周期或供应链中的壁垒与弹性（如 Kioxia 在 NAND 市场的真实困境与机遇）。
 3. 资金定性博弈：当前外资更倾向于将其视作“价值避险资产”还是“高弹性成长资产”？
 4. 操作指令：拒绝废话，基于客观产业逻辑给出方向性建议。
-"""
+{stock_logic_inject}
+	"""
             if btn_jp_whale:
                 with st.spinner("正在穿透外资套利与信用盘口..."):
                     whale_jp_prompt = f"""
@@ -1978,8 +2056,9 @@ else:
                     请强制执行【日股资金流与套利穿透】：
                     1. 华尔街套利追踪：是否符合“巴菲特式”的低息日元借贷买入高息/现金流资产的逻辑？
                     2. 日本散户信用盘口：日本国内散户的信用买残/卖残情绪如何？有无踩踏风险？
-                    3. 给出指令。
-                    """
+3. 给出指令。
+{stock_logic_inject}
+	                    """
                     st.markdown("### 🐳 外资套利与信用盘口嗅探")
                     call_deepseek_stream(jp_prompt, system_role="你是顶尖全球宏观对冲基金分析师，擅长用美股科技成长框架解剖亚洲资产。")
                     
