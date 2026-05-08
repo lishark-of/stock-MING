@@ -6,6 +6,7 @@ import datetime
 import os
 import time
 import io
+import inspect
 import pandas as pd
 import numpy as np
 
@@ -143,6 +144,153 @@ except Exception as module_error:
 
     def render_data_quality_module(report):
         st.json(report)
+
+
+def call_with_supported_kwargs(func, *args, **kwargs):
+    try:
+        signature = inspect.signature(func)
+        supports_any_kwargs = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        )
+        if not supports_any_kwargs:
+            kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
+    except Exception:
+        pass
+    return func(*args, **kwargs)
+
+
+def build_strict_risk_decision_safe(
+    valuation,
+    news_rows,
+    replay_rules="",
+    technical=None,
+    money_flow=None,
+    position_status="未买入 (观望/找买点)",
+    data_quality=None,
+    scenario=None,
+):
+    try:
+        return call_with_supported_kwargs(
+            build_strict_risk_decision,
+            valuation,
+            news_rows,
+            replay_rules=replay_rules,
+            technical=technical,
+            money_flow=money_flow,
+            position_status=position_status,
+            data_quality=data_quality,
+            scenario=scenario,
+        )
+    except TypeError as e:
+        decision = build_strict_risk_decision(
+            valuation,
+            news_rows,
+            replay_rules=replay_rules,
+            technical=technical,
+            money_flow=money_flow,
+            position_status=position_status,
+        )
+        if isinstance(decision, dict):
+            decision.setdefault("reasons", []).append(f"分析引擎版本兼容提示：{e}")
+            decision["risk_score"] = max(int(decision.get("risk_score", 0)), 55)
+        return decision
+
+
+def build_ai_context_packet_safe(
+    supply_chain,
+    valuation,
+    news_rows,
+    replay_rules,
+    peer_rows=None,
+    research_links=None,
+    technical=None,
+    scenario=None,
+    data_quality=None,
+    money_flow=None,
+):
+    try:
+        return call_with_supported_kwargs(
+            build_ai_context_packet,
+            supply_chain,
+            valuation,
+            news_rows,
+            replay_rules,
+            peer_rows=peer_rows,
+            research_links=research_links,
+            technical=technical,
+            scenario=scenario,
+            data_quality=data_quality,
+            money_flow=money_flow,
+        )
+    except TypeError as e:
+        legacy_context = build_ai_context_packet(
+            supply_chain,
+            valuation,
+            news_rows,
+            replay_rules,
+            peer_rows=peer_rows,
+            research_links=research_links,
+        )
+        return f"""
+{legacy_context}
+
+【版本兼容补充】
+分析引擎旧版本不支持全部新字段：{e}
+实时技术指标：{technical or '缺失'}
+Monte Carlo 情景：{scenario or '缺失'}
+数据可信度：{data_quality or '缺失'}
+资金面：{money_flow or '缺失'}
+"""
+
+
+def build_position_aware_prompt_safe(
+    ticker,
+    price,
+    position_status,
+    capital_plan,
+    base_context,
+    strict_decision,
+    money_flow_text_block,
+    technical=None,
+    scenario=None,
+    data_quality=None,
+):
+    try:
+        return call_with_supported_kwargs(
+            build_position_aware_prompt,
+            ticker,
+            price,
+            position_status,
+            capital_plan,
+            base_context,
+            strict_decision,
+            money_flow_text_block,
+            technical=technical,
+            scenario=scenario,
+            data_quality=data_quality,
+        )
+    except TypeError as e:
+        legacy_prompt = build_position_aware_prompt(
+            ticker,
+            price,
+            position_status,
+            capital_plan,
+            base_context,
+            strict_decision,
+            money_flow_text_block,
+        )
+        return f"""
+{legacy_prompt}
+
+【版本兼容补充】
+分析引擎旧版本不支持全部新字段：{e}
+实时技术指标：{technical or '缺失'}
+Monte Carlo 情景：{scenario or '缺失'}
+数据可信度：{data_quality or '缺失'}
+要求：数据可信度低时禁止给确定买入结论；目标价必须参考 Monte Carlo p10/p50/p90。
+"""
+
 
 def get_config_value(name, default=""):
     env_value = os.getenv(name)
@@ -2160,7 +2308,7 @@ else:
                 money_flow=money_flow_snapshot,
                 scenario=scenario_snapshot,
             )
-            strict_decision = build_strict_risk_decision(
+            strict_decision = build_strict_risk_decision_safe(
                 valuation_snapshot,
                 recent_news_rows,
                 replay_rules=stock_logic_rules,
@@ -2172,7 +2320,7 @@ else:
             )
             peer_rows = build_peer_snapshot(normalized_target, supply_profile)
             research_links = deep_research_queries(normalized_target, supply_profile.get("name", ""))
-            ai_context_packet = build_ai_context_packet(
+            ai_context_packet = build_ai_context_packet_safe(
                 supply_profile,
                 valuation_snapshot,
                 recent_news_rows,
@@ -2237,7 +2385,7 @@ else:
                 )
 
         if st.button("🧠 生成私人交易助手建议", key=f"private_assistant_{normalized_target}", type="primary"):
-            assistant_prompt = build_position_aware_prompt(
+            assistant_prompt = build_position_aware_prompt_safe(
                 normalized_target,
                 price,
                 position_status,
