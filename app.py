@@ -548,6 +548,42 @@ else:
         except Exception as e:
             st.warning(f"⚠️ market_news 读取失败: {e}")
             return []
+
+    def app_check_risk_veto(target, market_type, headlines):
+        text = "\n".join(headlines or [])
+        reasons = []
+
+        if market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
+            if "ST" in target.upper() or "ST" in text:
+                reasons.append("A股：ST 或退市风险")
+            if any(word in text for word in ["监管问询", "问询函", "立案调查"]):
+                reasons.append("A股：监管问询或立案调查")
+            if any(word in text for word in ["财务造假", "会计差错", "审计保留"]):
+                reasons.append("A股：财务真实性风险")
+            if any(word in text for word in ["商誉减值", "高商誉", "股东质押"]):
+                reasons.append("A股：商誉或质押风险")
+
+        elif market_type == "US_STOCK":
+            lowered = text.lower()
+            if any(word in lowered for word in ["earnings miss", "missed earnings", "财报暴雷"]):
+                reasons.append("美股：财报低于预期或暴雷")
+            if any(word in lowered for word in ["guidance cut", "lowered guidance", "指引下修"]):
+                reasons.append("美股：指引下修")
+            if any(word in lowered for word in ["insider selling", "executive sells", "内部卖出"]):
+                reasons.append("美股：内部人卖出")
+
+        elif market_type == "HK_STOCK":
+            if any(word in text for word in ["沽空", "大股东减持", "控股股东减持"]):
+                reasons.append("港股：沽空或大股东减持风险")
+            if any(word in text for word in ["仙股", "合股", "长期低价"]):
+                reasons.append("港股：仙股化或长期低价风险")
+
+        return {
+            "risk_flag": bool(reasons),
+            "reasons": reasons,
+            "can_analyze": not reasons,
+        }
+
     def load_manager_names():
         """
         从 manager_rules 表自动读取所有已经投喂过的基金经理名字。
@@ -1209,6 +1245,15 @@ else:
                             "暂无可用舆情。请注意：当前没有抓到最新新闻，以下分析只能基于有限信息。"
                         ]
 
+                    veto_result = app_check_risk_veto(target, market_type, all_headlines)
+                    if veto_result["risk_flag"]:
+                        st.error(
+                            "已触发风险一票否决，建议先不要看多或买入："
+                            + "；".join(veto_result["reasons"])
+                        )
+                    else:
+                        st.success("未触发风险一票否决，可以继续查看深度分析。")
+
                     risk_prompt = f"""
 当前分析标的：{target}
 用户原始输入：{raw_target}
@@ -1221,6 +1266,9 @@ else:
 
 舆情线索如下：
 {chr(10).join(all_headlines)}
+
+系统一票否决结果：
+{veto_result}
 
 请执行风控排雷：
 
