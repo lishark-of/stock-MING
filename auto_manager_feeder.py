@@ -6,7 +6,7 @@ import feedparser
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
 import os
-from urllib.parse import unquote_plus
+from urllib.parse import quote_plus, unquote_plus
 
 from manager_feeder import feed_manager_from_text
 
@@ -21,6 +21,10 @@ if not SUPABASE_KEY:
     raise ValueError("缺少 SUPABASE_KEY，请检查 GitHub Secrets")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+max_articles_per_manager = 5
+per_rss_limit = 8
 
 
 def url_hash(url):
@@ -70,23 +74,28 @@ def clean_html_text(text):
     return soup.get_text(" ", strip=True)
 
 
-def fetch_rss_items(rss_url, limit=5):
+def fetch_rss_items(rss_url, limit=per_rss_limit, source="RSS"):
     feed = feedparser.parse(rss_url)
     items = []
 
     for entry in feed.entries[:limit]:
-        title = getattr(entry, "title", "")
-        link = getattr(entry, "link", "")
-        summary = clean_html_text(getattr(entry, "summary", ""))
-        published = getattr(entry, "published", "")
+        try:
+            title = getattr(entry, "title", "")
+            link = getattr(entry, "link", "")
+            summary = clean_html_text(getattr(entry, "summary", ""))
+            published = getattr(entry, "published", "")
 
-        if title and link:
-            items.append({
-                "title": title,
-                "link": link,
-                "summary": summary,
-                "published": published
-            })
+            if title and link:
+                items.append({
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "published": published,
+                    "source": source,
+                    "feed_url": rss_url
+                })
+        except Exception as e:
+            print(f"解析 RSS 单条失败，跳过：{e}")
 
     return items
 
@@ -155,6 +164,143 @@ def is_targeted_rss(rss_url, manager_name, keywords):
     return False
 
 
+def build_google_news_rss(query):
+    query = (query or "").strip()
+    if not query:
+        return ""
+
+    has_chinese = any("\u4e00" <= ch <= "\u9fff" for ch in query)
+
+    if has_chinese:
+        return (
+            "https://news.google.com/rss/search?"
+            f"q={quote_plus(query)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+        )
+
+    return (
+        "https://news.google.com/rss/search?"
+        f"q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en"
+    )
+
+
+def default_search_queries(manager_name):
+    has_chinese = any("\u4e00" <= ch <= "\u9fff" for ch in manager_name)
+
+    if has_chinese:
+        return [
+            f"{manager_name} 基金经理",
+            f"{manager_name} 持仓",
+            f"{manager_name} 季报",
+            f"{manager_name} 调仓",
+            f"{manager_name} 访谈",
+            f"{manager_name} 投资框架",
+            f"{manager_name} 最新观点",
+            f"{manager_name} 一季报",
+            f"{manager_name} 年报",
+            f"{manager_name} 四季报",
+        ]
+
+    return [
+        f"{manager_name} portfolio",
+        f"{manager_name} holdings",
+        f"{manager_name} 13F",
+        f"{manager_name} interview",
+        f"{manager_name} market outlook",
+        f"{manager_name} AI stocks",
+        f"{manager_name} hedge fund",
+    ]
+
+
+def get_manager_search_queries(manager):
+    manager_name = manager["manager_name"]
+    queries = manager.get("search_queries") or default_search_queries(manager_name)
+
+    if isinstance(queries, str):
+        queries = [queries]
+
+    cleaned = []
+    for query in queries:
+        query = str(query).strip()
+        if query and query not in cleaned:
+            cleaned.append(query)
+
+    return cleaned
+
+
+def build_xueqiu_forum_queries(query):
+    has_chinese = any("\u4e00" <= ch <= "\u9fff" for ch in query)
+
+    if has_chinese:
+        intent = "调仓 OR 持仓 OR 重仓股 OR 投资策略 OR 明星操作 OR 访谈 OR 最新观点"
+        sites = [
+            ("Xueqiu", "site:xueqiu.com"),
+            ("EastmoneyForum", "site:guba.eastmoney.com"),
+            ("EastmoneyFund", "site:fund.eastmoney.com"),
+            ("Zhihu", "site:zhihu.com"),
+        ]
+    else:
+        intent = "portfolio OR holdings OR 13F OR interview OR market outlook OR strategy"
+        sites = [
+            ("SeekingAlpha", "site:seekingalpha.com"),
+            ("MarketWatch", "site:marketwatch.com"),
+            ("Reddit", "site:reddit.com"),
+        ]
+
+    return [(source, f"{query} {intent} {site}") for source, site in sites]
+
+
+def dedupe_items(items):
+    seen = set()
+    deduped = []
+
+    for item in items:
+        link = (item.get("link") or "").strip()
+        title = (item.get("title") or "").strip()
+        key = link or title.lower()
+
+        if not key or key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(item)
+
+    return deduped
+
+
+def collect_manager_items(manager):
+    manager_name = manager["manager_name"]
+    rss_feeds = manager.get("rss_feeds", [])
+    search_queries = get_manager_search_queries(manager)
+    items = []
+
+    for rss_url in rss_feeds:
+        try:
+            print(f"读取 RSS：{rss_url}")
+            items.extend(fetch_rss_items(rss_url, limit=per_rss_limit, source="RSS"))
+        except Exception as e:
+            print(f"RSS 抓取失败，继续下一项：{rss_url}，原因：{e}")
+
+    for query in search_queries:
+        try:
+            google_rss = build_google_news_rss(query)
+            print(f"读取 Google News：{query}")
+            items.extend(fetch_rss_items(google_rss, limit=per_rss_limit, source="Google"))
+        except Exception as e:
+            print(f"Google News 抓取失败，继续下一项：{query}，原因：{e}")
+
+        for source, forum_query in build_xueqiu_forum_queries(query):
+            try:
+                forum_rss = build_google_news_rss(forum_query)
+                print(f"读取 {source}：{forum_query}")
+                items.extend(fetch_rss_items(forum_rss, limit=per_rss_limit, source=source))
+            except Exception as e:
+                print(f"{source} 抓取失败，继续下一项：{forum_query}，原因：{e}")
+
+    items = dedupe_items(items)
+    print(f"{manager_name} 合并去重后发现文章数：{len(items)}")
+    return items
+
+
 def run_auto_feed():
     with open("sources.json", "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -164,42 +310,53 @@ def run_auto_feed():
     for manager in managers:
         manager_name = manager["manager_name"]
         keywords = list(manager.get("keywords", []))
-        rss_feeds = manager.get("rss_feeds", [])
 
         if manager_name not in keywords:
             keywords.append(manager_name)
 
         print(f"\n========== 开始扫描：{manager_name} ==========")
 
-        for rss_url in rss_feeds:
-            print(f"读取 RSS：{rss_url}")
+        items = collect_manager_items(manager)
+        found_count = len(items)
+        skipped_count = 0
+        processed_count = 0
+        saved_count = 0
 
-            items = fetch_rss_items(rss_url, limit=5)
+        if not items:
+            print("本轮暂时没有抓到内容，跳过。")
+            print(
+                f"{manager_name} 本轮统计：发现 {found_count} 篇，"
+                f"跳过 {skipped_count} 篇，处理 {processed_count} 篇，"
+                f"成功写入规则 {saved_count} 条。"
+            )
+            continue
 
-            if not items:
-                print("这个 RSS 暂时没有抓到内容，跳过。")
-                continue
+        for item in items:
+            if processed_count >= max_articles_per_manager:
+                break
 
-            for item in items:
-                try:
-                    title = item["title"]
-                    link = item["link"]
-                    summary = item.get("summary", "")
-                    published = item.get("published", "")
+            try:
+                title = item["title"]
+                link = item["link"]
+                summary = item.get("summary", "")
+                published = item.get("published", "")
+                source_name = item.get("source", "RSS")
 
-                    print(f"\n发现文章：{title}")
-                    print(link)
+                print(f"\n发现文章：[{source_name}] {title}")
+                print(link)
 
-                    if already_processed(link):
-                        print("已处理过，跳过。")
-                        continue
+                if already_processed(link):
+                    skipped_count += 1
+                    print("已处理过，跳过。")
+                    continue
 
-                    text = fetch_page_text(link)
+                text = fetch_page_text(link)
 
-                    combined_text = f"""
+                combined_text = f"""
 标题：{title}
 发布时间：{published}
 链接：{link}
+来源：{source_name}
 
 RSS摘要：
 {summary}
@@ -211,31 +368,53 @@ RSS摘要：
 如果网页正文为空，也请基于标题和RSS摘要提炼可能的投资信息。
 """
 
-                    is_targeted_feed = is_targeted_rss(rss_url, manager_name, keywords)
+                is_targeted_feed = source_name in {
+                    "Google",
+                    "Xueqiu",
+                    "EastmoneyForum",
+                    "EastmoneyFund",
+                    "Zhihu",
+                    "SeekingAlpha",
+                    "MarketWatch",
+                    "Reddit",
+                } or (
+                    source_name == "RSS"
+                    and is_targeted_rss(item.get("feed_url", ""), manager_name, keywords)
+                )
 
-                    if not is_targeted_feed:
-                        keyword_text = title + "\n" + summary + "\n" + text + "\n" + link
-                        if not manager_keyword_hit(keyword_text, keywords):
-                            print("泛资讯源关键词不匹配，跳过。")
-                            continue
+                if not is_targeted_feed:
+                    keyword_text = title + "\n" + summary + "\n" + text + "\n" + link
+                    if not manager_keyword_hit(keyword_text, keywords):
+                        skipped_count += 1
+                        print("泛资讯源关键词不匹配，跳过。")
+                        continue
 
-                    saved = feed_manager_from_text(
-                        manager_name=manager_name,
-                        raw_text=combined_text,
-                        source=link
-                    )
+                processed_count += 1
+                saved = feed_manager_from_text(
+                    manager_name=manager_name,
+                    raw_text=combined_text,
+                    source=link
+                )
 
-                    if saved > 0:
-                        mark_processed(manager_name, link, title)
-                        print(f"文章处理完成，新增规则：{saved}，已记录为处理成功。")
-                    else:
-                        print("文章处理完成，但新增规则为 0。暂不记录 processed_sources，下次仍可重试。")
+                saved_count += saved
 
-                    time.sleep(2)
+                if saved > 0:
+                    mark_processed(manager_name, link, title)
+                    print(f"文章处理完成，新增规则：{saved}，已记录为处理成功。")
+                else:
+                    print("文章处理完成，但新增规则为 0。暂不记录 processed_sources，下次仍可重试。")
 
-                except Exception as e:
-                    print(f"处理单篇文章失败，继续下一篇：{e}")
-                    continue
+                time.sleep(2)
+
+            except Exception as e:
+                print(f"处理单篇文章失败，继续下一篇：{e}")
+                continue
+
+        print(
+            f"{manager_name} 本轮统计：发现 {found_count} 篇，"
+            f"跳过 {skipped_count} 篇，处理 {processed_count} 篇，"
+            f"成功写入规则 {saved_count} 条。"
+        )
 
 
 if __name__ == "__main__":
