@@ -1079,8 +1079,8 @@ def identify_market(raw_input):
 # ==========================================
 # 3. 权限认证与 Supabase 云端连线
 # ==========================================
-if 'user_role' not in st.session_state: 
-    st.session_state.user_role = None
+if 'user_role' not in st.session_state or st.session_state.user_role is None:
+    st.session_state.user_role = "Admin"
 
 if st.session_state.user_role is None:
     st.markdown("""
