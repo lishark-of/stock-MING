@@ -61,6 +61,7 @@ try:
     deep_research_queries = getattr(_data_fetcher, "deep_research_queries", lambda ticker, company_name="": [])
     build_peer_snapshot = getattr(_data_fetcher, "build_peer_snapshot", lambda ticker, supply_profile=None: [])
     fetch_ohlcv = getattr(_data_fetcher, "fetch_ohlcv", lambda ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq": pd.DataFrame())
+    fetch_ohlcv_diagnostics = getattr(_data_fetcher, "fetch_ohlcv_diagnostics", lambda ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq": {"attempts": ["data_fetcher 缺少 fetch_ohlcv_diagnostics"]})
     fetch_realtime_quote = getattr(_data_fetcher, "fetch_realtime_quote", lambda ticker, market_type=None, provider="auto": {"ticker": ticker, "price": None, "warning": "行情模块未同步"})
     fetch_micro_data = getattr(_data_fetcher, "fetch_micro_data", lambda ticker, market_type=None: {"ticker": ticker, "warnings": ["微观数据模块未同步"]})
 
@@ -128,6 +129,9 @@ except Exception as module_error:
 
     def fetch_ohlcv(ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq"):
         return pd.DataFrame()
+
+    def fetch_ohlcv_diagnostics(ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq"):
+        return {"attempts": [str(DATA_FETCHER_MODULE_ERROR)], "rows": 0}
 
     def fetch_realtime_quote(ticker, market_type=None, provider="auto"):
         return {"ticker": ticker, "price": None, "warning": str(DATA_FETCHER_MODULE_ERROR)}
@@ -417,6 +421,17 @@ Monte Carlo 情景：{scenario or '缺失'}
 @st.cache_data(ttl=900)
 def cached_fetch_ohlcv(ticker, market_type, start, end, provider="auto"):
     return fetch_ohlcv(
+        ticker,
+        market_type=market_type,
+        start=str(start),
+        end=str(end),
+        provider=provider,
+    )
+
+
+@st.cache_data(ttl=900)
+def cached_fetch_ohlcv_diagnostics(ticker, market_type, start, end, provider="auto"):
+    return fetch_ohlcv_diagnostics(
         ticker,
         market_type=market_type,
         start=str(start),
@@ -2977,8 +2992,20 @@ else:
                     st.session_state["last_backtest_key"] = bt_key
                     st.warning("没有抓到可用行情。")
                     st.caption(f"识别结果：{target}｜{market_type}｜行情源：{bt_provider}｜区间：{bt_start} 至 {bt_end}")
+                    diag = cached_fetch_ohlcv_diagnostics(
+                        target,
+                        market_type,
+                        bt_start.isoformat(),
+                        (bt_end + datetime.timedelta(days=1)).isoformat(),
+                        provider=bt_provider,
+                    )
+                    attempts = diag.get("attempts") or []
+                    if attempts:
+                        st.markdown("##### 数据源尝试记录")
+                        for item in attempts:
+                            st.caption(f"- {item}")
                     if market_type.startswith("A_SHARE"):
-                        st.info("A股请优先输入 6 位代码或带 .SZ/.SS 后缀，例如 002008、002008.SZ、600459、600459.SS；行情源优先用 auto 或 akshare。")
+                        st.info("A股请优先输入 6 位代码或带 .SZ/.SS 后缀，例如 002008、002008.SZ、600459、600459.SS。若 akshare 为空，系统会自动再试 yfinance。")
                     elif market_type == "HK_STOCK":
                         st.info("港股请用 0700 或 0700.HK 这种格式，行情源用 auto/yfinance。")
                     elif market_type == "JP_STOCK":

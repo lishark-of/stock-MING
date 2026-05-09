@@ -240,15 +240,22 @@ def _fetch_ohlcv_yfinance(ticker, market_type, start=None, end=None, interval="1
             progress=False,
             threads=False,
         )
-        return standardize_ohlcv_frame(data, market_type=market_type, source=f"yfinance:{symbol}")
-    except Exception:
-        return pd.DataFrame()
+        frame = standardize_ohlcv_frame(data, market_type=market_type, source=f"yfinance:{symbol}")
+        if frame.empty:
+            frame.attrs["warning"] = f"yfinance:{symbol} 返回空数据"
+        return frame
+    except Exception as exc:
+        frame = pd.DataFrame()
+        frame.attrs["warning"] = f"yfinance:{symbol} 异常：{exc}"
+        return frame
 
 
 def _fetch_ohlcv_akshare(ticker, start=None, end=None, adjust="qfq"):
     code = ticker_core(ticker)
     if not code.isdigit():
-        return pd.DataFrame()
+        frame = pd.DataFrame()
+        frame.attrs["warning"] = f"akshare 需要6位A股代码，当前为 {ticker}"
+        return frame
 
     start_date = pd.to_datetime(start or datetime.date.today() - datetime.timedelta(days=365 * 2)).strftime("%Y%m%d")
     end_date = pd.to_datetime(end or datetime.date.today()).strftime("%Y%m%d")
@@ -262,30 +269,75 @@ def _fetch_ohlcv_akshare(ticker, start=None, end=None, adjust="qfq"):
             end_date=end_date,
             adjust=adjust,
         )
-        return standardize_ohlcv_frame(data, market_type="A_SHARE", source=f"akshare:{code}")
-    except Exception:
-        return pd.DataFrame()
+        frame = standardize_ohlcv_frame(data, market_type="A_SHARE", source=f"akshare:{code}")
+        if frame.empty:
+            frame.attrs["warning"] = f"akshare:{code} 返回空数据，区间 {start_date}-{end_date}"
+        return frame
+    except Exception as exc:
+        frame = pd.DataFrame()
+        frame.attrs["warning"] = f"akshare:{code} 异常：{exc}"
+        return frame
 
 
 def fetch_ohlcv(ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq"):
     normalized = normalize_ticker(ticker)
     market = market_family(market_type or infer_market_type(normalized))
     provider = (provider or "auto").lower()
+    attempts = []
 
     if market == "A_SHARE" and provider in {"auto", "akshare"}:
         data = _fetch_ohlcv_akshare(normalized, start=start, end=end, adjust=adjust)
-        if not data.empty or provider == "akshare":
+        attempts.append(data.attrs.get("warning") or f"akshare:{ticker_core(normalized)} 成功 {len(data)} 行")
+        if not data.empty:
+            data.attrs["attempts"] = attempts
             return data
 
     if provider in {"auto", "yfinance", "yf"}:
         data = _fetch_ohlcv_yfinance(normalized, market, start=start, end=end, interval=freq)
+        attempts.append(data.attrs.get("warning") or f"yfinance:{_yf_symbol(normalized, market)} 成功 {len(data)} 行")
         if not data.empty:
+            data.attrs["attempts"] = attempts
+            return data
+
+    if market == "A_SHARE" and provider in {"akshare"}:
+        data = _fetch_ohlcv_yfinance(normalized, market, start=start, end=end, interval=freq)
+        attempts.append(data.attrs.get("warning") or f"yfinance:{_yf_symbol(normalized, market)} 备用成功 {len(data)} 行")
+        if not data.empty:
+            data.attrs["attempts"] = attempts
             return data
 
     if market == "A_SHARE" and provider not in {"akshare"}:
-        return _fetch_ohlcv_akshare(normalized, start=start, end=end, adjust=adjust)
+        data = _fetch_ohlcv_akshare(normalized, start=start, end=end, adjust=adjust)
+        attempts.append(data.attrs.get("warning") or f"akshare:{ticker_core(normalized)} 备用成功 {len(data)} 行")
+        if not data.empty:
+            data.attrs["attempts"] = attempts
+            return data
 
-    return pd.DataFrame()
+    empty = pd.DataFrame()
+    empty.attrs["attempts"] = attempts or [f"未匹配可用行情源：{normalized}/{market}/{provider}"]
+    return empty
+
+
+def fetch_ohlcv_diagnostics(ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq"):
+    data = fetch_ohlcv(
+        ticker,
+        market_type=market_type,
+        start=start,
+        end=end,
+        freq=freq,
+        provider=provider,
+        adjust=adjust,
+    )
+    return {
+        "ticker": normalize_ticker(ticker),
+        "market_type": market_family(market_type or infer_market_type(ticker)),
+        "provider": provider,
+        "rows": int(len(data)) if data is not None else 0,
+        "source": data["source"].iloc[-1] if data is not None and not data.empty and "source" in data.columns else "",
+        "attempts": data.attrs.get("attempts", []) if data is not None else [],
+        "start": str(start),
+        "end": str(end),
+    }
 
 
 def fetch_realtime_quote(ticker, market_type=None, provider="auto"):
