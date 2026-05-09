@@ -26,7 +26,7 @@ except Exception as module_error:
     def build_counter_argument_prompt(ticker, bull_case, context):
         return f"请反驳 {ticker} 的看多理由：{bull_case}\n材料：{context}"
 
-    def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block, technical=None, scenario=None, data_quality=None):
+    def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block, technical=None, scenario=None, data_quality=None, position_profile=None):
         return f"标的：{ticker}，价格：{price}，状态：{position_status}，本金：{capital_plan}\n{base_context}\n{strict_decision}\n{money_flow_text_block}"
 
     def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None, money_flow=None, position_status="未买入 (观望/找买点)", data_quality=None, scenario=None):
@@ -316,9 +316,10 @@ def build_position_aware_prompt_safe(
     technical=None,
     scenario=None,
     data_quality=None,
+    position_profile=None,
 ):
     try:
-        return call_with_supported_kwargs(
+        prompt = call_with_supported_kwargs(
             build_position_aware_prompt,
             ticker,
             price,
@@ -330,7 +331,16 @@ def build_position_aware_prompt_safe(
             technical=technical,
             scenario=scenario,
             data_quality=data_quality,
+            position_profile=position_profile,
         )
+        if position_profile:
+            prompt += f"""
+
+【用户持仓画像补充】
+{position_profile}
+要求：必须围绕成本价判断浮盈/浮亏，止损和止盈都要写成相对成本价的动作。
+"""
+        return prompt
     except TypeError as e:
         legacy_prompt = build_position_aware_prompt(
             ticker,
@@ -349,8 +359,198 @@ def build_position_aware_prompt_safe(
 实时技术指标：{technical or '缺失'}
 Monte Carlo 情景：{scenario or '缺失'}
 数据可信度：{data_quality or '缺失'}
+用户持仓画像：{position_profile or '缺失'}
 要求：数据可信度低时禁止给确定买入结论；目标价必须参考 Monte Carlo p10/p50/p90。
 """
+
+
+def _num(value, default=None):
+    try:
+        if value is None or value == "":
+            return default
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _fmt_price(value, currency=""):
+    value = _num(value)
+    if value is None:
+        return "N/A"
+    prefix = f"{currency} " if currency else ""
+    return f"{prefix}{value:,.2f}"
+
+
+def build_position_profile(ticker, current_price, cost_price, holding_units, capital_plan, position_status, currency):
+    current = _num(current_price)
+    cost = _num(cost_price)
+    units = _num(holding_units, 0) or 0
+    capital = _num(capital_plan, 0) or 0
+    is_holding = str(position_status).startswith("已持有")
+    pnl_pct = None
+    pnl_amount = None
+    state = "未输入成本价"
+
+    if current and cost and cost > 0:
+        pnl_pct = round((current / cost - 1) * 100, 2)
+        if units > 0:
+            pnl_amount = round((current - cost) * units, 2)
+        elif capital > 0:
+            pnl_amount = round(capital * pnl_pct / 100, 2)
+        if pnl_pct > 0:
+            state = f"浮盈 {pnl_pct:.2f}%"
+        elif pnl_pct < 0:
+            state = f"浮亏 {abs(pnl_pct):.2f}%"
+        else:
+            state = "接近成本"
+    elif not is_holding:
+        state = "未买入，成本价作为计划参考"
+
+    return {
+        "ticker": ticker,
+        "position_status": position_status,
+        "is_holding": is_holding,
+        "currency": currency,
+        "current_price": current,
+        "cost_price": cost,
+        "holding_units": units,
+        "capital_plan": capital,
+        "pnl_pct": pnl_pct,
+        "pnl_amount": pnl_amount,
+        "profit_state": state,
+    }
+
+
+def build_one_line_trade_instruction(profile, strict_decision, technical=None, scenario=None, money_flow=None, data_quality=None):
+    technical = technical or {}
+    scenario = scenario or {}
+    money_flow = money_flow or {}
+    data_quality = data_quality or {}
+    current = profile.get("current_price")
+    cost = profile.get("cost_price")
+    pnl_pct = profile.get("pnl_pct")
+    is_holding = profile.get("is_holding")
+    risk_score = int(_num((strict_decision or {}).get("risk_score"), 0) or 0)
+    risk_action = (strict_decision or {}).get("action", "允许继续分析")
+    ma60_state = technical.get("ma60_state", "未知")
+    rsi = _num(technical.get("rsi"))
+    p10 = _num(scenario.get("p10"))
+    p75 = _num(scenario.get("p75"))
+    p90 = _num(scenario.get("p90"))
+    ma60 = _num(technical.get("ma60"))
+    quality_score = int(_num(data_quality.get("score"), 100) or 0)
+    negatives = ((money_flow.get("summary") or {}).get("negative") or [])
+    reasons = list((strict_decision or {}).get("reasons") or [])
+
+    trend_bad = ma60_state == "低于MA60"
+    rsi_hot = rsi is not None and rsi >= 72
+    flow_bad = bool(negatives)
+    hard_block = risk_action.startswith("禁止") or risk_score >= 70 or quality_score < 45
+
+    stop_loss = None
+    take_profit = None
+    if current:
+        stop_loss = current * 0.92
+        take_profit = current * 1.12
+    if p10:
+        stop_loss = p10 if stop_loss is None else min(stop_loss, p10)
+    if p75:
+        take_profit = p75
+    if p90 and rsi_hot:
+        take_profit = min(p90, take_profit) if take_profit else p90
+
+    if is_holding and cost:
+        if pnl_pct is not None and pnl_pct < 0:
+            stop_loss = min(current * 0.97, cost * 0.92) if current else cost * 0.92
+        elif pnl_pct is not None:
+            trailing_candidates = [cost * 1.01]
+            if ma60:
+                trailing_candidates.append(ma60 * 0.98)
+            if current:
+                trailing_candidates.append(current * 0.93)
+            stop_loss = max(trailing_candidates)
+
+    if is_holding:
+        if pnl_pct is not None and pnl_pct <= -8 and (trend_bad or flow_bad or risk_score >= 55):
+            action = "减仓/止损"
+            driver = "亏损已扩大且趋势或资金面未确认修复"
+        elif pnl_pct is not None and pnl_pct < 0:
+            action = "防守持有"
+            driver = "仍低于成本，先等趋势/资金面确认"
+        elif pnl_pct is not None and pnl_pct >= 15 and (rsi_hot or (p75 and current and current >= p75)):
+            action = "分批止盈"
+            driver = "相对成本已有较高浮盈，且接近情景上沿或RSI偏热"
+        elif hard_block:
+            action = "降仓观察"
+            driver = "系统风控触发较多，优先保护本金"
+        else:
+            action = "继续持有"
+            driver = "未触发硬性卖出，按成本价上方移动止损"
+    else:
+        if hard_block:
+            action = "禁止开仓"
+            driver = "风险分或数据缺口过高，不适合新买入"
+        elif trend_bad or quality_score < 60:
+            action = "观望"
+            driver = "趋势或数据可信度不足，等待更清晰买点"
+        elif risk_score <= 40:
+            action = "小仓尝试"
+            driver = "风控未明显否决，可用小仓验证"
+        else:
+            action = "观望/小仓试错"
+            driver = "仍有风险因子，仓位必须保守"
+
+    if take_profit is None and cost:
+        take_profit = cost * 1.15
+    if stop_loss is None and cost:
+        stop_loss = cost * 0.92
+
+    cost_text = _fmt_price(cost, profile.get("currency")) if cost else "未填成本"
+    current_text = _fmt_price(current, profile.get("currency"))
+    stop_text = _fmt_price(stop_loss, profile.get("currency"))
+    take_text = _fmt_price(take_profit, profile.get("currency"))
+    pnl_text = profile.get("profit_state", "未计算")
+    risk_text = "；".join([str(r) for r in reasons[:3]]) if reasons else "暂无硬性风险，但仍需盘中确认"
+    one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。止损参考 {stop_text}，止盈/减仓参考 {take_text}。"
+
+    return {
+        "action": action,
+        "one_line": one_line,
+        "driver": driver,
+        "stop_loss": round(stop_loss, 2) if stop_loss else None,
+        "take_profit": round(take_profit, 2) if take_profit else None,
+        "risk_factors": risk_text,
+        "risk_score": risk_score,
+        "quality_score": quality_score,
+    }
+
+
+def render_trade_instruction_card(profile, instruction):
+    st.markdown("#### 🧾 一句话交易指令卡")
+    action = instruction.get("action", "")
+    if any(word in action for word in ["禁止", "止损", "减仓", "降仓"]):
+        st.error(instruction.get("one_line", "暂无交易指令"))
+    elif any(word in action for word in ["观望", "防守"]):
+        st.warning(instruction.get("one_line", "暂无交易指令"))
+    else:
+        st.success(instruction.get("one_line", "暂无交易指令"))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("成本价", _fmt_price(profile.get("cost_price"), profile.get("currency")))
+    c2.metric("当前价", _fmt_price(profile.get("current_price"), profile.get("currency")))
+    pnl_delta = None
+    if profile.get("pnl_amount") is not None:
+        pnl_delta = _fmt_price(profile.get("pnl_amount"), profile.get("currency"))
+    c3.metric("浮动盈亏", profile.get("profit_state", "未计算"), pnl_delta)
+    c4.metric("当前建议", instruction.get("action", "观察"))
+
+    c5, c6, c7 = st.columns(3)
+    c5.metric("止损参考", _fmt_price(instruction.get("stop_loss"), profile.get("currency")))
+    c6.metric("止盈/减仓参考", _fmt_price(instruction.get("take_profit"), profile.get("currency")))
+    c7.metric("风控分", instruction.get("risk_score", 0), f"可信度 {instruction.get('quality_score', 0)}")
+    st.caption(f"风险因素：{instruction.get('risk_factors', '')}")
 
 
 def get_config_value(name, default=""):
@@ -1935,7 +2135,7 @@ else:
         else:
             st.metric(f"📡 信号丢��� ({market_badge})", "未查找到该标的")
 
-    pos_c1, pos_c2 = st.columns([2, 1])
+    pos_c1, pos_c2, pos_c3, pos_c4 = st.columns([1.5, 1, 1, 1])
     with pos_c1:
         position_status = st.selectbox(
             "持仓状态",
@@ -1949,6 +2149,44 @@ else:
             value=0.0,
             step=1000.0,
             key="capital_plan",
+        )
+    with pos_c3:
+        cost_price = st.number_input(
+            "成本价/参考价",
+            min_value=0.0,
+            value=0.0,
+            step=0.01,
+            format="%.3f",
+            key="cost_price",
+            help="已持有时填真实成本价；未买入时可填计划买入参考价。",
+        )
+    with pos_c4:
+        holding_units = st.number_input(
+            "持仓数量（可选）",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            format="%.2f",
+            key="holding_units",
+        )
+
+    position_profile_preview = build_position_profile(
+        target,
+        price,
+        cost_price,
+        holding_units,
+        capital_plan,
+        position_status,
+        currency,
+    )
+    if cost_price > 0:
+        p1, p2, p3 = st.columns(3)
+        p1.metric("成本价", _fmt_price(position_profile_preview.get("cost_price"), currency))
+        p2.metric("当前价", _fmt_price(position_profile_preview.get("current_price"), currency))
+        p3.metric(
+            "相对成本",
+            position_profile_preview.get("profit_state", "未计算"),
+            _fmt_price(position_profile_preview.get("pnl_amount"), currency) if position_profile_preview.get("pnl_amount") is not None else None,
         )
 
     st.markdown("---")
@@ -2380,6 +2618,24 @@ else:
                 data_quality=data_quality_report,
                 scenario=scenario_snapshot,
             )
+            position_profile = build_position_profile(
+                normalized_target,
+                price,
+                cost_price,
+                holding_units,
+                capital_plan,
+                position_status,
+                currency,
+            )
+            trade_instruction = build_one_line_trade_instruction(
+                position_profile,
+                strict_decision,
+                technical=technical_snapshot,
+                scenario=scenario_snapshot,
+                money_flow=money_flow_snapshot,
+                data_quality=data_quality_report,
+            )
+            position_profile["local_trade_instruction"] = trade_instruction
             peer_rows = build_peer_snapshot(normalized_target, supply_profile)
             research_links = deep_research_queries(normalized_target, supply_profile.get("name", ""))
             ai_context_packet = build_ai_context_packet_safe(
@@ -2394,6 +2650,8 @@ else:
                 data_quality=data_quality_report,
                 money_flow=money_flow_snapshot,
             )
+
+        render_trade_instruction_card(position_profile, trade_instruction)
 
         with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
             base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8, base_tab9, base_tab10, base_tab11 = st.tabs([
@@ -2458,6 +2716,7 @@ else:
                 technical=technical_snapshot,
                 scenario=scenario_snapshot,
                 data_quality=data_quality_report,
+                position_profile=position_profile,
             )
             call_deepseek_stream(
                 assistant_prompt,
