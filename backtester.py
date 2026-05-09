@@ -1,0 +1,419 @@
+import math
+
+import numpy as np
+import pandas as pd
+
+
+DEFAULT_RULES = {
+    "ma_fast": 5,
+    "ma_mid": 20,
+    "ma_slow": 60,
+    "rsi_period": 14,
+    "rsi_buy_max": 58,
+    "rsi_sell_min": 74,
+    "stop_loss_pct": 0.08,
+    "take_profit_pct": 0.18,
+    "max_drawdown_exit": 0.12,
+    "position_size": 1.0,
+}
+
+
+def normalize_price_frame(price_df):
+    if price_df is None or price_df.empty:
+        return pd.DataFrame()
+
+    df = price_df.copy()
+    rename_map = {
+        "Date": "date",
+        "日期": "date",
+        "Open": "open",
+        "开盘": "open",
+        "High": "high",
+        "最高": "high",
+        "Low": "low",
+        "最低": "low",
+        "Close": "close",
+        "收盘": "close",
+        "Volume": "volume",
+        "成交量": "volume",
+        "Amount": "amount",
+        "成交额": "amount",
+        "Turnover": "turnover_rate",
+        "换手率": "turnover_rate",
+    }
+    df = df.rename(columns={c: rename_map.get(c, c) for c in df.columns})
+    if "date" not in df.columns:
+        df = df.reset_index().rename(columns={"index": "date"})
+
+    for col in ["open", "high", "low", "close", "volume", "amount", "turnover_rate"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    return df
+
+
+def compute_rsi(close, period=14):
+    if close is None or len(close) < period + 2:
+        return pd.Series(index=close.index if close is not None else [], dtype=float)
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def add_indicators(price_df, rules=None):
+    df = normalize_price_frame(price_df)
+    if df.empty:
+        return df
+
+    rules = {**DEFAULT_RULES, **(rules or {})}
+    close = df["close"]
+    df["ma_fast"] = close.rolling(int(rules["ma_fast"])).mean()
+    df["ma_mid"] = close.rolling(int(rules["ma_mid"])).mean()
+    df["ma_slow"] = close.rolling(int(rules["ma_slow"])).mean()
+    df["rsi"] = compute_rsi(close, int(rules["rsi_period"]))
+    df["daily_return"] = close.pct_change().fillna(0)
+    df["rolling_peak"] = close.cummax()
+    df["drawdown_from_peak"] = close / df["rolling_peak"] - 1
+    if "volume" in df.columns:
+        df["volume_ratio_20"] = df["volume"] / df["volume"].rolling(20).mean().replace(0, np.nan)
+    else:
+        df["volume_ratio_20"] = np.nan
+    return df
+
+
+def generate_signals(price_df, rules=None, cost_price=None):
+    df = add_indicators(price_df, rules)
+    if df.empty:
+        return df
+
+    rules = {**DEFAULT_RULES, **(rules or {})}
+    cost = _num(cost_price)
+    in_position = False
+    entry_price = None
+    peak_since_entry = None
+    signals = []
+    reasons = []
+
+    for _, row in df.iterrows():
+        close = _num(row.get("close"))
+        ma_mid = _num(row.get("ma_mid"))
+        ma_slow = _num(row.get("ma_slow"))
+        rsi = _num(row.get("rsi"))
+        signal = "HOLD" if in_position else "WAIT"
+        reason = "等待有效信号"
+
+        if close is None:
+            signals.append(signal)
+            reasons.append(reason)
+            continue
+
+        if in_position:
+            peak_since_entry = max(peak_since_entry or close, close)
+            stop_anchor = entry_price or cost or close
+            stop_loss = stop_anchor * (1 - float(rules["stop_loss_pct"]))
+            take_profit = stop_anchor * (1 + float(rules["take_profit_pct"]))
+            trailing_dd = close / max(peak_since_entry, 1) - 1
+
+            if close <= stop_loss:
+                signal = "SELL"
+                reason = "跌破成本/入场锚定止损"
+            elif close >= take_profit and (rsi is None or rsi >= 60):
+                signal = "TAKE_PROFIT"
+                reason = "达到止盈区并有过热/上冲迹象"
+            elif trailing_dd <= -float(rules["max_drawdown_exit"]):
+                signal = "SELL"
+                reason = "持仓后回撤超过纪律阈值"
+            elif ma_slow is not None and close < ma_slow and rsi is not None and rsi < 45:
+                signal = "REDUCE"
+                reason = "跌破慢线且动能偏弱"
+        else:
+            trend_ok = ma_mid is not None and ma_slow is not None and close >= ma_mid >= ma_slow
+            cost_ok = True
+            if cost:
+                cost_ok = close <= cost * 1.03 or close >= cost
+            rsi_ok = rsi is None or rsi <= float(rules["rsi_buy_max"])
+            if trend_ok and rsi_ok and cost_ok:
+                signal = "BUY"
+                reason = "趋势站稳且未明显过热"
+            elif cost and close <= cost * (1 - float(rules["stop_loss_pct"])):
+                signal = "AVOID"
+                reason = "低于参考成本且未确认止跌"
+
+        if signal == "BUY":
+            in_position = True
+            entry_price = close
+            peak_since_entry = close
+        elif signal in {"SELL", "TAKE_PROFIT"}:
+            in_position = False
+            entry_price = None
+            peak_since_entry = None
+
+        signals.append(signal)
+        reasons.append(reason)
+
+    df["signal"] = signals
+    df["signal_reason"] = reasons
+    return df
+
+
+def simulate_trades(signal_df, initial_cash=100000, position_size=1.0, fee_rate=0.0005):
+    if signal_df is None or signal_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    cash = float(initial_cash)
+    shares = 0.0
+    entry_price = None
+    trades = []
+    equity_rows = []
+    position_size = max(0.0, min(float(position_size), 1.0))
+
+    for _, row in signal_df.iterrows():
+        date = row.get("date")
+        close = _num(row.get("close"))
+        signal = row.get("signal", "WAIT")
+        reason = row.get("signal_reason", "")
+        if close is None:
+            continue
+
+        if signal == "BUY" and shares <= 0 and cash > 0:
+            budget = cash * position_size
+            shares = budget * (1 - fee_rate) / close
+            cash -= budget
+            entry_price = close
+            trades.append({
+                "date": date,
+                "action": "BUY",
+                "price": round(close, 4),
+                "shares": round(shares, 4),
+                "reason": reason,
+                "pnl_pct": "",
+            })
+        elif signal in {"SELL", "TAKE_PROFIT"} and shares > 0:
+            proceeds = shares * close * (1 - fee_rate)
+            pnl_pct = (close / entry_price - 1) * 100 if entry_price else 0
+            cash += proceeds
+            trades.append({
+                "date": date,
+                "action": signal,
+                "price": round(close, 4),
+                "shares": round(shares, 4),
+                "reason": reason,
+                "pnl_pct": round(pnl_pct, 2),
+            })
+            shares = 0.0
+            entry_price = None
+        elif signal == "REDUCE" and shares > 0:
+            sell_shares = shares * 0.5
+            proceeds = sell_shares * close * (1 - fee_rate)
+            pnl_pct = (close / entry_price - 1) * 100 if entry_price else 0
+            cash += proceeds
+            shares -= sell_shares
+            trades.append({
+                "date": date,
+                "action": "REDUCE",
+                "price": round(close, 4),
+                "shares": round(sell_shares, 4),
+                "reason": reason,
+                "pnl_pct": round(pnl_pct, 2),
+            })
+
+        equity = cash + shares * close
+        equity_rows.append({
+            "date": date,
+            "close": close,
+            "cash": cash,
+            "shares": shares,
+            "equity": equity,
+            "signal": signal,
+        })
+
+    return pd.DataFrame(equity_rows), pd.DataFrame(trades)
+
+
+def compute_backtest_metrics(equity_curve, trades=None, initial_cash=100000):
+    if equity_curve is None or equity_curve.empty:
+        return {
+            "total_return_pct": 0,
+            "annual_return_pct": 0,
+            "sharpe": 0,
+            "max_drawdown_pct": 0,
+            "win_rate_pct": 0,
+            "trade_count": 0,
+        }
+
+    equity = equity_curve["equity"].astype(float)
+    total_return = equity.iloc[-1] / float(initial_cash) - 1
+    daily = equity.pct_change().dropna()
+    days = max(len(equity_curve), 1)
+    annual_return = (1 + total_return) ** (252 / days) - 1 if total_return > -1 else -1
+    sharpe = 0
+    if len(daily) > 2 and daily.std() > 0:
+        sharpe = daily.mean() / daily.std() * math.sqrt(252)
+    dd = equity / equity.cummax() - 1
+
+    trade_count = 0
+    win_rate = 0
+    if trades is not None and not trades.empty:
+        exits = trades[trades["action"].isin(["SELL", "TAKE_PROFIT", "REDUCE"])]
+        trade_count = len(exits)
+        pnl = pd.to_numeric(exits.get("pnl_pct"), errors="coerce").dropna()
+        if len(pnl):
+            win_rate = (pnl > 0).mean() * 100
+
+    return {
+        "total_return_pct": round(float(total_return * 100), 2),
+        "annual_return_pct": round(float(annual_return * 100), 2),
+        "sharpe": round(float(sharpe), 2),
+        "max_drawdown_pct": round(float(dd.min() * 100), 2),
+        "win_rate_pct": round(float(win_rate), 2),
+        "trade_count": int(trade_count),
+    }
+
+
+def build_cost_context(price_df, cost_price=None, current_price=None):
+    df = normalize_price_frame(price_df)
+    latest = _num(current_price)
+    if latest is None and not df.empty:
+        latest = _num(df["close"].iloc[-1])
+    cost = _num(cost_price)
+    pnl_pct = None
+    state = "未输入成本价"
+    if latest and cost and cost > 0:
+        pnl_pct = round((latest / cost - 1) * 100, 2)
+        state = f"浮盈 {pnl_pct}%" if pnl_pct > 0 else ("接近成本" if pnl_pct == 0 else f"浮亏 {abs(pnl_pct)}%")
+    return {
+        "cost_price": cost,
+        "current_price": latest,
+        "pnl_pct": pnl_pct,
+        "state": state,
+    }
+
+
+def run_backtest(price_df, rules=None, cost_price=None, initial_cash=100000):
+    rules = {**DEFAULT_RULES, **(rules or {})}
+    signal_df = generate_signals(price_df, rules=rules, cost_price=cost_price)
+    equity_curve, trades = simulate_trades(
+        signal_df,
+        initial_cash=initial_cash,
+        position_size=rules.get("position_size", 1.0),
+    )
+    metrics = compute_backtest_metrics(equity_curve, trades=trades, initial_cash=initial_cash)
+    cost_context = build_cost_context(price_df, cost_price=cost_price)
+    latest_signal = build_latest_signal(signal_df, cost_context, metrics)
+    return {
+        "signals": signal_df,
+        "equity_curve": equity_curve,
+        "trades": trades,
+        "metrics": metrics,
+        "rules": rules,
+        "position_context": cost_context,
+        "latest_signal": latest_signal,
+        "signal_counts": signal_df["signal"].value_counts().to_dict() if "signal" in signal_df.columns else {},
+        "data_points": int(len(signal_df)),
+        "summary": build_report_summary(metrics, cost_context, latest_signal),
+    }
+
+
+def build_latest_signal(signal_df, cost_context, metrics):
+    if signal_df is None or signal_df.empty:
+        return {
+            "action": "数据不足",
+            "reason": "没有可用行情生成回测信号",
+            "date": "",
+            "price": None,
+        }
+
+    latest = signal_df.iloc[-1]
+    raw_signal = latest.get("signal", "WAIT")
+    reason = latest.get("signal_reason", "")
+    current = _num(latest.get("close"))
+    cost = cost_context.get("cost_price")
+    pnl_pct = cost_context.get("pnl_pct")
+    max_dd = _num(metrics.get("max_drawdown_pct"), 0) or 0
+
+    if raw_signal in {"BUY"}:
+        action = "小仓尝试"
+    elif raw_signal in {"SELL"}:
+        action = "止损/退出"
+    elif raw_signal in {"TAKE_PROFIT"}:
+        action = "分批止盈"
+    elif raw_signal in {"REDUCE"}:
+        action = "减仓"
+    elif raw_signal in {"AVOID"}:
+        action = "禁止开仓"
+    else:
+        action = "继续观察"
+
+    if cost and current:
+        if pnl_pct is not None and pnl_pct <= -8:
+            reason = f"{reason}；当前相对成本浮亏 {abs(pnl_pct)}%，优先检查止损纪律"
+        elif pnl_pct is not None and pnl_pct >= 15:
+            reason = f"{reason}；当前相对成本浮盈 {pnl_pct}%，优先检查移动止盈"
+
+    if max_dd <= -20 and action in {"小仓尝试", "继续观察"}:
+        reason = f"{reason}；该策略历史最大回撤较深，仓位需降档"
+
+    return {
+        "action": action,
+        "raw_signal": raw_signal,
+        "reason": reason,
+        "date": str(latest.get("date").date()) if pd.notna(latest.get("date")) else "",
+        "price": round(current, 4) if current is not None else None,
+    }
+
+
+def build_report_summary(metrics, cost_context, latest_signal=None):
+    state = cost_context.get("state", "未输入成本价")
+    total = metrics.get("total_return_pct", 0)
+    dd = metrics.get("max_drawdown_pct", 0)
+    sharpe = metrics.get("sharpe", 0)
+    action = (latest_signal or {}).get("action", "继续观察")
+    if total > 0 and sharpe >= 1:
+        stance = "策略历史表现较稳"
+    elif dd <= -18:
+        stance = "策略回撤偏大，需降低仓位"
+    elif total <= 0:
+        stance = "策略历史收益不足，优先观察"
+    else:
+        stance = "策略可作为辅助参考"
+    return f"{stance}；最新信号：{action}；当前相对成本状态：{state}；回测收益 {total}%、最大回撤 {dd}%、夏普 {sharpe}。"
+
+
+def compact_report_for_prompt(report, max_trades=8):
+    if not report:
+        return {}
+
+    trades = report.get("trades")
+    if trades is not None and not trades.empty:
+        trade_rows = trades.tail(max_trades).copy()
+        if "date" in trade_rows.columns:
+            trade_rows["date"] = trade_rows["date"].astype(str)
+        trade_rows = trade_rows.to_dict("records")
+    else:
+        trade_rows = []
+
+    return {
+        "summary": report.get("summary", ""),
+        "metrics": report.get("metrics", {}),
+        "position_context": report.get("position_context", {}),
+        "latest_signal": report.get("latest_signal", {}),
+        "rules": report.get("rules", {}),
+        "signal_counts": report.get("signal_counts", {}),
+        "data_points": report.get("data_points", 0),
+        "recent_trades": trade_rows,
+    }
+
+
+def _num(value, default=None):
+    try:
+        if value is None or value == "":
+            return default
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default

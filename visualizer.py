@@ -190,10 +190,82 @@ def render_research_links(links):
         st.markdown(f"- [公开检索]({link})")
 
 
+def render_backtest_report(report):
+    st.markdown("#### 回测结果卡")
+    if not report:
+        st.warning("暂无回测报告。")
+        return
+
+    metrics = report.get("metrics", {}) or {}
+    latest_signal = report.get("latest_signal", {}) or {}
+    position_context = report.get("position_context", {}) or {}
+
+    summary = report.get("summary", "")
+    action = latest_signal.get("action", "继续观察")
+    if any(word in action for word in ["禁止", "止损", "退出", "减仓"]):
+        st.error(summary or action)
+    elif any(word in action for word in ["观察", "防守"]):
+        st.warning(summary or action)
+    else:
+        st.success(summary or action)
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("总收益", _pct(metrics.get("total_return_pct")))
+    c2.metric("年化收益", _pct(metrics.get("annual_return_pct")))
+    c3.metric("夏普", _fmt(metrics.get("sharpe")))
+    c4.metric("最大回撤", _pct(metrics.get("max_drawdown_pct")))
+    c5.metric("胜率", _pct(metrics.get("win_rate_pct")))
+    c6.metric("交易次数", metrics.get("trade_count", 0))
+
+    p1, p2, p3 = st.columns(3)
+    p1.metric("当前信号", action)
+    p2.metric("相对成本", position_context.get("state", "未输入成本价"))
+    p3.metric("最新信号日", latest_signal.get("date", ""))
+    if latest_signal.get("reason"):
+        st.caption(f"信号原因：{latest_signal.get('reason')}")
+
+    equity_curve = report.get("equity_curve")
+    if equity_curve is not None and not equity_curve.empty:
+        chart_df = equity_curve.copy()
+        if "date" in chart_df.columns:
+            chart_df["date"] = pd.to_datetime(chart_df["date"], errors="coerce")
+            chart_df = chart_df.dropna(subset=["date"]).set_index("date")
+        if "equity" in chart_df.columns:
+            st.line_chart(chart_df[["equity"]], use_container_width=True)
+
+    trades = report.get("trades")
+    if trades is not None and not trades.empty:
+        with st.expander("交易明细", expanded=False):
+            show = trades.copy()
+            if "date" in show.columns:
+                show["date"] = show["date"].astype(str)
+            st.dataframe(show, use_container_width=True, hide_index=True)
+    else:
+        st.info("这段历史里没有触发完整买卖交易，说明规则偏保守或样本不足。")
+
+    signals = report.get("signals")
+    if signals is not None and not signals.empty:
+        with st.expander("最近信号", expanded=False):
+            cols = [col for col in ["date", "close", "ma_mid", "ma_slow", "rsi", "volume_ratio_20", "signal", "signal_reason"] if col in signals.columns]
+            show = signals[cols].tail(20).copy()
+            if "date" in show.columns:
+                show["date"] = show["date"].astype(str)
+            st.dataframe(show, use_container_width=True, hide_index=True)
+
+
 def _fmt(value):
     try:
         if value is None:
             return "N/A"
         return round(float(value), 2)
+    except Exception:
+        return "N/A"
+
+
+def _pct(value):
+    try:
+        if value is None:
+            return "N/A"
+        return f"{float(value):.2f}%"
     except Exception:
         return "N/A"

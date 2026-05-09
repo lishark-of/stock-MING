@@ -132,6 +132,231 @@ def ticker_core(ticker):
     return normalize_ticker(ticker).replace(".SZ", "").replace(".SS", "").replace(".HK", "").replace(".T", "")
 
 
+def market_family(market_type):
+    value = (market_type or "").upper()
+    if value in {"A_SHARE", "A_SHARE_SH", "A_SHARE_SZ", "CN", "CHINA"}:
+        return "A_SHARE"
+    if value in {"HK", "HK_STOCK", "HONGKONG"}:
+        return "HK_STOCK"
+    if value in {"JP", "JP_STOCK", "JAPAN"}:
+        return "JP_STOCK"
+    if value in {"US", "US_STOCK", "USA"}:
+        return "US_STOCK"
+    return value or "US_STOCK"
+
+
+def standardize_ohlcv_frame(raw_df, market_type="", source=""):
+    if raw_df is None or raw_df.empty:
+        return pd.DataFrame()
+
+    df = raw_df.copy()
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [str(col[0] or col[-1]) for col in df.columns]
+
+    rename_map = {
+        "Date": "date",
+        "Datetime": "date",
+        "日期": "date",
+        "时间": "date",
+        "Open": "open",
+        "开盘": "open",
+        "High": "high",
+        "最高": "high",
+        "Low": "low",
+        "最低": "low",
+        "Close": "close",
+        "收盘": "close",
+        "Adj Close": "adj_close",
+        "Volume": "volume",
+        "成交量": "volume",
+        "Amount": "amount",
+        "成交额": "amount",
+        "Turnover": "turnover_rate",
+        "换手率": "turnover_rate",
+        "涨跌幅": "pct_change",
+        "涨跌额": "change",
+    }
+    df = df.rename(columns={col: rename_map.get(str(col), str(col).lower()) for col in df.columns})
+    if "date" not in df.columns:
+        df = df.reset_index()
+        df = df.rename(columns={col: rename_map.get(str(col), str(col).lower()) for col in df.columns})
+        if "date" not in df.columns and "index" in df.columns:
+            df = df.rename(columns={"index": "date"})
+
+    for col in ["open", "high", "low", "close", "adj_close", "volume", "amount", "turnover_rate", "pct_change", "change"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    else:
+        df["date"] = pd.NaT
+
+    keep_cols = [
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume",
+        "amount",
+        "turnover_rate",
+        "pct_change",
+        "change",
+    ]
+    keep_cols = [col for col in keep_cols if col in df.columns]
+    df = df[keep_cols].dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    if df.empty:
+        return df
+    df["market_type"] = market_family(market_type)
+    df["source"] = source or "unknown"
+    return df
+
+
+def _yf_symbol(ticker, market_type=None):
+    raw = (ticker or "").strip().upper()
+    market = market_family(market_type or infer_market_type(raw))
+    if market == "A_SHARE":
+        return normalize_ticker(raw)
+    if market == "HK_STOCK" and raw.isdigit():
+        return f"{raw.zfill(4)}.HK"
+    if market == "JP_STOCK" and raw.isdigit():
+        return f"{raw}.T"
+    return normalize_ticker(raw)
+
+
+def _fetch_ohlcv_yfinance(ticker, market_type, start=None, end=None, interval="1d"):
+    symbol = _yf_symbol(ticker, market_type)
+    try:
+        data = yf.download(
+            symbol,
+            start=start,
+            end=end,
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+        )
+        return standardize_ohlcv_frame(data, market_type=market_type, source=f"yfinance:{symbol}")
+    except Exception:
+        return pd.DataFrame()
+
+
+def _fetch_ohlcv_akshare(ticker, start=None, end=None, adjust="qfq"):
+    code = ticker_core(ticker)
+    if not code.isdigit():
+        return pd.DataFrame()
+
+    start_date = pd.to_datetime(start or datetime.date.today() - datetime.timedelta(days=365 * 2)).strftime("%Y%m%d")
+    end_date = pd.to_datetime(end or datetime.date.today()).strftime("%Y%m%d")
+    try:
+        import akshare as ak
+
+        data = ak.stock_zh_a_hist(
+            symbol=code,
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust=adjust,
+        )
+        return standardize_ohlcv_frame(data, market_type="A_SHARE", source=f"akshare:{code}")
+    except Exception:
+        return pd.DataFrame()
+
+
+def fetch_ohlcv(ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq"):
+    normalized = normalize_ticker(ticker)
+    market = market_family(market_type or infer_market_type(normalized))
+    provider = (provider or "auto").lower()
+
+    if market == "A_SHARE" and provider in {"auto", "akshare"}:
+        data = _fetch_ohlcv_akshare(normalized, start=start, end=end, adjust=adjust)
+        if not data.empty or provider == "akshare":
+            return data
+
+    if provider in {"auto", "yfinance", "yf"}:
+        data = _fetch_ohlcv_yfinance(normalized, market, start=start, end=end, interval=freq)
+        if not data.empty:
+            return data
+
+    if market == "A_SHARE" and provider not in {"akshare"}:
+        return _fetch_ohlcv_akshare(normalized, start=start, end=end, adjust=adjust)
+
+    return pd.DataFrame()
+
+
+def fetch_realtime_quote(ticker, market_type=None, provider="auto"):
+    end = datetime.date.today() + datetime.timedelta(days=1)
+    start = end - datetime.timedelta(days=10)
+    data = fetch_ohlcv(
+        ticker,
+        market_type=market_type,
+        start=start.isoformat(),
+        end=end.isoformat(),
+        provider=provider,
+    )
+    if data.empty:
+        return {
+            "ticker": normalize_ticker(ticker),
+            "price": None,
+            "asof": "",
+            "source": provider,
+            "warning": "暂无可用实时/近实时行情",
+        }
+    latest = data.iloc[-1]
+    return {
+        "ticker": normalize_ticker(ticker),
+        "price": round(float(latest.get("close")), 4),
+        "asof": str(latest.get("date").date()) if pd.notna(latest.get("date")) else "",
+        "source": latest.get("source", provider),
+        "volume": float(latest.get("volume")) if pd.notna(latest.get("volume")) else None,
+    }
+
+
+def fetch_micro_data(ticker, market_type=None):
+    normalized = normalize_ticker(ticker)
+    market = market_family(market_type or infer_market_type(normalized))
+    result = {
+        "ticker": normalized,
+        "market_type": market,
+        "fund_flow": [],
+        "dragon_tiger": [],
+        "block_trade": [],
+        "warnings": [],
+    }
+
+    if market != "A_SHARE":
+        result["warnings"].append("当前微观数据优先覆盖A股；港股/美股使用资金面模块代理。")
+        return result
+
+    code = ticker_core(normalized)
+    try:
+        import akshare as ak
+
+        try:
+            flow = ak.stock_individual_fund_flow(stock=code, market="sh" if normalized.endswith(".SS") else "sz")
+            if flow is not None and not flow.empty:
+                result["fund_flow"] = flow.tail(8).to_dict("records")
+        except Exception as exc:
+            result["warnings"].append(f"个股资金流暂不可用：{exc}")
+
+        try:
+            lhb = ak.stock_lhb_detail_em(start_date=(datetime.date.today() - datetime.timedelta(days=90)).strftime("%Y%m%d"), end_date=datetime.date.today().strftime("%Y%m%d"))
+            if lhb is not None and not lhb.empty:
+                text_cols = [col for col in lhb.columns if "代码" in str(col) or "名称" in str(col)]
+                mask = pd.Series(False, index=lhb.index)
+                for col in text_cols:
+                    mask = mask | lhb[col].astype(str).str.contains(code, na=False)
+                result["dragon_tiger"] = lhb[mask].tail(8).to_dict("records")
+        except Exception as exc:
+            result["warnings"].append(f"龙虎榜暂不可用：{exc}")
+    except Exception as exc:
+        result["warnings"].append(f"Akshare微观接口不可用：{exc}")
+
+    return result
+
+
 def build_google_news_rss(query, lang="zh-CN", region="CN"):
     encoded = quote_plus(query)
     ceid = "US:en" if lang == "en-US" else f"{region}:zh-Hans"

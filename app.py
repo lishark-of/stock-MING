@@ -13,6 +13,7 @@ import numpy as np
 try:
     from analysis_engine import (
         build_ai_context_packet,
+        build_backtest_explanation_prompt,
         build_counter_argument_prompt,
         build_position_aware_prompt,
         build_strict_risk_decision,
@@ -22,6 +23,9 @@ except Exception as module_error:
 
     def build_ai_context_packet(supply_chain, valuation, news_rows, replay_rules, peer_rows=None, research_links=None, technical=None, scenario=None, data_quality=None, money_flow=None):
         return f"分析模块降级：{ANALYSIS_MODULE_ERROR}\n{supply_chain}\n{valuation}\n{news_rows}\n{replay_rules}"
+
+    def build_backtest_explanation_prompt(ticker, backtest_report, stock_context=None):
+        return f"请解释 {ticker} 的回测报告：{backtest_report}\n上下文：{stock_context}"
 
     def build_counter_argument_prompt(ticker, bull_case, context):
         return f"请反驳 {ticker} 的看多理由：{bull_case}\n材料：{context}"
@@ -55,6 +59,9 @@ try:
     institutional_signal_queries = getattr(_data_fetcher, "institutional_signal_queries", lambda ticker, company_name="": [])
     deep_research_queries = getattr(_data_fetcher, "deep_research_queries", lambda ticker, company_name="": [])
     build_peer_snapshot = getattr(_data_fetcher, "build_peer_snapshot", lambda ticker, supply_profile=None: [])
+    fetch_ohlcv = getattr(_data_fetcher, "fetch_ohlcv", lambda ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq": pd.DataFrame())
+    fetch_realtime_quote = getattr(_data_fetcher, "fetch_realtime_quote", lambda ticker, market_type=None, provider="auto": {"ticker": ticker, "price": None, "warning": "行情模块未同步"})
+    fetch_micro_data = getattr(_data_fetcher, "fetch_micro_data", lambda ticker, market_type=None: {"ticker": ticker, "warnings": ["微观数据模块未同步"]})
 
     if hasattr(_data_fetcher, "build_recent_news_context"):
         build_recent_news_context = _data_fetcher.build_recent_news_context
@@ -118,6 +125,15 @@ except Exception as module_error:
     def build_peer_snapshot(ticker, supply_profile=None):
         return []
 
+    def fetch_ohlcv(ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq"):
+        return pd.DataFrame()
+
+    def fetch_realtime_quote(ticker, market_type=None, provider="auto"):
+        return {"ticker": ticker, "price": None, "warning": str(DATA_FETCHER_MODULE_ERROR)}
+
+    def fetch_micro_data(ticker, market_type=None):
+        return {"ticker": ticker, "warnings": [str(DATA_FETCHER_MODULE_ERROR)]}
+
 try:
     from money_flow_tracker import collect_money_flow_snapshot, money_flow_text
 except Exception as module_error:
@@ -170,6 +186,8 @@ if "render_scenario_module" not in globals():
     render_scenario_module = getattr(_visualizer, "render_scenario_module", None) if "_visualizer" in globals() else None
 if "render_data_quality_module" not in globals():
     render_data_quality_module = getattr(_visualizer, "render_data_quality_module", None) if "_visualizer" in globals() else None
+if "render_backtest_report" not in globals():
+    render_backtest_report = getattr(_visualizer, "render_backtest_report", None) if "_visualizer" in globals() else None
 
 if render_supply_chain_module is None:
     def render_supply_chain_module(profile, portfolio_health):
@@ -205,6 +223,32 @@ if render_scenario_module is None:
 if render_data_quality_module is None:
     def render_data_quality_module(report):
         _fallback_render("可信度可视化", report)
+if render_backtest_report is None:
+    def render_backtest_report(report):
+        _fallback_render("回测报告可视化", report)
+
+try:
+    from backtester import DEFAULT_RULES, compact_report_for_prompt, run_backtest
+except Exception as module_error:
+    BACKTESTER_MODULE_ERROR = module_error
+    DEFAULT_RULES = {
+        "ma_fast": 5,
+        "ma_mid": 20,
+        "ma_slow": 60,
+        "rsi_period": 14,
+        "rsi_buy_max": 58,
+        "rsi_sell_min": 74,
+        "stop_loss_pct": 0.08,
+        "take_profit_pct": 0.18,
+        "max_drawdown_exit": 0.12,
+        "position_size": 1.0,
+    }
+
+    def run_backtest(price_df, rules=None, cost_price=None, initial_cash=100000):
+        return {"summary": f"回测模块降级：{BACKTESTER_MODULE_ERROR}", "metrics": {}, "signals": pd.DataFrame(), "trades": pd.DataFrame(), "equity_curve": pd.DataFrame()}
+
+    def compact_report_for_prompt(report, max_trades=8):
+        return {"summary": report.get("summary", "") if isinstance(report, dict) else str(report)}
 
 
 def call_with_supported_kwargs(func, *args, **kwargs):
@@ -362,6 +406,22 @@ Monte Carlo 情景：{scenario or '缺失'}
 用户持仓画像：{position_profile or '缺失'}
 要求：数据可信度低时禁止给确定买入结论；目标价必须参考 Monte Carlo p10/p50/p90。
 """
+
+
+@st.cache_data(ttl=900)
+def cached_fetch_ohlcv(ticker, market_type, start, end, provider="auto"):
+    return fetch_ohlcv(
+        ticker,
+        market_type=market_type,
+        start=str(start),
+        end=str(end),
+        provider=provider,
+    )
+
+
+@st.cache_data(ttl=300)
+def cached_realtime_quote(ticker, market_type, provider="auto"):
+    return fetch_realtime_quote(ticker, market_type=market_type, provider=provider)
 
 
 def _num(value, default=None):
@@ -2263,10 +2323,11 @@ else:
 
     st.markdown("---")
 
-    tab_home, tab_risk, tab_rl, tab_main, tab_brain, tab_screener = st.tabs([
+    tab_home, tab_risk, tab_rl, tab_backtest, tab_main, tab_brain, tab_screener = st.tabs([
     "🏠 今日关注池",
     "🛡️ 天眼风控 (排雷)", 
     "⏳ 炼丹炉 (强化学习)", 
+    "📊 回测实验室",
     "📈 量化推演 (多市场)", 
     "☁️ 云端外脑 (数据中心)",
     "🎯 大师选股 (策略雷达)"
@@ -2628,6 +2689,122 @@ else:
                                     insert_cloud_memory("reflection", f"【时光机 - {target}】{market_tag}: {res}")
                                     st.success(f"✅ 纪律已写入云端：{res}")
                             except: pass
+
+    # 模块 B2：回测实验室
+    with tab_backtest:
+        st.markdown(f"### 📊 单票回测实验室：{target}")
+        st.caption("这里用历史行情验证一套可执行纪律，并把成本价、止损、止盈和当前信号连起来。")
+
+        default_end = datetime.date.today()
+        default_start = default_end - datetime.timedelta(days=365 * 2)
+        b1, b2, b3, b4 = st.columns(4)
+        with b1:
+            bt_start = st.date_input("回测起点", default_start, key="bt_start")
+        with b2:
+            bt_end = st.date_input("回测终点", default_end, key="bt_end")
+        with b3:
+            bt_cash = st.number_input("回测本金", min_value=1000.0, value=float(capital_plan or 100000.0), step=5000.0, key="bt_cash")
+        with b4:
+            bt_provider = st.selectbox("行情源", ["auto", "akshare", "yfinance"], index=0, key="bt_provider")
+
+        st.markdown("#### 策略纪律")
+        r1, r2, r3, r4 = st.columns(4)
+        with r1:
+            bt_stop = st.slider("止损比例", 3, 20, int(DEFAULT_RULES["stop_loss_pct"] * 100), key="bt_stop") / 100
+        with r2:
+            bt_take = st.slider("止盈比例", 6, 40, int(DEFAULT_RULES["take_profit_pct"] * 100), key="bt_take") / 100
+        with r3:
+            bt_trailing = st.slider("持仓回撤退出", 5, 30, int(DEFAULT_RULES["max_drawdown_exit"] * 100), key="bt_trailing") / 100
+        with r4:
+            bt_position = st.slider("单次仓位", 10, 100, int(DEFAULT_RULES["position_size"] * 100), step=5, key="bt_position") / 100
+
+        r5, r6, r7 = st.columns(3)
+        with r5:
+            bt_rsi_buy = st.slider("买入RSI上限", 35, 70, int(DEFAULT_RULES["rsi_buy_max"]), key="bt_rsi_buy")
+        with r6:
+            bt_rsi_sell = st.slider("止盈RSI参考", 55, 85, int(DEFAULT_RULES["rsi_sell_min"]), key="bt_rsi_sell")
+        with r7:
+            bt_ma_slow = st.selectbox("慢线周期", [40, 60, 120], index=1, key="bt_ma_slow")
+
+        bt_rules = {
+            **DEFAULT_RULES,
+            "rsi_buy_max": bt_rsi_buy,
+            "rsi_sell_min": bt_rsi_sell,
+            "stop_loss_pct": bt_stop,
+            "take_profit_pct": bt_take,
+            "max_drawdown_exit": bt_trailing,
+            "position_size": bt_position,
+            "ma_slow": bt_ma_slow,
+        }
+
+        bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}"
+        if st.button("运行回测", key="btn_run_backtest", type="primary", use_container_width=True):
+            with st.spinner("正在拉取历史行情并跑回测..."):
+                price_frame = cached_fetch_ohlcv(
+                    target,
+                    market_type,
+                    bt_start.isoformat(),
+                    (bt_end + datetime.timedelta(days=1)).isoformat(),
+                    provider=bt_provider,
+                )
+                if price_frame.empty:
+                    st.session_state["last_backtest_report"] = None
+                    st.session_state["last_backtest_key"] = bt_key
+                    st.warning("没有抓到可用行情。A股可试 auto/akshare，美股/港股/日股可试 yfinance。")
+                else:
+                    report = run_backtest(
+                        price_frame,
+                        rules=bt_rules,
+                        cost_price=cost_price if cost_price > 0 else None,
+                        initial_cash=bt_cash,
+                    )
+                    report["ticker"] = target
+                    report["market_type"] = market_type
+                    report["source"] = price_frame["source"].iloc[-1] if "source" in price_frame.columns and not price_frame.empty else bt_provider
+                    report["date_range"] = {"start": bt_start.isoformat(), "end": bt_end.isoformat()}
+                    st.session_state["last_backtest_report"] = report
+                    st.session_state["last_backtest_key"] = bt_key
+                    st.success(f"回测完成：{report.get('summary', '')}")
+
+        report = st.session_state.get("last_backtest_report")
+        if report:
+            st.caption(f"行情源：{report.get('source', 'unknown')}｜区间：{report.get('date_range', {}).get('start')} 至 {report.get('date_range', {}).get('end')}｜样本数：{report.get('data_points', 0)}")
+            render_backtest_report(report)
+
+            with st.expander("A股微观数据补充", expanded=False):
+                micro_key = f"micro_{target}_{market_type}"
+                if st.button("刷新资金流/龙虎榜", key=f"btn_{micro_key}"):
+                    with st.spinner("正在抓取公开微观数据..."):
+                        st.session_state[micro_key] = fetch_micro_data(target, market_type=market_type)
+                micro = st.session_state.get(micro_key, {})
+                if micro.get("fund_flow"):
+                    st.markdown("##### 个股资金流")
+                    st.dataframe(pd.DataFrame(micro["fund_flow"]), use_container_width=True)
+                if micro.get("dragon_tiger"):
+                    st.markdown("##### 龙虎榜")
+                    st.dataframe(pd.DataFrame(micro["dragon_tiger"]), use_container_width=True)
+                for warning in micro.get("warnings", []):
+                    st.caption(f"提示：{warning}")
+                if not micro:
+                    st.info("需要时再点刷新，避免每次打开页面都慢。")
+
+            if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", use_container_width=True):
+                compact_report = compact_report_for_prompt(report)
+                replay_rules_for_bt = load_stock_logic_rules(target)
+                context_for_bt = {
+                    "position_status": position_status,
+                    "capital_plan": capital_plan,
+                    "cost_price": cost_price,
+                    "current_price": price,
+                    "stock_logic_rules": replay_rules_for_bt[:1200] if replay_rules_for_bt else "",
+                }
+                prompt = build_backtest_explanation_prompt(target, compact_report, context_for_bt)
+                call_deepseek_stream(
+                    prompt,
+                    system_role="你是严格的私人量化回测教练，必须把历史回测和成本价纪律说清楚。",
+                )
+        else:
+            st.info("先运行一次回测。建议起点覆盖近两年，成本价填真实持仓成本或计划买入价。")
 
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:
