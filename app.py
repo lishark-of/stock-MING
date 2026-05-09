@@ -1308,6 +1308,12 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
 def identify_market(raw_input):
     """智能识别输入符号属于哪个交易所"""
     raw_input = raw_input.upper().strip()
+
+    if raw_input.endswith((".SZ", ".SS", ".SH")):
+        normalized = raw_input[:-3] + ".SS" if raw_input.endswith(".SH") else raw_input
+        if normalized.endswith(".SS"):
+            return normalized, "A_SHARE_SH", "🇨🇳 A股 (沪)", "¥"
+        return normalized, "A_SHARE_SZ", "🇨🇳 A股 (深)", "¥"
     
     # A 股判断（纯数字）
     if raw_input.isdigit() and len(raw_input) == 6:
@@ -2969,7 +2975,16 @@ else:
                 if price_frame.empty:
                     st.session_state["last_backtest_report"] = None
                     st.session_state["last_backtest_key"] = bt_key
-                    st.warning("没有抓到可用行情。A股可试 auto/akshare，美股/港股/日股可试 yfinance。")
+                    st.warning("没有抓到可用行情。")
+                    st.caption(f"识别结果：{target}｜{market_type}｜行情源：{bt_provider}｜区间：{bt_start} 至 {bt_end}")
+                    if market_type.startswith("A_SHARE"):
+                        st.info("A股请优先输入 6 位代码或带 .SZ/.SS 后缀，例如 002008、002008.SZ、600459、600459.SS；行情源优先用 auto 或 akshare。")
+                    elif market_type == "HK_STOCK":
+                        st.info("港股请用 0700 或 0700.HK 这种格式，行情源用 auto/yfinance。")
+                    elif market_type == "JP_STOCK":
+                        st.info("日股请用 6758 或 6758.T 这种格式，行情源用 auto/yfinance。")
+                    else:
+                        st.info("美股请用 NVDA、INTC 这种 ticker，行情源用 auto/yfinance。")
                 else:
                     report = run_backtest(
                         price_frame,

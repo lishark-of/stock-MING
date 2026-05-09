@@ -109,6 +109,8 @@ SUPPLY_CHAIN_MAP = {
 
 def normalize_ticker(ticker):
     ticker = (ticker or "").strip().upper()
+    if ticker.endswith(".SH"):
+        ticker = ticker[:-3] + ".SS"
     if ticker.isdigit() and len(ticker) == 6:
         if ticker.startswith("6"):
             return f"{ticker}.SS"
@@ -119,7 +121,7 @@ def normalize_ticker(ticker):
 
 def infer_market_type(ticker):
     normalized = normalize_ticker(ticker)
-    if normalized.endswith(".SZ") or normalized.endswith(".SS"):
+    if normalized.endswith(".SZ") or normalized.endswith(".SS") or normalized.endswith(".SH"):
         return "A_SHARE"
     if normalized.endswith(".HK"):
         return "HK_STOCK"
@@ -129,7 +131,7 @@ def infer_market_type(ticker):
 
 
 def ticker_core(ticker):
-    return normalize_ticker(ticker).replace(".SZ", "").replace(".SS", "").replace(".HK", "").replace(".T", "")
+    return normalize_ticker(ticker).replace(".SZ", "").replace(".SS", "").replace(".SH", "").replace(".HK", "").replace(".T", "")
 
 
 def market_family(market_type):
