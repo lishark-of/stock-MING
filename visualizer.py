@@ -223,9 +223,10 @@ def render_backtest_report(report):
     metrics = report.get("metrics", {}) or {}
     latest_signal = report.get("latest_signal", {}) or {}
     position_context = report.get("position_context", {}) or {}
+    trader_brief = report.get("trader_brief", {}) or {}
 
-    summary = report.get("summary", "")
-    action = latest_signal.get("action", "继续观察")
+    summary = trader_brief.get("plain_summary") or report.get("summary", "")
+    action = trader_brief.get("action") or latest_signal.get("action", "继续观察")
     if any(word in action for word in ["禁止", "止损", "退出", "减仓"]):
         st.error(summary or action)
     elif any(word in action for word in ["观察", "防守"]):
@@ -233,13 +234,24 @@ def render_backtest_report(report):
     else:
         st.success(summary or action)
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("总收益", _pct(metrics.get("total_return_pct")))
-    c2.metric("年化收益", _pct(metrics.get("annual_return_pct")))
-    c3.metric("夏普", _fmt(metrics.get("sharpe")))
-    c4.metric("最大回撤", _pct(metrics.get("max_drawdown_pct")))
-    c5.metric("胜率", _pct(metrics.get("win_rate_pct")))
-    c6.metric("交易次数", metrics.get("trade_count", 0))
+    if trader_brief.get("warnings"):
+        with st.expander("为什么这样说", expanded=True):
+            st.markdown(trader_brief.get("explanation", ""))
+            for item in trader_brief.get("warnings", []):
+                st.caption(f"- {item}")
+            st.markdown("##### 下一步")
+            for item in trader_brief.get("next_steps", []):
+                st.caption(f"- {item}")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("策略收益", _pct(metrics.get("total_return_pct")))
+    c2.metric("最大回撤", _pct(metrics.get("max_drawdown_pct")))
+    c3.metric("交易次数", metrics.get("trade_count", 0))
+
+    c4, c5, c6 = st.columns(3)
+    c4.metric("胜率", _pct(metrics.get("win_rate_pct")))
+    c5.metric("夏普", _fmt(metrics.get("sharpe")))
+    c6.metric("样本天数", report.get("data_points", trader_brief.get("sample_days", 0)))
 
     p1, p2, p3 = st.columns(3)
     p1.metric("当前信号", action)

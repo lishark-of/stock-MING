@@ -2933,49 +2933,111 @@ else:
     # 模块 B2：回测实验室
     with tab_backtest:
         st.markdown(f"### 📊 单票回测实验室：{target}")
-        st.caption("这里用历史行情验证一套可执行纪律，并把成本价、止损、止盈和当前信号连起来。")
+        st.caption("先选你现在的交易目的，系统会自动套一组纪律；参数想细调时再打开高级设置。")
 
         default_end = datetime.date.today()
         default_start = default_end - datetime.timedelta(days=365 * 2)
-        b1, b2, b3, b4 = st.columns(4)
+        b0, b1, b2 = st.columns([1.2, 1, 1])
+        with b0:
+            bt_preset = st.selectbox(
+                "这次想解决什么",
+                ["持仓体检（推荐）", "找买点", "找卖点/止盈", "短线试错", "自定义参数"],
+                key="bt_preset_v2",
+            )
         with b1:
             bt_start = st.date_input("回测起点", default_start, key="bt_start")
         with b2:
             bt_end = st.date_input("回测终点", default_end, key="bt_end")
+
+        b3, b4 = st.columns([1, 1])
         with b3:
             bt_cash = st.number_input("回测本金", min_value=1000.0, value=float(capital_plan or 100000.0), step=5000.0, key="bt_cash")
         with b4:
             bt_provider = st.selectbox("行情源", ["auto", "akshare", "yfinance"], index=0, key="bt_provider")
 
-        st.markdown("#### 策略纪律")
-        r1, r2, r3, r4 = st.columns(4)
-        with r1:
-            bt_stop = st.slider("止损比例", 3, 20, int(DEFAULT_RULES["stop_loss_pct"] * 100), key="bt_stop") / 100
-        with r2:
-            bt_take = st.slider("止盈比例", 6, 40, int(DEFAULT_RULES["take_profit_pct"] * 100), key="bt_take") / 100
-        with r3:
-            bt_trailing = st.slider("持仓回撤退出", 5, 30, int(DEFAULT_RULES["max_drawdown_exit"] * 100), key="bt_trailing") / 100
-        with r4:
-            bt_position = st.slider("单次仓位", 10, 100, int(DEFAULT_RULES["position_size"] * 100), step=5, key="bt_position") / 100
-
-        r5, r6, r7 = st.columns(3)
-        with r5:
-            bt_rsi_buy = st.slider("买入RSI上限", 35, 70, int(DEFAULT_RULES["rsi_buy_max"]), key="bt_rsi_buy")
-        with r6:
-            bt_rsi_sell = st.slider("止盈RSI参考", 55, 85, int(DEFAULT_RULES["rsi_sell_min"]), key="bt_rsi_sell")
-        with r7:
-            bt_ma_slow = st.selectbox("慢线周期", [40, 60, 120], index=1, key="bt_ma_slow")
-
-        bt_rules = {
-            **DEFAULT_RULES,
-            "rsi_buy_max": bt_rsi_buy,
-            "rsi_sell_min": bt_rsi_sell,
-            "stop_loss_pct": bt_stop,
-            "take_profit_pct": bt_take,
-            "max_drawdown_exit": bt_trailing,
-            "position_size": bt_position,
-            "ma_slow": bt_ma_slow,
+        preset_rules = {
+            "持仓体检（推荐）": {
+                **DEFAULT_RULES,
+                "stop_loss_pct": 0.10,
+                "take_profit_pct": 0.18,
+                "max_drawdown_exit": 0.12,
+                "position_size": 0.6,
+                "rsi_buy_max": 62,
+                "rsi_sell_min": 75,
+                "ma_slow": 60,
+            },
+            "找买点": {
+                **DEFAULT_RULES,
+                "stop_loss_pct": 0.08,
+                "take_profit_pct": 0.16,
+                "max_drawdown_exit": 0.10,
+                "position_size": 0.35,
+                "rsi_buy_max": 58,
+                "rsi_sell_min": 72,
+                "ma_slow": 60,
+            },
+            "找卖点/止盈": {
+                **DEFAULT_RULES,
+                "stop_loss_pct": 0.09,
+                "take_profit_pct": 0.12,
+                "max_drawdown_exit": 0.08,
+                "position_size": 0.5,
+                "rsi_buy_max": 64,
+                "rsi_sell_min": 68,
+                "ma_slow": 40,
+            },
+            "短线试错": {
+                **DEFAULT_RULES,
+                "stop_loss_pct": 0.05,
+                "take_profit_pct": 0.10,
+                "max_drawdown_exit": 0.06,
+                "position_size": 0.25,
+                "rsi_buy_max": 66,
+                "rsi_sell_min": 70,
+                "ma_slow": 40,
+            },
         }
+        bt_rules = preset_rules.get(bt_preset, DEFAULT_RULES.copy())
+
+        if bt_preset != "自定义参数":
+            st.info(
+                f"当前模式：{bt_preset}。系统会自动使用止损 {int(bt_rules['stop_loss_pct'] * 100)}%、"
+                f"止盈 {int(bt_rules['take_profit_pct'] * 100)}%、慢线 {bt_rules['ma_slow']} 日、"
+                f"单次仓位 {int(bt_rules['position_size'] * 100)}%。"
+            )
+        else:
+            with st.expander("高级参数", expanded=True):
+                r1, r2, r3, r4 = st.columns(4)
+                with r1:
+                    bt_stop = st.slider("止损比例", 3, 20, int(DEFAULT_RULES["stop_loss_pct"] * 100), key="bt_stop_v2") / 100
+                with r2:
+                    bt_take = st.slider("止盈比例", 6, 40, int(DEFAULT_RULES["take_profit_pct"] * 100), key="bt_take_v2") / 100
+                with r3:
+                    bt_trailing = st.slider("持仓回撤退出", 5, 30, int(DEFAULT_RULES["max_drawdown_exit"] * 100), key="bt_trailing_v2") / 100
+                with r4:
+                    bt_position = st.slider("单次仓位", 10, 100, int(DEFAULT_RULES["position_size"] * 100), step=5, key="bt_position_v2") / 100
+
+                r5, r6, r7 = st.columns(3)
+                with r5:
+                    bt_rsi_buy = st.slider("买入RSI上限", 35, 70, int(DEFAULT_RULES["rsi_buy_max"]), key="bt_rsi_buy_v2")
+                with r6:
+                    bt_rsi_sell = st.slider("止盈RSI参考", 55, 85, int(DEFAULT_RULES["rsi_sell_min"]), key="bt_rsi_sell_v2")
+                with r7:
+                    bt_ma_slow = st.selectbox("慢线周期", [40, 60, 120], index=1, key="bt_ma_slow_v2")
+
+                bt_rules = {
+                    **DEFAULT_RULES,
+                    "rsi_buy_max": bt_rsi_buy,
+                    "rsi_sell_min": bt_rsi_sell,
+                    "stop_loss_pct": bt_stop,
+                    "take_profit_pct": bt_take,
+                    "max_drawdown_exit": bt_trailing,
+                    "position_size": bt_position,
+                    "ma_slow": bt_ma_slow,
+                }
+
+        if (bt_end - bt_start).days < 365:
+            st.warning("这段回测不足一年，结论只能当短期体检。想看规则是否可靠，建议把起点拉到近两年。")
 
         bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}"
         if st.button("运行回测", key="btn_run_backtest", type="primary", use_container_width=True):

@@ -304,6 +304,8 @@ def run_backtest(price_df, rules=None, cost_price=None, initial_cash=100000):
     metrics = compute_backtest_metrics(equity_curve, trades=trades, initial_cash=initial_cash)
     cost_context = build_cost_context(price_df, cost_price=cost_price)
     latest_signal = build_latest_signal(signal_df, cost_context, metrics)
+    signal_counts = signal_df["signal"].value_counts().to_dict() if "signal" in signal_df.columns else {}
+    trader_brief = build_trader_brief(signal_df, trades, metrics, cost_context, latest_signal, rules)
     return {
         "signals": signal_df,
         "equity_curve": equity_curve,
@@ -312,9 +314,10 @@ def run_backtest(price_df, rules=None, cost_price=None, initial_cash=100000):
         "rules": rules,
         "position_context": cost_context,
         "latest_signal": latest_signal,
-        "signal_counts": signal_df["signal"].value_counts().to_dict() if "signal" in signal_df.columns else {},
+        "signal_counts": signal_counts,
         "data_points": int(len(signal_df)),
-        "summary": build_report_summary(metrics, cost_context, latest_signal),
+        "trader_brief": trader_brief,
+        "summary": trader_brief.get("plain_summary") or build_report_summary(metrics, cost_context, latest_signal),
     }
 
 
@@ -383,6 +386,73 @@ def build_report_summary(metrics, cost_context, latest_signal=None):
     return f"{stance}；最新信号：{action}；当前相对成本状态：{state}；回测收益 {total}%、最大回撤 {dd}%、夏普 {sharpe}。"
 
 
+def build_trader_brief(signal_df, trades, metrics, cost_context, latest_signal, rules):
+    data_points = int(len(signal_df)) if signal_df is not None else 0
+    trade_count = int(metrics.get("trade_count", 0) or 0)
+    ma_slow = int(_num(rules.get("ma_slow"), 60) or 60)
+    required_points = max(ma_slow + 40, 120)
+    warnings = []
+    next_steps = []
+
+    if data_points < required_points:
+        warnings.append(f"样本只有 {data_points} 个交易日，慢线是 {ma_slow} 日，样本偏短。")
+        next_steps.append("把回测起点拉到近两年，或把慢线改成60日。")
+
+    if trade_count == 0:
+        verdict = "这次没有形成可验证交易"
+        action = "先不要按这个回测下结论"
+        explanation = "它不是在说这只股票一定不好，而是这组规则在当前区间没有触发买入/卖出。收益、胜率、夏普为0没有统计意义。"
+        warnings.append("交易次数为0，不能用收益率判断规则好坏。")
+        next_steps.append("换成“持仓体检（推荐）”或“短线试错”，再跑一次。")
+    else:
+        total = _num(metrics.get("total_return_pct"), 0) or 0
+        dd = _num(metrics.get("max_drawdown_pct"), 0) or 0
+        sharpe = _num(metrics.get("sharpe"), 0) or 0
+        if total > 0 and sharpe >= 0.8 and dd > -18:
+            verdict = "规则历史表现可参考"
+            action = latest_signal.get("action", "继续观察")
+            explanation = "这套纪律在历史区间里有交易、有收益，且回撤没有明显失控，可作为辅助判断。"
+        elif dd <= -22:
+            verdict = "规则回撤偏大"
+            action = "降仓/只观察"
+            explanation = "这套规则历史上可能让账户承受较深回撤，不适合作为重仓依据。"
+            warnings.append(f"最大回撤 {dd}% 偏深。")
+            next_steps.append("降低单次仓位，或提高止损纪律后重跑。")
+        elif total <= 0:
+            verdict = "规则历史收益不足"
+            action = "只观察"
+            explanation = "这套纪律在当前样本中没有证明优势，不适合直接拿来指导买入。"
+            next_steps.append("换更长区间或更贴近该股性格的规则。")
+        else:
+            verdict = "规则只能辅助参考"
+            action = latest_signal.get("action", "继续观察")
+            explanation = "回测有一定参考价值，但收益质量还不够强，需要结合趋势和资金面。"
+
+    if cost_context.get("pnl_pct") is not None:
+        pnl = cost_context.get("pnl_pct")
+        if pnl >= 15:
+            next_steps.append("你现在相对成本浮盈较高，优先检查移动止盈，而不是追加买入。")
+        elif pnl <= -8:
+            next_steps.append("你现在相对成本浮亏较深，优先检查止损线是否失效。")
+
+    if not next_steps:
+        next_steps.append("看最新信号、止损线和资金面是否共振。")
+
+    warnings = list(dict.fromkeys(warnings))[:5]
+    next_steps = list(dict.fromkeys(next_steps))[:5]
+    plain_summary = f"{verdict}：{explanation} 当前建议：{action}。"
+    return {
+        "verdict": verdict,
+        "action": action,
+        "explanation": explanation,
+        "warnings": warnings,
+        "next_steps": next_steps,
+        "plain_summary": plain_summary,
+        "sample_days": data_points,
+        "required_days": required_points,
+    }
+
+
 def compact_report_for_prompt(report, max_trades=8):
     if not report:
         return {}
@@ -401,6 +471,7 @@ def compact_report_for_prompt(report, max_trades=8):
         "metrics": report.get("metrics", {}),
         "position_context": report.get("position_context", {}),
         "latest_signal": report.get("latest_signal", {}),
+        "trader_brief": report.get("trader_brief", {}),
         "rules": report.get("rules", {}),
         "signal_counts": report.get("signal_counts", {}),
         "data_points": report.get("data_points", 0),
