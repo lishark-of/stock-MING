@@ -195,6 +195,8 @@ if "render_freshness_module" not in globals():
     render_freshness_module = getattr(_visualizer, "render_freshness_module", None) if "_visualizer" in globals() else None
 if "render_backtest_report" not in globals():
     render_backtest_report = getattr(_visualizer, "render_backtest_report", None) if "_visualizer" in globals() else None
+if "render_multi_mode_backtest" not in globals():
+    render_multi_mode_backtest = getattr(_visualizer, "render_multi_mode_backtest", None) if "_visualizer" in globals() else None
 
 if render_supply_chain_module is None:
     def render_supply_chain_module(profile, portfolio_health):
@@ -236,9 +238,12 @@ if render_freshness_module is None:
 if render_backtest_report is None:
     def render_backtest_report(report):
         _fallback_render("回测报告可视化", report)
+if render_multi_mode_backtest is None:
+    def render_multi_mode_backtest(result):
+        _fallback_render("多模式回测可视化", result)
 
 try:
-    from backtester import DEFAULT_RULES, compact_report_for_prompt, run_backtest
+    from backtester import DEFAULT_RULES, compact_report_for_prompt, run_backtest, run_multi_mode_backtests
 except Exception as module_error:
     BACKTESTER_MODULE_ERROR = module_error
     DEFAULT_RULES = {
@@ -256,6 +261,9 @@ except Exception as module_error:
 
     def run_backtest(price_df, rules=None, cost_price=None, initial_cash=100000):
         return {"summary": f"回测模块降级：{BACKTESTER_MODULE_ERROR}", "metrics": {}, "signals": pd.DataFrame(), "trades": pd.DataFrame(), "equity_curve": pd.DataFrame()}
+
+    def run_multi_mode_backtests(price_df, base_rules=None, cost_price=None, initial_cash=100000, modes=None):
+        return {"reports": {"default": run_backtest(price_df, base_rules, cost_price, initial_cash)}, "summary": f"多模式回测降级：{BACKTESTER_MODULE_ERROR}"}
 
     def compact_report_for_prompt(report, max_trades=8):
         return {"summary": report.get("summary", "") if isinstance(report, dict) else str(report)}
@@ -2937,12 +2945,18 @@ else:
 
         default_end = datetime.date.today()
         default_start = default_end - datetime.timedelta(days=365 * 2)
-        b0, b1, b2 = st.columns([1.2, 1, 1])
+        b0, bm, b1, b2 = st.columns([1.2, 1.1, 1, 1])
         with b0:
             bt_preset = st.selectbox(
                 "这次想解决什么",
                 ["持仓体检（推荐）", "找买点", "找卖点/止盈", "短线试错", "自定义参数"],
                 key="bt_preset_v2",
+            )
+        with bm:
+            bt_mode_choice = st.selectbox(
+                "回测方式",
+                ["三模式对比（推荐）", "默认模式", "自由模式", "动态止盈止损模式"],
+                key="bt_mode_choice_v1",
             )
         with b1:
             bt_start = st.date_input("回测起点", default_start, key="bt_start")
@@ -3039,7 +3053,16 @@ else:
         if (bt_end - bt_start).days < 365:
             st.warning("这段回测不足一年，结论只能当短期体检。想看规则是否可靠，建议把起点拉到近两年。")
 
-        bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}"
+        mode_map = {
+            "默认模式": ["default"],
+            "自由模式": ["free"],
+            "动态止盈止损模式": ["dynamic"],
+            "三模式对比（推荐）": ["default", "free", "dynamic"],
+        }
+        selected_modes = mode_map.get(bt_mode_choice, ["default", "free", "dynamic"])
+        st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损。")
+
+        bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}|{selected_modes}"
         if st.button("运行回测", key="btn_run_backtest", type="primary", use_container_width=True):
             with st.spinner("正在拉取历史行情并跑回测..."):
                 price_frame = fetch_ohlcv(
@@ -3059,6 +3082,7 @@ else:
                     )
                 if price_frame.empty:
                     st.session_state["last_backtest_report"] = None
+                    st.session_state["last_multi_backtest"] = None
                     st.session_state["last_backtest_key"] = bt_key
                     st.warning("没有抓到可用行情。")
                     st.caption(f"识别结果：{target}｜{market_type}｜行情源：{bt_provider}｜区间：{bt_start} 至 {bt_end}")
@@ -3083,26 +3107,45 @@ else:
                     else:
                         st.info("美股请用 NVDA、INTC 这种 ticker，行情源用 auto/yfinance。")
                 else:
-                    report = run_backtest(
+                    multi_result = run_multi_mode_backtests(
                         price_frame,
-                        rules=bt_rules,
+                        base_rules=bt_rules,
                         cost_price=cost_price if cost_price > 0 else None,
                         initial_cash=bt_cash,
+                        modes=selected_modes,
                     )
+                    reports = multi_result.get("reports", {})
+                    primary_mode = selected_modes[0] if selected_modes else "default"
+                    report = reports.get(primary_mode) or next(iter(reports.values()))
                     report["ticker"] = target
                     report["market_type"] = market_type
                     report["source"] = price_frame["source"].iloc[-1] if "source" in price_frame.columns and not price_frame.empty else bt_provider
                     report["date_range"] = {"start": bt_start.isoformat(), "end": bt_end.isoformat()}
+                    for mode_report in reports.values():
+                        mode_report["ticker"] = target
+                        mode_report["market_type"] = market_type
+                        mode_report["source"] = report["source"]
+                        mode_report["date_range"] = report["date_range"]
+                    multi_result["ticker"] = target
+                    multi_result["market_type"] = market_type
+                    multi_result["source"] = report["source"]
+                    multi_result["date_range"] = report["date_range"]
                     st.session_state["last_backtest_report"] = report
+                    st.session_state["last_multi_backtest"] = multi_result
                     st.session_state["last_backtest_key"] = bt_key
-                    st.success(f"回测完成：{report.get('summary', '')}")
+                    st.success(f"回测完成：{multi_result.get('summary') or report.get('summary', '')}")
 
         report = st.session_state.get("last_backtest_report")
+        multi_result = st.session_state.get("last_multi_backtest")
         if report and report.get("ticker") != target:
             report = None
+            multi_result = None
         if report:
             st.caption(f"行情源：{report.get('source', 'unknown')}｜区间：{report.get('date_range', {}).get('start')} 至 {report.get('date_range', {}).get('end')}｜样本数：{report.get('data_points', 0)}")
-            render_backtest_report(report)
+            if multi_result and len((multi_result.get("reports") or {})) > 1:
+                render_multi_mode_backtest(multi_result)
+            else:
+                render_backtest_report(report)
 
             with st.expander("A股微观数据补充", expanded=False):
                 micro_key = f"micro_{target}_{market_type}"
@@ -3122,7 +3165,16 @@ else:
                     st.info("需要时再点刷新，避免每次打开页面都慢。")
 
             if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", use_container_width=True):
-                compact_report = compact_report_for_prompt(report)
+                if multi_result and multi_result.get("reports"):
+                    compact_report = {
+                        "summary": multi_result.get("summary", ""),
+                        "reports": {
+                            mode: compact_report_for_prompt(mode_report)
+                            for mode, mode_report in multi_result.get("reports", {}).items()
+                        },
+                    }
+                else:
+                    compact_report = compact_report_for_prompt(report)
                 replay_rules_for_bt = load_stock_logic_rules(target)
                 context_for_bt = {
                     "position_status": position_status,
@@ -3138,7 +3190,16 @@ else:
                 )
 
             if st.button("保存这次回测到云端", key="btn_save_backtest_report", use_container_width=True):
-                compact_report = compact_report_for_prompt(report)
+                if multi_result and multi_result.get("reports"):
+                    compact_report = {
+                        "summary": multi_result.get("summary", ""),
+                        "reports": {
+                            mode: compact_report_for_prompt(mode_report)
+                            for mode, mode_report in multi_result.get("reports", {}).items()
+                        },
+                    }
+                else:
+                    compact_report = compact_report_for_prompt(report)
                 compact_report["ticker"] = target
                 compact_report["market_type"] = market_type
                 compact_report["source"] = report.get("source", "")

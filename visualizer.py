@@ -289,6 +289,56 @@ def render_backtest_report(report):
             st.dataframe(show, use_container_width=True, hide_index=True)
 
 
+def render_multi_mode_backtest(multi_result):
+    st.markdown("#### 多模式回测对照")
+    if not multi_result:
+        st.warning("暂无多模式回测结果。")
+        return
+
+    reports = multi_result.get("reports", {}) or {}
+    summary = multi_result.get("summary", "")
+    if summary:
+        st.info(summary)
+
+    rows = []
+    for mode, report in reports.items():
+        metrics = report.get("metrics", {}) or {}
+        latest = report.get("latest_signal", {}) or {}
+        brief = report.get("trader_brief", {}) or {}
+        rows.append({
+            "模式": report.get("mode_label", mode),
+            "策略收益": _pct(metrics.get("total_return_pct")),
+            "最大回撤": _pct(metrics.get("max_drawdown_pct")),
+            "交易次数": metrics.get("trade_count", 0),
+            "胜率": _pct(metrics.get("win_rate_pct")),
+            "夏普": _fmt(metrics.get("sharpe")),
+            "当前信号": brief.get("action") or latest.get("action", "继续观察"),
+            "状态总结": brief.get("verdict", ""),
+        })
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    if reports:
+        chart_parts = []
+        for mode, report in reports.items():
+            curve = report.get("equity_curve")
+            if curve is None or curve.empty or "equity" not in curve.columns:
+                continue
+            label = report.get("mode_label", mode)
+            part = curve[["date", "equity"]].copy()
+            part["date"] = pd.to_datetime(part["date"], errors="coerce")
+            part = part.dropna(subset=["date"]).set_index("date").rename(columns={"equity": label})
+            chart_parts.append(part[[label]])
+        if chart_parts:
+            chart_df = pd.concat(chart_parts, axis=1).sort_index()
+            st.line_chart(chart_df, use_container_width=True)
+
+    tabs = st.tabs([report.get("mode_label", mode) for mode, report in reports.items()]) if reports else []
+    for tab, (mode, report) in zip(tabs, reports.items()):
+        with tab:
+            render_backtest_report(report)
+
+
 def _fmt(value):
     try:
         if value is None:
