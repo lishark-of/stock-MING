@@ -173,6 +173,30 @@ def render_data_quality_module(report):
         st.caption(f"数据接口提示：{item}")
 
 
+def render_freshness_module(report):
+    st.markdown("#### 数据新鲜度")
+    if not report:
+        st.warning("暂无数据新鲜度报告。")
+        return
+
+    score = report.get("score", 0)
+    grade = report.get("grade", "未知")
+    if score >= 80:
+        st.success(f"新鲜度：{grade}｜{score}/100")
+    elif score >= 55:
+        st.warning(f"新鲜度：{grade}｜{score}/100")
+    else:
+        st.error(f"新鲜度：{grade}｜{score}/100")
+
+    st.caption(report.get("instruction", ""))
+    rows = report.get("items", [])
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    for warning in report.get("warnings", []):
+        st.caption(f"提示：{warning}")
+
+
 def render_peer_snapshot(peer_rows):
     st.markdown("#### 同行公司数据对比")
     if not peer_rows:

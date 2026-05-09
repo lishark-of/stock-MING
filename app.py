@@ -3,6 +3,7 @@ import yfinance as yf
 from openai import OpenAI
 from supabase import create_client, Client
 import datetime
+import json
 import os
 import time
 import io
@@ -186,6 +187,8 @@ if "render_scenario_module" not in globals():
     render_scenario_module = getattr(_visualizer, "render_scenario_module", None) if "_visualizer" in globals() else None
 if "render_data_quality_module" not in globals():
     render_data_quality_module = getattr(_visualizer, "render_data_quality_module", None) if "_visualizer" in globals() else None
+if "render_freshness_module" not in globals():
+    render_freshness_module = getattr(_visualizer, "render_freshness_module", None) if "_visualizer" in globals() else None
 if "render_backtest_report" not in globals():
     render_backtest_report = getattr(_visualizer, "render_backtest_report", None) if "_visualizer" in globals() else None
 
@@ -223,6 +226,9 @@ if render_scenario_module is None:
 if render_data_quality_module is None:
     def render_data_quality_module(report):
         _fallback_render("可信度可视化", report)
+if render_freshness_module is None:
+    def render_freshness_module(report):
+        _fallback_render("新鲜度可视化", report)
 if render_backtest_report is None:
     def render_backtest_report(report):
         _fallback_render("回测报告可视化", report)
@@ -424,6 +430,176 @@ def cached_realtime_quote(ticker, market_type, provider="auto"):
     return fetch_realtime_quote(ticker, market_type=market_type, provider=provider)
 
 
+def _parse_datetime_safe(value):
+    if not value:
+        return None
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, datetime.date):
+        return datetime.datetime.combine(value, datetime.time.min)
+    try:
+        return datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        try:
+            parsed = pd.to_datetime(value, errors="coerce")
+            if pd.isna(parsed):
+                return None
+            return parsed.to_pydatetime().replace(tzinfo=None)
+        except Exception:
+            return None
+
+
+def _age_days(value):
+    dt = _parse_datetime_safe(value)
+    if not dt:
+        return None
+    return max(0, (datetime.datetime.now() - dt).days)
+
+
+def _fresh_status(age_days, good_days=2, stale_days=7):
+    if age_days is None:
+        return "缺失"
+    if age_days <= good_days:
+        return "新鲜"
+    if age_days <= stale_days:
+        return "可用但偏旧"
+    return "偏旧"
+
+
+def _latest_created_at(rows):
+    best = None
+    for row in rows or []:
+        candidate = _parse_datetime_safe((row or {}).get("created_at"))
+        if candidate and (best is None or candidate > best):
+            best = candidate
+    return best.isoformat(timespec="seconds") if best else ""
+
+
+def build_data_freshness_report(technical=None, news_rows=None, money_flow=None, auto_feedback=None, backtest_report=None):
+    items = []
+    warnings = []
+    score = 100
+
+    technical = technical or {}
+    market_asof = technical.get("data_asof")
+    market_age = _age_days(market_asof)
+    market_status = _fresh_status(market_age, good_days=3, stale_days=10)
+    if market_status == "缺失":
+        score -= 22
+    elif market_status == "偏旧":
+        score -= 18
+    elif market_status == "可用但偏旧":
+        score -= 8
+    items.append({
+        "数据层": "行情/技术指标",
+        "最新时间": market_asof or "未知",
+        "距今天数": market_age if market_age is not None else "N/A",
+        "状态": market_status,
+        "说明": f"MA/RSI可信度 {technical.get('confidence', 0)}",
+    })
+
+    news_asof = _latest_created_at(news_rows)
+    news_age = _age_days(news_asof)
+    news_status = _fresh_status(news_age, good_days=2, stale_days=5)
+    if not news_rows:
+        score -= 18
+        warnings.append("近48小时高相关舆情为空，AI结论会自动降权。")
+    elif news_status == "偏旧":
+        score -= 14
+    elif news_status == "可用但偏旧":
+        score -= 6
+    items.append({
+        "数据层": "近48小时舆情",
+        "最新时间": news_asof or "无高相关新闻",
+        "距今天数": news_age if news_age is not None else "N/A",
+        "状态": news_status if news_rows else "缺失",
+        "说明": f"命中 {len(news_rows or [])} 条",
+    })
+
+    flow = money_flow or {}
+    coverage = (flow.get("coverage") or {}).get("score")
+    positives = len((flow.get("summary") or {}).get("positive", []) or [])
+    negatives = len((flow.get("summary") or {}).get("negative", []) or [])
+    if coverage is None:
+        flow_status = "可用但需复核" if positives or negatives else "缺失"
+        score -= 10 if positives or negatives else 18
+    elif coverage >= 65:
+        flow_status = "可用"
+    elif coverage >= 35:
+        flow_status = "覆盖不足"
+        score -= 8
+    else:
+        flow_status = "缺失"
+        score -= 16
+    items.append({
+        "数据层": "资金面",
+        "最新时间": "接口实时/近实时" if positives or negatives else "未知",
+        "距今天数": "N/A",
+        "状态": flow_status,
+        "说明": f"正面 {positives} / 负面 {negatives} / 覆盖 {coverage if coverage is not None else 'N/A'}",
+    })
+    for warning in flow.get("warnings", [])[:3]:
+        warnings.append(str(warning))
+
+    feedback = auto_feedback or {}
+    auto_rows = []
+    for key in ["auto_runs", "market_news", "processed_sources", "manager_rules", "manager_scores"]:
+        auto_rows.extend(feedback.get(key, []) or [])
+    auto_asof = _latest_created_at(auto_rows)
+    auto_age = _age_days(auto_asof)
+    auto_status = _fresh_status(auto_age, good_days=1, stale_days=3)
+    if auto_status == "缺失":
+        score -= 14
+        warnings.append("没有看到自动任务心跳，建议检查 GitHub Actions。")
+    elif auto_status == "偏旧":
+        score -= 12
+    elif auto_status == "可用但偏旧":
+        score -= 6
+    items.append({
+        "数据层": "自动投喂",
+        "最新时间": auto_asof or "未知",
+        "距今天数": auto_age if auto_age is not None else "N/A",
+        "状态": auto_status,
+        "说明": f"新闻 {len(feedback.get('market_news', []))} / 经理规则 {len(feedback.get('manager_rules', []))} / 心跳 {len(feedback.get('auto_runs', []))}",
+    })
+
+    bt_asof = ""
+    if backtest_report:
+        bt_asof = (backtest_report.get("latest_signal") or {}).get("date") or (backtest_report.get("date_range") or {}).get("end", "")
+    bt_age = _age_days(bt_asof)
+    bt_status = _fresh_status(bt_age, good_days=10, stale_days=30)
+    if not backtest_report:
+        score -= 10
+    elif bt_status == "偏旧":
+        score -= 8
+    items.append({
+        "数据层": "回测覆盖",
+        "最新时间": bt_asof or "未生成",
+        "距今天数": bt_age if bt_age is not None else "N/A",
+        "状态": bt_status if backtest_report else "缺失",
+        "说明": (backtest_report or {}).get("summary", "")[:80] if backtest_report else "主诊断未生成回测反哺",
+    })
+
+    score = max(0, min(100, int(score)))
+    if score >= 80:
+        grade = "高"
+        instruction = "数据较新，可以输出较明确的条件式交易建议。"
+    elif score >= 55:
+        grade = "中"
+        instruction = "数据可用但有缺口，建议降低仓位并等待关键数据确认。"
+    else:
+        grade = "低"
+        instruction = "数据偏旧或缺失较多，不适合给确定买入结论。"
+
+    return {
+        "score": score,
+        "grade": grade,
+        "items": items,
+        "warnings": list(dict.fromkeys(warnings))[:8],
+        "instruction": instruction,
+    }
+
+
 def _num(value, default=None):
     try:
         if value is None or value == "":
@@ -483,11 +659,12 @@ def build_position_profile(ticker, current_price, cost_price, holding_units, cap
     }
 
 
-def build_one_line_trade_instruction(profile, strict_decision, technical=None, scenario=None, money_flow=None, data_quality=None):
+def build_one_line_trade_instruction(profile, strict_decision, technical=None, scenario=None, money_flow=None, data_quality=None, backtest_report=None):
     technical = technical or {}
     scenario = scenario or {}
     money_flow = money_flow or {}
     data_quality = data_quality or {}
+    backtest_report = backtest_report or {}
     current = profile.get("current_price")
     cost = profile.get("cost_price")
     pnl_pct = profile.get("pnl_pct")
@@ -503,11 +680,26 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     quality_score = int(_num(data_quality.get("score"), 100) or 0)
     negatives = ((money_flow.get("summary") or {}).get("negative") or [])
     reasons = list((strict_decision or {}).get("reasons") or [])
+    backtest_signal = backtest_report.get("latest_signal") or {}
+    backtest_metrics = backtest_report.get("metrics") or {}
+    backtest_action = backtest_signal.get("action", "")
+    backtest_summary = backtest_report.get("summary", "")
+    bt_dd = _num(backtest_metrics.get("max_drawdown_pct"))
+    bt_sharpe = _num(backtest_metrics.get("sharpe"))
+    bt_trade_count = int(_num(backtest_metrics.get("trade_count"), 0) or 0)
+
+    if backtest_action:
+        reasons.append(f"回测最新信号：{backtest_action}，{backtest_signal.get('reason', '')}")
+    if bt_dd is not None and bt_dd <= -22:
+        reasons.append(f"回测风险：历史最大回撤 {bt_dd}% 偏深，仓位必须降档")
+    if bt_trade_count >= 2 and bt_sharpe is not None and bt_sharpe < 0.2:
+        reasons.append(f"回测风险：夏普 {bt_sharpe} 偏低，规则历史收益质量不足")
 
     trend_bad = ma60_state == "低于MA60"
     rsi_hot = rsi is not None and rsi >= 72
     flow_bad = bool(negatives)
-    hard_block = risk_action.startswith("禁止") or risk_score >= 70 or quality_score < 45
+    backtest_blocks = any(word in backtest_action for word in ["禁止", "止损", "退出"]) or (bt_dd is not None and bt_dd <= -28)
+    hard_block = risk_action.startswith("禁止") or risk_score >= 70 or quality_score < 45 or backtest_blocks
 
     stop_loss = None
     take_profit = None
@@ -544,17 +736,20 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
             driver = "相对成本已有较高浮盈，且接近情景上沿或RSI偏热"
         elif hard_block:
             action = "降仓观察"
-            driver = "系统风控触发较多，优先保护本金"
+            driver = "系统风控或回测纪律触发较多，优先保护本金"
         else:
             action = "继续持有"
             driver = "未触发硬性卖出，按成本价上方移动止损"
     else:
         if hard_block:
             action = "禁止开仓"
-            driver = "风险分或数据缺口过高，不适合新买入"
+            driver = "风险分、数据缺口或回测纪律不支持新买入"
         elif trend_bad or quality_score < 60:
             action = "观望"
             driver = "趋势或数据可信度不足，等待更清晰买点"
+        elif backtest_action == "小仓尝试" and risk_score <= 45:
+            action = "小仓尝试"
+            driver = "回测最新信号允许试错，但仓位需受止损纪律约束"
         elif risk_score <= 40:
             action = "小仓尝试"
             driver = "风控未明显否决，可用小仓验证"
@@ -584,6 +779,8 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
         "risk_factors": risk_text,
         "risk_score": risk_score,
         "quality_score": quality_score,
+        "backtest_summary": backtest_summary,
+        "backtest_action": backtest_action,
     }
 
 
@@ -611,6 +808,8 @@ def render_trade_instruction_card(profile, instruction):
     c6.metric("止盈/减仓参考", _fmt_price(instruction.get("take_profit"), profile.get("currency")))
     c7.metric("风控分", instruction.get("risk_score", 0), f"可信度 {instruction.get('quality_score', 0)}")
     st.caption(f"风险因素：{instruction.get('risk_factors', '')}")
+    if instruction.get("backtest_summary"):
+        st.caption(f"回测反哺：{instruction.get('backtest_summary')}")
 
 
 def get_config_value(name, default=""):
@@ -1231,6 +1430,26 @@ else:
             return True
         except Exception as e:
             st.warning(f"股票专属规则写入失败：{e}")
+            return False
+
+    def save_stock_report(ticker, market_type, report_type, payload):
+        if not supabase or not payload:
+            return False
+
+        try:
+            if isinstance(payload, str):
+                content = payload
+            else:
+                content = json.dumps(payload, ensure_ascii=False, default=str)
+            supabase.table("stock_reports").insert({
+                "ticker": ticker,
+                "market_type": market_type,
+                "report_type": report_type,
+                "report_content": content,
+            }).execute()
+            return True
+        except Exception as e:
+            st.warning(f"股票报告写入失败：{e}")
             return False
 
     def load_stock_logic_rules(ticker, limit=3):
@@ -2767,6 +2986,8 @@ else:
                     st.success(f"回测完成：{report.get('summary', '')}")
 
         report = st.session_state.get("last_backtest_report")
+        if report and report.get("ticker") != target:
+            report = None
         if report:
             st.caption(f"行情源：{report.get('source', 'unknown')}｜区间：{report.get('date_range', {}).get('start')} 至 {report.get('date_range', {}).get('end')}｜样本数：{report.get('data_points', 0)}")
             render_backtest_report(report)
@@ -2803,6 +3024,17 @@ else:
                     prompt,
                     system_role="你是严格的私人量化回测教练，必须把历史回测和成本价纪律说清楚。",
                 )
+
+            if st.button("保存这次回测到云端", key="btn_save_backtest_report", use_container_width=True):
+                compact_report = compact_report_for_prompt(report)
+                compact_report["ticker"] = target
+                compact_report["market_type"] = market_type
+                compact_report["source"] = report.get("source", "")
+                compact_report["date_range"] = report.get("date_range", {})
+                compact_report["saved_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                if save_stock_report(target, market_type, "backtest_report", compact_report):
+                    insert_cloud_memory("reflection", f"【回测报告 - {target}】{compact_report.get('summary', '')}")
+                    st.success("✅ 回测报告已写入 stock_reports，并同步一条摘要到云端外脑。")
         else:
             st.info("先运行一次回测。建议起点覆盖近两年，成本价填真实持仓成本或计划买入价。")
 
@@ -2843,6 +3075,43 @@ else:
                 money_flow=money_flow_snapshot,
                 scenario=scenario_snapshot,
             )
+            main_backtest_report = None
+            backtest_warning = ""
+            try:
+                bt_end_auto = datetime.date.today()
+                bt_start_auto = bt_end_auto - datetime.timedelta(days=365 * 2)
+                bt_price_frame = cached_fetch_ohlcv(
+                    normalized_target,
+                    market_type,
+                    bt_start_auto.isoformat(),
+                    (bt_end_auto + datetime.timedelta(days=1)).isoformat(),
+                    provider="auto",
+                )
+                if not bt_price_frame.empty:
+                    main_backtest_report = run_backtest(
+                        bt_price_frame,
+                        rules=DEFAULT_RULES,
+                        cost_price=cost_price if cost_price > 0 else None,
+                        initial_cash=float(capital_plan or 100000),
+                    )
+                    main_backtest_report["ticker"] = normalized_target
+                    main_backtest_report["market_type"] = market_type
+                    main_backtest_report["source"] = bt_price_frame["source"].iloc[-1] if "source" in bt_price_frame.columns else "auto"
+                    main_backtest_report["date_range"] = {"start": bt_start_auto.isoformat(), "end": bt_end_auto.isoformat()}
+                else:
+                    backtest_warning = "主诊断未抓到可用行情，回测反哺为空。"
+            except Exception as e:
+                backtest_warning = f"主诊断回测反哺失败：{e}"
+            auto_feedback_for_freshness = load_auto_feed_feedback(limit=4)
+            freshness_report = build_data_freshness_report(
+                technical=technical_snapshot,
+                news_rows=recent_news_rows,
+                money_flow=money_flow_snapshot,
+                auto_feedback=auto_feedback_for_freshness,
+                backtest_report=main_backtest_report,
+            )
+            if backtest_warning:
+                freshness_report.setdefault("warnings", []).append(backtest_warning)
             strict_decision = build_strict_risk_decision_safe(
                 valuation_snapshot,
                 recent_news_rows,
@@ -2869,8 +3138,10 @@ else:
                 scenario=scenario_snapshot,
                 money_flow=money_flow_snapshot,
                 data_quality=data_quality_report,
+                backtest_report=main_backtest_report,
             )
             position_profile["local_trade_instruction"] = trade_instruction
+            position_profile["backtest_summary"] = (main_backtest_report or {}).get("summary", "")
             peer_rows = build_peer_snapshot(normalized_target, supply_profile)
             research_links = deep_research_queries(normalized_target, supply_profile.get("name", ""))
             ai_context_packet = build_ai_context_packet_safe(
@@ -2885,11 +3156,23 @@ else:
                 data_quality=data_quality_report,
                 money_flow=money_flow_snapshot,
             )
+            if main_backtest_report:
+                ai_context_packet += "\n\n【回测反哺】\n" + json.dumps(
+                    compact_report_for_prompt(main_backtest_report),
+                    ensure_ascii=False,
+                    default=str,
+                )
+            if freshness_report:
+                ai_context_packet += "\n\n【数据新鲜度】\n" + json.dumps(
+                    freshness_report,
+                    ensure_ascii=False,
+                    default=str,
+                )
 
         render_trade_instruction_card(position_profile, trade_instruction)
 
         with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
-            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8, base_tab9, base_tab10, base_tab11 = st.tabs([
+            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8, base_tab9, base_tab10, base_tab11, base_tab12, base_tab13 = st.tabs([
                 "产业链联动",
                 "估值回归",
                 "实时指标",
@@ -2897,10 +3180,12 @@ else:
                 "近48小时舆情",
                 "持仓体检",
                 "资金面",
+                "回测反哺",
                 "同行对比",
                 "深度挖掘",
                 "禁止买入",
                 "可信度",
+                "新鲜度",
             ])
             with base_tab1:
                 render_supply_chain_module(supply_profile, portfolio_health)
@@ -2917,13 +3202,20 @@ else:
             with base_tab7:
                 render_money_flow_module(money_flow_snapshot)
             with base_tab8:
-                render_peer_snapshot(peer_rows)
+                if main_backtest_report:
+                    render_backtest_report(main_backtest_report)
+                else:
+                    st.warning(backtest_warning or "暂无主诊断回测反哺。")
             with base_tab9:
-                render_research_links(research_links)
+                render_peer_snapshot(peer_rows)
             with base_tab10:
-                render_risk_decision(strict_decision)
+                render_research_links(research_links)
             with base_tab11:
+                render_risk_decision(strict_decision)
+            with base_tab12:
                 render_data_quality_module(data_quality_report)
+            with base_tab13:
+                render_freshness_module(freshness_report)
 
         with st.expander("🏦 机构/游资信息接入口", expanded=False):
             st.caption("这些是公开信息入口：机构调仓、龙虎榜、游资席位、大宗交易、融资融券。自动任务也会逐步从这些关键词补充 market_news。")
