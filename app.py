@@ -720,7 +720,7 @@ def update_manager_learning_feedback(manager_name, feedback_content, rating):
 # ==========================================
 # 1. 全局配置与极简美学 UI
 # ==========================================
-st.set_page_config(page_title="量化交易终端 V25.0 GLOBAL", page_icon="🦈", layout="wide")
+st.set_page_config(page_title="MING 交易工作台", page_icon="🦈", layout="wide")
 
 st.markdown("""
 <style>
@@ -734,10 +734,56 @@ st.markdown("""
     .us-card { background-color: #F0F7FF; padding: 15px; border-radius: 8px; border-left: 4px solid #0071E3; margin-bottom: 10px; }
     .hk-card { background-color: #FFE5F0; padding: 15px; border-radius: 8px; border-left: 4px solid #D91E63; margin-bottom: 10px; }
     .jp-card { background-color: #FFF0E5; padding: 15px; border-radius: 8px; border-left: 4px solid #FF6B35; margin-bottom: 10px; }
-    .cn-card { background-color: #FFF8F0; padding: 15px; border-radius: 8px; border-left: 4px solid #FF6B35; margin-bottom: 10px; }
-    .token-counter { background-color: #FFE5E5; padding: 10px; border-radius: 8px; font-size: 0.85rem; }
-</style>
-""", unsafe_allow_html=True)
+	    .cn-card { background-color: #FFF8F0; padding: 15px; border-radius: 8px; border-left: 4px solid #FF6B35; margin-bottom: 10px; }
+	    .token-counter { background-color: #FFE5E5; padding: 10px; border-radius: 8px; font-size: 0.85rem; }
+	    .ming-hero {
+	        padding: 22px 0 14px 0;
+	        border-bottom: 1px solid #E5E5EA;
+	        margin-bottom: 18px;
+	    }
+	    .ming-kicker {
+	        color: #6E6E73;
+	        font-size: 0.82rem;
+	        font-weight: 600;
+	        letter-spacing: 0;
+	        margin-bottom: 6px;
+	    }
+	    .ming-title {
+	        color: #111114;
+	        font-size: clamp(2rem, 3.2vw, 3.25rem);
+	        line-height: 1.05;
+	        font-weight: 750;
+	        letter-spacing: 0;
+	        margin: 0;
+	    }
+	    .ming-subtitle {
+	        color: #515154;
+	        font-size: 1rem;
+	        line-height: 1.55;
+	        margin-top: 10px;
+	        max-width: 760px;
+	    }
+	    .login-shell {
+	        max-width: 560px;
+	        margin: 15vh auto 0 auto;
+	        text-align: center;
+	    }
+	    .login-title {
+	        color: #111114;
+	        font-size: clamp(2.2rem, 4vw, 4rem);
+	        line-height: 1.05;
+	        font-weight: 760;
+	        letter-spacing: 0;
+	        margin: 0 0 12px 0;
+	    }
+	    .login-subtitle {
+	        color: #6E6E73;
+	        font-size: 1rem;
+	        line-height: 1.5;
+	        margin-bottom: 26px;
+	    }
+	</style>
+	""", unsafe_allow_html=True)
 
 # ==========================================
 # 📊 Token 消耗计数器
@@ -1037,7 +1083,13 @@ if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
 if st.session_state.user_role is None:
-    st.markdown("<h1 style='text-align: center; margin-top: 10vh;'>Terminal V22 (全球三市场)</h1>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="login-shell">
+        <div class="ming-kicker">PRIVATE RESEARCH DESK</div>
+        <h1 class="login-title">MING 交易工作台</h1>
+        <div class="login-subtitle">把成本、趋势、资金和风险放到同一张桌面上。</div>
+    </div>
+    """, unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         pwd = st.text_input("", type="password", placeholder="输入访问密钥", label_visibility="collapsed")
@@ -2119,7 +2171,13 @@ else:
     # ==========================================
     # 4. 主界面
     # ==========================================
-    st.title("机构级资产指挥台 V22 (全球三市场)")
+    st.markdown("""
+    <section class="ming-hero">
+        <div class="ming-kicker">PRIVATE TRADING ASSISTANT</div>
+        <h1 class="ming-title">MING 交易工作台</h1>
+        <div class="ming-subtitle">从成本价出发，合并量化、资金、舆情和经理规则，给出更克制的交易指令。</div>
+    </section>
+    """, unsafe_allow_html=True)
     
     top_c1, top_c2 = st.columns([3, 1])
     with top_c1: 
