@@ -419,7 +419,7 @@ Monte Carlo 情景：{scenario or '缺失'}
 
 
 @st.cache_data(ttl=900)
-def cached_fetch_ohlcv(ticker, market_type, start, end, provider="auto"):
+def cached_fetch_ohlcv(ticker, market_type, start, end, provider="auto", cache_version="ohlcv_v3"):
     return fetch_ohlcv(
         ticker,
         market_type=market_type,
@@ -430,7 +430,7 @@ def cached_fetch_ohlcv(ticker, market_type, start, end, provider="auto"):
 
 
 @st.cache_data(ttl=900)
-def cached_fetch_ohlcv_diagnostics(ticker, market_type, start, end, provider="auto"):
+def cached_fetch_ohlcv_diagnostics(ticker, market_type, start, end, provider="auto", cache_version="ohlcv_diag_v3"):
     return fetch_ohlcv_diagnostics(
         ticker,
         market_type=market_type,
@@ -2980,13 +2980,21 @@ else:
         bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}"
         if st.button("运行回测", key="btn_run_backtest", type="primary", use_container_width=True):
             with st.spinner("正在拉取历史行情并跑回测..."):
-                price_frame = cached_fetch_ohlcv(
+                price_frame = fetch_ohlcv(
                     target,
-                    market_type,
-                    bt_start.isoformat(),
-                    (bt_end + datetime.timedelta(days=1)).isoformat(),
+                    market_type=market_type,
+                    start=bt_start.isoformat(),
+                    end=(bt_end + datetime.timedelta(days=1)).isoformat(),
                     provider=bt_provider,
                 )
+                if price_frame.empty and market_type.startswith("A_SHARE") and bt_provider != "auto":
+                    price_frame = fetch_ohlcv(
+                        target,
+                        market_type=market_type,
+                        start=bt_start.isoformat(),
+                        end=(bt_end + datetime.timedelta(days=1)).isoformat(),
+                        provider="auto",
+                    )
                 if price_frame.empty:
                     st.session_state["last_backtest_report"] = None
                     st.session_state["last_backtest_key"] = bt_key
@@ -3128,6 +3136,7 @@ else:
                     bt_start_auto.isoformat(),
                     (bt_end_auto + datetime.timedelta(days=1)).isoformat(),
                     provider="auto",
+                    cache_version="main_auto_v3",
                 )
                 if not bt_price_frame.empty:
                     main_backtest_report = run_backtest(
