@@ -33,19 +33,55 @@ except Exception as module_error:
         return {"risk_score": 0, "action": "分析模块降级", "reasons": [str(ANALYSIS_MODULE_ERROR)]}
 
 try:
-    from data_fetcher import (
-        build_data_quality_report,
-        build_peer_snapshot,
-        build_recent_news_context,
-        compute_technical_snapshot,
-        compute_portfolio_health,
-        deep_research_queries,
-        get_supply_chain_profile,
-        get_valuation_snapshot,
-        institutional_signal_queries,
-        normalize_ticker,
-        simulate_monte_carlo_range,
+    import data_fetcher as _data_fetcher
+
+    DATA_FETCHER_MODULE_ERROR = ""
+    normalize_ticker = getattr(_data_fetcher, "normalize_ticker", lambda ticker: (ticker or "").upper().strip())
+    get_supply_chain_profile = getattr(
+        _data_fetcher,
+        "get_supply_chain_profile",
+        lambda ticker: {"name": normalize_ticker(ticker), "theme": "模块兼容", "position": "待恢复", "a_share_links": [], "risk_transmission": "data_fetcher 缺少 get_supply_chain_profile"},
     )
+    get_valuation_snapshot = getattr(
+        _data_fetcher,
+        "get_valuation_snapshot",
+        lambda ticker: {"ticker": normalize_ticker(ticker), "valuation_flag": "估值模块版本未同步"},
+    )
+    compute_portfolio_health = getattr(
+        _data_fetcher,
+        "compute_portfolio_health",
+        lambda target, related_tickers=None: {"tickers": [normalize_ticker(target)], "correlation": pd.DataFrame(), "metrics": {}},
+    )
+    institutional_signal_queries = getattr(_data_fetcher, "institutional_signal_queries", lambda ticker, company_name="": [])
+    deep_research_queries = getattr(_data_fetcher, "deep_research_queries", lambda ticker, company_name="": [])
+    build_peer_snapshot = getattr(_data_fetcher, "build_peer_snapshot", lambda ticker, supply_profile=None: [])
+
+    if hasattr(_data_fetcher, "build_recent_news_context"):
+        build_recent_news_context = _data_fetcher.build_recent_news_context
+    else:
+        def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, market_type=None):
+            return []
+
+    if hasattr(_data_fetcher, "compute_technical_snapshot"):
+        compute_technical_snapshot = _data_fetcher.compute_technical_snapshot
+    else:
+        def compute_technical_snapshot(ticker, period="2y"):
+            return {"ticker": normalize_ticker(ticker), "missing": ["data_fetcher 旧版本缺少 compute_technical_snapshot"], "confidence": 0}
+
+    if hasattr(_data_fetcher, "simulate_monte_carlo_range"):
+        simulate_monte_carlo_range = _data_fetcher.simulate_monte_carlo_range
+    else:
+        def simulate_monte_carlo_range(ticker, days=63, simulations=1500, period="2y", seed=42):
+            return {"ticker": normalize_ticker(ticker), "horizon_days": days, "missing": ["data_fetcher 旧版本缺少 simulate_monte_carlo_range"], "confidence": 0}
+
+    if hasattr(_data_fetcher, "build_data_quality_report"):
+        build_data_quality_report = _data_fetcher.build_data_quality_report
+    else:
+        def build_data_quality_report(technical=None, valuation=None, news_rows=None, money_flow=None, scenario=None):
+            missing = ["data_fetcher 旧版本缺少 build_data_quality_report"]
+            missing.extend((technical or {}).get("missing", [])[:4])
+            missing.extend((scenario or {}).get("missing", [])[:2])
+            return {"score": 45, "grade": "低", "missing": missing, "warnings": (money_flow or {}).get("warnings", [])[:6], "instruction": "数据模块版本未完全同步，只能给条件式观察结论。"}
 except Exception as module_error:
     DATA_FETCHER_MODULE_ERROR = module_error
 
@@ -94,56 +130,81 @@ except Exception as module_error:
         return str(flow)
 
 try:
-    from visualizer import (
-        render_money_flow_module,
-        render_peer_snapshot,
-        render_portfolio_health_module,
-        render_recent_sentiment_module,
-        render_research_links,
-        render_risk_decision,
-        render_data_quality_module,
-        render_scenario_module,
-        render_supply_chain_module,
-        render_technical_module,
-        render_valuation_module,
-    )
+    import visualizer as _visualizer
+
+    VISUALIZER_MODULE_ERROR = ""
 except Exception as module_error:
     VISUALIZER_MODULE_ERROR = module_error
 
+
+def _fallback_render(title, payload):
+    if VISUALIZER_MODULE_ERROR:
+        st.warning(f"{title} 降级：{VISUALIZER_MODULE_ERROR}")
+    else:
+        st.warning(f"{title} 降级：云端 visualizer.py 版本未完全同步。")
+    if isinstance(payload, pd.DataFrame):
+        st.dataframe(payload, use_container_width=True)
+    else:
+        st.json(payload)
+
+
+if "render_supply_chain_module" not in globals():
+    render_supply_chain_module = getattr(_visualizer, "render_supply_chain_module", None) if "_visualizer" in globals() else None
+if "render_valuation_module" not in globals():
+    render_valuation_module = getattr(_visualizer, "render_valuation_module", None) if "_visualizer" in globals() else None
+if "render_recent_sentiment_module" not in globals():
+    render_recent_sentiment_module = getattr(_visualizer, "render_recent_sentiment_module", None) if "_visualizer" in globals() else None
+if "render_portfolio_health_module" not in globals():
+    render_portfolio_health_module = getattr(_visualizer, "render_portfolio_health_module", None) if "_visualizer" in globals() else None
+if "render_risk_decision" not in globals():
+    render_risk_decision = getattr(_visualizer, "render_risk_decision", None) if "_visualizer" in globals() else None
+if "render_money_flow_module" not in globals():
+    render_money_flow_module = getattr(_visualizer, "render_money_flow_module", None) if "_visualizer" in globals() else None
+if "render_peer_snapshot" not in globals():
+    render_peer_snapshot = getattr(_visualizer, "render_peer_snapshot", None) if "_visualizer" in globals() else None
+if "render_research_links" not in globals():
+    render_research_links = getattr(_visualizer, "render_research_links", None) if "_visualizer" in globals() else None
+if "render_technical_module" not in globals():
+    render_technical_module = getattr(_visualizer, "render_technical_module", None) if "_visualizer" in globals() else None
+if "render_scenario_module" not in globals():
+    render_scenario_module = getattr(_visualizer, "render_scenario_module", None) if "_visualizer" in globals() else None
+if "render_data_quality_module" not in globals():
+    render_data_quality_module = getattr(_visualizer, "render_data_quality_module", None) if "_visualizer" in globals() else None
+
+if render_supply_chain_module is None:
     def render_supply_chain_module(profile, portfolio_health):
-        st.warning(f"可视化模块降级：{VISUALIZER_MODULE_ERROR}")
-        st.json(profile)
-
+        _fallback_render("产业链可视化", profile)
+if render_valuation_module is None:
     def render_valuation_module(valuation):
-        st.json(valuation)
-
+        _fallback_render("估值可视化", valuation)
+if render_recent_sentiment_module is None:
     def render_recent_sentiment_module(news_rows):
-        st.dataframe(pd.DataFrame(news_rows)) if news_rows else st.info("暂无舆情")
-
+        st.dataframe(pd.DataFrame(news_rows), use_container_width=True) if news_rows else st.info("暂无舆情")
+if render_portfolio_health_module is None:
     def render_portfolio_health_module(portfolio_health):
-        st.json(portfolio_health)
-
+        _fallback_render("持仓体检可视化", portfolio_health)
+if render_risk_decision is None:
     def render_risk_decision(decision):
-        st.json(decision)
-
+        _fallback_render("风控结论可视化", decision)
+if render_money_flow_module is None:
     def render_money_flow_module(flow):
-        st.json(flow)
-
+        _fallback_render("资金面可视化", flow)
+if render_peer_snapshot is None:
     def render_peer_snapshot(peer_rows):
-        st.dataframe(pd.DataFrame(peer_rows)) if peer_rows else st.info("暂无同行对比")
-
+        st.dataframe(pd.DataFrame(peer_rows), use_container_width=True) if peer_rows else st.info("暂无同行对比")
+if render_research_links is None:
     def render_research_links(links):
         for link in links or []:
             st.markdown(f"- [公开检索]({link})")
-
+if render_technical_module is None:
     def render_technical_module(technical):
-        st.json(technical)
-
+        _fallback_render("实时指标可视化", technical)
+if render_scenario_module is None:
     def render_scenario_module(scenario):
-        st.json(scenario)
-
+        _fallback_render("情景推演可视化", scenario)
+if render_data_quality_module is None:
     def render_data_quality_module(report):
-        st.json(report)
+        _fallback_render("可信度可视化", report)
 
 
 def call_with_supported_kwargs(func, *args, **kwargs):
@@ -2289,7 +2350,8 @@ else:
             technical_snapshot = compute_technical_snapshot(normalized_target)
             scenario_snapshot = simulate_monte_carlo_range(normalized_target)
             money_flow_snapshot = collect_money_flow_snapshot(normalized_target, market_type=market_type)
-            recent_news_rows = build_recent_news_context(
+            recent_news_rows = call_with_supported_kwargs(
+                build_recent_news_context,
                 supabase,
                 normalized_target,
                 aliases=aliases,
