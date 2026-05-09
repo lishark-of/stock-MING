@@ -88,6 +88,22 @@ SUPPLY_CHAIN_MAP = {
         ],
         "risk_transmission": "更受制造业资本开支和下游扩产周期影响，若订单确认慢，股价容易走震荡折返。",
     },
+    "0700.HK": {
+        "name": "腾讯控股",
+        "aliases": ["0700.HK", "0700", "腾讯控股", "Tencent", "TCEHY"],
+        "theme": "港股互联网/游戏/广告/金融科技",
+        "position": "中国互联网平台核心资产，兼具游戏现金流、广告修复、回购和AI应用映射",
+        "upstream": ["云计算基础设施", "AI模型与算力", "内容/IP", "支付清算网络"],
+        "core_modules": ["游戏流水", "广告加载率", "视频号商业化", "金融科技", "回购强度"],
+        "downstream": ["消费复苏", "游戏版号", "港股流动性", "南向资金"],
+        "a_share_links": [
+            {"ticker": "300413.SZ", "name": "芒果超媒", "role": "内容/广告情绪映射"},
+            {"ticker": "002555.SZ", "name": "三七互娱", "role": "游戏景气映射"},
+            {"ticker": "002624.SZ", "name": "完美世界", "role": "游戏景气映射"},
+            {"ticker": "300059.SZ", "name": "东方财富", "role": "互联网金融情绪映射"},
+        ],
+        "risk_transmission": "腾讯核心看游戏流水、广告修复、回购力度和港股流动性；若南向资金转弱或游戏/广告低于预期，港股互联网估值容易同步降温。",
+    },
 }
 
 
@@ -212,6 +228,14 @@ def compute_technical_snapshot(ticker, period="2y"):
         peak = close.cummax()
         drawdown = round(float((close / peak - 1).iloc[-1] * 100), 2)
         volatility_20d = round(float(returns.tail(20).std() * np.sqrt(252) * 100), 2) if len(returns) >= 20 else None
+    drawdown_20d = None
+    drawdown_60d = None
+    if len(close) >= 20:
+        peak_20d = close.tail(20).cummax()
+        drawdown_20d = round(float((close.tail(20) / peak_20d - 1).iloc[-1] * 100), 2)
+    if len(close) >= 60:
+        peak_60d = close.tail(60).cummax()
+        drawdown_60d = round(float((close.tail(60) / peak_60d - 1).iloc[-1] * 100), 2)
 
     confidence = max(0, 100 - len(missing) * 22)
     return {
@@ -226,6 +250,8 @@ def compute_technical_snapshot(ticker, period="2y"):
         "return_20d": round(float((close.iloc[-1] / close.iloc[-21] - 1) * 100), 2) if len(close) >= 21 else None,
         "return_60d": round(float((close.iloc[-1] / close.iloc[-61] - 1) * 100), 2) if len(close) >= 61 else None,
         "drawdown": drawdown,
+        "drawdown_20d": drawdown_20d,
+        "drawdown_60d": drawdown_60d,
         "annualized_vol_20d": volatility_20d,
         "missing": missing,
         "confidence": confidence,
@@ -583,6 +609,19 @@ def build_data_quality_report(technical=None, valuation=None, news_rows=None, mo
         score -= 8
     if not money_flow.get("options_signal") and money_flow.get("market_type") == "US_STOCK":
         missing.append("资金面缺失：期权链")
+        score -= 8
+    if money_flow.get("market_type") == "A_SHARE":
+        if not money_flow.get("individual_fund_flow"):
+            missing.append("资金面缺失：A股个股资金流")
+            score -= 8
+        if not money_flow.get("dragon_tiger"):
+            missing.append("资金面缺失：龙虎榜")
+            score -= 4
+        if not money_flow.get("block_trade"):
+            missing.append("资金面缺失：大宗交易")
+            score -= 4
+    if money_flow.get("market_type") == "HK_STOCK" and not money_flow.get("volume_signal"):
+        missing.append("资金面缺失：港股成交量代理")
         score -= 8
 
     if (scenario or {}).get("confidence", 0) <= 0:

@@ -46,7 +46,9 @@ def render_technical_module(technical):
     c5, c6, c7 = st.columns(3)
     c5.metric("20日涨跌", f"{technical.get('return_20d')}%" if technical.get("return_20d") is not None else "N/A")
     c6.metric("60日涨跌", f"{technical.get('return_60d')}%" if technical.get("return_60d") is not None else "N/A")
-    c7.metric("当前回撤", f"{technical.get('drawdown')}%" if technical.get("drawdown") is not None else "N/A")
+    c7.metric("60日回撤", f"{technical.get('drawdown_60d')}%" if technical.get("drawdown_60d") is not None else "N/A")
+    if technical.get("drawdown") is not None:
+        st.caption(f"距离近两年高点回撤：{technical.get('drawdown')}%")
 
     st.caption(f"行情日期：{technical.get('data_asof') or '未知'}｜技术面可信度：{technical.get('confidence', 0)}")
     if technical.get("missing"):

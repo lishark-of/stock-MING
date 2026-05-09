@@ -17,17 +17,23 @@ def build_strict_risk_decision(
 
     for row in news_rows or []:
         text = " ".join(str(row.get(k, "")) for k in ["title", "summary", "risk_tag", "sentiment"])
-        if any(word in text for word in ["减持", "监管", "问询", "立案", "财报风险", "财报暴雷", "指引下修", "大宗折价"]):
+        lowered = text.lower()
+        if any(word in text for word in ["减持", "监管", "问询", "立案", "财报风险", "财报暴雷", "指引下修", "大宗折价"]) or any(
+            word in lowered
+            for word in ["guidance cut", "guidance risk", "earnings miss", "margin pressure", "insider selling", "selloff"]
+        ):
             reasons.append(f"舆情风险：{row.get('title', '')[:60]}")
 
     if technical:
         rsi = technical.get("rsi")
-        drawdown = technical.get("drawdown")
+        drawdown = technical.get("drawdown_60d")
+        if drawdown is None:
+            drawdown = technical.get("drawdown")
         volume_vs_20d = technical.get("volume_vs_20d")
         if rsi is not None and rsi >= 78:
             reasons.append("技术风险：RSI高位，追买胜率下降")
         if drawdown is not None and drawdown <= -18:
-            reasons.append("技术风险：近期回撤过深，需确认止跌")
+            reasons.append("技术风险：60日内回撤过深，需确认止跌")
         if technical.get("ma60_state") == "低于MA60":
             reasons.append("技术风险：仍在MA60下方，趋势确认不足")
         if volume_vs_20d is not None and volume_vs_20d < 0.55:
@@ -41,10 +47,8 @@ def build_strict_risk_decision(
         reasons.append(f"资金面风险：{item}")
 
     if scenario:
-        if scenario.get("probability_down_10_pct", 0) >= 28:
+        if scenario.get("probability_down_10_pct", 0) >= 45:
             reasons.append(f"情景风险：Monte Carlo显示未来区间下跌10%以上概率约 {scenario.get('probability_down_10_pct')}%")
-        if scenario.get("p10") and valuation and valuation.get("latest"):
-            reasons.append(f"风控锚：悲观10分位价格约 {scenario.get('p10')}")
 
     if data_quality:
         if data_quality.get("score", 100) < 55:
@@ -55,13 +59,30 @@ def build_strict_risk_decision(
     if position_status.startswith("已持有") and any("减持" in r or "卖出" in r or "出逃" in r for r in reasons):
         reasons.append("持仓状态风险：已持有时负面资金信号需优先处理")
 
-    if len(reasons) >= 2:
+    hard_keywords = [
+        "内部人卖出",
+        "指引下修",
+        "guidance",
+        "财报暴雷",
+        "监管",
+        "问询",
+        "立案",
+        "60日内回撤过深",
+        "RSI高位",
+        "Put活跃度偏高",
+        "数据可信度风险",
+    ]
+    hard_count = sum(1 for reason in reasons if any(keyword in reason for keyword in hard_keywords))
+
+    if hard_count >= 2 or len(reasons) >= 4:
         action = "禁止开仓/只观察"
     elif reasons:
         action = "谨慎观察/小仓试错"
 
+    soft_count = max(0, len(reasons) - hard_count)
+
     return {
-        "risk_score": min(100, len(reasons) * 28),
+        "risk_score": min(100, hard_count * 35 + soft_count * 15),
         "action": action,
         "reasons": reasons or ["未触发硬性否决，但仍需结合实时盘口确认"],
     }
