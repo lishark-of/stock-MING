@@ -1,5 +1,6 @@
 import datetime
 import re
+from functools import lru_cache
 from urllib.parse import quote_plus
 
 import numpy as np
@@ -446,14 +447,20 @@ def get_supply_chain_profile(ticker):
     }
 
 
-def fetch_price_history(ticker, period="2y"):
+@lru_cache(maxsize=128)
+def _fetch_price_history_cached(normalized_ticker, period):
     try:
-        data = yf.Ticker(normalize_ticker(ticker)).history(period=period)
+        data = yf.Ticker(normalized_ticker).history(period=period)
         if data is None or data.empty:
             return pd.DataFrame()
         return data.dropna(subset=["Close"])
     except Exception:
         return pd.DataFrame()
+
+
+def fetch_price_history(ticker, period="2y"):
+    normalized = normalize_ticker(ticker)
+    return _fetch_price_history_cached(normalized, period).copy()
 
 
 def compute_rsi(close, period=14):
@@ -478,7 +485,7 @@ def compute_technical_snapshot(ticker, period="2y"):
         return {
             "ticker": normalized,
             "data_asof": "",
-            "missing": ["price_history", "MA60", "RSI", "volume"],
+            "missing": ["price_history", "MA20", "MA60", "MA120", "RSI", "volume"],
             "confidence": 0,
         }
 
@@ -486,9 +493,14 @@ def compute_technical_snapshot(ticker, period="2y"):
     latest = float(close.iloc[-1]) if len(close) else None
     ma20 = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
     ma60 = float(close.rolling(60).mean().iloc[-1]) if len(close) >= 60 else None
+    ma120 = float(close.rolling(120).mean().iloc[-1]) if len(close) >= 120 else None
     rsi = compute_rsi(close, 14)
+    if ma20 is None:
+        missing.append("MA20")
     if ma60 is None:
         missing.append("MA60")
+    if ma120 is None:
+        missing.append("MA120")
     if rsi is None:
         missing.append("RSI")
 
@@ -523,7 +535,9 @@ def compute_technical_snapshot(ticker, period="2y"):
         "latest_close": round(latest, 2) if latest else None,
         "ma20": round(ma20, 2) if ma20 else None,
         "ma60": round(ma60, 2) if ma60 else None,
+        "ma120": round(ma120, 2) if ma120 else None,
         "ma60_state": "站上MA60" if latest and ma60 and latest >= ma60 else ("低于MA60" if latest and ma60 else "未知"),
+        "ma120_state": "站上MA120" if latest and ma120 and latest >= ma120 else ("低于MA120" if latest and ma120 else "未知"),
         "rsi": rsi,
         "volume_vs_20d": volume_vs_20d,
         "return_20d": round(float((close.iloc[-1] / close.iloc[-21] - 1) * 100), 2) if len(close) >= 21 else None,
@@ -753,6 +767,18 @@ def parse_created_at(value):
         return None
 
 
+def _supabase_ilike_filter(aliases, columns=("keyword", "title", "summary")):
+    filters = []
+    for alias in aliases or []:
+        alias = str(alias or "").strip()
+        if len(alias) < 2:
+            continue
+        alias = alias.replace(",", " ").replace("(", " ").replace(")", " ")
+        for column in columns:
+            filters.append(f"{column}.ilike.*{alias}*")
+    return ",".join(filters[:24])
+
+
 def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, market_type=None):
     if not supabase:
         return []
@@ -764,16 +790,31 @@ def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, 
     rows = []
 
     try:
-        res = (
+        alias_filter = _supabase_ilike_filter(aliases)
+        query = (
             supabase.table("market_news")
             .select("keyword, title, url, summary, risk_tag, sentiment, created_at")
-            .order("created_at", desc=True)
-            .limit(80)
-            .execute()
+            .gte("created_at", cutoff.isoformat())
         )
+        if alias_filter:
+            query = query.or_(alias_filter)
+        res = query.order("created_at", desc=True).limit(max(limit * 4, 20)).execute()
         rows.extend(res.data or [])
     except Exception:
         pass
+
+    if not rows:
+        try:
+            res = (
+                supabase.table("market_news")
+                .select("keyword, title, url, summary, risk_tag, sentiment, created_at")
+                .order("created_at", desc=True)
+                .limit(80)
+                .execute()
+            )
+            rows.extend(res.data or [])
+        except Exception:
+            pass
 
     filtered = []
     for row in rows:
