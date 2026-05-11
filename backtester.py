@@ -31,9 +31,14 @@ def normalize_price_frame(price_df):
         return pd.DataFrame()
 
     df = price_df.copy()
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [str(col[0] or col[-1]) for col in df.columns]
+
     rename_map = {
         "Date": "date",
+        "Datetime": "date",
         "日期": "date",
+        "时间": "date",
         "Open": "open",
         "开盘": "open",
         "High": "high",
@@ -49,9 +54,15 @@ def normalize_price_frame(price_df):
         "Turnover": "turnover_rate",
         "换手率": "turnover_rate",
     }
-    df = df.rename(columns={c: rename_map.get(c, c) for c in df.columns})
+    df = df.rename(columns={c: rename_map.get(str(c), str(c).lower()) for c in df.columns})
     if "date" not in df.columns:
-        df = df.reset_index().rename(columns={"index": "date"})
+        df = df.reset_index()
+        df = df.rename(columns={c: rename_map.get(str(c), str(c).lower()) for c in df.columns})
+        if "date" not in df.columns and "index" in df.columns:
+            df = df.rename(columns={"index": "date"})
+
+    if "date" not in df.columns:
+        return pd.DataFrame()
 
     for col in ["open", "high", "low", "close", "volume", "amount", "turnover_rate"]:
         if col in df.columns:
@@ -179,7 +190,7 @@ def generate_signals(price_df, rules=None, cost_price=None):
             trend_ok = ma_mid is not None and ma_slow is not None and close >= ma_mid >= ma_slow
             cost_ok = True
             if cost:
-                cost_ok = close <= cost * 1.03 or close >= cost
+                cost_ok = close <= cost * 1.03
             rsi_ok = rsi is None or rsi <= float(rules["rsi_buy_max"])
             if mode == "free":
                 rsi_ok = rsi is None or rsi <= max(float(rules["rsi_buy_max"]), 66)

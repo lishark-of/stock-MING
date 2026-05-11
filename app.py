@@ -2405,11 +2405,18 @@ else:
             st.markdown("**🌍 北向资金动向**")
             north_data = get_cn_north_bound_data()
             if north_data:
-                st.metric(f"北向净流入({north_data['date']})", f"¥{north_data['net_flow']:.2f}亿", "")
-                if north_data['net_flow'] > 0:
-                    st.success("✅ 外资在买入")
-                else:
-                    st.error("❌ 外资在卖出")
+                raw_flow = north_data.get("net_flow")
+                try:
+                    net_flow = float(raw_flow)
+                    st.metric(f"北向净流入({north_data.get('date', '未知')})", f"¥{net_flow:.2f}亿", "")
+                    if net_flow > 0:
+                        st.success("✅ 外资在买入")
+                    else:
+                        st.error("❌ 外资在卖出")
+                except (TypeError, ValueError):
+                    st.metric(f"北向资金({north_data.get('date', '未知')})", str(raw_flow or "暂无实时披露"), "")
+                    if north_data.get("status"):
+                        st.caption(north_data["status"])
             else:
                 st.info("暂无北向数据")
         
@@ -3526,6 +3533,8 @@ else:
 {stock_logic_inject}
 {ai_context_packet}
 	"""
+                    st.markdown("### 🎯 东京市场交易建议")
+                    call_deepseek_stream(jp_prompt, system_role="你是顶尖全球宏观对冲基金分析师，擅长用美股科技成长框架解剖亚洲资产。")
             if btn_jp_whale:
                 with st.spinner("正在穿透外资套利与信用盘口..."):
                     whale_jp_prompt = f"""
@@ -3538,7 +3547,7 @@ else:
 {ai_context_packet}
 		                    """
                     st.markdown("### 🐳 外资套利与信用盘口嗅探")
-                    call_deepseek_stream(jp_prompt, system_role="你是顶尖全球宏观对冲基金分析师，擅长用美股科技成长框架解剖亚洲资产。")
+                    call_deepseek_stream(whale_jp_prompt, system_role="你是日股资金流与外资套利盘口分析师，只能基于已给材料输出。")
                     
         elif market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
             # A股的核心按钮和逻辑已经内嵌在这个函数里了

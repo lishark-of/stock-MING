@@ -127,6 +127,7 @@ def collect_us_money_flow(ticker):
     result["etf_proxy_flow"] = collect_us_etf_proxy_flow(ticker)
     result["coverage"] = money_flow_coverage(result)
 
+    result["coverage"] = money_flow_coverage(result)
     result["summary"] = summarize_money_flow(result)
     return result
 
@@ -206,6 +207,7 @@ def collect_a_share_money_flow(ticker):
     except Exception as e:
         result["warnings"].append(f"block_trade unavailable: {e}")
 
+    result["coverage"] = money_flow_coverage(result)
     result["summary"] = summarize_money_flow(result)
     return result
 
@@ -229,6 +231,7 @@ def collect_hk_money_flow(ticker):
             }
     except Exception as e:
         result["warnings"].append(f"hk volume unavailable: {e}")
+    result["coverage"] = money_flow_coverage(result)
     result["summary"] = summarize_money_flow(result)
     return result
 
@@ -282,12 +285,24 @@ def summarize_money_flow(flow):
 
 
 def money_flow_coverage(flow):
-    checks = {
-        "institutional_holders": bool(flow.get("institutional_holders")),
-        "insider_transactions": bool(flow.get("insider_transactions")),
-        "options_signal": bool(flow.get("options_signal")),
-        "etf_proxy_flow": bool(flow.get("etf_proxy_flow")),
-    }
+    market_type = flow.get("market_type")
+    if market_type == "A_SHARE":
+        checks = {
+            "individual_fund_flow": bool(flow.get("individual_fund_flow")),
+            "dragon_tiger": bool(flow.get("dragon_tiger")),
+            "block_trade": bool(flow.get("block_trade")),
+        }
+    elif market_type == "HK_STOCK":
+        checks = {
+            "volume_signal": bool(flow.get("volume_signal")),
+        }
+    else:
+        checks = {
+            "institutional_holders": bool(flow.get("institutional_holders")),
+            "insider_transactions": bool(flow.get("insider_transactions")),
+            "options_signal": bool(flow.get("options_signal")),
+            "etf_proxy_flow": bool(flow.get("etf_proxy_flow")),
+        }
     available = sum(1 for ok in checks.values() if ok)
     missing = [key for key, ok in checks.items() if not ok]
     return {

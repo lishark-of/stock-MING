@@ -1,3 +1,121 @@
+import json
+import math
+
+
+def _dedupe_rows(rows, keys=("url", "title")):
+    deduped = []
+    seen = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        identity = tuple(str(row.get(key, "")).strip() for key in keys)
+        if not any(identity):
+            identity = (json.dumps(row, ensure_ascii=False, sort_keys=True, default=str),)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(row)
+    return deduped
+
+
+def _dedupe_items(items):
+    deduped = []
+    seen = set()
+    for item in items or []:
+        identity = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(item)
+    return deduped
+
+
+def _json_safe(value):
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            return _json_safe(value.item())
+        except Exception:
+            pass
+    if hasattr(value, "isoformat") and callable(value.isoformat):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    if value.__class__.__name__ == "DataFrame" and hasattr(value, "to_json"):
+        try:
+            return json.loads(value.tail(20).to_json(orient="records", date_format="iso", force_ascii=False))
+        except Exception:
+            return []
+    if value.__class__.__name__ == "Series" and hasattr(value, "to_dict"):
+        try:
+            return _json_safe(value.to_dict())
+        except Exception:
+            pass
+    try:
+        json.dumps(value, ensure_ascii=False, allow_nan=False)
+        return value
+    except Exception:
+        return str(value)
+
+
+def _compact_backtest_report(report):
+    if not report:
+        return {}
+    try:
+        from backtester import compact_report_for_prompt
+
+        return _json_safe(compact_report_for_prompt(report))
+    except Exception:
+        return _json_safe(report)
+
+
+def build_ai_context_payload(
+    supply_chain,
+    valuation,
+    news_rows,
+    replay_rules,
+    peer_rows=None,
+    research_links=None,
+    technical=None,
+    scenario=None,
+    data_quality=None,
+    money_flow=None,
+    backtest_report=None,
+):
+    """Build a structured, JSON-serializable context for DeepSeek prompts."""
+
+    return {
+        "task": "stock_ming_single_stock_analysis",
+        "schema_version": "1.0",
+        "supply_chain": _json_safe(supply_chain or {}),
+        "valuation": _json_safe(valuation or {}),
+        "technical": _json_safe(technical or {}),
+        "scenario": _json_safe(scenario or {}),
+        "data_quality": _json_safe(data_quality or {}),
+        "money_flow": _json_safe(money_flow or {}),
+        "recent_news": _json_safe(_dedupe_rows(news_rows)[:8]),
+        "replay_rules": _json_safe(replay_rules or ""),
+        "peer_rows": _json_safe(peer_rows or []),
+        "research_links": _json_safe(_dedupe_items(research_links)),
+        "backtest_report": _compact_backtest_report(backtest_report),
+        "analysis_requirements": {
+            "no_fabricated_news": True,
+            "prefer_structured_fields": True,
+            "respect_data_quality": True,
+            "use_monte_carlo_range_for_targets": True,
+            "prioritize_negative_signals": True,
+        },
+    }
+
+
 def build_strict_risk_decision(
     valuation,
     news_rows,
@@ -201,42 +319,54 @@ def build_ai_context_packet(
     data_quality=None,
     money_flow=None,
 ):
+    payload = build_ai_context_payload(
+        supply_chain,
+        valuation,
+        news_rows,
+        replay_rules,
+        peer_rows=peer_rows,
+        research_links=research_links,
+        technical=technical,
+        scenario=scenario,
+        data_quality=data_quality,
+        money_flow=money_flow,
+    )
     news_text = "\n".join(
         f"- {row.get('title', '')}｜情绪:{row.get('sentiment', '')}｜风险:{row.get('risk_tag', '')}｜相关:{row.get('relevance_score', '')}"
-        for row in (news_rows or [])[:8]
+        for row in payload["recent_news"]
     )
     return f"""
 【产业链】
-主题：{supply_chain.get('theme')}
-位置：{supply_chain.get('position')}
-风险传导：{supply_chain.get('risk_transmission')}
+主题：{payload['supply_chain'].get('theme')}
+位置：{payload['supply_chain'].get('position')}
+风险传导：{payload['supply_chain'].get('risk_transmission')}
 
 【估值】
-{valuation}
+{payload['valuation']}
 
 【实时技术面】
-{technical or '暂无实时技术面'}
+{payload['technical'] or '暂无实时技术面'}
 
 【量化情景区间】
-{scenario or '暂无情景推演'}
+{payload['scenario'] or '暂无情景推演'}
 
 【数据可信度】
-{data_quality or '暂无可信度报告'}
+{payload['data_quality'] or '暂无可信度报告'}
 
 【资金面】
-{money_flow or '暂无资金面结构化数据'}
+{payload['money_flow'] or '暂无资金面结构化数据'}
 
 【近48小时高相关舆情】
 {news_text or '暂无高相关舆情'}
 
 【炼丹炉专属规则】
-{replay_rules or '暂无该票专属规则'}
+{payload['replay_rules'] or '暂无该票专属规则'}
 
 【同行估值对比】
-{peer_rows or '暂无同行对比'}
+{payload['peer_rows'] or '暂无同行对比'}
 
 【深度信息挖掘入口】
-{research_links or '暂无深度信息入口'}
+{payload['research_links'] or '暂无深度信息入口'}
 """
 
 
