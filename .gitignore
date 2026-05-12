@@ -2,10 +2,16 @@ __pycache__/
 *.pyc
 *.py[cod]
 .streamlit/secrets.toml
+.streamlit/secrets.toml.save
+.streamlit/secrets.toml.bak
 .env
 *.key
+.python-user/
 
 # Local secrets
 .streamlit/secrets.toml
+.streamlit/secrets.toml.save
+.streamlit/secrets.toml.bak
 .env
 *.key
+.python-user/
