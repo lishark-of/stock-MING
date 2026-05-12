@@ -1,4 +1,3 @@
-import os
 import json
 import time
 import hashlib
@@ -9,28 +8,12 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from supabase import create_client, Client
 
+from config import require_deepseek_keys, require_supabase_config
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL:
-    raise ValueError("缺少 SUPABASE_URL")
-
-if not SUPABASE_KEY:
-    raise ValueError("缺少 SUPABASE_KEY")
-
+SUPABASE_URL, SUPABASE_KEY = require_supabase_config()
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
-DEEPSEEK_TOKENS = [
-    os.getenv("DEEPSEEK_TOKEN_1"),
-    os.getenv("DEEPSEEK_TOKEN_2")
-]
-
-DEEPSEEK_TOKENS = [t for t in DEEPSEEK_TOKENS if t]
-
-if not DEEPSEEK_TOKENS:
-    raise ValueError("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2")
+DEEPSEEK_TOKENS = require_deepseek_keys()
 
 _token_index = 0
 

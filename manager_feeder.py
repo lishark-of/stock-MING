@@ -1,29 +1,14 @@
 import hashlib
-import os
 import time
 
 from openai import OpenAI
 from supabase import create_client, Client
 
+from config import require_deepseek_keys, require_supabase_config
 
-DEEPSEEK_TOKENS = [
-    os.getenv("DEEPSEEK_TOKEN_1"),
-    os.getenv("DEEPSEEK_TOKEN_2"),
-]
 
-DEEPSEEK_TOKENS = [t for t in DEEPSEEK_TOKENS if t]
-
-if not DEEPSEEK_TOKENS:
-    raise ValueError("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2")
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL:
-    raise ValueError("缺少 SUPABASE_URL")
-
-if not SUPABASE_KEY:
-    raise ValueError("缺少 SUPABASE_KEY")
+DEEPSEEK_TOKENS = require_deepseek_keys()
+SUPABASE_URL, SUPABASE_KEY = require_supabase_config()
 
 _token_index = 0
 

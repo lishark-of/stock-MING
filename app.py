@@ -11,6 +11,8 @@ import inspect
 import pandas as pd
 import numpy as np
 
+from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
+
 try:
     from analysis_engine import (
         build_ai_context_packet,
@@ -836,14 +838,7 @@ def render_trade_instruction_card(profile, instruction):
 
 
 def get_config_value(name, default=""):
-    env_value = os.getenv(name)
-    if env_value:
-        return env_value
-
-    try:
-        return st.secrets.get(name, default)
-    except Exception:
-        return default
+    return read_config_value(name, default)
 
 # ==========================================
 # 🚀 基金经理AI克隆系统 - 核心逻辑引擎
@@ -1228,7 +1223,8 @@ def build_auto_replay_cases(ticker, lookback_days=730, window_days=60, future_da
 def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"):
     api_key = get_deepseek_api_key()
     if not api_key:
-        return st.error("❌ 缺少 DeepSeek 密钥")
+        st.warning("缺少 DeepSeek key，本次只展示行情、回测和结构化分析，不调用模型。")
+        return None
 
     try:
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1271,6 +1267,7 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
 
 def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理。", max_tokens=2000):
     if not st.session_state.get("ds_keys"):
+        st.warning("缺少 DeepSeek key，本次只展示行情、回测和结构化分析，不调用模型。")
         return None
 
     today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1386,34 +1383,24 @@ if st.session_state.user_role is None:
             elif pwd == "guest": st.session_state.user_role = "Guest"; st.rerun()
             else: st.error("密钥验证失败")
 else:
-    try:
-        raw_ds_keys = [
-            get_config_value("DEEPSEEK_API_KEY"),
-            get_config_value("DEEPSEEK_TOKEN_1"),
-            get_config_value("DEEPSEEK_TOKEN_2"),
-        ]
-        ds_keys = []
-        for key in raw_ds_keys:
-            key = str(key).strip()
-            if key and key not in ds_keys:
-                ds_keys.append(key)
+    ds_keys = get_deepseek_keys()
+    st.session_state.ds_keys = ds_keys
+    st.session_state.ds_key = ds_keys[0] if ds_keys else None
+    if "ds_key_index" not in st.session_state:
+        st.session_state.ds_key_index = 0
+    if not ds_keys:
+        st.warning("缺少 DeepSeek key，本次只展示行情、回测和结构化分析，不调用模型。")
 
-        st.session_state.ds_keys = ds_keys
-        st.session_state.ds_key = ds_keys[0] if ds_keys else None
-        if "ds_key_index" not in st.session_state:
-            st.session_state.ds_key_index = 0
-
-        sb_url = get_config_value("SUPABASE_URL")
-        sb_key = get_config_value("SUPABASE_KEY")
-        if not sb_url or not sb_key:
-            raise ValueError("缺少 SUPABASE_URL 或 SUPABASE_KEY")
-
-        supabase: Client = create_client(sb_url, sb_key)
-    except Exception as e:
-        st.session_state.ds_keys = []
-        st.session_state.ds_key = None
-        supabase = None
-        st.error(f"⚠️ 云端配置缺失: {e}")
+    supabase = None
+    sb_url, sb_key = get_supabase_config()
+    if not sb_url or not sb_key:
+        st.warning("Supabase 配置缺失，云端记忆、自动投喂和历史新闻读取暂不可用；行情、回测和本地结构化分析会继续运行。")
+    else:
+        try:
+            supabase: Client = create_client(sb_url, sb_key)
+        except Exception as e:
+            st.warning(f"Supabase 初始化失败，云端功能暂不可用：{e}")
+            supabase = None
 
     def load_cloud_knowledge():
         if not supabase: return {"strategies": [], "reflections": []}

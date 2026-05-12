@@ -1,2 +1,11 @@
 __pycache__/
+*.pyc
 *.py[cod]
+.streamlit/secrets.toml
+.env
+*.key
+
+# Local secrets
+.streamlit/secrets.toml
+.env
+*.key
