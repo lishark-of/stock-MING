@@ -275,6 +275,8 @@ def render_backtest_report(report):
             show = trades.copy()
             if "date" in show.columns:
                 show["date"] = show["date"].astype(str)
+            if "pnl_pct" in show.columns:
+                show["pnl_pct"] = pd.to_numeric(show["pnl_pct"], errors="coerce")
             st.dataframe(show, width="stretch", hide_index=True)
     else:
         st.info("这段历史里没有触发完整买卖交易，说明规则偏保守或样本不足。")
@@ -287,6 +289,64 @@ def render_backtest_report(report):
             if "date" in show.columns:
                 show["date"] = show["date"].astype(str)
             st.dataframe(show, width="stretch", hide_index=True)
+
+
+def build_trade_explanation_summary(multi_result, position_profile=None):
+    reports = (multi_result or {}).get("reports", {}) or {}
+    rows = []
+    for mode, report in reports.items():
+        metrics = report.get("metrics", {}) or {}
+        rows.append({
+            "mode": mode,
+            "label": report.get("mode_label", mode),
+            "total": _num(metrics.get("total_return_pct"), 0) or 0,
+            "dd": _num(metrics.get("max_drawdown_pct"), 0) or 0,
+            "trades": int(_num(metrics.get("trade_count"), 0) or 0),
+            "sharpe": _num(metrics.get("sharpe"), 0) or 0,
+        })
+    if not rows:
+        return "暂无足够回测数据生成交易解释摘要。"
+
+    best_return = max(rows, key=lambda row: row["total"])
+    best_dd = max(rows, key=lambda row: row["dd"])
+    most_trades = max(rows, key=lambda row: row["trades"])
+    least_trades = min(rows, key=lambda row: row["trades"])
+    dynamic = next((row for row in rows if row["mode"] == "dynamic"), None)
+    free = next((row for row in rows if row["mode"] == "free"), None)
+
+    if max(row["trades"] for row in rows) == 0:
+        style = "只观察"
+        style_reason = "三种模式都没有形成有效交易，不能把“无交易”误解成策略无效，更适合作为趋势体检。"
+    elif free and free["total"] >= best_return["total"] - 1 and free["dd"] > -22:
+        style = "趋势跟随"
+        style_reason = "自由趋势模式能接住主要行情，说明这只票更吃趋势延续。"
+    elif dynamic and (dynamic["dd"] >= best_dd["dd"] or dynamic["total"] >= best_return["total"] - 3):
+        style = "动态止盈"
+        style_reason = "动态止盈止损对收益/回撤更均衡，适合用移动止盈保护利润。"
+    elif best_dd["dd"] > -12:
+        style = "机械止损"
+        style_reason = "回撤控制优先级较高，固定纪律比追求弹性更重要。"
+    else:
+        style = "只观察"
+        style_reason = "收益和回撤质量不够稳定，先把它作为观察样本。"
+
+    pnl_pct = (position_profile or {}).get("pnl_pct")
+    intent = (position_profile or {}).get("position_intent")
+    position_note = ""
+    if pnl_pct is not None and pnl_pct >= 20:
+        position_note = " 当前相对成本浮盈较大，优先用动态止盈/分批减仓保护利润；不要把“回测无交易”误解成策略无效，也不建议因为高位强势重新追高开仓。"
+    elif intent == "new":
+        position_note = " 未买入时重点不是止盈止损，而是等回踩、突破确认和失效条件同时清楚。"
+    elif intent == "add":
+        position_note = " 想加仓时只看回踩加仓或突破确认加仓，若偏离均线过大就只持有不加。"
+
+    return (
+        f"交易解释摘要：收益最好的是 {best_return['label']}（{best_return['total']}%）；"
+        f"最大回撤最小的是 {best_dd['label']}（{best_dd['dd']}%）；"
+        f"交易次数最多的是 {most_trades['label']}（{most_trades['trades']} 次），"
+        f"最少的是 {least_trades['label']}（{least_trades['trades']} 次）。"
+        f"综合看更偏向“{style}”：{style_reason}{position_note}"
+    )
 
 
 def render_multi_mode_backtest(multi_result):
@@ -318,6 +378,12 @@ def render_multi_mode_backtest(multi_result):
     if rows:
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
+    explanation = multi_result.get("trade_explanation")
+    if not explanation:
+        explanation = build_trade_explanation_summary(multi_result, multi_result.get("position_profile"))
+    st.markdown("#### 交易解释摘要")
+    st.info(explanation)
+
     if reports:
         chart_parts = []
         for mode, report in reports.items():
@@ -346,6 +412,17 @@ def _fmt(value):
         return round(float(value), 2)
     except Exception:
         return "N/A"
+
+
+def _num(value, default=None):
+    try:
+        if value is None or value == "":
+            return default
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
 
 
 def _pct(value):

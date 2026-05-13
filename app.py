@@ -538,7 +538,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "行情/技术指标",
         "最新时间": market_asof or "未知",
-        "距今天数": market_age if market_age is not None else "N/A",
+        "距今天数": str(market_age) if market_age is not None else "N/A",
         "状态": market_status,
         "说明": f"MA/RSI可信度 {technical.get('confidence', 0)}",
     })
@@ -556,7 +556,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "近48小时舆情",
         "最新时间": news_asof or "无高相关新闻",
-        "距今天数": news_age if news_age is not None else "N/A",
+        "距今天数": str(news_age) if news_age is not None else "N/A",
         "状态": news_status if news_rows else "缺失",
         "说明": f"命中 {len(news_rows or [])} 条",
     })
@@ -603,7 +603,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "自动投喂",
         "最新时间": auto_asof or "未知",
-        "距今天数": auto_age if auto_age is not None else "N/A",
+        "距今天数": str(auto_age) if auto_age is not None else "N/A",
         "状态": auto_status,
         "说明": f"新闻 {len(feedback.get('market_news', []))} / 经理规则 {len(feedback.get('manager_rules', []))} / 心跳 {len(feedback.get('auto_runs', []))}",
     })
@@ -620,7 +620,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "回测覆盖",
         "最新时间": bt_asof or "未生成",
-        "距今天数": bt_age if bt_age is not None else "N/A",
+        "距今天数": str(bt_age) if bt_age is not None else "N/A",
         "状态": bt_status if backtest_report else "缺失",
         "说明": (backtest_report or {}).get("summary", "")[:80] if backtest_report else "主诊断未生成回测反哺",
     })
@@ -669,7 +669,10 @@ def build_position_profile(ticker, current_price, cost_price, holding_units, cap
     cost = _num(cost_price)
     units = _num(holding_units, 0) or 0
     capital = _num(capital_plan, 0) or 0
-    is_holding = str(position_status).startswith("已持有")
+    position_text = str(position_status)
+    is_adding = position_text.startswith("想加仓")
+    is_holding = position_text.startswith("已持有") or is_adding
+    intent = "add" if is_adding else ("hold" if position_text.startswith("已持有") else "new")
     pnl_pct = None
     pnl_amount = None
     state = "未输入成本价"
@@ -692,7 +695,9 @@ def build_position_profile(ticker, current_price, cost_price, holding_units, cap
     return {
         "ticker": ticker,
         "position_status": position_status,
+        "position_intent": intent,
         "is_holding": is_holding,
+        "is_adding": is_adding,
         "currency": currency,
         "current_price": current,
         "cost_price": cost,
@@ -713,15 +718,20 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     current = profile.get("current_price")
     cost = profile.get("cost_price")
     pnl_pct = profile.get("pnl_pct")
-    is_holding = profile.get("is_holding")
+    intent = profile.get("position_intent") or ("hold" if profile.get("is_holding") else "new")
+    is_holding = intent in {"hold", "add"}
     risk_score = int(_num((strict_decision or {}).get("risk_score"), 0) or 0)
     risk_action = (strict_decision or {}).get("action", "允许继续分析")
     ma60_state = technical.get("ma60_state", "未知")
     rsi = _num(technical.get("rsi"))
+    ma20 = _num(technical.get("ma20"))
     p10 = _num(scenario.get("p10"))
     p75 = _num(scenario.get("p75"))
     p90 = _num(scenario.get("p90"))
     ma60 = _num(technical.get("ma60"))
+    volume_vs_20d = _num(technical.get("volume_vs_20d"))
+    drawdown_20d = _num(technical.get("drawdown_20d"))
+    drawdown_60d = _num(technical.get("drawdown_60d"))
     quality_score = int(_num(data_quality.get("score"), 100) or 0)
     negatives = ((money_flow.get("summary") or {}).get("negative") or [])
     reasons = list((strict_decision or {}).get("reasons") or [])
@@ -740,11 +750,18 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     if bt_trade_count >= 2 and bt_sharpe is not None and bt_sharpe < 0.2:
         reasons.append(f"回测风险：夏普 {bt_sharpe} 偏低，规则历史收益质量不足")
 
-    trend_bad = ma60_state == "低于MA60"
+    trend_bad = ma60_state == "低于MA60" or (current and ma60 and current < ma60)
+    ma_stack = bool(current and ma20 and ma60 and current >= ma20 >= ma60)
     rsi_hot = rsi is not None and rsi >= 72
+    rsi_extreme = rsi is not None and rsi >= 82
+    extended_from_ma20 = bool(current and ma20 and current >= ma20 * 1.08)
+    healthy_volume = volume_vs_20d is None or 0.55 <= volume_vs_20d <= 2.8
+    strong_trend = ma_stack and not trend_bad and healthy_volume and (drawdown_20d is None or drawdown_20d > -10)
     flow_bad = bool(negatives)
     backtest_blocks = any(word in backtest_action for word in ["禁止", "止损", "退出"]) or (bt_dd is not None and bt_dd <= -28)
-    hard_block = risk_action.startswith("禁止") or risk_score >= 70 or quality_score < 45 or backtest_blocks
+    severe_data_gap = quality_score < 45
+    trend_break = trend_bad or (drawdown_60d is not None and drawdown_60d <= -18)
+    hard_block = severe_data_gap or (backtest_blocks and trend_break) or (risk_score >= 85 and trend_break)
 
     stop_loss = None
     take_profit = None
@@ -769,38 +786,63 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
                 trailing_candidates.append(current * 0.93)
             stop_loss = max(trailing_candidates)
 
-    if is_holding:
+    if intent == "hold":
         if pnl_pct is not None and pnl_pct <= -8 and (trend_bad or flow_bad or risk_score >= 55):
-            action = "减仓/止损"
+            action = "趋势破位离场"
             driver = "亏损已扩大且趋势或资金面未确认修复"
         elif pnl_pct is not None and pnl_pct < 0:
-            action = "防守持有"
+            action = "继续持有"
             driver = "仍低于成本，先等趋势/资金面确认"
-        elif pnl_pct is not None and pnl_pct >= 15 and (rsi_hot or (p75 and current and current >= p75)):
-            action = "分批止盈"
-            driver = "相对成本已有较高浮盈，且接近情景上沿或RSI偏热"
+        elif pnl_pct is not None and pnl_pct >= 20 and (rsi_hot or extended_from_ma20):
+            action = "移动止盈"
+            driver = "相对成本已有较高浮盈，优先用MA20/MA60或成本上方保护利润，不机械清仓"
+        elif pnl_pct is not None and pnl_pct >= 12 and (p75 and current and current >= p75):
+            action = "分批减仓"
+            driver = "已接近情景上沿，可分批锁定部分利润，剩余仓位用移动止盈跟踪"
         elif hard_block:
-            action = "降仓观察"
+            action = "分批减仓"
             driver = "系统风控或回测纪律触发较多，优先保护本金"
         else:
             action = "继续持有"
             driver = "未触发硬性卖出，按成本价上方移动止损"
+    elif intent == "add":
+        if hard_block or trend_break:
+            action = "减仓观察"
+            driver = "趋势或数据质量不足，不做加仓；已有仓位先保护利润或降低风险"
+        elif pnl_pct is not None and pnl_pct >= 20 and (rsi_extreme or extended_from_ma20):
+            action = "禁止加仓但可持有"
+            driver = "浮盈较大且价格偏离均线，允许持仓跟踪，不允许高位继续抬成本"
+        elif strong_trend and rsi_hot:
+            action = "只允许回踩加仓"
+            driver = "趋势仍强但短线偏热，只等缩量回踩MA20/MA30或突破位不破后再加"
+        elif strong_trend and backtest_action in {"小仓尝试", "继续观察"}:
+            action = "只允许突破确认加仓"
+            driver = "多头结构仍在，可等放量突破后2-5日回踩不破突破位再加"
+        else:
+            action = "禁止加仓但可持有"
+            driver = "加仓信号不完整，先持有观察，等回踩或突破确认"
     else:
         if hard_block:
-            action = "禁止开仓"
-            driver = "风险分、数据缺口或回测纪律不支持新买入"
+            action = "暂不参与"
+            driver = "趋势破坏、数据缺口或回测纪律不足，先不寻找新买点"
         elif trend_bad or quality_score < 60:
-            action = "观望"
-            driver = "趋势或数据可信度不足，等待更清晰买点"
+            action = "暂不参与"
+            driver = "趋势或数据可信度不足，等待结构修复"
+        elif strong_trend and (rsi_hot or extended_from_ma20):
+            action = "等回踩"
+            driver = "强趋势仍在，但当前位置不可追高；等MA20/MA30附近企稳、缩量回踩不破平台或突破位回踩确认"
         elif backtest_action == "小仓尝试" and risk_score <= 45:
-            action = "小仓尝试"
+            action = "可试探"
             driver = "回测最新信号允许试错，但仓位需受止损纪律约束"
+        elif strong_trend:
+            action = "等突破确认"
+            driver = "多头结构健康，优先等放量突破后2-5日回踩不破突破位"
         elif risk_score <= 40:
-            action = "小仓尝试"
+            action = "可试探"
             driver = "风控未明显否决，可用小仓验证"
         else:
-            action = "观望/小仓试错"
-            driver = "仍有风险因子，仓位必须保守"
+            action = "禁止追高"
+            driver = "仍有风险因子，不能追价，等待回踩、缩量企稳或RSI降温后转强"
 
     if take_profit is None and cost:
         take_profit = cost * 1.15
@@ -813,7 +855,12 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     take_text = _fmt_price(take_profit, profile.get("currency"))
     pnl_text = profile.get("profit_state", "未计算")
     risk_text = "；".join([str(r) for r in reasons[:3]]) if reasons else "暂无硬性风险，但仍需盘中确认"
-    one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。止损参考 {stop_text}，止盈/减仓参考 {take_text}。"
+    if intent == "new":
+        one_line = f"{action}：当前价 {current_text}；{driver}。入场只看新结构，参考买点为回踩企稳/突破确认，失效参考 {stop_text}，首次仓位建议小。"
+    elif intent == "add":
+        one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。加仓后移动止损参考 {stop_text}，不把低成本浮盈当作追高理由。"
+    else:
+        one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。移动止损参考 {stop_text}，止盈/减仓参考 {take_text}。"
 
     return {
         "action": action,
@@ -826,6 +873,8 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
         "quality_score": quality_score,
         "backtest_summary": backtest_summary,
         "backtest_action": backtest_action,
+        "position_intent": intent,
+        "strong_trend": strong_trend,
     }
 
 
@@ -1434,10 +1483,12 @@ else:
         except: return {"strategies": [], "reflections": []}
 
     def insert_cloud_memory(m_type, content):
-        if not supabase: return
+        if not supabase: return False
         try:
             supabase.table("brain_memory").insert({"memory_type": m_type, "content": content}).execute()
-        except: pass
+            return True
+        except:
+            return False
 
     def get_all_cloud_memories():
         if not supabase: return []
@@ -1487,6 +1538,174 @@ else:
         except Exception as e:
             st.warning(f"股票报告写入失败：{e}")
             return False
+
+    def save_manager_rule(manager_name, rule_type, content, source="手动投喂"):
+        if not supabase or not manager_name or not content:
+            return False
+        try:
+            supabase.table("manager_rules").insert({
+                "manager_name": manager_name,
+                "rule_type": rule_type or "其他",
+                "content": content,
+                "source": source,
+            }).execute()
+            return True
+        except Exception as e:
+            st.warning(f"manager_rules 写入失败：{e}")
+            return False
+
+    def split_feed_chunks(text, chunk_size=2800, overlap=250):
+        text = (text or "").strip()
+        chunks = []
+        start = 0
+        while start < len(text):
+            chunk = text[start:start + chunk_size].strip()
+            if chunk:
+                chunks.append(chunk)
+            start += max(1, chunk_size - overlap)
+        return chunks or ([text] if text else [])
+
+    def extract_uploaded_text(uploaded_file):
+        if not uploaded_file:
+            return ""
+        name = uploaded_file.name.lower()
+        data = uploaded_file.getvalue()
+        if name.endswith(".txt"):
+            return data.decode("utf-8", errors="ignore")
+        if name.endswith(".docx"):
+            try:
+                import docx
+
+                doc = docx.Document(io.BytesIO(data))
+                return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            except Exception as e:
+                st.warning(f"Word 解析失败：{e}")
+                return ""
+        if name.endswith(".pdf"):
+            try:
+                import PyPDF2
+
+                reader = PyPDF2.PdfReader(io.BytesIO(data))
+                pages = []
+                for page in reader.pages[:20]:
+                    pages.append(page.extract_text() or "")
+                return "\n".join(pages)
+            except Exception as e:
+                st.warning(f"PDF 解析失败：{e}")
+                return ""
+        return ""
+
+    def fallback_feed_extract(raw_text, source="手动投喂"):
+        summary = " ".join((raw_text or "").split())[:500]
+        return {
+            "status": "needs_ai_extract",
+            "core_view": summary or "原文为空，等待补充资料。",
+            "market": "待识别",
+            "buy_conditions": [],
+            "add_conditions": [],
+            "sell_conditions": [],
+            "risk_triggers": [],
+            "invalid_conditions": [],
+            "rules": ["needs_ai_extract|原文已保存摘要，等待 AI 提炼。"],
+            "evidence": f"来源：{source}；原文摘要：{summary}",
+        }
+
+    def parse_feed_extract(content, raw_text, source):
+        try:
+            start = content.find("{")
+            end = content.rfind("}")
+            if start >= 0 and end > start:
+                parsed = json.loads(content[start:end + 1])
+                parsed.setdefault("status", "extracted")
+                parsed.setdefault("rules", [])
+                parsed.setdefault("evidence", f"来源：{source}")
+                return parsed
+        except Exception:
+            pass
+        result = fallback_feed_extract(raw_text, source)
+        result["status"] = "extracted_text"
+        result["core_view"] = (content or result["core_view"])[:900]
+        return result
+
+    def extract_feed_knowledge(raw_text, source="手动投喂"):
+        chunks = split_feed_chunks(raw_text)
+        if not st.session_state.get("ds_keys"):
+            result = fallback_feed_extract(raw_text, source)
+            result["chunk_count"] = len(chunks)
+            return result
+
+        chunk_summaries = []
+        for i, chunk in enumerate(chunks[:6], start=1):
+            prompt = f"""
+请把下面投研资料第 {i}/{len(chunks)} 段提炼成结构化交易记忆，只能基于原文，不要编造。
+输出 JSON，字段固定：
+core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence。
+rules 用数组，每条格式为 rule_type|content，其中 rule_type 可用：买入条件/加仓条件/减仓条件/风险触发/失效条件/行业判断/其他。
+
+资料来源：{source}
+资料片段：
+{chunk[:2800]}
+"""
+            content = call_deepseek_non_stream(
+                prompt,
+                system_role="你是交易知识提炼器，负责把研报、复盘和文章压缩成可复用规则。",
+                max_tokens=900,
+            )
+            if content:
+                chunk_summaries.append(content[:2200])
+
+        if not chunk_summaries:
+            result = fallback_feed_extract(raw_text, source)
+            result["chunk_count"] = len(chunks)
+            return result
+
+        merge_prompt = f"""
+请合并以下分段提炼，输出最终 JSON，字段固定：
+core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence。
+要求高度浓缩，rules 最多 8 条，不要包含原文长段落。
+
+分段提炼：
+{json.dumps(chunk_summaries, ensure_ascii=False)}
+"""
+        merged = call_deepseek_non_stream(
+            merge_prompt,
+            system_role="你是交易知识合并器，负责生成长期记忆和可执行规则。",
+            max_tokens=1200,
+        )
+        result = parse_feed_extract(merged or "\n".join(chunk_summaries), raw_text, source)
+        result["chunk_count"] = len(chunks)
+        return result
+
+    def persist_extracted_knowledge(extract_result, ticker="", market_type="", manager_name="", source="手动投喂"):
+        status = extract_result.get("status", "needs_ai_extract")
+        core = extract_result.get("core_view", "")
+        memory_content = json.dumps({
+            "status": status,
+            "source": source,
+            "core_view": core,
+            "market": extract_result.get("market", ""),
+            "buy_conditions": extract_result.get("buy_conditions", []),
+            "add_conditions": extract_result.get("add_conditions", []),
+            "sell_conditions": extract_result.get("sell_conditions", []),
+            "risk_triggers": extract_result.get("risk_triggers", []),
+            "invalid_conditions": extract_result.get("invalid_conditions", []),
+            "evidence": extract_result.get("evidence", ""),
+        }, ensure_ascii=False, default=str)
+        counts = {"brain_memory": 0, "stock_reports": 0, "manager_rules": 0}
+        if insert_cloud_memory("strategy", memory_content):
+            counts["brain_memory"] += 1
+        if ticker and save_stock_report(ticker, market_type or "UNKNOWN", "manual_feed_extract", extract_result):
+            counts["stock_reports"] += 1
+        for rule in extract_result.get("rules", [])[:8]:
+            rule = str(rule).strip()
+            if not rule:
+                continue
+            rule_type, content = ("其他", rule)
+            if "|" in rule:
+                rule_type, content = rule.split("|", 1)
+            if manager_name and save_manager_rule(manager_name, rule_type.strip(), content.strip(), source=source):
+                counts["manager_rules"] += 1
+        return counts
 
     def load_stock_logic_rules(ticker, limit=3):
         if not supabase:
@@ -2519,7 +2738,7 @@ else:
     with pos_c1:
         position_status = st.selectbox(
             "持仓状态",
-            ["未买入 (观望/找买点)", "已持有 (持仓/找卖点)"],
+            ["未买入 (观望/找买点)", "已持有 (持仓/找卖点)", "想加仓 (已有底仓/找加仓点)"],
             key="position_status",
         )
     with pos_c2:
@@ -3144,6 +3363,7 @@ else:
                     multi_result["market_type"] = market_type
                     multi_result["source"] = report["source"]
                     multi_result["date_range"] = report["date_range"]
+                    multi_result["position_profile"] = position_profile_preview
                     st.session_state["last_backtest_report"] = report
                     st.session_state["last_multi_backtest"] = multi_result
                     st.session_state["last_backtest_key"] = bt_key
@@ -3163,9 +3383,9 @@ else:
 
             with st.expander("A股微观数据补充", expanded=False):
                 micro_key = f"micro_{target}_{market_type}"
-                if st.button("刷新资金流/龙虎榜", key=f"btn_{micro_key}"):
-                    with st.spinner("正在抓取公开微观数据..."):
-                        st.session_state[micro_key] = fetch_micro_data(target, market_type=market_type)
+                if st.button("深度资金扫描 / 刷新龙虎榜", key=f"btn_{micro_key}"):
+                    with st.spinner("正在抓取完整公开微观数据，可能较慢..."):
+                        st.session_state[micro_key] = cached_micro_data(target, market_type, deep=True)
                 micro = st.session_state.get(micro_key, {})
                 if micro.get("fund_flow"):
                     st.markdown("##### 个股资金流")
@@ -3173,6 +3393,9 @@ else:
                 if micro.get("dragon_tiger"):
                     st.markdown("##### 龙虎榜")
                     st.dataframe(pd.DataFrame(micro["dragon_tiger"]), width="stretch")
+                if micro.get("block_trade"):
+                    st.markdown("##### 大宗交易")
+                    st.dataframe(pd.DataFrame(micro["block_trade"]), width="stretch")
                 for warning in micro.get("warnings", []):
                     st.caption(f"提示：{warning}")
                 if not micro:
@@ -3389,6 +3612,18 @@ else:
                 render_portfolio_health_module(portfolio_health)
             with base_tab7:
                 render_money_flow_module(money_flow_snapshot)
+                if market_type == "A_SHARE":
+                    st.caption("主报告默认使用快速资金模式；完整龙虎榜/大宗交易扫描需要手动触发，避免阻塞诊股。")
+                    deep_key = f"deep_money_flow_{normalized_target}_{market_type}"
+                    if st.button("深度资金扫描 / 运行完整龙虎榜与资金流", key=f"btn_{deep_key}"):
+                        with st.spinner("正在运行完整资金扫描，可能较慢..."):
+                            try:
+                                st.session_state[deep_key] = cached_money_flow_snapshot(normalized_target, market_type, deep=True)
+                            except Exception as e:
+                                st.session_state[deep_key] = {"warnings": [f"深度资金扫描失败：{e}"]}
+                    if st.session_state.get(deep_key):
+                        st.markdown("##### 深度资金扫描结果")
+                        render_money_flow_module(st.session_state[deep_key])
             with base_tab8:
                 if main_backtest_report:
                     render_backtest_report(main_backtest_report)
@@ -3651,10 +3886,28 @@ else:
         with c_feed1:
             st.markdown("#### 📝 1. 碎片战法投喂")
             feed_text = st.text_area("记录盘感或交易纪律", placeholder="例如：跌破 MA20 必须无条件砍仓...", key="f_text")
+            feed_manager_name = st.text_input("关联基金经理/大师（可选）", value="", key="feed_manager_name")
             if st.button("🧠 提交入库", width="stretch"):
                 if feed_text:
-                    insert_cloud_memory("strategy", feed_text)
-                    st.success("✅ 纪律已烙印入云。")
+                    with st.spinner("正在切分资料并提炼交易记忆..."):
+                        extract_result = extract_feed_knowledge(feed_text, source="手动碎片投喂")
+                        counts = persist_extracted_knowledge(
+                            extract_result,
+                            ticker=target,
+                            market_type=market_type,
+                            manager_name=feed_manager_name.strip(),
+                            source="手动碎片投喂",
+                        )
+                    if extract_result.get("status") == "needs_ai_extract":
+                        st.warning("已保存，等待 AI 提炼。")
+                    else:
+                        st.success("已提炼入脑。")
+                    st.caption(f"写入 brain_memory {counts['brain_memory']} 条 / stock_reports {counts['stock_reports']} 条 / manager_rules {counts['manager_rules']} 条")
+                    st.json({
+                        "状态": "等待 AI 提炼" if extract_result.get("status") == "needs_ai_extract" else "已提炼入脑",
+                        "核心观点": extract_result.get("core_view", ""),
+                        "可复用交易规则": extract_result.get("rules", [])[:5],
+                    })
                 else: 
                     st.warning("⚠️ 内容为空。")
         
@@ -3664,8 +3917,24 @@ else:
             if st.button("🚀 解析并挂载到神经元", width="stretch"):
                 if uploaded_file:
                     file_name = uploaded_file.name
-                    insert_cloud_memory("strategy", f"【深度研报提取】来源：{file_name}。具体策略已通过文档录入系统。")
-                    st.success(f"✅ 文件 {file_name} 已解析并成功存入云端记忆！")
+                    raw_doc_text = extract_uploaded_text(uploaded_file)
+                    if not raw_doc_text.strip():
+                        st.warning("原文已上传但未解析出有效文本，未写入结构化记忆。")
+                    else:
+                        with st.spinner("正在解析文档并提炼结构化记忆..."):
+                            extract_result = extract_feed_knowledge(raw_doc_text, source=file_name)
+                            counts = persist_extracted_knowledge(
+                                extract_result,
+                                ticker=target,
+                                market_type=market_type,
+                                manager_name=feed_manager_name.strip(),
+                                source=file_name,
+                            )
+                        if extract_result.get("status") == "needs_ai_extract":
+                            st.warning(f"文件 {file_name} 已保存摘要，等待 AI 提炼。")
+                        else:
+                            st.success(f"文件 {file_name} 已提炼入脑。")
+                        st.caption(f"写入 brain_memory {counts['brain_memory']} 条 / stock_reports {counts['stock_reports']} 条 / manager_rules {counts['manager_rules']} 条")
                 else:
                     st.warning("⚠️ 请先上传研报或投研记录。")
 # --- 记忆显示器（完美接回） ---

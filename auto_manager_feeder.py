@@ -345,6 +345,8 @@ def call_deepseek_text(prompt, system_role, max_tokens=1600, temperature=0.2):
     for attempt, delay in enumerate(retry_delays, start=1):
         try:
             client = get_deepseek_client()
+            if client is None:
+                return ""
             response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
