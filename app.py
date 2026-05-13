@@ -166,7 +166,7 @@ def _fallback_render(title, payload):
     else:
         st.warning(f"{title} 降级：云端 visualizer.py 版本未完全同步。")
     if isinstance(payload, pd.DataFrame):
-        st.dataframe(payload, use_container_width=True)
+        st.dataframe(payload, width="stretch")
     else:
         st.json(payload)
 
@@ -208,7 +208,7 @@ if render_valuation_module is None:
         _fallback_render("估值可视化", valuation)
 if render_recent_sentiment_module is None:
     def render_recent_sentiment_module(news_rows):
-        st.dataframe(pd.DataFrame(news_rows), use_container_width=True) if news_rows else st.info("暂无舆情")
+        st.dataframe(pd.DataFrame(news_rows), width="stretch") if news_rows else st.info("暂无舆情")
 if render_portfolio_health_module is None:
     def render_portfolio_health_module(portfolio_health):
         _fallback_render("持仓体检可视化", portfolio_health)
@@ -220,7 +220,7 @@ if render_money_flow_module is None:
         _fallback_render("资金面可视化", flow)
 if render_peer_snapshot is None:
     def render_peer_snapshot(peer_rows):
-        st.dataframe(pd.DataFrame(peer_rows), use_container_width=True) if peer_rows else st.info("暂无同行对比")
+        st.dataframe(pd.DataFrame(peer_rows), width="stretch") if peer_rows else st.info("暂无同行对比")
 if render_research_links is None:
     def render_research_links(links):
         for link in links or []:
@@ -453,6 +453,26 @@ def cached_fetch_ohlcv_diagnostics(ticker, market_type, start, end, provider="au
 @st.cache_data(ttl=300)
 def cached_realtime_quote(ticker, market_type, provider="auto"):
     return fetch_realtime_quote(ticker, market_type=market_type, provider=provider)
+
+
+@st.cache_data(ttl=900)
+def cached_money_flow_snapshot(ticker, market_type, deep=False):
+    return call_with_supported_kwargs(
+        collect_money_flow_snapshot,
+        ticker,
+        market_type=market_type,
+        deep=deep,
+    )
+
+
+@st.cache_data(ttl=900)
+def cached_micro_data(ticker, market_type, deep=False):
+    return call_with_supported_kwargs(
+        fetch_micro_data,
+        ticker,
+        market_type=market_type,
+        deep=deep,
+    )
 
 
 def _parse_datetime_safe(value):
@@ -2413,10 +2433,10 @@ else:
         col_cn1, col_cn2 = st.columns(2)
         
         with col_cn1:
-            btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", use_container_width=True, key="btn_cn_deepseek")
+            btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
         
         with col_cn2:
-            btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", use_container_width=True, key="btn_cn_whale")
+            btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
         
         if btn_deepseek:
             with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
@@ -2578,7 +2598,7 @@ else:
         st.markdown("### 🏠 今日关注池 / 投研驾驶舱")
         st.caption("先判断今天该看什么，再决定用哪个大师人格和哪个诊股模块。")
 
-        if st.button("🚀 生成今日关注池", type="primary", use_container_width=True):
+        if st.button("🚀 生成今日关注池", type="primary", width="stretch"):
             prompt = build_today_watchlist_prompt()
             call_deepseek_stream(
                 prompt,
@@ -2607,31 +2627,31 @@ else:
 
             with feed_tab1:
                 if feedback.get("market_news"):
-                    st.dataframe(pd.DataFrame(feedback["market_news"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["market_news"]), width="stretch")
                 else:
                     st.info("暂时没有最近市场新闻入库。")
 
             with feed_tab2:
                 if feedback.get("processed_sources"):
-                    st.dataframe(pd.DataFrame(feedback["processed_sources"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["processed_sources"]), width="stretch")
                 else:
                     st.info("暂时没有最近处理成功的经理来源。")
 
             with feed_tab3:
                 if feedback.get("manager_rules"):
-                    st.dataframe(pd.DataFrame(feedback["manager_rules"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["manager_rules"]), width="stretch")
                 else:
                     st.info("暂时没有最近新增的经理规则。")
 
             with feed_tab4:
                 if feedback.get("manager_scores"):
-                    st.dataframe(pd.DataFrame(feedback["manager_scores"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["manager_scores"]), width="stretch")
                 else:
                     st.info("暂时没有最近经理评分。")
 
             with feed_tab5:
                 if feedback.get("auto_runs"):
-                    st.dataframe(pd.DataFrame(feedback["auto_runs"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["auto_runs"]), width="stretch")
                 else:
                     st.warning("还没有看到自动任务心跳。可去 GitHub Actions 手动 Run workflow 验证 secrets 和权限。")
     # 模块 A：天眼风控
@@ -2798,7 +2818,7 @@ else:
                 else:
                     case_df = pd.DataFrame(cases)
                     st.markdown("#### 历史切片样本")
-                    st.dataframe(case_df, use_container_width=True)
+                    st.dataframe(case_df, width="stretch")
 
                     case_lines = "\n".join(format_replay_case(case) for case in cases)
                     latest_close = round(float(hist["Close"].dropna().iloc[-1]), 2) if not hist.empty else "未知"
@@ -3057,7 +3077,7 @@ else:
         st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损。")
 
         bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}|{selected_modes}"
-        if st.button("运行回测", key="btn_run_backtest", type="primary", use_container_width=True):
+        if st.button("运行回测", key="btn_run_backtest", type="primary", width="stretch"):
             with st.spinner("正在拉取历史行情并跑回测..."):
                 price_frame = fetch_ohlcv(
                     target,
@@ -3149,16 +3169,16 @@ else:
                 micro = st.session_state.get(micro_key, {})
                 if micro.get("fund_flow"):
                     st.markdown("##### 个股资金流")
-                    st.dataframe(pd.DataFrame(micro["fund_flow"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(micro["fund_flow"]), width="stretch")
                 if micro.get("dragon_tiger"):
                     st.markdown("##### 龙虎榜")
-                    st.dataframe(pd.DataFrame(micro["dragon_tiger"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(micro["dragon_tiger"]), width="stretch")
                 for warning in micro.get("warnings", []):
                     st.caption(f"提示：{warning}")
                 if not micro:
                     st.info("需要时再点刷新，避免每次打开页面都慢。")
 
-            if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", use_container_width=True):
+            if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", width="stretch"):
                 if multi_result and multi_result.get("reports"):
                     compact_report = {
                         "summary": multi_result.get("summary", ""),
@@ -3183,7 +3203,7 @@ else:
                     system_role="你是严格的私人量化回测教练，必须把历史回测和成本价纪律说清楚。",
                 )
 
-            if st.button("保存这次回测到云端", key="btn_save_backtest_report", use_container_width=True):
+            if st.button("保存这次回测到云端", key="btn_save_backtest_report", width="stretch"):
                 if multi_result and multi_result.get("reports"):
                     compact_report = {
                         "summary": multi_result.get("summary", ""),
@@ -3221,7 +3241,7 @@ else:
             valuation_snapshot = get_valuation_snapshot(normalized_target)
             technical_snapshot = compute_technical_snapshot(normalized_target)
             scenario_snapshot = simulate_monte_carlo_range(normalized_target)
-            money_flow_snapshot = collect_money_flow_snapshot(normalized_target, market_type=market_type)
+            money_flow_snapshot = cached_money_flow_snapshot(normalized_target, market_type, deep=False)
             recent_news_rows = call_with_supported_kwargs(
                 build_recent_news_context,
                 supabase,
@@ -3426,7 +3446,7 @@ else:
             """, unsafe_allow_html=True)
             display_us_stock_analysis(target, price)
             
-            if st.button("💡 启动 AI 华尔街策略顾问", use_container_width=True, key="btn_us_ai"):
+            if st.button("💡 启动 AI 华尔街策略顾问", width="stretch", key="btn_us_ai"):
                 with st.spinner("正在连接华尔街数据库..."):
                     db = load_cloud_knowledge()
                     us_rules = [r for r in (db["strategies"] + db["reflections"]) if "🇺🇸" in r or "美股" in r]
@@ -3460,8 +3480,8 @@ else:
             
             # 引入 A 股同款的双轨制按钮
             col_hk1, col_hk2 = st.columns(2)
-            with col_hk1: btn_hk_ai = st.button("💡 启动 AI 港股策略顾问", use_container_width=True)
-            with col_hk2: btn_hk_whale = st.button("🐳 离岸巨鲸资金嗅探", type="primary", use_container_width=True)
+            with col_hk1: btn_hk_ai = st.button("💡 启动 AI 港股策略顾问", width="stretch")
+            with col_hk2: btn_hk_whale = st.button("🐳 离岸巨鲸资金嗅探", type="primary", width="stretch")
             
             if btn_hk_ai:
                 with st.spinner("正在加载香港投行估值模型..."):
@@ -3499,8 +3519,8 @@ else:
             display_jp_stock_analysis(target, price)
             
             col_jp1, col_jp2 = st.columns(2)
-            with col_jp1: btn_jp_ai = st.button("💡 启动 AI 日股策略顾问", use_container_width=True)
-            with col_jp2: btn_jp_whale = st.button("🐳 华尔街/日银外资嗅探", type="primary", use_container_width=True)
+            with col_jp1: btn_jp_ai = st.button("💡 启动 AI 日股策略顾问", width="stretch")
+            with col_jp2: btn_jp_whale = st.button("🐳 华尔街/日银外资嗅探", type="primary", width="stretch")
             
             if btn_jp_ai:
                 with st.spinner("正在加载东京券商估值模型..."):
@@ -3565,10 +3585,10 @@ else:
         col_a, col_b = st.columns(2)
 
         with col_a:
-            run_scan = st.button("🚀 启动大师选股", type="primary", use_container_width=True)
+            run_scan = st.button("🚀 启动大师选股", type="primary", width="stretch")
 
         with col_b:
-            show_rules = st.button("📚 查看该大师规则库", use_container_width=True)
+            show_rules = st.button("📚 查看该大师规则库", width="stretch")
 
         if show_rules:
             rules = load_manager_rules(manager_name, limit=50)
@@ -3631,7 +3651,7 @@ else:
         with c_feed1:
             st.markdown("#### 📝 1. 碎片战法投喂")
             feed_text = st.text_area("记录盘感或交易纪律", placeholder="例如：跌破 MA20 必须无条件砍仓...", key="f_text")
-            if st.button("🧠 提交入库", use_container_width=True):
+            if st.button("🧠 提交入库", width="stretch"):
                 if feed_text:
                     insert_cloud_memory("strategy", feed_text)
                     st.success("✅ 纪律已烙印入云。")
@@ -3641,7 +3661,7 @@ else:
         with c_feed2:
             st.markdown("#### 📂 2. 研报文档直投 (基金经理训练)")
             uploaded_file = st.file_uploader("上传 PDF/Word 研报进行深度向量化", type=["pdf", "docx", "txt"])
-            if st.button("🚀 解析并挂载到神经元", use_container_width=True):
+            if st.button("🚀 解析并挂载到神经元", width="stretch"):
                 if uploaded_file:
                     file_name = uploaded_file.name
                     insert_cloud_memory("strategy", f"【深度研报提取】来源：{file_name}。具体策略已通过文档录入系统。")

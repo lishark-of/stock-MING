@@ -57,10 +57,10 @@ def frame_records(df, limit=8):
     return json_safe(df.head(limit).where(pd.notna(df), "").to_dict("records"))
 
 
-def collect_money_flow_snapshot(ticker, market_type=None):
+def collect_money_flow_snapshot(ticker, market_type=None, deep=False):
     market_type = market_type or infer_market_type(ticker)
     if market_type in ["A_SHARE_SH", "A_SHARE_SZ", "A_SHARE"]:
-        return collect_a_share_money_flow(ticker)
+        return collect_a_share_money_flow(ticker, deep=deep)
     if market_type == "HK_STOCK":
         return collect_hk_money_flow(ticker)
     return collect_us_money_flow(ticker)
@@ -160,11 +160,50 @@ def collect_us_etf_proxy_flow(ticker):
     return rows
 
 
-def collect_a_share_money_flow(ticker):
+def _filter_code_frame(df, code):
+    if df is None or df.empty:
+        return df
+    code = str(code).zfill(6)
+    code_cols = [
+        col for col in df.columns
+        if any(word in str(col) for word in ["代码", "股票代码", "证券代码", "code", "Code", "symbol"])
+    ]
+    for col in code_cols:
+        try:
+            extracted = df[col].astype(str).str.extract(r"(\d{6})", expand=False).fillna("")
+            mask = extracted == code
+            if mask.any():
+                return df[mask]
+        except Exception:
+            continue
+    return df
+
+
+def _collect_a_share_fund_flow(code, ticker):
+    try:
+        import akshare as ak
+        try:
+            flow_df = ak.stock_individual_fund_flow(
+                stock=code,
+                market="sh" if str(ticker).upper().endswith(".SS") else "sz",
+            )
+        except Exception:
+            try:
+                flow_df = ak.stock_fund_flow_individual(symbol=code)
+            except TypeError:
+                flow_df = ak.stock_fund_flow_individual(indicator="即时")
+        flow_df = _filter_code_frame(flow_df, code)
+        return frame_records(flow_df, 8), ""
+    except Exception as e:
+        return [], f"个股资金流暂不可用：{e}"
+
+
+def collect_a_share_money_flow(ticker, deep=False):
     result = {
         "ticker": ticker,
         "market_type": "A_SHARE",
         "data_time": datetime.datetime.utcnow().isoformat(),
+        "mode": "deep" if deep else "quick",
         "individual_fund_flow": [],
         "dragon_tiger": [],
         "block_trade": [],
@@ -173,25 +212,23 @@ def collect_a_share_money_flow(ticker):
 
     code = ticker_plain(ticker)
 
-    try:
-        import akshare as ak
-        try:
-            flow_df = ak.stock_fund_flow_individual(symbol=code)
-        except TypeError:
-            flow_df = ak.stock_fund_flow_individual(indicator="即时")
-            if "代码" in flow_df.columns:
-                flow_df = flow_df[flow_df["代码"].astype(str) == code]
-        if flow_df is not None and not flow_df.empty:
-            result["individual_fund_flow"] = frame_records(flow_df, 8)
-    except Exception as e:
-        result["warnings"].append(f"stock_fund_flow_individual unavailable: {e}")
+    rows, warning = _collect_a_share_fund_flow(code, ticker)
+    result["individual_fund_flow"] = rows
+    if warning:
+        result["warnings"].append(warning)
+
+    if not deep:
+        result["warnings"].append("快速资金模式：未自动运行完整龙虎榜/大宗交易扫描。")
+        result["coverage"] = money_flow_coverage(result)
+        result["summary"] = summarize_money_flow(result)
+        return result
 
     try:
         import akshare as ak
         today = datetime.datetime.now().strftime("%Y%m%d")
         lhb_df = ak.stock_lhb_detail_em(start_date=today, end_date=today)
-        if lhb_df is not None and not lhb_df.empty and "代码" in lhb_df.columns:
-            lhb_df = lhb_df[lhb_df["代码"].astype(str) == code]
+        if lhb_df is not None and not lhb_df.empty:
+            lhb_df = _filter_code_frame(lhb_df, code)
             result["dragon_tiger"] = frame_records(lhb_df, 8)
     except Exception as e:
         result["warnings"].append(f"stock_lhb_detail_em unavailable: {e}")
@@ -200,9 +237,7 @@ def collect_a_share_money_flow(ticker):
         import akshare as ak
         block_df = ak.stock_dzjy_mrmx(symbol=datetime.datetime.now().strftime("%Y%m%d"))
         if block_df is not None and not block_df.empty:
-            code_cols = [c for c in block_df.columns if "代码" in c]
-            if code_cols:
-                block_df = block_df[block_df[code_cols[0]].astype(str) == code]
+            block_df = _filter_code_frame(block_df, code)
             result["block_trade"] = frame_records(block_df, 8)
     except Exception as e:
         result["warnings"].append(f"block_trade unavailable: {e}")

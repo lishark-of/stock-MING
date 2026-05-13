@@ -13,12 +13,12 @@ def render_supply_chain_module(profile, portfolio_health):
 
     link_rows = profile.get("a_share_links", [])
     if link_rows:
-        st.dataframe(pd.DataFrame(link_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(link_rows), width="stretch", hide_index=True)
 
     corr = portfolio_health.get("correlation")
     if corr is not None and not corr.empty:
         st.markdown("##### 相关性表")
-        st.dataframe(corr, use_container_width=True)
+        st.dataframe(corr, width="stretch")
 
 
 def render_valuation_module(valuation):
@@ -82,7 +82,7 @@ def render_recent_sentiment_module(news_rows):
 
     df = pd.DataFrame(news_rows)
     cols = [c for c in ["relevance_score", "market_filter", "filter_reason", "keyword", "title", "sentiment", "risk_tag", "created_at", "url"] if c in df.columns]
-    st.dataframe(df[cols], use_container_width=True, hide_index=True)
+    st.dataframe(df[cols], width="stretch", hide_index=True)
 
 
 def render_portfolio_health_module(portfolio_health):
@@ -93,7 +93,7 @@ def render_portfolio_health_module(portfolio_health):
         return
 
     df = pd.DataFrame(metrics).T.reset_index().rename(columns={"index": "ticker"})
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
 
 def render_risk_decision(decision):
@@ -141,7 +141,7 @@ def render_money_flow_module(flow):
         rows = flow.get(key)
         if rows:
             with st.expander(label, expanded=False):
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     if flow.get("options_signal"):
         with st.expander("期权异动", expanded=False):
@@ -191,7 +191,7 @@ def render_freshness_module(report):
     st.caption(report.get("instruction", ""))
     rows = report.get("items", [])
     if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     for warning in report.get("warnings", []):
         st.caption(f"提示：{warning}")
@@ -202,7 +202,7 @@ def render_peer_snapshot(peer_rows):
     if not peer_rows:
         st.info("暂无可用同行估值对比。")
         return
-    st.dataframe(pd.DataFrame(peer_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(peer_rows), width="stretch", hide_index=True)
 
 
 def render_research_links(links):
@@ -267,7 +267,7 @@ def render_backtest_report(report):
             chart_df["date"] = pd.to_datetime(chart_df["date"], errors="coerce")
             chart_df = chart_df.dropna(subset=["date"]).set_index("date")
         if "equity" in chart_df.columns:
-            st.line_chart(chart_df[["equity"]], use_container_width=True)
+            st.line_chart(chart_df[["equity"]], width="stretch")
 
     trades = report.get("trades")
     if trades is not None and not trades.empty:
@@ -275,7 +275,7 @@ def render_backtest_report(report):
             show = trades.copy()
             if "date" in show.columns:
                 show["date"] = show["date"].astype(str)
-            st.dataframe(show, use_container_width=True, hide_index=True)
+            st.dataframe(show, width="stretch", hide_index=True)
     else:
         st.info("这段历史里没有触发完整买卖交易，说明规则偏保守或样本不足。")
 
@@ -286,7 +286,7 @@ def render_backtest_report(report):
             show = signals[cols].tail(20).copy()
             if "date" in show.columns:
                 show["date"] = show["date"].astype(str)
-            st.dataframe(show, use_container_width=True, hide_index=True)
+            st.dataframe(show, width="stretch", hide_index=True)
 
 
 def render_multi_mode_backtest(multi_result):
@@ -316,7 +316,7 @@ def render_multi_mode_backtest(multi_result):
             "状态总结": brief.get("verdict", ""),
         })
     if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     if reports:
         chart_parts = []
@@ -331,7 +331,7 @@ def render_multi_mode_backtest(multi_result):
             chart_parts.append(part[[label]])
         if chart_parts:
             chart_df = pd.concat(chart_parts, axis=1).sort_index()
-            st.line_chart(chart_df, use_container_width=True)
+            st.line_chart(chart_df, width="stretch")
 
     tabs = st.tabs([report.get("mode_label", mode) for mode, report in reports.items()]) if reports else []
     for tab, (mode, report) in zip(tabs, reports.items()):
