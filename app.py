@@ -1497,6 +1497,135 @@ else:
             return res.data
         except: return []
 
+    FEED_MISSING_TEXT = "原文未提供/暂无明确提取"
+
+    def parse_memory_payload(content):
+        if isinstance(content, dict):
+            return content, content
+        if not isinstance(content, str):
+            return {}, content
+
+        text = content.strip()
+        try:
+            return json.loads(text), text
+        except Exception:
+            pass
+
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text[start:end + 1]), text
+            except Exception:
+                pass
+
+        return {"raw_text": text}, text
+
+    def compact_display_text(value):
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return " ".join(value.split())
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        return ""
+
+    def list_display_items(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [item for item in value if compact_display_text(item) or isinstance(item, dict)]
+        if compact_display_text(value):
+            return [value]
+        return []
+
+    def render_memory_list_section(title, value):
+        items = list_display_items(value)
+        if not items:
+            return False
+
+        st.markdown(f"**{title}**")
+        for item in items:
+            if isinstance(item, dict):
+                summary = item.get("content") or item.get("rule") or item.get("title") or item.get("summary")
+                st.markdown(f"- {compact_display_text(summary) or FEED_MISSING_TEXT}")
+            else:
+                st.markdown(f"- {compact_display_text(item) or FEED_MISSING_TEXT}")
+        return True
+
+    def render_feed_extract_card(payload, memory_type="strategy", raw_payload=None, card_title="资料提炼结果"):
+        data, raw = parse_memory_payload(payload)
+        raw_payload = raw_payload if raw_payload is not None else raw
+        memory_label = compact_display_text(memory_type).upper() or "MEMORY"
+        source = compact_display_text(data.get("source"))
+        status = compact_display_text(data.get("status"))
+        market = compact_display_text(data.get("market"))
+        core_view = compact_display_text(data.get("core_view") or data.get("summary") or data.get("raw_text"))
+        evidence = compact_display_text(data.get("evidence"))
+
+        with st.container(border=True):
+            st.markdown(f"**[{memory_label}] {card_title}**")
+            meta_parts = []
+            if source:
+                meta_parts.append(f"来源：{source}")
+            if status:
+                status_text = "等待 AI 提炼" if status == "needs_ai_extract" else status
+                meta_parts.append(f"状态：{status_text}")
+            if market:
+                meta_parts.append(f"市场：{market}")
+            if meta_parts:
+                st.caption(" ｜ ".join(meta_parts))
+
+            if memory_type == "reflection":
+                st.markdown("**复盘记忆**")
+            else:
+                st.markdown("**核心观点**")
+            st.write(core_view or FEED_MISSING_TEXT)
+
+            rendered_sections = False
+            if memory_type == "strategy":
+                sections = [
+                    ("买入条件", "buy_conditions"),
+                    ("加仓条件", "add_conditions"),
+                    ("卖出/减仓条件", "sell_conditions"),
+                    ("风险触发", "risk_triggers"),
+                    ("失效条件", "invalid_conditions"),
+                    ("可复用交易规则", "rules"),
+                ]
+            else:
+                sections = [
+                    ("可复用规则", "rules"),
+                    ("证据/来源线索", "evidence"),
+                ]
+
+            for title, key in sections:
+                if key == "evidence":
+                    if evidence:
+                        st.markdown(f"**{title}**")
+                        st.write(evidence)
+                        rendered_sections = True
+                    continue
+                rendered_sections = render_memory_list_section(title, data.get(key)) or rendered_sections
+
+            if not rendered_sections and not evidence:
+                st.caption(FEED_MISSING_TEXT)
+
+            if evidence and memory_type == "strategy":
+                st.markdown("**证据/来源线索**")
+                st.write(evidence)
+
+            with st.expander("查看原始提炼 JSON", expanded=False):
+                if isinstance(raw_payload, (dict, list)):
+                    st.json(raw_payload)
+                elif isinstance(raw_payload, str):
+                    parsed_raw, _ = parse_memory_payload(raw_payload)
+                    if parsed_raw and "raw_text" not in parsed_raw:
+                        st.json(parsed_raw)
+                    else:
+                        st.json({"raw_content": raw_payload})
+                else:
+                    st.json({"raw_content": str(raw_payload)})
+
     def delete_cloud_memories(ids_to_delete):
         if not supabase or not ids_to_delete: return
         try:
@@ -3903,11 +4032,12 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
                     else:
                         st.success("已提炼入脑。")
                     st.caption(f"写入 brain_memory {counts['brain_memory']} 条 / stock_reports {counts['stock_reports']} 条 / manager_rules {counts['manager_rules']} 条")
-                    st.json({
-                        "状态": "等待 AI 提炼" if extract_result.get("status") == "needs_ai_extract" else "已提炼入脑",
-                        "核心观点": extract_result.get("core_view", ""),
-                        "可复用交易规则": extract_result.get("rules", [])[:5],
-                    })
+                    render_feed_extract_card(
+                        extract_result,
+                        memory_type="strategy",
+                        raw_payload=extract_result,
+                        card_title="手动碎片投喂",
+                    )
                 else: 
                     st.warning("⚠️ 内容为空。")
         
@@ -3935,6 +4065,12 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
                         else:
                             st.success(f"文件 {file_name} 已提炼入脑。")
                         st.caption(f"写入 brain_memory {counts['brain_memory']} 条 / stock_reports {counts['stock_reports']} 条 / manager_rules {counts['manager_rules']} 条")
+                        render_feed_extract_card(
+                            extract_result,
+                            memory_type="strategy",
+                            raw_payload=extract_result,
+                            card_title=file_name,
+                        )
                 else:
                     st.warning("⚠️ 请先上传研报或投研记录。")
 # --- 记忆显示器（完美接回） ---
@@ -3946,12 +4082,11 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
             
             if memories:
                 for m in memories:
-                    # 使用极其凌厉的卡片UI展示历史记忆
-                    st.markdown(f"""
-                    <div class='knowledge-card'>
-                        <span style='color: #0071E3; font-weight: bold;'>[{m['memory_type'].upper()}]</span> 
-                        {m['content']}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    render_feed_extract_card(
+                        m.get("content", ""),
+                        memory_type=m.get("memory_type", "memory"),
+                        raw_payload=m.get("content", ""),
+                        card_title=f"云端记忆 #{m.get('id', '')}",
+                    )
             else:
                 st.info("📭 当前云端神经元为空，请在上方投喂你的第一条交易纪律。")
