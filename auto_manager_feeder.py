@@ -5,22 +5,14 @@ import requests
 import feedparser
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
-import os
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus, unquote_plus
 
+from config import require_supabase_config
 from manager_feeder import feed_manager_from_text, get_deepseek_client
 
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL:
-    raise ValueError("缺少 SUPABASE_URL，请检查 GitHub Secrets")
-
-if not SUPABASE_KEY:
-    raise ValueError("缺少 SUPABASE_KEY，请检查 GitHub Secrets")
-
+SUPABASE_URL, SUPABASE_KEY = require_supabase_config()
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -353,6 +345,8 @@ def call_deepseek_text(prompt, system_role, max_tokens=1600, temperature=0.2):
     for attempt, delay in enumerate(retry_delays, start=1):
         try:
             client = get_deepseek_client()
+            if client is None:
+                return ""
             response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[

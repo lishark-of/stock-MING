@@ -369,7 +369,20 @@ def fetch_realtime_quote(ticker, market_type=None, provider="auto"):
     }
 
 
-def fetch_micro_data(ticker, market_type=None):
+def _filter_micro_frame_by_code(df, code):
+    if df is None or df.empty:
+        return df
+    code = str(code).zfill(6)
+    text_cols = [col for col in df.columns if "代码" in str(col) or "名称" in str(col)]
+    if not text_cols:
+        return df
+    mask = pd.Series(False, index=df.index)
+    for col in text_cols:
+        mask = mask | df[col].astype(str).str.contains(code, na=False)
+    return df[mask]
+
+
+def fetch_micro_data(ticker, market_type=None, deep=False):
     normalized = normalize_ticker(ticker)
     market = market_family(market_type or infer_market_type(normalized))
     result = {
@@ -379,6 +392,7 @@ def fetch_micro_data(ticker, market_type=None):
         "dragon_tiger": [],
         "block_trade": [],
         "warnings": [],
+        "mode": "deep" if deep else "quick",
     }
 
     if market != "A_SHARE":
@@ -396,16 +410,23 @@ def fetch_micro_data(ticker, market_type=None):
         except Exception as exc:
             result["warnings"].append(f"个股资金流暂不可用：{exc}")
 
+        if not deep:
+            result["warnings"].append("快速模式：未运行完整龙虎榜/大宗交易扫描。")
+            return result
+
         try:
             lhb = ak.stock_lhb_detail_em(start_date=(datetime.date.today() - datetime.timedelta(days=90)).strftime("%Y%m%d"), end_date=datetime.date.today().strftime("%Y%m%d"))
             if lhb is not None and not lhb.empty:
-                text_cols = [col for col in lhb.columns if "代码" in str(col) or "名称" in str(col)]
-                mask = pd.Series(False, index=lhb.index)
-                for col in text_cols:
-                    mask = mask | lhb[col].astype(str).str.contains(code, na=False)
-                result["dragon_tiger"] = lhb[mask].tail(8).to_dict("records")
+                result["dragon_tiger"] = _filter_micro_frame_by_code(lhb, code).tail(8).to_dict("records")
         except Exception as exc:
             result["warnings"].append(f"龙虎榜暂不可用：{exc}")
+
+        try:
+            block = ak.stock_dzjy_mrmx(symbol=datetime.date.today().strftime("%Y%m%d"))
+            if block is not None and not block.empty:
+                result["block_trade"] = _filter_micro_frame_by_code(block, code).tail(8).to_dict("records")
+        except Exception as exc:
+            result["warnings"].append(f"大宗交易暂不可用：{exc}")
     except Exception as exc:
         result["warnings"].append(f"Akshare微观接口不可用：{exc}")
 

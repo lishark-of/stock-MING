@@ -260,7 +260,7 @@ def simulate_trades(signal_df, initial_cash=100000, position_size=1.0, fee_rate=
                 "price": round(close, 4),
                 "shares": round(shares, 4),
                 "reason": reason,
-                "pnl_pct": "",
+                "pnl_pct": None,
             })
         elif signal in {"SELL", "TAKE_PROFIT"} and shares > 0:
             proceeds = shares * close * (1 - fee_rate)
@@ -474,7 +474,7 @@ def build_latest_signal(signal_df, cost_context, metrics):
     elif raw_signal in {"REDUCE"}:
         action = "减仓"
     elif raw_signal in {"AVOID"}:
-        action = "禁止开仓"
+        action = "暂不参与"
     else:
         action = "继续观察"
 

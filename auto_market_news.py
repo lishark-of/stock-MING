@@ -1,4 +1,3 @@
-import os
 import json
 import time
 import hashlib
@@ -9,34 +8,21 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from supabase import create_client, Client
 
+from config import get_deepseek_keys, require_supabase_config
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL:
-    raise ValueError("缺少 SUPABASE_URL")
-
-if not SUPABASE_KEY:
-    raise ValueError("缺少 SUPABASE_KEY")
-
+SUPABASE_URL, SUPABASE_KEY = require_supabase_config()
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
-DEEPSEEK_TOKENS = [
-    os.getenv("DEEPSEEK_TOKEN_1"),
-    os.getenv("DEEPSEEK_TOKEN_2")
-]
-
-DEEPSEEK_TOKENS = [t for t in DEEPSEEK_TOKENS if t]
-
-if not DEEPSEEK_TOKENS:
-    raise ValueError("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2")
+DEEPSEEK_TOKENS = get_deepseek_keys()
 
 _token_index = 0
 
 
 def get_deepseek_client():
     global _token_index
+
+    if not DEEPSEEK_TOKENS:
+        return None
 
     token = DEEPSEEK_TOKENS[_token_index]
     _token_index = (_token_index + 1) % len(DEEPSEEK_TOKENS)
@@ -150,7 +136,16 @@ RSS摘要：
         return {
             "summary": "正文抓取为空，仅保留标题。",
             "risk_tag": "未知",
-            "sentiment": "中性"
+            "sentiment": "中性",
+            "extract_status": "raw_summary_only",
+        }
+
+    if not DEEPSEEK_TOKENS:
+        return {
+            "summary": (rss_summary or title)[:300],
+            "risk_tag": "未知",
+            "sentiment": "不确定",
+            "extract_status": "needs_ai_extract",
         }
 
     prompt = f"""
@@ -181,6 +176,8 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
     for attempt, delay in enumerate(retry_delays, start=1):
         try:
             client = get_deepseek_client()
+            if client is None:
+                break
 
             response = client.chat.completions.create(
                 model="deepseek-chat",
@@ -210,13 +207,15 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
         return {
             "summary": rss_summary[:300] if rss_summary else "DeepSeek 分析失败，仅保存原始标题。",
             "risk_tag": "未知",
-            "sentiment": "不确定"
+            "sentiment": "不确定",
+            "extract_status": "needs_ai_extract",
         }
 
     result = {
         "summary": "",
         "risk_tag": "未知",
-        "sentiment": "不确定"
+        "sentiment": "不确定",
+        "extract_status": "extracted",
     }
 
     for line in content.splitlines():

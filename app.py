@@ -3,13 +3,17 @@ import yfinance as yf
 from openai import OpenAI
 from supabase import create_client, Client
 import datetime
+import hashlib
 import json
 import os
+import re
 import time
 import io
 import inspect
 import pandas as pd
 import numpy as np
+
+from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
 try:
     from analysis_engine import (
@@ -164,7 +168,7 @@ def _fallback_render(title, payload):
     else:
         st.warning(f"{title} 降级：云端 visualizer.py 版本未完全同步。")
     if isinstance(payload, pd.DataFrame):
-        st.dataframe(payload, use_container_width=True)
+        st.dataframe(payload, width="stretch")
     else:
         st.json(payload)
 
@@ -206,7 +210,7 @@ if render_valuation_module is None:
         _fallback_render("估值可视化", valuation)
 if render_recent_sentiment_module is None:
     def render_recent_sentiment_module(news_rows):
-        st.dataframe(pd.DataFrame(news_rows), use_container_width=True) if news_rows else st.info("暂无舆情")
+        st.dataframe(pd.DataFrame(news_rows), width="stretch") if news_rows else st.info("暂无舆情")
 if render_portfolio_health_module is None:
     def render_portfolio_health_module(portfolio_health):
         _fallback_render("持仓体检可视化", portfolio_health)
@@ -218,7 +222,7 @@ if render_money_flow_module is None:
         _fallback_render("资金面可视化", flow)
 if render_peer_snapshot is None:
     def render_peer_snapshot(peer_rows):
-        st.dataframe(pd.DataFrame(peer_rows), use_container_width=True) if peer_rows else st.info("暂无同行对比")
+        st.dataframe(pd.DataFrame(peer_rows), width="stretch") if peer_rows else st.info("暂无同行对比")
 if render_research_links is None:
     def render_research_links(links):
         for link in links or []:
@@ -453,6 +457,26 @@ def cached_realtime_quote(ticker, market_type, provider="auto"):
     return fetch_realtime_quote(ticker, market_type=market_type, provider=provider)
 
 
+@st.cache_data(ttl=900)
+def cached_money_flow_snapshot(ticker, market_type, deep=False):
+    return call_with_supported_kwargs(
+        collect_money_flow_snapshot,
+        ticker,
+        market_type=market_type,
+        deep=deep,
+    )
+
+
+@st.cache_data(ttl=900)
+def cached_micro_data(ticker, market_type, deep=False):
+    return call_with_supported_kwargs(
+        fetch_micro_data,
+        ticker,
+        market_type=market_type,
+        deep=deep,
+    )
+
+
 def _parse_datetime_safe(value):
     if not value:
         return None
@@ -516,7 +540,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "行情/技术指标",
         "最新时间": market_asof or "未知",
-        "距今天数": market_age if market_age is not None else "N/A",
+        "距今天数": str(market_age) if market_age is not None else "N/A",
         "状态": market_status,
         "说明": f"MA/RSI可信度 {technical.get('confidence', 0)}",
     })
@@ -534,7 +558,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "近48小时舆情",
         "最新时间": news_asof or "无高相关新闻",
-        "距今天数": news_age if news_age is not None else "N/A",
+        "距今天数": str(news_age) if news_age is not None else "N/A",
         "状态": news_status if news_rows else "缺失",
         "说明": f"命中 {len(news_rows or [])} 条",
     })
@@ -581,7 +605,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "自动投喂",
         "最新时间": auto_asof or "未知",
-        "距今天数": auto_age if auto_age is not None else "N/A",
+        "距今天数": str(auto_age) if auto_age is not None else "N/A",
         "状态": auto_status,
         "说明": f"新闻 {len(feedback.get('market_news', []))} / 经理规则 {len(feedback.get('manager_rules', []))} / 心跳 {len(feedback.get('auto_runs', []))}",
     })
@@ -598,7 +622,7 @@ def build_data_freshness_report(technical=None, news_rows=None, money_flow=None,
     items.append({
         "数据层": "回测覆盖",
         "最新时间": bt_asof or "未生成",
-        "距今天数": bt_age if bt_age is not None else "N/A",
+        "距今天数": str(bt_age) if bt_age is not None else "N/A",
         "状态": bt_status if backtest_report else "缺失",
         "说明": (backtest_report or {}).get("summary", "")[:80] if backtest_report else "主诊断未生成回测反哺",
     })
@@ -647,7 +671,10 @@ def build_position_profile(ticker, current_price, cost_price, holding_units, cap
     cost = _num(cost_price)
     units = _num(holding_units, 0) or 0
     capital = _num(capital_plan, 0) or 0
-    is_holding = str(position_status).startswith("已持有")
+    position_text = str(position_status)
+    is_adding = position_text.startswith("想加仓")
+    is_holding = position_text.startswith("已持有") or is_adding
+    intent = "add" if is_adding else ("hold" if position_text.startswith("已持有") else "new")
     pnl_pct = None
     pnl_amount = None
     state = "未输入成本价"
@@ -670,7 +697,9 @@ def build_position_profile(ticker, current_price, cost_price, holding_units, cap
     return {
         "ticker": ticker,
         "position_status": position_status,
+        "position_intent": intent,
         "is_holding": is_holding,
+        "is_adding": is_adding,
         "currency": currency,
         "current_price": current,
         "cost_price": cost,
@@ -691,15 +720,20 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     current = profile.get("current_price")
     cost = profile.get("cost_price")
     pnl_pct = profile.get("pnl_pct")
-    is_holding = profile.get("is_holding")
+    intent = profile.get("position_intent") or ("hold" if profile.get("is_holding") else "new")
+    is_holding = intent in {"hold", "add"}
     risk_score = int(_num((strict_decision or {}).get("risk_score"), 0) or 0)
     risk_action = (strict_decision or {}).get("action", "允许继续分析")
     ma60_state = technical.get("ma60_state", "未知")
     rsi = _num(technical.get("rsi"))
+    ma20 = _num(technical.get("ma20"))
     p10 = _num(scenario.get("p10"))
     p75 = _num(scenario.get("p75"))
     p90 = _num(scenario.get("p90"))
     ma60 = _num(technical.get("ma60"))
+    volume_vs_20d = _num(technical.get("volume_vs_20d"))
+    drawdown_20d = _num(technical.get("drawdown_20d"))
+    drawdown_60d = _num(technical.get("drawdown_60d"))
     quality_score = int(_num(data_quality.get("score"), 100) or 0)
     negatives = ((money_flow.get("summary") or {}).get("negative") or [])
     reasons = list((strict_decision or {}).get("reasons") or [])
@@ -718,11 +752,18 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     if bt_trade_count >= 2 and bt_sharpe is not None and bt_sharpe < 0.2:
         reasons.append(f"回测风险：夏普 {bt_sharpe} 偏低，规则历史收益质量不足")
 
-    trend_bad = ma60_state == "低于MA60"
+    trend_bad = ma60_state == "低于MA60" or (current and ma60 and current < ma60)
+    ma_stack = bool(current and ma20 and ma60 and current >= ma20 >= ma60)
     rsi_hot = rsi is not None and rsi >= 72
+    rsi_extreme = rsi is not None and rsi >= 82
+    extended_from_ma20 = bool(current and ma20 and current >= ma20 * 1.08)
+    healthy_volume = volume_vs_20d is None or 0.55 <= volume_vs_20d <= 2.8
+    strong_trend = ma_stack and not trend_bad and healthy_volume and (drawdown_20d is None or drawdown_20d > -10)
     flow_bad = bool(negatives)
     backtest_blocks = any(word in backtest_action for word in ["禁止", "止损", "退出"]) or (bt_dd is not None and bt_dd <= -28)
-    hard_block = risk_action.startswith("禁止") or risk_score >= 70 or quality_score < 45 or backtest_blocks
+    severe_data_gap = quality_score < 45
+    trend_break = trend_bad or (drawdown_60d is not None and drawdown_60d <= -18)
+    hard_block = severe_data_gap or (backtest_blocks and trend_break) or (risk_score >= 85 and trend_break)
 
     stop_loss = None
     take_profit = None
@@ -747,38 +788,63 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
                 trailing_candidates.append(current * 0.93)
             stop_loss = max(trailing_candidates)
 
-    if is_holding:
+    if intent == "hold":
         if pnl_pct is not None and pnl_pct <= -8 and (trend_bad or flow_bad or risk_score >= 55):
-            action = "减仓/止损"
+            action = "趋势破位离场"
             driver = "亏损已扩大且趋势或资金面未确认修复"
         elif pnl_pct is not None and pnl_pct < 0:
-            action = "防守持有"
+            action = "继续持有"
             driver = "仍低于成本，先等趋势/资金面确认"
-        elif pnl_pct is not None and pnl_pct >= 15 and (rsi_hot or (p75 and current and current >= p75)):
-            action = "分批止盈"
-            driver = "相对成本已有较高浮盈，且接近情景上沿或RSI偏热"
+        elif pnl_pct is not None and pnl_pct >= 20 and (rsi_hot or extended_from_ma20):
+            action = "移动止盈"
+            driver = "相对成本已有较高浮盈，优先用MA20/MA60或成本上方保护利润，不机械清仓"
+        elif pnl_pct is not None and pnl_pct >= 12 and (p75 and current and current >= p75):
+            action = "分批减仓"
+            driver = "已接近情景上沿，可分批锁定部分利润，剩余仓位用移动止盈跟踪"
         elif hard_block:
-            action = "降仓观察"
+            action = "分批减仓"
             driver = "系统风控或回测纪律触发较多，优先保护本金"
         else:
             action = "继续持有"
             driver = "未触发硬性卖出，按成本价上方移动止损"
+    elif intent == "add":
+        if hard_block or trend_break:
+            action = "减仓观察"
+            driver = "趋势或数据质量不足，不做加仓；已有仓位先保护利润或降低风险"
+        elif pnl_pct is not None and pnl_pct >= 20 and (rsi_extreme or extended_from_ma20):
+            action = "禁止加仓但可持有"
+            driver = "浮盈较大且价格偏离均线，允许持仓跟踪，不允许高位继续抬成本"
+        elif strong_trend and rsi_hot:
+            action = "只允许回踩加仓"
+            driver = "趋势仍强但短线偏热，只等缩量回踩MA20/MA30或突破位不破后再加"
+        elif strong_trend and backtest_action in {"小仓尝试", "继续观察"}:
+            action = "只允许突破确认加仓"
+            driver = "多头结构仍在，可等放量突破后2-5日回踩不破突破位再加"
+        else:
+            action = "禁止加仓但可持有"
+            driver = "加仓信号不完整，先持有观察，等回踩或突破确认"
     else:
         if hard_block:
-            action = "禁止开仓"
-            driver = "风险分、数据缺口或回测纪律不支持新买入"
+            action = "暂不参与"
+            driver = "趋势破坏、数据缺口或回测纪律不足，先不寻找新买点"
         elif trend_bad or quality_score < 60:
-            action = "观望"
-            driver = "趋势或数据可信度不足，等待更清晰买点"
+            action = "暂不参与"
+            driver = "趋势或数据可信度不足，等待结构修复"
+        elif strong_trend and (rsi_hot or extended_from_ma20):
+            action = "等回踩"
+            driver = "强趋势仍在，但当前位置不可追高；等MA20/MA30附近企稳、缩量回踩不破平台或突破位回踩确认"
         elif backtest_action == "小仓尝试" and risk_score <= 45:
-            action = "小仓尝试"
+            action = "可试探"
             driver = "回测最新信号允许试错，但仓位需受止损纪律约束"
+        elif strong_trend:
+            action = "等突破确认"
+            driver = "多头结构健康，优先等放量突破后2-5日回踩不破突破位"
         elif risk_score <= 40:
-            action = "小仓尝试"
+            action = "可试探"
             driver = "风控未明显否决，可用小仓验证"
         else:
-            action = "观望/小仓试错"
-            driver = "仍有风险因子，仓位必须保守"
+            action = "禁止追高"
+            driver = "仍有风险因子，不能追价，等待回踩、缩量企稳或RSI降温后转强"
 
     if take_profit is None and cost:
         take_profit = cost * 1.15
@@ -791,7 +857,12 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     take_text = _fmt_price(take_profit, profile.get("currency"))
     pnl_text = profile.get("profit_state", "未计算")
     risk_text = "；".join([str(r) for r in reasons[:3]]) if reasons else "暂无硬性风险，但仍需盘中确认"
-    one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。止损参考 {stop_text}，止盈/减仓参考 {take_text}。"
+    if intent == "new":
+        one_line = f"{action}：当前价 {current_text}；{driver}。入场只看新结构，参考买点为回踩企稳/突破确认，失效参考 {stop_text}，首次仓位建议小。"
+    elif intent == "add":
+        one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。加仓后移动止损参考 {stop_text}，不把低成本浮盈当作追高理由。"
+    else:
+        one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。移动止损参考 {stop_text}，止盈/减仓参考 {take_text}。"
 
     return {
         "action": action,
@@ -804,6 +875,8 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
         "quality_score": quality_score,
         "backtest_summary": backtest_summary,
         "backtest_action": backtest_action,
+        "position_intent": intent,
+        "strong_trend": strong_trend,
     }
 
 
@@ -836,14 +909,7 @@ def render_trade_instruction_card(profile, instruction):
 
 
 def get_config_value(name, default=""):
-    env_value = os.getenv(name)
-    if env_value:
-        return env_value
-
-    try:
-        return st.secrets.get(name, default)
-    except Exception:
-        return default
+    return read_config_value(name, default)
 
 # ==========================================
 # 🚀 基金经理AI克隆系统 - 核心逻辑引擎
@@ -1228,7 +1294,8 @@ def build_auto_replay_cases(ticker, lookback_days=730, window_days=60, future_da
 def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"):
     api_key = get_deepseek_api_key()
     if not api_key:
-        return st.error("❌ 缺少 DeepSeek 密钥")
+        st.warning("缺少 DeepSeek key，本次只展示行情、回测和结构化分析，不调用模型。")
+        return None
 
     try:
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1271,6 +1338,7 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
 
 def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理。", max_tokens=2000):
     if not st.session_state.get("ds_keys"):
+        st.warning("缺少 DeepSeek key，本次只展示行情、回测和结构化分析，不调用模型。")
         return None
 
     today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1386,34 +1454,24 @@ if st.session_state.user_role is None:
             elif pwd == "guest": st.session_state.user_role = "Guest"; st.rerun()
             else: st.error("密钥验证失败")
 else:
-    try:
-        raw_ds_keys = [
-            get_config_value("DEEPSEEK_API_KEY"),
-            get_config_value("DEEPSEEK_TOKEN_1"),
-            get_config_value("DEEPSEEK_TOKEN_2"),
-        ]
-        ds_keys = []
-        for key in raw_ds_keys:
-            key = str(key).strip()
-            if key and key not in ds_keys:
-                ds_keys.append(key)
+    ds_keys = get_deepseek_keys()
+    st.session_state.ds_keys = ds_keys
+    st.session_state.ds_key = ds_keys[0] if ds_keys else None
+    if "ds_key_index" not in st.session_state:
+        st.session_state.ds_key_index = 0
+    if not ds_keys:
+        st.warning("缺少 DeepSeek key，本次只展示行情、回测和结构化分析，不调用模型。")
 
-        st.session_state.ds_keys = ds_keys
-        st.session_state.ds_key = ds_keys[0] if ds_keys else None
-        if "ds_key_index" not in st.session_state:
-            st.session_state.ds_key_index = 0
-
-        sb_url = get_config_value("SUPABASE_URL")
-        sb_key = get_config_value("SUPABASE_KEY")
-        if not sb_url or not sb_key:
-            raise ValueError("缺少 SUPABASE_URL 或 SUPABASE_KEY")
-
-        supabase: Client = create_client(sb_url, sb_key)
-    except Exception as e:
-        st.session_state.ds_keys = []
-        st.session_state.ds_key = None
-        supabase = None
-        st.error(f"⚠️ 云端配置缺失: {e}")
+    supabase = None
+    sb_url, sb_key = get_supabase_config()
+    if not sb_url or not sb_key:
+        st.warning("Supabase 配置缺失，云端记忆、自动投喂和历史新闻读取暂不可用；行情、回测和本地结构化分析会继续运行。")
+    else:
+        try:
+            supabase: Client = create_client(sb_url, sb_key)
+        except Exception as e:
+            st.warning(f"Supabase 初始化失败，云端功能暂不可用：{e}")
+            supabase = None
 
     def load_cloud_knowledge():
         if not supabase: return {"strategies": [], "reflections": []}
@@ -1427,10 +1485,12 @@ else:
         except: return {"strategies": [], "reflections": []}
 
     def insert_cloud_memory(m_type, content):
-        if not supabase: return
+        if not supabase: return False
         try:
             supabase.table("brain_memory").insert({"memory_type": m_type, "content": content}).execute()
-        except: pass
+            return True
+        except:
+            return False
 
     def get_all_cloud_memories():
         if not supabase: return []
@@ -1438,6 +1498,349 @@ else:
             res = supabase.table("brain_memory").select("id, memory_type, content").order("id", desc=True).execute()
             return res.data
         except: return []
+
+    FEED_MISSING_TEXT = "原文未提供/暂无明确提取"
+    FEED_DOCUMENT_TYPES = {
+        "stock_report",
+        "industry_report",
+        "news",
+        "manager_interview",
+        "trade_review",
+        "user_rule",
+        "article",
+        "unknown",
+    }
+    FEED_THEME_KEYWORDS = [
+        "CPO", "AI算力", "AI", "PCB", "光刻", "液冷", "低空经济", "机器人", "半导体",
+        "新能源", "储能", "光伏", "医药", "创新药", "消费电子", "数据中心", "算力",
+    ]
+    FEED_INDUSTRY_KEYWORDS = [
+        "半导体", "通信", "传媒", "计算机", "电子", "新能源", "汽车", "医药", "消费",
+        "军工", "机械", "银行", "地产", "有色", "煤炭", "电力", "化工", "食品饮料",
+    ]
+    FEED_RISK_KEYWORDS = [
+        "估值风险", "业绩风险", "政策风险", "流动性风险", "竞争加剧", "订单不及预期",
+        "需求不及预期", "毛利率下滑", "汇率风险", "减持", "解禁", "商誉", "退市风险",
+    ]
+
+    def parse_memory_payload(content):
+        if isinstance(content, dict):
+            return content, content
+        if not isinstance(content, str):
+            return {}, content
+
+        text = content.strip()
+        try:
+            return json.loads(text), text
+        except Exception:
+            pass
+
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text[start:end + 1]), text
+            except Exception:
+                pass
+
+        return {"raw_text": text}, text
+
+    def compact_display_text(value):
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return " ".join(value.split())
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        return ""
+
+    def normalize_feed_text_for_hash(raw_text):
+        return " ".join((raw_text or "").split())
+
+    def generate_content_hash(raw_text):
+        normalized = normalize_feed_text_for_hash(raw_text)
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest() if normalized else ""
+
+    def normalize_metadata_list(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            values = value
+        elif isinstance(value, str):
+            values = re.split(r"[,，、\n;；]+", value)
+        else:
+            values = [value]
+
+        cleaned = []
+        for item in values:
+            if isinstance(item, dict):
+                item = item.get("name") or item.get("ticker") or item.get("value") or item.get("content")
+            text = compact_display_text(item)
+            if text and text not in {"原文未提供", "暂无明确提取", "low_confidence", "unknown"} and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
+
+    def keyword_hits(raw_text, keywords):
+        text = raw_text or ""
+        return [keyword for keyword in keywords if keyword and keyword in text]
+
+    def detect_tickers(raw_text):
+        text = raw_text or ""
+        patterns = [
+            r"\b[0368]\d{5}\b",
+            r"\b\d{6}\.(?:SH|SZ|BJ|SS)\b",
+            r"\b\d{4,5}\.HK\b",
+            r"\bHK[:：]?\s*\d{4,5}\b",
+        ]
+        tickers = []
+        for pattern in patterns:
+            for match in re.findall(pattern, text, flags=re.IGNORECASE):
+                ticker = compact_display_text(match).upper().replace(" ", "")
+                if ticker and ticker not in tickers:
+                    tickers.append(ticker)
+        return tickers[:12]
+
+    def infer_document_type(raw_text, source):
+        haystack = f"{source or ''}\n{raw_text or ''}"
+        lowered = haystack.lower()
+        if any(word in haystack for word in ["基金经理", "访谈", "调研纪要", "路演"]):
+            return "manager_interview"
+        if any(word in haystack for word in ["复盘", "交易记录", "止损", "止盈"]) and "研报" not in haystack:
+            return "trade_review"
+        if any(word in haystack for word in ["纪律", "规则", "盘感"]) or "手动碎片投喂" in haystack:
+            return "user_rule"
+        if any(word in haystack for word in ["行业报告", "行业深度", "产业链"]) or "industry" in lowered:
+            return "industry_report"
+        if any(word in haystack for word in ["研报", "公司报告", "深度报告"]) or "report" in lowered:
+            return "stock_report"
+        if any(word in haystack for word in ["新闻", "快讯", "公告"]) or "news" in lowered:
+            return "news"
+        if any(word in haystack for word in ["文章", "专栏"]) or "article" in lowered:
+            return "article"
+        return "unknown"
+
+    def normalize_extraction_status(status, raw_text):
+        if status == "extracted":
+            return "extracted"
+        if status == "extracted_text":
+            return "low_confidence"
+        if status == "needs_ai_extract":
+            return "pending_extract" if raw_text else "raw_saved"
+        return "low_confidence" if raw_text else "raw_saved"
+
+    def build_feed_metadata(extract_result, raw_text, source="手动投喂"):
+        extract_result = extract_result or {}
+        source_metadata = extract_result.get("metadata") if isinstance(extract_result.get("metadata"), dict) else {}
+        content_hash = source_metadata.get("content_hash") or generate_content_hash(raw_text)
+        raw_document_type = compact_display_text(source_metadata.get("document_type") or extract_result.get("document_type"))
+        document_type = raw_document_type if raw_document_type in FEED_DOCUMENT_TYPES else infer_document_type(raw_text, source)
+        extraction_status = compact_display_text(
+            source_metadata.get("extraction_status") or extract_result.get("extraction_status")
+        ) or normalize_extraction_status(extract_result.get("status"), raw_text)
+
+        evidence_summary = compact_display_text(
+            source_metadata.get("evidence_summary") or extract_result.get("evidence") or extract_result.get("core_view")
+        )
+        if not evidence_summary:
+            evidence_summary = FEED_MISSING_TEXT
+
+        metadata = {
+            "document_type": document_type,
+            "extraction_status": extraction_status,
+            "tickers": normalize_metadata_list(source_metadata.get("tickers") or extract_result.get("tickers")) or detect_tickers(raw_text),
+            "company_names": normalize_metadata_list(source_metadata.get("company_names") or extract_result.get("company_names")),
+            "industries": normalize_metadata_list(source_metadata.get("industries") or extract_result.get("industries")) or keyword_hits(raw_text, FEED_INDUSTRY_KEYWORDS),
+            "themes": normalize_metadata_list(source_metadata.get("themes") or extract_result.get("themes")) or keyword_hits(raw_text, FEED_THEME_KEYWORDS),
+            "risk_tags": normalize_metadata_list(source_metadata.get("risk_tags") or extract_result.get("risk_tags")) or keyword_hits(raw_text, FEED_RISK_KEYWORDS),
+            "time_window": compact_display_text(source_metadata.get("time_window") or extract_result.get("time_window")) or "原文未提供",
+            "source_file": compact_display_text(source_metadata.get("source_file") or source) or "原文未提供",
+            "content_hash": content_hash,
+            "extracted_at": source_metadata.get("extracted_at") or datetime.datetime.now().isoformat(timespec="seconds"),
+            "evidence_summary": evidence_summary[:800],
+        }
+        if extraction_status not in {"extracted", "pending_extract", "low_confidence", "raw_saved"}:
+            metadata["extraction_status"] = "low_confidence"
+        return metadata
+
+    def attach_feed_metadata(extract_result, raw_text, source="手动投喂"):
+        result = dict(extract_result or {})
+        metadata = build_feed_metadata(result, raw_text, source)
+        result["metadata"] = metadata
+        result["content_hash"] = metadata["content_hash"]
+        result["document_type"] = metadata["document_type"]
+        result["extraction_status"] = metadata["extraction_status"]
+        return result
+
+    def extract_payload_content_hash(payload):
+        data, _ = parse_memory_payload(payload)
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        return compact_display_text(data.get("content_hash") or metadata.get("content_hash"))
+
+    def find_existing_content_hash(content_hash):
+        result = {"duplicate": False, "brain_memory": False, "stock_reports": False}
+        if not supabase or not content_hash:
+            return result
+        try:
+            brain = (
+                supabase
+                .table("brain_memory")
+                .select("id")
+                .ilike("content", f"%{content_hash}%")
+                .limit(1)
+                .execute()
+            )
+            result["brain_memory"] = bool(brain.data)
+        except Exception:
+            result["brain_memory_check_failed"] = True
+        try:
+            reports = (
+                supabase
+                .table("stock_reports")
+                .select("id")
+                .ilike("report_content", f"%{content_hash}%")
+                .limit(1)
+                .execute()
+            )
+            result["stock_reports"] = bool(reports.data)
+        except Exception:
+            result["stock_reports_check_failed"] = True
+        result["duplicate"] = result["brain_memory"] or result["stock_reports"]
+        return result
+
+    def list_display_items(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [item for item in value if compact_display_text(item) or isinstance(item, dict)]
+        if compact_display_text(value):
+            return [value]
+        return []
+
+    def render_memory_list_section(title, value):
+        items = list_display_items(value)
+        if not items:
+            return False
+
+        st.markdown(f"**{title}**")
+        for item in items:
+            if isinstance(item, dict):
+                summary = item.get("content") or item.get("rule") or item.get("title") or item.get("summary")
+                st.markdown(f"- {compact_display_text(summary) or FEED_MISSING_TEXT}")
+            else:
+                st.markdown(f"- {compact_display_text(item) or FEED_MISSING_TEXT}")
+        return True
+
+    def render_metadata_tags(metadata):
+        if not isinstance(metadata, dict):
+            metadata = {}
+        document_type = compact_display_text(metadata.get("document_type")) or "unknown"
+        extraction_status = compact_display_text(metadata.get("extraction_status")) or "low_confidence"
+        duplicate_hit = metadata.get("duplicate_hit")
+        duplicate_text = "命中重复资料" if duplicate_hit else "未命中重复资料"
+        st.caption(f"资料类型：{document_type} ｜ 提炼状态：{extraction_status} ｜ 去重：{duplicate_text}")
+
+        tag_groups = [
+            ("股票", normalize_metadata_list(metadata.get("tickers"))),
+            ("公司", normalize_metadata_list(metadata.get("company_names"))),
+            ("行业", normalize_metadata_list(metadata.get("industries"))),
+            ("主题", normalize_metadata_list(metadata.get("themes"))),
+            ("风险标签", normalize_metadata_list(metadata.get("risk_tags"))),
+        ]
+        display_parts = []
+        for label, values in tag_groups:
+            display_parts.append(f"{label}：{', '.join(values) if values else '[]'}")
+        st.caption(" ｜ ".join(display_parts))
+        st.caption(f"时间窗口：{compact_display_text(metadata.get('time_window')) or '原文未提供'}")
+
+    def render_feed_write_summary(counts, extract_result):
+        metadata = extract_result.get("metadata") if isinstance(extract_result.get("metadata"), dict) else {}
+        if counts.get("duplicate_hit"):
+            st.warning("该资料已存在，已跳过重复写入。")
+        else:
+            st.caption(
+                f"写入 brain_memory {counts['brain_memory']} 条 / "
+                f"stock_reports {counts['stock_reports']} 条 / "
+                f"manager_rules {counts['manager_rules']} 条"
+            )
+        render_metadata_tags(metadata)
+        if counts.get("manager_rules") == 0:
+            st.info(f"manager_rules 为 0：{counts.get('manager_rules_reason') or '未生成可写入规则。'}")
+
+    def render_feed_extract_card(payload, memory_type="strategy", raw_payload=None, card_title="资料提炼结果"):
+        data, raw = parse_memory_payload(payload)
+        raw_payload = raw_payload if raw_payload is not None else raw
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        memory_label = compact_display_text(memory_type).upper() or "MEMORY"
+        source = compact_display_text(data.get("source"))
+        status = compact_display_text(data.get("extraction_status") or data.get("status") or metadata.get("extraction_status"))
+        market = compact_display_text(data.get("market"))
+        core_view = compact_display_text(data.get("core_view") or data.get("summary") or data.get("raw_text"))
+        evidence = compact_display_text(data.get("evidence") or metadata.get("evidence_summary"))
+
+        with st.container(border=True):
+            st.markdown(f"**[{memory_label}] {card_title}**")
+            meta_parts = []
+            source = source or compact_display_text(metadata.get("source_file"))
+            if source:
+                meta_parts.append(f"来源：{source}")
+            if status:
+                status_text = "等待 AI 提炼" if status in {"needs_ai_extract", "pending_extract"} else status
+                meta_parts.append(f"状态：{status_text}")
+            if market:
+                meta_parts.append(f"市场：{market}")
+            if meta_parts:
+                st.caption(" ｜ ".join(meta_parts))
+            render_metadata_tags(metadata)
+
+            if memory_type == "reflection":
+                st.markdown("**复盘记忆**")
+            else:
+                st.markdown("**核心观点**")
+            st.write(core_view or FEED_MISSING_TEXT)
+
+            rendered_sections = False
+            if memory_type == "strategy":
+                sections = [
+                    ("买入条件", "buy_conditions"),
+                    ("加仓条件", "add_conditions"),
+                    ("卖出/减仓条件", "sell_conditions"),
+                    ("风险触发", "risk_triggers"),
+                    ("失效条件", "invalid_conditions"),
+                    ("可复用交易规则", "rules"),
+                ]
+            else:
+                sections = [
+                    ("可复用规则", "rules"),
+                    ("证据/来源线索", "evidence"),
+                ]
+
+            for title, key in sections:
+                if key == "evidence":
+                    if evidence:
+                        st.markdown(f"**{title}**")
+                        st.write(evidence)
+                        rendered_sections = True
+                    continue
+                rendered_sections = render_memory_list_section(title, data.get(key)) or rendered_sections
+
+            if not rendered_sections and not evidence:
+                st.caption(FEED_MISSING_TEXT)
+
+            if evidence and memory_type == "strategy":
+                st.markdown("**证据/来源线索**")
+                st.write(evidence)
+
+            with st.expander("查看原始提炼 JSON", expanded=False):
+                if isinstance(raw_payload, (dict, list)):
+                    st.json(raw_payload)
+                elif isinstance(raw_payload, str):
+                    parsed_raw, _ = parse_memory_payload(raw_payload)
+                    if parsed_raw and "raw_text" not in parsed_raw:
+                        st.json(parsed_raw)
+                    else:
+                        st.json({"raw_content": raw_payload})
+                else:
+                    st.json({"raw_content": str(raw_payload)})
 
     def delete_cloud_memories(ids_to_delete):
         if not supabase or not ids_to_delete: return
@@ -1480,6 +1883,226 @@ else:
         except Exception as e:
             st.warning(f"股票报告写入失败：{e}")
             return False
+
+    def save_manager_rule(manager_name, rule_type, content, source="手动投喂"):
+        if not supabase or not manager_name or not content:
+            return False
+        try:
+            supabase.table("manager_rules").insert({
+                "manager_name": manager_name,
+                "rule_type": rule_type or "其他",
+                "content": content,
+                "source": source,
+            }).execute()
+            return True
+        except Exception as e:
+            st.warning(f"manager_rules 写入失败：{e}")
+            return False
+
+    def split_feed_chunks(text, chunk_size=2800, overlap=250):
+        text = (text or "").strip()
+        chunks = []
+        start = 0
+        while start < len(text):
+            chunk = text[start:start + chunk_size].strip()
+            if chunk:
+                chunks.append(chunk)
+            start += max(1, chunk_size - overlap)
+        return chunks or ([text] if text else [])
+
+    def extract_uploaded_text(uploaded_file):
+        if not uploaded_file:
+            return ""
+        name = uploaded_file.name.lower()
+        data = uploaded_file.getvalue()
+        if name.endswith(".txt"):
+            return data.decode("utf-8", errors="ignore")
+        if name.endswith(".docx"):
+            try:
+                import docx
+
+                doc = docx.Document(io.BytesIO(data))
+                return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            except Exception as e:
+                st.warning(f"Word 解析失败：{e}")
+                return ""
+        if name.endswith(".pdf"):
+            try:
+                import PyPDF2
+
+                reader = PyPDF2.PdfReader(io.BytesIO(data))
+                pages = []
+                for page in reader.pages[:20]:
+                    pages.append(page.extract_text() or "")
+                return "\n".join(pages)
+            except Exception as e:
+                st.warning(f"PDF 解析失败：{e}")
+                return ""
+        return ""
+
+    def fallback_feed_extract(raw_text, source="手动投喂"):
+        summary = " ".join((raw_text or "").split())[:500]
+        result = {
+            "status": "needs_ai_extract",
+            "core_view": summary or "原文为空，等待补充资料。",
+            "market": "待识别",
+            "buy_conditions": [],
+            "add_conditions": [],
+            "sell_conditions": [],
+            "risk_triggers": [],
+            "invalid_conditions": [],
+            "rules": ["needs_ai_extract|原文已保存摘要，等待 AI 提炼。"],
+            "evidence": f"来源：{source}；原文摘要：{summary}",
+        }
+        return attach_feed_metadata(result, raw_text, source)
+
+    def parse_feed_extract(content, raw_text, source):
+        try:
+            start = content.find("{")
+            end = content.rfind("}")
+            if start >= 0 and end > start:
+                parsed = json.loads(content[start:end + 1])
+                parsed.setdefault("status", "extracted")
+                parsed.setdefault("rules", [])
+                parsed.setdefault("evidence", f"来源：{source}")
+                return attach_feed_metadata(parsed, raw_text, source)
+        except Exception:
+            pass
+        result = fallback_feed_extract(raw_text, source)
+        result["status"] = "extracted_text"
+        result["extraction_status"] = "low_confidence"
+        result["metadata"] = build_feed_metadata(result, raw_text, source)
+        result["content_hash"] = result["metadata"].get("content_hash", "")
+        result["document_type"] = result["metadata"].get("document_type", "unknown")
+        result["core_view"] = (content or result["core_view"])[:900]
+        return result
+
+    def extract_feed_knowledge(raw_text, source="手动投喂"):
+        chunks = split_feed_chunks(raw_text)
+        if not st.session_state.get("ds_keys"):
+            result = fallback_feed_extract(raw_text, source)
+            result["chunk_count"] = len(chunks)
+            return result
+
+        chunk_summaries = []
+        for i, chunk in enumerate(chunks[:6], start=1):
+            prompt = f"""
+请把下面投研资料第 {i}/{len(chunks)} 段提炼成结构化交易记忆，只能基于原文，不要编造。
+输出 JSON，字段固定：
+core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence, metadata。
+rules 用数组，每条格式为 rule_type|content，其中 rule_type 可用：买入条件/加仓条件/减仓条件/风险触发/失效条件/行业判断/其他。
+metadata 必须包含：
+document_type, extraction_status, tickers, company_names, industries, themes, risk_tags, time_window, source_file, evidence_summary。
+document_type 只能用 stock_report / industry_report / news / manager_interview / trade_review / user_rule / article / unknown。
+extraction_status 只能用 extracted / pending_extract / low_confidence / raw_saved。
+如果原文没有明确股票、公司、行业、主题或风险标签，对应数组用 []；不要编造。
+time_window 缺失时写“原文未提供”。
+
+资料来源：{source}
+资料片段：
+{chunk[:2800]}
+"""
+            content = call_deepseek_non_stream(
+                prompt,
+                system_role="你是交易知识提炼器，负责把研报、复盘和文章压缩成可复用规则。",
+                max_tokens=900,
+            )
+            if content:
+                chunk_summaries.append(content[:2200])
+
+        if not chunk_summaries:
+            result = fallback_feed_extract(raw_text, source)
+            result["chunk_count"] = len(chunks)
+            return result
+
+        merge_prompt = f"""
+请合并以下分段提炼，输出最终 JSON，字段固定：
+core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence, metadata。
+要求高度浓缩，rules 最多 8 条，不要包含原文长段落。
+metadata 保留并去重明确来自原文的 tickers/company_names/industries/themes/risk_tags；缺失用 [] 或“原文未提供”，不得补全猜测。
+
+分段提炼：
+{json.dumps(chunk_summaries, ensure_ascii=False)}
+"""
+        merged = call_deepseek_non_stream(
+            merge_prompt,
+            system_role="你是交易知识合并器，负责生成长期记忆和可执行规则。",
+            max_tokens=1200,
+        )
+        result = parse_feed_extract(merged or "\n".join(chunk_summaries), raw_text, source)
+        result["chunk_count"] = len(chunks)
+        return result
+
+    def persist_extracted_knowledge(extract_result, raw_text="", ticker="", market_type="", manager_name="", source="手动投喂"):
+        original_result = extract_result if isinstance(extract_result, dict) else None
+        extract_result = attach_feed_metadata(extract_result, raw_text, source)
+        if original_result is not None:
+            original_result.clear()
+            original_result.update(extract_result)
+            extract_result = original_result
+        status = extract_result.get("status", "needs_ai_extract")
+        core = extract_result.get("core_view", "")
+        metadata = dict(extract_result.get("metadata") or {})
+        duplicate = find_existing_content_hash(metadata.get("content_hash", ""))
+        metadata["duplicate_hit"] = duplicate.get("duplicate", False)
+        metadata["duplicate_scope"] = [
+            scope for scope in ["brain_memory", "stock_reports"] if duplicate.get(scope)
+        ]
+        extract_result["metadata"] = metadata
+        extract_result["content_hash"] = metadata.get("content_hash", "")
+        extract_result["document_type"] = metadata.get("document_type", "unknown")
+        extract_result["extraction_status"] = metadata.get("extraction_status", "low_confidence")
+        memory_content = json.dumps({
+            "status": status,
+            "extraction_status": metadata.get("extraction_status"),
+            "document_type": metadata.get("document_type"),
+            "source": source,
+            "source_file": metadata.get("source_file"),
+            "content_hash": metadata.get("content_hash"),
+            "metadata": metadata,
+            "core_view": core,
+            "market": extract_result.get("market", ""),
+            "buy_conditions": extract_result.get("buy_conditions", []),
+            "add_conditions": extract_result.get("add_conditions", []),
+            "sell_conditions": extract_result.get("sell_conditions", []),
+            "risk_triggers": extract_result.get("risk_triggers", []),
+            "invalid_conditions": extract_result.get("invalid_conditions", []),
+            "evidence": extract_result.get("evidence", ""),
+        }, ensure_ascii=False, default=str)
+        counts = {
+            "brain_memory": 0,
+            "stock_reports": 0,
+            "manager_rules": 0,
+            "duplicate_hit": duplicate.get("duplicate", False),
+            "duplicate_scope": metadata.get("duplicate_scope", []),
+            "content_hash": metadata.get("content_hash", ""),
+            "manager_rules_reason": "",
+        }
+        if duplicate.get("duplicate"):
+            counts["skipped_reason"] = "该资料已存在，已跳过重复写入。"
+            counts["manager_rules_reason"] = "重复资料已跳过，避免重复生成规则。"
+            return counts
+
+        if insert_cloud_memory("strategy", memory_content):
+            counts["brain_memory"] += 1
+        if ticker and save_stock_report(ticker, market_type or "UNKNOWN", "manual_feed_extract", extract_result):
+            counts["stock_reports"] += 1
+
+        rules = [str(rule).strip() for rule in extract_result.get("rules", [])[:8] if str(rule).strip()]
+        if not manager_name:
+            counts["manager_rules_reason"] = "未填写关联基金经理/大师。"
+        elif not rules:
+            counts["manager_rules_reason"] = "提炼结果没有可写入的 manager_rules 规则。"
+        for rule in rules:
+            rule_type, content = ("其他", rule)
+            if "|" in rule:
+                rule_type, content = rule.split("|", 1)
+            manager_source = f"{source} | hash:{metadata.get('content_hash', '')[:12]}"
+            if manager_name and save_manager_rule(manager_name, rule_type.strip(), content.strip(), source=manager_source):
+                counts["manager_rules"] += 1
+        if manager_name and rules and counts["manager_rules"] == 0:
+            counts["manager_rules_reason"] = "manager_rules 写入失败或 Supabase 暂不可用。"
+        return counts
 
     def load_stock_logic_rules(ticker, limit=3):
         if not supabase:
@@ -2426,10 +3049,10 @@ else:
         col_cn1, col_cn2 = st.columns(2)
         
         with col_cn1:
-            btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", use_container_width=True, key="btn_cn_deepseek")
+            btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
         
         with col_cn2:
-            btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", use_container_width=True, key="btn_cn_whale")
+            btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
         
         if btn_deepseek:
             with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
@@ -2512,7 +3135,7 @@ else:
     with pos_c1:
         position_status = st.selectbox(
             "持仓状态",
-            ["未买入 (观望/找买点)", "已持有 (持仓/找卖点)"],
+            ["未买入 (观望/找买点)", "已持有 (持仓/找卖点)", "想加仓 (已有底仓/找加仓点)"],
             key="position_status",
         )
     with pos_c2:
@@ -2591,7 +3214,7 @@ else:
         st.markdown("### 🏠 今日关注池 / 投研驾驶舱")
         st.caption("先判断今天该看什么，再决定用哪个大师人格和哪个诊股模块。")
 
-        if st.button("🚀 生成今日关注池", type="primary", use_container_width=True):
+        if st.button("🚀 生成今日关注池", type="primary", width="stretch"):
             prompt = build_today_watchlist_prompt()
             call_deepseek_stream(
                 prompt,
@@ -2620,31 +3243,31 @@ else:
 
             with feed_tab1:
                 if feedback.get("market_news"):
-                    st.dataframe(pd.DataFrame(feedback["market_news"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["market_news"]), width="stretch")
                 else:
                     st.info("暂时没有最近市场新闻入库。")
 
             with feed_tab2:
                 if feedback.get("processed_sources"):
-                    st.dataframe(pd.DataFrame(feedback["processed_sources"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["processed_sources"]), width="stretch")
                 else:
                     st.info("暂时没有最近处理成功的经理来源。")
 
             with feed_tab3:
                 if feedback.get("manager_rules"):
-                    st.dataframe(pd.DataFrame(feedback["manager_rules"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["manager_rules"]), width="stretch")
                 else:
                     st.info("暂时没有最近新增的经理规则。")
 
             with feed_tab4:
                 if feedback.get("manager_scores"):
-                    st.dataframe(pd.DataFrame(feedback["manager_scores"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["manager_scores"]), width="stretch")
                 else:
                     st.info("暂时没有最近经理评分。")
 
             with feed_tab5:
                 if feedback.get("auto_runs"):
-                    st.dataframe(pd.DataFrame(feedback["auto_runs"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(feedback["auto_runs"]), width="stretch")
                 else:
                     st.warning("还没有看到自动任务心跳。可去 GitHub Actions 手动 Run workflow 验证 secrets 和权限。")
     # 模块 A：天眼风控
@@ -2811,7 +3434,7 @@ else:
                 else:
                     case_df = pd.DataFrame(cases)
                     st.markdown("#### 历史切片样本")
-                    st.dataframe(case_df, use_container_width=True)
+                    st.dataframe(case_df, width="stretch")
 
                     case_lines = "\n".join(format_replay_case(case) for case in cases)
                     latest_close = round(float(hist["Close"].dropna().iloc[-1]), 2) if not hist.empty else "未知"
@@ -3070,7 +3693,7 @@ else:
         st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损。")
 
         bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}|{selected_modes}"
-        if st.button("运行回测", key="btn_run_backtest", type="primary", use_container_width=True):
+        if st.button("运行回测", key="btn_run_backtest", type="primary", width="stretch"):
             with st.spinner("正在拉取历史行情并跑回测..."):
                 price_frame = fetch_ohlcv(
                     target,
@@ -3137,6 +3760,7 @@ else:
                     multi_result["market_type"] = market_type
                     multi_result["source"] = report["source"]
                     multi_result["date_range"] = report["date_range"]
+                    multi_result["position_profile"] = position_profile_preview
                     st.session_state["last_backtest_report"] = report
                     st.session_state["last_multi_backtest"] = multi_result
                     st.session_state["last_backtest_key"] = bt_key
@@ -3156,22 +3780,25 @@ else:
 
             with st.expander("A股微观数据补充", expanded=False):
                 micro_key = f"micro_{target}_{market_type}"
-                if st.button("刷新资金流/龙虎榜", key=f"btn_{micro_key}"):
-                    with st.spinner("正在抓取公开微观数据..."):
-                        st.session_state[micro_key] = fetch_micro_data(target, market_type=market_type)
+                if st.button("深度资金扫描 / 刷新龙虎榜", key=f"btn_{micro_key}"):
+                    with st.spinner("正在抓取完整公开微观数据，可能较慢..."):
+                        st.session_state[micro_key] = cached_micro_data(target, market_type, deep=True)
                 micro = st.session_state.get(micro_key, {})
                 if micro.get("fund_flow"):
                     st.markdown("##### 个股资金流")
-                    st.dataframe(pd.DataFrame(micro["fund_flow"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(micro["fund_flow"]), width="stretch")
                 if micro.get("dragon_tiger"):
                     st.markdown("##### 龙虎榜")
-                    st.dataframe(pd.DataFrame(micro["dragon_tiger"]), use_container_width=True)
+                    st.dataframe(pd.DataFrame(micro["dragon_tiger"]), width="stretch")
+                if micro.get("block_trade"):
+                    st.markdown("##### 大宗交易")
+                    st.dataframe(pd.DataFrame(micro["block_trade"]), width="stretch")
                 for warning in micro.get("warnings", []):
                     st.caption(f"提示：{warning}")
                 if not micro:
                     st.info("需要时再点刷新，避免每次打开页面都慢。")
 
-            if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", use_container_width=True):
+            if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", width="stretch"):
                 if multi_result and multi_result.get("reports"):
                     compact_report = {
                         "summary": multi_result.get("summary", ""),
@@ -3196,7 +3823,7 @@ else:
                     system_role="你是严格的私人量化回测教练，必须把历史回测和成本价纪律说清楚。",
                 )
 
-            if st.button("保存这次回测到云端", key="btn_save_backtest_report", use_container_width=True):
+            if st.button("保存这次回测到云端", key="btn_save_backtest_report", width="stretch"):
                 if multi_result and multi_result.get("reports"):
                     compact_report = {
                         "summary": multi_result.get("summary", ""),
@@ -3234,7 +3861,7 @@ else:
             valuation_snapshot = get_valuation_snapshot(normalized_target)
             technical_snapshot = compute_technical_snapshot(normalized_target)
             scenario_snapshot = simulate_monte_carlo_range(normalized_target)
-            money_flow_snapshot = collect_money_flow_snapshot(normalized_target, market_type=market_type)
+            money_flow_snapshot = cached_money_flow_snapshot(normalized_target, market_type, deep=False)
             recent_news_rows = call_with_supported_kwargs(
                 build_recent_news_context,
                 supabase,
@@ -3382,6 +4009,18 @@ else:
                 render_portfolio_health_module(portfolio_health)
             with base_tab7:
                 render_money_flow_module(money_flow_snapshot)
+                if market_type == "A_SHARE":
+                    st.caption("主报告默认使用快速资金模式；完整龙虎榜/大宗交易扫描需要手动触发，避免阻塞诊股。")
+                    deep_key = f"deep_money_flow_{normalized_target}_{market_type}"
+                    if st.button("深度资金扫描 / 运行完整龙虎榜与资金流", key=f"btn_{deep_key}"):
+                        with st.spinner("正在运行完整资金扫描，可能较慢..."):
+                            try:
+                                st.session_state[deep_key] = cached_money_flow_snapshot(normalized_target, market_type, deep=True)
+                            except Exception as e:
+                                st.session_state[deep_key] = {"warnings": [f"深度资金扫描失败：{e}"]}
+                    if st.session_state.get(deep_key):
+                        st.markdown("##### 深度资金扫描结果")
+                        render_money_flow_module(st.session_state[deep_key])
             with base_tab8:
                 if main_backtest_report:
                     render_backtest_report(main_backtest_report)
@@ -3439,7 +4078,7 @@ else:
             """, unsafe_allow_html=True)
             display_us_stock_analysis(target, price)
             
-            if st.button("💡 启动 AI 华尔街策略顾问", use_container_width=True, key="btn_us_ai"):
+            if st.button("💡 启动 AI 华尔街策略顾问", width="stretch", key="btn_us_ai"):
                 with st.spinner("正在连接华尔街数据库..."):
                     db = load_cloud_knowledge()
                     us_rules = [r for r in (db["strategies"] + db["reflections"]) if "🇺🇸" in r or "美股" in r]
@@ -3473,8 +4112,8 @@ else:
             
             # 引入 A 股同款的双轨制按钮
             col_hk1, col_hk2 = st.columns(2)
-            with col_hk1: btn_hk_ai = st.button("💡 启动 AI 港股策略顾问", use_container_width=True)
-            with col_hk2: btn_hk_whale = st.button("🐳 离岸巨鲸资金嗅探", type="primary", use_container_width=True)
+            with col_hk1: btn_hk_ai = st.button("💡 启动 AI 港股策略顾问", width="stretch")
+            with col_hk2: btn_hk_whale = st.button("🐳 离岸巨鲸资金嗅探", type="primary", width="stretch")
             
             if btn_hk_ai:
                 with st.spinner("正在加载香港投行估值模型..."):
@@ -3512,8 +4151,8 @@ else:
             display_jp_stock_analysis(target, price)
             
             col_jp1, col_jp2 = st.columns(2)
-            with col_jp1: btn_jp_ai = st.button("💡 启动 AI 日股策略顾问", use_container_width=True)
-            with col_jp2: btn_jp_whale = st.button("🐳 华尔街/日银外资嗅探", type="primary", use_container_width=True)
+            with col_jp1: btn_jp_ai = st.button("💡 启动 AI 日股策略顾问", width="stretch")
+            with col_jp2: btn_jp_whale = st.button("🐳 华尔街/日银外资嗅探", type="primary", width="stretch")
             
             if btn_jp_ai:
                 with st.spinner("正在加载东京券商估值模型..."):
@@ -3578,10 +4217,10 @@ else:
         col_a, col_b = st.columns(2)
 
         with col_a:
-            run_scan = st.button("🚀 启动大师选股", type="primary", use_container_width=True)
+            run_scan = st.button("🚀 启动大师选股", type="primary", width="stretch")
 
         with col_b:
-            show_rules = st.button("📚 查看该大师规则库", use_container_width=True)
+            show_rules = st.button("📚 查看该大师规则库", width="stretch")
 
         if show_rules:
             rules = load_manager_rules(manager_name, limit=50)
@@ -3644,21 +4283,64 @@ else:
         with c_feed1:
             st.markdown("#### 📝 1. 碎片战法投喂")
             feed_text = st.text_area("记录盘感或交易纪律", placeholder="例如：跌破 MA20 必须无条件砍仓...", key="f_text")
-            if st.button("🧠 提交入库", use_container_width=True):
+            feed_manager_name = st.text_input("关联基金经理/大师（可选）", value="", key="feed_manager_name")
+            if st.button("🧠 提交入库", width="stretch"):
                 if feed_text:
-                    insert_cloud_memory("strategy", feed_text)
-                    st.success("✅ 纪律已烙印入云。")
+                    with st.spinner("正在切分资料并提炼交易记忆..."):
+                        extract_result = extract_feed_knowledge(feed_text, source="手动碎片投喂")
+                        counts = persist_extracted_knowledge(
+                            extract_result,
+                            raw_text=feed_text,
+                            ticker=target,
+                            market_type=market_type,
+                            manager_name=feed_manager_name.strip(),
+                            source="手动碎片投喂",
+                        )
+                    if extract_result.get("status") == "needs_ai_extract":
+                        st.warning("已保存，等待 AI 提炼。")
+                    else:
+                        st.success("已提炼入脑。")
+                    render_feed_write_summary(counts, extract_result)
+                    render_feed_extract_card(
+                        extract_result,
+                        memory_type="strategy",
+                        raw_payload=extract_result,
+                        card_title="手动碎片投喂",
+                    )
                 else: 
                     st.warning("⚠️ 内容为空。")
         
         with c_feed2:
             st.markdown("#### 📂 2. 研报文档直投 (基金经理训练)")
             uploaded_file = st.file_uploader("上传 PDF/Word 研报进行深度向量化", type=["pdf", "docx", "txt"])
-            if st.button("🚀 解析并挂载到神经元", use_container_width=True):
+            if st.button("🚀 解析并挂载到神经元", width="stretch"):
                 if uploaded_file:
                     file_name = uploaded_file.name
-                    insert_cloud_memory("strategy", f"【深度研报提取】来源：{file_name}。具体策略已通过文档录入系统。")
-                    st.success(f"✅ 文件 {file_name} 已解析并成功存入云端记忆！")
+                    raw_doc_text = extract_uploaded_text(uploaded_file)
+                    if not raw_doc_text.strip():
+                        st.warning("原文已上传但未解析出有效文本，未写入结构化记忆。")
+                    else:
+                        with st.spinner("正在解析文档并提炼结构化记忆..."):
+                            extract_result = extract_feed_knowledge(raw_doc_text, source=file_name)
+                            counts = persist_extracted_knowledge(
+                                extract_result,
+                                raw_text=raw_doc_text,
+                                ticker=target,
+                                market_type=market_type,
+                                manager_name=feed_manager_name.strip(),
+                                source=file_name,
+                            )
+                        if extract_result.get("status") == "needs_ai_extract":
+                            st.warning(f"文件 {file_name} 已保存摘要，等待 AI 提炼。")
+                        else:
+                            st.success(f"文件 {file_name} 已提炼入脑。")
+                        render_feed_write_summary(counts, extract_result)
+                        render_feed_extract_card(
+                            extract_result,
+                            memory_type="strategy",
+                            raw_payload=extract_result,
+                            card_title=file_name,
+                        )
                 else:
                     st.warning("⚠️ 请先上传研报或投研记录。")
 # --- 记忆显示器（完美接回） ---
@@ -3670,12 +4352,11 @@ else:
             
             if memories:
                 for m in memories:
-                    # 使用极其凌厉的卡片UI展示历史记忆
-                    st.markdown(f"""
-                    <div class='knowledge-card'>
-                        <span style='color: #0071E3; font-weight: bold;'>[{m['memory_type'].upper()}]</span> 
-                        {m['content']}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    render_feed_extract_card(
+                        m.get("content", ""),
+                        memory_type=m.get("memory_type", "memory"),
+                        raw_payload=m.get("content", ""),
+                        card_title=f"云端记忆 #{m.get('id', '')}",
+                    )
             else:
                 st.info("📭 当前云端神经元为空，请在上方投喂你的第一条交易纪律。")

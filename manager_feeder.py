@@ -1,35 +1,23 @@
 import hashlib
-import os
 import time
 
 from openai import OpenAI
 from supabase import create_client, Client
 
+from config import get_deepseek_keys, require_supabase_config
 
-DEEPSEEK_TOKENS = [
-    os.getenv("DEEPSEEK_TOKEN_1"),
-    os.getenv("DEEPSEEK_TOKEN_2"),
-]
 
-DEEPSEEK_TOKENS = [t for t in DEEPSEEK_TOKENS if t]
-
-if not DEEPSEEK_TOKENS:
-    raise ValueError("缺少 DEEPSEEK_TOKEN_1 或 DEEPSEEK_TOKEN_2")
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL:
-    raise ValueError("缺少 SUPABASE_URL")
-
-if not SUPABASE_KEY:
-    raise ValueError("缺少 SUPABASE_KEY")
+DEEPSEEK_TOKENS = get_deepseek_keys()
+SUPABASE_URL, SUPABASE_KEY = require_supabase_config()
 
 _token_index = 0
 
 
 def get_deepseek_client():
     global _token_index
+
+    if not DEEPSEEK_TOKENS:
+        return None
 
     token = DEEPSEEK_TOKENS[_token_index]
     _token_index = (_token_index + 1) % len(DEEPSEEK_TOKENS)
@@ -76,6 +64,10 @@ def split_text_to_chunks(text, chunk_size=6000, overlap=500):
 
 
 def extract_rules_with_deepseek(manager_name, text_chunk, source_url=""):
+    if not DEEPSEEK_TOKENS:
+        summary = " ".join((text_chunk or "").split())[:180]
+        return f"其他|needs_ai_extract：未调用模型，仅保存原始摘要/待提炼状态。来源 {source_url} 摘要 {summary}"
+
     prompt = f"""
 你是一个基金经理研究员。
 
@@ -132,6 +124,8 @@ rule_type 只能从下面选择：
     for attempt, delay in enumerate(retry_delays, start=1):
         try:
             client = get_deepseek_client()
+            if client is None:
+                return "其他|needs_ai_extract：未调用模型，仅保存原始摘要/待提炼状态。"
 
             response = client.chat.completions.create(
                 model="deepseek-chat",
