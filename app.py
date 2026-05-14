@@ -3,8 +3,10 @@ import yfinance as yf
 from openai import OpenAI
 from supabase import create_client, Client
 import datetime
+import hashlib
 import json
 import os
+import re
 import time
 import io
 import inspect
@@ -1498,6 +1500,28 @@ else:
         except: return []
 
     FEED_MISSING_TEXT = "原文未提供/暂无明确提取"
+    FEED_DOCUMENT_TYPES = {
+        "stock_report",
+        "industry_report",
+        "news",
+        "manager_interview",
+        "trade_review",
+        "user_rule",
+        "article",
+        "unknown",
+    }
+    FEED_THEME_KEYWORDS = [
+        "CPO", "AI算力", "AI", "PCB", "光刻", "液冷", "低空经济", "机器人", "半导体",
+        "新能源", "储能", "光伏", "医药", "创新药", "消费电子", "数据中心", "算力",
+    ]
+    FEED_INDUSTRY_KEYWORDS = [
+        "半导体", "通信", "传媒", "计算机", "电子", "新能源", "汽车", "医药", "消费",
+        "军工", "机械", "银行", "地产", "有色", "煤炭", "电力", "化工", "食品饮料",
+    ]
+    FEED_RISK_KEYWORDS = [
+        "估值风险", "业绩风险", "政策风险", "流动性风险", "竞争加剧", "订单不及预期",
+        "需求不及预期", "毛利率下滑", "汇率风险", "减持", "解禁", "商誉", "退市风险",
+    ]
 
     def parse_memory_payload(content):
         if isinstance(content, dict):
@@ -1530,6 +1554,159 @@ else:
             return str(value)
         return ""
 
+    def normalize_feed_text_for_hash(raw_text):
+        return " ".join((raw_text or "").split())
+
+    def generate_content_hash(raw_text):
+        normalized = normalize_feed_text_for_hash(raw_text)
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest() if normalized else ""
+
+    def normalize_metadata_list(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            values = value
+        elif isinstance(value, str):
+            values = re.split(r"[,，、\n;；]+", value)
+        else:
+            values = [value]
+
+        cleaned = []
+        for item in values:
+            if isinstance(item, dict):
+                item = item.get("name") or item.get("ticker") or item.get("value") or item.get("content")
+            text = compact_display_text(item)
+            if text and text not in {"原文未提供", "暂无明确提取", "low_confidence", "unknown"} and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
+
+    def keyword_hits(raw_text, keywords):
+        text = raw_text or ""
+        return [keyword for keyword in keywords if keyword and keyword in text]
+
+    def detect_tickers(raw_text):
+        text = raw_text or ""
+        patterns = [
+            r"\b[0368]\d{5}\b",
+            r"\b\d{6}\.(?:SH|SZ|BJ|SS)\b",
+            r"\b\d{4,5}\.HK\b",
+            r"\bHK[:：]?\s*\d{4,5}\b",
+        ]
+        tickers = []
+        for pattern in patterns:
+            for match in re.findall(pattern, text, flags=re.IGNORECASE):
+                ticker = compact_display_text(match).upper().replace(" ", "")
+                if ticker and ticker not in tickers:
+                    tickers.append(ticker)
+        return tickers[:12]
+
+    def infer_document_type(raw_text, source):
+        haystack = f"{source or ''}\n{raw_text or ''}"
+        lowered = haystack.lower()
+        if any(word in haystack for word in ["基金经理", "访谈", "调研纪要", "路演"]):
+            return "manager_interview"
+        if any(word in haystack for word in ["复盘", "交易记录", "止损", "止盈"]) and "研报" not in haystack:
+            return "trade_review"
+        if any(word in haystack for word in ["纪律", "规则", "盘感"]) or "手动碎片投喂" in haystack:
+            return "user_rule"
+        if any(word in haystack for word in ["行业报告", "行业深度", "产业链"]) or "industry" in lowered:
+            return "industry_report"
+        if any(word in haystack for word in ["研报", "公司报告", "深度报告"]) or "report" in lowered:
+            return "stock_report"
+        if any(word in haystack for word in ["新闻", "快讯", "公告"]) or "news" in lowered:
+            return "news"
+        if any(word in haystack for word in ["文章", "专栏"]) or "article" in lowered:
+            return "article"
+        return "unknown"
+
+    def normalize_extraction_status(status, raw_text):
+        if status == "extracted":
+            return "extracted"
+        if status == "extracted_text":
+            return "low_confidence"
+        if status == "needs_ai_extract":
+            return "pending_extract" if raw_text else "raw_saved"
+        return "low_confidence" if raw_text else "raw_saved"
+
+    def build_feed_metadata(extract_result, raw_text, source="手动投喂"):
+        extract_result = extract_result or {}
+        source_metadata = extract_result.get("metadata") if isinstance(extract_result.get("metadata"), dict) else {}
+        content_hash = source_metadata.get("content_hash") or generate_content_hash(raw_text)
+        raw_document_type = compact_display_text(source_metadata.get("document_type") or extract_result.get("document_type"))
+        document_type = raw_document_type if raw_document_type in FEED_DOCUMENT_TYPES else infer_document_type(raw_text, source)
+        extraction_status = compact_display_text(
+            source_metadata.get("extraction_status") or extract_result.get("extraction_status")
+        ) or normalize_extraction_status(extract_result.get("status"), raw_text)
+
+        evidence_summary = compact_display_text(
+            source_metadata.get("evidence_summary") or extract_result.get("evidence") or extract_result.get("core_view")
+        )
+        if not evidence_summary:
+            evidence_summary = FEED_MISSING_TEXT
+
+        metadata = {
+            "document_type": document_type,
+            "extraction_status": extraction_status,
+            "tickers": normalize_metadata_list(source_metadata.get("tickers") or extract_result.get("tickers")) or detect_tickers(raw_text),
+            "company_names": normalize_metadata_list(source_metadata.get("company_names") or extract_result.get("company_names")),
+            "industries": normalize_metadata_list(source_metadata.get("industries") or extract_result.get("industries")) or keyword_hits(raw_text, FEED_INDUSTRY_KEYWORDS),
+            "themes": normalize_metadata_list(source_metadata.get("themes") or extract_result.get("themes")) or keyword_hits(raw_text, FEED_THEME_KEYWORDS),
+            "risk_tags": normalize_metadata_list(source_metadata.get("risk_tags") or extract_result.get("risk_tags")) or keyword_hits(raw_text, FEED_RISK_KEYWORDS),
+            "time_window": compact_display_text(source_metadata.get("time_window") or extract_result.get("time_window")) or "原文未提供",
+            "source_file": compact_display_text(source_metadata.get("source_file") or source) or "原文未提供",
+            "content_hash": content_hash,
+            "extracted_at": source_metadata.get("extracted_at") or datetime.datetime.now().isoformat(timespec="seconds"),
+            "evidence_summary": evidence_summary[:800],
+        }
+        if extraction_status not in {"extracted", "pending_extract", "low_confidence", "raw_saved"}:
+            metadata["extraction_status"] = "low_confidence"
+        return metadata
+
+    def attach_feed_metadata(extract_result, raw_text, source="手动投喂"):
+        result = dict(extract_result or {})
+        metadata = build_feed_metadata(result, raw_text, source)
+        result["metadata"] = metadata
+        result["content_hash"] = metadata["content_hash"]
+        result["document_type"] = metadata["document_type"]
+        result["extraction_status"] = metadata["extraction_status"]
+        return result
+
+    def extract_payload_content_hash(payload):
+        data, _ = parse_memory_payload(payload)
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        return compact_display_text(data.get("content_hash") or metadata.get("content_hash"))
+
+    def find_existing_content_hash(content_hash):
+        result = {"duplicate": False, "brain_memory": False, "stock_reports": False}
+        if not supabase or not content_hash:
+            return result
+        try:
+            brain = (
+                supabase
+                .table("brain_memory")
+                .select("id")
+                .ilike("content", f"%{content_hash}%")
+                .limit(1)
+                .execute()
+            )
+            result["brain_memory"] = bool(brain.data)
+        except Exception:
+            result["brain_memory_check_failed"] = True
+        try:
+            reports = (
+                supabase
+                .table("stock_reports")
+                .select("id")
+                .ilike("report_content", f"%{content_hash}%")
+                .limit(1)
+                .execute()
+            )
+            result["stock_reports"] = bool(reports.data)
+        except Exception:
+            result["stock_reports_check_failed"] = True
+        result["duplicate"] = result["brain_memory"] or result["stock_reports"]
+        return result
+
     def list_display_items(value):
         if value is None:
             return []
@@ -1553,28 +1730,67 @@ else:
                 st.markdown(f"- {compact_display_text(item) or FEED_MISSING_TEXT}")
         return True
 
+    def render_metadata_tags(metadata):
+        if not isinstance(metadata, dict):
+            metadata = {}
+        document_type = compact_display_text(metadata.get("document_type")) or "unknown"
+        extraction_status = compact_display_text(metadata.get("extraction_status")) or "low_confidence"
+        duplicate_hit = metadata.get("duplicate_hit")
+        duplicate_text = "命中重复资料" if duplicate_hit else "未命中重复资料"
+        st.caption(f"资料类型：{document_type} ｜ 提炼状态：{extraction_status} ｜ 去重：{duplicate_text}")
+
+        tag_groups = [
+            ("股票", normalize_metadata_list(metadata.get("tickers"))),
+            ("公司", normalize_metadata_list(metadata.get("company_names"))),
+            ("行业", normalize_metadata_list(metadata.get("industries"))),
+            ("主题", normalize_metadata_list(metadata.get("themes"))),
+            ("风险标签", normalize_metadata_list(metadata.get("risk_tags"))),
+        ]
+        display_parts = []
+        for label, values in tag_groups:
+            display_parts.append(f"{label}：{', '.join(values) if values else '[]'}")
+        st.caption(" ｜ ".join(display_parts))
+        st.caption(f"时间窗口：{compact_display_text(metadata.get('time_window')) or '原文未提供'}")
+
+    def render_feed_write_summary(counts, extract_result):
+        metadata = extract_result.get("metadata") if isinstance(extract_result.get("metadata"), dict) else {}
+        if counts.get("duplicate_hit"):
+            st.warning("该资料已存在，已跳过重复写入。")
+        else:
+            st.caption(
+                f"写入 brain_memory {counts['brain_memory']} 条 / "
+                f"stock_reports {counts['stock_reports']} 条 / "
+                f"manager_rules {counts['manager_rules']} 条"
+            )
+        render_metadata_tags(metadata)
+        if counts.get("manager_rules") == 0:
+            st.info(f"manager_rules 为 0：{counts.get('manager_rules_reason') or '未生成可写入规则。'}")
+
     def render_feed_extract_card(payload, memory_type="strategy", raw_payload=None, card_title="资料提炼结果"):
         data, raw = parse_memory_payload(payload)
         raw_payload = raw_payload if raw_payload is not None else raw
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
         memory_label = compact_display_text(memory_type).upper() or "MEMORY"
         source = compact_display_text(data.get("source"))
-        status = compact_display_text(data.get("status"))
+        status = compact_display_text(data.get("extraction_status") or data.get("status") or metadata.get("extraction_status"))
         market = compact_display_text(data.get("market"))
         core_view = compact_display_text(data.get("core_view") or data.get("summary") or data.get("raw_text"))
-        evidence = compact_display_text(data.get("evidence"))
+        evidence = compact_display_text(data.get("evidence") or metadata.get("evidence_summary"))
 
         with st.container(border=True):
             st.markdown(f"**[{memory_label}] {card_title}**")
             meta_parts = []
+            source = source or compact_display_text(metadata.get("source_file"))
             if source:
                 meta_parts.append(f"来源：{source}")
             if status:
-                status_text = "等待 AI 提炼" if status == "needs_ai_extract" else status
+                status_text = "等待 AI 提炼" if status in {"needs_ai_extract", "pending_extract"} else status
                 meta_parts.append(f"状态：{status_text}")
             if market:
                 meta_parts.append(f"市场：{market}")
             if meta_parts:
                 st.caption(" ｜ ".join(meta_parts))
+            render_metadata_tags(metadata)
 
             if memory_type == "reflection":
                 st.markdown("**复盘记忆**")
@@ -1726,7 +1942,7 @@ else:
 
     def fallback_feed_extract(raw_text, source="手动投喂"):
         summary = " ".join((raw_text or "").split())[:500]
-        return {
+        result = {
             "status": "needs_ai_extract",
             "core_view": summary or "原文为空，等待补充资料。",
             "market": "待识别",
@@ -1738,6 +1954,7 @@ else:
             "rules": ["needs_ai_extract|原文已保存摘要，等待 AI 提炼。"],
             "evidence": f"来源：{source}；原文摘要：{summary}",
         }
+        return attach_feed_metadata(result, raw_text, source)
 
     def parse_feed_extract(content, raw_text, source):
         try:
@@ -1748,11 +1965,15 @@ else:
                 parsed.setdefault("status", "extracted")
                 parsed.setdefault("rules", [])
                 parsed.setdefault("evidence", f"来源：{source}")
-                return parsed
+                return attach_feed_metadata(parsed, raw_text, source)
         except Exception:
             pass
         result = fallback_feed_extract(raw_text, source)
         result["status"] = "extracted_text"
+        result["extraction_status"] = "low_confidence"
+        result["metadata"] = build_feed_metadata(result, raw_text, source)
+        result["content_hash"] = result["metadata"].get("content_hash", "")
+        result["document_type"] = result["metadata"].get("document_type", "unknown")
         result["core_view"] = (content or result["core_view"])[:900]
         return result
 
@@ -1768,8 +1989,14 @@ else:
             prompt = f"""
 请把下面投研资料第 {i}/{len(chunks)} 段提炼成结构化交易记忆，只能基于原文，不要编造。
 输出 JSON，字段固定：
-core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence。
+core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence, metadata。
 rules 用数组，每条格式为 rule_type|content，其中 rule_type 可用：买入条件/加仓条件/减仓条件/风险触发/失效条件/行业判断/其他。
+metadata 必须包含：
+document_type, extraction_status, tickers, company_names, industries, themes, risk_tags, time_window, source_file, evidence_summary。
+document_type 只能用 stock_report / industry_report / news / manager_interview / trade_review / user_rule / article / unknown。
+extraction_status 只能用 extracted / pending_extract / low_confidence / raw_saved。
+如果原文没有明确股票、公司、行业、主题或风险标签，对应数组用 []；不要编造。
+time_window 缺失时写“原文未提供”。
 
 资料来源：{source}
 资料片段：
@@ -1790,8 +2017,9 @@ rules 用数组，每条格式为 rule_type|content，其中 rule_type 可用：
 
         merge_prompt = f"""
 请合并以下分段提炼，输出最终 JSON，字段固定：
-core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence。
+core_view, market, buy_conditions, add_conditions, sell_conditions, risk_triggers, invalid_conditions, rules, evidence, metadata。
 要求高度浓缩，rules 最多 8 条，不要包含原文长段落。
+metadata 保留并去重明确来自原文的 tickers/company_names/industries/themes/risk_tags；缺失用 [] 或“原文未提供”，不得补全猜测。
 
 分段提炼：
 {json.dumps(chunk_summaries, ensure_ascii=False)}
@@ -1805,12 +2033,33 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
         result["chunk_count"] = len(chunks)
         return result
 
-    def persist_extracted_knowledge(extract_result, ticker="", market_type="", manager_name="", source="手动投喂"):
+    def persist_extracted_knowledge(extract_result, raw_text="", ticker="", market_type="", manager_name="", source="手动投喂"):
+        original_result = extract_result if isinstance(extract_result, dict) else None
+        extract_result = attach_feed_metadata(extract_result, raw_text, source)
+        if original_result is not None:
+            original_result.clear()
+            original_result.update(extract_result)
+            extract_result = original_result
         status = extract_result.get("status", "needs_ai_extract")
         core = extract_result.get("core_view", "")
+        metadata = dict(extract_result.get("metadata") or {})
+        duplicate = find_existing_content_hash(metadata.get("content_hash", ""))
+        metadata["duplicate_hit"] = duplicate.get("duplicate", False)
+        metadata["duplicate_scope"] = [
+            scope for scope in ["brain_memory", "stock_reports"] if duplicate.get(scope)
+        ]
+        extract_result["metadata"] = metadata
+        extract_result["content_hash"] = metadata.get("content_hash", "")
+        extract_result["document_type"] = metadata.get("document_type", "unknown")
+        extract_result["extraction_status"] = metadata.get("extraction_status", "low_confidence")
         memory_content = json.dumps({
             "status": status,
+            "extraction_status": metadata.get("extraction_status"),
+            "document_type": metadata.get("document_type"),
             "source": source,
+            "source_file": metadata.get("source_file"),
+            "content_hash": metadata.get("content_hash"),
+            "metadata": metadata,
             "core_view": core,
             "market": extract_result.get("market", ""),
             "buy_conditions": extract_result.get("buy_conditions", []),
@@ -1820,20 +2069,39 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
             "invalid_conditions": extract_result.get("invalid_conditions", []),
             "evidence": extract_result.get("evidence", ""),
         }, ensure_ascii=False, default=str)
-        counts = {"brain_memory": 0, "stock_reports": 0, "manager_rules": 0}
+        counts = {
+            "brain_memory": 0,
+            "stock_reports": 0,
+            "manager_rules": 0,
+            "duplicate_hit": duplicate.get("duplicate", False),
+            "duplicate_scope": metadata.get("duplicate_scope", []),
+            "content_hash": metadata.get("content_hash", ""),
+            "manager_rules_reason": "",
+        }
+        if duplicate.get("duplicate"):
+            counts["skipped_reason"] = "该资料已存在，已跳过重复写入。"
+            counts["manager_rules_reason"] = "重复资料已跳过，避免重复生成规则。"
+            return counts
+
         if insert_cloud_memory("strategy", memory_content):
             counts["brain_memory"] += 1
         if ticker and save_stock_report(ticker, market_type or "UNKNOWN", "manual_feed_extract", extract_result):
             counts["stock_reports"] += 1
-        for rule in extract_result.get("rules", [])[:8]:
-            rule = str(rule).strip()
-            if not rule:
-                continue
+
+        rules = [str(rule).strip() for rule in extract_result.get("rules", [])[:8] if str(rule).strip()]
+        if not manager_name:
+            counts["manager_rules_reason"] = "未填写关联基金经理/大师。"
+        elif not rules:
+            counts["manager_rules_reason"] = "提炼结果没有可写入的 manager_rules 规则。"
+        for rule in rules:
             rule_type, content = ("其他", rule)
             if "|" in rule:
                 rule_type, content = rule.split("|", 1)
-            if manager_name and save_manager_rule(manager_name, rule_type.strip(), content.strip(), source=source):
+            manager_source = f"{source} | hash:{metadata.get('content_hash', '')[:12]}"
+            if manager_name and save_manager_rule(manager_name, rule_type.strip(), content.strip(), source=manager_source):
                 counts["manager_rules"] += 1
+        if manager_name and rules and counts["manager_rules"] == 0:
+            counts["manager_rules_reason"] = "manager_rules 写入失败或 Supabase 暂不可用。"
         return counts
 
     def load_stock_logic_rules(ticker, limit=3):
@@ -4022,6 +4290,7 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
                         extract_result = extract_feed_knowledge(feed_text, source="手动碎片投喂")
                         counts = persist_extracted_knowledge(
                             extract_result,
+                            raw_text=feed_text,
                             ticker=target,
                             market_type=market_type,
                             manager_name=feed_manager_name.strip(),
@@ -4031,7 +4300,7 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
                         st.warning("已保存，等待 AI 提炼。")
                     else:
                         st.success("已提炼入脑。")
-                    st.caption(f"写入 brain_memory {counts['brain_memory']} 条 / stock_reports {counts['stock_reports']} 条 / manager_rules {counts['manager_rules']} 条")
+                    render_feed_write_summary(counts, extract_result)
                     render_feed_extract_card(
                         extract_result,
                         memory_type="strategy",
@@ -4055,6 +4324,7 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
                             extract_result = extract_feed_knowledge(raw_doc_text, source=file_name)
                             counts = persist_extracted_knowledge(
                                 extract_result,
+                                raw_text=raw_doc_text,
                                 ticker=target,
                                 market_type=market_type,
                                 manager_name=feed_manager_name.strip(),
@@ -4064,7 +4334,7 @@ core_view, market, buy_conditions, add_conditions, sell_conditions, risk_trigger
                             st.warning(f"文件 {file_name} 已保存摘要，等待 AI 提炼。")
                         else:
                             st.success(f"文件 {file_name} 已提炼入脑。")
-                        st.caption(f"写入 brain_memory {counts['brain_memory']} 条 / stock_reports {counts['stock_reports']} 条 / manager_rules {counts['manager_rules']} 条")
+                        render_feed_write_summary(counts, extract_result)
                         render_feed_extract_card(
                             extract_result,
                             memory_type="strategy",
