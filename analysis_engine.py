@@ -89,6 +89,7 @@ def build_ai_context_payload(
     data_quality=None,
     money_flow=None,
     backtest_report=None,
+    cloud_memory_context=None,
 ):
     """Build a structured, JSON-serializable context for DeepSeek prompts."""
 
@@ -106,6 +107,11 @@ def build_ai_context_payload(
         "peer_rows": _json_safe(peer_rows or []),
         "research_links": _json_safe(_dedupe_items(research_links)),
         "backtest_report": _compact_backtest_report(backtest_report),
+        "cloud_memory_context": _json_safe((cloud_memory_context or [])[:5]),
+        "cloud_memory_usage_note": (
+            "这些是 Supabase 中的历史投喂资料，不一定最新。ticker/company 匹配强于 industry/theme/risk 匹配，"
+            "所有结论必须结合当前行情、资金、估值和数据新鲜度验证。"
+        ),
         "analysis_requirements": {
             "no_fabricated_news": True,
             "prefer_structured_fields": True,
@@ -328,6 +334,7 @@ def build_ai_context_packet(
     scenario=None,
     data_quality=None,
     money_flow=None,
+    cloud_memory_context=None,
 ):
     payload = build_ai_context_payload(
         supply_chain,
@@ -340,10 +347,19 @@ def build_ai_context_packet(
         scenario=scenario,
         data_quality=data_quality,
         money_flow=money_flow,
+        cloud_memory_context=cloud_memory_context,
     )
     news_text = "\n".join(
         f"- {row.get('title', '')}｜情绪:{row.get('sentiment', '')}｜风险:{row.get('risk_tag', '')}｜相关:{row.get('relevance_score', '')}"
         for row in payload["recent_news"]
+    )
+    memory_text = json.dumps(
+        {
+            "cloud_memory_context": payload["cloud_memory_context"],
+            "usage_note": payload["cloud_memory_usage_note"],
+        },
+        ensure_ascii=False,
+        default=str,
     )
     return f"""
 【产业链】
@@ -371,6 +387,10 @@ def build_ai_context_packet(
 
 【炼丹炉专属规则】
 {payload['replay_rules'] or '暂无该票专属规则'}
+
+【云端历史投喂资料 JSON】
+{memory_text}
+要求：这些资料是历史投喂资料，不一定最新；ticker/company 匹配强于行业/主题/风险匹配，所有结论必须结合当前行情、资金、估值和数据新鲜度验证。
 
 【同行估值对比】
 {payload['peer_rows'] or '暂无同行对比'}

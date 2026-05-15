@@ -1,5 +1,37 @@
 # WORKLOG
 
+## 2026-05-15 Cloud Memory Recall For Diagnosis
+
+- Goal: let the main quantitative diagnosis recall already extracted cloud memories from Supabase by ticker, company, industry, theme, or risk tag before asking DeepSeek for a final opinion.
+- Modified files:
+  - `app.py`
+  - `analysis_engine.py`
+  - `tests/test_analysis_engine_payload.py`
+  - `WORKLOG.md`
+- Recall logic:
+  - Added `load_relevant_memory_for_stock(...)`.
+  - Sources: `brain_memory`, `stock_reports`, and weak/optional `manager_rules`; no `manager_embeddings` dependency was added.
+  - Match priority: `ticker` > `company` > `industry` > `theme` > `risk`.
+  - `ticker` and `company` matches are marked as stronger stock/company-specific memory.
+  - `industry`, `theme`, and `risk` matches are marked as related reference only, not stock-specific evidence.
+  - Returned memory is compacted to `memory_type`, `match_level`, `source`, `core_view`, `buy_conditions`, `sell_conditions`, `risk_triggers`, `evidence_summary`, and `extracted_at`.
+- Prompt/context integration:
+  - `build_ai_context_payload` and `build_ai_context_packet` now accept `cloud_memory_context`.
+  - The prompt explicitly tells DeepSeek these are historical user-fed memories and must be verified against current price, valuation, money flow, backtest, and data freshness.
+- Frontend:
+  - The main quantitative diagnosis tab now shows an `已召回云端记忆` module.
+  - If no match is found, it shows that the diagnosis is based only on market data, valuation, backtest, and money flow.
+- Test results:
+  - `python3 -m py_compile app.py analysis_engine.py data_fetcher.py backtester.py money_flow_tracker.py visualizer.py config.py` passed.
+  - `python3 -m unittest discover -s tests -v` passed, 8 tests run.
+  - `bash run_local.sh` started Streamlit at `http://localhost:8502`.
+  - `curl -I http://localhost:8502` returned HTTP 200 OK.
+  - Manual browser check with `002008.SZ` showed the `已召回云端记忆` module and stock-specific recalled memory from `stock_reports` / `brain_memory`.
+  - Manual browser check with `ZZZZZZ` showed `暂无匹配云端记忆，本次仅基于行情/估值/回测/资金流分析。`
+  - `build_ai_context_packet(...)` verification returned `CLOUD_MEMORY_CONTEXT_IN_PROMPT=YES`.
+- Next step:
+  - Commit if the recall behavior and prompt wording are accepted.
+
 ## 2026-05-14 Feed Metadata And Dedup Verification Rerun
 
 - Goal: re-check the existing metadata/tags and duplicate document handling changes after the task was repeated in chat.

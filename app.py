@@ -335,6 +335,7 @@ def build_ai_context_packet_safe(
     scenario=None,
     data_quality=None,
     money_flow=None,
+    cloud_memory_context=None,
 ):
     try:
         return call_with_supported_kwargs(
@@ -349,6 +350,7 @@ def build_ai_context_packet_safe(
             scenario=scenario,
             data_quality=data_quality,
             money_flow=money_flow,
+            cloud_memory_context=cloud_memory_context,
         )
     except TypeError as e:
         legacy_context = build_ai_context_packet(
@@ -368,6 +370,8 @@ def build_ai_context_packet_safe(
 Monte Carlo 情景：{scenario or '缺失'}
 数据可信度：{data_quality or '缺失'}
 资金面：{money_flow or '缺失'}
+云端历史投喂资料：{json.dumps(cloud_memory_context or [], ensure_ascii=False, default=str)}
+要求：云端资料是历史投喂资料，不一定最新；行业/主题/风险匹配只能作为相关参考。
 """
 
 
@@ -1706,6 +1710,283 @@ else:
             result["stock_reports_check_failed"] = True
         result["duplicate"] = result["brain_memory"] or result["stock_reports"]
         return result
+
+    def normalize_memory_match_token(value):
+        text = compact_display_text(value).upper()
+        if not text:
+            return ""
+        text = text.replace("HK:", "").replace("HK：", "")
+        if text.endswith(".SH"):
+            text = text[:-3] + ".SS"
+        return text
+
+    def build_ticker_match_terms(ticker):
+        normalized = normalize_memory_match_token(ticker)
+        terms = []
+        for term in [ticker, normalized]:
+            clean = normalize_memory_match_token(term)
+            if clean and clean not in terms:
+                terms.append(clean)
+        if normalized.endswith((".SS", ".SZ", ".HK", ".T")):
+            core = normalized.rsplit(".", 1)[0]
+            if core and core not in terms:
+                terms.append(core)
+        return terms
+
+    def compact_prompt_text(value, limit=360):
+        text = compact_display_text(value)
+        return text[:limit] + ("..." if len(text) > limit else "")
+
+    def value_matches_any(value, terms):
+        values = normalize_metadata_list(value)
+        if not values and compact_display_text(value):
+            values = [compact_display_text(value)]
+        haystack = " ".join(normalize_memory_match_token(item) for item in values)
+        return any(term and term in haystack for term in terms)
+
+    def text_matches_any(text, terms):
+        haystack = normalize_memory_match_token(text)
+        return any(term and term in haystack for term in terms)
+
+    def memory_identity(row):
+        payload = row.get("payload") or {}
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        content_hash = compact_display_text(payload.get("content_hash") or metadata.get("content_hash"))
+        if content_hash:
+            return f"hash:{content_hash}"
+        return f"{row.get('memory_type')}:{row.get('id')}:{row.get('source')}:{row.get('created_at')}"
+
+    def parse_memory_row(row, source_table):
+        if source_table == "brain_memory":
+            payload, _ = parse_memory_payload(row.get("content", ""))
+            return {
+                "id": row.get("id"),
+                "source_table": source_table,
+                "memory_type": row.get("memory_type", "memory"),
+                "payload": payload,
+                "created_at": row.get("created_at", ""),
+            }
+        if source_table == "stock_reports":
+            payload, _ = parse_memory_payload(row.get("report_content", ""))
+            if "ticker" not in payload and row.get("ticker"):
+                payload["ticker"] = row.get("ticker")
+            return {
+                "id": row.get("id"),
+                "source_table": source_table,
+                "memory_type": row.get("report_type", "stock_report"),
+                "payload": payload,
+                "created_at": row.get("created_at", ""),
+            }
+
+        content = compact_prompt_text(row.get("content", ""), 500)
+        payload = {
+            "source": row.get("source", "manager_rules"),
+            "core_view": content,
+            "rules": [content] if content else [],
+            "metadata": {
+                "source_file": row.get("source", "manager_rules"),
+                "document_type": "manager_rule",
+                "extraction_status": "extracted",
+                "evidence_summary": content,
+            },
+        }
+        return {
+            "id": row.get("id"),
+            "source_table": source_table,
+            "memory_type": row.get("rule_type", "manager_rule"),
+            "payload": payload,
+            "created_at": row.get("created_at", ""),
+        }
+
+    def match_memory_payload(parsed_row, ticker_terms, company_terms, industry_terms, theme_terms, risk_terms):
+        payload = parsed_row.get("payload") or {}
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        searchable_text = json.dumps(payload, ensure_ascii=False, default=str)
+
+        if value_matches_any(metadata.get("tickers"), ticker_terms) or text_matches_any(payload.get("ticker"), ticker_terms):
+            return "ticker"
+        if text_matches_any(searchable_text, ticker_terms):
+            return "ticker"
+        if value_matches_any(metadata.get("company_names"), company_terms) or text_matches_any(searchable_text, company_terms):
+            return "company"
+        if value_matches_any(metadata.get("industries"), industry_terms):
+            return "industry"
+        if value_matches_any(metadata.get("themes"), theme_terms):
+            return "theme"
+        if value_matches_any(metadata.get("risk_tags"), risk_terms):
+            return "risk"
+        if text_matches_any(searchable_text, industry_terms):
+            return "industry"
+        if text_matches_any(searchable_text, theme_terms):
+            return "theme"
+        if text_matches_any(searchable_text, risk_terms):
+            return "risk"
+        return ""
+
+    def format_relevant_memory(parsed_row, match_level):
+        payload = parsed_row.get("payload") or {}
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        return {
+            "memory_type": compact_display_text(parsed_row.get("memory_type") or payload.get("document_type")) or "memory",
+            "match_level": match_level,
+            "match_strength": "strong" if match_level in {"ticker", "company"} else "related",
+            "source": compact_prompt_text(
+                payload.get("source") or metadata.get("source_file") or parsed_row.get("source_table") or "云端记忆",
+                120,
+            ),
+            "core_view": compact_prompt_text(payload.get("core_view") or payload.get("summary") or payload.get("raw_text"), 420),
+            "buy_conditions": [compact_prompt_text(item, 140) for item in list_display_items(payload.get("buy_conditions"))[:4]],
+            "sell_conditions": [compact_prompt_text(item, 140) for item in list_display_items(payload.get("sell_conditions"))[:4]],
+            "risk_triggers": [compact_prompt_text(item, 140) for item in list_display_items(payload.get("risk_triggers"))[:4]],
+            "evidence_summary": compact_prompt_text(metadata.get("evidence_summary") or payload.get("evidence"), 320),
+            "extracted_at": compact_prompt_text(metadata.get("extracted_at") or parsed_row.get("created_at"), 80),
+            "reference_note": (
+                "股票/公司专属记忆，仍需用当前行情验证。"
+                if match_level in {"ticker", "company"}
+                else "主题相关记忆，只能作为相关参考，不代表该股票专属资料。"
+            ),
+        }
+
+    @st.cache_data(ttl=300)
+    def load_relevant_memory_for_stock(ticker, company_name=None, industry=None, themes=None, risk_tags=None, limit=5):
+        if not supabase:
+            return []
+
+        ticker_terms = build_ticker_match_terms(ticker)
+        company_terms = [term for term in normalize_metadata_list(company_name) if term]
+        industry_terms = [term for term in normalize_metadata_list(industry) if term]
+        theme_terms = [term for term in normalize_metadata_list(themes) if term]
+        risk_terms = [term for term in normalize_metadata_list(risk_tags) if term]
+        query_terms = ticker_terms + company_terms + industry_terms + theme_terms + risk_terms
+        if not query_terms:
+            return []
+
+        candidates = []
+
+        def add_rows(source_table, rows):
+            for row in rows or []:
+                candidates.append(parse_memory_row(row, source_table))
+
+        def query_brain_by_content(term, row_limit=8):
+            try:
+                add_rows(
+                    "brain_memory",
+                    supabase.table("brain_memory")
+                    .select("id, memory_type, content, created_at")
+                    .ilike("content", f"%{term}%")
+                    .order("id", desc=True)
+                    .limit(row_limit)
+                    .execute()
+                    .data,
+                )
+            except Exception:
+                pass
+
+        def query_reports_by_content(term, row_limit=8):
+            try:
+                add_rows(
+                    "stock_reports",
+                    supabase.table("stock_reports")
+                    .select("id, ticker, market_type, report_type, report_content, created_at")
+                    .ilike("report_content", f"%{term}%")
+                    .order("created_at", desc=True)
+                    .limit(row_limit)
+                    .execute()
+                    .data,
+                )
+            except Exception:
+                pass
+
+        for term in ticker_terms[:3]:
+            try:
+                add_rows(
+                    "stock_reports",
+                    supabase.table("stock_reports")
+                    .select("id, ticker, market_type, report_type, report_content, created_at")
+                    .eq("ticker", term)
+                    .order("created_at", desc=True)
+                    .limit(12)
+                    .execute()
+                    .data,
+                )
+            except Exception:
+                pass
+            query_brain_by_content(term, row_limit=8)
+            query_reports_by_content(term, row_limit=8)
+
+        for term in company_terms[:3]:
+            query_brain_by_content(term, row_limit=8)
+            query_reports_by_content(term, row_limit=8)
+
+        related_terms = (industry_terms + theme_terms + risk_terms)[:4]
+        for term in related_terms:
+            query_brain_by_content(term, row_limit=5)
+            query_reports_by_content(term, row_limit=5)
+
+        for term in (company_terms + related_terms)[:4]:
+            try:
+                add_rows(
+                    "manager_rules",
+                    supabase.table("manager_rules")
+                    .select("id, manager_name, rule_type, content, source, created_at")
+                    .ilike("content", f"%{term}%")
+                    .order("created_at", desc=True)
+                    .limit(6)
+                    .execute()
+                    .data,
+                )
+            except Exception:
+                pass
+
+        best_by_identity = {}
+        priority = {"ticker": 0, "company": 1, "industry": 2, "theme": 3, "risk": 4}
+        for row in candidates:
+            identity = memory_identity(row)
+            match_level = match_memory_payload(row, ticker_terms, company_terms, industry_terms, theme_terms, risk_terms)
+            if not match_level:
+                continue
+            memory = format_relevant_memory(row, match_level)
+            score = priority.get(match_level, 9)
+            existing = best_by_identity.get(identity)
+            if existing is None or score < existing[0]:
+                best_by_identity[identity] = (score, memory)
+
+        return [memory for _, memory in sorted(best_by_identity.values(), key=lambda item: item[0])[:limit]]
+
+    def render_relevant_memory_context(memories):
+        st.markdown("#### 已召回云端记忆")
+        if not memories:
+            st.info("暂无匹配云端记忆，本次仅基于行情/估值/回测/资金流分析。")
+            return
+
+        label_map = {
+            "ticker": "股票专属",
+            "company": "公司名匹配",
+            "industry": "行业主题相关",
+            "theme": "行业主题相关",
+            "risk": "风险标签相关",
+        }
+        strong_count = sum(1 for item in memories if item.get("match_strength") == "strong")
+        related_count = len(memories) - strong_count
+        st.caption(f"召回 {len(memories)} 条：股票/公司专属 {strong_count} 条，主题相关参考 {related_count} 条。")
+
+        for idx, item in enumerate(memories, start=1):
+            match_label = label_map.get(item.get("match_level"), item.get("match_level", "相关"))
+            title = f"{idx}. {match_label}｜{item.get('source') or '云端记忆'}"
+            with st.expander(title, expanded=idx == 1):
+                st.caption(item.get("reference_note", "历史投喂资料，需结合当前行情验证。"))
+                st.markdown("**核心观点**")
+                st.write(item.get("core_view") or FEED_MISSING_TEXT)
+                risks = item.get("risk_triggers") or []
+                if risks:
+                    st.markdown("**风险提示**")
+                    for risk in risks:
+                        st.markdown(f"- {risk}")
+                if item.get("evidence_summary"):
+                    st.markdown("**证据摘要**")
+                    st.write(item["evidence_summary"])
+                if item.get("extracted_at"):
+                    st.caption(f"提炼时间：{item['extracted_at']}")
 
     def list_display_items(value):
         if value is None:
@@ -3856,8 +4137,21 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         normalized_target = normalize_ticker(target)
         supply_profile = get_supply_chain_profile(normalized_target)
         aliases = [raw_target, target, normalized_target, supply_profile.get("name", ""), *supply_profile.get("aliases", [])]
+        memory_themes = [
+            supply_profile.get("theme", ""),
+            supply_profile.get("position", ""),
+            *supply_profile.get("core_modules", [])[:3],
+            *supply_profile.get("downstream", [])[:2],
+        ]
 
-        with st.spinner("正在合并产业链、估值、近48小时舆情和炼丹炉规则..."):
+        with st.spinner("正在合并产业链、估值、近48小时舆情、云端记忆和炼丹炉规则..."):
+            cloud_memory_context = load_relevant_memory_for_stock(
+                normalized_target,
+                company_name=[supply_profile.get("name", ""), *supply_profile.get("aliases", [])],
+                industry=supply_profile.get("theme", ""),
+                themes=memory_themes,
+                limit=5,
+            )
             valuation_snapshot = get_valuation_snapshot(normalized_target)
             technical_snapshot = compute_technical_snapshot(normalized_target)
             scenario_snapshot = simulate_monte_carlo_range(normalized_target)
@@ -3963,6 +4257,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 scenario=scenario_snapshot,
                 data_quality=data_quality_report,
                 money_flow=money_flow_snapshot,
+                cloud_memory_context=cloud_memory_context,
             )
             if main_backtest_report:
                 ai_context_packet += "\n\n【回测反哺】\n" + json.dumps(
@@ -3978,6 +4273,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 )
 
         render_trade_instruction_card(position_profile, trade_instruction)
+        render_relevant_memory_context(cloud_memory_context)
 
         with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
             base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8, base_tab9, base_tab10, base_tab11, base_tab12, base_tab13 = st.tabs([

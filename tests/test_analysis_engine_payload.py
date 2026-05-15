@@ -53,6 +53,29 @@ class AnalysisEnginePayloadTest(unittest.TestCase):
         self.assertNotIn("signals", payload["backtest_report"])
         self.assertEqual(payload["backtest_report"]["recent_trades"][0]["action"], "BUY")
 
+    def test_payload_includes_cloud_memory_context(self):
+        payload = build_ai_context_payload(
+            {"ticker": "NVDA"},
+            {},
+            [],
+            "",
+            cloud_memory_context=[
+                {
+                    "memory_type": "strategy",
+                    "match_level": "ticker",
+                    "source": "manual-feed",
+                    "core_view": "AI服务器订单需要验证",
+                }
+            ],
+        )
+
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+
+        self.assertIn("cloud_memory_context", payload)
+        self.assertEqual(payload["cloud_memory_context"][0]["match_level"], "ticker")
+        self.assertIn("历史", payload["cloud_memory_usage_note"])
+        self.assertIn("cloud_memory_context", encoded)
+
 
 if __name__ == "__main__":
     unittest.main()
