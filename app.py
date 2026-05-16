@@ -3117,8 +3117,25 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             return None
         return round(number / 100000000, 2)
 
+    def _cn_wan_to_yi(value):
+        number = _cn_float(value)
+        if number is None:
+            return None
+        return round(number / 10000, 2)
+
     def _cn_fmt_yi(value):
         return "暂无" if value is None else f"¥{value:.2f}亿"
+
+    def _cn_fmt_flow_yi(value):
+        if value is None:
+            return "暂无"
+        if value > 0:
+            direction = "净流入"
+        elif value < 0:
+            direction = "净流出"
+        else:
+            direction = "持平"
+        return f"{value:+.2f}亿 {direction}"
 
     def _cn_fmt_date(value):
         text = str(value or "")
@@ -3237,6 +3254,131 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             return base
         except Exception as e:
             base["error"] = str(e)
+            return base
+
+    def get_cn_moneyflow_data(stock_code):
+        """获取 A 股个股资金流向：Tushare moneyflow，金额字段原始单位为万元。"""
+        ts_code = _cn_ts_code(stock_code)
+        base = {
+            "available": False,
+            "message": "近5日未取得可验证个股资金流向，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。",
+            "source": "Tushare",
+            "api": "moneyflow",
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "error": "",
+        }
+        if _tushare_adapter is None:
+            base["error"] = str(TUSHARE_ADAPTER_MODULE_ERROR)
+            return base
+        if not hasattr(_tushare_adapter, "get_moneyflow"):
+            base["error"] = "tushare_adapter 未接入 moneyflow 接口"
+            return base
+
+        def net_amount(row, buy_key, sell_key):
+            buy = _cn_float(row.get(buy_key))
+            sell = _cn_float(row.get(sell_key))
+            if buy is None or sell is None:
+                return None
+            return buy - sell
+
+        def classify_error(error):
+            text = str(error or "")
+            if any(keyword in text for keyword in ["权限", "积分", "permission", "没有访问", "抱歉"]):
+                return "Tushare moneyflow 暂不可用，可能需要等待积分权限生效或检查接口权限。"
+            if any(keyword in text for keyword in ["Connection", "Network", "timed out", "NameResolution", "Max retries", "网络"]):
+                return "资金流向数据暂时获取失败，请稍后重试。"
+            return base["message"]
+
+        try:
+            rows = []
+            for trade_date in _cn_recent_trade_dates(10)[:5]:
+                flow_result = _tushare_adapter.get_moneyflow(ts_code=ts_code, trade_date=trade_date)
+                base["updated_at"] = flow_result.get("updated_at") or base["updated_at"]
+                if not flow_result.get("ok"):
+                    base["error"] = flow_result.get("error") or ""
+                    base["message"] = classify_error(base["error"])
+                    return base
+
+                flow_df = flow_result.get("data")
+                if flow_df is None or flow_df.empty:
+                    continue
+                rows.extend(_cn_frame_records(flow_df, 5))
+
+            if not rows:
+                return base
+
+            rows = sorted(rows, key=lambda item: str(item.get("trade_date") or ""), reverse=True)[:5]
+            latest = rows[0]
+
+            latest_small = net_amount(latest, "buy_sm_amount", "sell_sm_amount")
+            latest_medium = net_amount(latest, "buy_md_amount", "sell_md_amount")
+            latest_large = net_amount(latest, "buy_lg_amount", "sell_lg_amount")
+            latest_extra_large = net_amount(latest, "buy_elg_amount", "sell_elg_amount")
+            latest_main = None
+            if latest_large is not None and latest_extra_large is not None:
+                latest_main = latest_large + latest_extra_large
+
+            five_day_main = 0
+            valid_main_days = 0
+            for row in rows:
+                large = net_amount(row, "buy_lg_amount", "sell_lg_amount")
+                extra_large = net_amount(row, "buy_elg_amount", "sell_elg_amount")
+                if large is None or extra_large is None:
+                    continue
+                five_day_main += large + extra_large
+                valid_main_days += 1
+
+            if latest_main is None or valid_main_days == 0:
+                base["message"] = "资金结构暂无法验证"
+                return base
+
+            if latest_main > 0 and five_day_main > 0:
+                direction = "主力延续流入"
+            elif latest_main < 0 and five_day_main < 0:
+                direction = "主力延续流出"
+            elif latest_main > 0 and five_day_main <= 0:
+                direction = "短线资金回流"
+            elif latest_main < 0 and five_day_main >= 0:
+                direction = "短线资金转弱"
+            else:
+                direction = "资金方向分歧"
+
+            values = [latest_large, latest_medium, latest_small]
+            same_direction = all(value is not None and value > 0 for value in values) or all(value is not None and value < 0 for value in values)
+            if latest_small is None:
+                structure = "资金结构暂无法验证"
+            elif latest_main > 0 and latest_small < 0:
+                structure = "筹码偏向主力集中"
+            elif latest_main < 0 and latest_small > 0:
+                structure = "主力派发 / 散户承接迹象"
+            elif same_direction:
+                structure = "资金方向较一致"
+            elif latest_main * latest_small < 0:
+                structure = "资金结构分化，需结合量价确认"
+            else:
+                structure = "资金方向分歧"
+
+            return {
+                "available": True,
+                "date": latest.get("trade_date"),
+                "main_net_yi": _cn_wan_to_yi(latest_main),
+                "large_net_yi": _cn_wan_to_yi(latest_large),
+                "medium_net_yi": _cn_wan_to_yi(latest_medium),
+                "small_net_yi": _cn_wan_to_yi(latest_small),
+                "net_mf_yi": _cn_wan_to_yi(latest.get("net_mf_amount")),
+                "five_day_main_net_yi": _cn_wan_to_yi(five_day_main),
+                "direction": direction,
+                "structure": structure,
+                "source": "Tushare",
+                "api": "moneyflow",
+                "updated_at": base["updated_at"],
+                "rows": rows,
+                "message": "",
+                "error": "",
+            }
+        except Exception as e:
+            base["error"] = str(e)
+            base["message"] = classify_error(base["error"])
             return base
 
     @st.cache_data(ttl=3600)
@@ -3601,7 +3743,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         
         st.markdown("#### 🇨🇳 A股专业数据穿透系统")
 
-        cn_status = st.status("正在检查 A股龙虎榜与融资融券...", expanded=False)
+        cn_status = st.status("正在检查 A股龙虎榜、融资融券与资金流向...", expanded=False)
         cn_progress = st.progress(0)
         dragon_data = _run_progress_stage(
             "检查龙虎榜",
@@ -3619,9 +3761,9 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             66,
             has_data=lambda data: bool(data and data.get("available")),
         )
-        north_data = _run_progress_stage(
-            "检查北向持股披露",
-            lambda: get_cn_north_bound_data(stock_code),
+        moneyflow_data = _run_progress_stage(
+            "检查个股资金流向",
+            lambda: get_cn_moneyflow_data(stock_code),
             cn_status,
             cn_progress,
             100,
@@ -3629,7 +3771,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         )
         cn_status.update(label="完成：A股盘口数据检查", state="complete")
         
-        # 第一排：龙虎榜 + 融资融券 + 北向资金
+        # 第一排：龙虎榜 + 融资融券 + 个股资金流向
         col_a1, col_a2, col_a3 = st.columns(3)
         
         with col_a1:
@@ -3662,15 +3804,19 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             st.caption(f"数据源：{(margin_data or {}).get('source', 'Tushare')} {(margin_data or {}).get('api', 'margin_detail')}｜更新时间：{(margin_data or {}).get('updated_at', '未知')}")
         
         with col_a3:
-            st.markdown("**🌍 北向资金动向**")
-            st.caption((north_data or {}).get("status") or "北向资金日度披露口径已调整，实时买卖方向不可直接推断。")
-            if north_data and north_data.get("available"):
-                st.metric("持股日期", _cn_fmt_date(north_data.get("date")), "")
-                st.metric("持股数量", north_data.get("hold_vol") or "暂无", "")
-                st.metric("持股占比", f"{north_data.get('hold_ratio'):.4f}%" if north_data.get("hold_ratio") is not None else "暂无", "")
+            st.markdown("**💧 个股资金流向**")
+            if moneyflow_data and moneyflow_data.get("available"):
+                st.metric("主力净流入", _cn_fmt_flow_yi(moneyflow_data.get("main_net_yi")), "")
+                st.metric("大单净流入", _cn_fmt_flow_yi(moneyflow_data.get("large_net_yi")), "")
+                st.metric("中单 / 小单净流入", f"{_cn_fmt_flow_yi(moneyflow_data.get('medium_net_yi'))} / {_cn_fmt_flow_yi(moneyflow_data.get('small_net_yi'))}", "")
+                st.metric("近5日主力净流入合计", _cn_fmt_flow_yi(moneyflow_data.get("five_day_main_net_yi")), "")
+                st.caption(f"最新数据日期：{_cn_fmt_date(moneyflow_data.get('date'))}")
+                st.caption(f"最近资金方向：{moneyflow_data.get('direction') or '资金方向分歧'}")
+                st.caption(f"资金结构评价：{moneyflow_data.get('structure') or '资金结构暂无法验证'}")
             else:
-                st.info((north_data or {}).get("message") or "北向持股数据暂不可用，受披露规则限制。")
-            st.caption(f"数据源：{(north_data or {}).get('source', 'Tushare')} {(north_data or {}).get('api', 'hk_hold')}｜更新时间：{(north_data or {}).get('updated_at', '未知')}")
+                st.info((moneyflow_data or {}).get("message") or "近5日未取得可验证个股资金流向，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。")
+            st.caption(f"数据源：{(moneyflow_data or {}).get('source', 'Tushare')} {(moneyflow_data or {}).get('api', 'moneyflow')}｜更新时间：{(moneyflow_data or {}).get('updated_at', '未知')}")
+            st.caption("北向资金日度披露口径已调整，实时买卖方向不再作为核心交易信号。")
         
         st.markdown("---")
         
