@@ -191,6 +191,36 @@ def get_moneyflow(ts_code=None, trade_date=None, start_date=None, end_date=None)
     )
 
 
+def get_stk_limit(ts_code=None, trade_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "stk_limit",
+        ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_limit_list_d(ts_code=None, trade_date=None, start_date=None, end_date=None, limit_type=None):
+    return _call_pro(
+        "limit_list_d",
+        ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+        limit_type=limit_type,
+    )
+
+
+def get_limit_cpt_list(trade_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "limit_cpt_list",
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
 def get_hk_hold(ts_code=None, trade_date=None, start_date=None, end_date=None, exchange=None):
     return _call_pro(
         "hk_hold",

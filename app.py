@@ -3143,6 +3143,217 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             return f"{text[:4]}-{text[4:6]}-{text[6:]}"
         return text or "未知"
 
+    def get_cn_limit_emotion_data(stock_code, current_price=None):
+        """获取 A 股涨跌停边界与情绪数据：Tushare stk_limit / limit_list_d / limit_cpt_list。"""
+        ts_code = _cn_ts_code(stock_code)
+        updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+        base_message = "近5日未取得可验证涨跌停/情绪数据，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。"
+        base = {
+            "available": False,
+            "boundary_available": False,
+            "records_available": False,
+            "concept_available": False,
+            "message": base_message,
+            "record_message": "近5日未见该股涨跌停/炸板记录。",
+            "source": "Tushare",
+            "api": "stk_limit / limit_list_d / limit_cpt_list",
+            "updated_at": updated_at,
+            "error": "",
+            "errors": [],
+            "warning": "",
+            "ts_code": ts_code,
+            "latest_date": "",
+            "up_limit": None,
+            "down_limit": None,
+            "pre_close": None,
+            "current_price": _cn_float(current_price),
+            "distance_to_up_pct": None,
+            "distance_to_down_pct": None,
+            "limit_records": [],
+            "concept_top5": [],
+            "flags": {
+                "has_limit_up": False,
+                "has_limit_down": False,
+                "has_break_limit": False,
+                "has_consecutive_limit": False,
+            },
+        }
+
+        def classify_error(error):
+            text = str(error or "")
+            if any(keyword in text for keyword in ["权限", "积分", "permission", "没有访问", "抱歉", "token"]):
+                return "Tushare 涨跌停/情绪接口暂不可用，可能需要相应积分或接口权限。"
+            if any(keyword in text for keyword in ["Connection", "Network", "timed out", "NameResolution", "Max retries", "网络"]):
+                return "涨跌停/情绪数据暂时获取失败，请稍后重试。"
+            return base_message
+
+        def remember_error(result):
+            if not isinstance(result, dict):
+                return
+            error = result.get("error") or ""
+            if error:
+                base["error"] = error
+                base["errors"].append(error)
+                base["warning"] = classify_error(error)
+                base["message"] = base["warning"]
+            base["updated_at"] = result.get("updated_at") or base["updated_at"]
+
+        if _tushare_adapter is None:
+            base["error"] = str(TUSHARE_ADAPTER_MODULE_ERROR)
+            base["message"] = classify_error(base["error"])
+            return base
+
+        missing = [
+            name for name in ["get_stk_limit", "get_limit_list_d", "get_limit_cpt_list"]
+            if not hasattr(_tushare_adapter, name)
+        ]
+        if missing:
+            base["error"] = f"tushare_adapter 未接入接口：{', '.join(missing)}"
+            return base
+
+        try:
+            recent_dates = _cn_recent_trade_dates(10)[:5]
+            if not recent_dates:
+                return base
+
+            for trade_date in recent_dates:
+                limit_result = _tushare_adapter.get_stk_limit(ts_code=ts_code, trade_date=trade_date)
+                if not limit_result.get("ok"):
+                    remember_error(limit_result)
+                    break
+
+                limit_df = limit_result.get("data")
+                if limit_df is None or limit_df.empty:
+                    continue
+
+                row = _cn_frame_records(limit_df, 1)[0]
+                up_limit = _cn_float(row.get("up_limit"))
+                down_limit = _cn_float(row.get("down_limit"))
+                current = base.get("current_price")
+                base.update(
+                    {
+                        "boundary_available": True,
+                        "latest_date": row.get("trade_date") or trade_date,
+                        "up_limit": up_limit,
+                        "down_limit": down_limit,
+                        "pre_close": _cn_float(row.get("pre_close")),
+                        "updated_at": limit_result.get("updated_at") or base["updated_at"],
+                    }
+                )
+                if current and current > 0 and up_limit is not None:
+                    base["distance_to_up_pct"] = round((up_limit - current) / current * 100, 2)
+                if current and current > 0 and down_limit is not None:
+                    base["distance_to_down_pct"] = round((current - down_limit) / current * 100, 2)
+                break
+
+            start_date = min(recent_dates)
+            end_date = max(recent_dates)
+            records_result = _tushare_adapter.get_limit_list_d(ts_code=ts_code, start_date=start_date, end_date=end_date)
+            if records_result.get("ok"):
+                records_df = records_result.get("data")
+                if records_df is not None and not records_df.empty:
+                    raw_records = sorted(
+                        _cn_frame_records(records_df, 10),
+                        key=lambda item: str(item.get("trade_date") or ""),
+                        reverse=True,
+                    )[:5]
+                    records = []
+                    for item in raw_records:
+                        limit_value = str(item.get("limit") or item.get("limit_type") or "")
+                        type_label = {
+                            "U": "涨停",
+                            "D": "跌停",
+                            "Z": "炸板",
+                        }.get(limit_value, limit_value or "未知")
+                        limit_times = _cn_float(item.get("limit_times"))
+                        base["flags"]["has_limit_up"] = base["flags"]["has_limit_up"] or limit_value == "U" or "涨停" in type_label
+                        base["flags"]["has_limit_down"] = base["flags"]["has_limit_down"] or limit_value == "D" or "跌停" in type_label
+                        base["flags"]["has_break_limit"] = base["flags"]["has_break_limit"] or limit_value == "Z" or "炸" in type_label
+                        base["flags"]["has_consecutive_limit"] = base["flags"]["has_consecutive_limit"] or bool(limit_times and limit_times > 1)
+                        records.append(
+                            {
+                                "日期": _cn_fmt_date(item.get("trade_date")),
+                                "类型": type_label,
+                                "首次封板": item.get("first_time") or "暂无",
+                                "最后封板": item.get("last_time") or "暂无",
+                                "开板次数": item.get("open_times") if item.get("open_times") is not None else "暂无",
+                                "封单金额(亿)": _cn_amount_to_yi(item.get("fd_amount")),
+                                "板上成交额(亿)": _cn_amount_to_yi(item.get("limit_amount")),
+                                "连板统计": item.get("up_stat") or "",
+                                "连板数": item.get("limit_times") if item.get("limit_times") is not None else "",
+                            }
+                        )
+                    base["limit_records"] = records
+                    base["records_available"] = bool(records)
+            else:
+                remember_error(records_result)
+
+            concept_dates = []
+            if base.get("latest_date"):
+                concept_dates.append(base["latest_date"])
+            concept_dates.extend([date for date in recent_dates if date not in concept_dates])
+            for trade_date in concept_dates:
+                concept_result = _tushare_adapter.get_limit_cpt_list(trade_date=trade_date)
+                if not concept_result.get("ok"):
+                    remember_error(concept_result)
+                    break
+
+                concept_df = concept_result.get("data")
+                if concept_df is None or concept_df.empty:
+                    continue
+                if "rank" in concept_df.columns:
+                    try:
+                        concept_df = concept_df.assign(_rank_sort=pd.to_numeric(concept_df["rank"], errors="coerce")).sort_values("_rank_sort")
+                    except Exception:
+                        pass
+                concepts = []
+                for item in _cn_frame_records(concept_df, 5):
+                    concepts.append(
+                        {
+                            "概念": item.get("name") or item.get("ts_code") or "未知",
+                            "涨停家数": item.get("up_nums") if item.get("up_nums") is not None else "暂无",
+                            "连板家数": item.get("cons_nums") if item.get("cons_nums") is not None else "暂无",
+                            "连板高度": item.get("up_stat") or "暂无",
+                            "涨跌幅": item.get("pct_chg") if item.get("pct_chg") is not None else "暂无",
+                            "排名": item.get("rank") if item.get("rank") is not None else "暂无",
+                        }
+                    )
+                base["concept_top5"] = concepts
+                base["concept_available"] = bool(concepts)
+                base["concept_date"] = trade_date
+                base["updated_at"] = concept_result.get("updated_at") or base["updated_at"]
+                break
+
+            base["available"] = bool(base["boundary_available"] or base["records_available"] or base["concept_available"])
+            if base["available"]:
+                base["message"] = ""
+            if not base["records_available"]:
+                base["record_message"] = "近5日未见该股涨跌停/炸板记录。"
+            return base
+        except Exception as e:
+            base["error"] = str(e)
+            base["message"] = classify_error(base["error"])
+            return base
+
+    def format_cn_limit_emotion_context(limit_emotion_data):
+        data = limit_emotion_data or {}
+        if not data.get("available"):
+            return "\n\n【A股涨跌停与情绪事实】\n暂无可验证涨跌停/情绪数据。"
+        records = data.get("limit_records") or []
+        concepts = data.get("concept_top5") or []
+        return f"""
+
+【A股涨跌停与情绪事实】
+数据源：Tushare stk_limit / limit_list_d / limit_cpt_list
+涨停价：{data.get('up_limit') if data.get('up_limit') is not None else '暂无'}
+跌停价：{data.get('down_limit') if data.get('down_limit') is not None else '暂无'}
+距离涨停：{data.get('distance_to_up_pct') if data.get('distance_to_up_pct') is not None else '暂无'}%
+距离跌停：{data.get('distance_to_down_pct') if data.get('distance_to_down_pct') is not None else '暂无'}%
+近5日涨跌停/炸板记录：{json.dumps(records, ensure_ascii=False, default=str) if records else '近5日未见该股涨跌停/炸板记录。'}
+当日涨停概念强度Top5：{json.dumps(concepts, ensure_ascii=False, default=str) if concepts else '暂无'}
+约束：没有真实接口返回时，不得编造连板、炸板、封单、题材强度。
+"""
+
     def get_cn_dragon_tiger_board(stock_code):
         """获取 A 股龙虎榜数据：Tushare top_list 优先，近30日回看。"""
         ts_code = _cn_ts_code(stock_code)
@@ -3769,7 +3980,15 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             100,
             has_data=lambda data: bool(data and data.get("available")),
         )
-        cn_status.update(label="完成：A股盘口数据检查", state="complete")
+        limit_emotion_data = _run_progress_stage(
+            "检查涨跌停情绪",
+            lambda: get_cn_limit_emotion_data(stock_code, current_price=price),
+            cn_status,
+            cn_progress,
+            100,
+            has_data=lambda data: bool(data and data.get("available")),
+        )
+        cn_status.update(label="完成：A股盘口与情绪数据检查", state="complete")
         
         # 第一排：龙虎榜 + 融资融券 + 个股资金流向
         col_a1, col_a2, col_a3 = st.columns(3)
@@ -3817,6 +4036,50 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 st.info((moneyflow_data or {}).get("message") or "近5日未取得可验证个股资金流向，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。")
             st.caption(f"数据源：{(moneyflow_data or {}).get('source', 'Tushare')} {(moneyflow_data or {}).get('api', 'moneyflow')}｜更新时间：{(moneyflow_data or {}).get('updated_at', '未知')}")
             st.caption("北向资金日度披露口径已调整，实时买卖方向不再作为核心交易信号。")
+
+        st.markdown("**📈 A股情绪与涨跌停边界**")
+
+        def _cn_fmt_limit_price(value):
+            number = _cn_float(value)
+            return "暂无" if number is None else f"¥{number:.2f}"
+
+        def _cn_fmt_limit_pct(value):
+            number = _cn_float(value)
+            return "暂无" if number is None else f"{number:+.2f}%"
+
+        if limit_emotion_data and limit_emotion_data.get("available"):
+            e1, e2, e3, e4, e5 = st.columns(5)
+            e1.metric("涨停价", _cn_fmt_limit_price(limit_emotion_data.get("up_limit")))
+            e2.metric("跌停价", _cn_fmt_limit_price(limit_emotion_data.get("down_limit")))
+            e3.metric("距涨停", _cn_fmt_limit_pct(limit_emotion_data.get("distance_to_up_pct")))
+            e4.metric("距跌停", _cn_fmt_limit_pct(limit_emotion_data.get("distance_to_down_pct")))
+            e5.metric("数据日期", _cn_fmt_date(limit_emotion_data.get("latest_date") or limit_emotion_data.get("concept_date")))
+
+            record_rows = limit_emotion_data.get("limit_records") or []
+            concept_rows = limit_emotion_data.get("concept_top5") or []
+            record_col, concept_col = st.columns(2)
+            with record_col:
+                st.markdown("##### 近5日涨跌停 / 炸板 / 连板记录")
+                if record_rows:
+                    st.dataframe(pd.DataFrame(record_rows), width="stretch")
+                else:
+                    st.info("近5日未见该股涨跌停/炸板记录。")
+            with concept_col:
+                st.markdown("##### 当日涨停概念强度 Top 5")
+                if concept_rows:
+                    st.dataframe(pd.DataFrame(concept_rows), width="stretch")
+                else:
+                    st.info("暂未取得当日涨停概念强度数据。")
+        else:
+            st.info((limit_emotion_data or {}).get("message") or "近5日未取得可验证涨跌停/情绪数据，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。")
+        st.caption(
+            "数据源："
+            f"{(limit_emotion_data or {}).get('source', 'Tushare')} "
+            f"{(limit_emotion_data or {}).get('api', 'stk_limit / limit_list_d / limit_cpt_list')}"
+            f"｜更新时间：{(limit_emotion_data or {}).get('updated_at', '未知')}"
+        )
+        if (limit_emotion_data or {}).get("warning"):
+            st.caption(f"提示：{(limit_emotion_data or {}).get('warning')}")
         
         st.markdown("---")
         
@@ -4707,6 +4970,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             *supply_profile.get("downstream", [])[:2],
         ]
         tushare_verified_source = {}
+        limit_emotion_snapshot = {}
 
         if True:
             cloud_memory_context = _run_progress_stage(
@@ -4780,6 +5044,21 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                     tushare_verified_source = {
                         "ok": False,
                         "status": "Tushare 补充失败",
+                        "error": str(e),
+                    }
+                try:
+                    limit_emotion_snapshot = _run_progress_stage(
+                        "读取涨跌停情绪事实",
+                        lambda: get_cn_limit_emotion_data(normalized_target, current_price=price),
+                        main_status,
+                        main_progress,
+                        58,
+                        has_data=lambda data: bool(data and data.get("available")),
+                    )
+                except Exception as e:
+                    limit_emotion_snapshot = {
+                        "available": False,
+                        "message": "近5日未取得可验证涨跌停/情绪数据，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。",
                         "error": str(e),
                     }
             portfolio_health = compute_portfolio_health(
@@ -4888,6 +5167,8 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 money_flow=money_flow_snapshot,
                 cloud_memory_context=cloud_memory_context,
             )
+            if is_a_share_market(market_type):
+                ai_context_packet += format_cn_limit_emotion_context(limit_emotion_snapshot)
             if main_backtest_report:
                 ai_context_packet += "\n\n【回测反哺】\n" + json.dumps(
                     compact_report_for_prompt(main_backtest_report),
