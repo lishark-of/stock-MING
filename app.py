@@ -489,6 +489,59 @@ def cached_micro_data(ticker, market_type, deep=False):
     )
 
 
+def _progress_result_has_data(result):
+    if result is None:
+        return False
+    if hasattr(result, "empty"):
+        try:
+            return not result.empty
+        except Exception:
+            return True
+    if isinstance(result, (list, tuple, set)):
+        return len(result) > 0
+    if isinstance(result, str):
+        return bool(result.strip())
+    if isinstance(result, dict):
+        if result.get("available") is False and not result.get("ok"):
+            return False
+        if result.get("ok") is False and not result.get("available"):
+            return False
+        meaningful_keys = [
+            "individual_fund_flow",
+            "dragon_tiger",
+            "block_trade",
+            "fund_flow",
+            "raw_rows",
+            "inst_rows",
+            "market_news",
+            "processed_sources",
+            "manager_rules",
+            "manager_scores",
+            "auto_runs",
+        ]
+        if any(key in result for key in meaningful_keys):
+            return any(result.get(key) for key in meaningful_keys)
+        return bool(result)
+    return True
+
+
+def _run_progress_stage(label, action, status_box=None, progress_bar=None, progress_value=None, has_data=None):
+    if status_box is not None:
+        status_box.update(label=f"{label}...")
+    if progress_bar is not None and progress_value is not None:
+        progress_bar.progress(progress_value)
+
+    start_time = time.perf_counter()
+    result = action()
+    elapsed = time.perf_counter() - start_time
+    result_has_data = has_data(result) if callable(has_data) else _progress_result_has_data(result)
+    if result_has_data:
+        (status_box or st).write(f"完成：{label}，用时 {elapsed:.1f}s")
+    else:
+        (status_box or st).write(f"完成：{label}，用时 {elapsed:.1f}s。该项暂无可验证数据，继续分析")
+    return result
+
+
 def _parse_datetime_safe(value):
     if not value:
         return None
@@ -3547,13 +3600,40 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         stock_code = target.split('.')[0]
         
         st.markdown("#### 🇨🇳 A股专业数据穿透系统")
+
+        cn_status = st.status("正在检查 A股龙虎榜与融资融券...", expanded=False)
+        cn_progress = st.progress(0)
+        dragon_data = _run_progress_stage(
+            "检查龙虎榜",
+            lambda: get_cn_dragon_tiger_board(stock_code),
+            cn_status,
+            cn_progress,
+            33,
+            has_data=lambda data: bool(data and data.get("available")),
+        )
+        margin_data = _run_progress_stage(
+            "检查融资融券",
+            lambda: get_cn_margin_data(stock_code),
+            cn_status,
+            cn_progress,
+            66,
+            has_data=lambda data: bool(data and data.get("available")),
+        )
+        north_data = _run_progress_stage(
+            "检查北向持股披露",
+            lambda: get_cn_north_bound_data(stock_code),
+            cn_status,
+            cn_progress,
+            100,
+            has_data=lambda data: bool(data and data.get("available")),
+        )
+        cn_status.update(label="完成：A股盘口数据检查", state="complete")
         
         # 第一排：龙虎榜 + 融资融券 + 北向资金
         col_a1, col_a2, col_a3 = st.columns(3)
         
         with col_a1:
             st.markdown("**🐯 龙虎榜追踪**")
-            dragon_data = get_cn_dragon_tiger_board(stock_code)
             if dragon_data and dragon_data.get("available"):
                 st.metric("上榜日期", _cn_fmt_date(dragon_data.get("latest_date")), "")
                 if dragon_data.get("reason"):
@@ -3568,7 +3648,6 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         
         with col_a2:
             st.markdown("**💰 融资融券监测**")
-            margin_data = get_cn_margin_data(stock_code)
             if margin_data and margin_data.get("available"):
                 st.metric("融资余额", _cn_fmt_yi(margin_data.get("financing_balance_yi")), "")
                 st.metric("融资买入额", _cn_fmt_yi(margin_data.get("financing_buy_yi")), "")
@@ -3584,7 +3663,6 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         
         with col_a3:
             st.markdown("**🌍 北向资金动向**")
-            north_data = get_cn_north_bound_data(stock_code)
             st.caption((north_data or {}).get("status") or "北向资金日度披露口径已调整，实时买卖方向不可直接推断。")
             if north_data and north_data.get("available"):
                 st.metric("持股日期", _cn_fmt_date(north_data.get("date")), "")
@@ -3632,18 +3710,26 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             call_deepseek_stream(improved_prompt, system_role="作为顶级A股量化基金经理")
 
         if btn_whale:
-            with st.spinner("正在分析巨鲸资金..."):
-                hist_5d = get_historical_data(target, 
+            whale_status = st.status("正在分析巨鲸资金...", expanded=True)
+            whale_progress = st.progress(0)
+            hist_5d = _run_progress_stage(
+                "读取近 5 日量价",
+                lambda: get_historical_data(target, 
                     (datetime.datetime.now() - datetime.timedelta(days=10)).strftime('%Y-%m-%d'), 
-                    datetime.datetime.now().strftime('%Y-%m-%d'))
-                
-                volume_data = "近期无数据"
-                if not hist_5d.empty:
-                    recent_data = hist_5d[['Close', 'Volume']].tail(5)
-                    volume_data = recent_data.to_string()
+                    datetime.datetime.now().strftime('%Y-%m-%d')),
+                whale_status,
+                whale_progress,
+                25,
+            )
+            
+            volume_data = "近期无数据"
+            if not hist_5d.empty:
+                recent_data = hist_5d[['Close', 'Volume']].tail(5)
+                volume_data = recent_data.to_string()
 
+            def build_whale_lhb_context():
                 if dragon_data and dragon_data.get("available"):
-                    lhb_context = json.dumps(
+                    return json.dumps(
                         {
                             "source": "Tushare",
                             "api": "top_list/top_inst",
@@ -3657,10 +3743,18 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                         ensure_ascii=False,
                         default=str,
                     )
-                else:
-                    lhb_context = "未见龙虎榜上榜记录"
-                
-                whale_prompt = f"""
+                return "未见龙虎榜上榜记录"
+
+            lhb_context = _run_progress_stage(
+                "整理龙虎榜上下文",
+                build_whale_lhb_context,
+                whale_status,
+                whale_progress,
+                50,
+                has_data=lambda data: bool(data and data != "未见龙虎榜上榜记录"),
+            )
+            
+            whale_prompt = f"""
 		                你是陆家嘴资金流向分析师。标的：{target}。当前价：¥{price}。
 		                
 		                请执行【宏观机构与微观盘口双重穿透】：
@@ -3672,9 +3766,29 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
 	                量价数据：{volume_data}
 	                龙虎榜真实数据：{lhb_context}
 	                """
-                
+
+            def run_whale_deepseek():
                 st.markdown("### 🐳 巨鲸资金嗅探")
                 call_deepseek_stream(whale_prompt, system_role="你是A股盘口与机构解剖机器")
+                return True
+
+            _run_progress_stage(
+                "调用 DeepSeek 推理",
+                run_whale_deepseek,
+                whale_status,
+                whale_progress,
+                85,
+                has_data=lambda _: True,
+            )
+            _run_progress_stage(
+                "生成巨鲸资金结果",
+                lambda: True,
+                whale_status,
+                whale_progress,
+                100,
+                has_data=lambda _: True,
+            )
+            whale_status.update(label="完成：巨鲸资金结果", state="complete")
 
     # ==========================================
     # 4. 主界面
@@ -4418,13 +4532,27 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:
         st.markdown(f"### 📈 实时穿透：{target} ({market_badge})")
-        stock_logic_rules = load_stock_logic_rules(target)
+        main_status = st.status("正在生成单票深度诊断...", expanded=True)
+        main_progress = st.progress(0)
+        stock_logic_rules = _run_progress_stage(
+            "读取炼丹炉规则",
+            lambda: load_stock_logic_rules(target),
+            main_status,
+            main_progress,
+            5,
+        )
         stock_logic_inject = (
             f"\n\n【{target} 自动炼丹专属规则】\n{stock_logic_rules}"
             if stock_logic_rules else ""
         )
         normalized_target = normalize_ticker(target)
-        supply_profile = get_supply_chain_profile(normalized_target)
+        supply_profile = _run_progress_stage(
+            "读取基础行情与估值",
+            lambda: get_supply_chain_profile(normalized_target),
+            main_status,
+            main_progress,
+            10,
+        )
         aliases = [raw_target, target, normalized_target, supply_profile.get("name", ""), *supply_profile.get("aliases", [])]
         memory_themes = [
             supply_profile.get("theme", ""),
@@ -4434,36 +4562,73 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         ]
         tushare_verified_source = {}
 
-        with st.spinner("正在合并产业链、估值、近48小时舆情、云端记忆和炼丹炉规则..."):
-            cloud_memory_context = load_relevant_memory_for_stock(
-                normalized_target,
-                company_name=[supply_profile.get("name", ""), *supply_profile.get("aliases", [])],
-                industry=supply_profile.get("theme", ""),
-                themes=memory_themes,
-                limit=5,
+        if True:
+            cloud_memory_context = _run_progress_stage(
+                "召回云端记忆",
+                lambda: load_relevant_memory_for_stock(
+                    normalized_target,
+                    company_name=[supply_profile.get("name", ""), *supply_profile.get("aliases", [])],
+                    industry=supply_profile.get("theme", ""),
+                    themes=memory_themes,
+                    limit=5,
+                ),
+                main_status,
+                main_progress,
+                20,
             )
-            valuation_snapshot = get_valuation_snapshot(normalized_target)
-            technical_snapshot = compute_technical_snapshot(normalized_target)
-            scenario_snapshot = simulate_monte_carlo_range(normalized_target)
-            money_flow_snapshot = cached_money_flow_snapshot(normalized_target, market_type, deep=False)
-            recent_news_rows = call_with_supported_kwargs(
-                build_recent_news_context,
-                supabase,
-                normalized_target,
-                aliases=aliases,
-                days=2,
-                limit=12,
-                market_type=market_type,
+
+            def load_base_snapshots():
+                return (
+                    get_valuation_snapshot(normalized_target),
+                    compute_technical_snapshot(normalized_target),
+                    simulate_monte_carlo_range(normalized_target),
+                )
+
+            valuation_snapshot, technical_snapshot, scenario_snapshot = _run_progress_stage(
+                "读取基础行情与估值",
+                load_base_snapshots,
+                main_status,
+                main_progress,
+                30,
+            )
+            money_flow_snapshot = _run_progress_stage(
+                "合并资金面数据",
+                lambda: cached_money_flow_snapshot(normalized_target, market_type, deep=False),
+                main_status,
+                main_progress,
+                40,
+            )
+            recent_news_rows = _run_progress_stage(
+                "召回近48小时舆情",
+                lambda: call_with_supported_kwargs(
+                    build_recent_news_context,
+                    supabase,
+                    normalized_target,
+                    aliases=aliases,
+                    days=2,
+                    limit=12,
+                    market_type=market_type,
+                ),
+                main_status,
+                main_progress,
+                48,
             )
             if is_a_share_market(market_type):
                 try:
                     tushare_end = datetime.date.today()
                     tushare_start = tushare_end - datetime.timedelta(days=30)
-                    tushare_verified_source = cached_fetch_tushare_a_share_basics(
-                        normalized_target,
-                        tushare_start.isoformat(),
-                        tushare_end.isoformat(),
-                        cache_version="main_diag_tushare_v1",
+                    tushare_verified_source = _run_progress_stage(
+                        "读取基础行情与估值",
+                        lambda: cached_fetch_tushare_a_share_basics(
+                            normalized_target,
+                            tushare_start.isoformat(),
+                            tushare_end.isoformat(),
+                            cache_version="main_diag_tushare_v1",
+                        ),
+                        main_status,
+                        main_progress,
+                        55,
+                        has_data=lambda data: bool(data and data.get("ok")),
                     )
                 except Exception as e:
                     tushare_verified_source = {
@@ -4487,13 +4652,19 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             try:
                 bt_end_auto = datetime.date.today()
                 bt_start_auto = bt_end_auto - datetime.timedelta(days=365 * 2)
-                bt_price_frame = cached_fetch_ohlcv(
-                    normalized_target,
-                    market_type,
-                    bt_start_auto.isoformat(),
-                    (bt_end_auto + datetime.timedelta(days=1)).isoformat(),
-                    provider="auto",
-                    cache_version="main_auto_v3",
+                bt_price_frame = _run_progress_stage(
+                    "读取基础行情与估值",
+                    lambda: cached_fetch_ohlcv(
+                        normalized_target,
+                        market_type,
+                        bt_start_auto.isoformat(),
+                        (bt_end_auto + datetime.timedelta(days=1)).isoformat(),
+                        provider="auto",
+                        cache_version="main_auto_v3",
+                    ),
+                    main_status,
+                    main_progress,
+                    62,
                 )
                 if not bt_price_frame.empty:
                     main_backtest_report = run_backtest(
@@ -4510,7 +4681,13 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                     backtest_warning = "主诊断未抓到可用行情，回测反哺为空。"
             except Exception as e:
                 backtest_warning = f"主诊断回测反哺失败：{e}"
-            auto_feedback_for_freshness = load_auto_feed_feedback(limit=4)
+            auto_feedback_for_freshness = _run_progress_stage(
+                "召回云端记忆",
+                lambda: load_auto_feed_feedback(limit=4),
+                main_status,
+                main_progress,
+                70,
+            )
             freshness_report = build_data_freshness_report(
                 technical=technical_snapshot,
                 news_rows=recent_news_rows,
@@ -4593,6 +4770,18 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                     default=str,
                 )
 
+            _run_progress_stage(
+                "生成单票深度诊断",
+                lambda: True,
+                main_status,
+                main_progress,
+                90,
+                has_data=lambda _: True,
+            )
+            main_status.write("调用 DeepSeek 推理：等待点击“生成私人交易助手建议”后执行")
+            main_progress.progress(100)
+            main_status.update(label="完成：单票深度诊断底座", state="complete")
+
         if tushare_verified_source.get("ok"):
             st.caption(
                 "已验证数据来源：Tushare"
@@ -4637,11 +4826,43 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                     st.caption("主报告默认使用快速资金模式；完整龙虎榜/大宗交易扫描需要手动触发，避免阻塞诊股。")
                     deep_key = f"deep_money_flow_{normalized_target}_{market_type}"
                     if st.button("深度资金扫描 / 运行完整龙虎榜与资金流", key=f"btn_{deep_key}"):
-                        with st.spinner("正在运行完整资金扫描，可能较慢..."):
-                            try:
-                                st.session_state[deep_key] = cached_money_flow_snapshot(normalized_target, market_type, deep=True)
-                            except Exception as e:
-                                st.session_state[deep_key] = {"warnings": [f"深度资金扫描失败：{e}"]}
+                        deep_status = st.status("正在运行完整资金扫描，可能较慢...", expanded=True)
+                        deep_progress = st.progress(0)
+                        try:
+                            deep_result = _run_progress_stage(
+                                "读取 Akshare 个股资金流",
+                                lambda: cached_money_flow_snapshot(normalized_target, market_type, deep=True),
+                                deep_status,
+                                deep_progress,
+                                35,
+                            )
+                            _run_progress_stage(
+                                "检查龙虎榜",
+                                lambda: (deep_result or {}).get("dragon_tiger", []),
+                                deep_status,
+                                deep_progress,
+                                60,
+                            )
+                            _run_progress_stage(
+                                "检查大宗交易",
+                                lambda: (deep_result or {}).get("block_trade", []),
+                                deep_status,
+                                deep_progress,
+                                80,
+                            )
+                            _run_progress_stage(
+                                "生成资金扫描结论",
+                                lambda: (deep_result or {}).get("summary", {}),
+                                deep_status,
+                                deep_progress,
+                                100,
+                                has_data=lambda _: True,
+                            )
+                            st.session_state[deep_key] = deep_result
+                            deep_status.update(label="完成：完整资金扫描", state="complete")
+                        except Exception as e:
+                            st.session_state[deep_key] = {"warnings": [f"深度资金扫描失败：{e}"]}
+                            deep_status.update(label="完整资金扫描结束", state="complete")
                     if st.session_state.get(deep_key):
                         st.markdown("##### 深度资金扫描结果")
                         render_money_flow_module(st.session_state[deep_key])
@@ -4676,23 +4897,47 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 )
 
         if st.button("🧠 生成私人交易助手建议", key=f"private_assistant_{normalized_target}", type="primary"):
-            assistant_prompt = build_position_aware_prompt_safe(
-                normalized_target,
-                price,
-                position_status,
-                capital_plan,
-                ai_context_packet,
-                strict_decision,
-                money_flow_text(money_flow_snapshot),
-                technical=technical_snapshot,
-                scenario=scenario_snapshot,
-                data_quality=data_quality_report,
-                position_profile=position_profile,
+            assistant_status = st.status("正在调用 DeepSeek 推理...", expanded=True)
+            assistant_progress = st.progress(0)
+            assistant_prompt = _run_progress_stage(
+                "生成单票深度诊断",
+                lambda: build_position_aware_prompt_safe(
+                    normalized_target,
+                    price,
+                    position_status,
+                    capital_plan,
+                    ai_context_packet,
+                    strict_decision,
+                    money_flow_text(money_flow_snapshot),
+                    technical=technical_snapshot,
+                    scenario=scenario_snapshot,
+                    data_quality=data_quality_report,
+                    position_profile=position_profile,
+                ),
+                assistant_status,
+                assistant_progress,
+                35,
             )
-            call_deepseek_stream(
-                assistant_prompt,
-                system_role="你是私人交易助手，必须先处理风险，再给建仓或持仓动作。",
+            _run_progress_stage(
+                "调用 DeepSeek 推理",
+                lambda: call_deepseek_stream(
+                    assistant_prompt,
+                    system_role="你是私人交易助手，必须先处理风险，再给建仓或持仓动作。",
+                ),
+                assistant_status,
+                assistant_progress,
+                85,
+                has_data=lambda _: True,
             )
+            _run_progress_stage(
+                "生成单票深度诊断",
+                lambda: True,
+                assistant_status,
+                assistant_progress,
+                100,
+                has_data=lambda _: True,
+            )
+            assistant_status.update(label="完成：DeepSeek 单票诊断", state="complete")
         
         if market_type == "US_STOCK":
             st.markdown("""
