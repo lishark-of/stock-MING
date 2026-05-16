@@ -3017,50 +3017,174 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
     # ✨✨✨ A股专业数据补充（重装抗震版）✨✨✨
     # ==========================================
 
-    @st.cache_data(ttl=600)
+    def _cn_ts_code(stock_code):
+        code = str(stock_code or "").split(".")[0].zfill(6)
+        if code.startswith("6"):
+            return f"{code}.SH"
+        if code.startswith(("0", "3")):
+            return f"{code}.SZ"
+        if code.startswith(("4", "8")):
+            return f"{code}.BJ"
+        return code
+
+    def _cn_recent_trade_dates(days=30):
+        today = datetime.date.today()
+        start = today - datetime.timedelta(days=days)
+        if _tushare_adapter is not None and hasattr(_tushare_adapter, "get_trade_cal"):
+            cal_result = _tushare_adapter.get_trade_cal(start.isoformat(), today.isoformat())
+            cal_df = cal_result.get("data") if isinstance(cal_result, dict) else None
+            if cal_df is not None and not cal_df.empty and "cal_date" in cal_df.columns:
+                if "is_open" in cal_df.columns:
+                    cal_df = cal_df[cal_df["is_open"].astype(str) == "1"]
+                dates = sorted(cal_df["cal_date"].astype(str).tolist(), reverse=True)
+                if dates:
+                    return dates
+        return [
+            (today - datetime.timedelta(days=offset)).strftime("%Y%m%d")
+            for offset in range(days + 1)
+            if (today - datetime.timedelta(days=offset)).weekday() < 5
+        ]
+
+    def _cn_frame_records(df, limit=8):
+        if df is None or df.empty:
+            return []
+        return df.head(limit).where(pd.notna(df), None).to_dict("records")
+
+    def _cn_float(value):
+        try:
+            if value is None or pd.isna(value):
+                return None
+            return float(value)
+        except Exception:
+            return None
+
+    def _cn_amount_to_yi(value):
+        number = _cn_float(value)
+        if number is None:
+            return None
+        return round(number / 100000000, 2)
+
+    def _cn_fmt_yi(value):
+        return "暂无" if value is None else f"¥{value:.2f}亿"
+
+    def _cn_fmt_date(value):
+        text = str(value or "")
+        if len(text) == 8 and text.isdigit():
+            return f"{text[:4]}-{text[4:6]}-{text[6:]}"
+        return text or "未知"
+
     def get_cn_dragon_tiger_board(stock_code):
-        """获取 A 股龙虎榜数据 (升级版)"""
-        try:
-            import akshare as ak
-            # 换用最新的 em (东方财富) 接口，规避 daily 报错
-            today = datetime.datetime.now().strftime("%Y%m%d")
-            df = ak.stock_lhb_detail_em(start_date=today, end_date=today)
-            if df is None or df.empty: return None
-            
-            # 过滤出当前目标标的
-            target_df = df[df['代码'] == stock_code]
-            if target_df.empty: return None
-            
-            return {
-                'latest_date': today,
-                'buy_seats': "需深度穿透", 
-                'top_buyer': "上榜机构/游资"
-            }
-        except Exception as e:
-            return None
-
-    @st.cache_data(ttl=300)
-    def get_cn_margin_data(stock_code):
-        """获取 A 股融资融券数据 (降级抗震)"""
-        try:
-            import akshare as ak
-            # 单票实时融资融券接口极其脆弱，加入强力降级保护
-            # 若接口失效，直接返回引导提示而不是页面崩溃
-            return {
-                'financing_balance': "数据延迟",
-                'financing_ratio': 0,
-            }
-        except:
-            return None
-
-    @st.cache_data(ttl=300)
-    def get_cn_north_bound_data():
-        """获取北向资金 (适配最新交易所盲盒规则)"""
-        return {
-            'date': "最新监管规则",
-            'net_flow': "盘中已屏蔽",
-            'status': "交易所已关闭盘中实时披露，请关注收盘总额"
+        """获取 A 股龙虎榜数据：Tushare top_list 优先，近30日回看。"""
+        ts_code = _cn_ts_code(stock_code)
+        base = {
+            "available": False,
+            "message": "近30日未见龙虎榜上榜记录",
+            "source": "Tushare",
+            "api": "top_list",
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "error": "",
         }
+        if _tushare_adapter is None:
+            base["error"] = str(TUSHARE_ADAPTER_MODULE_ERROR)
+            return base
+
+        try:
+            for trade_date in _cn_recent_trade_dates(30):
+                top_result = _tushare_adapter.get_top_list(trade_date=trade_date, ts_code=ts_code)
+                base["updated_at"] = top_result.get("updated_at") or base["updated_at"]
+                if not top_result.get("ok"):
+                    base["error"] = top_result.get("error") or ""
+                    break
+
+                top_df = top_result.get("data")
+                if top_df is None or top_df.empty:
+                    continue
+
+                row = _cn_frame_records(top_df, 1)[0]
+                inst_rows = []
+                inst_summary = ""
+                if hasattr(_tushare_adapter, "get_top_inst"):
+                    inst_result = _tushare_adapter.get_top_inst(trade_date=trade_date, ts_code=ts_code)
+                    inst_df = inst_result.get("data") if isinstance(inst_result, dict) else None
+                    inst_rows = _cn_frame_records(inst_df, 8)
+                    buy_total = sum((_cn_float(item.get("buy")) or 0) for item in inst_rows)
+                    sell_total = sum((_cn_float(item.get("sell")) or 0) for item in inst_rows)
+                    net_total = sum((_cn_float(item.get("net_buy")) or 0) for item in inst_rows)
+                    if inst_rows:
+                        inst_summary = (
+                            f"席位{len(inst_rows)}条，买入{_cn_fmt_yi(_cn_amount_to_yi(buy_total))}，"
+                            f"卖出{_cn_fmt_yi(_cn_amount_to_yi(sell_total))}，"
+                            f"净买入{_cn_fmt_yi(_cn_amount_to_yi(net_total))}"
+                        )
+
+                return {
+                    "available": True,
+                    "latest_date": row.get("trade_date") or trade_date,
+                    "reason": row.get("explain") or row.get("reason") or "",
+                    "close": _cn_float(row.get("close")),
+                    "pct_change": _cn_float(row.get("pct_change")),
+                    "buy_amount_yi": _cn_amount_to_yi(row.get("buy")),
+                    "sell_amount_yi": _cn_amount_to_yi(row.get("sell")),
+                    "net_buy_amount_yi": _cn_amount_to_yi(row.get("net_amount") if row.get("net_amount") is not None else row.get("net_buy")),
+                    "source": "Tushare",
+                    "api": "top_list",
+                    "updated_at": top_result.get("updated_at") or base["updated_at"],
+                    "raw_rows": _cn_frame_records(top_df, 3),
+                    "inst_rows": inst_rows,
+                    "inst_summary": inst_summary,
+                    "message": "",
+                    "error": "",
+                }
+            return base
+        except Exception as e:
+            base["error"] = str(e)
+            return base
+
+    def get_cn_margin_data(stock_code):
+        """获取 A 股融资融券数据：Tushare margin_detail 优先。"""
+        ts_code = _cn_ts_code(stock_code)
+        base = {
+            "available": False,
+            "message": "融资融券数据暂不可用或权限不足",
+            "source": "Tushare",
+            "api": "margin_detail",
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "error": "",
+        }
+        if _tushare_adapter is None:
+            base["error"] = str(TUSHARE_ADAPTER_MODULE_ERROR)
+            return base
+
+        try:
+            for trade_date in _cn_recent_trade_dates(30):
+                margin_result = _tushare_adapter.get_margin_detail(trade_date=trade_date, ts_code=ts_code)
+                base["updated_at"] = margin_result.get("updated_at") or base["updated_at"]
+                if not margin_result.get("ok"):
+                    base["error"] = margin_result.get("error") or ""
+                    break
+
+                margin_df = margin_result.get("data")
+                if margin_df is None or margin_df.empty:
+                    continue
+
+                row = _cn_frame_records(margin_df, 1)[0]
+                return {
+                    "available": True,
+                    "date": row.get("trade_date") or trade_date,
+                    "financing_balance_yi": _cn_amount_to_yi(row.get("rzye")),
+                    "financing_buy_yi": _cn_amount_to_yi(row.get("rzmre")),
+                    "short_sell_volume": _cn_float(row.get("rqyl")),
+                    "margin_balance_yi": _cn_amount_to_yi(row.get("rzrqye")),
+                    "source": "Tushare",
+                    "api": "margin_detail",
+                    "updated_at": margin_result.get("updated_at") or base["updated_at"],
+                    "message": "",
+                    "error": "",
+                }
+            return base
+        except Exception as e:
+            base["error"] = str(e)
+            return base
 
     @st.cache_data(ttl=3600)
     def get_cn_fund_holdings(stock_code):
@@ -3078,22 +3202,78 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         except:
             return None
 
-    @st.cache_data(ttl=300)
-    def get_cn_north_bound_data():
-        """获取北向资金实时数据"""
+    def get_cn_north_bound_data(stock_code=None):
+        """获取北向持股披露口径数据，不推断实时买卖方向。"""
+        ts_code = _cn_ts_code(stock_code) if stock_code else None
+        base = {
+            "available": False,
+            "message": "北向持股数据暂不可用，受披露规则限制。",
+            "status": "北向资金日度披露口径已调整，实时买卖方向不可直接推断。",
+            "source": "Tushare",
+            "api": "hk_hold",
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "error": "",
+        }
         try:
-            import akshare as ak
-            df = ak.bond_zh_hs_north_net_flow_in()
-            if df.empty:
-                return None
-            
-            latest = df.iloc[0]
-            return {
-                'date': latest.get('日期', ''),
-                'net_flow': latest.get('北向资金（亿）', 0),
-            }
-        except:
-            return None
+            if _tushare_adapter is not None and hasattr(_tushare_adapter, "get_hk_hold"):
+                for trade_date in _cn_recent_trade_dates(30):
+                    hold_result = _tushare_adapter.get_hk_hold(ts_code=ts_code, trade_date=trade_date)
+                    base["updated_at"] = hold_result.get("updated_at") or base["updated_at"]
+                    if not hold_result.get("ok"):
+                        base["error"] = hold_result.get("error") or ""
+                        break
+
+                    hold_df = hold_result.get("data")
+                    if hold_df is None or hold_df.empty:
+                        continue
+
+                    row = _cn_frame_records(hold_df, 1)[0]
+                    return {
+                        "available": True,
+                        "date": row.get("trade_date") or trade_date,
+                        "hold_vol": _cn_float(row.get("vol")),
+                        "hold_ratio": _cn_float(row.get("ratio")),
+                        "exchange": row.get("exchange") or "",
+                        "source": "Tushare",
+                        "api": "hk_hold",
+                        "updated_at": hold_result.get("updated_at") or base["updated_at"],
+                        "status": base["status"],
+                        "message": "",
+                        "error": "",
+                    }
+                if base["error"]:
+                    return base
+
+            try:
+                import akshare as ak
+                df = ak.stock_hsgt_hold_stock_em(market="北向", indicator="今日排行")
+                if df is not None and not df.empty:
+                    code = str(stock_code or "").zfill(6)
+                    code_cols = [col for col in df.columns if "代码" in str(col)]
+                    for col in code_cols:
+                        match = df[df[col].astype(str).str.contains(code, na=False)]
+                        if not match.empty:
+                            row = match.head(1).where(pd.notna(match), None).to_dict("records")[0]
+                            return {
+                                "available": True,
+                                "date": row.get("日期") or "最新披露",
+                                "hold_vol": _cn_float(row.get("持股数")),
+                                "hold_ratio": _cn_float(row.get("持股占比")),
+                                "exchange": "",
+                                "source": "Akshare",
+                                "api": "stock_hsgt_hold_stock_em",
+                                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                                "status": "非实时/口径可能受限。北向资金日度披露口径已调整，实时买卖方向不可直接推断。",
+                                "message": "",
+                                "error": "",
+                            }
+            except Exception as fallback_error:
+                if not base["error"]:
+                    base["error"] = str(fallback_error)
+            return base
+        except Exception as e:
+            base["error"] = str(e)
+            return base
 
     # ==========================================
     # 美股技术面分析
@@ -3374,65 +3554,45 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         with col_a1:
             st.markdown("**🐯 龙虎榜追踪**")
             dragon_data = get_cn_dragon_tiger_board(stock_code)
-            if dragon_data:
-                st.metric("最新龙虎榜", dragon_data['latest_date'], "")
-                st.metric("游资买入席位", dragon_data['buy_seats'], "")
-                if dragon_data['top_buyer']:
-                    st.caption(f"💡 最大买家：{dragon_data['top_buyer']}")
+            if dragon_data and dragon_data.get("available"):
+                st.metric("上榜日期", _cn_fmt_date(dragon_data.get("latest_date")), "")
+                if dragon_data.get("reason"):
+                    st.caption(f"上榜原因：{dragon_data.get('reason')}")
+                st.metric("收盘价 / 涨跌幅", f"{dragon_data.get('close') or '暂无'} / {dragon_data.get('pct_change') or '暂无'}%", "")
+                st.metric("买入 / 卖出 / 净买入", f"{_cn_fmt_yi(dragon_data.get('buy_amount_yi'))} / {_cn_fmt_yi(dragon_data.get('sell_amount_yi'))} / {_cn_fmt_yi(dragon_data.get('net_buy_amount_yi'))}", "")
+                if dragon_data.get("inst_summary"):
+                    st.caption(f"机构席位摘要：{dragon_data.get('inst_summary')}")
             else:
-                st.info("暂无龙虎榜数据")
+                st.info((dragon_data or {}).get("message") or "近30日未见龙虎榜上榜记录")
+            st.caption(f"数据源：{(dragon_data or {}).get('source', 'Tushare')} {(dragon_data or {}).get('api', 'top_list')}｜更新时间：{(dragon_data or {}).get('updated_at', '未知')}")
         
         with col_a2:
             st.markdown("**💰 融资融券监测**")
             margin_data = get_cn_margin_data(stock_code)
-            
-            # ==========================================
-            # 🛡️ 融资融券数据安全渲染装甲 (防断流设计)
-            # ==========================================
-            if margin_data and isinstance(margin_data, dict):
-                raw_balance = margin_data.get('financing_balance')
-                raw_ratio = margin_data.get('financing_ratio')
-                
-                # 1. 默认降级显示
-                safe_margin_display = "暂无数据"
-                
-                # 2. 强行清洗融资余额数据
-                if raw_balance is not None:
-                    try:
-                        safe_margin_display = f"¥{float(raw_balance):.2f}"
-                    except (ValueError, TypeError):
-                        safe_margin_display = "数据异常"
-                
-                st.metric("融资余额(亿)", safe_margin_display, "")
-                
-                # 3. 强行清洗融资占比数据（防止占比指标也引发崩溃）
-                if raw_ratio is not None:
-                    try:
-                        if float(raw_ratio) > 50:
-                            st.warning("⚠️ 融资占比超 **50%**")
-                    except (ValueError, TypeError):
-                        pass  # 数据脏则静默，不显示警告
+            if margin_data and margin_data.get("available"):
+                st.metric("融资余额", _cn_fmt_yi(margin_data.get("financing_balance_yi")), "")
+                st.metric("融资买入额", _cn_fmt_yi(margin_data.get("financing_buy_yi")), "")
+                margin_balance = margin_data.get("margin_balance_yi")
+                if margin_balance is not None:
+                    st.metric("融资融券余额", _cn_fmt_yi(margin_balance), "")
+                else:
+                    st.metric("融券余量", margin_data.get("short_sell_volume") or "暂无", "")
+                st.caption(f"数据日期：{_cn_fmt_date(margin_data.get('date'))}")
             else:
-                st.info("暂无融资数据")
+                st.info((margin_data or {}).get("message") or "融资融券数据暂不可用或权限不足")
+            st.caption(f"数据源：{(margin_data or {}).get('source', 'Tushare')} {(margin_data or {}).get('api', 'margin_detail')}｜更新时间：{(margin_data or {}).get('updated_at', '未知')}")
         
         with col_a3:
             st.markdown("**🌍 北向资金动向**")
-            north_data = get_cn_north_bound_data()
-            if north_data:
-                raw_flow = north_data.get("net_flow")
-                try:
-                    net_flow = float(raw_flow)
-                    st.metric(f"北向净流入({north_data.get('date', '未知')})", f"¥{net_flow:.2f}亿", "")
-                    if net_flow > 0:
-                        st.success("✅ 外资在买入")
-                    else:
-                        st.error("❌ 外资在卖出")
-                except (TypeError, ValueError):
-                    st.metric(f"北向资金({north_data.get('date', '未知')})", str(raw_flow or "暂无实时披露"), "")
-                    if north_data.get("status"):
-                        st.caption(north_data["status"])
+            north_data = get_cn_north_bound_data(stock_code)
+            st.caption((north_data or {}).get("status") or "北向资金日度披露口径已调整，实时买卖方向不可直接推断。")
+            if north_data and north_data.get("available"):
+                st.metric("持股日期", _cn_fmt_date(north_data.get("date")), "")
+                st.metric("持股数量", north_data.get("hold_vol") or "暂无", "")
+                st.metric("持股占比", f"{north_data.get('hold_ratio'):.4f}%" if north_data.get("hold_ratio") is not None else "暂无", "")
             else:
-                st.info("暂无北向数据")
+                st.info((north_data or {}).get("message") or "北向持股数据暂不可用，受披露规则限制。")
+            st.caption(f"数据源：{(north_data or {}).get('source', 'Tushare')} {(north_data or {}).get('api', 'hk_hold')}｜更新时间：{(north_data or {}).get('updated_at', '未知')}")
         
         st.markdown("---")
         
@@ -3481,18 +3641,37 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 if not hist_5d.empty:
                     recent_data = hist_5d[['Close', 'Volume']].tail(5)
                     volume_data = recent_data.to_string()
+
+                if dragon_data and dragon_data.get("available"):
+                    lhb_context = json.dumps(
+                        {
+                            "source": "Tushare",
+                            "api": "top_list/top_inst",
+                            "latest_date": dragon_data.get("latest_date"),
+                            "reason": dragon_data.get("reason"),
+                            "buy_amount_yi": dragon_data.get("buy_amount_yi"),
+                            "sell_amount_yi": dragon_data.get("sell_amount_yi"),
+                            "net_buy_amount_yi": dragon_data.get("net_buy_amount_yi"),
+                            "inst_summary": dragon_data.get("inst_summary"),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                else:
+                    lhb_context = "未见龙虎榜上榜记录"
                 
                 whale_prompt = f"""
-                你是陆家嘴最顶级的"巨鲸资���流向嗅探犬"。标的：{target}。当前价：¥{price}。
-                
-                请执行【宏观机构与微观盘口双重穿透】：
-                1. 该标的通常受哪些明星基金经理或国家队关注？
-                2. 近期是否有新的大基金申报或清仓迹象？
-                3. 龙虎榜分析与微观盘口解剖
-                4. 冷血的跟庄或避险建议
-                
-                量价数据：{volume_data}
-                """
+		                你是陆家嘴资金流向分析师。标的：{target}。当前价：¥{price}。
+		                
+		                请执行【宏观机构与微观盘口双重穿透】：
+		                1. 只能基于已给材料判断机构关注度；没有真实材料时不得点名基金经理或具体机构
+		                2. 近期是否有新的大基金申报或清仓迹象；没有真实材料时写“未验证”
+	                3. 龙虎榜分析只能引用下方 Tushare top_list/top_inst 真实返回；没有真实返回时只能写“未见龙虎榜上榜记录”，不得编造机构席位、游资席位、基金经理
+	                4. 冷血的跟庄或避险建议
+	                
+	                量价数据：{volume_data}
+	                龙虎榜真实数据：{lhb_context}
+	                """
                 
                 st.markdown("### 🐳 巨鲸资金嗅探")
                 call_deepseek_stream(whale_prompt, system_role="你是A股盘口与机构解剖机器")

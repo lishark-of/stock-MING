@@ -155,6 +155,43 @@ def get_adj_factor(ts_code, start_date=None, end_date=None):
     )
 
 
+def get_top_list(trade_date=None, ts_code=None):
+    return _call_pro(
+        "top_list",
+        trade_date=_normalize_date(trade_date),
+        ts_code=_normalize_ts_code(ts_code),
+    )
+
+
+def get_top_inst(trade_date=None, ts_code=None):
+    return _call_pro(
+        "top_inst",
+        trade_date=_normalize_date(trade_date),
+        ts_code=_normalize_ts_code(ts_code),
+    )
+
+
+def get_margin_detail(trade_date=None, ts_code=None, start_date=None, end_date=None):
+    return _call_pro(
+        "margin_detail",
+        trade_date=_normalize_date(trade_date),
+        ts_code=_normalize_ts_code(ts_code),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_hk_hold(ts_code=None, trade_date=None, start_date=None, end_date=None, exchange=None):
+    return _call_pro(
+        "hk_hold",
+        ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+        exchange=exchange,
+    )
+
+
 def _payload_from_result(result, api, ts_code=None):
     data = result.get("data")
     rows = []
