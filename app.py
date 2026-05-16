@@ -144,6 +144,14 @@ except Exception as module_error:
         return {"ticker": ticker, "warnings": [str(DATA_FETCHER_MODULE_ERROR)]}
 
 try:
+    import tushare_adapter as _tushare_adapter
+
+    TUSHARE_ADAPTER_MODULE_ERROR = ""
+except Exception as module_error:
+    _tushare_adapter = None
+    TUSHARE_ADAPTER_MODULE_ERROR = module_error
+
+try:
     from money_flow_tracker import collect_money_flow_snapshot, money_flow_text
 except Exception as module_error:
     MONEY_FLOW_MODULE_ERROR = module_error
@@ -1172,6 +1180,108 @@ def get_historical_data(ticker, start_str, end_str):
         return data
     except:
         return pd.DataFrame()
+
+
+def is_a_share_market(market_type):
+    try:
+        return str(market_type or "").startswith("A_SHARE")
+    except Exception:
+        return False
+
+
+def _safe_tushare_rows(data, limit=3):
+    try:
+        if data is None or data.empty:
+            return []
+        return data.head(limit).where(data.notna(), None).to_dict("records")
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=300)
+def cached_fetch_tushare_a_share_basics(ticker, start_str=None, end_str=None, cache_version="tushare_a_share_v1"):
+    updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+    base = {
+        "ok": False,
+        "partial": False,
+        "data_source": "",
+        "api_name": "",
+        "updated_at": updated_at,
+        "status": "未启用",
+        "successful_apis": [],
+        "failed_apis": [],
+        "api_results": {},
+        "error": "",
+    }
+
+    try:
+        if _tushare_adapter is None:
+            base["status"] = "Tushare 适配层不可用"
+            base["error"] = str(TUSHARE_ADAPTER_MODULE_ERROR)
+            return base
+
+        today = datetime.date.today()
+        end_date = end_str or today.isoformat()
+        start_date = start_str or (today - datetime.timedelta(days=30)).isoformat()
+        api_calls = [
+            ("daily", _tushare_adapter.get_daily),
+            ("daily_basic", _tushare_adapter.get_daily_basic),
+            ("adj_factor", _tushare_adapter.get_adj_factor),
+        ]
+
+        for api_name, api_func in api_calls:
+            try:
+                result = api_func(ticker, start_date, end_date)
+                rows = _safe_tushare_rows(result.get("data") if isinstance(result, dict) else None)
+                ok = bool(isinstance(result, dict) and result.get("ok") and rows)
+                api_updated_at = result.get("updated_at") if isinstance(result, dict) else updated_at
+                summary = {
+                    "ok": ok,
+                    "api_name": api_name,
+                    "updated_at": api_updated_at or updated_at,
+                    "rows": rows,
+                    "row_count": len(result.get("data")) if isinstance(result, dict) and result.get("data") is not None else 0,
+                    "latest_date": (rows[0] or {}).get("trade_date", "") if rows else "",
+                    "error": "" if ok else (result.get("error") if isinstance(result, dict) else "Tushare 返回异常"),
+                }
+                base["api_results"][api_name] = summary
+                if ok:
+                    base["successful_apis"].append(api_name)
+                    base["updated_at"] = summary["updated_at"]
+                else:
+                    base["failed_apis"].append(api_name)
+            except Exception as exc:
+                base["api_results"][api_name] = {
+                    "ok": False,
+                    "api_name": api_name,
+                    "updated_at": updated_at,
+                    "rows": [],
+                    "row_count": 0,
+                    "latest_date": "",
+                    "error": str(exc),
+                }
+                base["failed_apis"].append(api_name)
+
+        if base["successful_apis"]:
+            base["ok"] = True
+            base["partial"] = bool(base["failed_apis"])
+            base["data_source"] = "Tushare"
+            base["api_name"] = ", ".join(base["successful_apis"])
+            base["status"] = "部分接口成功" if base["partial"] else "全部接口成功"
+        else:
+            base["status"] = "全部接口失败"
+            errors = [
+                f"{name}: {payload.get('error')}"
+                for name, payload in base["api_results"].items()
+                if payload.get("error")
+            ]
+            base["error"] = "；".join(errors[:3])
+        return base
+    except Exception as exc:
+        base["status"] = "Tushare 补充失败"
+        base["error"] = str(exc)
+        return base
+
 
 def compute_rsi_series(close, period=14):
     delta = close.diff()
@@ -4143,6 +4253,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             *supply_profile.get("core_modules", [])[:3],
             *supply_profile.get("downstream", [])[:2],
         ]
+        tushare_verified_source = {}
 
         with st.spinner("正在合并产业链、估值、近48小时舆情、云端记忆和炼丹炉规则..."):
             cloud_memory_context = load_relevant_memory_for_stock(
@@ -4165,6 +4276,22 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 limit=12,
                 market_type=market_type,
             )
+            if is_a_share_market(market_type):
+                try:
+                    tushare_end = datetime.date.today()
+                    tushare_start = tushare_end - datetime.timedelta(days=30)
+                    tushare_verified_source = cached_fetch_tushare_a_share_basics(
+                        normalized_target,
+                        tushare_start.isoformat(),
+                        tushare_end.isoformat(),
+                        cache_version="main_diag_tushare_v1",
+                    )
+                except Exception as e:
+                    tushare_verified_source = {
+                        "ok": False,
+                        "status": "Tushare 补充失败",
+                        "error": str(e),
+                    }
             portfolio_health = compute_portfolio_health(
                 normalized_target,
                 related_tickers=supply_profile.get("a_share_links", []),
@@ -4271,7 +4398,29 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                     ensure_ascii=False,
                     default=str,
                 )
+            if tushare_verified_source.get("ok"):
+                verified_context = {
+                    "data_source": "Tushare",
+                    "api_name": tushare_verified_source.get("api_name", ""),
+                    "updated_at": tushare_verified_source.get("updated_at", ""),
+                    "verification_status": tushare_verified_source.get("status", ""),
+                    "successful_apis": tushare_verified_source.get("successful_apis", []),
+                    "failed_apis": tushare_verified_source.get("failed_apis", []),
+                    "api_results": tushare_verified_source.get("api_results", {}),
+                }
+                ai_context_packet += "\n\n【已验证数据来源】\n" + json.dumps(
+                    verified_context,
+                    ensure_ascii=False,
+                    default=str,
+                )
 
+        if tushare_verified_source.get("ok"):
+            st.caption(
+                "已验证数据来源：Tushare"
+                f"｜接口：{tushare_verified_source.get('api_name', '')}"
+                f"｜更新时间：{tushare_verified_source.get('updated_at', '')}"
+                f"｜{tushare_verified_source.get('status', '')}"
+            )
         render_trade_instruction_card(position_profile, trade_instruction)
         render_relevant_memory_context(cloud_memory_context)
 

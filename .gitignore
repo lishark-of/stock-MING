@@ -7,6 +7,8 @@ __pycache__/
 .env
 *.key
 .python-user/
+*.bak*
+app.py.bak_before_tushare_app_integration
 
 # Local secrets
 .streamlit/secrets.toml
