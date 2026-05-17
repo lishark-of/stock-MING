@@ -737,31 +737,86 @@ def build_position_profile(ticker, current_price, cost_price, holding_units, cap
     units = _num(holding_units, 0) or 0
     capital = _num(capital_plan, 0) or 0
     position_text = str(position_status)
-    is_adding = position_text.startswith("想加仓")
-    is_holding = position_text.startswith("已持有") or is_adding
-    intent = "add" if is_adding else ("hold" if position_text.startswith("已持有") else "new")
+    selected_new = position_text.startswith("未买入")
+    selected_add = position_text.startswith("想加仓")
+    selected_holding = position_text.startswith("已持有") or selected_add
+    has_cost = bool(cost and cost > 0)
+    has_units = units > 0
+    position_warning = ""
+
+    if has_units:
+        normalized_position_state = "已持仓"
+        position_confidence = "高"
+        allow_pnl = True
+        allow_t_plan = True
+        allow_reduce_plan = True
+        allow_trial_entry = False
+        if selected_new:
+            position_confidence = "中"
+            position_warning = "用户选择未买入，但填写了持仓数量，系统按已持仓处理，请核对输入"
+    elif selected_holding:
+        normalized_position_state = "已持仓但缺少持仓数量"
+        position_confidence = "低"
+        allow_pnl = False
+        allow_t_plan = False
+        allow_reduce_plan = False
+        allow_trial_entry = False
+        position_warning = "用户选择已持仓，但缺少持仓数量，持仓计划将按低置信度处理"
+    elif has_cost:
+        normalized_position_state = "未买入，有参考成本/计划价格"
+        position_confidence = "中"
+        allow_pnl = False
+        allow_t_plan = False
+        allow_reduce_plan = False
+        allow_trial_entry = True
+    else:
+        normalized_position_state = "未买入，纯观察"
+        position_confidence = "高"
+        allow_pnl = False
+        allow_t_plan = False
+        allow_reduce_plan = False
+        allow_trial_entry = False
+
+    is_adding = selected_add and has_units
+    is_holding = normalized_position_state == "已持仓"
+    intent = "add" if is_adding else ("hold" if is_holding else "new")
     pnl_pct = None
     pnl_amount = None
     state = "未输入成本价"
+    reference_cost_text = ""
+    if has_cost:
+        reference_cost_text = f"{cost:.3f}".rstrip("0").rstrip(".")
+        if "." not in reference_cost_text:
+            reference_cost_text += ".0"
 
-    if current and cost and cost > 0:
+    if allow_pnl and current and has_cost:
         pnl_pct = round((current / cost - 1) * 100, 2)
-        if units > 0:
-            pnl_amount = round((current - cost) * units, 2)
-        elif capital > 0:
-            pnl_amount = round(capital * pnl_pct / 100, 2)
+        pnl_amount = round((current - cost) * units, 2)
         if pnl_pct > 0:
             state = f"浮盈 {pnl_pct:.2f}%"
         elif pnl_pct < 0:
             state = f"浮亏 {abs(pnl_pct):.2f}%"
         else:
             state = "接近成本"
-    elif not is_holding:
-        state = "未买入，成本价作为计划参考"
+    elif normalized_position_state == "未买入，有参考成本/计划价格":
+        state = f"未买入；{reference_cost_text}元为参考成本/计划价格，不计算浮盈浮亏。"
+    elif normalized_position_state == "未买入，纯观察":
+        state = "未买入；未填写参考成本，不计算浮盈浮亏。"
+    elif normalized_position_state == "已持仓但缺少持仓数量":
+        state = "已选择持仓状态，但缺少持仓数量，不计算精确浮盈浮亏。"
+    elif allow_pnl and not has_cost:
+        state = "已持仓；未填写成本价，不计算浮盈浮亏。"
 
     return {
         "ticker": ticker,
         "position_status": position_status,
+        "normalized_position_state": normalized_position_state,
+        "position_confidence": position_confidence,
+        "position_warning": position_warning,
+        "allow_pnl": allow_pnl,
+        "allow_t_plan": allow_t_plan,
+        "allow_reduce_plan": allow_reduce_plan,
+        "allow_trial_entry": allow_trial_entry,
         "position_intent": intent,
         "is_holding": is_holding,
         "is_adding": is_adding,
@@ -4067,6 +4122,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "current_price": current_price if current_price is not None else "暂无可验证数据",
             "position_profile": {
                 "position_status": position_profile.get("position_status") or "暂无可验证数据",
+                "normalized_position_state": position_profile.get("normalized_position_state") or "暂无可验证数据",
+                "position_confidence": position_profile.get("position_confidence") or "暂无可验证数据",
+                "position_warning": position_profile.get("position_warning") or "",
+                "allow_pnl": bool(position_profile.get("allow_pnl")),
+                "allow_t_plan": bool(position_profile.get("allow_t_plan")),
+                "allow_reduce_plan": bool(position_profile.get("allow_reduce_plan")),
+                "allow_trial_entry": bool(position_profile.get("allow_trial_entry")),
                 "capital_plan": position_profile.get("capital_plan") if position_profile.get("capital_plan") is not None else "暂无可验证数据",
                 "cost_price": position_profile.get("cost_price") if position_profile.get("cost_price") is not None else "暂无可验证数据",
                 "holding_units": position_profile.get("holding_units") if position_profile.get("holding_units") is not None else "暂无可验证数据",
@@ -4749,6 +4811,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 13. 不得给确定性买卖建议；只能输出观察条件、人工确认前提和风险边界。
 14. 可考虑动作只能使用“观察、等待验证、小仓试错需人工确认、降低风险暴露、只观察、放弃观察”等非确定性措辞。
 15. 涉及 moneyflow、龙虎榜、limit_list_d 时，必须先检查对应 available 或 records_available 字段；字段为 false 时只能写“暂无可验证数据”。
+16. 必须优先读取 position_profile.normalized_position_state，不得只根据 position_status 或 position_summary 的自然语言判断持仓。
+17. 当 normalized_position_state == "已持仓" 时：可以输出浮盈/浮亏、做T条件、减仓条件、持仓风控、止损/止盈观察。
+18. 当 normalized_position_state == "未买入，有参考成本/计划价格" 时：必须说明该价格是参考成本/计划价格；不得计算浮盈/浮亏；不得输出做T、T出、降低成本；可以输出观察条件、试仓条件、放弃条件；试仓如出现，必须写“0.5–1成试仓，需人工确认”。
+19. 当 normalized_position_state == "未买入，纯观察" 时：不得计算浮盈/浮亏；不得输出做T；只输出观察条件和放弃条件；除非资金、量价、情绪至少两项改善，否则不得输出试仓。
+20. 当 normalized_position_state == "已持仓但缺少持仓数量" 时：不得计算精确浮盈；不得输出精确做T数量；可以输出低置信度持仓风控提醒，并必须提示“缺少持仓数量，持仓计划将按低置信度处理”。
+21. 若 position_profile.allow_pnl 为 false，当前状态摘要里必须写“不计算浮盈浮亏”；若 allow_t_plan 为 false，“做T条件”只能写“不适用：未确认实际持仓，不做T”。
 """
             plan_status.write("调用 DeepSeek 推理：生成六段式观察计划")
             st.markdown("### 🧾 次日交易计划")
