@@ -2782,11 +2782,12 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
 
         return feedback
 
-    def build_today_watchlist_prompt():
+    def build_today_watchlist_prompt(market_style_fact_packet=None):
         today_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         position_status_for_prompt = st.session_state.get("position_status", "未买入 (观望/找买点)")
         capital_plan_for_prompt = st.session_state.get("capital_plan", 0)
 
+        market_style_fact_packet = market_style_fact_packet or build_market_style_fact_packet()
         db = load_cloud_knowledge()
         brain_rules = "\n".join((db["strategies"] + db["reflections"])[-20:])
         market_snapshot = "\n".join(fetch_market_snapshot())
@@ -2817,65 +2818,127 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
 用户当前状态：{position_status_for_prompt}
 本金/计划仓位：{capital_plan_for_prompt}
 
-你是我的个人投研总控台。请基于以下四类资料生成【今日关注池】：
+你是我的个人投研总控台。请基于分层资料生成【市场风格判断 + 今日关注池 + 次日验证清单】。
 
-【今日市场快照】
+【已验证数据】
+market_style_fact_packet:
+{json.dumps(market_style_fact_packet, ensure_ascii=False, indent=2, default=str)}
+
+Tushare 数据源说明：
+- 优先使用 limit_list_d / top_list / moneyflow 的真实返回。
+- 数据日期：{market_style_fact_packet.get("trade_date") or "暂无可验证数据"}
+- 缺失项：{", ".join(market_style_fact_packet.get("missing_sources") or []) if market_style_fact_packet.get("missing_sources") else "暂无"}
+- 不依赖 limit_cpt_list，不得引用未返回的概念强度。
+
+Yahoo Finance 市场快照：
 {market_snapshot}
 
-【近期市场/经理资讯线索】
+【谨慎推断】
+- 市场状态：{market_style_fact_packet.get("market_state") or "暂无可验证数据"}
+- 进攻/防守开关：{market_style_fact_packet.get("risk_switch") or "适合只观察不买"}
+- 推断边界：只能基于 market_style_fact_packet 和市场快照做条件式判断；字段不足时必须偏防守，不得硬判。
+
+【投喂资料观点】
+近期市场/经理资讯线索：
 {market_context if market_context else "暂无可用新闻线索。"}
 
-【新趋势候选】
+新趋势候选：
 {emerging_trends}
 
-【我的交易外脑 brain_memory】
+我的交易外脑 brain_memory：
 {brain_rules}
 
-【基金经理人格规则 manager_rules】
+基金经理人格规则 manager_rules：
 {manager_text}
 
-请输出以下五类关注池：
+【观察清单】
+请输出以下五类关注池。今日关注池不是买入建议，只能写“关注 / 观察 / 验证”。
 
 1. 进攻型
-- 当前适合看的方向
-- 适配的基金经理人格
-- 观察标的方向
-- 触发条件
-- 风险
+- 方向名称：
+- 观察标的：不超过 3 个，可以为空
+- 进入关注的理由：
+- 已验证数据依据：
+- 谨慎推断：
+- 触发条件：
+- 放弃条件：
+- 适配市场状态：
+- 适配基金经理人格：
+- 风险提示：
+- 次日验证点：
 
 2. 防守型
-- 当前适合看的方向
-- 适配的基金经理人格
-- 观察标的方向
-- 触发条件
-- 风险
+- 方向名称：
+- 观察标的：不超过 3 个，可以为空
+- 进入关注的理由：
+- 已验证数据依据：
+- 谨慎推断：
+- 触发条件：
+- 放弃条件：
+- 适配市场状态：
+- 适配基金经理人格：
+- 风险提示：
+- 次日验证点：
 
 3. 港股反弹型
-- 当前适合看的方向
-- 适配的基金经理人格
-- 观察标的方向
-- 触发条件
-- 风险
+- 方向名称：
+- 观察标的：不超过 3 个，可以为空
+- 进入关注的理由：
+- 已验证数据依据：
+- 谨慎推断：
+- 触发条件：
+- 放弃条件：
+- 适配市场状态：
+- 适配基金经理人格：
+- 风险提示：
+- 次日验证点：
 
 4. 美股 AI 型
-- 当前适合看的方向
-- 适配的基金经理人格
-- 观察标的方向
-- 触发条件
-- 风险
+- 方向名称：
+- 观察标的：不超过 3 个，可以为空
+- 进入关注的理由：
+- 已验证数据依据：
+- 谨慎推断：
+- 触发条件：
+- 放弃条件：
+- 适配市场状态：
+- 适配基金经理人格：
+- 风险提示：
+- 次日验证点：
 
 5. 只观察不买型
-- 为什么只观察
-- 哪些信号出现前不能买
-- 风险红线
+- 方向名称：
+- 观察标的：不超过 3 个，可以为空
+- 进入关注的理由：
+- 已验证数据依据：
+- 谨慎推断：
+- 触发条件：
+- 放弃条件：
+- 适配市场状态：
+- 适配基金经理人格：
+- 风险提示：
+- 次日验证点：
+
+最后必须单独输出：
+
+【次日验证清单】
+1. 市场情绪验证：
+2. 主线方向验证：
+3. 风险信号验证：
+4. 关注池淘汰条件：
 
 强制要求：
-1. 必须优先使用【今日市场快照】和【近期市场/经理资讯线索】，不要开头写“缺少实时行情/新闻”这种笼统免责声明。
-2. 如果某个具体数据源显示“抓取失败”或“暂无足够行情”，只说明该源缺失，不要否定全部实时数据。
-3. 不要编造没有出现在材料里的实时新闻、公告、资金流或持仓。
-4. 结论要偏交易实用，不要写空话。
-5. 每类最多给 3 个方向。
-6. 如果用户已持有，优先给止损/止盈/减仓规则；如果用户未买入，优先给安全边际和分批建仓规则。
+1. 不得把【投喂资料观点】当成事实，只能标记为观点、线索或待验证假设。
+2. 不得编造龙虎榜、机构席位、连板、炸板、资金流。
+3. 没有 Tushare 真实返回时，只能写“暂无可验证数据”。
+4. 今日关注池不是买入建议，只能写“关注 / 观察 / 验证”。
+5. 不得编造实时价格。
+6. 不得输出“满仓、梭哈、必涨”等确定性话术。
+7. 如果没有足够事实支撑，应放入“只观察不买型”。
+8. 不要为了凑满数量而编标的。
+9. 结论要偏交易实用，不要写空话。
+10. “已验证数据依据”只能引用 market_style_fact_packet 和 Yahoo Finance 市场快照，不得把 market_news、processed_sources、brain_memory、manager_rules 写入已验证数据依据。
+11. 如果观察标的只来自投喂资料或记忆，必须在“谨慎推断”中标为“待验证线索”，不得写成已验证资金行为。
 """
         return prompt
     def load_manager_rules(manager_name, limit=30):
@@ -3142,6 +3205,287 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         if len(text) == 8 and text.isdigit():
             return f"{text[:4]}-{text[4:6]}-{text[6:]}"
         return text or "未知"
+
+    def build_market_style_fact_packet():
+        """构建今日关注池使用的 A 股市场情绪事实包，所有 Tushare 失败都降级为缺失项。"""
+        updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+        packet = {
+            "trade_date": "",
+            "limit_up_count": 0,
+            "limit_down_count": 0,
+            "break_limit_count": 0,
+            "break_limit_rate": None,
+            "max_consecutive_limit": None,
+            "recent_active_limit_samples": [],
+            "dragon_tiger_activity": {
+                "list_count": 0,
+                "sample_rows": [],
+            },
+            "moneyflow_samples": {
+                "positive_samples": [],
+                "negative_samples": [],
+            },
+            "market_state": "暂无可验证数据",
+            "risk_switch": "适合只观察不买",
+            "verified_sources": [],
+            "missing_sources": [],
+            "updated_at": updated_at,
+        }
+
+        def add_missing(source, reason="暂无可验证数据"):
+            text = f"{source}: {reason}" if reason else source
+            if text not in packet["missing_sources"]:
+                packet["missing_sources"].append(text)
+
+        def add_verified(source):
+            if source not in packet["verified_sources"]:
+                packet["verified_sources"].append(source)
+
+        if _tushare_adapter is None:
+            add_missing("Tushare", str(TUSHARE_ADAPTER_MODULE_ERROR) or "adapter 不可用")
+            return packet
+
+        recent_dates = []
+        try:
+            recent_dates = _cn_recent_trade_dates(10)[:5]
+        except Exception as e:
+            add_missing("Tushare trade_cal", str(e))
+
+        if not recent_dates:
+            add_missing("Tushare trade_cal", "未取得最近交易日")
+            return packet
+
+        def normalize_limit_value(row):
+            return str(row.get("limit") or row.get("limit_type") or "").strip().upper()
+
+        def calc_limit_stats(df):
+            if df is None or df.empty:
+                return None
+            rows = df.where(pd.notna(df), None).to_dict("records")
+            up_count = 0
+            down_count = 0
+            break_count = 0
+            max_height = None
+            for row in rows:
+                value = normalize_limit_value(row)
+                type_text = str(row.get("type") or row.get("name_type") or "")
+                if value == "U" or "涨停" in type_text:
+                    up_count += 1
+                elif value == "D" or "跌停" in type_text:
+                    down_count += 1
+                elif value == "Z" or "炸" in type_text:
+                    break_count += 1
+
+                height = _cn_float(row.get("limit_times"))
+                if height is None:
+                    stat_text = str(row.get("up_stat") or "")
+                    match = re.search(r"(\d+)\s*连", stat_text)
+                    if match:
+                        height = _cn_float(match.group(1))
+                if height is not None:
+                    max_height = int(max(height, max_height or 0))
+
+            denominator = up_count + break_count
+            break_rate = round(break_count / denominator, 4) if denominator else None
+            return {
+                "up_count": up_count,
+                "down_count": down_count,
+                "break_count": break_count,
+                "break_rate": break_rate,
+                "max_height": max_height,
+                "rows": rows,
+            }
+
+        current_limit_stats = None
+        previous_limit_stats = None
+        limit_error = ""
+        for index, trade_date in enumerate(recent_dates):
+            try:
+                result = _tushare_adapter.get_limit_list_d(trade_date=trade_date)
+                if not result.get("ok"):
+                    limit_error = result.get("error") or "limit_list_d 调用失败"
+                    continue
+                df = result.get("data")
+                stats = calc_limit_stats(df)
+                if not stats:
+                    if not packet["trade_date"]:
+                        packet["trade_date"] = trade_date
+                    continue
+
+                if current_limit_stats is None:
+                    current_limit_stats = stats
+                    packet["trade_date"] = trade_date
+                    packet["limit_up_count"] = stats["up_count"]
+                    packet["limit_down_count"] = stats["down_count"]
+                    packet["break_limit_count"] = stats["break_count"]
+                    packet["break_limit_rate"] = stats["break_rate"]
+                    packet["max_consecutive_limit"] = stats["max_height"]
+                    samples = []
+                    for row in stats["rows"]:
+                        value = normalize_limit_value(row)
+                        height = _cn_float(row.get("limit_times"))
+                        if value in {"U", "Z"} or (height is not None and height >= 2):
+                            samples.append(
+                                {
+                                    "trade_date": row.get("trade_date") or trade_date,
+                                    "ts_code": row.get("ts_code") or "",
+                                    "name": row.get("name") or "",
+                                    "limit_type": value or "暂无",
+                                    "limit_times": row.get("limit_times") if row.get("limit_times") is not None else "暂无",
+                                    "open_times": row.get("open_times") if row.get("open_times") is not None else "暂无",
+                                    "fd_amount_yi": _cn_amount_to_yi(row.get("fd_amount")),
+                                }
+                            )
+                    packet["recent_active_limit_samples"] = samples[:8]
+                    add_verified("Tushare limit_list_d")
+                elif index > 0:
+                    previous_limit_stats = stats
+                    break
+            except Exception as e:
+                limit_error = str(e)
+
+        if current_limit_stats is None:
+            add_missing("Tushare limit_list_d", limit_error or "最近交易日无返回")
+            packet["trade_date"] = packet["trade_date"] or recent_dates[0]
+
+        if current_limit_stats is not None and previous_limit_stats is None:
+            for trade_date in recent_dates[1:]:
+                try:
+                    result = _tushare_adapter.get_limit_list_d(trade_date=trade_date)
+                    if result.get("ok"):
+                        previous_limit_stats = calc_limit_stats(result.get("data"))
+                        if previous_limit_stats:
+                            break
+                except Exception:
+                    continue
+
+        trade_date_for_market = packet["trade_date"] or recent_dates[0]
+
+        try:
+            top_result = _tushare_adapter.get_top_list(trade_date=trade_date_for_market)
+            if top_result.get("ok"):
+                top_df = top_result.get("data")
+                if top_df is not None and not top_df.empty:
+                    top_rows = top_df.where(pd.notna(top_df), None).to_dict("records")
+                    packet["dragon_tiger_activity"]["list_count"] = len(top_rows)
+                    packet["dragon_tiger_activity"]["sample_rows"] = [
+                        {
+                            "trade_date": row.get("trade_date") or trade_date_for_market,
+                            "ts_code": row.get("ts_code") or "",
+                            "name": row.get("name") or "",
+                            "reason": row.get("explain") or row.get("reason") or "",
+                            "net_buy_yi": _cn_amount_to_yi(row.get("net_amount") if row.get("net_amount") is not None else row.get("net_buy")),
+                        }
+                        for row in top_rows[:8]
+                    ]
+                    add_verified("Tushare top_list")
+                else:
+                    add_missing("Tushare top_list", "最近交易日无龙虎榜返回")
+            else:
+                add_missing("Tushare top_list", top_result.get("error") or "调用失败")
+        except Exception as e:
+            add_missing("Tushare top_list", str(e))
+
+        try:
+            flow_result = _tushare_adapter.get_moneyflow(trade_date=trade_date_for_market)
+            if flow_result.get("ok"):
+                flow_df = flow_result.get("data")
+                if flow_df is not None and not flow_df.empty:
+                    flow_rows = flow_df.where(pd.notna(flow_df), None).to_dict("records")
+
+                    def moneyflow_score(row):
+                        value = _cn_float(row.get("net_mf_amount"))
+                        if value is not None:
+                            return value
+                        large_buy = _cn_float(row.get("buy_lg_amount"))
+                        large_sell = _cn_float(row.get("sell_lg_amount"))
+                        extra_buy = _cn_float(row.get("buy_elg_amount"))
+                        extra_sell = _cn_float(row.get("sell_elg_amount"))
+                        if None not in [large_buy, large_sell, extra_buy, extra_sell]:
+                            return (large_buy - large_sell) + (extra_buy - extra_sell)
+                        return 0
+
+                    def flow_sample(row):
+                        return {
+                            "trade_date": row.get("trade_date") or trade_date_for_market,
+                            "ts_code": row.get("ts_code") or "",
+                            "name": row.get("name") or "",
+                            "net_mf_yi": _cn_wan_to_yi(moneyflow_score(row)),
+                        }
+
+                    scored_rows = sorted(flow_rows, key=moneyflow_score, reverse=True)
+                    packet["moneyflow_samples"]["positive_samples"] = [
+                        flow_sample(row) for row in scored_rows if moneyflow_score(row) > 0
+                    ][:5]
+                    packet["moneyflow_samples"]["negative_samples"] = [
+                        flow_sample(row) for row in reversed(scored_rows) if moneyflow_score(row) < 0
+                    ][:5]
+                    add_verified("Tushare moneyflow")
+                else:
+                    add_missing("Tushare moneyflow", "最近交易日无资金流返回")
+            else:
+                add_missing("Tushare moneyflow", flow_result.get("error") or "调用失败")
+        except Exception as e:
+            add_missing("Tushare moneyflow", str(e))
+
+        if current_limit_stats is None:
+            return packet
+
+        up_count = packet["limit_up_count"]
+        down_count = packet["limit_down_count"]
+        break_rate = packet["break_limit_rate"]
+        max_height = packet["max_consecutive_limit"]
+        prev_up = previous_limit_stats.get("up_count") if previous_limit_stats else None
+        prev_down = previous_limit_stats.get("down_count") if previous_limit_stats else None
+        prev_break_rate = previous_limit_stats.get("break_rate") if previous_limit_stats else None
+        prev_height = previous_limit_stats.get("max_height") if previous_limit_stats else None
+
+        high_break = break_rate is not None and break_rate >= 0.45
+        low_break = break_rate is not None and break_rate <= 0.25
+        adequate_limits = up_count >= 30
+        strong_limits = up_count >= 50
+        high_height = max_height is not None and max_height >= 3
+        down_rising = (
+            prev_down is not None and down_count > prev_down
+        ) or down_count >= 10
+        height_declining = (
+            prev_height is not None and max_height is not None and max_height < prev_height
+        )
+        break_rising = (
+            prev_break_rate is not None
+            and break_rate is not None
+            and break_rate > prev_break_rate
+        )
+        repairing = (
+            prev_up is not None
+            and prev_down is not None
+            and prev_break_rate is not None
+            and break_rate is not None
+            and up_count > prev_up
+            and down_count <= prev_down
+            and break_rate < prev_break_rate
+        )
+
+        if strong_limits and low_break and high_height:
+            packet["market_state"] = "高潮或强修复"
+            packet["risk_switch"] = "适合进攻或轻仓试错"
+        elif down_rising and high_break and (height_declining or max_height in [None, 0, 1]):
+            packet["market_state"] = "退潮"
+            packet["risk_switch"] = "适合防守观察"
+        elif repairing:
+            packet["market_state"] = "修复"
+            packet["risk_switch"] = "适合轻仓试错"
+        elif adequate_limits and high_break:
+            packet["market_state"] = "分歧"
+            packet["risk_switch"] = "适合轻仓试错"
+        elif up_count == 0 and down_count == 0 and break_rate is None:
+            packet["market_state"] = "暂无可验证数据"
+            packet["risk_switch"] = "适合只观察不买"
+        else:
+            packet["market_state"] = "暂无可验证数据" if up_count == 0 else "分歧"
+            packet["risk_switch"] = "适合防守观察"
+
+        return packet
 
     def get_cn_limit_emotion_data(stock_code, current_price=None):
         """获取 A 股涨跌停边界与情绪数据：Tushare stk_limit / limit_list_d / limit_cpt_list。"""
@@ -4307,8 +4651,45 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         st.markdown("### 🏠 今日关注池 / 投研驾驶舱")
         st.caption("先判断今天该看什么，再决定用哪个大师人格和哪个诊股模块。")
 
+        market_style_fact_packet = build_market_style_fact_packet()
+        st.markdown("#### 市场风格总览")
+
+        st.markdown(
+            "**数据日期：** "
+            f"{_cn_fmt_date(market_style_fact_packet.get('trade_date'))}"
+            " ｜ **市场状态：** "
+            f"{market_style_fact_packet.get('market_state') or '暂无可验证数据'}"
+            " ｜ **进攻/防守开关：** "
+            f"{market_style_fact_packet.get('risk_switch') or '适合只观察不买'}"
+        )
+
+        emotion_cols = st.columns(5)
+        break_rate = market_style_fact_packet.get("break_limit_rate")
+        break_rate_text = "暂无" if break_rate is None else f"{break_rate * 100:.1f}%"
+        emotion_cols[0].metric("涨停家数", market_style_fact_packet.get("limit_up_count", 0))
+        emotion_cols[1].metric("跌停家数", market_style_fact_packet.get("limit_down_count", 0))
+        emotion_cols[2].metric("炸板家数", market_style_fact_packet.get("break_limit_count", 0))
+        emotion_cols[3].metric("炸板率", break_rate_text)
+        emotion_cols[4].metric("连板最高高度", market_style_fact_packet.get("max_consecutive_limit") or "暂无")
+
+        activity_cols = st.columns(2)
+        activity_cols[0].metric(
+            "龙虎榜活跃数量",
+            (market_style_fact_packet.get("dragon_tiger_activity") or {}).get("list_count", 0),
+        )
+        activity_cols[1].metric("资金流样本", len((market_style_fact_packet.get("moneyflow_samples") or {}).get("positive_samples", [])))
+
+        st.caption("数据源：Tushare / Supabase / Yahoo Finance / DeepSeek")
+        missing_sources = market_style_fact_packet.get("missing_sources") or []
+        if missing_sources:
+            st.caption("缺失数据说明：" + "；".join(missing_sources[:4]))
+        else:
+            st.caption("缺失数据说明：暂无")
+        if market_style_fact_packet.get("market_state") == "暂无可验证数据" or missing_sources:
+            st.info("市场情绪事实数据暂不完整，今日关注池将偏向防守观察。")
+
         if st.button("🚀 生成今日关注池", type="primary", width="stretch"):
-            prompt = build_today_watchlist_prompt()
+            prompt = build_today_watchlist_prompt(market_style_fact_packet=market_style_fact_packet)
             call_deepseek_stream(
                 prompt,
                 system_role="你是冷静的投研总控台，负责生成今日关注池和风险分层。"
