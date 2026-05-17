@@ -2789,11 +2789,57 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
 
         market_style_fact_packet = market_style_fact_packet or build_market_style_fact_packet()
         db = load_cloud_knowledge()
-        brain_rules = "\n".join((db["strategies"] + db["reflections"])[-20:])
+
+        def sanitize_unverified_prompt_text(text):
+            text = str(text or "")
+            replacements = {
+                "买入条件": "待验证观察条件",
+                "买点条件": "待验证观察条件",
+                "买点": "观察点",
+                "买入": "观察",
+                "buy_conditions": "待验证观察条件",
+                "加仓": "风格适配线索",
+                "增持": "风格适配线索",
+                "看好": "风格适配线索",
+                "持仓": "风格适配线索",
+                "持有": "风格适配线索",
+                "关键均线": "待验证技术指标",
+            }
+            for raw, safe in replacements.items():
+                text = text.replace(raw, safe)
+            text = re.sub(r"\d[\d,]*(?:股|万股|亿股)", "数量待核验", text)
+            text = re.sub(
+                r"(站上|站稳|跌破|企稳于|企稳在|附近企稳|回踩|回调至)\s*(MA20|MA50|MA60|MA200|RSI|PB|ROE)",
+                "后续需用技术指标验证",
+                text,
+                flags=re.IGNORECASE,
+            )
+            return text
+
+        brain_rules = sanitize_unverified_prompt_text("\n".join((db["strategies"] + db["reflections"])[-20:]))
         market_snapshot = "\n".join(fetch_market_snapshot())
         market_context_lines = fetch_recent_market_context()
-        market_context = "\n".join(market_context_lines)
+        verified_market_news_lines = [
+            line for line in market_context_lines
+            if str(line).startswith("market_news｜")
+        ]
+        feed_context_lines = [
+            sanitize_unverified_prompt_text(line) for line in market_context_lines
+            if not str(line).startswith("market_news｜")
+        ]
+        verified_market_news = "\n".join(verified_market_news_lines)
+        feed_context = "\n".join(feed_context_lines)
         emerging_trends = summarize_context_trends(market_context_lines)
+        dragon_tiger_activity = market_style_fact_packet.get("dragon_tiger_activity") or {}
+        moneyflow_samples = market_style_fact_packet.get("moneyflow_samples") or {}
+        moneyflow_sample_count = len(moneyflow_samples.get("positive_samples") or []) + len(
+            moneyflow_samples.get("negative_samples") or []
+        )
+        missing_sources_text = (
+            ", ".join(market_style_fact_packet.get("missing_sources") or [])
+            if market_style_fact_packet.get("missing_sources")
+            else "暂无"
+        )
 
         try:
             manager_res = (
@@ -2809,7 +2855,9 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             manager_data = []
 
         manager_text = "\n".join([
-            f"{m.get('manager_name')}｜{m.get('rule_type')}｜{m.get('content')}"
+            sanitize_unverified_prompt_text(
+                f"{m.get('manager_name')}｜{m.get('rule_type')}｜{m.get('content')}"
+            )
             for m in manager_data
         ])
 
@@ -2820,27 +2868,52 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
 
 你是我的个人投研总控台。请基于分层资料生成【市场风格判断 + 今日关注池 + 次日验证清单】。
 
+输出开头必须先逐项展示以下内容，不得省略，不得只引用 JSON：
+【市场风格总览】
+- 数据日期：{market_style_fact_packet.get("trade_date") or "暂无可验证数据"}
+- 涨停家数：{market_style_fact_packet.get("limit_up_count", 0)}
+- 跌停家数：{market_style_fact_packet.get("limit_down_count", 0)}
+- 炸板家数：{market_style_fact_packet.get("break_limit_count", 0)}
+- 炸板率：{market_style_fact_packet.get("break_limit_rate") if market_style_fact_packet.get("break_limit_rate") is not None else "暂无可验证数据"}
+- 最高连板：{market_style_fact_packet.get("max_consecutive_limit") if market_style_fact_packet.get("max_consecutive_limit") is not None else "暂无可验证数据"}
+- 龙虎榜活跃数量：{dragon_tiger_activity.get("list_count", 0)}
+- 资金流样本数量：{moneyflow_sample_count}
+- market_state：{market_style_fact_packet.get("market_state") or "暂无可验证数据"}
+- risk_switch：{market_style_fact_packet.get("risk_switch") or "适合只观察不买"}
+- missing_sources：{missing_sources_text}
+
 【已验证数据】
+只能包含以下三类：
+1. Tushare market_style_fact_packet
+2. Yahoo Finance 市场快照
+3. Supabase market_news 中真实返回的新闻、公告、市场消息
+
 market_style_fact_packet:
 {json.dumps(market_style_fact_packet, ensure_ascii=False, indent=2, default=str)}
 
 Tushare 数据源说明：
 - 优先使用 limit_list_d / top_list / moneyflow 的真实返回。
 - 数据日期：{market_style_fact_packet.get("trade_date") or "暂无可验证数据"}
-- 缺失项：{", ".join(market_style_fact_packet.get("missing_sources") or []) if market_style_fact_packet.get("missing_sources") else "暂无"}
+- 缺失项：{missing_sources_text}
 - 不依赖 limit_cpt_list，不得引用未返回的概念强度。
 
 Yahoo Finance 市场快照：
 {market_snapshot}
 
+Supabase market_news 真实返回：
+{verified_market_news if verified_market_news else "暂无可验证 market_news。"}
+说明：Supabase market_news 只能证明系统真实返回了 title / summary / risk_tag / sentiment / created_at 等字段；不得把新闻标题外推成公告已确认、订单已落地、客户已确认或席位资金事实。
+
 【谨慎推断】
 - 市场状态：{market_style_fact_packet.get("market_state") or "暂无可验证数据"}
 - 进攻/防守开关：{market_style_fact_packet.get("risk_switch") or "适合只观察不买"}
-- 推断边界：只能基于 market_style_fact_packet 和市场快照做条件式判断；字段不足时必须偏防守，不得硬判。
+- 推断边界：只能基于已验证数据和明确标注的待验证线索进行条件式判断；字段不足时必须偏防守，不得硬判，不得把待验证线索写成事实。
 
-【投喂资料观点】
-近期市场/经理资讯线索：
-{market_context if market_context else "暂无可用新闻线索。"}
+【投喂资料观点 / 待验证线索】
+以下内容只能作为观点、风格适配或待验证线索，不得写入“已验证数据依据”：
+
+processed_sources / 历史投喂观点：
+{feed_context if feed_context else "暂无 processed_sources 待验证线索。"}
 
 新趋势候选：
 {emerging_trends}
@@ -2851,94 +2924,90 @@ Yahoo Finance 市场快照：
 基金经理人格规则 manager_rules：
 {manager_text}
 
+manager_rules 说明：当前输入只包含 manager_name / rule_type / content，不包含可核验 source 或 url；基金经理相关内容默认只能写成“风格适配 / 待验证观点”，不得写成或复述某基金经理实际买入、加仓、增持、看好，也不得复述持股数量。
+
 【观察清单】
-请输出以下五类关注池。今日关注池不是买入建议，只能写“关注 / 观察 / 验证”。
+请输出以下五类关注池。今日关注池不是买入建议，只能写“关注 / 观察 / 验证”。每一类观察标的不超过 3 个，可以为空；如果没有足够真实数据支撑，必须写“暂无可验证数据”，不要为了凑满数量而编标的。
+触发条件和放弃条件中如需引用 MA20、MA50、MA60、MA200、RSI、PB、ROE、均线、技术支撑，整行只能写“后续需用 MA20/MA60/MA50/MA200/RSI/PB/ROE 验证”，不得扩写成站上、站稳、跌破、企稳、支撑、关键均线、分位等技术结论。
 
-1. 进攻型
-- 方向名称：
-- 观察标的：不超过 3 个，可以为空
-- 进入关注的理由：
+### 进攻型
+- 观察标的：
 - 已验证数据依据：
 - 谨慎推断：
+- 投喂资料观点 / 待验证线索：
 - 触发条件：
 - 放弃条件：
-- 适配市场状态：
-- 适配基金经理人格：
-- 风险提示：
 - 次日验证点：
+- 风险提示：
 
-2. 防守型
-- 方向名称：
-- 观察标的：不超过 3 个，可以为空
-- 进入关注的理由：
+### 防守型
+- 观察标的：
 - 已验证数据依据：
 - 谨慎推断：
+- 投喂资料观点 / 待验证线索：
 - 触发条件：
 - 放弃条件：
-- 适配市场状态：
-- 适配基金经理人格：
-- 风险提示：
 - 次日验证点：
+- 风险提示：
 
-3. 港股反弹型
-- 方向名称：
-- 观察标的：不超过 3 个，可以为空
-- 进入关注的理由：
+### 港股反弹型
+- 观察标的：
 - 已验证数据依据：
 - 谨慎推断：
+- 投喂资料观点 / 待验证线索：
 - 触发条件：
 - 放弃条件：
-- 适配市场状态：
-- 适配基金经理人格：
-- 风险提示：
 - 次日验证点：
+- 风险提示：
 
-4. 美股 AI 型
-- 方向名称：
-- 观察标的：不超过 3 个，可以为空
-- 进入关注的理由：
+### 美股 AI 型
+- 观察标的：
 - 已验证数据依据：
 - 谨慎推断：
+- 投喂资料观点 / 待验证线索：
 - 触发条件：
 - 放弃条件：
-- 适配市场状态：
-- 适配基金经理人格：
-- 风险提示：
 - 次日验证点：
+- 风险提示：
 
-5. 只观察不买型
-- 方向名称：
-- 观察标的：不超过 3 个，可以为空
-- 进入关注的理由：
+### 只观察不买型
+- 观察标的：
 - 已验证数据依据：
 - 谨慎推断：
+- 投喂资料观点 / 待验证线索：
 - 触发条件：
 - 放弃条件：
-- 适配市场状态：
-- 适配基金经理人格：
-- 风险提示：
 - 次日验证点：
+- 风险提示：
 
 最后必须单独输出：
 
 【次日验证清单】
-1. 市场情绪验证：
-2. 主线方向验证：
-3. 风险信号验证：
-4. 关注池淘汰条件：
+- 市场情绪验证：
+- 主线方向验证：
+- 风险信号验证：
+- 关注池淘汰条件：
 
 强制要求：
 1. 不得把【投喂资料观点】当成事实，只能标记为观点、线索或待验证假设。
-2. 不得编造龙虎榜、机构席位、连板、炸板、资金流。
+2. 不得编造龙虎榜、机构席位、连板、炸板、资金流；龙虎榜、机构席位、连板、炸板只能来自 market_style_fact_packet 或 Tushare 真实返回。
 3. 没有 Tushare 真实返回时，只能写“暂无可验证数据”。
 4. 今日关注池不是买入建议，只能写“关注 / 观察 / 验证”。
 5. 不得编造实时价格。
-6. 不得输出“满仓、梭哈、必涨”等确定性话术。
+6. 禁止“严禁买入、必涨、满仓、梭哈、确定性机会”等绝对化措辞。
 7. 如果没有足够事实支撑，应放入“只观察不买型”。
 8. 不要为了凑满数量而编标的。
 9. 结论要偏交易实用，不要写空话。
-10. “已验证数据依据”只能引用 market_style_fact_packet 和 Yahoo Finance 市场快照，不得把 market_news、processed_sources、brain_memory、manager_rules 写入已验证数据依据。
+10. “已验证数据依据”只能引用 Tushare、Yahoo Finance、Supabase market_news 的真实返回数据；processed_sources、brain_memory、manager_rules 只能进入“投喂资料观点 / 待验证线索”。
 11. 如果观察标的只来自投喂资料或记忆，必须在“谨慎推断”中标为“待验证线索”，不得写成已验证资金行为。
+12. 没有 Supabase market_news、公告或真实新闻验证时，不得把订单金额、授权、收购、客户名称写成事实。
+13. MA20、MA60、MA50、MA200、RSI、PB、ROE 如果没有当前数值，固定写“后续需用 MA20/MA60/MA50/MA200/RSI/PB/ROE 验证”；不得写“股价在 MA20 附近企稳”“站上 MA60”“站稳 MA50”“跌破 MA60”“RSI 在 40-60”“PB 低于历史分位”等像已计算的条件。
+14. 标的名称不确定时写“标的名称待核验”，不得输出 CPOAI 这类自造简称。
+15. 基金经理相关内容只能写“风格适配”或“待验证观点”；当前 manager_rules 不含 source/url，不能作为实际交易事实来源。即使 manager_rules 原文包含“买入、加仓、增持、看好、持股数量”等字样，输出时也必须改写为“风格偏好指向该方向”，不得复述交易动作或数量。
+16. “只观察不买型”统一使用：“未满足验证条件前仅观察”。
+17. 每个方向的“已验证数据依据”必须逐项列出来源名和字段名；如果没有对应真实返回，必须写“暂无可验证数据”，不得用投喂资料补足。
+18. market_news 中出现“龙虎榜盘点、席位、机构”等标题时，只能作为新闻线索；不得据此生成具体机构席位、净买入、席位动向或龙虎榜结论。具体龙虎榜数量和样本只能引用 market_style_fact_packet / Tushare top_list 字段。
+19. 不得输出 buy_conditions、买入条件、买点条件、买点；统一改写为“待验证观察条件”。
 """
         return prompt
     def load_manager_rules(manager_name, limit=30):
