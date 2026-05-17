@@ -4005,6 +4005,135 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             base["message"] = classify_error(base["error"])
             return base
 
+    def build_next_day_plan_fact_packet(
+        stock_code,
+        stock_name,
+        current_price,
+        position_profile,
+        trade_instruction,
+        dragon_data,
+        margin_data,
+        moneyflow_data,
+        limit_emotion_data,
+        tushare_verified_source=None,
+        market_style_fact_packet=None,
+    ):
+        """Build a verified fact packet for the next-day observation plan."""
+        position_profile = position_profile or {}
+        trade_instruction = trade_instruction or {}
+        dragon_data = dragon_data or {}
+        margin_data = margin_data or {}
+        moneyflow_data = moneyflow_data or {}
+        limit_emotion_data = limit_emotion_data or {}
+        tushare_verified_source = tushare_verified_source or {}
+        market_style_fact_packet = market_style_fact_packet or {}
+
+        moneyflow_available = bool(moneyflow_data.get("available"))
+        dragon_available = bool(dragon_data.get("available"))
+        margin_available = bool(margin_data.get("available"))
+        limit_available = bool(limit_emotion_data.get("available"))
+        limit_records_available = bool(limit_emotion_data.get("records_available"))
+        boundary_available = bool(limit_emotion_data.get("boundary_available"))
+        api_results = tushare_verified_source.get("api_results") or {}
+
+        missing_items = []
+        if not moneyflow_available:
+            missing_items.append("Tushare moneyflow")
+        if not dragon_available:
+            missing_items.append("Tushare top_list/top_inst")
+        if not margin_available:
+            missing_items.append("Tushare margin_detail")
+        if not boundary_available:
+            missing_items.append("Tushare stk_limit")
+        if not limit_records_available:
+            missing_items.append("Tushare limit_list_d")
+        if not api_results.get("daily", {}).get("ok"):
+            missing_items.append("Tushare daily")
+        if not api_results.get("daily_basic", {}).get("ok"):
+            missing_items.append("Tushare daily_basic")
+
+        updated_sources = [
+            moneyflow_data.get("updated_at"),
+            dragon_data.get("updated_at"),
+            margin_data.get("updated_at"),
+            limit_emotion_data.get("updated_at"),
+            tushare_verified_source.get("updated_at"),
+        ]
+        updated_sources = [item for item in updated_sources if item]
+
+        return {
+            "stock_code": stock_code,
+            "stock_name": stock_name,
+            "current_price": current_price if current_price is not None else "暂无可验证数据",
+            "position_profile": {
+                "position_status": position_profile.get("position_status") or "暂无可验证数据",
+                "capital_plan": position_profile.get("capital_plan") if position_profile.get("capital_plan") is not None else "暂无可验证数据",
+                "cost_price": position_profile.get("cost_price") if position_profile.get("cost_price") is not None else "暂无可验证数据",
+                "holding_units": position_profile.get("holding_units") if position_profile.get("holding_units") is not None else "暂无可验证数据",
+                "position_summary": position_profile.get("profit_state") or "暂无可验证数据",
+            },
+            "price_boundary": {
+                "available": boundary_available,
+                "limit_up_price": limit_emotion_data.get("up_limit") if boundary_available else "暂无可验证数据",
+                "limit_down_price": limit_emotion_data.get("down_limit") if boundary_available else "暂无可验证数据",
+                "distance_to_limit_up": limit_emotion_data.get("distance_to_up_pct") if boundary_available else "暂无可验证数据",
+                "distance_to_limit_down": limit_emotion_data.get("distance_to_down_pct") if boundary_available else "暂无可验证数据",
+                "latest_date": limit_emotion_data.get("latest_date") if boundary_available else "",
+                "note": "涨停价/跌停价仅作为交易边界参考，不是长期支撑压力",
+            },
+            "moneyflow": {
+                "available": moneyflow_available,
+                "latest_date": moneyflow_data.get("date") if moneyflow_available else "",
+                "main_net_inflow_yi": moneyflow_data.get("main_net_yi") if moneyflow_available else "",
+                "large_net_inflow_yi": moneyflow_data.get("large_net_yi") if moneyflow_available else "",
+                "medium_net_inflow_yi": moneyflow_data.get("medium_net_yi") if moneyflow_available else "",
+                "small_net_inflow_yi": moneyflow_data.get("small_net_yi") if moneyflow_available else "",
+                "five_day_main_net_inflow_yi": moneyflow_data.get("five_day_main_net_yi") if moneyflow_available else "",
+                "direction": moneyflow_data.get("direction") if moneyflow_available else "",
+                "structure_comment": moneyflow_data.get("structure") if moneyflow_available else "",
+                "note": "" if moneyflow_available else "暂无可验证数据",
+            },
+            "dragon_tiger": {
+                "available": dragon_available,
+                "trade_date": dragon_data.get("latest_date") if dragon_available else "",
+                "reason": dragon_data.get("reason") if dragon_available else "",
+                "net_buy_amount": dragon_data.get("net_buy_amount_yi") if dragon_available else "",
+                "institution_summary": dragon_data.get("inst_summary") if dragon_available else "",
+                "note": "" if dragon_available else "暂无可验证数据",
+            },
+            "margin": {
+                "available": margin_available,
+                "trade_date": margin_data.get("date") if margin_available else "",
+                "financing_balance_yi": margin_data.get("financing_balance_yi") if margin_available else "",
+                "financing_buy_yi": margin_data.get("financing_buy_yi") if margin_available else "",
+                "margin_balance_yi": margin_data.get("margin_balance_yi") if margin_available else "",
+                "short_sell_volume": margin_data.get("short_sell_volume") if margin_available else "",
+                "note": "" if margin_available else "暂无可验证数据",
+            },
+            "limit_emotion": {
+                "available": limit_available,
+                "records_available": limit_records_available,
+                "recent_limit_records": limit_emotion_data.get("limit_records", []) if limit_records_available else [],
+                "concept_top5": limit_emotion_data.get("concept_top5", []) if limit_available else [],
+                "note": "" if limit_records_available else "暂无可验证数据",
+            },
+            "daily": api_results.get("daily", {"ok": False, "rows": [], "error": "暂无可验证数据"}),
+            "daily_basic": api_results.get("daily_basic", {"ok": False, "rows": [], "error": "暂无可验证数据"}),
+            "market_style": {
+                "trade_date": market_style_fact_packet.get("trade_date", ""),
+                "market_state": market_style_fact_packet.get("market_state") or "暂无可验证数据",
+                "risk_switch": market_style_fact_packet.get("risk_switch") or "暂无可验证数据",
+                "limit_up_count": market_style_fact_packet.get("limit_up_count", "暂无可验证数据"),
+                "limit_down_count": market_style_fact_packet.get("limit_down_count", "暂无可验证数据"),
+                "break_limit_count": market_style_fact_packet.get("break_limit_count", "暂无可验证数据"),
+                "break_limit_rate": market_style_fact_packet.get("break_limit_rate", "暂无可验证数据"),
+                "max_consecutive_limit": market_style_fact_packet.get("max_consecutive_limit", "暂无可验证数据"),
+            },
+            "trade_instruction": trade_instruction.get("one_line") or trade_instruction.get("action") or "暂无可验证数据",
+            "data_missing_items": missing_items,
+            "updated_at": max(updated_sources) if updated_sources else datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+
     @st.cache_data(ttl=3600)
     def get_cn_fund_holdings(stock_code):
         """获取 A 股基金持仓数据"""
@@ -4496,14 +4625,17 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         
         st.markdown("---")
         
-        # 第二排：两个按钮
-        col_cn1, col_cn2 = st.columns(2)
+        # 第二排：A股推演按钮
+        col_cn1, col_cn2, col_cn3 = st.columns(3)
         
         with col_cn1:
             btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
         
         with col_cn2:
             btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
+
+        with col_cn3:
+            btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
         
         if btn_deepseek:
             with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
@@ -4530,6 +4662,101 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             
             st.markdown("### 📋 A股专用深度研报")
             call_deepseek_stream(improved_prompt, system_role="作为顶级A股量化基金经理")
+
+        if btn_next_day_plan:
+            plan_status = st.status("正在生成次日交易计划...", expanded=True)
+            next_day_plan_fact_packet = build_next_day_plan_fact_packet(
+                stock_code,
+                target,
+                price,
+                position_profile,
+                trade_instruction,
+                dragon_data,
+                margin_data,
+                moneyflow_data,
+                limit_emotion_data,
+                tushare_verified_source=tushare_verified_source,
+                market_style_fact_packet=market_style_fact_packet,
+            )
+            plan_prompt = f"""
+你是A股次日观察计划生成器。标的：{target}。本功能只生成“次日观察计划”，不是自动交易指令。
+
+请严格基于下方【次日交易计划事实包】输出，不允许引用事实包以外的公告、订单、客户、席位或实时资金。
+
+【次日交易计划事实包】
+{json.dumps(next_day_plan_fact_packet, ensure_ascii=False, indent=2, default=str)}
+
+【固定输出格式】
+必须逐字使用以下标题与条目，不要改标题：
+
+【次日交易计划】
+
+一、当前状态摘要
+- 当前价格：
+- 涨停价：
+- 跌停价：
+- moneyflow 状态：
+- 龙虎榜状态：
+- 融资融券状态：
+- 涨跌停/炸板记录：
+- 持仓状态：
+- 数据缺失项：
+
+二、强势高开 / 冲高情景
+- 观察条件：
+- 可考虑动作：
+- 不追高条件：
+- 放弃条件：
+
+三、平开震荡情景
+- 观察条件：
+- 可考虑动作：
+- 做T条件：
+- 放弃条件：
+
+四、低开走弱情景
+- 观察条件：
+- 风控条件：
+- 减仓 / 只观察条件：
+- 放弃条件：
+
+五、次日验证清单
+- 资金验证：
+- 量价验证：
+- 龙虎榜验证：
+- 情绪验证：
+- 公告/新闻验证：
+
+六、纪律提醒
+- 未满足验证条件前仅观察。
+- 所有交易动作需要用户人工确认。
+- 不得因为单一指标直接买入或卖出。
+- 不得自动下单。
+
+【强制规则】
+1. 本功能是“次日观察计划”，不是自动交易指令。
+2. 不允许写“必买、必卖、满仓、梭哈、确定上涨、确定反包”。
+3. 不允许自动下单。
+4. 不允许编造公告、订单、客户、席位。
+5. 涨停价/跌停价只作为交易边界参考，不能作为长期支撑/压力。
+6. 不得写“跌破跌停价”。
+7. 没有真实 moneyflow，不得写主力流入/流出。
+8. 没有真实龙虎榜，不得写机构席位。
+9. 没有真实 limit_list_d，不得写涨停/炸板/连板。
+10. margin_detail 只能代表融资融券/杠杆资金，不能等同于主力资金或机构资金。
+11. 所有结论必须区分“已验证数据”和“谨慎推断”。
+12. 若数据缺失，必须写“暂无可验证数据”。
+13. 不得给确定性买卖建议；只能输出观察条件、人工确认前提和风险边界。
+14. 可考虑动作只能使用“观察、等待验证、小仓试错需人工确认、降低风险暴露、只观察、放弃观察”等非确定性措辞。
+15. 涉及 moneyflow、龙虎榜、limit_list_d 时，必须先检查对应 available 或 records_available 字段；字段为 false 时只能写“暂无可验证数据”。
+"""
+            plan_status.write("调用 DeepSeek 推理：生成六段式观察计划")
+            st.markdown("### 🧾 次日交易计划")
+            call_deepseek_stream(
+                plan_prompt,
+                system_role="你是严格的A股次日观察计划生成器，只能基于已验证数据生成观察预案。",
+            )
+            plan_status.update(label="完成：次日交易计划", state="complete")
 
         if btn_whale:
             whale_status = st.status("正在分析巨鲸资金...", expanded=True)
