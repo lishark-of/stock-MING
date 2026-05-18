@@ -542,6 +542,80 @@ def _run_progress_stage(label, action, status_box=None, progress_bar=None, progr
     return result
 
 
+def build_verified_technical_fact_packet(technical_snapshot):
+    """Normalize already-computed technical metrics for prompt fact packets."""
+    technical = technical_snapshot or {}
+    field_map = [
+        ("latest_close", "latest_close", "收盘价"),
+        ("ma60", "ma60", "MA60"),
+        ("ma60_state", "ma60_state", "MA60状态"),
+        ("rsi_14", "rsi", "RSI-14"),
+        ("volume_vs_20d", "volume_vs_20d", "量能/20日"),
+        ("return_20d", "return_20d", "20日涨跌"),
+        ("return_60d", "return_60d", "60日涨跌"),
+        ("drawdown_60d", "drawdown_60d", "60日回撤"),
+        ("market_date", "data_asof", "行情日期"),
+        ("confidence", "confidence", "技术指标可信度"),
+    ]
+
+    packet = {
+        "available": bool(technical and _num(technical.get("confidence"), 0) > 0),
+        "latest_close": "",
+        "ma60": "",
+        "ma60_state": "",
+        "rsi_14": "",
+        "volume_vs_20d": "",
+        "return_20d": "",
+        "return_60d": "",
+        "drawdown_60d": "",
+        "market_date": "",
+        "source": technical.get("source") or "yfinance / compute_technical_snapshot",
+        "confidence": "",
+        "missing": list(technical.get("missing") or []),
+    }
+
+    for output_key, source_key, label in field_map:
+        value = technical.get(source_key)
+        if value is None or value == "":
+            packet["missing"].append(label)
+            packet[output_key] = ""
+        else:
+            packet[output_key] = value
+
+    packet["missing"] = list(dict.fromkeys(str(item) for item in packet["missing"] if item))
+    return packet
+
+
+def format_verified_technical_facts_for_prompt(verified_technical_facts):
+    facts = verified_technical_facts or build_verified_technical_fact_packet({})
+
+    def fact_value(key):
+        value = facts.get(key)
+        return value if value not in [None, ""] else "暂无可验证数据"
+
+    missing = facts.get("missing") or []
+    missing_text = "、".join(str(item) for item in missing) if missing else "无"
+    available_text = "可用" if facts.get("available") else "不可用或覆盖不足"
+    return f"""
+【已验证技术事实】
+- 可用状态：{available_text}
+- 收盘价：{fact_value("latest_close")}
+- MA60状态：{fact_value("ma60_state")}（MA60：{fact_value("ma60")}）
+- RSI-14：{fact_value("rsi_14")}
+- 量能/20日：{fact_value("volume_vs_20d")}
+- 20日涨跌：{fact_value("return_20d")}
+- 60日涨跌：{fact_value("return_60d")}
+- 60日回撤：{fact_value("drawdown_60d")}
+- 行情日期：{fact_value("market_date")}
+- 数据源：{fact_value("source")}
+- 技术指标可信度：{fact_value("confidence")}
+- 缺失项：{missing_text}
+
+约束：以上字段存在时，不得再表述为缺少该技术项数据。RSI、MA、量能、涨跌幅、回撤只用于观察条件和验证条件，不得直接推导确定性买卖结论。
+强制规则：RSI 高位不等于必跌，RSI 低位不等于必涨；站上 MA60 不等于买入信号；量能放大/缩小不得单独推断主力行为；技术事实必须和 moneyflow、龙虎榜、涨跌停、融资融券分层，不得混为同一类证据。
+"""
+
+
 def _parse_datetime_safe(value):
     if not value:
         return None
@@ -4072,6 +4146,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         limit_emotion_data,
         tushare_verified_source=None,
         market_style_fact_packet=None,
+        verified_technical_facts=None,
     ):
         """Build a verified fact packet for the next-day observation plan."""
         position_profile = position_profile or {}
@@ -4082,6 +4157,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         limit_emotion_data = limit_emotion_data or {}
         tushare_verified_source = tushare_verified_source or {}
         market_style_fact_packet = market_style_fact_packet or {}
+        verified_technical_facts = verified_technical_facts or build_verified_technical_fact_packet({})
 
         moneyflow_available = bool(moneyflow_data.get("available"))
         dragon_available = bool(dragon_data.get("available"))
@@ -4181,6 +4257,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             },
             "daily": api_results.get("daily", {"ok": False, "rows": [], "error": "暂无可验证数据"}),
             "daily_basic": api_results.get("daily_basic", {"ok": False, "rows": [], "error": "暂无可验证数据"}),
+            "verified_technical_facts": verified_technical_facts,
             "market_style": {
                 "trade_date": market_style_fact_packet.get("trade_date", ""),
                 "market_state": market_style_fact_packet.get("market_state") or "暂无可验证数据",
@@ -4710,14 +4787,20 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 stock_logic_inject = f"\n\n【{target} 自动炼丹专属规则】：\n{stock_logic}" if stock_logic else ""
             
             p_val = price if price else "未知"
+            verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
             
             improved_prompt = f"""
             你是顶级A股量化基金经理。请对 {target}（最新价 ¥{p_val}）出具深度研报。
             
+            {verified_technical_prompt}
+
             【要求】：
             1. 字数不少于 800 字
             2. 从四大维度深度拆解：基本面、情绪共振、技术面、操作指令
             3. 明确的买入/卖出信号和止损止盈位
+            4. 如果【已验证技术事实】中已有 MA60、RSI、量能、20日/60日涨跌或60日回撤，不得说缺少对应技术数据。
+            5. 技术指标只能作为观察条件和验证条件，不得因为 RSI 高、RSI 低、站上 MA60 或量能变化直接给确定性买入/卖出结论。
+            6. 技术事实必须和 moneyflow、龙虎榜、涨跌停、融资融券分层，不得混为同一类证据。
             {sys_inject}
             {stock_logic_inject}
             """
@@ -4739,11 +4822,15 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 limit_emotion_data,
                 tushare_verified_source=tushare_verified_source,
                 market_style_fact_packet=market_style_fact_packet,
+                verified_technical_facts=verified_technical_facts,
             )
+            verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
             plan_prompt = f"""
 你是A股次日观察计划生成器。标的：{target}。本功能只生成“次日观察计划”，不是自动交易指令。
 
 请严格基于下方【次日交易计划事实包】输出，不允许引用事实包以外的公告、订单、客户、席位或实时资金。
+
+{verified_technical_prompt}
 
 【次日交易计划事实包】
 {json.dumps(next_day_plan_fact_packet, ensure_ascii=False, indent=2, default=str)}
@@ -4817,6 +4904,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 19. 当 normalized_position_state == "未买入，纯观察" 时：不得计算浮盈/浮亏；不得输出做T；只输出观察条件和放弃条件；除非资金、量价、情绪至少两项改善，否则不得输出试仓。
 20. 当 normalized_position_state == "已持仓但缺少持仓数量" 时：不得计算精确浮盈；不得输出精确做T数量；可以输出低置信度持仓风控提醒，并必须提示“缺少持仓数量，持仓计划将按低置信度处理”。
 21. 若 position_profile.allow_pnl 为 false，当前状态摘要里必须写“不计算浮盈浮亏”；若 allow_t_plan 为 false，“做T条件”只能写“不适用：未确认实际持仓，不做T”。
+22. 若 verified_technical_facts.available 为 true，必须引用至少 2 个【已验证技术事实】；已有字段不得再写“缺少该技术数据”。
+23. 如果技术事实显示 RSI 高位、涨幅较大、回撤较小，只能用于风险提示和次日验证条件，不得直接写买入或卖出。
+24. 技术指标只能作为观察条件和验证条件；RSI 高位不等于必跌，RSI 低位不等于必涨，站上 MA60 不等于买入信号，量能放大/缩小不得单独推断主力行为。
+25. 技术事实必须和 moneyflow、龙虎榜、涨跌停、融资融券分层，不得混为同一类证据。
 """
             plan_status.write("调用 DeepSeek 推理：生成六段式观察计划")
             st.markdown("### 🧾 次日交易计划")
@@ -4857,7 +4948,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     )
                 volume_data = recent_data.to_string()
 
-            def build_verified_whale_fact_packet():
+            def build_verified_whale_fact_packet(verified_technical_facts=None):
+                verified_technical_facts = verified_technical_facts or build_verified_technical_fact_packet({})
                 moneyflow_available = bool(moneyflow_data and moneyflow_data.get("available"))
                 dragon_available = bool(dragon_data and dragon_data.get("available"))
                 margin_available = bool(margin_data and margin_data.get("available"))
@@ -4880,6 +4972,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "recent_5d_close_volume": recent_5d_close_volume,
                         "note": "" if recent_5d_close_volume else "暂无可验证数据",
                     },
+                    "verified_technical_facts": verified_technical_facts,
                     "moneyflow": {
                         "available": moneyflow_available,
                         "source": "Tushare moneyflow",
@@ -4937,12 +5030,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
             whale_fact_packet = _run_progress_stage(
                 "整理巨鲸资金事实包",
-                build_verified_whale_fact_packet,
+                lambda: build_verified_whale_fact_packet(verified_technical_facts),
                 whale_status,
                 whale_progress,
                 50,
                 has_data=lambda data: bool(data),
             )
+            verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
             
             whale_prompt = f"""
 你是陆家嘴资金流向分析师。标的：{target}。当前价：¥{price}。
@@ -4952,6 +5046,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 【谨慎推断】
 【投喂资料观点 / 历史假设】
 【观察清单】
+
+{verified_technical_prompt}
 
 【巨鲸资金事实包】
 {json.dumps(whale_fact_packet, ensure_ascii=False, indent=2, default=str)}
@@ -4963,6 +5059,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 3. Tushare top_list/top_inst 龙虎榜与机构席位：只能引用 dragon_tiger.available=true 时的上榜日期、上榜原因、买入/卖出/净买入、机构席位摘要和席位明细；没有明确席位名称和分类依据时只能写“营业部席位”或“席位异动”，不得写“游资席位”；否则写“暂无可验证数据”。
 4. Tushare margin_detail 融资融券：只能引用 margin.available=true 时的融资余额、融资买入额、融资融券余额或融券余量、数据日期、接口名、更新时间；否则写“暂无可验证数据”。
 5. Tushare stk_limit/limit_list_d 涨跌停与情绪：只能引用 limit_emotion.available=true 时的涨停价、跌停价、距离涨跌停；只有 records_available=true 时才能引用涨停、炸板、连板记录；否则写“暂无可验证数据”。
+6. 已验证技术事实：必须单独归入【已验证技术事实】或【观察清单】，不得归入资金事实；若 verified_technical_facts.available=true，已有 MA60、RSI、量能、20日/60日涨跌或60日回撤不得再说缺少。
 
 二、【谨慎推断】只能基于已验证资金事实判断：
 1. 资金是否偏流入/流出。
@@ -4997,6 +5094,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 11. 不得使用“出货、接盘、控盘、砸盘、抢筹”等确定性动机词；只能写“主力净流出、小单净流入/小单承接、资金结构分化”等字段可支持的描述。
 12. 使用“未满足验证条件前仅观察”，不要使用绝对化命令。
 13. 所有结论必须标注是“已验证事实”还是“谨慎推断”。
+14. 技术事实不是资金事实；不能用 MA60、RSI、涨跌幅、回撤或量能直接推断主力控盘、出货、抢筹或资金意图。
+15. 技术指标只能辅助解释量价状态和次日观察条件；RSI 高位不等于必跌，RSI 低位不等于必涨，站上 MA60 不等于买入信号，量能放大/缩小不得单独推断主力行为。
+16. 技术事实必须和 moneyflow、龙虎榜、涨跌停、融资融券分层，不得混为同一类证据。
 
 请给出基于已验证资金事实的观察与风控建议。
 """
@@ -5863,6 +5963,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 main_progress,
                 30,
             )
+            verified_technical_facts = build_verified_technical_fact_packet(technical_snapshot)
+            verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
             money_flow_snapshot = _run_progress_stage(
                 "合并资金面数据",
                 lambda: cached_money_flow_snapshot(normalized_target, market_type, deep=False),
@@ -6029,6 +6131,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 money_flow=money_flow_snapshot,
                 cloud_memory_context=cloud_memory_context,
             )
+            ai_context_packet += "\n\n" + verified_technical_prompt
             if is_a_share_market(market_type):
                 ai_context_packet += format_cn_limit_emotion_context(limit_emotion_snapshot)
             if main_backtest_report:
