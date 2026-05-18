@@ -4273,6 +4273,86 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "updated_at": max(updated_sources) if updated_sources else datetime.datetime.now().isoformat(timespec="seconds"),
         }
 
+    def build_single_stock_war_room_fact_packet(
+        stock_code,
+        stock_name,
+        current_price,
+        position_profile,
+        trade_instruction,
+        dragon_data,
+        margin_data,
+        moneyflow_data,
+        limit_emotion_data,
+        tushare_verified_source=None,
+        market_style_fact_packet=None,
+        verified_technical_facts=None,
+    ):
+        """Build the single-stock war room packet from already-loaded page data."""
+        base_fact_packet = build_next_day_plan_fact_packet(
+            stock_code,
+            stock_name,
+            current_price,
+            position_profile,
+            trade_instruction,
+            dragon_data,
+            margin_data,
+            moneyflow_data,
+            limit_emotion_data,
+            tushare_verified_source=tushare_verified_source,
+            market_style_fact_packet=market_style_fact_packet,
+            verified_technical_facts=verified_technical_facts,
+        )
+        profile = base_fact_packet.get("position_profile") or {}
+        watch_targets = st.session_state.get("single_stock_watch_targets", [])
+        if not isinstance(watch_targets, list):
+            watch_targets = []
+
+        return {
+            "stock": {
+                "ts_code": _cn_ts_code(stock_code) if stock_code else "",
+                "name": stock_name or "",
+                "current_price": base_fact_packet.get("current_price", ""),
+            },
+            "position_profile": profile,
+            "trade_instruction": base_fact_packet.get("trade_instruction", ""),
+            "verified_technical_facts": base_fact_packet.get("verified_technical_facts", {}),
+            "moneyflow": base_fact_packet.get("moneyflow", {}),
+            "dragon_tiger": base_fact_packet.get("dragon_tiger", {}),
+            "margin": base_fact_packet.get("margin", {}),
+            "limit_emotion": base_fact_packet.get("limit_emotion", {}),
+            "market_style": base_fact_packet.get("market_style", {}),
+            "position_permissions": {
+                "allow_t_plan": bool(profile.get("allow_t_plan")),
+                "allow_reduce_plan": bool(profile.get("allow_reduce_plan")),
+                "allow_trial_entry": bool(profile.get("allow_trial_entry")),
+                "normalized_position_state": profile.get("normalized_position_state") or "",
+            },
+            "trend_validation_inputs": {
+                "technical": base_fact_packet.get("verified_technical_facts", {}),
+                "moneyflow": base_fact_packet.get("moneyflow", {}),
+                "limit_emotion": base_fact_packet.get("limit_emotion", {}),
+                "market_style": base_fact_packet.get("market_style", {}),
+            },
+            "rotation_context": {
+                "watch_targets": watch_targets,
+                "note": "第一版仅使用 session_state 或今日关注池线索，未做持久化",
+            },
+            "rules": {
+                "no_auto_order": True,
+                "position_unit": "成",
+                "max_new_trial_position": "0.5–1成",
+                "no_full_position": True,
+            },
+            "tushare_verified_source": {
+                "ok": bool((tushare_verified_source or {}).get("ok")),
+                "api_name": (tushare_verified_source or {}).get("api_name", ""),
+                "updated_at": (tushare_verified_source or {}).get("updated_at", ""),
+                "status": (tushare_verified_source or {}).get("status", ""),
+            },
+            "data_missing_items": base_fact_packet.get("data_missing_items", []),
+            "updated_at": base_fact_packet.get("updated_at", ""),
+        }
+
     @st.cache_data(ttl=3600)
     def get_cn_fund_holdings(stock_code):
         """获取 A 股基金持仓数据"""
@@ -4765,11 +4845,15 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.markdown("---")
         
         # 第二排：A股主路径按钮
-        btn_deepseek = False
         btn_whale = False
         btn_next_day_plan = False
+        btn_war_room = False
+        btn_deepseek = False
+        whale_fact_packet = None
+        next_day_plan_fact_packet = None
+        single_stock_war_room_fact_packet = None
 
-        col_whale, col_plan = st.columns(2)
+        col_whale, col_plan, col_war_room = st.columns(3)
 
         with col_whale:
             btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
@@ -4777,12 +4861,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         with col_plan:
             btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
 
+        with col_war_room:
+            btn_war_room = st.button("🎯 单票作战室 / 换仓雷达", width="stretch", key="btn_cn_war_room")
+
         with st.expander("🧩 更多推演 / 扩展工具", expanded=False):
             st.caption("用于补充深度研报、扩展推演，不作为主路径交易计划。")
             btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
-
-        whale_fact_packet = None
-        next_day_plan_fact_packet = None
         
         if btn_deepseek:
             with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
@@ -4924,6 +5008,107 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 system_role="你是严格的A股次日观察计划生成器，只能基于已验证数据生成观察预案。",
             )
             plan_status.update(label="完成：次日交易计划", state="complete")
+
+        if btn_war_room:
+            war_room_status = st.status("正在生成单票作战室...", expanded=True)
+            single_stock_war_room_fact_packet = build_single_stock_war_room_fact_packet(
+                stock_code,
+                target,
+                price,
+                position_profile,
+                trade_instruction,
+                dragon_data,
+                margin_data,
+                moneyflow_data,
+                limit_emotion_data,
+                tushare_verified_source=tushare_verified_source,
+                market_style_fact_packet=market_style_fact_packet,
+                verified_technical_facts=verified_technical_facts,
+            )
+            verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
+            war_room_prompt = f"""
+你是A股单票作战室与换仓雷达。标的：{target}。本功能是作战计划，不是自动交易指令。
+
+请严格基于下方【单票作战室事实包】输出，不允许引用事实包以外的公告、订单、客户、席位或实时资金。
+
+{verified_technical_prompt}
+
+【单票作战室事实包】
+{json.dumps(single_stock_war_room_fact_packet, ensure_ascii=False, indent=2, default=str)}
+
+【固定输出格式】
+必须逐字使用以下标题与条目，不要改标题：
+只能输出以下五段，五段后立即结束；不得新增总结、免责声明、复盘、补充建议或任何额外段落。
+
+【单票作战室】
+
+一、当前票状态
+- 持仓状态：
+- 当前价格：
+- 技术状态：
+- 资金状态：
+- 龙虎榜状态：
+- 涨跌停/情绪状态：
+- 主升浪状态：
+- 风险等级：
+
+二、卖出 / 减仓信号
+- 继续持有条件：
+- 分批减仓条件：
+- 清仓/放弃条件：
+- 只做T不加仓条件：
+
+三、主升浪持有纪律
+- 哪些条件没坏就继续拿：
+- 哪些条件坏了要降低仓位：
+- 哪些是假跌破/正常震荡：
+- 哪些是真破位：
+
+四、换仓候选
+- 候选方向：
+- 候选标的：
+- 已验证数据依据：
+- 买入触发条件：
+- 放弃条件：
+- 建议观察仓位：
+
+五、仓位建议
+- 当前票建议仓位：
+- 新票试仓仓位：
+- 是否允许加仓：
+- 是否禁止追高：
+- 最大风险暴露：
+
+【硬规则】
+1. 本功能是作战计划，不是自动交易指令。
+2. 不自动下单。
+3. 不写必买、必卖、满仓、梭哈、确定上涨。
+4. 仓位建议只能是区间：0、0.5–1成、1–2成、2–3成；不得建议满仓。
+5. 未持仓不得输出做T、T出、降低成本。
+6. 已持仓才允许输出做T/减仓/持仓风控。
+7. 主升浪判断必须基于 verified_technical_facts、moneyflow_data、limit_emotion_data、market_style_fact_packet，不得只靠故事、投喂资料或主观判断。
+8. 如果当前票仍在主升结构中，不得因为单日震荡直接建议卖出。
+9. 如果资金、量价、情绪三项共振转弱，必须提示降低仓位或只观察。
+10. 没有真实 Tushare 数据时，必须写“暂无可验证数据”。
+11. 换仓候选如果只来自 session_state 或今日关注池文本，必须标注“待验证线索”，不能写成已验证机会。
+12. 投喂资料、云记忆、manager_rules 只能作为待验证线索。
+13. 涨停价/跌停价只作为交易边界参考，不能作为长期支撑/压力。
+14. 不得写“跌破跌停价”。
+15. 如果 rotation_context.watch_targets 为空，四、换仓候选的“候选标的”必须写“暂无可验证换仓候选”。
+16. 当 position_permissions.allow_t_plan 为 false，“只做T不加仓条件”只能写“不适用：未确认实际持仓，不做T”。
+17. 当 position_permissions.allow_reduce_plan 为 false，不得输出实际减仓动作，只能输出观察或放弃条件。
+18. 当 position_permissions.allow_trial_entry 为 false，新票试仓仓位只能写“0”或“不适用”。
+19. 所有交易动作都必须写明“需人工确认”。
+20. 所有结论必须区分“已验证数据”和“待验证线索/谨慎推断”。
+21. 禁止在“五、仓位建议”后追加【作战计划总结】、总结段、风险提示段或任何额外内容。
+"""
+            war_room_status.write("调用 DeepSeek 推理：生成单票作战室 / 换仓雷达")
+            st.markdown("### 🎯 单票作战室 / 换仓雷达")
+            call_deepseek_stream(
+                war_room_prompt,
+                system_role="你是严格的A股单票作战室，只能基于已验证数据生成持仓与换仓观察预案。",
+            )
+            war_room_status.update(label="完成：单票作战室 / 换仓雷达", state="complete")
 
         if btn_whale:
             whale_status = st.status("正在分析巨鲸资金...", expanded=True)
@@ -5270,6 +5455,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "ai_context_packet_has_verified_technical_facts": ai_context_has_technical,
                 "whale_fact_packet_status": "已构造" if whale_fact_packet is not None else "尚未触发",
                 "next_day_plan_fact_packet_status": "已构造" if next_day_plan_fact_packet is not None else "尚未触发",
+                "single_stock_war_room_fact_packet_status": "已构造" if single_stock_war_room_fact_packet is not None else "尚未触发",
                 "market_style_fact_packet_status": "仅今日关注池生成 / 当前页未生成",
             }
             st.markdown("##### 三、AI输入事实包状态")
