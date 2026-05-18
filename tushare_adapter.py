@@ -252,6 +252,82 @@ def get_hk_hold(ts_code=None, trade_date=None, start_date=None, end_date=None, e
     )
 
 
+def get_anns_d(ts_code=None, ann_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "anns_d",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_forecast(ts_code=None, ann_date=None, start_date=None, end_date=None, period=None):
+    return _call_pro(
+        "forecast",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+        period=_normalize_date(period),
+    )
+
+
+def get_stk_holdertrade(
+    ts_code=None,
+    ann_date=None,
+    start_date=None,
+    end_date=None,
+    trade_type=None,
+    holder_type=None,
+):
+    return _call_pro(
+        "stk_holdertrade",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+        trade_type=trade_type,
+        holder_type=holder_type,
+    )
+
+
+def get_share_float(ts_code=None, ann_date=None, float_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "share_float",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        float_date=_normalize_date(float_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_pledge_stat(ts_code=None, end_date=None):
+    return _call_pro(
+        "pledge_stat",
+        ts_code=_normalize_ts_code(ts_code),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_pledge_detail(ts_code=None):
+    return _call_pro(
+        "pledge_detail",
+        ts_code=_normalize_ts_code(ts_code),
+    )
+
+
+def get_stk_surv(ts_code=None, trade_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "stk_surv",
+        ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
 def _payload_from_result(result, api, ts_code=None):
     data = result.get("data")
     rows = []

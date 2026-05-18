@@ -4366,6 +4366,372 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     def cached_cn_limit_emotion_data(stock_code, current_price):
         return get_cn_limit_emotion_data(stock_code, current_price)
 
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def get_cn_hard_risk_radar_data(stock_code):
+        """Build verified hard-risk radar data from Tushare with prompt-safe field whitelists."""
+        ts_code = _cn_ts_code(_cn_stock_code_6(stock_code))
+        today = datetime.date.today()
+        updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+
+        def date_str(day):
+            return day.strftime("%Y%m%d")
+
+        def window(days, start_day=None, end_day=None):
+            end = end_day or today
+            start = start_day or (end - datetime.timedelta(days=days))
+            return {
+                "start_date": date_str(start),
+                "end_date": date_str(end),
+                "days": days,
+            }
+
+        ann_window = window(90)
+        forecast_window = window(180)
+        holder_window = window(180)
+        unlock_window = window(90, start_day=today, end_day=today + datetime.timedelta(days=90))
+        survey_window = window(90)
+
+        def empty_section(api, win=None, message="暂无可验证数据"):
+            return {
+                "available": False,
+                "source": "Tushare",
+                "api": api,
+                "window": win or {},
+                "rows": [],
+                "summary": "",
+                "risk_flags": [],
+                "message": message,
+                "error": "",
+                "updated_at": updated_at,
+            }
+
+        packet = {
+            "available": False,
+            "announcements": empty_section("anns_d", ann_window),
+            "earnings_forecast": empty_section("forecast", forecast_window),
+            "holder_reduction": empty_section("stk_holdertrade", holder_window),
+            "share_unlock": empty_section("share_float", unlock_window),
+            "pledge": empty_section("pledge_stat/pledge_detail", {}),
+            "institution_surveys": empty_section("stk_surv", survey_window),
+            "risk_flags": [],
+            "missing_items": [],
+            "updated_at": updated_at,
+        }
+
+        def add_missing(api, reason):
+            text = f"{api}: {reason or '暂无可验证数据'}"
+            if text not in packet["missing_items"]:
+                packet["missing_items"].append(text)
+
+        def set_result(section_name, section, result=None):
+            if isinstance(result, dict):
+                section["updated_at"] = result.get("updated_at") or section.get("updated_at") or updated_at
+                section["error"] = result.get("error") or ""
+            section["available"] = bool(section.get("rows"))
+            if section["available"]:
+                section["message"] = ""
+            else:
+                section["message"] = section.get("message") or "暂无可验证数据"
+                add_missing(section.get("api", section_name), section.get("error") or section["message"])
+            packet[section_name] = section
+
+        def data_frame(result):
+            if not isinstance(result, dict) or not result.get("ok"):
+                return None
+            df = result.get("data")
+            if df is None or df.empty:
+                return None
+            return df
+
+        def rows_from_result(result, limit=5, sort_key=None, reverse=True):
+            df = data_frame(result)
+            if df is None:
+                return []
+            rows = df.where(pd.notna(df), None).to_dict("records")
+            if sort_key:
+                rows = sorted(rows, key=lambda item: str(item.get(sort_key) or ""), reverse=reverse)
+            return rows[:limit]
+
+        def has_api(name):
+            return _tushare_adapter is not None and hasattr(_tushare_adapter, name)
+
+        def is_parameter_error(result):
+            text = str((result or {}).get("error") or "")
+            return any(keyword in text for keyword in ["参数", "trade_type", "字段", "unexpected", "got an unexpected"])
+
+        if _tushare_adapter is None:
+            reason = str(TUSHARE_ADAPTER_MODULE_ERROR) or "tushare_adapter 不可用"
+            for name, section in list(packet.items()):
+                if isinstance(section, dict) and section.get("source") == "Tushare":
+                    section["error"] = reason
+                    section["message"] = "Tushare 适配层不可用，暂无结构化硬风险。"
+                    packet[name] = section
+            packet["missing_items"].append(reason)
+            return packet
+
+        # 公告风险：标题只能作为线索，不当作事实结论。
+        section = empty_section("anns_d", ann_window)
+        if not has_api("get_anns_d"):
+            section["error"] = "tushare_adapter 未接入 anns_d 接口"
+            set_result("announcements", section)
+        else:
+            result = _tushare_adapter.get_anns_d(
+                ts_code=ts_code,
+                start_date=ann_window["start_date"],
+                end_date=ann_window["end_date"],
+            )
+            rows = []
+            risk_keywords = ["处罚", "问询", "监管", "诉讼", "仲裁", "立案", "调查", "退市", "风险提示", "担保", "冻结", "减持", "质押", "解禁", "亏损", "修正"]
+            for item in rows_from_result(result, limit=5, sort_key="ann_date"):
+                title = str(item.get("title") or "")
+                rows.append(
+                    {
+                        "ann_date": item.get("ann_date") or "",
+                        "title": title,
+                        "url": item.get("url") or "",
+                        "rec_time": item.get("rec_time") or "",
+                    }
+                )
+                matched = [keyword for keyword in risk_keywords if keyword in title]
+                if matched:
+                    section["risk_flags"].append(f"公告标题线索涉及：{','.join(matched[:3])}")
+            section["rows"] = rows
+            if rows:
+                section["summary"] = f"近90天取得公告标题 {len(rows)} 条；标题仅作公告线索，不能直接下事实结论。"
+            set_result("announcements", section, result)
+
+        # 业绩预告风险：只记录预告类型和区间，不当作确定业绩。
+        section = empty_section("forecast", forecast_window)
+        if not has_api("get_forecast"):
+            section["error"] = "tushare_adapter 未接入 forecast 接口"
+            set_result("earnings_forecast", section)
+        else:
+            result = _tushare_adapter.get_forecast(
+                ts_code=ts_code,
+                start_date=forecast_window["start_date"],
+                end_date=forecast_window["end_date"],
+            )
+            rows = []
+            for item in rows_from_result(result, limit=5, sort_key="ann_date"):
+                forecast_type = str(item.get("type") or "")
+                p_min = _cn_float(item.get("p_change_min"))
+                p_max = _cn_float(item.get("p_change_max"))
+                rows.append(
+                    {
+                        "ann_date": item.get("ann_date") or "",
+                        "end_date": item.get("end_date") or "",
+                        "type": forecast_type,
+                        "p_change_min": p_min,
+                        "p_change_max": p_max,
+                        "net_profit_min": _cn_float(item.get("net_profit_min")),
+                        "net_profit_max": _cn_float(item.get("net_profit_max")),
+                        "summary": item.get("summary") or "",
+                        "change_reason": item.get("change_reason") or "",
+                    }
+                )
+                if forecast_type in ["预减", "首亏", "续亏", "略减"] or (p_max is not None and p_max < 0):
+                    section["risk_flags"].append(f"业绩预告偏负面：{forecast_type or '变动区间为负'}")
+            section["rows"] = rows
+            if rows:
+                section["summary"] = f"近180天取得业绩预告 {len(rows)} 条；盈利预测不是业绩确定。"
+            set_result("earnings_forecast", section, result)
+
+        # 股东减持风险：优先 DE，参数不支持时全取后过滤。
+        section = empty_section("stk_holdertrade", holder_window)
+        if not has_api("get_stk_holdertrade"):
+            section["error"] = "tushare_adapter 未接入 stk_holdertrade 接口"
+            set_result("holder_reduction", section)
+        else:
+            result = _tushare_adapter.get_stk_holdertrade(
+                ts_code=ts_code,
+                start_date=holder_window["start_date"],
+                end_date=holder_window["end_date"],
+                trade_type="DE",
+            )
+            if not result.get("ok") and is_parameter_error(result):
+                result = _tushare_adapter.get_stk_holdertrade(
+                    ts_code=ts_code,
+                    start_date=holder_window["start_date"],
+                    end_date=holder_window["end_date"],
+                )
+                raw_rows = [
+                    item for item in rows_from_result(result, limit=30, sort_key="ann_date")
+                    if str(item.get("in_de") or "").upper() == "DE"
+                ][:5]
+            else:
+                raw_rows = rows_from_result(result, limit=5, sort_key="ann_date")
+            section["rows"] = [
+                {
+                    "ann_date": item.get("ann_date") or "",
+                    "holder_name": item.get("holder_name") or "",
+                    "holder_type": item.get("holder_type") or "",
+                    "in_de": item.get("in_de") or "",
+                    "change_vol": _cn_float(item.get("change_vol")),
+                    "change_ratio": _cn_float(item.get("change_ratio")),
+                    "avg_price": _cn_float(item.get("avg_price")),
+                    "begin_date": item.get("begin_date") or "",
+                    "close_date": item.get("close_date") or "",
+                }
+                for item in raw_rows
+            ]
+            if section["rows"]:
+                section["summary"] = f"近180天取得股东减持记录 {len(section['rows'])} 条。"
+                section["risk_flags"].append("存在股东减持记录")
+            set_result("holder_reduction", section, result)
+
+        # 解禁风险：未来90天按 float_date 窗口。
+        section = empty_section("share_float", unlock_window)
+        if not has_api("get_share_float"):
+            section["error"] = "tushare_adapter 未接入 share_float 接口"
+            set_result("share_unlock", section)
+        else:
+            result = _tushare_adapter.get_share_float(
+                ts_code=ts_code,
+                start_date=unlock_window["start_date"],
+                end_date=unlock_window["end_date"],
+            )
+            rows = []
+            for item in rows_from_result(result, limit=5, sort_key="float_date", reverse=False):
+                ratio = _cn_float(item.get("float_ratio"))
+                rows.append(
+                    {
+                        "float_date": item.get("float_date") or "",
+                        "float_share": _cn_float(item.get("float_share")),
+                        "float_ratio": ratio,
+                        "holder_name": item.get("holder_name") or "",
+                        "share_type": item.get("share_type") or "",
+                    }
+                )
+                if ratio is not None and ratio >= 5:
+                    section["risk_flags"].append(f"未来解禁比例较高：{ratio}%")
+            section["rows"] = rows
+            if rows:
+                section["summary"] = f"未来90天取得限售股解禁记录 {len(rows)} 条。"
+            set_result("share_unlock", section, result)
+
+        # 股权质押风险：统计取最近一期，明细取最近若干条。
+        section = empty_section("pledge_stat/pledge_detail", {})
+        stat_result = None
+        detail_result = None
+        if not has_api("get_pledge_stat") and not has_api("get_pledge_detail"):
+            section["error"] = "tushare_adapter 未接入 pledge_stat / pledge_detail 接口"
+            set_result("pledge", section)
+        else:
+            stat_rows = []
+            detail_rows = []
+            if has_api("get_pledge_stat"):
+                stat_result = _tushare_adapter.get_pledge_stat(ts_code=ts_code)
+                for item in rows_from_result(stat_result, limit=1, sort_key="end_date"):
+                    stat_rows.append(
+                        {
+                            "end_date": item.get("end_date") or "",
+                            "pledge_ratio": _cn_float(item.get("pledge_ratio")),
+                            "pledge_count": item.get("pledge_count") if item.get("pledge_count") is not None else "",
+                            "unrest_pledge": _cn_float(item.get("unrest_pledge")),
+                        }
+                    )
+                    ratio = _cn_float(item.get("pledge_ratio"))
+                    if ratio is not None and ratio >= 30:
+                        section["risk_flags"].append(f"最近一期质押比例较高：{ratio}%")
+            if has_api("get_pledge_detail"):
+                detail_result = _tushare_adapter.get_pledge_detail(ts_code=ts_code)
+                raw_detail = rows_from_result(detail_result, limit=20, sort_key="ann_date")
+                unreleased = [item for item in raw_detail if str(item.get("is_release") or "").strip() in ["0", "否", "N", "n", ""]]
+                detail_limit = 4 if stat_rows else 5
+                selected_detail = (unreleased if unreleased else raw_detail)[:detail_limit]
+                detail_rows = [
+                    {
+                        "holder_name": item.get("holder_name") or "",
+                        "pledge_amount": _cn_float(item.get("pledge_amount")),
+                        "p_total_ratio": _cn_float(item.get("p_total_ratio")),
+                        "h_total_ratio": _cn_float(item.get("h_total_ratio")),
+                        "is_release": item.get("is_release") if item.get("is_release") is not None else "",
+                    }
+                    for item in selected_detail
+                ]
+            section["rows"] = stat_rows + detail_rows
+            if section["rows"]:
+                section["summary"] = f"取得股权质押统计/明细 {len(section['rows'])} 条，优先展示最近一期和未解押记录。"
+            if isinstance(stat_result, dict) and stat_result.get("error"):
+                section["error"] = stat_result.get("error") or ""
+            if not section["error"] and isinstance(detail_result, dict) and detail_result.get("error"):
+                section["error"] = detail_result.get("error") or ""
+            section["updated_at"] = max(
+                [
+                    str(updated_at),
+                    str((stat_result or {}).get("updated_at") or ""),
+                    str((detail_result or {}).get("updated_at") or ""),
+                ]
+            )
+            set_result("pledge", section, detail_result or stat_result)
+
+        # 机构调研验证：不拉 content 长文本，不当作买入信号。
+        section = empty_section("stk_surv", survey_window)
+        if not has_api("get_stk_surv"):
+            section["error"] = "tushare_adapter 未接入 stk_surv 接口"
+            set_result("institution_surveys", section)
+        else:
+            result = _tushare_adapter.get_stk_surv(
+                ts_code=ts_code,
+                start_date=survey_window["start_date"],
+                end_date=survey_window["end_date"],
+            )
+            section["rows"] = [
+                {
+                    "surv_date": item.get("surv_date") or "",
+                    "rece_org": item.get("rece_org") or "",
+                    "org_type": item.get("org_type") or "",
+                    "rece_mode": item.get("rece_mode") or "",
+                    "fund_visitors": item.get("fund_visitors") or "",
+                    "rece_place": item.get("rece_place") or "",
+                    "comp_rece": item.get("comp_rece") or "",
+                }
+                for item in rows_from_result(result, limit=5, sort_key="surv_date")
+            ]
+            if section["rows"]:
+                section["summary"] = f"近90天取得机构调研记录 {len(section['rows'])} 条；调研记录只作关注度/验证线索，不是买入信号。"
+                section["risk_flags"].append("存在机构调研记录，需用于问题验证而非买入判断")
+            set_result("institution_surveys", section, result)
+
+        packet["risk_flags"] = []
+        for section_name in [
+            "announcements",
+            "earnings_forecast",
+            "holder_reduction",
+            "share_unlock",
+            "pledge",
+            "institution_surveys",
+        ]:
+            packet["risk_flags"].extend(packet.get(section_name, {}).get("risk_flags") or [])
+        packet["available"] = any(
+            bool((packet.get(section_name) or {}).get("available"))
+            for section_name in [
+                "announcements",
+                "earnings_forecast",
+                "holder_reduction",
+                "share_unlock",
+                "pledge",
+                "institution_surveys",
+            ]
+        )
+        packet["updated_at"] = max(
+            [
+                str(updated_at),
+                *[
+                    str((packet.get(section_name) or {}).get("updated_at") or "")
+                    for section_name in [
+                        "announcements",
+                        "earnings_forecast",
+                        "holder_reduction",
+                        "share_unlock",
+                        "pledge",
+                        "institution_surveys",
+                    ]
+                ],
+            ]
+        )
+        return packet
+
     def build_a_share_professional_fact_packet(
         stock_code,
         stock_name,
@@ -4572,6 +4938,18 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "limit_emotion": {},
                 "concept_strength": {},
             },
+            "verified_hard_risks": {
+                "announcements": {},
+                "earnings_forecast": {},
+                "holder_reduction": {},
+                "share_unlock": {},
+                "pledge": {},
+                "institution_surveys": {},
+                "policy": {
+                    "ann_titles_are_clues_not_conclusions": True,
+                    "institution_surveys_are_validation_not_buy_signal": True,
+                },
+            },
             "sentiment_and_unverified_clues": {
                 "market_news": [],
                 "processed_sources": [],
@@ -4595,10 +4973,34 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
         if not is_a_share_market(detected_market_type):
             packet["missing_items"].append("非A股标的：本阶段不调用 Tushare 结构化风控事实。")
+            packet["verified_hard_risks"]["missing_items"] = ["非A股标的：暂无结构化硬风险雷达。"]
             return packet
 
         stock_code_6 = _cn_stock_code_6(normalized_code or stock_code)
         packet["stock"]["ts_code"] = _cn_ts_code(stock_code_6)
+
+        try:
+            hard_risks = get_cn_hard_risk_radar_data(stock_code_6) or {}
+            packet["verified_hard_risks"].update(
+                {
+                    "announcements": hard_risks.get("announcements") or {},
+                    "earnings_forecast": hard_risks.get("earnings_forecast") or {},
+                    "holder_reduction": hard_risks.get("holder_reduction") or {},
+                    "share_unlock": hard_risks.get("share_unlock") or {},
+                    "pledge": hard_risks.get("pledge") or {},
+                    "institution_surveys": hard_risks.get("institution_surveys") or {},
+                    "available": bool(hard_risks.get("available")),
+                    "risk_flags": hard_risks.get("risk_flags") or [],
+                    "missing_items": hard_risks.get("missing_items") or [],
+                    "updated_at": hard_risks.get("updated_at") or updated_at,
+                    "policy": {
+                        "ann_titles_are_clues_not_conclusions": True,
+                        "institution_surveys_are_validation_not_buy_signal": True,
+                    },
+                }
+            )
+        except Exception as exc:
+            packet["verified_hard_risks"]["missing_items"] = [f"硬风险雷达构造失败：{type(exc).__name__}"]
 
         try:
             facts = build_a_share_professional_fact_packet(
@@ -4637,7 +5039,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             },
         }
         packet["missing_items"] = list(facts.get("missing_items") or [])
-        packet["updated_at"] = facts.get("updated_at") or updated_at
+        packet["missing_items"].extend(packet.get("verified_hard_risks", {}).get("missing_items") or [])
+        packet["updated_at"] = max(
+            str(facts.get("updated_at") or updated_at),
+            str(packet.get("verified_hard_risks", {}).get("updated_at") or updated_at),
+        )
         return packet
 
     def build_next_day_plan_fact_packet(
@@ -6369,6 +6775,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         trading = packet.get("verified_trading_structure_risks") or {}
                         chip = packet.get("verified_chip_risks") or {}
                         emotion = packet.get("verified_emotion_risks") or {}
+                        hard = packet.get("verified_hard_risks") or {}
                         clues = packet.get("sentiment_and_unverified_clues") or {}
 
                         moneyflow = trading.get("moneyflow") or {}
@@ -6427,12 +6834,29 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         else:
                             emotion_line = "暂无可验证数据"
 
+                        def hard_line(section, empty_text="暂无可验证数据"):
+                            section = section or {}
+                            if not section.get("available"):
+                                return section.get("message") or empty_text
+                            summary = section.get("summary") or ""
+                            flags = section.get("risk_flags") or []
+                            if flags:
+                                return f"{summary or '已取得可验证记录'}；风险线索：{'；'.join(flags[:2])}"
+                            rows = section.get("rows") or []
+                            return summary or f"已取得 {len(rows)} 条可验证记录"
+
                         return {
                             "moneyflow": moneyflow_line,
                             "dragon_tiger": dragon_line,
                             "margin": margin_line,
                             "chip": chip_line,
                             "emotion": emotion_line,
+                            "hard_announcements": hard_line(hard.get("announcements")),
+                            "hard_earnings_forecast": hard_line(hard.get("earnings_forecast")),
+                            "hard_holder_reduction": hard_line(hard.get("holder_reduction")),
+                            "hard_share_unlock": hard_line(hard.get("share_unlock")),
+                            "hard_pledge": hard_line(hard.get("pledge")),
+                            "hard_institution_surveys": hard_line(hard.get("institution_surveys")),
                             "market_news": first_titles(clues.get("market_news"), limit=3),
                             "processed_sources": first_titles(clues.get("processed_sources"), prefix="待验证线索：", limit=3),
                             "yfinance_news": first_titles(clues.get("yfinance_news"), limit=3),
@@ -6520,6 +6944,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.markdown(f"- 筹码风险：{display_lines['chip']}")
                     st.markdown(f"- 情绪/题材风险（涨跌停 / 概念热度风险）：{display_lines['emotion']}")
 
+                    st.markdown("#### 【已验证硬风险】")
+                    st.markdown(f"- 公告风险：{display_lines['hard_announcements']}")
+                    st.markdown(f"- 业绩预告风险：{display_lines['hard_earnings_forecast']}")
+                    st.markdown(f"- 股东减持风险：{display_lines['hard_holder_reduction']}")
+                    st.markdown(f"- 解禁风险：{display_lines['hard_share_unlock']}")
+                    st.markdown(f"- 质押风险：{display_lines['hard_pledge']}")
+                    st.markdown(f"- 机构调研验证：{display_lines['hard_institution_surveys']}")
+
                     st.markdown("#### 【舆情与待验证线索】")
                     st.markdown(f"- Supabase market_news：{display_lines['market_news']}")
                     st.markdown(f"- processed_sources：{display_lines['processed_sources']}")
@@ -6546,6 +6978,15 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 {veto_result}
 
 请严格按以下固定结构输出：
+
+【已验证硬风险】
+只能引用：
+- anns_d：公告标题、公告日期、URL。标题只能作为公告线索，不能直接下事实结论。
+- forecast：业绩预告类型、净利润变动区间、报告期。
+- stk_holdertrade：股东减持记录。
+- share_float：未来解禁日期、解禁比例、股东名称。
+- pledge_stat / pledge_detail：最近一期质押比例、未解押明细。
+- stk_surv：机构调研记录，只能作为关注度/验证线索，不是买入信号。
 
 【已验证交易结构风险】
 只能引用：
@@ -6594,6 +7035,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 11. market_news 的 risk_tag / sentiment 是系统提取标签，不等同公告事实。
 12. 没有真实接口返回，不得补写监管处罚、问询、诉讼、减持、质押、解禁。
 13. 不得编造事实包以外的公告、新闻、资金、席位、监管或财务信息。
+14. 公告标题不是事实裁判；没有阅读全文或结构化字段时，只能写“公告线索显示标题涉及 X”。
+15. 机构调研不是利好，不等于机构买入、持仓或推荐。
+16. 减持、解禁、质押只能提升风险权重，不能自动推出必跌。
+17. 盈利预测不是业绩确定。
+18. 投喂资料不是事实。
 """
 
                     st.markdown(
