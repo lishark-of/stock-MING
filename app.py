@@ -4764,17 +4764,22 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         
         st.markdown("---")
         
-        # 第二排：A股推演按钮
-        col_cn1, col_cn2, col_cn3 = st.columns(3)
-        
-        with col_cn1:
-            btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
-        
-        with col_cn2:
+        # 第二排：A股主路径按钮
+        btn_deepseek = False
+        btn_whale = False
+        btn_next_day_plan = False
+
+        col_whale, col_plan = st.columns(2)
+
+        with col_whale:
             btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
 
-        with col_cn3:
+        with col_plan:
             btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
+
+        with st.expander("🧩 更多推演 / 扩展工具", expanded=False):
+            st.caption("用于补充深度研报、扩展推演，不作为主路径交易计划。")
+            btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
 
         whale_fact_packet = None
         next_day_plan_fact_packet = None
