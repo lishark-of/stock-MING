@@ -176,7 +176,10 @@ def _fallback_render(title, payload):
     else:
         st.warning(f"{title} 降级：云端 visualizer.py 版本未完全同步。")
     if isinstance(payload, pd.DataFrame):
-        st.dataframe(payload, width="stretch")
+        try:
+            st.dataframe(payload, use_container_width=True)
+        except Exception as table_error:
+            st.warning(f"{title} 表格暂不可用：{type(table_error).__name__}")
     else:
         st.json(payload)
 
@@ -218,7 +221,13 @@ if render_valuation_module is None:
         _fallback_render("估值可视化", valuation)
 if render_recent_sentiment_module is None:
     def render_recent_sentiment_module(news_rows):
-        st.dataframe(pd.DataFrame(news_rows), width="stretch") if news_rows else st.info("暂无舆情")
+        if news_rows:
+            try:
+                st.dataframe(pd.DataFrame(news_rows), use_container_width=True)
+            except Exception as table_error:
+                st.warning(f"舆情表格暂不可用：{type(table_error).__name__}")
+        else:
+            st.info("暂无舆情")
 if render_portfolio_health_module is None:
     def render_portfolio_health_module(portfolio_health):
         _fallback_render("持仓体检可视化", portfolio_health)
@@ -230,7 +239,13 @@ if render_money_flow_module is None:
         _fallback_render("资金面可视化", flow)
 if render_peer_snapshot is None:
     def render_peer_snapshot(peer_rows):
-        st.dataframe(pd.DataFrame(peer_rows), width="stretch") if peer_rows else st.info("暂无同行对比")
+        if peer_rows:
+            try:
+                st.dataframe(pd.DataFrame(peer_rows), use_container_width=True)
+            except Exception as table_error:
+                st.warning(f"同行对比表格暂不可用：{type(table_error).__name__}")
+        else:
+            st.info("暂无同行对比")
 if render_research_links is None:
     def render_research_links(links):
         for link in links or []:
@@ -4949,6 +4964,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         stock_code = target.split('.')[0]
         
         st.markdown("#### 🇨🇳 A股专业数据穿透系统")
+        st.caption("A股专业区已加载｜chip radar feature present｜commit b96737a")
         st.caption("功能标记：chip radar enabled｜Tushare 15000 features active")
         st.caption("chip radar module loaded")
         st.caption("本页 A股专业事实在当前短时间内复用缓存，可刷新页面或等待缓存过期后重新拉取。")
