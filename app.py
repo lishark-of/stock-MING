@@ -4949,6 +4949,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         stock_code = target.split('.')[0]
         
         st.markdown("#### 🇨🇳 A股专业数据穿透系统")
+        st.caption("功能标记：chip radar enabled｜Tushare 15000 features active")
+        st.caption("chip radar module loaded")
         st.caption("本页 A股专业事实在当前短时间内复用缓存，可刷新页面或等待缓存过期后重新拉取。")
 
         cn_status = st.status("正在检查 A股龙虎榜、融资融券、资金流向与筹码事实...", expanded=False)
@@ -5066,13 +5068,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             with record_col:
                 st.markdown("##### 近5日涨跌停 / 炸板 / 连板记录")
                 if record_rows:
-                    st.dataframe(pd.DataFrame(record_rows), width="stretch")
+                    try:
+                        st.dataframe(pd.DataFrame(record_rows), use_container_width=True)
+                    except Exception as e:
+                        st.caption(f"表格渲染暂不可用：{e}")
                 else:
                     st.info("近5日未见该股涨跌停/炸板记录。")
             with concept_col:
                 st.markdown("##### 当日涨停概念强度 Top 5")
                 if concept_rows:
-                    st.dataframe(pd.DataFrame(concept_rows), width="stretch")
+                    try:
+                        st.dataframe(pd.DataFrame(concept_rows), use_container_width=True)
+                    except Exception as e:
+                        st.caption(f"表格渲染暂不可用：{e}")
                 else:
                     st.info("暂未取得当日涨停概念强度数据。")
         else:
