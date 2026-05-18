@@ -3359,6 +3359,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             return f"{code}.BJ"
         return code
 
+    def _cn_stock_code_6(stock_code):
+        text = str(stock_code or "").upper().strip()
+        text = text.replace(".SS", "").replace(".SH", "").replace(".SZ", "")
+        text = text.split(".")[0]
+        digits = re.sub(r"\D", "", text)
+        return digits.zfill(6) if digits else text
+
     @st.cache_data(ttl=900, show_spinner=False)
     def _cn_recent_trade_dates(days=30):
         today = datetime.date.today()
@@ -4359,6 +4366,189 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     def cached_cn_limit_emotion_data(stock_code, current_price):
         return get_cn_limit_emotion_data(stock_code, current_price)
 
+    def build_a_share_professional_fact_packet(
+        stock_code,
+        stock_name,
+        current_price,
+        position_profile=None,
+        trade_instruction=None,
+        dragon_data=None,
+        margin_data=None,
+        moneyflow_data=None,
+        limit_emotion_data=None,
+        chip_radar_data=None,
+        tushare_verified_source=None,
+        market_style_fact_packet=None,
+        verified_technical_facts=None,
+    ):
+        """Build a prompt-safe A-share professional fact bundle from cached data."""
+        stock_code_6 = _cn_stock_code_6(stock_code)
+        verified_technical_facts = verified_technical_facts or build_verified_technical_fact_packet({})
+
+        try:
+            if dragon_data is None:
+                dragon_data = cached_cn_dragon_tiger_board(stock_code_6)
+            if margin_data is None:
+                margin_data = cached_cn_margin_data(stock_code_6)
+            if moneyflow_data is None:
+                moneyflow_data = cached_cn_moneyflow_data(stock_code_6)
+            if limit_emotion_data is None:
+                limit_emotion_data = cached_cn_limit_emotion_data(stock_code_6, current_price=current_price)
+            if chip_radar_data is None:
+                chip_radar_data = get_cn_chip_radar_data(stock_code_6, current_price=current_price)
+        except Exception as fact_error:
+            return {
+                "available": False,
+                "stock_code": stock_code_6,
+                "moneyflow": {},
+                "dragon_tiger": {},
+                "margin": {},
+                "limit_emotion": {},
+                "chip_radar": {},
+                "verified_technical_facts": verified_technical_facts,
+                "data_source": "Tushare + yfinance technical",
+                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "missing_items": [f"A股专业事实包构造失败：{type(fact_error).__name__}"],
+            }
+
+        base_packet = build_next_day_plan_fact_packet(
+            stock_code_6,
+            stock_name,
+            current_price,
+            position_profile or {},
+            trade_instruction or {},
+            dragon_data or {},
+            margin_data or {},
+            moneyflow_data or {},
+            limit_emotion_data or {},
+            chip_radar_data=chip_radar_data or {},
+            tushare_verified_source=tushare_verified_source or {},
+            market_style_fact_packet=market_style_fact_packet or {},
+            verified_technical_facts=verified_technical_facts,
+        )
+
+        def updated_at_of(*items):
+            values = []
+            for item in items:
+                if isinstance(item, dict) and item.get("updated_at"):
+                    values.append(str(item.get("updated_at")))
+            values.append(str(base_packet.get("updated_at") or datetime.datetime.now().isoformat(timespec="seconds")))
+            return max(values)
+
+        moneyflow_fact = {
+            **(base_packet.get("moneyflow") or {}),
+            "source": "Tushare",
+            "api": "moneyflow",
+            "date": (moneyflow_data or {}).get("date", ""),
+            "main_net_yi": (moneyflow_data or {}).get("main_net_yi", ""),
+            "large_net_yi": (moneyflow_data or {}).get("large_net_yi", ""),
+            "medium_net_yi": (moneyflow_data or {}).get("medium_net_yi", ""),
+            "small_net_yi": (moneyflow_data or {}).get("small_net_yi", ""),
+            "five_day_main_net_yi": (moneyflow_data or {}).get("five_day_main_net_yi", ""),
+            "updated_at": (moneyflow_data or {}).get("updated_at", ""),
+        }
+        dragon_fact = {
+            **(base_packet.get("dragon_tiger") or {}),
+            "source": "Tushare",
+            "api": "top_list/top_inst",
+            "latest_date": (dragon_data or {}).get("latest_date", ""),
+            "close": (dragon_data or {}).get("close", ""),
+            "pct_change": (dragon_data or {}).get("pct_change", ""),
+            "buy_amount_yi": (dragon_data or {}).get("buy_amount_yi", ""),
+            "sell_amount_yi": (dragon_data or {}).get("sell_amount_yi", ""),
+            "net_buy_amount_yi": (dragon_data or {}).get("net_buy_amount_yi", ""),
+            "inst_summary": (dragon_data or {}).get("inst_summary", ""),
+            "updated_at": (dragon_data or {}).get("updated_at", ""),
+        }
+        margin_fact = {
+            **(base_packet.get("margin") or {}),
+            "source": "Tushare",
+            "api": "margin_detail",
+            "date": (margin_data or {}).get("date", ""),
+            "updated_at": (margin_data or {}).get("updated_at", ""),
+        }
+        limit_fact = {
+            **(base_packet.get("limit_emotion") or {}),
+            "source": "Tushare",
+            "api": "stk_limit / limit_list_d / limit_cpt_list",
+            "latest_date": (limit_emotion_data or {}).get("latest_date", ""),
+            "concept_date": (limit_emotion_data or {}).get("concept_date", ""),
+            "up_limit": (limit_emotion_data or {}).get("up_limit", ""),
+            "down_limit": (limit_emotion_data or {}).get("down_limit", ""),
+            "distance_to_up_pct": (limit_emotion_data or {}).get("distance_to_up_pct", ""),
+            "distance_to_down_pct": (limit_emotion_data or {}).get("distance_to_down_pct", ""),
+            "boundary_available": bool((limit_emotion_data or {}).get("boundary_available")),
+            "concept_available": bool((limit_emotion_data or {}).get("concept_available")),
+            "updated_at": (limit_emotion_data or {}).get("updated_at", ""),
+        }
+        chip_fact = {
+            **(base_packet.get("chip_radar") or {}),
+            "source": "Tushare",
+            "api": "cyq_perf/cyq_chips",
+            "updated_at": (chip_radar_data or {}).get("updated_at", ""),
+        }
+        missing_items = list(base_packet.get("data_missing_items") or [])
+        available = any(
+            bool(section.get("available"))
+            for section in [moneyflow_fact, dragon_fact, margin_fact, limit_fact, chip_fact]
+            if isinstance(section, dict)
+        ) or bool((verified_technical_facts or {}).get("available"))
+
+        return {
+            "available": available,
+            "stock_code": stock_code_6,
+            "moneyflow": moneyflow_fact,
+            "dragon_tiger": dragon_fact,
+            "margin": margin_fact,
+            "limit_emotion": limit_fact,
+            "chip_radar": chip_fact,
+            "verified_technical_facts": verified_technical_facts,
+            "data_source": "Tushare + yfinance technical",
+            "updated_at": updated_at_of(
+                moneyflow_data,
+                dragon_data,
+                margin_data,
+                limit_emotion_data,
+                chip_radar_data,
+            ),
+            "missing_items": missing_items,
+        }
+
+    def format_a_share_professional_facts_for_prompt(a_share_professional_facts):
+        facts = a_share_professional_facts or {}
+        if not facts:
+            return "\n\n【已验证A股专业事实】\n暂无可验证A股专业事实。"
+        compact = {
+            "available": bool(facts.get("available")),
+            "stock_code": facts.get("stock_code", ""),
+            "个股资金流": facts.get("moneyflow") or {},
+            "龙虎榜": facts.get("dragon_tiger") or {},
+            "融资融券": facts.get("margin") or {},
+            "涨跌停/概念强度": facts.get("limit_emotion") or {},
+            "筹码/胜率": facts.get("chip_radar") or {},
+            "技术事实": facts.get("verified_technical_facts") or {},
+            "缺失项": facts.get("missing_items") or [],
+            "data_source": facts.get("data_source", "Tushare + yfinance technical"),
+            "updated_at": facts.get("updated_at", ""),
+        }
+        return f"""
+
+【已验证A股专业事实】
+{json.dumps(compact, ensure_ascii=False, indent=2, default=str)}
+
+【A股专业事实硬规则】
+1. A股专业事实只能来自 Tushare / verified_technical_facts。
+2. Supabase、brain_memory、manager_rules、processed_sources 只能作为投喂资料观点 / 历史假设 / 待验证线索。
+3. 没有 moneyflow 真实数据，不得写主力流入/流出。
+4. 没有 top_list/top_inst，不得写机构席位。
+5. 没有 cyq_perf/cyq_chips，不得写筹码压力。
+6. 筹码集中不是必涨。
+7. 获利盘高不是必卖。
+8. 融资融券只能代表杠杆资金，不等于主力资金。
+9. limit_cpt_list 只能代表概念热度，不是追涨理由。
+10. 不得写必买、必卖、满仓、梭哈。
+"""
+
     def build_next_day_plan_fact_packet(
         stock_code,
         stock_name,
@@ -4957,11 +5147,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         
         st.markdown("---")
 
-    def display_cn_stock_analysis(target, price):
+    def display_cn_stock_analysis(target, price, professional_facts=None):
         """A股深度分析 - 集成 akshare 专业数据"""
         
         # 提取 A 股代码（去后缀）
-        stock_code = target.split('.')[0]
+        stock_code = _cn_stock_code_6(target)
+        professional_facts = professional_facts or {}
+        reuse_professional_facts = bool(
+            professional_facts.get("available")
+            or any(
+                isinstance(professional_facts.get(key), dict) and professional_facts.get(key)
+                for key in ["dragon_tiger", "margin", "moneyflow", "limit_emotion", "chip_radar"]
+            )
+        )
         
         st.markdown("#### 🇨🇳 A股专业数据穿透系统")
         st.caption("A股专业区已加载｜chip radar feature present｜commit b96737a")
@@ -4971,46 +5169,55 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
         cn_status = st.status("正在检查 A股龙虎榜、融资融券、资金流向与筹码事实...", expanded=False)
         cn_progress = st.progress(0)
-        dragon_data = _run_progress_stage(
-            "检查龙虎榜",
-            lambda: cached_cn_dragon_tiger_board(stock_code),
-            cn_status,
-            cn_progress,
-            25,
-            has_data=lambda data: bool(data and data.get("available")),
-        )
-        margin_data = _run_progress_stage(
-            "检查融资融券",
-            lambda: cached_cn_margin_data(stock_code),
-            cn_status,
-            cn_progress,
-            50,
-            has_data=lambda data: bool(data and data.get("available")),
-        )
-        moneyflow_data = _run_progress_stage(
-            "检查个股资金流向",
-            lambda: cached_cn_moneyflow_data(stock_code),
-            cn_status,
-            cn_progress,
-            75,
-            has_data=lambda data: bool(data and data.get("available")),
-        )
-        limit_emotion_data = _run_progress_stage(
-            "检查涨跌停情绪",
-            lambda: cached_cn_limit_emotion_data(stock_code, current_price=price),
-            cn_status,
-            cn_progress,
-            90,
-            has_data=lambda data: bool(data and data.get("available")),
-        )
-        chip_radar_data = _run_progress_stage(
-            "检查筹码/胜率",
-            lambda: get_cn_chip_radar_data(stock_code, current_price=price),
-            cn_status,
-            cn_progress,
-            100,
-            has_data=lambda data: bool(data and data.get("available")),
-        )
+        if reuse_professional_facts:
+            dragon_data = professional_facts.get("dragon_tiger") or {}
+            margin_data = professional_facts.get("margin") or {}
+            moneyflow_data = professional_facts.get("moneyflow") or {}
+            limit_emotion_data = professional_facts.get("limit_emotion") or {}
+            chip_radar_data = professional_facts.get("chip_radar") or {}
+            cn_progress.progress(100)
+            cn_status.write("完成：复用主诊断A股专业事实包")
+        else:
+            dragon_data = _run_progress_stage(
+                "检查龙虎榜",
+                lambda: cached_cn_dragon_tiger_board(stock_code),
+                cn_status,
+                cn_progress,
+                25,
+                has_data=lambda data: bool(data and data.get("available")),
+            )
+            margin_data = _run_progress_stage(
+                "检查融资融券",
+                lambda: cached_cn_margin_data(stock_code),
+                cn_status,
+                cn_progress,
+                50,
+                has_data=lambda data: bool(data and data.get("available")),
+            )
+            moneyflow_data = _run_progress_stage(
+                "检查个股资金流向",
+                lambda: cached_cn_moneyflow_data(stock_code),
+                cn_status,
+                cn_progress,
+                75,
+                has_data=lambda data: bool(data and data.get("available")),
+            )
+            limit_emotion_data = _run_progress_stage(
+                "检查涨跌停情绪",
+                lambda: cached_cn_limit_emotion_data(stock_code, current_price=price),
+                cn_status,
+                cn_progress,
+                90,
+                has_data=lambda data: bool(data and data.get("available")),
+            )
+            chip_radar_data = _run_progress_stage(
+                "检查筹码/胜率",
+                lambda: get_cn_chip_radar_data(stock_code, current_price=price),
+                cn_status,
+                cn_progress,
+                100,
+                has_data=lambda data: bool(data and data.get("available")),
+            )
         cn_status.update(label="完成：A股盘口与情绪数据检查", state="complete")
         
         # 第一排：龙虎榜 + 融资融券 + 个股资金流向
@@ -6603,6 +6810,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         ]
         tushare_verified_source = {}
         limit_emotion_snapshot = {}
+        a_share_professional_stock_code = ""
+        a_share_dragon_data = None
+        a_share_margin_data = None
+        a_share_moneyflow_data = None
+        a_share_limit_emotion_data = None
+        a_share_chip_radar_data = None
+        a_share_professional_facts = {}
 
         if True:
             cloud_memory_context = _run_progress_stage(
@@ -6658,6 +6872,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 48,
             )
             if is_a_share_market(market_type):
+                a_share_professional_stock_code = _cn_stock_code_6(normalized_target)
                 try:
                     tushare_end = datetime.date.today()
                     tushare_start = tushare_end - datetime.timedelta(days=30)
@@ -6681,12 +6896,45 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "error": str(e),
                     }
                 try:
-                    limit_emotion_snapshot = _run_progress_stage(
-                        "读取涨跌停情绪事实",
-                        lambda: cached_cn_limit_emotion_data(normalized_target, current_price=price),
+                    a_share_dragon_data = _run_progress_stage(
+                        "读取A股龙虎榜事实",
+                        lambda: cached_cn_dragon_tiger_board(a_share_professional_stock_code),
+                        main_status,
+                        main_progress,
+                        56,
+                        has_data=lambda data: bool(data and data.get("available")),
+                    )
+                    a_share_margin_data = _run_progress_stage(
+                        "读取A股融资融券事实",
+                        lambda: cached_cn_margin_data(a_share_professional_stock_code),
+                        main_status,
+                        main_progress,
+                        57,
+                        has_data=lambda data: bool(data and data.get("available")),
+                    )
+                    a_share_moneyflow_data = _run_progress_stage(
+                        "读取A股moneyflow事实",
+                        lambda: cached_cn_moneyflow_data(a_share_professional_stock_code),
                         main_status,
                         main_progress,
                         58,
+                        has_data=lambda data: bool(data and data.get("available")),
+                    )
+                    a_share_limit_emotion_data = _run_progress_stage(
+                        "读取涨跌停情绪事实",
+                        lambda: cached_cn_limit_emotion_data(a_share_professional_stock_code, current_price=price),
+                        main_status,
+                        main_progress,
+                        59,
+                        has_data=lambda data: bool(data and data.get("available")),
+                    )
+                    limit_emotion_snapshot = a_share_limit_emotion_data
+                    a_share_chip_radar_data = _run_progress_stage(
+                        "读取A股筹码/胜率事实",
+                        lambda: get_cn_chip_radar_data(a_share_professional_stock_code, current_price=price),
+                        main_status,
+                        main_progress,
+                        60,
                         has_data=lambda data: bool(data and data.get("available")),
                     )
                 except Exception as e:
@@ -6695,6 +6943,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "message": "近5日未取得可验证涨跌停/情绪数据，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。",
                         "error": str(e),
                     }
+                    a_share_limit_emotion_data = limit_emotion_snapshot
             portfolio_health = compute_portfolio_health(
                 normalized_target,
                 related_tickers=supply_profile.get("a_share_links", []),
@@ -6786,6 +7035,29 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             )
             position_profile["local_trade_instruction"] = trade_instruction
             position_profile["backtest_summary"] = (main_backtest_report or {}).get("summary", "")
+            if is_a_share_market(market_type):
+                a_share_professional_facts = _run_progress_stage(
+                    "整理A股专业事实包",
+                    lambda: build_a_share_professional_fact_packet(
+                        a_share_professional_stock_code or normalized_target,
+                        target,
+                        price,
+                        position_profile,
+                        trade_instruction,
+                        dragon_data=a_share_dragon_data,
+                        margin_data=a_share_margin_data,
+                        moneyflow_data=a_share_moneyflow_data,
+                        limit_emotion_data=a_share_limit_emotion_data or limit_emotion_snapshot,
+                        chip_radar_data=a_share_chip_radar_data,
+                        tushare_verified_source=tushare_verified_source,
+                        market_style_fact_packet=market_style_fact_packet,
+                        verified_technical_facts=verified_technical_facts,
+                    ),
+                    main_status,
+                    main_progress,
+                    78,
+                    has_data=lambda data: bool(data and data.get("available")),
+                )
             peer_rows = build_peer_snapshot(normalized_target, supply_profile)
             research_links = deep_research_queries(normalized_target, supply_profile.get("name", ""))
             ai_context_packet = build_ai_context_packet_safe(
@@ -6804,6 +7076,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             ai_context_packet += "\n\n" + verified_technical_prompt
             if is_a_share_market(market_type):
                 ai_context_packet += format_cn_limit_emotion_context(limit_emotion_snapshot)
+                ai_context_packet += format_a_share_professional_facts_for_prompt(a_share_professional_facts)
             if main_backtest_report:
                 ai_context_packet += "\n\n【回测反哺】\n" + json.dumps(
                     compact_report_for_prompt(main_backtest_report),
@@ -7121,7 +7394,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     
         elif market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
             # A股的核心按钮和逻辑已经内嵌在这个函数里了
-            display_cn_stock_analysis(target, price)
+            display_cn_stock_analysis(target, price, professional_facts=a_share_professional_facts)
     # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
        # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
     with tab_screener:
