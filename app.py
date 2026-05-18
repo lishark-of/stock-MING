@@ -2960,6 +2960,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         feed_context = "\n".join(feed_context_lines)
         emerging_trends = summarize_context_trends(market_context_lines)
         dragon_tiger_activity = market_style_fact_packet.get("dragon_tiger_activity") or {}
+        concept_strength_top = market_style_fact_packet.get("concept_strength_top") or []
         moneyflow_samples = market_style_fact_packet.get("moneyflow_samples") or {}
         moneyflow_sample_count = len(moneyflow_samples.get("positive_samples") or []) + len(
             moneyflow_samples.get("negative_samples") or []
@@ -3006,6 +3007,7 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
 - 炸板率：{market_style_fact_packet.get("break_limit_rate") if market_style_fact_packet.get("break_limit_rate") is not None else "暂无可验证数据"}
 - 最高连板：{market_style_fact_packet.get("max_consecutive_limit") if market_style_fact_packet.get("max_consecutive_limit") is not None else "暂无可验证数据"}
 - 龙虎榜活跃数量：{dragon_tiger_activity.get("list_count", 0)}
+- 概念强度样本数量：{len(concept_strength_top)}
 - 资金流样本数量：{moneyflow_sample_count}
 - market_state：{market_style_fact_packet.get("market_state") or "暂无可验证数据"}
 - risk_switch：{market_style_fact_packet.get("risk_switch") or "适合只观察不买"}
@@ -3024,7 +3026,8 @@ Tushare 数据源说明：
 - 优先使用 limit_list_d / top_list / moneyflow 的真实返回。
 - 数据日期：{market_style_fact_packet.get("trade_date") or "暂无可验证数据"}
 - 缺失项：{missing_sources_text}
-- 不依赖 limit_cpt_list，不得引用未返回的概念强度。
+- 若 concept_strength_top 有真实返回，只能作为“概念强度 / 题材热度 / 过热风控”引用；不得写成建议追涨。
+- 若 concept_strength_top 为空，不得引用未返回的概念强度。
 
 Yahoo Finance 市场快照：
 {market_snapshot}
@@ -3341,6 +3344,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             return f"{code}.BJ"
         return code
 
+    @st.cache_data(ttl=900, show_spinner=False)
     def _cn_recent_trade_dates(days=30):
         today = datetime.date.today()
         start = today - datetime.timedelta(days=days)
@@ -3404,6 +3408,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             return f"{text[:4]}-{text[4:6]}-{text[6:]}"
         return text or "未知"
 
+    @st.cache_data(ttl=600, show_spinner=False)
     def build_market_style_fact_packet():
         """构建今日关注池使用的 A 股市场情绪事实包，所有 Tushare 失败都降级为缺失项。"""
         updated_at = datetime.datetime.now().isoformat(timespec="seconds")
@@ -3423,6 +3428,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "positive_samples": [],
                 "negative_samples": [],
             },
+            "concept_strength_top": [],
             "market_state": "暂无可验证数据",
             "risk_switch": "适合只观察不买",
             "verified_sources": [],
@@ -3626,6 +3632,37 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         except Exception as e:
             add_missing("Tushare moneyflow", str(e))
 
+        try:
+            if hasattr(_tushare_adapter, "get_limit_cpt_list"):
+                concept_result = _tushare_adapter.get_limit_cpt_list(trade_date=trade_date_for_market)
+                if concept_result.get("ok"):
+                    concept_df = concept_result.get("data")
+                    if concept_df is not None and not concept_df.empty:
+                        if "rank" in concept_df.columns:
+                            try:
+                                concept_df = concept_df.assign(_rank_sort=pd.to_numeric(concept_df["rank"], errors="coerce")).sort_values("_rank_sort")
+                            except Exception:
+                                pass
+                        packet["concept_strength_top"] = [
+                            {
+                                "name": row.get("name") or row.get("ts_code") or "",
+                                "up_nums": row.get("up_nums") if row.get("up_nums") is not None else "",
+                                "cons_nums": row.get("cons_nums") if row.get("cons_nums") is not None else "",
+                                "up_stat": row.get("up_stat") or "",
+                                "rank": row.get("rank") if row.get("rank") is not None else "",
+                                "pct_chg": row.get("pct_chg") if row.get("pct_chg") is not None else "",
+                            }
+                            for row in _cn_frame_records(concept_df, 5)
+                        ]
+                        if packet["concept_strength_top"]:
+                            add_verified("Tushare limit_cpt_list")
+                    else:
+                        add_missing("Tushare limit_cpt_list", "最近交易日无概念强度返回")
+                else:
+                    add_missing("Tushare limit_cpt_list", concept_result.get("error") or "调用失败")
+        except Exception as e:
+            add_missing("Tushare limit_cpt_list", str(e))
+
         if current_limit_stats is None:
             return packet
 
@@ -3740,6 +3777,15 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 base["message"] = base["warning"]
             base["updated_at"] = result.get("updated_at") or base["updated_at"]
 
+        def is_permission_error(result):
+            if not isinstance(result, dict):
+                return False
+            text = " ".join(
+                str(result.get(key) or "")
+                for key in ["error", "message", "warning"]
+            )
+            return any(keyword.lower() in text.lower() for keyword in ["权限", "无接口访问权限", "permission", "积分", "没有访问", "抱歉", "token"])
+
         if _tushare_adapter is None:
             base["error"] = str(TUSHARE_ADAPTER_MODULE_ERROR)
             base["message"] = classify_error(base["error"])
@@ -3830,41 +3876,49 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             else:
                 remember_error(records_result)
 
-            concept_dates = []
-            if base.get("latest_date"):
-                concept_dates.append(base["latest_date"])
-            concept_dates.extend([date for date in recent_dates if date not in concept_dates])
-            for trade_date in concept_dates:
-                concept_result = _tushare_adapter.get_limit_cpt_list(trade_date=trade_date)
-                if not concept_result.get("ok"):
-                    remember_error(concept_result)
-                    break
+            if st.session_state.get("skip_limit_cpt_list"):
+                skip_message = "limit_cpt_list 当前权限不足，已在本会话跳过重复请求。"
+                base["warning"] = f"{base['warning']}；{skip_message}" if base.get("warning") else skip_message
+                if not base.get("available"):
+                    base["message"] = skip_message
+            else:
+                concept_dates = []
+                if base.get("latest_date"):
+                    concept_dates.append(base["latest_date"])
+                concept_dates.extend([date for date in recent_dates if date not in concept_dates])
+                for trade_date in concept_dates:
+                    concept_result = _tushare_adapter.get_limit_cpt_list(trade_date=trade_date)
+                    if not concept_result.get("ok"):
+                        remember_error(concept_result)
+                        if is_permission_error(concept_result):
+                            st.session_state["skip_limit_cpt_list"] = True
+                        break
 
-                concept_df = concept_result.get("data")
-                if concept_df is None or concept_df.empty:
-                    continue
-                if "rank" in concept_df.columns:
-                    try:
-                        concept_df = concept_df.assign(_rank_sort=pd.to_numeric(concept_df["rank"], errors="coerce")).sort_values("_rank_sort")
-                    except Exception:
-                        pass
-                concepts = []
-                for item in _cn_frame_records(concept_df, 5):
-                    concepts.append(
-                        {
-                            "概念": item.get("name") or item.get("ts_code") or "未知",
-                            "涨停家数": item.get("up_nums") if item.get("up_nums") is not None else "暂无",
-                            "连板家数": item.get("cons_nums") if item.get("cons_nums") is not None else "暂无",
-                            "连板高度": item.get("up_stat") or "暂无",
-                            "涨跌幅": item.get("pct_chg") if item.get("pct_chg") is not None else "暂无",
-                            "排名": item.get("rank") if item.get("rank") is not None else "暂无",
-                        }
-                    )
-                base["concept_top5"] = concepts
-                base["concept_available"] = bool(concepts)
-                base["concept_date"] = trade_date
-                base["updated_at"] = concept_result.get("updated_at") or base["updated_at"]
-                break
+                    concept_df = concept_result.get("data")
+                    if concept_df is None or concept_df.empty:
+                        continue
+                    if "rank" in concept_df.columns:
+                        try:
+                            concept_df = concept_df.assign(_rank_sort=pd.to_numeric(concept_df["rank"], errors="coerce")).sort_values("_rank_sort")
+                        except Exception:
+                            pass
+                    concepts = []
+                    for item in _cn_frame_records(concept_df, 5):
+                        concepts.append(
+                            {
+                                "概念": item.get("name") or item.get("ts_code") or "未知",
+                                "涨停家数": item.get("up_nums") if item.get("up_nums") is not None else "暂无",
+                                "连板家数": item.get("cons_nums") if item.get("cons_nums") is not None else "暂无",
+                                "连板高度": item.get("up_stat") or "暂无",
+                                "涨跌幅": item.get("pct_chg") if item.get("pct_chg") is not None else "暂无",
+                                "排名": item.get("rank") if item.get("rank") is not None else "暂无",
+                            }
+                        )
+                    base["concept_top5"] = concepts
+                    base["concept_available"] = bool(concepts)
+                    base["concept_date"] = trade_date
+                    base["updated_at"] = concept_result.get("updated_at") or base["updated_at"]
+                    break
 
             base["available"] = bool(base["boundary_available"] or base["records_available"] or base["concept_available"])
             if base["available"]:
@@ -4134,6 +4188,162 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             base["message"] = classify_error(base["error"])
             return base
 
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def get_cn_chip_radar_data(stock_code, current_price=None):
+        """获取 A 股筹码/胜率雷达：Tushare cyq_perf 优先，cyq_chips 补充筹码密集区。"""
+        ts_code = _cn_ts_code(stock_code)
+        updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+        base_message = "暂未取得可验证筹码/胜率数据，可能为数据尚未更新、接口权限不足或标的暂不覆盖。"
+        base = {
+            "available": False,
+            "source": "Tushare",
+            "api": "cyq_perf/cyq_chips",
+            "trade_date": "",
+            "winner_rate": "",
+            "weight_avg": "",
+            "cost_5pct": "",
+            "cost_50pct": "",
+            "cost_95pct": "",
+            "current_vs_weight_avg_pct": "",
+            "chip_band_width": "",
+            "chip_pressure_comment": "",
+            "chip_structure_comment": "",
+            "chips_top_areas": [],
+            "message": base_message,
+            "updated_at": updated_at,
+            "error": "",
+        }
+
+        if _tushare_adapter is None:
+            base["error"] = str(TUSHARE_ADAPTER_MODULE_ERROR)
+            return base
+        if not hasattr(_tushare_adapter, "get_cyq_perf"):
+            base["error"] = "tushare_adapter 未接入 cyq_perf 接口"
+            return base
+
+        try:
+            recent_dates = _cn_recent_trade_dates(10)[:5]
+            if not recent_dates:
+                return base
+
+            perf_row = None
+            perf_result = None
+            for trade_date in recent_dates:
+                result = _tushare_adapter.get_cyq_perf(ts_code=ts_code, trade_date=trade_date)
+                perf_result = result
+                base["updated_at"] = result.get("updated_at") or base["updated_at"]
+                if not result.get("ok"):
+                    base["error"] = result.get("error") or ""
+                    base["message"] = base_message
+                    return base
+                perf_df = result.get("data")
+                if perf_df is None or perf_df.empty:
+                    continue
+                perf_row = _cn_frame_records(perf_df, 1)[0]
+                break
+
+            if not perf_row:
+                return base
+
+            trade_date = perf_row.get("trade_date") or ""
+            winner_rate = _cn_float(perf_row.get("winner_rate"))
+            weight_avg = _cn_float(perf_row.get("weight_avg"))
+            cost_5pct = _cn_float(perf_row.get("cost_5pct"))
+            cost_50pct = _cn_float(perf_row.get("cost_50pct"))
+            cost_95pct = _cn_float(perf_row.get("cost_95pct"))
+            current = _cn_float(current_price)
+
+            current_vs_weight_avg_pct = None
+            if current is not None and weight_avg not in [None, 0]:
+                current_vs_weight_avg_pct = round((current - weight_avg) / weight_avg * 100, 2)
+
+            chip_band_width = None
+            if cost_5pct is not None and cost_95pct is not None and cost_50pct not in [None, 0]:
+                chip_band_width = round((cost_95pct - cost_5pct) / cost_50pct * 100, 2)
+
+            if winner_rate is None:
+                pressure_comment = "获利盘比例暂无法验证。"
+            elif winner_rate >= 70:
+                pressure_comment = "获利盘比例较高，兑现压力可能上升；不得据此直接卖出。"
+            elif winner_rate <= 30:
+                pressure_comment = "获利盘比例较低，套牢盘压力较重；不得据此直接买入。"
+            else:
+                pressure_comment = "获利盘与套牢盘压力相对均衡，需结合量价和情绪验证。"
+
+            structure_parts = []
+            if current_vs_weight_avg_pct is not None:
+                if current_vs_weight_avg_pct >= 10:
+                    structure_parts.append("当前价高于筹码中枢，需关注获利盘兑现压力。")
+                elif current_vs_weight_avg_pct <= -10:
+                    structure_parts.append("当前价低于筹码中枢，需关注上方套牢盘压力。")
+                else:
+                    structure_parts.append("当前价接近筹码中枢，筹码压力需结合成交量确认。")
+            if chip_band_width is not None:
+                if chip_band_width <= 15:
+                    structure_parts.append("筹码成本带相对收敛，但筹码集中不是必涨。")
+                elif chip_band_width >= 35:
+                    structure_parts.append("筹码成本带较宽，筹码结构偏分散。")
+                else:
+                    structure_parts.append("筹码成本带宽度中性。")
+            chip_structure_comment = " ".join(structure_parts) or "筹码结构暂无法验证。"
+
+            chips_top_areas = []
+            if hasattr(_tushare_adapter, "get_cyq_chips") and trade_date:
+                chips_result = _tushare_adapter.get_cyq_chips(ts_code=ts_code, trade_date=trade_date)
+                if isinstance(chips_result, dict):
+                    base["updated_at"] = chips_result.get("updated_at") or base["updated_at"]
+                    chips_df = chips_result.get("data") if chips_result.get("ok") else None
+                    if chips_df is not None and not chips_df.empty:
+                        chips_rows = _cn_frame_records(chips_df, 200)
+                        chips_rows = sorted(chips_rows, key=lambda item: _cn_float(item.get("percent")) or 0, reverse=True)[:5]
+                        chips_top_areas = [
+                            {
+                                "trade_date": item.get("trade_date") or trade_date,
+                                "price": _cn_float(item.get("price")),
+                                "percent": _cn_float(item.get("percent")),
+                            }
+                            for item in chips_rows
+                        ]
+
+            return {
+                "available": True,
+                "source": "Tushare",
+                "api": "cyq_perf/cyq_chips",
+                "trade_date": trade_date,
+                "winner_rate": winner_rate,
+                "weight_avg": weight_avg,
+                "cost_5pct": cost_5pct,
+                "cost_50pct": cost_50pct,
+                "cost_95pct": cost_95pct,
+                "current_vs_weight_avg_pct": current_vs_weight_avg_pct,
+                "chip_band_width": chip_band_width,
+                "chip_pressure_comment": pressure_comment,
+                "chip_structure_comment": chip_structure_comment,
+                "chips_top_areas": chips_top_areas,
+                "message": "",
+                "updated_at": (perf_result or {}).get("updated_at") or base["updated_at"],
+                "error": "",
+            }
+        except Exception as e:
+            base["error"] = str(e)
+            return base
+
+    @st.cache_data(ttl=600, show_spinner=False)
+    def cached_cn_dragon_tiger_board(stock_code):
+        return get_cn_dragon_tiger_board(stock_code)
+
+    @st.cache_data(ttl=600, show_spinner=False)
+    def cached_cn_margin_data(stock_code):
+        return get_cn_margin_data(stock_code)
+
+    @st.cache_data(ttl=600, show_spinner=False)
+    def cached_cn_moneyflow_data(stock_code):
+        return get_cn_moneyflow_data(stock_code)
+
+    @st.cache_data(ttl=300, show_spinner=False)
+    def cached_cn_limit_emotion_data(stock_code, current_price):
+        return get_cn_limit_emotion_data(stock_code, current_price)
+
     def build_next_day_plan_fact_packet(
         stock_code,
         stock_name,
@@ -4144,6 +4354,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         margin_data,
         moneyflow_data,
         limit_emotion_data,
+        chip_radar_data=None,
         tushare_verified_source=None,
         market_style_fact_packet=None,
         verified_technical_facts=None,
@@ -4155,6 +4366,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         margin_data = margin_data or {}
         moneyflow_data = moneyflow_data or {}
         limit_emotion_data = limit_emotion_data or {}
+        chip_radar_data = chip_radar_data or {}
         tushare_verified_source = tushare_verified_source or {}
         market_style_fact_packet = market_style_fact_packet or {}
         verified_technical_facts = verified_technical_facts or build_verified_technical_fact_packet({})
@@ -4165,6 +4377,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         limit_available = bool(limit_emotion_data.get("available"))
         limit_records_available = bool(limit_emotion_data.get("records_available"))
         boundary_available = bool(limit_emotion_data.get("boundary_available"))
+        chip_available = bool(chip_radar_data.get("available"))
         api_results = tushare_verified_source.get("api_results") or {}
 
         missing_items = []
@@ -4178,6 +4391,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             missing_items.append("Tushare stk_limit")
         if not limit_records_available:
             missing_items.append("Tushare limit_list_d")
+        if not chip_available:
+            missing_items.append("Tushare cyq_perf/cyq_chips")
         if not api_results.get("daily", {}).get("ok"):
             missing_items.append("Tushare daily")
         if not api_results.get("daily_basic", {}).get("ok"):
@@ -4188,6 +4403,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             dragon_data.get("updated_at"),
             margin_data.get("updated_at"),
             limit_emotion_data.get("updated_at"),
+            chip_radar_data.get("updated_at"),
             tushare_verified_source.get("updated_at"),
         ]
         updated_sources = [item for item in updated_sources if item]
@@ -4255,6 +4471,21 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "concept_top5": limit_emotion_data.get("concept_top5", []) if limit_available else [],
                 "note": "" if limit_records_available else "暂无可验证数据",
             },
+            "chip_radar": {
+                "available": chip_available,
+                "trade_date": chip_radar_data.get("trade_date") if chip_available else "",
+                "winner_rate": chip_radar_data.get("winner_rate") if chip_available else "",
+                "weight_avg": chip_radar_data.get("weight_avg") if chip_available else "",
+                "cost_5pct": chip_radar_data.get("cost_5pct") if chip_available else "",
+                "cost_50pct": chip_radar_data.get("cost_50pct") if chip_available else "",
+                "cost_95pct": chip_radar_data.get("cost_95pct") if chip_available else "",
+                "current_vs_weight_avg_pct": chip_radar_data.get("current_vs_weight_avg_pct") if chip_available else "",
+                "chip_band_width": chip_radar_data.get("chip_band_width") if chip_available else "",
+                "chip_pressure_comment": chip_radar_data.get("chip_pressure_comment") if chip_available else "暂无可验证数据",
+                "chip_structure_comment": chip_radar_data.get("chip_structure_comment") if chip_available else "暂无可验证数据",
+                "chips_top_areas": chip_radar_data.get("chips_top_areas", []) if chip_available else [],
+                "note": "" if chip_available else "暂无可验证数据",
+            },
             "daily": api_results.get("daily", {"ok": False, "rows": [], "error": "暂无可验证数据"}),
             "daily_basic": api_results.get("daily_basic", {"ok": False, "rows": [], "error": "暂无可验证数据"}),
             "verified_technical_facts": verified_technical_facts,
@@ -4283,6 +4514,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         margin_data,
         moneyflow_data,
         limit_emotion_data,
+        chip_radar_data=None,
         tushare_verified_source=None,
         market_style_fact_packet=None,
         verified_technical_facts=None,
@@ -4298,6 +4530,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             margin_data,
             moneyflow_data,
             limit_emotion_data,
+            chip_radar_data=chip_radar_data,
             tushare_verified_source=tushare_verified_source,
             market_style_fact_packet=market_style_fact_packet,
             verified_technical_facts=verified_technical_facts,
@@ -4320,6 +4553,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "dragon_tiger": base_fact_packet.get("dragon_tiger", {}),
             "margin": base_fact_packet.get("margin", {}),
             "limit_emotion": base_fact_packet.get("limit_emotion", {}),
+            "chip_radar": base_fact_packet.get("chip_radar", {}),
             "market_style": base_fact_packet.get("market_style", {}),
             "position_permissions": {
                 "allow_t_plan": bool(profile.get("allow_t_plan")),
@@ -4331,6 +4565,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "technical": base_fact_packet.get("verified_technical_facts", {}),
                 "moneyflow": base_fact_packet.get("moneyflow", {}),
                 "limit_emotion": base_fact_packet.get("limit_emotion", {}),
+                "chip_radar": base_fact_packet.get("chip_radar", {}),
                 "market_style": base_fact_packet.get("market_style", {}),
             },
             "rotation_context": {
@@ -4714,36 +4949,45 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         stock_code = target.split('.')[0]
         
         st.markdown("#### 🇨🇳 A股专业数据穿透系统")
+        st.caption("本页 A股专业事实在当前短时间内复用缓存，可刷新页面或等待缓存过期后重新拉取。")
 
-        cn_status = st.status("正在检查 A股龙虎榜、融资融券与资金流向...", expanded=False)
+        cn_status = st.status("正在检查 A股龙虎榜、融资融券、资金流向与筹码事实...", expanded=False)
         cn_progress = st.progress(0)
         dragon_data = _run_progress_stage(
             "检查龙虎榜",
-            lambda: get_cn_dragon_tiger_board(stock_code),
+            lambda: cached_cn_dragon_tiger_board(stock_code),
             cn_status,
             cn_progress,
-            33,
+            25,
             has_data=lambda data: bool(data and data.get("available")),
         )
         margin_data = _run_progress_stage(
             "检查融资融券",
-            lambda: get_cn_margin_data(stock_code),
+            lambda: cached_cn_margin_data(stock_code),
             cn_status,
             cn_progress,
-            66,
+            50,
             has_data=lambda data: bool(data and data.get("available")),
         )
         moneyflow_data = _run_progress_stage(
             "检查个股资金流向",
-            lambda: get_cn_moneyflow_data(stock_code),
+            lambda: cached_cn_moneyflow_data(stock_code),
             cn_status,
             cn_progress,
-            100,
+            75,
             has_data=lambda data: bool(data and data.get("available")),
         )
         limit_emotion_data = _run_progress_stage(
             "检查涨跌停情绪",
-            lambda: get_cn_limit_emotion_data(stock_code, current_price=price),
+            lambda: cached_cn_limit_emotion_data(stock_code, current_price=price),
+            cn_status,
+            cn_progress,
+            90,
+            has_data=lambda data: bool(data and data.get("available")),
+        )
+        chip_radar_data = _run_progress_stage(
+            "检查筹码/胜率",
+            lambda: get_cn_chip_radar_data(stock_code, current_price=price),
             cn_status,
             cn_progress,
             100,
@@ -4841,6 +5085,58 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         if (limit_emotion_data or {}).get("warning"):
             st.caption(f"提示：{(limit_emotion_data or {}).get('warning')}")
+        if st.session_state.get("skip_limit_cpt_list"):
+            st.info("limit_cpt_list 此前因权限不足被跳过；如已升级权限，请点击重新检测。")
+            if st.button("🔄 重新检测 limit_cpt_list 权限", key="btn_reset_limit_cpt_list"):
+                st.session_state["skip_limit_cpt_list"] = False
+                try:
+                    cached_cn_limit_emotion_data.clear()
+                    build_market_style_fact_packet.clear()
+                except Exception:
+                    pass
+                st.success("已重置 limit_cpt_list 跳过标记。请刷新页面或重新运行当前分析。")
+
+        st.markdown("**🧬 筹码/胜率雷达**")
+
+        def _cn_fmt_price(value):
+            number = _cn_float(value)
+            return "暂无" if number is None else f"¥{number:.2f}"
+
+        def _cn_fmt_pct_plain(value):
+            number = _cn_float(value)
+            return "暂无" if number is None else f"{number:.2f}%"
+
+        if chip_radar_data and chip_radar_data.get("available"):
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("数据日期", _cn_fmt_date(chip_radar_data.get("trade_date")))
+            c2.metric("获利盘比例 / 胜率", _cn_fmt_pct_plain(chip_radar_data.get("winner_rate")))
+            c3.metric("加权平均筹码成本", _cn_fmt_price(chip_radar_data.get("weight_avg")))
+            c4.metric("当前价相对筹码中枢", _cn_fmt_limit_pct(chip_radar_data.get("current_vs_weight_avg_pct")))
+            st.caption(
+                "筹码成本 5% / 50% / 95% 分位："
+                f"{_cn_fmt_price(chip_radar_data.get('cost_5pct'))} / "
+                f"{_cn_fmt_price(chip_radar_data.get('cost_50pct'))} / "
+                f"{_cn_fmt_price(chip_radar_data.get('cost_95pct'))}"
+            )
+            st.caption(f"筹码压力评价：{chip_radar_data.get('chip_pressure_comment') or '暂无可验证数据'}")
+            st.caption(f"筹码结构评价：{chip_radar_data.get('chip_structure_comment') or '暂无可验证数据'}")
+            top_areas = chip_radar_data.get("chips_top_areas") or []
+            if top_areas:
+                st.caption(
+                    "筹码密集区："
+                    + "；".join(
+                        f"{_cn_fmt_price(item.get('price'))} / {_cn_fmt_pct_plain(item.get('percent'))}"
+                        for item in top_areas[:5]
+                    )
+                )
+        else:
+            st.info((chip_radar_data or {}).get("message") or "暂未取得可验证筹码/胜率数据，可能为数据尚未更新、接口权限不足或标的暂不覆盖。")
+        st.caption(
+            "数据源："
+            f"{(chip_radar_data or {}).get('source', 'Tushare')} "
+            f"{(chip_radar_data or {}).get('api', 'cyq_perf/cyq_chips')}"
+            f"｜更新时间：{(chip_radar_data or {}).get('updated_at', '未知')}"
+        )
         
         st.markdown("---")
         
@@ -4912,6 +5208,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 margin_data,
                 moneyflow_data,
                 limit_emotion_data,
+                chip_radar_data=chip_radar_data,
                 tushare_verified_source=tushare_verified_source,
                 market_style_fact_packet=market_style_fact_packet,
                 verified_technical_facts=verified_technical_facts,
@@ -4937,11 +5234,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 - 涨停价：
 - 跌停价：
 - moneyflow 状态：
-- 龙虎榜状态：
-- 融资融券状态：
-- 涨跌停/炸板记录：
-- 持仓状态：
-- 数据缺失项：
+	- 龙虎榜状态：
+	- 融资融券状态：
+	- 涨跌停/炸板记录：
+	- 筹码压力：
+	- 持仓状态：
+	- 数据缺失项：
 
 二、强势高开 / 冲高情景
 - 观察条件：
@@ -4964,9 +5262,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 五、次日验证清单
 - 资金验证：
 - 量价验证：
-- 龙虎榜验证：
-- 情绪验证：
-- 公告/新闻验证：
+	- 龙虎榜验证：
+	- 情绪验证：
+	- 筹码压力验证：
+	- 公告/新闻验证：
 
 六、纪律提醒
 - 未满足验证条件前仅观察。
@@ -5000,7 +5299,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 23. 如果技术事实显示 RSI 高位、涨幅较大、回撤较小，只能用于风险提示和次日验证条件，不得直接写买入或卖出。
 24. 技术指标只能作为观察条件和验证条件；RSI 高位不等于必跌，RSI 低位不等于必涨，站上 MA60 不等于买入信号，量能放大/缩小不得单独推断主力行为。
 25. 技术事实必须和 moneyflow、龙虎榜、涨跌停、融资融券分层，不得混为同一类证据。
-"""
+26. 筹码/胜率只能作为观察和验证条件，不得直接触发买卖。
+27. 筹码集中不是必涨，获利盘高不是必卖，套牢盘重不是必买。
+28. 必须把筹码压力分为获利盘兑现压力、套牢盘压力、当前价相对筹码中枢三类观察项。
+	"""
             plan_status.write("调用 DeepSeek 推理：生成六段式观察计划")
             st.markdown("### 🧾 次日交易计划")
             call_deepseek_stream(
@@ -5021,6 +5323,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 margin_data,
                 moneyflow_data,
                 limit_emotion_data,
+                chip_radar_data=chip_radar_data,
                 tushare_verified_source=tushare_verified_source,
                 market_style_fact_packet=market_style_fact_packet,
                 verified_technical_facts=verified_technical_facts,
@@ -5033,8 +5336,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
 {verified_technical_prompt}
 
-【单票作战室事实包】
-{json.dumps(single_stock_war_room_fact_packet, ensure_ascii=False, indent=2, default=str)}
+	【单票作战室事实包】
+	{json.dumps(single_stock_war_room_fact_packet, ensure_ascii=False, indent=2, default=str)}
+
+	【已验证筹码事实】
+	- 胜率 / 获利盘比例：{(single_stock_war_room_fact_packet.get("chip_radar") or {}).get("winner_rate") or "暂无可验证数据"}
+	- 平均筹码成本：{(single_stock_war_room_fact_packet.get("chip_radar") or {}).get("weight_avg") or "暂无可验证数据"}
+	- 筹码分位：{(single_stock_war_room_fact_packet.get("chip_radar") or {}).get("cost_5pct") or "暂无"} / {(single_stock_war_room_fact_packet.get("chip_radar") or {}).get("cost_50pct") or "暂无"} / {(single_stock_war_room_fact_packet.get("chip_radar") or {}).get("cost_95pct") or "暂无"}
+	- 筹码压力评价：{(single_stock_war_room_fact_packet.get("chip_radar") or {}).get("chip_pressure_comment") or "暂无可验证数据"}
 
 【固定输出格式】
 必须逐字使用以下标题与条目，不要改标题：
@@ -5101,7 +5410,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 19. 所有交易动作都必须写明“需人工确认”。
 20. 所有结论必须区分“已验证数据”和“待验证线索/谨慎推断”。
 21. 禁止在“五、仓位建议”后追加【作战计划总结】、总结段、风险提示段或任何额外内容。
-"""
+22. 筹码集中不是必涨。
+23. 获利盘高不是必卖。
+24. 筹码只能用于主升浪健康度、风险压力和持仓纪律验证。
+25. 不得把筹码数据写成确定性买卖信号。
+	"""
             war_room_status.write("调用 DeepSeek 推理：生成单票作战室 / 换仓雷达")
             st.markdown("### 🎯 单票作战室 / 换仓雷达")
             call_deepseek_stream(
@@ -5318,157 +5631,137 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             whale_status.update(label="完成：巨鲸资金结果", state="complete")
 
         with st.expander("🧪 AI事实包调试（开发者用）", expanded=False):
-            def _debug_text(value, fallback="暂无可验证数据", limit=120):
-                if value is None or value == "":
-                    return fallback
-                text = str(value)
-                return text if len(text) <= limit else text[:limit] + "..."
+            show_debug_panel = st.checkbox("显示AI事实包调试详情", value=False, key="show_ai_fact_debug")
+            if show_debug_panel:
+                def _debug_text(value, fallback="暂无可验证数据", limit=120):
+                    if value is None or value == "":
+                        return fallback
+                    text = str(value)
+                    return text if len(text) <= limit else text[:limit] + "..."
 
-            def _debug_bool(data, key="available"):
-                if not isinstance(data, dict):
-                    return False
-                return bool(data.get(key))
+                def _debug_bool(data, key="available"):
+                    if not isinstance(data, dict):
+                        return False
+                    return bool(data.get(key))
 
-            def _debug_note(data):
-                if not isinstance(data, dict):
-                    return "暂无可验证数据"
-                return _debug_text(data.get("warning") or data.get("message") or data.get("error") or "")
+                def _debug_note(data):
+                    if not isinstance(data, dict):
+                        return "暂无可验证数据"
+                    return _debug_text(data.get("warning") or data.get("message") or data.get("error") or "")
 
-            def _debug_status(data):
-                if not isinstance(data, dict):
-                    return False
-                if "ok" in data:
-                    return bool(data.get("ok"))
-                return bool(data.get("available"))
+                def _debug_status(data):
+                    if not isinstance(data, dict):
+                        return False
+                    if "ok" in data:
+                        return bool(data.get("ok"))
+                    return bool(data.get("available"))
 
-            def _debug_issue_matches(data, keywords):
-                if not isinstance(data, dict):
-                    return ""
-                text = " ".join(
-                    str(data.get(key) or "")
-                    for key in ["message", "warning", "error"]
-                )
-                if not text or not any(keyword.lower() in text.lower() for keyword in keywords):
-                    return ""
-                return _debug_text(text)
+                def _debug_issue_matches(data, keywords):
+                    if not isinstance(data, dict):
+                        return ""
+                    text = " ".join(str(data.get(key) or "") for key in ["message", "warning", "error"])
+                    if not text or not any(keyword.lower() in text.lower() for keyword in keywords):
+                        return ""
+                    return _debug_text(text)
 
-            facts = verified_technical_facts if isinstance(verified_technical_facts, dict) else {}
-            technical_missing = facts.get("missing") or []
-            technical_summary = {
-                "available": bool(facts.get("available")),
-                "latest_close": _debug_text(facts.get("latest_close")),
-                "ma60_state": _debug_text(facts.get("ma60_state")),
-                "rsi_14": _debug_text(facts.get("rsi_14")),
-                "volume_vs_20d": _debug_text(facts.get("volume_vs_20d")),
-                "return_20d": _debug_text(facts.get("return_20d")),
-                "return_60d": _debug_text(facts.get("return_60d")),
-                "drawdown_60d": _debug_text(facts.get("drawdown_60d")),
-                "market_date": _debug_text(facts.get("market_date")),
-                "source": _debug_text(facts.get("source")),
-                "confidence": _debug_text(facts.get("confidence")),
-                "missing": "、".join(str(item) for item in technical_missing) if technical_missing else "无",
-            }
-            st.markdown("##### 一、已验证技术事实摘要")
-            st.table(pd.DataFrame([{"字段": key, "值": value} for key, value in technical_summary.items()]))
+                facts = verified_technical_facts if isinstance(verified_technical_facts, dict) else {}
+                technical_missing = facts.get("missing") or []
+                technical_summary = {
+                    "available": bool(facts.get("available")),
+                    "latest_close": _debug_text(facts.get("latest_close")),
+                    "ma60_state": _debug_text(facts.get("ma60_state")),
+                    "rsi_14": _debug_text(facts.get("rsi_14")),
+                    "volume_vs_20d": _debug_text(facts.get("volume_vs_20d")),
+                    "return_20d": _debug_text(facts.get("return_20d")),
+                    "return_60d": _debug_text(facts.get("return_60d")),
+                    "drawdown_60d": _debug_text(facts.get("drawdown_60d")),
+                    "market_date": _debug_text(facts.get("market_date")),
+                    "source": _debug_text(facts.get("source")),
+                    "confidence": _debug_text(facts.get("confidence")),
+                    "missing": "、".join(str(item) for item in technical_missing) if technical_missing else "无",
+                }
+                st.markdown("##### 一、已验证技术事实摘要")
+                st.table(pd.DataFrame([{"字段": key, "值": value} for key, value in technical_summary.items()]))
 
-            fund_sources = [
-                (
-                    "moneyflow",
-                    moneyflow_data if isinstance(moneyflow_data, dict) else {},
-                    {
+                fund_sources = [
+                    ("moneyflow", moneyflow_data if isinstance(moneyflow_data, dict) else {}, {
                         "latest_date": (moneyflow_data or {}).get("date") if isinstance(moneyflow_data, dict) else "",
                         "direction": (moneyflow_data or {}).get("direction") if isinstance(moneyflow_data, dict) else "",
                         "main_net_inflow_yi": (moneyflow_data or {}).get("main_net_yi") if isinstance(moneyflow_data, dict) else "",
                         "five_day_main_net_inflow_yi": (moneyflow_data or {}).get("five_day_main_net_yi") if isinstance(moneyflow_data, dict) else "",
-                    },
-                ),
-                (
-                    "dragon_tiger",
-                    dragon_data if isinstance(dragon_data, dict) else {},
-                    {
+                    }),
+                    ("dragon_tiger", dragon_data if isinstance(dragon_data, dict) else {}, {
                         "trade_date": (dragon_data or {}).get("latest_date") if isinstance(dragon_data, dict) else "",
                         "reason": (dragon_data or {}).get("reason") if isinstance(dragon_data, dict) else "",
                         "net_buy_amount": (dragon_data or {}).get("net_buy_amount_yi") if isinstance(dragon_data, dict) else "",
                         "institution_summary_exists": bool((dragon_data or {}).get("inst_summary")) if isinstance(dragon_data, dict) else False,
-                    },
-                ),
-                (
-                    "margin",
-                    margin_data if isinstance(margin_data, dict) else {},
-                    {
+                    }),
+                    ("margin", margin_data if isinstance(margin_data, dict) else {}, {
                         "trade_date": (margin_data or {}).get("date") if isinstance(margin_data, dict) else "",
                         "financing_balance_yi": (margin_data or {}).get("financing_balance_yi") if isinstance(margin_data, dict) else "",
                         "margin_balance_yi": (margin_data or {}).get("margin_balance_yi") if isinstance(margin_data, dict) else "",
-                    },
-                ),
-                (
-                    "limit_emotion",
-                    limit_emotion_data if isinstance(limit_emotion_data, dict) else {},
-                    {
-                        "trade_date": (
-                            (limit_emotion_data or {}).get("latest_date")
-                            or (limit_emotion_data or {}).get("concept_date")
-                        ) if isinstance(limit_emotion_data, dict) else "",
+                    }),
+                    ("limit_emotion", limit_emotion_data if isinstance(limit_emotion_data, dict) else {}, {
+                        "trade_date": ((limit_emotion_data or {}).get("latest_date") or (limit_emotion_data or {}).get("concept_date")) if isinstance(limit_emotion_data, dict) else "",
                         "limit_up_price": (limit_emotion_data or {}).get("up_limit") if isinstance(limit_emotion_data, dict) else "",
                         "limit_down_price": (limit_emotion_data or {}).get("down_limit") if isinstance(limit_emotion_data, dict) else "",
                         "recent_limit_records_count": len((limit_emotion_data or {}).get("limit_records") or []) if isinstance(limit_emotion_data, dict) else 0,
-                    },
-                ),
-            ]
-            fund_rows = []
-            funding_missing = []
-            permission_issues = []
-            stale_issues = []
-            permission_keywords = ["权限", "permission", "积分", "无接口访问权限"]
-            stale_keywords = ["无数据", "暂未取得", "数据尚未更新"]
-            for name, data, extras in fund_sources:
-                available = _debug_bool(data)
-                ok = _debug_status(data)
-                if not available or not ok:
-                    funding_missing.append(name)
-                permission_note = _debug_issue_matches(data, permission_keywords)
-                stale_note = _debug_issue_matches(data, stale_keywords)
-                if permission_note:
-                    permission_issues.append(f"{name}: {permission_note}")
-                if stale_note:
-                    stale_issues.append(f"{name}: {stale_note}")
-                row = {
-                    "name": name,
-                    "available": available,
-                    "ok": ok,
-                    "source": _debug_text(data.get("source") if isinstance(data, dict) else ""),
-                    "api": _debug_text(data.get("api") if isinstance(data, dict) else ""),
-                    "note": _debug_note(data),
+                    }),
+                ]
+                fund_rows = []
+                funding_missing = []
+                permission_issues = []
+                stale_issues = []
+                permission_keywords = ["权限", "permission", "积分", "无接口访问权限"]
+                stale_keywords = ["无数据", "暂未取得", "数据尚未更新"]
+                for name, data, extras in fund_sources:
+                    available = _debug_bool(data)
+                    ok = _debug_status(data)
+                    if not available or not ok:
+                        funding_missing.append(name)
+                    permission_note = _debug_issue_matches(data, permission_keywords)
+                    stale_note = _debug_issue_matches(data, stale_keywords)
+                    if permission_note:
+                        permission_issues.append(f"{name}: {permission_note}")
+                    if stale_note:
+                        stale_issues.append(f"{name}: {stale_note}")
+                    row = {
+                        "name": name,
+                        "available": available,
+                        "ok": ok,
+                        "source": _debug_text(data.get("source") if isinstance(data, dict) else ""),
+                        "api": _debug_text(data.get("api") if isinstance(data, dict) else ""),
+                        "note": _debug_note(data),
+                    }
+                    for key, value in extras.items():
+                        row[key] = _debug_text(value) if not isinstance(value, bool) else value
+                    fund_rows.append(row)
+                st.markdown("##### 二、A股资金事实摘要")
+                st.table(pd.DataFrame(fund_rows))
+
+                try:
+                    ai_context_has_technical = "【已验证技术事实】" in (ai_context_packet or "")
+                except Exception:
+                    ai_context_has_technical = False
+                packet_status = {
+                    "verified_technical_facts_available": bool(facts.get("available")),
+                    "ai_context_packet_has_verified_technical_facts": ai_context_has_technical,
+                    "whale_fact_packet_status": "已构造" if whale_fact_packet is not None else "尚未触发",
+                    "next_day_plan_fact_packet_status": "已构造" if next_day_plan_fact_packet is not None else "尚未触发",
+                    "single_stock_war_room_fact_packet_status": "已构造" if single_stock_war_room_fact_packet is not None else "尚未触发",
+                    "market_style_fact_packet_status": "仅今日关注池生成 / 当前页未生成",
                 }
-                for key, value in extras.items():
-                    row[key] = _debug_text(value) if not isinstance(value, bool) else value
-                fund_rows.append(row)
-            st.markdown("##### 二、A股资金事实摘要")
-            st.table(pd.DataFrame(fund_rows))
+                st.markdown("##### 三、AI输入事实包状态")
+                st.table(pd.DataFrame([{"字段": key, "状态": value} for key, value in packet_status.items()]))
 
-            try:
-                ai_context_has_technical = "【已验证技术事实】" in (ai_context_packet or "")
-            except Exception:
-                ai_context_has_technical = False
-            packet_status = {
-                "verified_technical_facts_available": bool(facts.get("available")),
-                "ai_context_packet_has_verified_technical_facts": ai_context_has_technical,
-                "whale_fact_packet_status": "已构造" if whale_fact_packet is not None else "尚未触发",
-                "next_day_plan_fact_packet_status": "已构造" if next_day_plan_fact_packet is not None else "尚未触发",
-                "single_stock_war_room_fact_packet_status": "已构造" if single_stock_war_room_fact_packet is not None else "尚未触发",
-                "market_style_fact_packet_status": "仅今日关注池生成 / 当前页未生成",
-            }
-            st.markdown("##### 三、AI输入事实包状态")
-            st.table(pd.DataFrame([{"字段": key, "状态": value} for key, value in packet_status.items()]))
-
-            missing_summary = {
-                "技术缺失项": "、".join(str(item) for item in technical_missing) if technical_missing else "无",
-                "资金缺失项": "、".join(funding_missing) if funding_missing else "无",
-                "权限不足项": "；".join(permission_issues) if permission_issues else "无",
-                "数据未更新项": "；".join(stale_issues) if stale_issues else "无",
-            }
-            st.markdown("##### 四、缺失项汇总")
-            st.table(pd.DataFrame([{"类别": key, "摘要": value} for key, value in missing_summary.items()]))
+                missing_summary = {
+                    "技术缺失项": "、".join(str(item) for item in technical_missing) if technical_missing else "无",
+                    "资金缺失项": "、".join(funding_missing) if funding_missing else "无",
+                    "权限不足项": "；".join(permission_issues) if permission_issues else "无",
+                    "数据未更新项": "；".join(stale_issues) if stale_issues else "无",
+                }
+                st.markdown("##### 四、缺失项汇总")
+                st.table(pd.DataFrame([{"类别": key, "摘要": value} for key, value in missing_summary.items()]))
 
     # ==========================================
     # 4. 主界面
@@ -6366,7 +6659,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 try:
                     limit_emotion_snapshot = _run_progress_stage(
                         "读取涨跌停情绪事实",
-                        lambda: get_cn_limit_emotion_data(normalized_target, current_price=price),
+                        lambda: cached_cn_limit_emotion_data(normalized_target, current_price=price),
                         main_status,
                         main_progress,
                         58,

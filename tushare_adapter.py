@@ -221,6 +221,26 @@ def get_limit_cpt_list(trade_date=None, start_date=None, end_date=None):
     )
 
 
+def get_cyq_perf(ts_code=None, trade_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "cyq_perf",
+        ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_cyq_chips(ts_code=None, trade_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "cyq_chips",
+        ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
 def get_hk_hold(ts_code=None, trade_date=None, start_date=None, end_date=None, exchange=None):
     return _call_pro(
         "hk_hold",
