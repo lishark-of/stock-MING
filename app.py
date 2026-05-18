@@ -547,7 +547,23 @@ def _run_progress_stage(label, action, status_box=None, progress_bar=None, progr
         progress_bar.progress(progress_value)
 
     start_time = time.perf_counter()
-    result = action()
+    try:
+        result = action()
+    except Exception as exc:
+        elapsed = time.perf_counter() - start_time
+        error_type = type(exc).__name__
+        fallback = {
+            "available": False,
+            "ok": False,
+            "message": "该阶段暂不可用，已跳过",
+            "error_type": error_type,
+            "error": str(exc),
+        }
+        (status_box or st).write(f"该阶段暂不可用，已跳过：{error_type}")
+        if status_box is None:
+            st.caption(f"阶段：{label}，用时 {elapsed:.1f}s")
+        return fallback
+
     elapsed = time.perf_counter() - start_time
     result_has_data = has_data(result) if callable(has_data) else _progress_result_has_data(result)
     if result_has_data:
@@ -2043,6 +2059,35 @@ else:
     def compact_prompt_text(value, limit=360):
         text = compact_display_text(value)
         return text[:limit] + ("..." if len(text) > limit else "")
+
+    def build_limited_unverified_prompt_block(items, source_label, max_items=10, max_chars=4000, per_item_chars=700):
+        lines = []
+        used_chars = 0
+        seen = set()
+
+        for item in items or []:
+            text = compact_prompt_text(item, per_item_chars)
+            if not text or text in seen:
+                continue
+            line = f"{len(lines) + 1}. {text}"
+            next_chars = used_chars + len(line) + 1
+            if next_chars > max_chars:
+                break
+            lines.append(line)
+            seen.add(text)
+            used_chars = next_chars
+            if len(lines) >= max_items:
+                break
+
+        if not lines:
+            return ""
+
+        return (
+            "\n\n【投喂资料观点 / 历史假设 / 待验证线索】\n"
+            f"来源：{source_label}。以下内容最多 {max_items} 条、总字符不超过 {max_chars}，"
+            "只能作为观点、历史假设或待验证线索，不能作为已验证事实。\n"
+            + "\n".join(lines)
+        )
 
     def value_matches_any(value, terms):
         values = normalize_metadata_list(value)
@@ -5897,10 +5942,17 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 db = load_cloud_knowledge() 
                 all_rules = db["strategies"] + db["reflections"]
                 filtered_rules = [r for r in all_rules if "🇨🇳" in r or "A股" in r]
-                rules_text = "\n".join(filtered_rules)
-                sys_inject = f"\n\n【A股专用外脑记忆库】：\n{rules_text}" if rules_text else ""
                 stock_logic = load_stock_logic_rules(target)
-                stock_logic_inject = f"\n\n【{target} 自动炼丹专属规则】：\n{stock_logic}" if stock_logic else ""
+                unverified_items = [f"brain_memory｜{rule}" for rule in filtered_rules]
+                if stock_logic:
+                    unverified_items.append(f"stock_reports.auto_replay_rules｜{stock_logic}")
+                unverified_inject = build_limited_unverified_prompt_block(
+                    unverified_items,
+                    "brain_memory 云记忆 / stock_reports 历史自动炼丹规则",
+                    max_items=10,
+                    max_chars=4000,
+                    per_item_chars=700,
+                )
             
             p_val = price if price else "未知"
             verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
@@ -5910,6 +5962,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             
             {verified_technical_prompt}
 
+            【事实边界硬规则】：
+            1. 云记忆、manager_rules、processed_sources、用户投喂资料不能作为已验证事实，只能放入“投喂资料观点 / 历史假设 / 待验证线索”。
+            2. 没有 Tushare / 公告 / market_news 真实返回，不得把订单、授权、客户、机构席位、资金流写成事实。
+            3. 已验证事实只能来自 Tushare、verified_technical_facts、market_news 标题/链接；其他资料必须标注为待验证线索。
+            4. 如果缺少 Tushare / 公告 / market_news 验证，对订单、授权、客户、机构席位、资金流统一写“暂无可验证数据”。
+            5. 不得仅凭技术形态写“主力高度控盘、机构加仓、游资接力、资金涌入”等资金事实；没有 Tushare / market_news 验证时，只能写“资金行为待验证”。
+
             【要求】：
             1. 字数不少于 800 字
             2. 从四大维度深度拆解：基本面、情绪共振、技术面、操作指令
@@ -5917,8 +5976,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             4. 如果【已验证技术事实】中已有 MA60、RSI、量能、20日/60日涨跌或60日回撤，不得说缺少对应技术数据。
             5. 技术指标只能作为观察条件和验证条件，不得因为 RSI 高、RSI 低、站上 MA60 或量能变化直接给确定性买入/卖出结论。
             6. 技术事实必须和 moneyflow、龙虎榜、涨跌停、融资融券分层，不得混为同一类证据。
-            {sys_inject}
-            {stock_logic_inject}
+            {unverified_inject}
             """
             
             st.markdown("### 📋 A股专用深度研报")
