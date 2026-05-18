@@ -4549,6 +4549,97 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 10. 不得写必买、必卖、满仓、梭哈。
 """
 
+    @st.cache_data(ttl=600, show_spinner=False)
+    def build_tianyan_risk_fact_packet(stock_code, stock_name, current_price=None):
+        """Build Tianyan risk radar facts from existing cached A-share professional facts."""
+        updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+        packet = {
+            "stock": {
+                "ts_code": str(stock_code or ""),
+                "name": str(stock_name or ""),
+                "current_price": "" if current_price is None else current_price,
+            },
+            "verified_trading_structure_risks": {
+                "moneyflow": {},
+                "dragon_tiger": {},
+                "margin": {},
+                "limit_emotion": {},
+            },
+            "verified_chip_risks": {
+                "chip_radar": {},
+            },
+            "verified_emotion_risks": {
+                "limit_emotion": {},
+                "concept_strength": {},
+            },
+            "sentiment_and_unverified_clues": {
+                "market_news": [],
+                "processed_sources": [],
+                "yfinance_news": [],
+                "note": "processed_sources / brain_memory / manager_rules 只能作为待验证线索",
+            },
+            "missing_items": [],
+            "data_source_policy": {
+                "hard_fact_sources": ["Tushare"],
+                "news_fact_sources": ["Supabase market_news title/url only", "yfinance.news title only"],
+                "unverified_sources": ["processed_sources", "brain_memory", "manager_rules"],
+            },
+            "updated_at": updated_at,
+        }
+
+        try:
+            normalized_code, detected_market_type, _, _ = identify_market(str(stock_code or ""))
+        except Exception:
+            normalized_code = str(stock_code or "")
+            detected_market_type = ""
+
+        if not is_a_share_market(detected_market_type):
+            packet["missing_items"].append("非A股标的：本阶段不调用 Tushare 结构化风控事实。")
+            return packet
+
+        stock_code_6 = _cn_stock_code_6(normalized_code or stock_code)
+        packet["stock"]["ts_code"] = _cn_ts_code(stock_code_6)
+
+        try:
+            facts = build_a_share_professional_fact_packet(
+                stock_code_6,
+                stock_name,
+                current_price,
+            ) or {}
+        except Exception as exc:
+            packet["missing_items"].append(f"A股专业事实包构造失败：{type(exc).__name__}")
+            return packet
+
+        moneyflow = facts.get("moneyflow") or {}
+        dragon_tiger = facts.get("dragon_tiger") or {}
+        margin = facts.get("margin") or {}
+        limit_emotion = facts.get("limit_emotion") or {}
+        chip_radar = facts.get("chip_radar") or {}
+
+        packet["verified_trading_structure_risks"] = {
+            "moneyflow": moneyflow,
+            "dragon_tiger": dragon_tiger,
+            "margin": margin,
+            "limit_emotion": limit_emotion,
+        }
+        packet["verified_chip_risks"] = {
+            "chip_radar": chip_radar,
+        }
+        packet["verified_emotion_risks"] = {
+            "limit_emotion": limit_emotion,
+            "concept_strength": {
+                "available": bool(limit_emotion.get("concept_available")),
+                "source": "Tushare",
+                "api": "limit_cpt_list",
+                "date": limit_emotion.get("concept_date") or limit_emotion.get("latest_date") or "",
+                "top5": limit_emotion.get("concept_top5") or [],
+                "note": "limit_cpt_list 只能代表概念热度，不是追涨理由。",
+            },
+        }
+        packet["missing_items"] = list(facts.get("missing_items") or [])
+        packet["updated_at"] = facts.get("updated_at") or updated_at
+        return packet
+
     def build_next_day_plan_fact_packet(
         stock_code,
         stock_name,
@@ -6202,6 +6293,151 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         if st.button("🚨 启动全网舆情风控网", key="btn_risk"):
             with st.spinner("正在渗透舆情数据源..."):
                 try:
+                    def compact_market_news_rows(rows):
+                        compact_rows = []
+                        for item in rows or []:
+                            title = item.get("title", "")
+                            if not title:
+                                continue
+                            compact_rows.append(
+                                {
+                                    "title": title,
+                                    "source": "Supabase market_news",
+                                    "url": item.get("url", ""),
+                                    "created_at": item.get("created_at", ""),
+                                    "risk_tag": item.get("risk_tag", ""),
+                                    "sentiment": item.get("sentiment", ""),
+                                }
+                            )
+                        return compact_rows[:8]
+
+                    def compact_processed_source_rows(rows):
+                        compact_rows = []
+                        for item in rows or []:
+                            title = item.get("title", "")
+                            if not title:
+                                continue
+                            compact_rows.append(
+                                {
+                                    "title": title,
+                                    "source": "processed_sources",
+                                    "created_at": item.get("created_at", ""),
+                                    "url": item.get("url", ""),
+                                    "verification_status": "待验证线索",
+                                }
+                            )
+                        return compact_rows[:8]
+
+                    def compact_yfinance_news_rows(rows):
+                        compact_rows = []
+                        for item in rows or []:
+                            content = item.get("content") if isinstance(item, dict) else {}
+                            title = item.get("title", "") if isinstance(item, dict) else ""
+                            title = title or (content or {}).get("title", "")
+                            if not title:
+                                continue
+                            compact_rows.append(
+                                {
+                                    "title": title,
+                                    "source": "yfinance.news",
+                                }
+                            )
+                        return compact_rows[:6]
+
+                    def first_titles(rows, prefix="", limit=3):
+                        titles = [str(item.get("title", "")).strip() for item in rows or [] if item.get("title")]
+                        if not titles:
+                            return "暂无"
+                        text = "；".join(titles[:limit])
+                        return f"{prefix}{text}" if prefix else text
+
+                    def section_available(data):
+                        data = data or {}
+                        return bool(
+                            data.get("available")
+                            or data.get("records_available")
+                            or data.get("boundary_available")
+                            or data.get("concept_available")
+                        )
+
+                    def fmt_num(value, suffix=""):
+                        if value in [None, ""]:
+                            return "暂无"
+                        return f"{value}{suffix}"
+
+                    def build_tianyan_display_lines(packet):
+                        trading = packet.get("verified_trading_structure_risks") or {}
+                        chip = packet.get("verified_chip_risks") or {}
+                        emotion = packet.get("verified_emotion_risks") or {}
+                        clues = packet.get("sentiment_and_unverified_clues") or {}
+
+                        moneyflow = trading.get("moneyflow") or {}
+                        if moneyflow.get("available"):
+                            moneyflow_line = (
+                                f"{moneyflow.get('direction') or '资金方向待验证'}；"
+                                f"主力净流入 {fmt_num(moneyflow.get('main_net_yi'), '亿')}；"
+                                f"近5日主力净流入 {fmt_num(moneyflow.get('five_day_main_net_yi'), '亿')}"
+                            )
+                        else:
+                            moneyflow_line = "暂无可验证数据"
+
+                        dragon = trading.get("dragon_tiger") or {}
+                        if dragon.get("available"):
+                            dragon_line = (
+                                f"上榜日期 {dragon.get('trade_date') or dragon.get('latest_date') or '暂无'}；"
+                                f"净买入 {fmt_num(dragon.get('net_buy_amount') or dragon.get('net_buy_amount_yi'), '亿')}；"
+                                f"{dragon.get('institution_summary') or dragon.get('inst_summary') or '席位明细待验证'}"
+                            )
+                        else:
+                            dragon_line = "暂无可验证数据"
+
+                        margin = trading.get("margin") or {}
+                        if margin.get("available"):
+                            margin_line = (
+                                f"融资余额 {fmt_num(margin.get('financing_balance_yi'), '亿')}；"
+                                f"融资买入额 {fmt_num(margin.get('financing_buy_yi'), '亿')}；"
+                                f"融资融券余额 {fmt_num(margin.get('margin_balance_yi'), '亿')}"
+                            )
+                        else:
+                            margin_line = "暂无可验证数据"
+
+                        chip_radar = chip.get("chip_radar") or {}
+                        if chip_radar.get("available"):
+                            chip_line = (
+                                f"获利盘 {fmt_num(chip_radar.get('winner_rate'), '%')}；"
+                                f"筹码中枢 {fmt_num(chip_radar.get('weight_avg'))}；"
+                                f"{chip_radar.get('chip_pressure_comment') or '筹码压力待验证'}"
+                            )
+                        else:
+                            chip_line = "暂无可验证数据"
+
+                        limit_emotion = emotion.get("limit_emotion") or {}
+                        concept = emotion.get("concept_strength") or {}
+                        if section_available(limit_emotion) or concept.get("available"):
+                            records = limit_emotion.get("recent_limit_records") or limit_emotion.get("limit_records") or []
+                            concept_names = [
+                                str(item.get("概念") or item.get("name") or item.get("ts_code") or "")
+                                for item in (concept.get("top5") or [])
+                            ]
+                            concept_names = [name for name in concept_names if name]
+                            emotion_line = (
+                                f"涨跌停/炸板记录 {len(records)} 条；"
+                                f"概念强度 Top5：{'、'.join(concept_names[:5]) if concept_names else '暂无'}"
+                            )
+                        else:
+                            emotion_line = "暂无可验证数据"
+
+                        return {
+                            "moneyflow": moneyflow_line,
+                            "dragon_tiger": dragon_line,
+                            "margin": margin_line,
+                            "chip": chip_line,
+                            "emotion": emotion_line,
+                            "market_news": first_titles(clues.get("market_news"), limit=3),
+                            "processed_sources": first_titles(clues.get("processed_sources"), prefix="待验证线索：", limit=3),
+                            "yfinance_news": first_titles(clues.get("yfinance_news"), limit=3),
+                        }
+
                     # 1. 优先查 market_news 股票/市场舆情库
                     market_news = fetch_market_news_from_supabase(raw_target, limit=8)
 
@@ -6209,20 +6445,15 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     if not market_news:
                         market_news = fetch_market_news_from_supabase(target, limit=8)
 
-                    market_headlines = []
-                    if market_news:
-                        for item in market_news:
-                            title = item.get("title", "")
-                            summary = item.get("summary", "")
-                            risk_tag = item.get("risk_tag", "")
-                            sentiment = item.get("sentiment", "")
-                            created_at = item.get("created_at", "")
-                            url = item.get("url", "")
-
-                            if title:
-                                market_headlines.append(
-                                    f"{title}｜情绪:{sentiment}｜风险:{risk_tag}｜摘要:{summary}｜时间:{created_at}｜链接:{url}"
-                                )
+                    market_news_clues = compact_market_news_rows(market_news)
+                    market_headlines = [
+                        (
+                            f"{item.get('title', '')}｜来源:{item.get('source', '')}"
+                            f"｜时间:{item.get('created_at', '')}｜链接:{item.get('url', '')}"
+                            f"｜系统标签:{item.get('risk_tag', '')}/{item.get('sentiment', '')}"
+                        )
+                        for item in market_news_clues
+                    ]
 
                     # 2. 再查 processed_sources，也就是你自动投喂抓到的资讯源
                     local_news = fetch_local_news_from_supabase(raw_target, limit=8)
@@ -6231,31 +6462,24 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     if not local_news:
                         local_news = fetch_local_news_from_supabase(target, limit=8)
 
-                    local_headlines = []
-                    if local_news:
-                        for item in local_news:
-                            title = item.get("title", "")
-                            url = item.get("url", "")
-                            created_at = item.get("created_at", "")
-                            manager_name = item.get("manager_name", "")
-
-                            if title:
-                                local_headlines.append(
-                                    f"{title}｜来源人格:{manager_name}｜时间:{created_at}｜链接:{url}"
-                                )
+                    processed_clues = compact_processed_source_rows(local_news)
+                    local_headlines = [
+                        (
+                            f"{item.get('title', '')}｜processed_sources 待验证线索"
+                            f"｜时间:{item.get('created_at', '')}｜链接:{item.get('url', '')}"
+                        )
+                        for item in processed_clues
+                    ]
 
                     # 3. 最后尝试 yfinance.news 作为备用
-                    yf_headlines = []
+                    yf_news_clues = []
                     try:
                         news_data = yf.Ticker(target).news
-                        if news_data:
-                            yf_headlines = [
-                                n.get("title", "") for n in news_data[:6] 
-                                if n.get("title")
-                            ]
+                        yf_news_clues = compact_yfinance_news_rows(news_data or [])
                     except Exception as e:
-                        yf_headlines = []
+                        yf_news_clues = []
                         st.info(f"yfinance 舆情接口受限，已切换本地舆情库。原因：{e}")
+                    yf_headlines = [item.get("title", "") for item in yf_news_clues if item.get("title")]
 
                     # 4. 合并舆情线索，优先级：market_news > processed_sources > yfinance
                     all_headlines = market_headlines + local_headlines + yf_headlines
@@ -6274,40 +6498,102 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     else:
                         st.success("未触发风险一票否决，可以继续查看深度分析。")
 
+                    tianyan_risk_fact_packet = build_tianyan_risk_fact_packet(
+                        target,
+                        raw_target or target,
+                        current_price=price,
+                    )
+                    tianyan_risk_fact_packet["sentiment_and_unverified_clues"].update(
+                        {
+                            "market_news": market_news_clues,
+                            "processed_sources": processed_clues,
+                            "yfinance_news": yf_news_clues,
+                            "note": "processed_sources / brain_memory / manager_rules 只能作为待验证线索",
+                        }
+                    )
+
+                    display_lines = build_tianyan_display_lines(tianyan_risk_fact_packet)
+                    st.markdown("#### 【已验证结构化风险】")
+                    st.markdown(f"- 资金风险：{display_lines['moneyflow']}")
+                    st.markdown(f"- 龙虎榜风险：{display_lines['dragon_tiger']}")
+                    st.markdown(f"- 融资融券风险：{display_lines['margin']}")
+                    st.markdown(f"- 筹码风险：{display_lines['chip']}")
+                    st.markdown(f"- 情绪/题材风险（涨跌停 / 概念热度风险）：{display_lines['emotion']}")
+
+                    st.markdown("#### 【舆情与待验证线索】")
+                    st.markdown(f"- Supabase market_news：{display_lines['market_news']}")
+                    st.markdown(f"- processed_sources：{display_lines['processed_sources']}")
+                    st.markdown(f"- yfinance news：{display_lines['yfinance_news']}")
+
+                    tianyan_prompt_packet = json.dumps(
+                        tianyan_risk_fact_packet,
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
+                    )
+
                     risk_prompt = f"""
 当前分析标的：{target}
 用户原始输入：{raw_target}
 当前价格：{price}
 
-以下是系统抓取到的舆情线索，优先级为：
-1. market_news 股票舆情库
-2. processed_sources 自动投喂资讯库
-3. yfinance.news 备用接口
+请基于下方【天眼风控雷达事实包】执行结构化风控排雷。
 
-舆情线索如下：
-{chr(10).join(all_headlines)}
+【天眼风控雷达事实包】
+{tianyan_prompt_packet}
 
 系统一票否决结果：
 {veto_result}
 
-请执行风控排雷：
+请严格按以下固定结构输出：
 
-1. 这些舆情是否可能影响该标的？
-2. 是否存在以下风险：
-   - 公告前股价异动
-   - 利好出尽
-   - 监管问询
-   - 大股东减持
-   - 财报暴雷
-   - 产业逻辑反转
-   - 资金踩踏
-3. 如果舆情不足，请明确说：“当前舆情数据不足，不能下确定结论”。
-4. 不允许编造没有出现在舆情线索里的新闻。
-5. 请给出：
-   - 风险等级：低 / 中 / 高
-   - 是否触发一票否决
-   - 继续观察要盯哪些信号
-   - 当前是否适合买入、持有、减仓、回避
+【已验证交易结构风险】
+只能引用：
+- moneyflow
+- top_list / top_inst
+- margin_detail
+- limit_list_d / limit_cpt_list
+
+【已验证筹码风险】
+只能引用：
+- cyq_perf
+- cyq_chips
+
+【已验证情绪/题材风险】
+只能引用：
+- 涨跌停记录
+- 炸板/连板
+- 概念强度 Top5
+
+【舆情 / 投喂资料 / 待验证线索】
+只能引用：
+- market_news
+- processed_sources
+- yfinance news
+- brain_memory
+- manager_rules
+
+【风控结论】
+- 风险等级：低 / 中 / 高
+- 当前动作：继续观察 / 暂停加仓 / 降低仓位 / 放弃观察
+- 一票否决项：
+- 次日验证点：
+- 缺失数据：
+
+硬规则：
+1. 风控模块不是买卖指令。
+2. 不自动下单。
+3. 不写必买、必卖、满仓、梭哈。
+4. processed_sources / brain_memory / manager_rules 只能作为待验证线索。
+5. 没有 Tushare 真实返回时写“暂无可验证数据”。
+6. 筹码集中不是必涨。
+7. 获利盘高不是必卖。
+8. 融资融券只能代表杠杆资金，不等于主力资金。
+9. 龙虎榜/游资不是跟随信号。
+10. limit_cpt_list 只能代表概念热度，不是追涨理由。
+11. market_news 的 risk_tag / sentiment 是系统提取标签，不等同公告事实。
+12. 没有真实接口返回，不得补写监管处罚、问询、诉讼、减持、质押、解禁。
+13. 不得编造事实包以外的公告、新闻、资金、席位、监管或财务信息。
 """
 
                     st.markdown(
