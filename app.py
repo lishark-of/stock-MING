@@ -4775,6 +4775,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
         with col_cn3:
             btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
+
+        whale_fact_packet = None
+        next_day_plan_fact_packet = None
         
         if btn_deepseek:
             with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
@@ -5123,6 +5126,158 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 has_data=lambda _: True,
             )
             whale_status.update(label="完成：巨鲸资金结果", state="complete")
+
+        with st.expander("🧪 AI事实包调试（开发者用）", expanded=False):
+            def _debug_text(value, fallback="暂无可验证数据", limit=120):
+                if value is None or value == "":
+                    return fallback
+                text = str(value)
+                return text if len(text) <= limit else text[:limit] + "..."
+
+            def _debug_bool(data, key="available"):
+                if not isinstance(data, dict):
+                    return False
+                return bool(data.get(key))
+
+            def _debug_note(data):
+                if not isinstance(data, dict):
+                    return "暂无可验证数据"
+                return _debug_text(data.get("warning") or data.get("message") or data.get("error") or "")
+
+            def _debug_status(data):
+                if not isinstance(data, dict):
+                    return False
+                if "ok" in data:
+                    return bool(data.get("ok"))
+                return bool(data.get("available"))
+
+            def _debug_issue_matches(data, keywords):
+                if not isinstance(data, dict):
+                    return ""
+                text = " ".join(
+                    str(data.get(key) or "")
+                    for key in ["message", "warning", "error"]
+                )
+                if not text or not any(keyword.lower() in text.lower() for keyword in keywords):
+                    return ""
+                return _debug_text(text)
+
+            facts = verified_technical_facts if isinstance(verified_technical_facts, dict) else {}
+            technical_missing = facts.get("missing") or []
+            technical_summary = {
+                "available": bool(facts.get("available")),
+                "latest_close": _debug_text(facts.get("latest_close")),
+                "ma60_state": _debug_text(facts.get("ma60_state")),
+                "rsi_14": _debug_text(facts.get("rsi_14")),
+                "volume_vs_20d": _debug_text(facts.get("volume_vs_20d")),
+                "return_20d": _debug_text(facts.get("return_20d")),
+                "return_60d": _debug_text(facts.get("return_60d")),
+                "drawdown_60d": _debug_text(facts.get("drawdown_60d")),
+                "market_date": _debug_text(facts.get("market_date")),
+                "source": _debug_text(facts.get("source")),
+                "confidence": _debug_text(facts.get("confidence")),
+                "missing": "、".join(str(item) for item in technical_missing) if technical_missing else "无",
+            }
+            st.markdown("##### 一、已验证技术事实摘要")
+            st.table(pd.DataFrame([{"字段": key, "值": value} for key, value in technical_summary.items()]))
+
+            fund_sources = [
+                (
+                    "moneyflow",
+                    moneyflow_data if isinstance(moneyflow_data, dict) else {},
+                    {
+                        "latest_date": (moneyflow_data or {}).get("date") if isinstance(moneyflow_data, dict) else "",
+                        "direction": (moneyflow_data or {}).get("direction") if isinstance(moneyflow_data, dict) else "",
+                        "main_net_inflow_yi": (moneyflow_data or {}).get("main_net_yi") if isinstance(moneyflow_data, dict) else "",
+                        "five_day_main_net_inflow_yi": (moneyflow_data or {}).get("five_day_main_net_yi") if isinstance(moneyflow_data, dict) else "",
+                    },
+                ),
+                (
+                    "dragon_tiger",
+                    dragon_data if isinstance(dragon_data, dict) else {},
+                    {
+                        "trade_date": (dragon_data or {}).get("latest_date") if isinstance(dragon_data, dict) else "",
+                        "reason": (dragon_data or {}).get("reason") if isinstance(dragon_data, dict) else "",
+                        "net_buy_amount": (dragon_data or {}).get("net_buy_amount_yi") if isinstance(dragon_data, dict) else "",
+                        "institution_summary_exists": bool((dragon_data or {}).get("inst_summary")) if isinstance(dragon_data, dict) else False,
+                    },
+                ),
+                (
+                    "margin",
+                    margin_data if isinstance(margin_data, dict) else {},
+                    {
+                        "trade_date": (margin_data or {}).get("date") if isinstance(margin_data, dict) else "",
+                        "financing_balance_yi": (margin_data or {}).get("financing_balance_yi") if isinstance(margin_data, dict) else "",
+                        "margin_balance_yi": (margin_data or {}).get("margin_balance_yi") if isinstance(margin_data, dict) else "",
+                    },
+                ),
+                (
+                    "limit_emotion",
+                    limit_emotion_data if isinstance(limit_emotion_data, dict) else {},
+                    {
+                        "trade_date": (
+                            (limit_emotion_data or {}).get("latest_date")
+                            or (limit_emotion_data or {}).get("concept_date")
+                        ) if isinstance(limit_emotion_data, dict) else "",
+                        "limit_up_price": (limit_emotion_data or {}).get("up_limit") if isinstance(limit_emotion_data, dict) else "",
+                        "limit_down_price": (limit_emotion_data or {}).get("down_limit") if isinstance(limit_emotion_data, dict) else "",
+                        "recent_limit_records_count": len((limit_emotion_data or {}).get("limit_records") or []) if isinstance(limit_emotion_data, dict) else 0,
+                    },
+                ),
+            ]
+            fund_rows = []
+            funding_missing = []
+            permission_issues = []
+            stale_issues = []
+            permission_keywords = ["权限", "permission", "积分", "无接口访问权限"]
+            stale_keywords = ["无数据", "暂未取得", "数据尚未更新"]
+            for name, data, extras in fund_sources:
+                available = _debug_bool(data)
+                ok = _debug_status(data)
+                if not available or not ok:
+                    funding_missing.append(name)
+                permission_note = _debug_issue_matches(data, permission_keywords)
+                stale_note = _debug_issue_matches(data, stale_keywords)
+                if permission_note:
+                    permission_issues.append(f"{name}: {permission_note}")
+                if stale_note:
+                    stale_issues.append(f"{name}: {stale_note}")
+                row = {
+                    "name": name,
+                    "available": available,
+                    "ok": ok,
+                    "source": _debug_text(data.get("source") if isinstance(data, dict) else ""),
+                    "api": _debug_text(data.get("api") if isinstance(data, dict) else ""),
+                    "note": _debug_note(data),
+                }
+                for key, value in extras.items():
+                    row[key] = _debug_text(value) if not isinstance(value, bool) else value
+                fund_rows.append(row)
+            st.markdown("##### 二、A股资金事实摘要")
+            st.table(pd.DataFrame(fund_rows))
+
+            try:
+                ai_context_has_technical = "【已验证技术事实】" in (ai_context_packet or "")
+            except Exception:
+                ai_context_has_technical = False
+            packet_status = {
+                "verified_technical_facts_available": bool(facts.get("available")),
+                "ai_context_packet_has_verified_technical_facts": ai_context_has_technical,
+                "whale_fact_packet_status": "已构造" if whale_fact_packet is not None else "尚未触发",
+                "next_day_plan_fact_packet_status": "已构造" if next_day_plan_fact_packet is not None else "尚未触发",
+                "market_style_fact_packet_status": "仅今日关注池生成 / 当前页未生成",
+            }
+            st.markdown("##### 三、AI输入事实包状态")
+            st.table(pd.DataFrame([{"字段": key, "状态": value} for key, value in packet_status.items()]))
+
+            missing_summary = {
+                "技术缺失项": "、".join(str(item) for item in technical_missing) if technical_missing else "无",
+                "资金缺失项": "、".join(funding_missing) if funding_missing else "无",
+                "权限不足项": "；".join(permission_issues) if permission_issues else "无",
+                "数据未更新项": "；".join(stale_issues) if stale_issues else "无",
+            }
+            st.markdown("##### 四、缺失项汇总")
+            st.table(pd.DataFrame([{"类别": key, "摘要": value} for key, value in missing_summary.items()]))
 
     # ==========================================
     # 4. 主界面
