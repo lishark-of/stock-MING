@@ -5374,12 +5374,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
     st.markdown("---")
 
-    tab_home, tab_risk, tab_rl, tab_backtest, tab_main, tab_brain, tab_screener = st.tabs([
+    tab_home, tab_risk, tab_discipline, tab_main, tab_brain, tab_screener = st.tabs([
     "🏠 今日关注池",
-    "🛡️ 天眼风控 (排雷)", 
-    "⏳ 炼丹炉 (强化学习)", 
-    "📊 回测实验室",
-    "📈 量化推演 (多市场)", 
+    "🛡️ 天眼风控 (排雷)",
+    "🧪 交易纪律实验室",
+    "📈 量化推演 (多市场)",
     "☁️ 云端外脑 (数据中心)",
     "🎯 大师选股 (策略雷达)"
 ])
@@ -5609,54 +5608,61 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 except Exception as e:
                     st.error(f"舆情风控模块运行失败: {e}")
 
-    # 模块 B：炼丹炉
-    with tab_rl:
-        st.markdown(f"### ⏳ 强化学习时光机：{target}")
-        st.caption("自动从近两年抽取多个历史窗口，用后续走势反向校验，提炼这只票自己的交易规范。")
+    # 模块 B：交易纪律实验室
+    with tab_discipline:
+        st.markdown("### 🧪 交易纪律实验室")
+        st.caption("先把交易经验和投喂资料炼成纪律，再用历史回测验证纪律是否有效。")
 
-        auto_tab, manual_tab = st.tabs(["自动多段复盘", "手动单段盲测"])
+        sub_tab_refine, sub_tab_backtest = st.tabs(["规则炼丹 / 手动投喂", "回测验证 / 纪律实验"])
 
-        with auto_tab:
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                replay_years = st.selectbox("复盘范围", [1, 2, 3], index=1, key="rl_replay_years")
-            with c2:
-                case_count = st.slider("抽样段数", 8, 28, 16, key="rl_case_count")
-            with c3:
-                window_days = st.selectbox("观察窗口", [40, 60, 90], index=1, key="rl_window_days")
-            with c4:
-                future_days = st.selectbox("验证窗口", [20, 40, 60], index=2, key="rl_future_days")
+        with sub_tab_refine:
+            st.caption("用于从历史行情、投喂资料、基金经理规则中提炼交易纪律。")
+            st.markdown(f"### ⏳ 强化学习时光机：{target}")
+            st.caption("自动从近两年抽取多个历史窗口，用后续走势反向校验，提炼这只票自己的交易规范。")
 
-            st.caption("默认覆盖近两年，抽样段数可拉高；系统仍会把提示词和回答控制在 20,000 token 以内。")
+            auto_tab, manual_tab = st.tabs(["自动多段复盘", "手动单段盲测"])
 
-            if st.button("🧪 自动炼丹：生成该票交易规范", key="btn_auto_rl", type="primary"):
-                with st.spinner("正在回放近两年历史片段..."):
-                    cases, hist = build_auto_replay_cases(
-                        target,
-                        lookback_days=365 * replay_years,
-                        window_days=window_days,
-                        future_days=future_days,
-                        case_count=case_count,
-                    )
+            with auto_tab:
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    replay_years = st.selectbox("复盘范围", [1, 2, 3], index=1, key="rl_replay_years")
+                with c2:
+                    case_count = st.slider("抽样段数", 8, 28, 16, key="rl_case_count")
+                with c3:
+                    window_days = st.selectbox("观察窗口", [40, 60, 90], index=1, key="rl_window_days")
+                with c4:
+                    future_days = st.selectbox("验证窗口", [20, 40, 60], index=2, key="rl_future_days")
 
-                if not cases:
-                    st.warning("⚠️ 历史数据不足，无法做多段复盘。可以换成上市更久的标的，或缩短观察窗口。")
-                else:
-                    case_df = pd.DataFrame(cases)
-                    st.markdown("#### 历史切片样本")
-                    st.dataframe(case_df, width="stretch")
+                st.caption("默认覆盖近两年，抽样段数可拉高；系统仍会把提示词和回答控制在 20,000 token 以内。")
 
-                    case_lines = "\n".join(format_replay_case(case) for case in cases)
-                    latest_close = round(float(hist["Close"].dropna().iloc[-1]), 2) if not hist.empty else "未知"
-                    market_tag = {
-                        "US_STOCK": "美股",
-                        "HK_STOCK": "港股",
-                        "JP_STOCK": "日股",
-                        "A_SHARE_SH": "A股",
-                        "A_SHARE_SZ": "A股",
-                    }.get(market_type, "全球市场")
+                if st.button("🧪 自动炼丹：生成该票交易规范", key="btn_auto_rl", type="primary"):
+                    with st.spinner("正在回放近两年历史片段..."):
+                        cases, hist = build_auto_replay_cases(
+                            target,
+                            lookback_days=365 * replay_years,
+                            window_days=window_days,
+                            future_days=future_days,
+                            case_count=case_count,
+                        )
 
-                    auto_prompt = f"""
+                    if not cases:
+                        st.warning("⚠️ 历史数据不足，无法做多段复盘。可以换成上市更久的标的，或缩短观察窗口。")
+                    else:
+                        case_df = pd.DataFrame(cases)
+                        st.markdown("#### 历史切片样本")
+                        st.dataframe(case_df, width="stretch")
+
+                        case_lines = "\n".join(format_replay_case(case) for case in cases)
+                        latest_close = round(float(hist["Close"].dropna().iloc[-1]), 2) if not hist.empty else "未知"
+                        market_tag = {
+                            "US_STOCK": "美股",
+                            "HK_STOCK": "港股",
+                            "JP_STOCK": "日股",
+                            "A_SHARE_SH": "A股",
+                            "A_SHARE_SZ": "A股",
+                        }.get(market_type, "全球市场")
+
+                        auto_prompt = f"""
 标的：{target}
 市场：{market_tag}
 最新价格：{currency} {latest_close}
@@ -5702,358 +5708,359 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 - 最后给一段 80 字以内的硬核纪律，方便写入交易外脑。
 """
 
-                    estimated_total = estimate_tokens(auto_prompt) + 3600
-                    st.info(f"本次预计 token 消耗约 {estimated_total:,}，目标上限 20,000。")
+                        estimated_total = estimate_tokens(auto_prompt) + 3600
+                        st.info(f"本次预计 token 消耗约 {estimated_total:,}，目标上限 20,000。")
 
-                    if estimated_total > 20000:
-                        st.warning("当前样本过多，建议把抽样段数调低后再跑。")
-                    else:
-                        result = call_deepseek_non_stream(
-                            auto_prompt,
-                            system_role="你是严格的量化复盘教练，只能从历史切片中归纳交易规范。",
-                            max_tokens=3600,
-                        )
-
-                        if result:
-                            st.markdown("### 该票交易规范")
-                            st.markdown(result)
-                            saved_stock_rule = save_stock_logic_rule(target, market_type, result)
-                            insert_cloud_memory(
-                                "reflection",
-                                f"【自动炼丹 - {target}】{market_tag}：{result[:1200]}"
+                        if estimated_total > 20000:
+                            st.warning("当前样本过多，建议把抽样段数调低后再跑。")
+                        else:
+                            result = call_deepseek_non_stream(
+                                auto_prompt,
+                                system_role="你是严格的量化复盘教练，只能从历史切片中归纳交易规范。",
+                                max_tokens=3600,
                             )
-                            if saved_stock_rule:
-                                st.success("✅ 自动炼丹结果已写入该股票专属规则，并同步到云端外脑。")
-                            else:
-                                st.success("✅ 自动炼丹结果已同步到云端外脑。")
 
-        with manual_tab:
-            st.caption("保留原来的单段盲测，适合你想专门检查某一个历史阶段。")
-            col1, col2 = st.columns(2)
-            with col1: start_d = st.date_input("盲测起点", datetime.date(2023, 1, 1), key="rl_start")
-            with col2: end_d = st.date_input("盲测终点", datetime.date(2023, 6, 1), key="rl_end")
+                            if result:
+                                st.markdown("### 该票交易规范")
+                                st.markdown(result)
+                                saved_stock_rule = save_stock_logic_rule(target, market_type, result)
+                                insert_cloud_memory(
+                                    "reflection",
+                                    f"【自动炼丹 - {target}】{market_tag}：{result[:1200]}"
+                                )
+                                if saved_stock_rule:
+                                    st.success("✅ 自动炼丹结果已写入该股票专属规则，并同步到云端外脑。")
+                                else:
+                                    st.success("✅ 自动炼丹结果已同步到云端外脑。")
 
-            if st.button("🔥 启动闭门军演", key="btn_rl"):
-                with st.spinner("正在切割历史时间线..."):
-                    s_str = start_d.strftime('%Y-%m-%d')
-                    e_str = end_d.strftime('%Y-%m-%d')
+            with manual_tab:
+                st.caption("保留原来的单段盲测，适合你想专门检查某一个历史阶段。")
+                col1, col2 = st.columns(2)
+                with col1: start_d = st.date_input("盲测起点", datetime.date(2023, 1, 1), key="rl_start")
+                with col2: end_d = st.date_input("盲测终点", datetime.date(2023, 6, 1), key="rl_end")
 
-                    hist = get_historical_data(target, s_str, e_str)
+                if st.button("🔥 启动闭门军演", key="btn_rl"):
+                    with st.spinner("正在切割历史时间线..."):
+                        s_str = start_d.strftime('%Y-%m-%d')
+                        e_str = end_d.strftime('%Y-%m-%d')
 
-                    if hist.empty:
-                        st.warning("⚠️ 该时间段无数据。")
-                    else:
-                        start_p = round(hist['Close'].iloc[0], 2)
-                        end_p = round(hist['Close'].iloc[-1], 2)
+                        hist = get_historical_data(target, s_str, e_str)
 
-                        future_d = end_d + datetime.timedelta(days=30)
-                        f_str = future_d.strftime('%Y-%m-%d')
-                        future = get_historical_data(target, e_str, f_str)
-                        future_p = round(future['Close'].iloc[-1], 2) if not future.empty else "未知"
+                        if hist.empty:
+                            st.warning("⚠️ 该时间段无数据。")
+                        else:
+                            start_p = round(hist['Close'].iloc[0], 2)
+                            end_p = round(hist['Close'].iloc[-1], 2)
 
-                        st.markdown(f"**📈 喂养数据**：从 {start_p} 至 {end_p}。")
-                        st.markdown(f"**🔮 现实毒打**：一个月后走到 {future_p}。")
+                            future_d = end_d + datetime.timedelta(days=30)
+                            f_str = future_d.strftime('%Y-%m-%d')
+                            future = get_historical_data(target, e_str, f_str)
+                            future_p = round(future['Close'].iloc[-1], 2) if not future.empty else "未知"
 
-                        rl_prompt = f"""
+                            st.markdown(f"**📈 喂养数据**：从 {start_p} 至 {end_p}。")
+                            st.markdown(f"**🔮 现实毒打**：一个月后走到 {future_p}。")
+
+                            rl_prompt = f"""
                         背景：{s_str} 到 {e_str}，{target} 从 {start_p} 至 {end_p}。
                         现实：后续一个月到了 {future_p}。
                         指令：提炼一条不超过 40 字的硬核量化纪律。
                         """
 
-                        st.markdown("### 🔴 历史左右互搏流")
-                        call_deepseek_stream(rl_prompt)
+                            st.markdown("### 🔴 历史左右互搏流")
+                            call_deepseek_stream(rl_prompt)
 
-                        if st.session_state.get("ds_keys"):
-                            try:
-                                res = call_deepseek_non_stream(rl_prompt + "请只输出那条 40 字以内的纪律本身。")
-                                if res:
-                                    market_tag = {
-                                        "US_STOCK": "🇺🇸",
-                                        "HK_STOCK": "🇭🇰",
-                                        "JP_STOCK": "🇯🇵",
-                                        "A_SHARE_SH": "🇨🇳",
-                                        "A_SHARE_SZ": "🇨🇳",
-                                    }.get(market_type, "🌍")
-                                    insert_cloud_memory("reflection", f"【时光机 - {target}】{market_tag}: {res}")
-                                    st.success(f"✅ 纪律已写入云端：{res}")
-                            except: pass
+                            if st.session_state.get("ds_keys"):
+                                try:
+                                    res = call_deepseek_non_stream(rl_prompt + "请只输出那条 40 字以内的纪律本身。")
+                                    if res:
+                                        market_tag = {
+                                            "US_STOCK": "🇺🇸",
+                                            "HK_STOCK": "🇭🇰",
+                                            "JP_STOCK": "🇯🇵",
+                                            "A_SHARE_SH": "🇨🇳",
+                                            "A_SHARE_SZ": "🇨🇳",
+                                        }.get(market_type, "🌍")
+                                        insert_cloud_memory("reflection", f"【时光机 - {target}】{market_tag}: {res}")
+                                        st.success(f"✅ 纪律已写入云端：{res}")
+                                except: pass
 
-    # 模块 B2：回测实验室
-    with tab_backtest:
-        st.markdown(f"### 📊 单票回测实验室：{target}")
-        st.caption("先选你现在的交易目的，系统会自动套一组纪律；参数想细调时再打开高级设置。")
 
-        default_end = datetime.date.today()
-        default_start = default_end - datetime.timedelta(days=365 * 2)
-        b0, bm, b1, b2 = st.columns([1.2, 1.1, 1, 1])
-        with b0:
-            bt_preset = st.selectbox(
-                "这次想解决什么",
-                ["持仓体检（推荐）", "找买点", "找卖点/止盈", "短线试错", "自定义参数"],
-                key="bt_preset_v2",
-            )
-        with bm:
-            bt_mode_choice = st.selectbox(
-                "回测方式",
-                ["三模式对比（推荐）", "默认模式", "自由模式", "动态止盈止损模式"],
-                key="bt_mode_choice_v1",
-            )
-        with b1:
-            bt_start = st.date_input("回测起点", default_start, key="bt_start")
-        with b2:
-            bt_end = st.date_input("回测终点", default_end, key="bt_end")
+        with sub_tab_backtest:
+            st.caption("用于验证某套交易纪律在历史区间内的表现。")
+            st.markdown(f"### 📊 单票回测实验室：{target}")
+            st.caption("先选你现在的交易目的，系统会自动套一组纪律；参数想细调时再打开高级设置。")
 
-        b3, b4 = st.columns([1, 1])
-        with b3:
-            bt_cash = st.number_input("回测本金", min_value=1000.0, value=float(capital_plan or 100000.0), step=5000.0, key="bt_cash")
-        with b4:
-            bt_provider = st.selectbox("行情源", ["auto", "akshare", "yfinance"], index=0, key="bt_provider")
-
-        preset_rules = {
-            "持仓体检（推荐）": {
-                **DEFAULT_RULES,
-                "stop_loss_pct": 0.10,
-                "take_profit_pct": 0.18,
-                "max_drawdown_exit": 0.12,
-                "position_size": 0.6,
-                "rsi_buy_max": 62,
-                "rsi_sell_min": 75,
-                "ma_slow": 60,
-            },
-            "找买点": {
-                **DEFAULT_RULES,
-                "stop_loss_pct": 0.08,
-                "take_profit_pct": 0.16,
-                "max_drawdown_exit": 0.10,
-                "position_size": 0.35,
-                "rsi_buy_max": 58,
-                "rsi_sell_min": 72,
-                "ma_slow": 60,
-            },
-            "找卖点/止盈": {
-                **DEFAULT_RULES,
-                "stop_loss_pct": 0.09,
-                "take_profit_pct": 0.12,
-                "max_drawdown_exit": 0.08,
-                "position_size": 0.5,
-                "rsi_buy_max": 64,
-                "rsi_sell_min": 68,
-                "ma_slow": 40,
-            },
-            "短线试错": {
-                **DEFAULT_RULES,
-                "stop_loss_pct": 0.05,
-                "take_profit_pct": 0.10,
-                "max_drawdown_exit": 0.06,
-                "position_size": 0.25,
-                "rsi_buy_max": 66,
-                "rsi_sell_min": 70,
-                "ma_slow": 40,
-            },
-        }
-        bt_rules = preset_rules.get(bt_preset, DEFAULT_RULES.copy())
-
-        if bt_preset != "自定义参数":
-            st.info(
-                f"当前模式：{bt_preset}。系统会自动使用止损 {int(bt_rules['stop_loss_pct'] * 100)}%、"
-                f"止盈 {int(bt_rules['take_profit_pct'] * 100)}%、慢线 {bt_rules['ma_slow']} 日、"
-                f"单次仓位 {int(bt_rules['position_size'] * 100)}%。"
-            )
-        else:
-            with st.expander("高级参数", expanded=True):
-                r1, r2, r3, r4 = st.columns(4)
-                with r1:
-                    bt_stop = st.slider("止损比例", 3, 20, int(DEFAULT_RULES["stop_loss_pct"] * 100), key="bt_stop_v2") / 100
-                with r2:
-                    bt_take = st.slider("止盈比例", 6, 40, int(DEFAULT_RULES["take_profit_pct"] * 100), key="bt_take_v2") / 100
-                with r3:
-                    bt_trailing = st.slider("持仓回撤退出", 5, 30, int(DEFAULT_RULES["max_drawdown_exit"] * 100), key="bt_trailing_v2") / 100
-                with r4:
-                    bt_position = st.slider("单次仓位", 10, 100, int(DEFAULT_RULES["position_size"] * 100), step=5, key="bt_position_v2") / 100
-
-                r5, r6, r7 = st.columns(3)
-                with r5:
-                    bt_rsi_buy = st.slider("买入RSI上限", 35, 70, int(DEFAULT_RULES["rsi_buy_max"]), key="bt_rsi_buy_v2")
-                with r6:
-                    bt_rsi_sell = st.slider("止盈RSI参考", 55, 85, int(DEFAULT_RULES["rsi_sell_min"]), key="bt_rsi_sell_v2")
-                with r7:
-                    bt_ma_slow = st.selectbox("慢线周期", [40, 60, 120], index=1, key="bt_ma_slow_v2")
-
-                bt_rules = {
-                    **DEFAULT_RULES,
-                    "rsi_buy_max": bt_rsi_buy,
-                    "rsi_sell_min": bt_rsi_sell,
-                    "stop_loss_pct": bt_stop,
-                    "take_profit_pct": bt_take,
-                    "max_drawdown_exit": bt_trailing,
-                    "position_size": bt_position,
-                    "ma_slow": bt_ma_slow,
-                }
-
-        if (bt_end - bt_start).days < 365:
-            st.warning("这段回测不足一年，结论只能当短期体检。想看规则是否可靠，建议把起点拉到近两年。")
-
-        mode_map = {
-            "默认模式": ["default"],
-            "自由模式": ["free"],
-            "动态止盈止损模式": ["dynamic"],
-            "三模式对比（推荐）": ["default", "free", "dynamic"],
-        }
-        selected_modes = mode_map.get(bt_mode_choice, ["default", "free", "dynamic"])
-        st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损。")
-
-        bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}|{selected_modes}"
-        if st.button("运行回测", key="btn_run_backtest", type="primary", width="stretch"):
-            with st.spinner("正在拉取历史行情并跑回测..."):
-                price_frame = fetch_ohlcv(
-                    target,
-                    market_type=market_type,
-                    start=bt_start.isoformat(),
-                    end=(bt_end + datetime.timedelta(days=1)).isoformat(),
-                    provider=bt_provider,
+            default_end = datetime.date.today()
+            default_start = default_end - datetime.timedelta(days=365 * 2)
+            b0, bm, b1, b2 = st.columns([1.2, 1.1, 1, 1])
+            with b0:
+                bt_preset = st.selectbox(
+                    "这次想解决什么",
+                    ["持仓体检（推荐）", "找买点", "找卖点/止盈", "短线试错", "自定义参数"],
+                    key="bt_preset_v2",
                 )
-                if price_frame.empty and market_type.startswith("A_SHARE") and bt_provider != "auto":
+            with bm:
+                bt_mode_choice = st.selectbox(
+                    "回测方式",
+                    ["三模式对比（推荐）", "默认模式", "自由模式", "动态止盈止损模式"],
+                    key="bt_mode_choice_v1",
+                )
+            with b1:
+                bt_start = st.date_input("回测起点", default_start, key="bt_start")
+            with b2:
+                bt_end = st.date_input("回测终点", default_end, key="bt_end")
+
+            b3, b4 = st.columns([1, 1])
+            with b3:
+                bt_cash = st.number_input("回测本金", min_value=1000.0, value=float(capital_plan or 100000.0), step=5000.0, key="bt_cash")
+            with b4:
+                bt_provider = st.selectbox("行情源", ["auto", "akshare", "yfinance"], index=0, key="bt_provider")
+
+            preset_rules = {
+                "持仓体检（推荐）": {
+                    **DEFAULT_RULES,
+                    "stop_loss_pct": 0.10,
+                    "take_profit_pct": 0.18,
+                    "max_drawdown_exit": 0.12,
+                    "position_size": 0.6,
+                    "rsi_buy_max": 62,
+                    "rsi_sell_min": 75,
+                    "ma_slow": 60,
+                },
+                "找买点": {
+                    **DEFAULT_RULES,
+                    "stop_loss_pct": 0.08,
+                    "take_profit_pct": 0.16,
+                    "max_drawdown_exit": 0.10,
+                    "position_size": 0.35,
+                    "rsi_buy_max": 58,
+                    "rsi_sell_min": 72,
+                    "ma_slow": 60,
+                },
+                "找卖点/止盈": {
+                    **DEFAULT_RULES,
+                    "stop_loss_pct": 0.09,
+                    "take_profit_pct": 0.12,
+                    "max_drawdown_exit": 0.08,
+                    "position_size": 0.5,
+                    "rsi_buy_max": 64,
+                    "rsi_sell_min": 68,
+                    "ma_slow": 40,
+                },
+                "短线试错": {
+                    **DEFAULT_RULES,
+                    "stop_loss_pct": 0.05,
+                    "take_profit_pct": 0.10,
+                    "max_drawdown_exit": 0.06,
+                    "position_size": 0.25,
+                    "rsi_buy_max": 66,
+                    "rsi_sell_min": 70,
+                    "ma_slow": 40,
+                },
+            }
+            bt_rules = preset_rules.get(bt_preset, DEFAULT_RULES.copy())
+
+            if bt_preset != "自定义参数":
+                st.info(
+                    f"当前模式：{bt_preset}。系统会自动使用止损 {int(bt_rules['stop_loss_pct'] * 100)}%、"
+                    f"止盈 {int(bt_rules['take_profit_pct'] * 100)}%、慢线 {bt_rules['ma_slow']} 日、"
+                    f"单次仓位 {int(bt_rules['position_size'] * 100)}%。"
+                )
+            else:
+                with st.expander("高级参数", expanded=True):
+                    r1, r2, r3, r4 = st.columns(4)
+                    with r1:
+                        bt_stop = st.slider("止损比例", 3, 20, int(DEFAULT_RULES["stop_loss_pct"] * 100), key="bt_stop_v2") / 100
+                    with r2:
+                        bt_take = st.slider("止盈比例", 6, 40, int(DEFAULT_RULES["take_profit_pct"] * 100), key="bt_take_v2") / 100
+                    with r3:
+                        bt_trailing = st.slider("持仓回撤退出", 5, 30, int(DEFAULT_RULES["max_drawdown_exit"] * 100), key="bt_trailing_v2") / 100
+                    with r4:
+                        bt_position = st.slider("单次仓位", 10, 100, int(DEFAULT_RULES["position_size"] * 100), step=5, key="bt_position_v2") / 100
+
+                    r5, r6, r7 = st.columns(3)
+                    with r5:
+                        bt_rsi_buy = st.slider("买入RSI上限", 35, 70, int(DEFAULT_RULES["rsi_buy_max"]), key="bt_rsi_buy_v2")
+                    with r6:
+                        bt_rsi_sell = st.slider("止盈RSI参考", 55, 85, int(DEFAULT_RULES["rsi_sell_min"]), key="bt_rsi_sell_v2")
+                    with r7:
+                        bt_ma_slow = st.selectbox("慢线周期", [40, 60, 120], index=1, key="bt_ma_slow_v2")
+
+                    bt_rules = {
+                        **DEFAULT_RULES,
+                        "rsi_buy_max": bt_rsi_buy,
+                        "rsi_sell_min": bt_rsi_sell,
+                        "stop_loss_pct": bt_stop,
+                        "take_profit_pct": bt_take,
+                        "max_drawdown_exit": bt_trailing,
+                        "position_size": bt_position,
+                        "ma_slow": bt_ma_slow,
+                    }
+
+            if (bt_end - bt_start).days < 365:
+                st.warning("这段回测不足一年，结论只能当短期体检。想看规则是否可靠，建议把起点拉到近两年。")
+
+            mode_map = {
+                "默认模式": ["default"],
+                "自由模式": ["free"],
+                "动态止盈止损模式": ["dynamic"],
+                "三模式对比（推荐）": ["default", "free", "dynamic"],
+            }
+            selected_modes = mode_map.get(bt_mode_choice, ["default", "free", "dynamic"])
+            st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损。")
+
+            bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}|{selected_modes}"
+            if st.button("运行回测", key="btn_run_backtest", type="primary", width="stretch"):
+                with st.spinner("正在拉取历史行情并跑回测..."):
                     price_frame = fetch_ohlcv(
                         target,
                         market_type=market_type,
                         start=bt_start.isoformat(),
                         end=(bt_end + datetime.timedelta(days=1)).isoformat(),
-                        provider="auto",
-                    )
-                if price_frame.empty:
-                    st.session_state["last_backtest_report"] = None
-                    st.session_state["last_multi_backtest"] = None
-                    st.session_state["last_backtest_key"] = bt_key
-                    st.warning("没有抓到可用行情。")
-                    st.caption(f"识别结果：{target}｜{market_type}｜行情源：{bt_provider}｜区间：{bt_start} 至 {bt_end}")
-                    diag = cached_fetch_ohlcv_diagnostics(
-                        target,
-                        market_type,
-                        bt_start.isoformat(),
-                        (bt_end + datetime.timedelta(days=1)).isoformat(),
                         provider=bt_provider,
                     )
-                    attempts = diag.get("attempts") or []
-                    if attempts:
-                        st.markdown("##### 数据源尝试记录")
-                        for item in attempts:
-                            st.caption(f"- {item}")
-                    if market_type.startswith("A_SHARE"):
-                        st.info("A股请优先输入 6 位代码或带 .SZ/.SS 后缀，例如 002008、002008.SZ、600459、600459.SS。若 akshare 为空，系统会自动再试 yfinance。")
-                    elif market_type == "HK_STOCK":
-                        st.info("港股请用 0700 或 0700.HK 这种格式，行情源用 auto/yfinance。")
-                    elif market_type == "JP_STOCK":
-                        st.info("日股请用 6758 或 6758.T 这种格式，行情源用 auto/yfinance。")
+                    if price_frame.empty and market_type.startswith("A_SHARE") and bt_provider != "auto":
+                        price_frame = fetch_ohlcv(
+                            target,
+                            market_type=market_type,
+                            start=bt_start.isoformat(),
+                            end=(bt_end + datetime.timedelta(days=1)).isoformat(),
+                            provider="auto",
+                        )
+                    if price_frame.empty:
+                        st.session_state["last_backtest_report"] = None
+                        st.session_state["last_multi_backtest"] = None
+                        st.session_state["last_backtest_key"] = bt_key
+                        st.warning("没有抓到可用行情。")
+                        st.caption(f"识别结果：{target}｜{market_type}｜行情源：{bt_provider}｜区间：{bt_start} 至 {bt_end}")
+                        diag = cached_fetch_ohlcv_diagnostics(
+                            target,
+                            market_type,
+                            bt_start.isoformat(),
+                            (bt_end + datetime.timedelta(days=1)).isoformat(),
+                            provider=bt_provider,
+                        )
+                        attempts = diag.get("attempts") or []
+                        if attempts:
+                            st.markdown("##### 数据源尝试记录")
+                            for item in attempts:
+                                st.caption(f"- {item}")
+                        if market_type.startswith("A_SHARE"):
+                            st.info("A股请优先输入 6 位代码或带 .SZ/.SS 后缀，例如 002008、002008.SZ、600459、600459.SS。若 akshare 为空，系统会自动再试 yfinance。")
+                        elif market_type == "HK_STOCK":
+                            st.info("港股请用 0700 或 0700.HK 这种格式，行情源用 auto/yfinance。")
+                        elif market_type == "JP_STOCK":
+                            st.info("日股请用 6758 或 6758.T 这种格式，行情源用 auto/yfinance。")
+                        else:
+                            st.info("美股请用 NVDA、INTC 这种 ticker，行情源用 auto/yfinance。")
                     else:
-                        st.info("美股请用 NVDA、INTC 这种 ticker，行情源用 auto/yfinance。")
+                        multi_result = run_multi_mode_backtests(
+                            price_frame,
+                            base_rules=bt_rules,
+                            cost_price=cost_price if cost_price > 0 else None,
+                            initial_cash=bt_cash,
+                            modes=selected_modes,
+                        )
+                        reports = multi_result.get("reports", {})
+                        primary_mode = selected_modes[0] if selected_modes else "default"
+                        report = reports.get(primary_mode) or next(iter(reports.values()))
+                        report["ticker"] = target
+                        report["market_type"] = market_type
+                        report["source"] = price_frame["source"].iloc[-1] if "source" in price_frame.columns and not price_frame.empty else bt_provider
+                        report["date_range"] = {"start": bt_start.isoformat(), "end": bt_end.isoformat()}
+                        for mode_report in reports.values():
+                            mode_report["ticker"] = target
+                            mode_report["market_type"] = market_type
+                            mode_report["source"] = report["source"]
+                            mode_report["date_range"] = report["date_range"]
+                        multi_result["ticker"] = target
+                        multi_result["market_type"] = market_type
+                        multi_result["source"] = report["source"]
+                        multi_result["date_range"] = report["date_range"]
+                        multi_result["position_profile"] = position_profile_preview
+                        st.session_state["last_backtest_report"] = report
+                        st.session_state["last_multi_backtest"] = multi_result
+                        st.session_state["last_backtest_key"] = bt_key
+                        st.success(f"回测完成：{multi_result.get('summary') or report.get('summary', '')}")
+
+            report = st.session_state.get("last_backtest_report")
+            multi_result = st.session_state.get("last_multi_backtest")
+            if report and report.get("ticker") != target:
+                report = None
+                multi_result = None
+            if report:
+                st.caption(f"行情源：{report.get('source', 'unknown')}｜区间：{report.get('date_range', {}).get('start')} 至 {report.get('date_range', {}).get('end')}｜样本数：{report.get('data_points', 0)}")
+                if multi_result and len((multi_result.get("reports") or {})) > 1:
+                    render_multi_mode_backtest(multi_result)
                 else:
-                    multi_result = run_multi_mode_backtests(
-                        price_frame,
-                        base_rules=bt_rules,
-                        cost_price=cost_price if cost_price > 0 else None,
-                        initial_cash=bt_cash,
-                        modes=selected_modes,
+                    render_backtest_report(report)
+
+                with st.expander("A股微观数据补充", expanded=False):
+                    micro_key = f"micro_{target}_{market_type}"
+                    if st.button("深度资金扫描 / 刷新龙虎榜", key=f"btn_{micro_key}"):
+                        with st.spinner("正在抓取完整公开微观数据，可能较慢..."):
+                            st.session_state[micro_key] = cached_micro_data(target, market_type, deep=True)
+                    micro = st.session_state.get(micro_key, {})
+                    if micro.get("fund_flow"):
+                        st.markdown("##### 个股资金流")
+                        st.dataframe(pd.DataFrame(micro["fund_flow"]), width="stretch")
+                    if micro.get("dragon_tiger"):
+                        st.markdown("##### 龙虎榜")
+                        st.dataframe(pd.DataFrame(micro["dragon_tiger"]), width="stretch")
+                    if micro.get("block_trade"):
+                        st.markdown("##### 大宗交易")
+                        st.dataframe(pd.DataFrame(micro["block_trade"]), width="stretch")
+                    for warning in micro.get("warnings", []):
+                        st.caption(f"提示：{warning}")
+                    if not micro:
+                        st.info("需要时再点刷新，避免每次打开页面都慢。")
+
+                if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", width="stretch"):
+                    if multi_result and multi_result.get("reports"):
+                        compact_report = {
+                            "summary": multi_result.get("summary", ""),
+                            "reports": {
+                                mode: compact_report_for_prompt(mode_report)
+                                for mode, mode_report in multi_result.get("reports", {}).items()
+                            },
+                        }
+                    else:
+                        compact_report = compact_report_for_prompt(report)
+                    replay_rules_for_bt = load_stock_logic_rules(target)
+                    context_for_bt = {
+                        "position_status": position_status,
+                        "capital_plan": capital_plan,
+                        "cost_price": cost_price,
+                        "current_price": price,
+                        "stock_logic_rules": replay_rules_for_bt[:1200] if replay_rules_for_bt else "",
+                    }
+                    prompt = build_backtest_explanation_prompt(target, compact_report, context_for_bt)
+                    call_deepseek_stream(
+                        prompt,
+                        system_role="你是严格的私人量化回测教练，必须把历史回测和成本价纪律说清楚。",
                     )
-                    reports = multi_result.get("reports", {})
-                    primary_mode = selected_modes[0] if selected_modes else "default"
-                    report = reports.get(primary_mode) or next(iter(reports.values()))
-                    report["ticker"] = target
-                    report["market_type"] = market_type
-                    report["source"] = price_frame["source"].iloc[-1] if "source" in price_frame.columns and not price_frame.empty else bt_provider
-                    report["date_range"] = {"start": bt_start.isoformat(), "end": bt_end.isoformat()}
-                    for mode_report in reports.values():
-                        mode_report["ticker"] = target
-                        mode_report["market_type"] = market_type
-                        mode_report["source"] = report["source"]
-                        mode_report["date_range"] = report["date_range"]
-                    multi_result["ticker"] = target
-                    multi_result["market_type"] = market_type
-                    multi_result["source"] = report["source"]
-                    multi_result["date_range"] = report["date_range"]
-                    multi_result["position_profile"] = position_profile_preview
-                    st.session_state["last_backtest_report"] = report
-                    st.session_state["last_multi_backtest"] = multi_result
-                    st.session_state["last_backtest_key"] = bt_key
-                    st.success(f"回测完成：{multi_result.get('summary') or report.get('summary', '')}")
 
-        report = st.session_state.get("last_backtest_report")
-        multi_result = st.session_state.get("last_multi_backtest")
-        if report and report.get("ticker") != target:
-            report = None
-            multi_result = None
-        if report:
-            st.caption(f"行情源：{report.get('source', 'unknown')}｜区间：{report.get('date_range', {}).get('start')} 至 {report.get('date_range', {}).get('end')}｜样本数：{report.get('data_points', 0)}")
-            if multi_result and len((multi_result.get("reports") or {})) > 1:
-                render_multi_mode_backtest(multi_result)
+                if st.button("保存这次回测到云端", key="btn_save_backtest_report", width="stretch"):
+                    if multi_result and multi_result.get("reports"):
+                        compact_report = {
+                            "summary": multi_result.get("summary", ""),
+                            "reports": {
+                                mode: compact_report_for_prompt(mode_report)
+                                for mode, mode_report in multi_result.get("reports", {}).items()
+                            },
+                        }
+                    else:
+                        compact_report = compact_report_for_prompt(report)
+                    compact_report["ticker"] = target
+                    compact_report["market_type"] = market_type
+                    compact_report["source"] = report.get("source", "")
+                    compact_report["date_range"] = report.get("date_range", {})
+                    compact_report["saved_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                    if save_stock_report(target, market_type, "backtest_report", compact_report):
+                        insert_cloud_memory("reflection", f"【回测报告 - {target}】{compact_report.get('summary', '')}")
+                        st.success("✅ 回测报告已写入 stock_reports，并同步一条摘要到云端外脑。")
             else:
-                render_backtest_report(report)
-
-            with st.expander("A股微观数据补充", expanded=False):
-                micro_key = f"micro_{target}_{market_type}"
-                if st.button("深度资金扫描 / 刷新龙虎榜", key=f"btn_{micro_key}"):
-                    with st.spinner("正在抓取完整公开微观数据，可能较慢..."):
-                        st.session_state[micro_key] = cached_micro_data(target, market_type, deep=True)
-                micro = st.session_state.get(micro_key, {})
-                if micro.get("fund_flow"):
-                    st.markdown("##### 个股资金流")
-                    st.dataframe(pd.DataFrame(micro["fund_flow"]), width="stretch")
-                if micro.get("dragon_tiger"):
-                    st.markdown("##### 龙虎榜")
-                    st.dataframe(pd.DataFrame(micro["dragon_tiger"]), width="stretch")
-                if micro.get("block_trade"):
-                    st.markdown("##### 大宗交易")
-                    st.dataframe(pd.DataFrame(micro["block_trade"]), width="stretch")
-                for warning in micro.get("warnings", []):
-                    st.caption(f"提示：{warning}")
-                if not micro:
-                    st.info("需要时再点刷新，避免每次打开页面都慢。")
-
-            if st.button("让 DeepSeek 解释这次回测", key="btn_explain_backtest", width="stretch"):
-                if multi_result and multi_result.get("reports"):
-                    compact_report = {
-                        "summary": multi_result.get("summary", ""),
-                        "reports": {
-                            mode: compact_report_for_prompt(mode_report)
-                            for mode, mode_report in multi_result.get("reports", {}).items()
-                        },
-                    }
-                else:
-                    compact_report = compact_report_for_prompt(report)
-                replay_rules_for_bt = load_stock_logic_rules(target)
-                context_for_bt = {
-                    "position_status": position_status,
-                    "capital_plan": capital_plan,
-                    "cost_price": cost_price,
-                    "current_price": price,
-                    "stock_logic_rules": replay_rules_for_bt[:1200] if replay_rules_for_bt else "",
-                }
-                prompt = build_backtest_explanation_prompt(target, compact_report, context_for_bt)
-                call_deepseek_stream(
-                    prompt,
-                    system_role="你是严格的私人量化回测教练，必须把历史回测和成本价纪律说清楚。",
-                )
-
-            if st.button("保存这次回测到云端", key="btn_save_backtest_report", width="stretch"):
-                if multi_result and multi_result.get("reports"):
-                    compact_report = {
-                        "summary": multi_result.get("summary", ""),
-                        "reports": {
-                            mode: compact_report_for_prompt(mode_report)
-                            for mode, mode_report in multi_result.get("reports", {}).items()
-                        },
-                    }
-                else:
-                    compact_report = compact_report_for_prompt(report)
-                compact_report["ticker"] = target
-                compact_report["market_type"] = market_type
-                compact_report["source"] = report.get("source", "")
-                compact_report["date_range"] = report.get("date_range", {})
-                compact_report["saved_at"] = datetime.datetime.now().isoformat(timespec="seconds")
-                if save_stock_report(target, market_type, "backtest_report", compact_report):
-                    insert_cloud_memory("reflection", f"【回测报告 - {target}】{compact_report.get('summary', '')}")
-                    st.success("✅ 回测报告已写入 stock_reports，并同步一条摘要到云端外脑。")
-        else:
-            st.info("先运行一次回测。建议起点覆盖近两年，成本价填真实持仓成本或计划买入价。")
+                st.info("先运行一次回测。建议起点覆盖近两年，成本价填真实持仓成本或计划买入价。")
 
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:
