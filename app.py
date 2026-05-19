@@ -7729,12 +7729,39 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             return "暂无"
                         return f"{value}{suffix}"
 
+                    def format_free_announcement_radar(free_ann, limit=3):
+                        free_ann = free_ann or {}
+                        rows = free_ann.get("rows") or []
+                        if not free_ann.get("available") or not rows:
+                            return "暂无免费公告雷达结果。"
+
+                        lines = []
+                        for item in rows[:limit]:
+                            title = str(item.get("title") or "").strip() or "无标题"
+                            ann_date = str(item.get("ann_date") or "").strip() or "暂无日期"
+                            parse_status = str(item.get("parse_status") or "").strip() or "unknown"
+                            pdf_url = str(item.get("pdf_url") or item.get("url") or "").strip() or "暂无"
+                            ai_summary = str(item.get("ai_summary") or "").strip()
+                            risk_tags = item.get("risk_tags") or []
+                            risk_tags_text = "、".join(str(tag) for tag in risk_tags[:3]) if risk_tags else "暂无"
+                            boundary = str(item.get("source_boundary") or "").strip() or "暂无"
+                            line = (
+                                f"{ann_date}｜{title}｜parse_status:{parse_status}｜"
+                                f"链接:{pdf_url}｜风险标签:{risk_tags_text}｜边界:{boundary}"
+                            )
+                            if ai_summary:
+                                line += f"｜摘要:{ai_summary}"
+                            lines.append(line)
+
+                        return "；".join(lines) if lines else "暂无免费公告雷达结果。"
+
                     def build_tianyan_display_lines(packet):
                         trading = packet.get("verified_trading_structure_risks") or {}
                         chip = packet.get("verified_chip_risks") or {}
                         emotion = packet.get("verified_emotion_risks") or {}
                         hard = packet.get("verified_hard_risks") or {}
                         clues = packet.get("sentiment_and_unverified_clues") or {}
+                        free_ann = hard.get("free_announcement_radar") or {}
 
                         moneyflow = trading.get("moneyflow") or {}
                         if moneyflow.get("available"):
@@ -7792,9 +7819,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         else:
                             emotion_line = "暂无可验证数据"
 
-                        def hard_line(section, empty_text="暂无可验证数据"):
+                        def hard_line(section, empty_text="暂无可验证数据", fallback_section=None, fallback_prefix="Tushare 官方公告接口未授权；已启用免费公告雷达 fallback。"):
                             section = section or {}
                             if not section.get("available"):
+                                fallback_text = format_free_announcement_radar(fallback_section)
+                                if fallback_section and fallback_section.get("available"):
+                                    return f"{fallback_prefix}{fallback_text}"
+                                if fallback_section is not None:
+                                    return f"{fallback_prefix}暂无免费公告雷达结果。"
                                 return section.get("message") or empty_text
                             summary = section.get("summary") or ""
                             flags = section.get("risk_flags") or []
@@ -7809,8 +7841,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             "margin": margin_line,
                             "chip": chip_line,
                             "emotion": emotion_line,
-                            "hard_announcements": hard_line(hard.get("announcements")),
-                            "free_announcement_radar": hard_line(hard.get("free_announcement_radar")),
+                            "hard_announcements": hard_line(
+                                hard.get("announcements"),
+                                fallback_section=free_ann,
+                            ),
+                            "free_announcement_radar": hard_line(free_ann),
                             "hard_earnings_forecast": hard_line(hard.get("earnings_forecast")),
                             "hard_holder_reduction": hard_line(hard.get("holder_reduction")),
                             "hard_share_unlock": hard_line(hard.get("share_unlock")),
@@ -7958,12 +7993,21 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 系统一票否决结果：
 {veto_result}
 
+公告边界补充：
+1. 如果 anns_d 未授权，但 free_announcement_radar 有数据，应写“官方 Tushare 公告缺失，已参考免费公告雷达作为公告线索”。
+2. parsed_pdf 可作为“公告 PDF 摘要线索”；metadata_only 只能作为“公告标题线索，需验证”。
+3. 没有 PDF 摘要时，不得凭标题补写具体处罚、诉讼、减持、订单、业绩事实。
+4. 免费公告雷达是 anns_d fallback，不等于 Tushare 官方公告接口。
+5. AI 摘要是模型解读，不是公告原文。
+
 请严格按以下固定结构输出：
 
 【已验证硬风险】
 只能引用：
 - anns_d：公告标题、公告日期、URL。标题只能作为公告线索，不能直接下事实结论。
 - free_announcement_radar：免费公告雷达。parsed_pdf 只能作为公告摘要线索；metadata_only 只能作为公告标题线索。
+- 如果 anns_d 未授权，但 free_announcement_radar 有数据，应优先引用“官方 Tushare 公告缺失，已参考免费公告雷达作为公告线索”。
+- 如果没有免费公告雷达结果，再明确写“暂无免费公告雷达结果”。
 - forecast：业绩预告类型、净利润变动区间、报告期。
 - stk_holdertrade：股东减持记录。
 - share_float：未来解禁日期、解禁比例、股东名称。
