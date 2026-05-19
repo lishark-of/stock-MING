@@ -1800,6 +1800,288 @@ else:
             st.warning(f"Supabase 初始化失败，云端功能暂不可用：{e}")
             supabase = None
 
+    @st.cache_data(ttl=300, show_spinner=False)
+    def run_data_source_healthcheck(sample_ts_code="000001.SZ", include_deepseek_ping=False, cache_version="healthcheck_v1", _supabase_client=None, _deepseek_keys=None):
+        checked_at = datetime.datetime.now().isoformat(timespec="seconds")
+        sample_ts_code = str(sample_ts_code or "000001.SZ").strip().upper() or "000001.SZ"
+        today = datetime.date.today()
+        start_10 = today - datetime.timedelta(days=10)
+        start_30 = today - datetime.timedelta(days=30)
+        start_90 = today - datetime.timedelta(days=90)
+        start_180 = today - datetime.timedelta(days=180)
+        unlock_end = today + datetime.timedelta(days=90)
+
+        def date_text(day):
+            return day.strftime("%Y-%m-%d")
+
+        def compact_error(error, limit=180):
+            text = str(error or "").strip()
+            if not text:
+                return ""
+            return text if len(text) <= limit else text[:limit] + "..."
+
+        def permission_likely(error):
+            text = str(error or "").lower()
+            keywords = ["权限", "无接口访问权限", "permission", "积分", "没有访问", "抱歉", "token", "denied", "forbidden", "unauthorized"]
+            return any(keyword.lower() in text for keyword in keywords)
+
+        def classify_status(ok, rows, error):
+            text = str(error or "")
+            if permission_likely(text):
+                return "权限不足"
+            if any(keyword.lower() in text.lower() for keyword in ["connection", "network", "timed out", "timeout", "nameresolution", "max retries", "网络"]):
+                return "网络失败"
+            if ok and rows == 0:
+                return "无数据"
+            if not ok:
+                return "调用失败"
+            return "正常"
+
+        def frame_summary(data):
+            if data is None:
+                return 0, ""
+            try:
+                rows = len(data)
+            except Exception:
+                rows = 0
+            latest_date = ""
+            try:
+                if data is not None and not data.empty:
+                    for column in ["trade_date", "cal_date", "ann_date", "end_date", "float_date", "surv_date", "date"]:
+                        if column in data.columns:
+                            values = [str(value) for value in data[column].dropna().tolist() if str(value).strip()]
+                            if values:
+                                latest_date = sorted(values, reverse=True)[0]
+                                break
+            except Exception:
+                latest_date = ""
+            return rows, latest_date
+
+        def empty_tushare_item(api, error):
+            error_text = compact_error(error)
+            return {
+                "api": api,
+                "ok": False,
+                "rows": 0,
+                "latest_date": "",
+                "latency_ms": 0,
+                "error": error_text,
+                "permission_likely": permission_likely(error_text),
+                "status": classify_status(False, 0, error_text),
+            }
+
+        def summarize_tushare_call(api, call):
+            start_time = time.perf_counter()
+            try:
+                result = call()
+                latency_ms = int((time.perf_counter() - start_time) * 1000)
+                if not isinstance(result, dict):
+                    return {
+                        "api": api,
+                        "ok": False,
+                        "rows": 0,
+                        "latest_date": "",
+                        "latency_ms": latency_ms,
+                        "error": f"返回类型异常：{type(result).__name__}",
+                        "permission_likely": False,
+                        "status": "调用失败",
+                    }
+                data = result.get("data")
+                rows, latest_date = frame_summary(data)
+                ok = bool(result.get("ok"))
+                error_text = compact_error(result.get("error") if not ok else "")
+                return {
+                    "api": api,
+                    "ok": ok,
+                    "rows": rows,
+                    "latest_date": latest_date,
+                    "latency_ms": latency_ms,
+                    "error": error_text,
+                    "permission_likely": permission_likely(error_text),
+                    "status": classify_status(ok, rows, error_text),
+                }
+            except Exception as exc:
+                latency_ms = int((time.perf_counter() - start_time) * 1000)
+                error_text = compact_error(exc)
+                return {
+                    "api": api,
+                    "ok": False,
+                    "rows": 0,
+                    "latest_date": "",
+                    "latency_ms": latency_ms,
+                    "error": error_text,
+                    "permission_likely": permission_likely(error_text),
+                    "status": classify_status(False, 0, error_text),
+                }
+
+        tushare_api_names = [
+            "trade_cal",
+            "daily",
+            "daily_basic",
+            "moneyflow",
+            "top_list",
+            "top_inst",
+            "margin_detail",
+            "limit_list_d",
+            "limit_cpt_list",
+            "cyq_perf",
+            "cyq_chips",
+            "anns_d",
+            "forecast",
+            "stk_holdertrade",
+            "share_float",
+            "pledge_stat",
+            "pledge_detail",
+            "stk_surv",
+        ]
+        tushare_items = []
+        recent_trade_date = today.strftime("%Y%m%d")
+        if _tushare_adapter is None:
+            error = str(TUSHARE_ADAPTER_MODULE_ERROR) or "tushare_adapter 不可用"
+            tushare_items = [empty_tushare_item(api, error) for api in tushare_api_names]
+        else:
+            trade_cal_item = summarize_tushare_call(
+                "trade_cal",
+                lambda: _tushare_adapter.get_trade_cal(date_text(start_30), date_text(today)),
+            )
+            tushare_items.append(trade_cal_item)
+            if trade_cal_item.get("latest_date"):
+                recent_trade_date = trade_cal_item["latest_date"]
+
+            tushare_specs = [
+                ("daily", lambda: _tushare_adapter.get_daily(sample_ts_code, date_text(start_30), date_text(today))),
+                ("daily_basic", lambda: _tushare_adapter.get_daily_basic(sample_ts_code, date_text(start_30), date_text(today))),
+                ("moneyflow", lambda: _tushare_adapter.get_moneyflow(ts_code=sample_ts_code, start_date=date_text(start_10), end_date=date_text(today))),
+                ("top_list", lambda: _tushare_adapter.get_top_list(trade_date=recent_trade_date)),
+                ("top_inst", lambda: _tushare_adapter.get_top_inst(trade_date=recent_trade_date, ts_code=sample_ts_code)),
+                ("margin_detail", lambda: _tushare_adapter.get_margin_detail(ts_code=sample_ts_code, start_date=date_text(start_30), end_date=date_text(today))),
+                ("limit_list_d", lambda: _tushare_adapter.get_limit_list_d(trade_date=recent_trade_date)),
+                ("limit_cpt_list", lambda: _tushare_adapter.get_limit_cpt_list(trade_date=recent_trade_date)),
+                ("cyq_perf", lambda: _tushare_adapter.get_cyq_perf(ts_code=sample_ts_code, trade_date=recent_trade_date)),
+                ("cyq_chips", lambda: _tushare_adapter.get_cyq_chips(ts_code=sample_ts_code, trade_date=recent_trade_date)),
+                ("anns_d", lambda: _tushare_adapter.get_anns_d(ts_code=sample_ts_code, start_date=date_text(start_90), end_date=date_text(today))),
+                ("forecast", lambda: _tushare_adapter.get_forecast(ts_code=sample_ts_code, start_date=date_text(start_180), end_date=date_text(today))),
+                ("stk_holdertrade", lambda: _tushare_adapter.get_stk_holdertrade(ts_code=sample_ts_code, start_date=date_text(start_180), end_date=date_text(today))),
+                ("share_float", lambda: _tushare_adapter.get_share_float(ts_code=sample_ts_code, start_date=date_text(today), end_date=date_text(unlock_end))),
+                ("pledge_stat", lambda: _tushare_adapter.get_pledge_stat(ts_code=sample_ts_code)),
+                ("pledge_detail", lambda: _tushare_adapter.get_pledge_detail(ts_code=sample_ts_code)),
+                ("stk_surv", lambda: _tushare_adapter.get_stk_surv(ts_code=sample_ts_code, start_date=date_text(start_90), end_date=date_text(today))),
+            ]
+            for api, call in tushare_specs:
+                if not hasattr(_tushare_adapter, f"get_{api}"):
+                    tushare_items.append(empty_tushare_item(api, f"tushare_adapter 未接入 {api}"))
+                    continue
+                tushare_items.append(summarize_tushare_call(api, call))
+
+        tushare_ok_count = sum(1 for item in tushare_items if item.get("ok"))
+        tushare_permission_count = sum(1 for item in tushare_items if item.get("permission_likely"))
+        tushare_result = {
+            "source": "Tushare",
+            "checked_at": checked_at,
+            "ok_count": tushare_ok_count,
+            "failed_count": len(tushare_items) - tushare_ok_count,
+            "permission_denied_count": tushare_permission_count,
+            "items": tushare_items,
+        }
+
+        supabase_tables = ["brain_memory", "market_news", "processed_sources"]
+        supabase_items = []
+        if _supabase_client is None:
+            supabase_items = [
+                {
+                    "table": table,
+                    "ok": False,
+                    "rows": 0,
+                    "count": "",
+                    "latency_ms": 0,
+                    "error": "Supabase 未配置或初始化失败",
+                    "status": "未配置",
+                }
+                for table in supabase_tables
+            ]
+        else:
+            for table in supabase_tables:
+                start_time = time.perf_counter()
+                try:
+                    response = _supabase_client.table(table).select("*", count="exact").limit(1).execute()
+                    latency_ms = int((time.perf_counter() - start_time) * 1000)
+                    data = response.data if getattr(response, "data", None) else []
+                    count = getattr(response, "count", None)
+                    supabase_items.append(
+                        {
+                            "table": table,
+                            "ok": True,
+                            "rows": len(data),
+                            "count": count if count is not None else "",
+                            "latency_ms": latency_ms,
+                            "error": "",
+                            "status": "正常" if data else "可连接但无样本",
+                        }
+                    )
+                except Exception as exc:
+                    latency_ms = int((time.perf_counter() - start_time) * 1000)
+                    supabase_items.append(
+                        {
+                            "table": table,
+                            "ok": False,
+                            "rows": 0,
+                            "count": "",
+                            "latency_ms": latency_ms,
+                            "error": compact_error(exc),
+                            "status": classify_status(False, 0, str(exc)),
+                        }
+                    )
+        supabase_ok_count = sum(1 for item in supabase_items if item.get("ok"))
+        supabase_result = {
+            "source": "Supabase",
+            "checked_at": checked_at,
+            "ok_count": supabase_ok_count,
+            "failed_count": len(supabase_items) - supabase_ok_count,
+            "items": supabase_items,
+        }
+
+        deepseek_keys = list(_deepseek_keys or [])
+        deepseek_result = {
+            "source": "DeepSeek",
+            "checked_at": checked_at,
+            "ok": bool(deepseek_keys),
+            "key_count": len(deepseek_keys),
+            "ping_enabled": bool(include_deepseek_ping),
+            "latency_ms": 0,
+            "error": "",
+            "status": "已配置" if deepseek_keys else "缺少 key",
+        }
+        if include_deepseek_ping and deepseek_keys:
+            start_time = time.perf_counter()
+            try:
+                client = OpenAI(
+                    api_key=deepseek_keys[0],
+                    base_url="https://api.deepseek.com/v1",
+                    timeout=20.0,
+                )
+                client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": "ping"}],
+                    stream=False,
+                    temperature=0,
+                    max_tokens=8,
+                )
+                deepseek_result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
+                deepseek_result["status"] = "连通"
+            except Exception as exc:
+                deepseek_result["ok"] = False
+                deepseek_result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
+                deepseek_result["error"] = compact_error(exc)
+                deepseek_result["status"] = classify_status(False, 0, str(exc))
+
+        return {
+            "checked_at": checked_at,
+            "sample_ts_code": sample_ts_code,
+            "tushare": tushare_result,
+            "supabase": supabase_result,
+            "deepseek": deepseek_result,
+        }
+
     def load_cloud_knowledge():
         if not supabase: return {"strategies": [], "reflections": []}
         try:
@@ -6644,12 +6926,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
     st.markdown("---")
 
-    tab_home, tab_risk, tab_discipline, tab_main, tab_brain, tab_screener = st.tabs([
+    tab_home, tab_risk, tab_discipline, tab_main, tab_brain, tab_health, tab_screener = st.tabs([
     "🏠 今日关注池",
     "🛡️ 天眼风控 (排雷)",
     "🧪 交易纪律实验室",
     "📈 量化推演 (多市场)",
     "☁️ 云端外脑 (数据中心)",
+    "⚙️ 数据源与权限体检",
     "🎯 大师选股 (策略雷达)"
 ])
     with tab_home:
@@ -8185,6 +8468,110 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         elif market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
             # A股的核心按钮和逻辑已经内嵌在这个函数里了
             display_cn_stock_analysis(target, price, professional_facts=a_share_professional_facts)
+
+    with tab_health:
+        st.markdown("### ⚙️ 数据源与权限体检")
+        st.caption("默认不自动运行；点击按钮后只检查连接、权限和返回行数，不展示 token、secrets 或原始数据。")
+
+        health_col1, health_col2, health_col3 = st.columns([1.2, 1, 1])
+        with health_col1:
+            health_sample_ts_code = st.text_input(
+                "Tushare 样例股票",
+                value="000001.SZ",
+                key="health_sample_ts_code",
+                help="仅用于权限体检的样例标的，不进入任何 DeepSeek prompt。",
+            )
+        with health_col2:
+            health_ping_deepseek = st.checkbox(
+                "执行 DeepSeek 极小连通测试",
+                value=False,
+                key="health_ping_deepseek",
+                help="默认只统计 key 数量；勾选后会发起一次极小 ping 调用。",
+            )
+        with health_col3:
+            st.caption("缓存 300 秒")
+            if st.button("清除体检缓存", key="btn_clear_data_source_healthcheck_cache"):
+                try:
+                    run_data_source_healthcheck.clear()
+                except Exception:
+                    pass
+                st.session_state.pop("last_data_source_healthcheck", None)
+                st.success("已清除体检缓存。")
+
+        if st.button("运行数据源体检", type="primary", key="btn_run_data_source_healthcheck", width="stretch"):
+            with st.spinner("正在检查 Tushare、Supabase 和 DeepSeek 配置..."):
+                st.session_state["last_data_source_healthcheck"] = run_data_source_healthcheck(
+                    health_sample_ts_code,
+                    health_ping_deepseek,
+                    _supabase_client=supabase,
+                    _deepseek_keys=ds_keys,
+                )
+
+        health_result = st.session_state.get("last_data_source_healthcheck")
+        if not health_result:
+            st.info("尚未运行体检。点击“运行数据源体检”后显示摘要。")
+        else:
+            checked_at = health_result.get("checked_at", "")
+            st.caption(f"最近体检时间：{checked_at}｜样例股票：{health_result.get('sample_ts_code', '')}")
+
+            tushare_health = health_result.get("tushare") or {}
+            supabase_health = health_result.get("supabase") or {}
+            deepseek_health = health_result.get("deepseek") or {}
+
+            card1, card2, card3 = st.columns(3)
+            with card1:
+                total = len(tushare_health.get("items") or [])
+                st.metric(
+                    "Tushare",
+                    f"{tushare_health.get('ok_count', 0)}/{total} 可用",
+                    f"疑似权限不足 {tushare_health.get('permission_denied_count', 0)}",
+                )
+            with card2:
+                total = len(supabase_health.get("items") or [])
+                st.metric(
+                    "Supabase",
+                    f"{supabase_health.get('ok_count', 0)}/{total} 可连接",
+                    f"失败 {supabase_health.get('failed_count', 0)}",
+                )
+            with card3:
+                st.metric(
+                    "DeepSeek",
+                    deepseek_health.get("status", "未知"),
+                    f"key_count {deepseek_health.get('key_count', 0)}",
+                )
+
+            st.markdown("#### Tushare 接口权限")
+            tushare_items = tushare_health.get("items") or []
+            if tushare_items:
+                tushare_df = pd.DataFrame(tushare_items)
+                display_columns = ["api", "status", "ok", "rows", "latest_date", "latency_ms", "permission_likely", "error"]
+                st.dataframe(tushare_df[display_columns], width="stretch", hide_index=True)
+            else:
+                st.warning("暂无 Tushare 体检结果。")
+
+            st.markdown("#### Supabase 表连接")
+            supabase_items = supabase_health.get("items") or []
+            if supabase_items:
+                supabase_df = pd.DataFrame(supabase_items)
+                st.dataframe(
+                    supabase_df[["table", "status", "ok", "rows", "count", "latency_ms", "error"]],
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                st.warning("暂无 Supabase 体检结果。")
+
+            st.markdown("#### DeepSeek 配置")
+            deepseek_display = {
+                "status": deepseek_health.get("status", ""),
+                "ok": deepseek_health.get("ok", False),
+                "key_count": deepseek_health.get("key_count", 0),
+                "ping_enabled": deepseek_health.get("ping_enabled", False),
+                "latency_ms": deepseek_health.get("latency_ms", 0),
+                "error": deepseek_health.get("error", ""),
+            }
+            st.table(pd.DataFrame([deepseek_display]))
+
     # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
        # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
     with tab_screener:

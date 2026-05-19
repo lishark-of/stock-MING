@@ -1,5 +1,9 @@
 import datetime
-import os
+
+try:
+    from config import get_tushare_token
+except Exception:  # pragma: no cover - keep adapter importable in minimal scripts.
+    get_tushare_token = None
 
 try:
     import pandas as pd
@@ -76,9 +80,9 @@ def _get_pro_client():
     if _INIT_ERROR:
         return None, _INIT_ERROR
 
-    token = os.environ.get("TUSHARE_TOKEN", "").strip()
+    token = get_tushare_token() if get_tushare_token is not None else ""
     if not token:
-        _INIT_ERROR = "缺少 TUSHARE_TOKEN 环境变量"
+        _INIT_ERROR = "缺少 TUSHARE_TOKEN 配置"
         return None, _INIT_ERROR
 
     try:

@@ -15,6 +15,7 @@ CONFIG_NAMES = {
     "SUPABASE_URL",
     "SUPABASE_KEY",
     "DATABASE_URL",
+    "TUSHARE_TOKEN",
 }
 
 
@@ -85,6 +86,21 @@ def get_deepseek_keys(extra_keys=None):
 
 def get_supabase_config():
     return get_config_value("SUPABASE_URL"), get_config_value("SUPABASE_KEY")
+
+
+def get_tushare_token(default=None):
+    """Read Tushare token without exposing it in logs or UI."""
+
+    value = _clean_value(os.environ.get("TUSHARE_TOKEN"))
+    if value:
+        return value
+
+    local_secrets = _load_local_streamlit_secrets()
+    value = _clean_value(local_secrets.get("TUSHARE_TOKEN"))
+    if value:
+        return value
+
+    return _get_streamlit_secret("TUSHARE_TOKEN", default)
 
 
 def require_supabase_config():
