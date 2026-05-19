@@ -3803,6 +3803,115 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.warning(f"⚠️ market_news 读取失败: {e}")
             return []
 
+    def _announcement_report_ticker_terms(ticker):
+        normalized = normalize_ticker(ticker)
+        terms = [ticker, normalized]
+        core = _cn_stock_code_6(normalized)
+        if core:
+            terms.extend([core, f"{core}.SZ", f"{core}.SH", f"{core}.SS"])
+        return [term for term in dict.fromkeys(str(term or "").strip().upper() for term in terms) if term]
+
+    def _parse_announcement_report_content(content):
+        if isinstance(content, dict):
+            return content
+        try:
+            return json.loads(str(content or ""))
+        except Exception:
+            return {}
+
+    def load_recent_announcement_summaries(ticker, days=7, limit=6):
+        updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+        section = {
+            "available": False,
+            "source": "stock_reports.announcement_summary",
+            "window_days": days,
+            "rows": [],
+            "summary": "",
+            "risk_flags": [],
+            "message": "暂无近7天免费公告摘要",
+            "error": "",
+            "updated_at": updated_at,
+            "policy": {
+                "parsed_pdf_is_summary_clue": True,
+                "metadata_only_is_title_clue": True,
+                "title_is_not_hard_fact": True,
+            },
+        }
+        if not supabase:
+            section["message"] = "Supabase 不可用，暂无免费公告雷达。"
+            return section
+
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=int(days or 7))
+        rows = []
+        try:
+            terms = _announcement_report_ticker_terms(ticker)
+            query = (
+                supabase
+                .table("stock_reports")
+                .select("ticker, report_content, created_at")
+                .eq("report_type", "announcement_summary")
+                .gte("created_at", cutoff.isoformat())
+                .order("created_at", desc=True)
+                .limit(max(limit * 4, 12))
+            )
+            if terms:
+                query = query.in_("ticker", terms)
+            res = query.execute()
+            rows = res.data or []
+        except Exception as exc:
+            section["error"] = str(exc)
+            section["message"] = "读取免费公告摘要失败。"
+            return section
+
+        seen = set()
+        for row in rows:
+            payload = _parse_announcement_report_content(row.get("report_content"))
+            title = str(payload.get("title") or "").strip()
+            ann_date = str(payload.get("ann_date") or "").strip()
+            key = (title, ann_date, payload.get("pdf_url") or payload.get("url") or "")
+            if not title or key in seen:
+                continue
+            seen.add(key)
+            summary = payload.get("summary") or {}
+            if not isinstance(summary, dict):
+                summary = {"one_line_summary": str(summary)}
+            fetch_status = payload.get("fetch_status") or ""
+            boundary = (
+                "公告摘要线索：PDF 已解析，AI 摘要不等于公告原文"
+                if fetch_status == "parsed_pdf"
+                else "公告标题线索：未解析正文，不得下事实结论"
+            )
+            item = {
+                "ticker": payload.get("ticker") or row.get("ticker") or "",
+                "ann_date": ann_date,
+                "title": title,
+                "pdf_url": payload.get("pdf_url") or "",
+                "url": payload.get("url") or "",
+                "important": bool(payload.get("important")),
+                "fetch_status": fetch_status,
+                "parse_status": payload.get("parse_status") or "",
+                "ai_summary": summary.get("one_line_summary") or "",
+                "risk_level": summary.get("impact_level") or "未知",
+                "impact_direction": summary.get("impact_direction") or "不确定",
+                "risk_tags": summary.get("risk_tags") or payload.get("provider_risk_tags") or [],
+                "needs_manual_review": bool(summary.get("needs_manual_review")),
+                "source_boundary": payload.get("source_boundary") or boundary,
+                "created_at": row.get("created_at") or payload.get("created_at") or "",
+            }
+            if item["important"]:
+                tags = "、".join(str(tag) for tag in item["risk_tags"][:3]) if item["risk_tags"] else "重要公告"
+                section["risk_flags"].append(f"免费公告雷达线索：{tags}")
+            section["rows"].append(item)
+            if len(section["rows"]) >= limit:
+                break
+
+        section["available"] = bool(section["rows"])
+        if section["available"]:
+            parsed_count = sum(1 for item in section["rows"] if item.get("fetch_status") == "parsed_pdf")
+            section["summary"] = f"近{days}天读取免费公告摘要 {len(section['rows'])} 条，其中 PDF 已解析 {parsed_count} 条。"
+            section["message"] = ""
+        return section
+
     def app_check_risk_veto(target, market_type, headlines):
         # Auto news/RSS headlines are intentionally not allowed to trigger a hard veto.
         # Tushare hard-risk sections drive official risk conclusions downstream.
@@ -5483,6 +5592,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             },
             "verified_hard_risks": {
                 "announcements": {},
+                "free_announcement_radar": {},
                 "earnings_forecast": {},
                 "holder_reduction": {},
                 "share_unlock": {},
@@ -5502,6 +5612,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "missing_items": [],
             "data_source_policy": {
                 "hard_fact_sources": ["Tushare"],
+                "announcement_summary_sources": ["stock_reports.announcement_summary parsed_pdf"],
                 "news_clue_sources": ["Supabase market_news title/url only", "yfinance.news title only"],
                 "unverified_sources": ["processed_sources", "brain_memory", "manager_rules"],
             },
@@ -5527,6 +5638,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             packet["verified_hard_risks"].update(
                 {
                     "announcements": hard_risks.get("announcements") or {},
+                    "free_announcement_radar": load_recent_announcement_summaries(stock_code_6, days=7, limit=6),
                     "earnings_forecast": hard_risks.get("earnings_forecast") or {},
                     "holder_reduction": hard_risks.get("holder_reduction") or {},
                     "share_unlock": hard_risks.get("share_unlock") or {},
@@ -7434,6 +7546,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             "chip": chip_line,
                             "emotion": emotion_line,
                             "hard_announcements": hard_line(hard.get("announcements")),
+                            "free_announcement_radar": hard_line(hard.get("free_announcement_radar")),
                             "hard_earnings_forecast": hard_line(hard.get("earnings_forecast")),
                             "hard_holder_reduction": hard_line(hard.get("holder_reduction")),
                             "hard_share_unlock": hard_line(hard.get("share_unlock")),
@@ -7538,6 +7651,24 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.markdown(f"- 质押风险：{display_lines['hard_pledge']}")
                     st.markdown(f"- 机构调研验证：{display_lines['hard_institution_surveys']}")
 
+                    free_ann = (tianyan_risk_fact_packet.get("verified_hard_risks") or {}).get("free_announcement_radar") or {}
+                    st.markdown("#### 【免费公告雷达】")
+                    if free_ann.get("available"):
+                        st.markdown(f"- 摘要：{display_lines['free_announcement_radar']}")
+                        for item in (free_ann.get("rows") or [])[:6]:
+                            link = item.get("pdf_url") or item.get("url") or ""
+                            st.markdown(
+                                f"- {item.get('ann_date', '')}｜{item.get('title', '')}"
+                                f"｜important:{item.get('important', False)}"
+                                f"｜解析:{item.get('fetch_status', '')}/{item.get('parse_status', '')}"
+                                f"｜风险等级:{item.get('risk_level', '未知')}/{item.get('impact_direction', '不确定')}"
+                                f"｜摘要:{item.get('ai_summary', '') or '暂无 AI 摘要'}"
+                                f"｜链接:{link or '暂无'}"
+                                f"｜边界:{item.get('source_boundary', '')}"
+                            )
+                    else:
+                        st.info(free_ann.get("message") or "暂无近7天免费公告摘要。")
+
                     st.markdown("#### 【舆情与待验证线索】")
                     st.markdown(f"- Supabase market_news 新闻线索：{display_lines['market_news']}")
                     st.markdown(f"- processed_sources 待验证投喂线索：{display_lines['processed_sources']}")
@@ -7568,6 +7699,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 【已验证硬风险】
 只能引用：
 - anns_d：公告标题、公告日期、URL。标题只能作为公告线索，不能直接下事实结论。
+- free_announcement_radar：免费公告雷达。parsed_pdf 只能作为公告摘要线索；metadata_only 只能作为公告标题线索。
 - forecast：业绩预告类型、净利润变动区间、报告期。
 - stk_holdertrade：股东减持记录。
 - share_float：未来解禁日期、解禁比例、股东名称。
@@ -7627,6 +7759,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 17. 减持、解禁、质押只能提升风险权重，不能自动推出必跌。
 18. 盈利预测不是业绩确定。
 19. 投喂资料不是事实。
+20. 免费公告雷达中 parsed_pdf 是 AI 公告摘要线索，不是公告原文；metadata_only 不得作为处罚、诉讼、减持等事实结论。
 """
 
                     st.markdown(
