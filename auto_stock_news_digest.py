@@ -33,6 +33,7 @@ WATCHLIST_REPORT_TYPE = "announcement_watchlist"
 NEWS_DIGEST_REPORT_TYPE = "news_digest"
 DEFAULT_WINDOW_HOURS = 48
 DEFAULT_ITEM_LIMIT = 5
+DEFAULT_DIGEST_TOP = 8
 MAX_QUERY_ALIASES = 4
 MAX_PAGE_TEXT_CHARS = 10000
 
@@ -272,7 +273,7 @@ def fetch_supabase_candidates(supabase, ticker, stock_name, hours, limit):
 
     aliases = normalize_profile_aliases(ticker, stock_name)
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=int(hours or DEFAULT_WINDOW_HOURS))
-    candidate_limit = min(max(limit * 8, 20), 80)
+    candidate_limit = min(max(int(limit or 0), 1), 20)
     rows = []
 
     try:
@@ -364,7 +365,7 @@ def fetch_rss_candidates(ticker, stock_name, hours, limit):
         queries.append((alias, build_google_news_rss(alias, lang=lang, region=region)))
 
     rows = []
-    candidate_limit = min(max(limit * 3, 8), 12)
+    candidate_limit = min(max(int(limit or 0), 1), 20)
     seen = set()
 
     for alias, rss_url in queries:
@@ -517,7 +518,7 @@ def fetch_item_excerpts(items, fetch_pages=True):
     return enriched
 
 
-def build_digest_prompt(target, items, hours):
+def build_digest_prompt(target, items, hours, digest_top):
     aliases = normalize_profile_aliases(target.get("ts_code"), target.get("name"))
     source_blob = []
     for item in items or []:
@@ -549,6 +550,7 @@ risk_tag / sentiment 只是新闻层判断，不等于官方事实。
 - stock_name: {target.get("name", "")}
 - market_type: {target.get("market_type", "")}
 - window_hours: {hours}
+- digest_top: {digest_top}
 - aliases: {aliases}
 
 候选新闻：
@@ -621,7 +623,7 @@ def parse_json_blob(text):
         return {}
 
 
-def build_heuristic_digest(target, items, hours):
+def build_heuristic_digest(target, items, hours, digest_top):
     normalized_items = []
     risk_tags = []
     positive_tags = []
@@ -680,7 +682,7 @@ def build_heuristic_digest(target, items, hours):
         "stock_name": target.get("name", ""),
         "market_type": target.get("market_type", ""),
         "window_hours": hours,
-        "items": normalized_items[:DEFAULT_ITEM_LIMIT],
+        "items": normalized_items[:digest_top],
         "one_line_summary": one_line_summary,
         "risk_tags": list(dict.fromkeys(risk_tags))[:8],
         "positive_tags": list(dict.fromkeys(positive_tags))[:8],
@@ -690,7 +692,7 @@ def build_heuristic_digest(target, items, hours):
     }
 
 
-def normalize_digest_payload(target, payload, hours):
+def normalize_digest_payload(target, payload, hours, digest_top):
     if not isinstance(payload, dict):
         return {}
 
@@ -734,7 +736,7 @@ def normalize_digest_payload(target, payload, hours):
         "stock_name": str(payload.get("stock_name") or target.get("name") or ""),
         "market_type": str(payload.get("market_type") or target.get("market_type") or ""),
         "window_hours": int(payload.get("window_hours") or hours or DEFAULT_WINDOW_HOURS),
-        "items": items[:DEFAULT_ITEM_LIMIT],
+        "items": items[:digest_top],
         "one_line_summary": str(payload.get("one_line_summary") or build_local_digest_summary(items)),
         "risk_tags": [str(x).strip() for x in (payload.get("risk_tags") or []) if str(x).strip()],
         "positive_tags": [str(x).strip() for x in (payload.get("positive_tags") or []) if str(x).strip()],
@@ -770,7 +772,15 @@ def save_news_digest(supabase, payload):
         return False
 
 
-def run_for_target(target, supabase, dry_run=False, simulate_summary=False, hours=DEFAULT_WINDOW_HOURS, limit=DEFAULT_ITEM_LIMIT):
+def run_for_target(
+    target,
+    supabase,
+    dry_run=False,
+    simulate_summary=False,
+    hours=DEFAULT_WINDOW_HOURS,
+    limit=DEFAULT_ITEM_LIMIT,
+    digest_top=DEFAULT_DIGEST_TOP,
+):
     candidates = fetch_selected_candidates_for_target(target, supabase, hours, limit)
     if not candidates:
         return None, "无候选新闻"
@@ -779,19 +789,19 @@ def run_for_target(target, supabase, dry_run=False, simulate_summary=False, hour
     candidates = fetch_item_excerpts(candidates, fetch_pages=fetch_pages)
 
     if dry_run or simulate_summary or not get_deepseek_keys():
-        payload = build_heuristic_digest(target, candidates, hours)
+        payload = build_heuristic_digest(target, candidates, hours, digest_top)
         mode = "heuristic"
     else:
-        prompt = build_digest_prompt(target, candidates, hours)
+        prompt = build_digest_prompt(target, candidates, hours, digest_top)
         raw = call_deepseek_text(
             prompt,
             system_role="你是严谨的股票新闻消化器，只能基于给定新闻标题、摘要、正文片段和股票别名生成 JSON。",
             max_tokens=2000,
             temperature=0.1,
         )
-        payload = normalize_digest_payload(target, parse_json_blob(raw), hours)
+        payload = normalize_digest_payload(target, parse_json_blob(raw), hours, digest_top)
         if not payload or not payload.get("items"):
-            payload = build_heuristic_digest(target, candidates, hours)
+            payload = build_heuristic_digest(target, candidates, hours, digest_top)
             mode = "heuristic_fallback"
         else:
             mode = "deepseek"
@@ -818,8 +828,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只打印结果，不写 Supabase，不调用 DeepSeek")
     parser.add_argument("--use-supabase-watchlist", action="store_true", help="优先读取 Supabase announcement_watchlist")
     parser.add_argument("--simulate-summary", action="store_true", help="dry-run 时打印模拟 digest JSON 摘要")
-    parser.add_argument("--hours", type=int, default=DEFAULT_WINDOW_HOURS, help="回看窗口小时数")
-    parser.add_argument("--limit", type=int, default=DEFAULT_ITEM_LIMIT, help="每只股票最多保留新闻条数")
+    parser.add_argument("--hours", type=int, default=72, help="回看窗口小时数")
+    parser.add_argument("--limit", type=int, default=20, help="每只股票最多保留候选新闻条数")
+    parser.add_argument("--digest-top", type=int, default=DEFAULT_DIGEST_TOP, help="每只股票最终保留的高价值线索数")
     args = parser.parse_args()
 
     supabase = create_supabase_client()
@@ -830,7 +841,7 @@ def main():
 
     print(
         f"[news-digest] target_source={target_source} "
-        f"targets={len(targets)} dry_run={bool(args.dry_run)} hours={args.hours} limit={args.limit}"
+        f"targets={len(targets)} dry_run={bool(args.dry_run)} hours={args.hours} limit={args.limit} digest_top={args.digest_top}"
     )
     if target_error:
         print(f"[news-digest] target_error={target_error}")
@@ -849,6 +860,7 @@ def main():
             simulate_summary=args.simulate_summary,
             hours=args.hours,
             limit=args.limit,
+            digest_top=args.digest_top,
         )
         if not payload:
             print(f"[news-digest] {target.get('ts_code')} 无结果：{error}")

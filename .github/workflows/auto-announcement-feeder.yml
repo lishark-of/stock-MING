@@ -42,7 +42,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python auto_announcement_feeder.py --dry-run --use-supabase-watchlist --days 7 --limit 20
+          python auto_announcement_feeder.py --dry-run --use-supabase-watchlist --days 14 --limit 50 --max-pdf-per-stock 10
 
       - name: Run live announcement feeder
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'live'
@@ -53,4 +53,4 @@ jobs:
           DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
         run: |
           # live 只建议手动触发；会写 Supabase，并可能调用 DeepSeek
-          python auto_announcement_feeder.py --days 7 --limit 20
+          python auto_announcement_feeder.py --days 14 --limit 50 --max-pdf-per-stock 10

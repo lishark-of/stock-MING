@@ -13,7 +13,9 @@ from config import get_deepseek_keys, get_supabase_config
 
 
 TARGETS_FILE = "announcement_targets.json"
-MAX_DEEP_READ_PER_STOCK = 3
+DEFAULT_DAYS = 14
+DEFAULT_LIMIT = 50
+DEFAULT_MAX_PDF_PER_STOCK = 10
 WATCHLIST_TICKER = "__ANNOUNCEMENT_WATCHLIST__"
 WATCHLIST_REPORT_TYPE = "announcement_watchlist"
 BUILTIN_DEFAULT_TARGETS = [
@@ -392,8 +394,9 @@ def save_announcement_summary(supabase, payload):
 
 def run_auto_announcement_feeder(
     dry_run=False,
-    days=7,
-    limit=20,
+    days=DEFAULT_DAYS,
+    limit=DEFAULT_LIMIT,
+    max_pdf_per_stock=DEFAULT_MAX_PDF_PER_STOCK,
     force_read_one=False,
     simulate_summary=False,
     use_supabase_watchlist=False,
@@ -416,6 +419,7 @@ def run_auto_announcement_feeder(
         "dry_run": bool(dry_run),
         "force_read_one": bool(force_read_one),
         "simulate_summary": bool(simulate_summary),
+        "max_pdf_per_stock": int(max_pdf_per_stock or DEFAULT_MAX_PDF_PER_STOCK),
         "target_source": target_source,
         "target_error": target_error,
     }
@@ -442,7 +446,13 @@ def run_auto_announcement_feeder(
             print(f"- [{marker}] {item.get('ann_date')} {item.get('title')} | {item.get('pdf_url') or item.get('url')}")
 
         if dry_run and force_read_one:
-            for item in items[:1]:
+            parsed_read_count = 0
+            for item in items:
+                if not item.get("important"):
+                    continue
+                if parsed_read_count >= max(1, int(max_pdf_per_stock or DEFAULT_MAX_PDF_PER_STOCK)):
+                    break
+                parsed_read_count += 1
                 pdf_url = item.get("pdf_url")
                 if not pdf_url:
                     print(f"PDF解析测试跳过：公告源未提供 PDF URL｜title={item.get('title')}")
@@ -466,7 +476,7 @@ def run_auto_announcement_feeder(
             if not item.get("important"):
                 continue
             stats["important"] += 1
-            if deep_read_count >= MAX_DEEP_READ_PER_STOCK:
+            if deep_read_count >= max(1, int(max_pdf_per_stock or DEFAULT_MAX_PDF_PER_STOCK)):
                 continue
             deep_read_count += 1
 
@@ -515,16 +525,18 @@ def run_auto_announcement_feeder(
 def main():
     parser = argparse.ArgumentParser(description="Free A-share announcement auto feeder PoC")
     parser.add_argument("--dry-run", action="store_true", help="只抓公告元数据，不写 Supabase，不调用 DeepSeek")
-    parser.add_argument("--force-read-one", action="store_true", help="dry-run 下每只股票最多下载解析 1 篇公告 PDF")
+    parser.add_argument("--force-read-one", action="store_true", help="dry-run 下按重要公告精读，受 --max-pdf-per-stock 限制")
     parser.add_argument("--simulate-summary", action="store_true", help="dry-run 下为解析成功公告打印模拟 stock_reports payload")
     parser.add_argument("--use-supabase-watchlist", action="store_true", help="dry-run 下也优先读取 Supabase announcement_watchlist")
-    parser.add_argument("--days", type=int, default=7)
-    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--days", type=int, default=DEFAULT_DAYS)
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    parser.add_argument("--max-pdf-per-stock", type=int, default=DEFAULT_MAX_PDF_PER_STOCK)
     args = parser.parse_args()
     run_auto_announcement_feeder(
         dry_run=args.dry_run,
         days=args.days,
         limit=args.limit,
+        max_pdf_per_stock=args.max_pdf_per_stock,
         force_read_one=args.force_read_one,
         simulate_summary=args.simulate_summary,
         use_supabase_watchlist=args.use_supabase_watchlist,
