@@ -2,8 +2,17 @@ name: Auto Announcement Feeder
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        default: "dry_run"
+        type: choice
+        options:
+          - dry_run
+          - live
   schedule:
-    - cron: "20 15 * * 1-5" # 北京时间周一到周五 23:20；当前仅安全 dry-run，不写 Supabase、不调用 DeepSeek
+    - cron: "20 15 * * 1-5" # 北京时间周一到周五 23:20；schedule 永远只跑安全 dry-run
 
 jobs:
   feed:
@@ -27,11 +36,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run safe dry-run
+      - name: Run schedule dry-run
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'dry_run')
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python auto_announcement_feeder.py --dry-run --use-supabase-watchlist --days 7 --limit 20
+
+      - name: Run live announcement feeder
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'live'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DEEPSEEK_TOKEN_1: ${{ secrets.DEEPSEEK_TOKEN_1 }}
           DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
         run: |
-          python auto_announcement_feeder.py --dry-run --use-supabase-watchlist --days 7 --limit 20
+          # live 只建议手动触发；会写 Supabase，并可能调用 DeepSeek
+          python auto_announcement_feeder.py --days 7 --limit 20
