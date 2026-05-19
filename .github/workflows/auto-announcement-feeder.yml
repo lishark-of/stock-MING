@@ -1,0 +1,37 @@
+name: Auto Announcement Feeder
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 15 * * 1-5" # 北京时间周一到周五 23:20；当前仅安全 dry-run，不写 Supabase、不调用 DeepSeek
+
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: auto-announcement-feeder
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run safe dry-run
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DEEPSEEK_TOKEN_1: ${{ secrets.DEEPSEEK_TOKEN_1 }}
+          DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
+        run: |
+          python auto_announcement_feeder.py --dry-run --use-supabase-watchlist --days 7 --limit 20
