@@ -7353,7 +7353,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     
     top_c1, top_c2 = st.columns([3, 1])
     with top_c1: 
-        raw_target = st.text_input("🎯 锁定目标 (NVDA、0700、6758、600459 等)", "LITE", label_visibility="collapsed").upper().strip()
+        raw_target = st.text_input("🎯 锁定目标 (NVDA、0700、6758、600459 等)", "002008", label_visibility="collapsed").upper().strip()
         
         target, market_type, market_badge, currency = identify_market(raw_target)
 
@@ -8042,7 +8042,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
 【风控结论】
 - 风险等级：低 / 中 / 高
-- 当前动作：继续观察 / 暂停加仓 / 降低仓位 / 放弃观察
+- 当前动作：继续观察 / 暂停加仓 / 降低仓位（必须附触发条件） / 放弃观察
 - 一票否决项：
 - 次日验证点：
 - 缺失数据：
@@ -8066,8 +8066,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 16. 机构调研不是利好，不等于机构买入、持仓或推荐。
 17. 减持、解禁、质押只能提升风险权重，不能自动推出必跌。
 18. 盈利预测不是业绩确定。
-19. 投喂资料不是事实。
-20. 免费公告雷达中 parsed_pdf 是 AI 公告摘要线索，不是公告原文；metadata_only 不得作为处罚、诉讼、减持等事实结论。
+19. "暂停加仓" 可以直接输出。
+20. "降低仓位" 必须绑定触发条件，且只能在满足以下任一或多项时使用：主力资金继续大幅流出、股价无法收回筹码中枢、放量跌破关键支撑位、硬风险新增或恶化（例如减持、质押、公告风险恶化）。
+21. 如果触发条件不足，必须改写为“暂不直接降低仓位，先暂停加仓 / 继续观察”。
+22. 风控结论只能给观察建议和条件化动作，不得写成直接交易指令。
+23. 不得写必卖、必须减仓、立即清仓、满仓、梭哈。
+24. 投喂资料不是事实。
+25. 免费公告雷达中 parsed_pdf 是 AI 公告摘要线索，不是公告原文；metadata_only 不得作为处罚、诉讼、减持等事实结论。
 """
 
                     st.markdown(
