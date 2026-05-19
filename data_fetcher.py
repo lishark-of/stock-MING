@@ -730,6 +730,100 @@ def score_news_relevance(text, aliases):
     return min(score, 100)
 
 
+def normalize_news_title(title):
+    text = str(title or "").strip().lower()
+    text = re.sub(r"\s+-\s+[^-｜|]{2,60}$", "", text)
+    text = re.sub(r"[｜|]\s*(新浪财经|东方财富|搜狐网|财富号|yahoo finance|seeking alpha).*$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(不斷更新|不断更新|快讯|快報|异动快报|股市要闻|市场)$", "", text, flags=re.IGNORECASE)
+    return re.sub(r"[\s\W_]+", "", text, flags=re.UNICODE)
+
+
+def build_dedupe_key(title, source=None, date=None):
+    normalized = normalize_news_title(title)
+    day = ""
+    parsed = parse_created_at(date) if date else None
+    if parsed:
+        day = parsed.date().isoformat()
+    return "|".join(part for part in [normalized, day] if part) or str(source or title or "")
+
+
+def _news_age_hours(row):
+    created = parse_created_at((row or {}).get("created_at"))
+    if not created:
+        return None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=datetime.timezone.utc)
+    return max(0.0, (now - created).total_seconds() / 3600)
+
+
+def _is_broad_news_row(row):
+    keyword = str((row or {}).get("keyword") or "")
+    source = str((row or {}).get("source") or "").lower()
+    title = str((row or {}).get("title") or "").lower()
+    broad_keywords = {"A股新趋势", "港股新趋势", "全球新趋势", "机构游资调仓", "黄金", "AI算力"}
+    if keyword in broad_keywords:
+        return True
+    broad_source_terms = [
+        "gold+price+market",
+        "%E6%9C%BA%E6%9E%84%E8%B0%83%E4%BB%93",
+        "%E6%B6%A8%E5%81%9C+%E6%9D%BF%E5%9D%97",
+        "%E6%B8%AF%E8%82%A1+OR",
+    ]
+    if any(term.lower() in source for term in broad_source_terms):
+        return True
+    if any(term in title for term in ["恒指", "港股市況", "港股走势", "gold price forecast"]):
+        return True
+    return False
+
+
+def filter_news_clues_for_prompt(rows, stock_code=None, stock_name=None, max_items=8, hours=48):
+    aliases = [stock_code, ticker_core(stock_code or ""), stock_name]
+    aliases = [str(alias).strip() for alias in aliases if str(alias or "").strip()]
+    cutoff_hours = float(hours or 48)
+    scored = []
+    seen = set()
+
+    for row in rows or []:
+        title = str((row or {}).get("title") or "")
+        if not title:
+            continue
+        key = normalize_news_title(title)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        blob = " ".join(str((row or {}).get(k, "")) for k in ["keyword", "title", "summary", "url"])
+        primary_hit = True if not aliases else has_primary_alias(blob, aliases)
+        if not primary_hit:
+            continue
+
+        age = _news_age_hours(row)
+        if age is not None and age > cutoff_hours:
+            continue
+
+        score = score_news_relevance(blob, aliases)
+        if age is not None and age <= 24:
+            score += 20
+        elif age is not None and age <= 48:
+            score += 10
+        if str((row or {}).get("risk_tag") or "") not in {"", "普通新闻", "未知"}:
+            score += 18
+        if _is_broad_news_row(row):
+            score -= 25
+
+        item = dict(row)
+        item["normalized_title"] = normalize_news_title(title)
+        item["dedupe_key"] = key
+        item["relevance_score"] = min(100, max(0, score))
+        item["verification_status"] = "新闻线索，需公告/交易所/Tushare/原文进一步验证"
+        item["fact_boundary"] = "risk_tag/sentiment 为模型提取标签，不是官方事实"
+        scored.append(item)
+
+    scored.sort(key=lambda item: (item.get("relevance_score", 0), item.get("created_at", "")), reverse=True)
+    return scored[:max_items]
+
+
 def has_primary_alias(text, aliases):
     text = (text or "").lower()
     for alias in aliases or []:
@@ -845,15 +939,21 @@ def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, 
         blob = " ".join(str(row.get(k, "")) for k in ["keyword", "title", "summary"])
         relevance = score_news_relevance(blob, aliases)
         keep, filter_reason = should_keep_news_row(row, normalized, aliases, market_type)
-        if keep and relevance >= 25:
+        primary_hit = has_primary_alias(blob, aliases)
+        if keep and primary_hit and relevance >= 25:
             row = dict(row)
             row["relevance_score"] = relevance
             row["market_filter"] = market_type
             row["filter_reason"] = filter_reason
             filtered.append(row)
 
-    filtered.sort(key=lambda x: (x.get("relevance_score", 0), x.get("created_at", "")), reverse=True)
-    return filtered[:limit]
+    return filter_news_clues_for_prompt(
+        filtered,
+        stock_code=None,
+        stock_name=None,
+        max_items=min(limit, 8),
+        hours=days * 24,
+    )
 
 
 def institutional_signal_queries(ticker, company_name=""):

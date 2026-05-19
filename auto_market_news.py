@@ -2,6 +2,7 @@ import json
 import time
 import hashlib
 import datetime
+import re
 import requests
 import feedparser
 from bs4 import BeautifulSoup
@@ -35,6 +36,62 @@ def get_deepseek_client():
 
 def url_hash(url):
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
+def normalize_news_title(title):
+    text = str(title or "").strip().lower()
+    text = re.sub(r"\s+-\s+[^-｜|]{2,80}$", "", text)
+    text = re.sub(r"[｜|]\s*(新浪财经|东方财富|搜狐网|财富号|yahoo finance|seeking alpha).*$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(不斷更新|不断更新|快讯|快報|异动快报|股市要闻|市场)$", "", text, flags=re.IGNORECASE)
+    return re.sub(r"[\s\W_]+", "", text, flags=re.UNICODE)
+
+
+def build_dedupe_key(title, source=None, date=None):
+    return normalize_news_title(title) or str(source or date or title or "").strip().lower()
+
+
+def load_recent_market_news_title_keys(days=7, limit=800):
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+    try:
+        res = (
+            supabase
+            .table("market_news")
+            .select("title, created_at")
+            .gte("created_at", cutoff.isoformat())
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return {
+            normalize_news_title(row.get("title"))
+            for row in (res.data or [])
+            if normalize_news_title(row.get("title"))
+        }
+    except Exception as e:
+        print(f"读取 market_news 历史标题去重集失败：{e}")
+        return set()
+
+
+WIDE_MARKET_NEWS_LIMITS = {
+    "A股新趋势": 5,
+    "港股新趋势": 5,
+    "机构游资调仓": 5,
+    "黄金": 3,
+}
+
+
+def wide_source_limit(keyword, rss_url="", title=""):
+    keyword = str(keyword or "")
+    source_text = f"{rss_url} {title}".lower()
+    if keyword in WIDE_MARKET_NEWS_LIMITS:
+        return WIDE_MARKET_NEWS_LIMITS[keyword]
+    if "gold+price+market" in source_text or "gold price" in source_text:
+        return 3
+    if "%E6%9C%BA%E6%9E%84%E8%B0%83%E4%BB%93".lower() in source_text:
+        return 5
+    if any(term in source_text for term in ["港股市況", "港股走势", "港股走勢", "恒指"]):
+        return 5
+    return None
 
 
 def already_saved(url):
@@ -254,6 +311,7 @@ def save_market_news(keyword, title, url, source, analysis):
         supabase.table("market_news").insert(payload).execute()
 
         print(f"已写入 market_news：{keyword}｜{title}")
+        return True
 
     except Exception as e:
         print(f"写入 market_news 失败：{e}")
@@ -262,8 +320,10 @@ def save_market_news(keyword, title, url, source, analysis):
             fallback_payload.pop("created_at", None)
             supabase.table("market_news").insert(fallback_payload).execute()
             print(f"已兼容旧表结构写入 market_news：{keyword}｜{title}")
+            return True
         except Exception as retry_error:
             print(f"兼容写入 market_news 仍失败：{retry_error}")
+            return False
 
 
 def save_run_status(status, detail):
@@ -291,9 +351,15 @@ def run_auto_market_news():
         config = json.load(f)
 
     targets = config.get("targets", [])
+    seen_title_keys = set()
+    recent_title_keys = load_recent_market_news_title_keys(days=7)
+    wide_source_counts = {}
     total_found = 0
     total_saved = 0
     total_skipped = 0
+    total_processed = 0
+    skipped_duplicate_title_count = 0
+    skipped_wide_source_limit_count = 0
 
     for target in targets:
         keyword = target.get("keyword", "")
@@ -314,11 +380,23 @@ def run_auto_market_news():
                     link = item["link"]
                     summary = item.get("summary", "")
                     published = item.get("published", "")
+                    title_key = build_dedupe_key(title)
 
                     print(f"\n发现新闻：{title}")
                     print(link)
                     if published:
                         print(f"发布时间：{published}")
+
+                    if title_key and title_key in seen_title_keys:
+                        print(f"skip duplicate normalized title: {title_key[:80]}")
+                        total_skipped += 1
+                        skipped_duplicate_title_count += 1
+                        continue
+                    if title_key and title_key in recent_title_keys:
+                        print(f"skip duplicate normalized title from recent market_news: {title_key[:80]}")
+                        total_skipped += 1
+                        skipped_duplicate_title_count += 1
+                        continue
 
                     if already_saved(link):
                         print("已保存过，跳过。")
@@ -329,6 +407,20 @@ def run_auto_market_news():
                         print("标题关键词不匹配，跳过。")
                         total_skipped += 1
                         continue
+
+                    limit = wide_source_limit(keyword, rss_url, title)
+                    if limit is not None:
+                        wide_key = keyword or rss_url
+                        current_count = wide_source_counts.get(wide_key, 0)
+                        if current_count >= limit:
+                            print(f"skip wide source limit: {wide_key} limit={limit}")
+                            total_skipped += 1
+                            skipped_wide_source_limit_count += 1
+                            continue
+                        wide_source_counts[wide_key] = current_count + 1
+
+                    seen_title_keys.add(title_key)
+                    total_processed += 1
 
                     text = fetch_page_text(link)
 
@@ -344,14 +436,15 @@ def run_auto_market_news():
                         rss_summary=summary
                     )
 
-                    save_market_news(
+                    inserted = save_market_news(
                         keyword=keyword,
                         title=title,
                         url=link,
                         source=rss_url,
                         analysis=analysis
                     )
-                    total_saved += 1
+                    if inserted:
+                        total_saved += 1
 
                     time.sleep(1)
 
@@ -364,9 +457,23 @@ def run_auto_market_news():
         "targets": len(targets),
         "found": total_found,
         "saved": total_saved,
-        "skipped": total_skipped
+        "skipped": total_skipped,
+        "fetched_count": total_found,
+        "processed_count": total_processed,
+        "inserted_count": total_saved,
+        "skipped_duplicate_title_count": skipped_duplicate_title_count,
+        "skipped_wide_source_limit_count": skipped_wide_source_limit_count,
     }
     print(f"auto_market_news 运行完成：{detail}")
+    print(
+        "auto_market_news stats: "
+        f"fetched_count={total_found}, "
+        f"skipped_duplicate_title_count={skipped_duplicate_title_count}, "
+        f"skipped_wide_source_limit_count={skipped_wide_source_limit_count}, "
+        f"inserted_count={total_saved}, "
+        f"processed_count={total_processed}, "
+        f"saved_rules_count=0"
+    )
     save_run_status("ok", detail)
 
 

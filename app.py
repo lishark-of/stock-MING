@@ -683,6 +683,145 @@ def _fresh_status(age_days, good_days=2, stale_days=7):
     return "偏旧"
 
 
+def normalize_news_title(title):
+    text = str(title or "").strip().lower()
+    text = re.sub(r"\s+-\s+[^-｜|]{2,60}$", "", text)
+    text = re.sub(r"[｜|]\s*(新浪财经|东方财富|搜狐网|财富号|yahoo finance|seeking alpha).*$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(不斷更新|不断更新|快讯|快報|异动快报|股市要闻|市场)$", "", text, flags=re.IGNORECASE)
+    return re.sub(r"[\s\W_]+", "", text, flags=re.UNICODE)
+
+
+def build_dedupe_key(title, source=None, date=None):
+    normalized = normalize_news_title(title)
+    parsed = _parse_datetime_safe(date)
+    day = parsed.date().isoformat() if parsed else ""
+    return "|".join(part for part in [normalized, day] if part) or str(source or title or "")
+
+
+def _news_row_age_hours(row):
+    created = _parse_datetime_safe((row or {}).get("created_at"))
+    if not created:
+        return None
+    return max(0.0, (datetime.datetime.now() - created).total_seconds() / 3600)
+
+
+def _news_primary_hit(row, stock_code=None, stock_name=None):
+    terms = []
+    for value in [stock_code, stock_name]:
+        value = str(value or "").strip()
+        if not value:
+            continue
+        terms.append(value)
+        if "." in value:
+            terms.append(value.split(".", 1)[0])
+    terms = [term for term in dict.fromkeys(terms) if len(term) >= 2]
+    if not terms:
+        return True
+    blob = " ".join(str((row or {}).get(key, "")) for key in ["keyword", "title", "summary", "url"]).lower()
+    for term in terms:
+        term_l = term.lower()
+        if term_l.isdigit():
+            if re.search(rf"(?<!\d){re.escape(term_l)}(?!\d)", blob):
+                return True
+        elif len(term_l) <= 5 and term_l.isascii():
+            if re.search(rf"\b{re.escape(term_l)}\b", blob):
+                return True
+        elif term_l in blob:
+            return True
+    return False
+
+
+def _is_broad_auto_news(row):
+    keyword = str((row or {}).get("keyword") or "")
+    source = str((row or {}).get("source") or "").lower()
+    title = str((row or {}).get("title") or "").lower()
+    if keyword in {"A股新趋势", "港股新趋势", "全球新趋势", "机构游资调仓", "黄金", "AI算力"}:
+        return True
+    broad_source_terms = [
+        "gold+price+market",
+        "%E6%9C%BA%E6%9E%84%E8%B0%83%E4%BB%93",
+        "%E6%B6%A8%E5%81%9C+%E6%9D%BF%E5%9D%97",
+        "%E6%B8%AF%E8%82%A1+OR",
+    ]
+    if any(term.lower() in source for term in broad_source_terms):
+        return True
+    return any(term in title for term in ["恒指", "港股市況", "港股走势", "港股走勢", "gold price forecast"])
+
+
+def _news_source_quality(row):
+    text = " ".join(str((row or {}).get(key, "")) for key in ["title", "source", "url"]).lower()
+    reliable_terms = ["证券时报", "上交所", "深交所", "巨潮", "公告", "新华网", "21财经", "财联社", "yahoo finance", "bloomberg", "reuters", "sec.gov"]
+    noisy_terms = ["财富号", "股吧", "搜狐", "reddit", "seeking alpha", "motley fool", "gold price forecast"]
+    score = 0
+    if any(term.lower() in text for term in reliable_terms):
+        score += 12
+    if any(term.lower() in text for term in noisy_terms):
+        score -= 10
+    return score
+
+
+def filter_news_clues_for_prompt(rows, stock_code=None, stock_name=None, max_items=8, hours=48):
+    scored = []
+    seen = set()
+    requires_primary_hit = bool(str(stock_code or "").strip() or str(stock_name or "").strip())
+
+    for row in rows or []:
+        title = str((row or {}).get("title") or "").strip()
+        if not title:
+            continue
+        key = normalize_news_title(title)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if requires_primary_hit and not _news_primary_hit(row, stock_code=stock_code, stock_name=stock_name):
+            continue
+
+        age = _news_row_age_hours(row)
+        if age is not None and age > float(hours or 48):
+            continue
+
+        risk_tag = str((row or {}).get("risk_tag") or "")
+        score = 50
+        if age is not None and age <= 24:
+            score += 20
+        elif age is not None and age <= 48:
+            score += 10
+        if risk_tag and risk_tag not in {"普通新闻", "未知"}:
+            score += 16
+        if _news_primary_hit(row, stock_code=stock_code, stock_name=stock_name):
+            score += 18
+        if _is_broad_auto_news(row):
+            score -= 25
+        score += _news_source_quality(row)
+
+        item = dict(row)
+        item["normalized_title"] = normalize_news_title(title)
+        item["dedupe_key"] = key
+        item["clue_score"] = max(0, min(100, score))
+        item["verification_status"] = "新闻线索，需公告/交易所/Tushare/原文进一步验证"
+        item["fact_boundary"] = "risk_tag/sentiment/标题均不得替代官方公告或结构化事实"
+        scored.append(item)
+
+    scored.sort(key=lambda item: (item.get("clue_score", 0), item.get("created_at", "")), reverse=True)
+    return scored[:max_items]
+
+
+def filter_topic_news_for_prompt(rows, max_items=8, per_topic=2, hours=48):
+    filtered = filter_news_clues_for_prompt(rows, max_items=max(max_items * 3, 12), hours=hours)
+    counts = {}
+    result = []
+    for row in filtered:
+        topic = str(row.get("keyword") or row.get("source") or "unknown")
+        if counts.get(topic, 0) >= per_topic:
+            continue
+        counts[topic] = counts.get(topic, 0) + 1
+        result.append(row)
+        if len(result) >= max_items:
+            break
+    return result
+
+
 def _latest_created_at(rows):
     best = None
     for row in rows or []:
@@ -3097,26 +3236,30 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
             return []
 
         context = []
+        market_rows = []
+        processed_rows = []
 
         try:
             res = (
                 supabase
                 .table("market_news")
-                .select("keyword, title, summary, risk_tag, sentiment, created_at")
+                .select("keyword, title, url, source, summary, risk_tag, sentiment, created_at")
                 .order("created_at", desc=True)
-                .limit(limit)
+                .limit(max(limit * 4, 40))
                 .execute()
             )
-            for item in res.data or []:
+            market_rows = filter_topic_news_for_prompt(res.data or [], max_items=limit, per_topic=2, hours=48)
+            for item in market_rows:
                 title = item.get("title", "")
                 if not title:
                     continue
                 context.append(
-                    f"market_news｜{item.get('keyword', '')}｜{title}"
+                    f"market_news线索｜{item.get('keyword', '')}｜{title}"
                     f"｜情绪:{item.get('sentiment', '')}"
                     f"｜风险:{item.get('risk_tag', '')}"
                     f"｜摘要:{item.get('summary', '')}"
                     f"｜时间:{item.get('created_at', '')}"
+                    f"｜边界:{item.get('fact_boundary', '新闻线索，不是官方事实')}"
                 )
         except Exception as e:
             context.append(f"market_news 读取失败：{e}")
@@ -3127,17 +3270,19 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
                 .table("processed_sources")
                 .select("manager_name, title, url, created_at")
                 .order("created_at", desc=True)
-                .limit(limit)
+                .limit(max(limit * 3, 30))
                 .execute()
             )
-            for item in res.data or []:
+            processed_rows = filter_news_clues_for_prompt(res.data or [], max_items=limit, hours=72)
+            for item in processed_rows:
                 title = item.get("title", "")
                 if not title:
                     continue
                 context.append(
-                    f"processed_sources｜{item.get('manager_name', '')}｜{title}"
+                    f"processed_sources待验证｜{item.get('manager_name', '')}｜{title}"
                     f"｜时间:{item.get('created_at', '')}"
                     f"｜链接:{item.get('url', '')}"
+                    f"｜边界:投喂资料/历史假设/待验证线索"
                 )
         except Exception as e:
             context.append(f"processed_sources 读取失败：{e}")
@@ -3292,13 +3437,13 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
         market_context_lines = fetch_recent_market_context()
         verified_market_news_lines = [
             line for line in market_context_lines
-            if str(line).startswith("market_news｜")
+            if str(line).startswith("market_news")
         ]
         feed_context_lines = [
             sanitize_unverified_prompt_text(line) for line in market_context_lines
-            if not str(line).startswith("market_news｜")
+            if not str(line).startswith("market_news")
         ]
-        verified_market_news = "\n".join(verified_market_news_lines)
+        market_news_clues = "\n".join(verified_market_news_lines)
         feed_context = "\n".join(feed_context_lines)
         emerging_trends = summarize_context_trends(market_context_lines)
         dragon_tiger_activity = market_style_fact_packet.get("dragon_tiger_activity") or {}
@@ -3355,11 +3500,10 @@ metadata 保留并去重明确来自原文的 tickers/company_names/industries/t
 - risk_switch：{market_style_fact_packet.get("risk_switch") or "适合只观察不买"}
 - missing_sources：{missing_sources_text}
 
-【已验证数据】
-只能包含以下三类：
+【已验证结构化数据】
+只能包含以下两类：
 1. Tushare market_style_fact_packet
 2. Yahoo Finance 市场快照
-3. Supabase market_news 中真实返回的新闻、公告、市场消息
 
 market_style_fact_packet:
 {json.dumps(market_style_fact_packet, ensure_ascii=False, indent=2, default=str)}
@@ -3374,9 +3518,10 @@ Tushare 数据源说明：
 Yahoo Finance 市场快照：
 {market_snapshot}
 
-Supabase market_news 真实返回：
-{verified_market_news if verified_market_news else "暂无可验证 market_news。"}
-说明：Supabase market_news 只能证明系统真实返回了 title / summary / risk_tag / sentiment / created_at 等字段；不得把新闻标题外推成公告已确认、订单已落地、客户已确认或席位资金事实。
+【市场话题线索】
+Supabase market_news 新闻线索（每个主题已限量、去重、降权宽 RSS）：
+{market_news_clues if market_news_clues else "暂无可用 market_news 新闻线索。"}
+说明：Supabase market_news 只能证明系统真实返回了 title / summary / risk_tag / sentiment / created_at 等字段；risk_tag / sentiment 是模型提取标签，不是官方事实；不得把新闻标题外推成公告已确认、订单已落地、客户已确认、监管处罚、诉讼、减持、业绩预告或席位资金事实。
 
 【谨慎推断】
 - 市场状态：{market_style_fact_packet.get("market_state") or "暂无可验证数据"}
@@ -3472,9 +3617,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 7. 如果没有足够事实支撑，应放入“只观察不买型”。
 8. 不要为了凑满数量而编标的。
 9. 结论要偏交易实用，不要写空话。
-10. “已验证数据依据”只能引用 Tushare、Yahoo Finance、Supabase market_news 的真实返回数据；processed_sources、brain_memory、manager_rules 只能进入“投喂资料观点 / 待验证线索”。
+10. “已验证数据依据”只能引用 Tushare 和 Yahoo Finance 市场快照等结构化真实返回；market_news、processed_sources、brain_memory、manager_rules 只能进入“新闻线索 / 投喂资料观点 / 待验证线索”。
 11. 如果观察标的只来自投喂资料或记忆，必须在“谨慎推断”中标为“待验证线索”，不得写成已验证资金行为。
-12. 没有 Supabase market_news、公告或真实新闻验证时，不得把订单金额、授权、收购、客户名称写成事实。
+12. 没有 Tushare 公告、官方公告或可信原文验证时，不得把订单金额、授权、收购、客户名称写成事实；market_news 标题不能单独构成验证。
 13. MA20、MA60、MA50、MA200、RSI、PB、ROE 如果没有当前数值，固定写“后续需用 MA20/MA60/MA50/MA200/RSI/PB/ROE 验证”；不得写“股价在 MA20 附近企稳”“站上 MA60”“站稳 MA50”“跌破 MA60”“RSI 在 40-60”“PB 低于历史分位”等像已计算的条件。
 14. 标的名称不确定时写“标的名称待核验”，不得输出 CPOAI 这类自造简称。
 15. 基金经理相关内容只能写“风格适配”或“待验证观点”；当前 manager_rules 不含 source/url，不能作为实际交易事实来源。即使 manager_rules 原文包含“买入、加仓、增持、看好、持股数量”等字样，输出时也必须改写为“风格偏好指向该方向”，不得复述交易动作或数量。
@@ -3482,6 +3627,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 17. 每个方向的“已验证数据依据”必须逐项列出来源名和字段名；如果没有对应真实返回，必须写“暂无可验证数据”，不得用投喂资料补足。
 18. market_news 中出现“龙虎榜盘点、席位、机构”等标题时，只能作为新闻线索；不得据此生成具体机构席位、净买入、席位动向或龙虎榜结论。具体龙虎榜数量和样本只能引用 market_style_fact_packet / Tushare top_list 字段。
 19. 不得输出 buy_conditions、买入条件、买点条件、买点；统一改写为“待验证观察条件”。
+20. market_news / yfinance.news / processed_sources 不得替代公告、监管、诉讼、处罚、减持、业绩预告等官方事实。
 """
         return prompt
     def load_manager_rules(manager_name, limit=30):
@@ -3575,37 +3721,24 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             return []
 
     def app_check_risk_veto(target, market_type, headlines):
-        text = "\n".join(headlines or [])
+        # Auto news/RSS headlines are intentionally not allowed to trigger a hard veto.
+        # Tushare hard-risk sections drive official risk conclusions downstream.
         reasons = []
+        soft_clues = []
 
         if market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
-            if "ST" in target.upper() or "ST" in text:
+            if "ST" in str(target or "").upper():
                 reasons.append("A股：ST 或退市风险")
-            if any(word in text for word in ["监管问询", "问询函", "立案调查"]):
-                reasons.append("A股：监管问询或立案调查")
-            if any(word in text for word in ["财务造假", "会计差错", "审计保留"]):
-                reasons.append("A股：财务真实性风险")
-            if any(word in text for word in ["商誉减值", "高商誉", "股东质押"]):
-                reasons.append("A股：商誉或质押风险")
 
-        elif market_type == "US_STOCK":
-            lowered = text.lower()
-            if any(word in lowered for word in ["earnings miss", "missed earnings", "财报暴雷"]):
-                reasons.append("美股：财报低于预期或暴雷")
-            if any(word in lowered for word in ["guidance cut", "lowered guidance", "指引下修"]):
-                reasons.append("美股：指引下修")
-            if any(word in lowered for word in ["insider selling", "executive sells", "内部卖出"]):
-                reasons.append("美股：内部人卖出")
-
-        elif market_type == "HK_STOCK":
-            if any(word in text for word in ["沽空", "大股东减持", "控股股东减持"]):
-                reasons.append("港股：沽空或大股东减持风险")
-            if any(word in text for word in ["仙股", "合股", "长期低价"]):
-                reasons.append("港股：仙股化或长期低价风险")
+        text = "\n".join(str(item) for item in headlines or [])
+        if any(word in text for word in ["监管问询", "问询函", "立案调查", "财务造假", "减持", "guidance cut", "insider selling"]):
+            soft_clues.append("auto 新闻标题命中风险词，仅作为待验证线索，不触发一票否决")
 
         return {
             "risk_flag": bool(reasons),
             "reasons": reasons,
+            "soft_clues": soft_clues,
+            "auto_news_veto_disabled": True,
             "can_analyze": not reasons,
         }
 
@@ -5286,7 +5419,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "missing_items": [],
             "data_source_policy": {
                 "hard_fact_sources": ["Tushare"],
-                "news_fact_sources": ["Supabase market_news title/url only", "yfinance.news title only"],
+                "news_clue_sources": ["Supabase market_news title/url only", "yfinance.news title only"],
                 "unverified_sources": ["processed_sources", "brain_memory", "manager_rules"],
             },
             "updated_at": updated_at,
@@ -6246,10 +6379,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
             【事实边界硬规则】：
             1. 云记忆、manager_rules、processed_sources、用户投喂资料不能作为已验证事实，只能放入“投喂资料观点 / 历史假设 / 待验证线索”。
-            2. 没有 Tushare / 公告 / market_news 真实返回，不得把订单、授权、客户、机构席位、资金流写成事实。
-            3. 已验证事实只能来自 Tushare、verified_technical_facts、market_news 标题/链接；其他资料必须标注为待验证线索。
-            4. 如果缺少 Tushare / 公告 / market_news 验证，对订单、授权、客户、机构席位、资金流统一写“暂无可验证数据”。
-            5. 不得仅凭技术形态写“主力高度控盘、机构加仓、游资接力、资金涌入”等资金事实；没有 Tushare / market_news 验证时，只能写“资金行为待验证”。
+            2. market_news / yfinance.news 只能作为新闻线索，不是公告、监管、诉讼、处罚、减持、业绩预告等官方事实。
+            3. 已验证事实只能来自 Tushare、verified_technical_facts、交易所/公司公告或其他可信结构化返回；其他资料必须标注为待验证线索。
+            4. 如果缺少 Tushare / 官方公告 / 可信原文验证，对订单、授权、客户、机构席位、资金流统一写“暂无可验证数据”。
+            5. 不得仅凭技术形态写“主力高度控盘、机构加仓、游资接力、资金涌入”等资金事实；没有 Tushare 验证时，只能写“资金行为待验证”。
 
             【要求】：
             1. 字数不少于 800 字
@@ -7042,51 +7175,71 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 try:
                     def compact_market_news_rows(rows):
                         compact_rows = []
-                        for item in rows or []:
+                        for item in filter_news_clues_for_prompt(
+                            rows or [],
+                            stock_code=target,
+                            stock_name=raw_target or target,
+                            max_items=8,
+                            hours=48,
+                        ):
                             title = item.get("title", "")
                             if not title:
                                 continue
                             compact_rows.append(
                                 {
                                     "title": title,
-                                    "source": "Supabase market_news",
+                                    "source": "Supabase market_news 新闻线索",
                                     "url": item.get("url", ""),
                                     "created_at": item.get("created_at", ""),
                                     "risk_tag": item.get("risk_tag", ""),
                                     "sentiment": item.get("sentiment", ""),
+                                    "verification_status": item.get("verification_status", "新闻线索，需验证"),
+                                    "fact_boundary": item.get("fact_boundary", "不得替代官方事实"),
                                 }
                             )
                         return compact_rows[:8]
 
                     def compact_processed_source_rows(rows):
                         compact_rows = []
-                        for item in rows or []:
+                        for item in filter_news_clues_for_prompt(
+                            rows or [],
+                            stock_code=target,
+                            stock_name=raw_target or target,
+                            max_items=8,
+                            hours=72,
+                        ):
                             title = item.get("title", "")
                             if not title:
                                 continue
                             compact_rows.append(
                                 {
                                     "title": title,
-                                    "source": "processed_sources",
+                                    "source": "processed_sources 待验证投喂线索",
                                     "created_at": item.get("created_at", ""),
                                     "url": item.get("url", ""),
-                                    "verification_status": "待验证线索",
+                                    "verification_status": "投喂资料 / 待验证线索",
                                 }
                             )
                         return compact_rows[:8]
 
                     def compact_yfinance_news_rows(rows):
                         compact_rows = []
+                        seen = set()
                         for item in rows or []:
                             content = item.get("content") if isinstance(item, dict) else {}
                             title = item.get("title", "") if isinstance(item, dict) else ""
                             title = title or (content or {}).get("title", "")
                             if not title:
                                 continue
+                            key = normalize_news_title(title)
+                            if key in seen:
+                                continue
+                            seen.add(key)
                             compact_rows.append(
                                 {
                                     "title": title,
-                                    "source": "yfinance.news",
+                                    "source": "yfinance.news 备用新闻线索",
+                                    "verification_status": "备用新闻线索，需验证",
                                 }
                             )
                         return compact_rows[:6]
@@ -7216,6 +7369,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             f"{item.get('title', '')}｜来源:{item.get('source', '')}"
                             f"｜时间:{item.get('created_at', '')}｜链接:{item.get('url', '')}"
                             f"｜系统标签:{item.get('risk_tag', '')}/{item.get('sentiment', '')}"
+                            f"｜状态:{item.get('verification_status', '新闻线索，需验证')}"
                         )
                         for item in market_news_clues
                     ]
@@ -7232,6 +7386,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         (
                             f"{item.get('title', '')}｜processed_sources 待验证线索"
                             f"｜时间:{item.get('created_at', '')}｜链接:{item.get('url', '')}"
+                            f"｜状态:{item.get('verification_status', '投喂资料 / 待验证线索')}"
                         )
                         for item in processed_clues
                     ]
@@ -7246,7 +7401,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         st.info(f"yfinance 舆情接口受限，已切换本地舆情库。原因：{e}")
                     yf_headlines = [item.get("title", "") for item in yf_news_clues if item.get("title")]
 
-                    # 4. 合并舆情线索，优先级：market_news > processed_sources > yfinance
+                    # 4. 合并舆情线索，优先级：market_news > processed_sources > yfinance；只作软线索
                     all_headlines = market_headlines + local_headlines + yf_headlines
 
                     if not all_headlines:
@@ -7261,7 +7416,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             + "；".join(veto_result["reasons"])
                         )
                     else:
-                        st.success("未触发风险一票否决，可以继续查看深度分析。")
+                        st.success("未触发硬性一票否决；auto 新闻/RSS 只作为待验证线索。")
+                        if veto_result.get("soft_clues"):
+                            st.info("；".join(veto_result["soft_clues"]))
 
                     tianyan_risk_fact_packet = build_tianyan_risk_fact_packet(
                         target,
@@ -7294,9 +7451,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.markdown(f"- 机构调研验证：{display_lines['hard_institution_surveys']}")
 
                     st.markdown("#### 【舆情与待验证线索】")
-                    st.markdown(f"- Supabase market_news：{display_lines['market_news']}")
-                    st.markdown(f"- processed_sources：{display_lines['processed_sources']}")
-                    st.markdown(f"- yfinance news：{display_lines['yfinance_news']}")
+                    st.markdown(f"- Supabase market_news 新闻线索：{display_lines['market_news']}")
+                    st.markdown(f"- processed_sources 待验证投喂线索：{display_lines['processed_sources']}")
+                    st.markdown(f"- yfinance.news 备用新闻线索：{display_lines['yfinance_news']}")
 
                     tianyan_prompt_packet = json.dumps(
                         tianyan_risk_fact_packet,
@@ -7349,9 +7506,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
 【舆情 / 投喂资料 / 待验证线索】
 只能引用：
-- market_news
-- processed_sources
-- yfinance news
+- market_news 新闻线索
+- processed_sources 待验证投喂线索
+- yfinance.news 备用新闻线索
 - brain_memory
 - manager_rules
 
@@ -7374,13 +7531,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 9. 龙虎榜/游资不是跟随信号。
 10. limit_cpt_list 只能代表概念热度，不是追涨理由。
 11. market_news 的 risk_tag / sentiment 是系统提取标签，不等同公告事实。
-12. 没有真实接口返回，不得补写监管处罚、问询、诉讼、减持、质押、解禁。
-13. 不得编造事实包以外的公告、新闻、资金、席位、监管或财务信息。
-14. 公告标题不是事实裁判；没有阅读全文或结构化字段时，只能写“公告线索显示标题涉及 X”。
-15. 机构调研不是利好，不等于机构买入、持仓或推荐。
-16. 减持、解禁、质押只能提升风险权重，不能自动推出必跌。
-17. 盈利预测不是业绩确定。
-18. 投喂资料不是事实。
+12. market_news / yfinance.news / processed_sources 不得替代公告、监管、诉讼、处罚、减持、业绩预告等官方事实。
+13. 没有真实接口返回，不得补写监管处罚、问询、诉讼、减持、质押、解禁。
+14. 不得编造事实包以外的公告、新闻、资金、席位、监管或财务信息。
+15. 公告标题不是事实裁判；没有阅读全文或结构化字段时，只能写“公告线索显示标题涉及 X”。
+16. 机构调研不是利好，不等于机构买入、持仓或推荐。
+17. 减持、解禁、质押只能提升风险权重，不能自动推出必跌。
+18. 盈利预测不是业绩确定。
+19. 投喂资料不是事实。
 """
 
                     st.markdown(
@@ -8146,6 +8304,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 money_flow=money_flow_snapshot,
                 cloud_memory_context=cloud_memory_context,
             )
+            ai_context_packet += """
+
+【新闻线索边界】
+1. 近48小时舆情只允许作为新闻线索，不是官方事实。
+2. 只有精确命中当前股票代码或公司名的 market_news 才进入本段；宽行业新闻不得进入严格风控。
+3. risk_tag / sentiment 是模型提取标签，不是公告、监管、诉讼、处罚、减持、业绩预告等官方事实。
+4. 涉及公告、监管、诉讼、处罚、减持、业绩预告，必须优先引用 Tushare / 交易所 / 公司公告等结构化或官方来源；没有验证则写“待验证线索”。
+"""
             ai_context_packet += "\n\n" + verified_technical_prompt
             if is_a_share_market(market_type):
                 ai_context_packet += format_cn_limit_emotion_context(limit_emotion_snapshot)

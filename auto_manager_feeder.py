@@ -1,6 +1,7 @@
 import json
 import time
 import hashlib
+import re
 import requests
 import feedparser
 from bs4 import BeautifulSoup
@@ -22,6 +23,57 @@ per_rss_limit = 8
 
 def url_hash(url):
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
+def normalize_news_title(title):
+    text = str(title or "").strip().lower()
+    text = re.sub(r"\s+-\s+[^-｜|]{2,80}$", "", text)
+    text = re.sub(r"[｜|]\s*(新浪财经|东方财富|搜狐网|财富号|yahoo finance|seeking alpha).*$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(不斷更新|不断更新|快讯|快報|异动快报|股市要闻|市场)$", "", text, flags=re.IGNORECASE)
+    return re.sub(r"[\s\W_]+", "", text, flags=re.UNICODE)
+
+
+def build_dedupe_key(title, source=None, date=None):
+    return normalize_news_title(title) or str(source or date or title or "").strip().lower()
+
+
+def load_recent_processed_title_keys(days=7, limit=800):
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    try:
+        res = (
+            supabase
+            .table("processed_sources")
+            .select("title, created_at")
+            .gte("created_at", cutoff.isoformat())
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return {
+            normalize_news_title(row.get("title"))
+            for row in (res.data or [])
+            if normalize_news_title(row.get("title"))
+        }
+    except Exception as e:
+        print(f"读取 processed_sources 历史标题去重集失败：{e}")
+        return set()
+
+
+def wide_source_limit_for_item(item, manager_name=""):
+    source_name = str((item or {}).get("source") or "")
+    feed_url = unquote_plus(str((item or {}).get("feed_url") or "")).lower()
+    title = str((item or {}).get("title") or "").lower()
+    source_l = source_name.lower()
+
+    if "fastbull/news" in feed_url or "/home/" in feed_url or feed_url.endswith("/news"):
+        return f"{manager_name}:generic_rss", 3
+    if source_l in {"xueqiu", "eastmoneyforum", "eastmoneyfund", "zhihu", "seekingalpha", "marketwatch", "reddit"}:
+        return f"{manager_name}:{source_name}", 5
+    if "gold+price+market" in feed_url or "gold price" in title:
+        return f"{manager_name}:gold", 3
+    if any(term in title for term in ["恒指", "港股市況", "港股走势", "港股走勢"]):
+        return f"{manager_name}:hk_flow", 5
+    return None, None
 
 
 def already_processed(url):
@@ -54,9 +106,11 @@ def mark_processed(manager_name, url, title=""):
             "url_hash": url_hash(url),
             "title": title
         }).execute()
+        return True
 
     except Exception as e:
         print(f"记录已处理链接失败：{e}")
+        return False
 
 
 def clean_html_text(text):
@@ -888,10 +942,16 @@ def run_auto_feed(max_articles_per_manager=max_articles_per_manager, per_rss_lim
 
     managers = config.get("managers", [])
     today_market_style = get_today_market_style()
+    seen_title_keys = set()
+    recent_title_keys = load_recent_processed_title_keys(days=7)
+    wide_source_counts = {}
     total_found = 0
     total_skipped = 0
     total_processed_articles = 0
     total_saved_rules = 0
+    total_inserted_sources = 0
+    skipped_duplicate_title_count = 0
+    skipped_wide_source_limit_count = 0
 
     for manager in managers:
         manager_name = manager["manager_name"]
@@ -940,11 +1000,40 @@ def run_auto_feed(max_articles_per_manager=max_articles_per_manager, per_rss_lim
                 print(f"\n发现文章：[{source_name}] {title}")
                 print(link)
 
+                title_key = build_dedupe_key(title)
+                if title_key:
+                    if title_key in seen_title_keys:
+                        manager_skipped += 1
+                        total_skipped += 1
+                        skipped_duplicate_title_count += 1
+                        print(f"skip duplicate normalized title: {title[:80]}")
+                        continue
+                    if title_key in recent_title_keys:
+                        manager_skipped += 1
+                        total_skipped += 1
+                        skipped_duplicate_title_count += 1
+                        print(f"skip duplicate normalized title from recent processed_sources: {title[:80]}")
+                        continue
+
                 if already_processed(link):
                     manager_skipped += 1
                     total_skipped += 1
                     print("已处理过，跳过。")
                     continue
+
+                wide_key, wide_limit = wide_source_limit_for_item(item, manager_name=manager_name)
+                if wide_key and wide_limit is not None:
+                    current_count = wide_source_counts.get(wide_key, 0)
+                    if current_count >= wide_limit:
+                        manager_skipped += 1
+                        total_skipped += 1
+                        skipped_wide_source_limit_count += 1
+                        print(f"skip wide source limit: {wide_key} title={title[:80]}")
+                        continue
+                    wide_source_counts[wide_key] = current_count + 1
+
+                if title_key:
+                    seen_title_keys.add(title_key)
 
                 text = fetch_page_text(link)
 
@@ -998,7 +1087,9 @@ RSS摘要：
                 total_saved_rules += saved
 
                 if saved > 0:
-                    mark_processed(manager_name, link, title)
+                    inserted_source = mark_processed(manager_name, link, title)
+                    if inserted_source:
+                        total_inserted_sources += 1
                     print(f"文章处理完成，新增规则：{saved}，已记录为处理成功。")
                 else:
                     print("文章处理完成，但新增规则为 0。暂不记录 processed_sources，下次仍可重试。")
@@ -1029,8 +1120,23 @@ RSS摘要：
         "skipped": total_skipped,
         "processed_articles": total_processed_articles,
         "saved_rules": total_saved_rules,
+        "fetched_count": total_found,
+        "skipped_duplicate_title_count": skipped_duplicate_title_count,
+        "skipped_wide_source_limit_count": skipped_wide_source_limit_count,
+        "inserted_count": total_inserted_sources,
+        "processed_count": total_processed_articles,
+        "saved_rules_count": total_saved_rules,
     }
     print(f"auto_manager_feeder 运行完成：{detail}")
+    print(
+        "auto_manager_feeder stats: "
+        f"fetched_count={total_found}, "
+        f"skipped_duplicate_title_count={skipped_duplicate_title_count}, "
+        f"skipped_wide_source_limit_count={skipped_wide_source_limit_count}, "
+        f"inserted_count={total_inserted_sources}, "
+        f"processed_count={total_processed_articles}, "
+        f"saved_rules_count={total_saved_rules}"
+    )
     save_run_status("ok", detail)
 
 
