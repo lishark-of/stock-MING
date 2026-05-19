@@ -1,0 +1,57 @@
+name: Auto Stock News Digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        default: "live"
+        type: choice
+        options:
+          - live
+          - dry_run
+  schedule:
+    - cron: "50 15 * * 1-5" # 北京时间周一到周五 23:50；schedule 直接跑 live，避开公告 feeder
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: auto-stock-news-digest
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run live news digest
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'live')
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DEEPSEEK_TOKEN_1: ${{ secrets.DEEPSEEK_TOKEN_1 }}
+          DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
+        run: |
+          # schedule 会真实写 stock_reports.news_digest，并可能调用 DeepSeek
+          # 只扫描持续调查池；新闻 digest 只能作为待验证线索，不能作为硬事实
+          python auto_stock_news_digest.py --use-supabase-watchlist --hours 72 --limit 20 --digest-top 8
+
+      - name: Run dry-run news digest
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'dry_run'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python auto_stock_news_digest.py --dry-run --use-supabase-watchlist --hours 72 --limit 20 --digest-top 8
