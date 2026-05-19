@@ -705,6 +705,66 @@ def _news_row_age_hours(row):
     return max(0.0, (datetime.datetime.now() - created).total_seconds() / 3600)
 
 
+SHORT_TICKER_STRONG_NOISE_TERMS = [
+    "litefinance",
+    "lite finance",
+    "forex",
+    "gold price",
+    "xau",
+    "trading platform",
+]
+SHORT_TICKER_WEAK_NOISE_TERMS = ["broker"]
+SHORT_TICKER_COMPANY_TERMS = ["lumentum", "lumentum holdings"]
+
+
+def alias_matches_news_text(text, alias, market_type=None):
+    raw_alias = str(alias or "").strip()
+    if len(raw_alias) < 2:
+        return False
+
+    text = str(text or "")
+    alias_l = raw_alias.lower()
+    text_l = text.lower()
+
+    if raw_alias.isdigit() and len(raw_alias) == 6:
+        return bool(re.search(rf"(?<!\d){re.escape(raw_alias)}(?!\d)", text))
+    if alias_l.isdigit():
+        return bool(re.search(rf"(?<!\d){re.escape(alias_l)}(?!\d)", text_l))
+    if len(alias_l) <= 5 and alias_l.isascii():
+        return bool(re.search(rf"\b{re.escape(alias_l)}\b", text_l))
+    return alias_l in text_l
+
+
+def _short_ticker_news_noise(text, terms):
+    text_l = str(text or "").lower()
+    if any(term in text_l for term in SHORT_TICKER_COMPANY_TERMS):
+        return False
+    has_strong_noise = any(term in text_l for term in SHORT_TICKER_STRONG_NOISE_TERMS)
+    has_weak_noise = any(term in text_l for term in SHORT_TICKER_WEAK_NOISE_TERMS)
+    if not has_strong_noise and not has_weak_noise:
+        return False
+    if has_weak_noise and not has_strong_noise:
+        return False
+    for term in terms or []:
+        term_l = str(term or "").strip().lower()
+        if len(term_l) <= 5 and term_l.isascii() and alias_matches_news_text(text_l, term_l):
+            return True
+    return False
+
+
+def _news_query_aliases(keyword):
+    keyword = str(keyword or "").strip()
+    if not keyword:
+        return []
+    aliases = [keyword]
+    try:
+        profile = get_supply_chain_profile(keyword.upper())
+        aliases.extend([profile.get("name", ""), *(profile.get("aliases") or [])])
+    except Exception:
+        pass
+    return [term for term in dict.fromkeys(str(alias or "").strip() for alias in aliases) if len(term) >= 2]
+
+
 def _news_primary_hit(row, stock_code=None, stock_name=None):
     terms = []
     for value in [stock_code, stock_name]:
@@ -719,14 +779,7 @@ def _news_primary_hit(row, stock_code=None, stock_name=None):
         return True
     blob = " ".join(str((row or {}).get(key, "")) for key in ["keyword", "title", "summary", "url"]).lower()
     for term in terms:
-        term_l = term.lower()
-        if term_l.isdigit():
-            if re.search(rf"(?<!\d){re.escape(term_l)}(?!\d)", blob):
-                return True
-        elif len(term_l) <= 5 and term_l.isascii():
-            if re.search(rf"\b{re.escape(term_l)}\b", blob):
-                return True
-        elif term_l in blob:
+        if alias_matches_news_text(blob, term):
             return True
     return False
 
@@ -775,6 +828,16 @@ def filter_news_clues_for_prompt(rows, stock_code=None, stock_name=None, max_ite
         seen.add(key)
 
         if requires_primary_hit and not _news_primary_hit(row, stock_code=stock_code, stock_name=stock_name):
+            continue
+        terms = []
+        for value in [stock_code, stock_name]:
+            value = str(value or "").strip()
+            if value:
+                terms.append(value)
+                if "." in value:
+                    terms.append(value.split(".", 1)[0])
+        blob = " ".join(str((row or {}).get(key, "")) for key in ["keyword", "title", "summary", "url"])
+        if terms and _short_ticker_news_noise(blob, terms):
             continue
 
         age = _news_row_age_hours(row)
@@ -3675,13 +3738,21 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             return []
 
         try:
-            res = (
+            aliases = _news_query_aliases(keyword)
+            candidate_limit = min(max(limit * 8, 20), 50) if any(
+                len(alias) <= 5 and alias.isascii() for alias in aliases
+            ) else limit
+            query = (
                 supabase
                 .table("processed_sources")
                 .select("title, url, manager_name, created_at")
-                .ilike("title", f"%{keyword}%")
+            )
+            if aliases:
+                query = query.or_(",".join(f"title.ilike.%{alias}%" for alias in aliases[:8]))
+            res = (
+                query
                 .order("created_at", desc=True)
-                .limit(limit)
+                .limit(candidate_limit)
                 .execute()
             )
 
@@ -3702,15 +3773,27 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             return []
 
         try:
-            res = (
+            aliases = _news_query_aliases(keyword)
+            candidate_limit = min(max(limit * 8, 20), 50) if any(
+                len(alias) <= 5 and alias.isascii() for alias in aliases
+            ) else limit
+            query = (
                 supabase
                 .table("market_news")
                 .select("keyword, title, url, summary, risk_tag, sentiment, created_at")
-                .or_(
-                    f"keyword.ilike.%{keyword}%,title.ilike.%{keyword}%,summary.ilike.%{keyword}%"
+            )
+            if aliases:
+                query = query.or_(
+                    ",".join(
+                        f"{column}.ilike.%{alias}%"
+                        for alias in aliases[:8]
+                        for column in ["keyword", "title", "summary"]
+                    )
                 )
+            res = (
+                query
                 .order("created_at", desc=True)
-                .limit(limit)
+                .limit(candidate_limit)
                 .execute()
             )
 
@@ -7173,12 +7256,17 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         if st.button("🚨 启动全网舆情风控网", key="btn_risk"):
             with st.spinner("正在渗透舆情数据源..."):
                 try:
+                    try:
+                        news_stock_name = get_supply_chain_profile(target).get("name") or raw_target or target
+                    except Exception:
+                        news_stock_name = raw_target or target
+
                     def compact_market_news_rows(rows):
                         compact_rows = []
                         for item in filter_news_clues_for_prompt(
                             rows or [],
                             stock_code=target,
-                            stock_name=raw_target or target,
+                            stock_name=news_stock_name,
                             max_items=8,
                             hours=48,
                         ):
@@ -7204,7 +7292,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         for item in filter_news_clues_for_prompt(
                             rows or [],
                             stock_code=target,
-                            stock_name=raw_target or target,
+                            stock_name=news_stock_name,
                             max_items=8,
                             hours=72,
                         ):

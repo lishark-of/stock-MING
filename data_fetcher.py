@@ -60,6 +60,17 @@ SUPPLY_CHAIN_MAP = {
         ],
         "risk_transmission": "INTC重点看数据中心份额、制程追赶、Foundry资本开支和毛利率修复；若指引下修，会压制半导体设备与AI芯片链风险偏好。",
     },
+    "LITE": {
+        "name": "Lumentum",
+        "aliases": ["LITE", "Lumentum", "Lumentum Holdings"],
+        "theme": "光通信/激光器/光学元件",
+        "position": "光通信器件与商用激光供应商",
+        "upstream": ["光学材料", "半导体激光器", "精密制造"],
+        "core_modules": ["光通信器件", "激光器", "数据中心光学需求"],
+        "downstream": ["云数据中心", "通信设备商", "工业激光应用"],
+        "a_share_links": [],
+        "risk_transmission": "LITE重点看云数据中心光器件需求、通信设备资本开支和激光业务周期。",
+    },
     "601138.SS": {
         "name": "工业富联",
         "theme": "AI服务器",
@@ -716,16 +727,64 @@ def compute_portfolio_health(target, related_tickers=None):
     return {"tickers": tickers, "correlation": corr, "metrics": metrics}
 
 
-def score_news_relevance(text, aliases):
-    text = (text or "").lower()
+SHORT_TICKER_STRONG_NOISE_TERMS = [
+    "litefinance",
+    "lite finance",
+    "forex",
+    "gold price",
+    "xau",
+    "trading platform",
+]
+SHORT_TICKER_WEAK_NOISE_TERMS = ["broker"]
+SHORT_TICKER_COMPANY_TERMS = ["lumentum", "lumentum holdings"]
+
+
+def alias_matches_news_text(text, alias, market_type=None):
+    raw_alias = str(alias or "").strip()
+    if len(raw_alias) < 2:
+        return False
+
+    text = str(text or "")
+    alias_l = raw_alias.lower()
+    text_l = text.lower()
+
+    if raw_alias.isdigit() and len(raw_alias) == 6:
+        return bool(re.search(rf"(?<!\d){re.escape(raw_alias)}(?!\d)", text))
+    if alias_l.isdigit():
+        return bool(re.search(rf"(?<!\d){re.escape(alias_l)}(?!\d)", text_l))
+    if len(alias_l) <= 5 and alias_l.isascii():
+        return bool(re.search(rf"\b{re.escape(alias_l)}\b", text_l))
+    return alias_l in text_l
+
+
+def has_short_ticker_news_noise(text, aliases, market_type=None):
+    text_l = str(text or "").lower()
+    if any(term in text_l for term in SHORT_TICKER_COMPANY_TERMS):
+        return False
+    has_strong_noise = any(term in text_l for term in SHORT_TICKER_STRONG_NOISE_TERMS)
+    has_weak_noise = any(term in text_l for term in SHORT_TICKER_WEAK_NOISE_TERMS)
+    if not has_strong_noise and not has_weak_noise:
+        return False
+    if has_weak_noise and not has_strong_noise:
+        return False
+    for alias in aliases or []:
+        alias_l = str(alias or "").strip().lower()
+        if len(alias_l) <= 5 and alias_l.isascii() and alias_matches_news_text(text_l, alias_l, market_type):
+            return True
+    return False
+
+
+def score_news_relevance(text, aliases, market_type=None):
+    text = text or ""
+    if has_short_ticker_news_noise(text, aliases, market_type):
+        return 0
     score = 0
     for alias in aliases:
-        alias = str(alias).lower()
-        if alias and alias in text:
+        if alias_matches_news_text(text, alias, market_type):
             score += 35
     hot_words = ["调仓", "持仓", "龙虎榜", "机构", "游资", "大宗交易", "回购", "减持", "增持", "订单", "业绩", "guidance", "insider"]
     for word in hot_words:
-        if word.lower() in text:
+        if word.lower() in str(text).lower():
             score += 8
     return min(score, 100)
 
@@ -797,6 +856,8 @@ def filter_news_clues_for_prompt(rows, stock_code=None, stock_name=None, max_ite
         primary_hit = True if not aliases else has_primary_alias(blob, aliases)
         if not primary_hit:
             continue
+        if has_short_ticker_news_noise(blob, aliases):
+            continue
 
         age = _news_age_hours(row)
         if age is not None and age > cutoff_hours:
@@ -825,18 +886,8 @@ def filter_news_clues_for_prompt(rows, stock_code=None, stock_name=None, max_ite
 
 
 def has_primary_alias(text, aliases):
-    text = (text or "").lower()
     for alias in aliases or []:
-        alias = str(alias or "").strip().lower()
-        if len(alias) < 2:
-            continue
-        if alias.isdigit():
-            if re.search(rf"(?<!\d){re.escape(alias)}(?!\d)", text):
-                return True
-        elif len(alias) <= 5 and alias.isascii():
-            if re.search(rf"\b{re.escape(alias)}\b", text):
-                return True
-        elif alias in text:
+        if alias_matches_news_text(text, alias):
             return True
     return False
 
@@ -857,6 +908,8 @@ def looks_like_us_noise_for_cn(text):
 def should_keep_news_row(row, normalized, aliases, market_type):
     blob = " ".join(str(row.get(k, "")) for k in ["keyword", "title", "summary", "url"])
     primary_hit = has_primary_alias(blob, aliases)
+    if primary_hit and has_short_ticker_news_noise(blob, aliases, market_type):
+        return False, "过滤：短ticker命中外汇/黄金/平台噪音"
     if market_type == "US_STOCK":
         if looks_like_a_share_noise(blob) and not primary_hit:
             return False, "过滤：美股标的排除A股泛新闻"
@@ -913,7 +966,8 @@ def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, 
         )
         if alias_filter:
             query = query.or_(alias_filter)
-        res = query.order("created_at", desc=True).limit(max(limit * 4, 20)).execute()
+        candidate_limit = min(max(limit * 8, 20), 50)
+        res = query.order("created_at", desc=True).limit(candidate_limit).execute()
         rows.extend(res.data or [])
     except Exception:
         pass
@@ -937,7 +991,7 @@ def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, 
         if created and created < cutoff:
             continue
         blob = " ".join(str(row.get(k, "")) for k in ["keyword", "title", "summary"])
-        relevance = score_news_relevance(blob, aliases)
+        relevance = score_news_relevance(blob, aliases, market_type)
         keep, filter_reason = should_keep_news_row(row, normalized, aliases, market_type)
         primary_hit = has_primary_alias(blob, aliases)
         if keep and primary_hit and relevance >= 25:
