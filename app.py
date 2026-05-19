@@ -2002,6 +2002,9 @@ else:
             st.warning(f"Supabase 初始化失败，云端功能暂不可用：{e}")
             supabase = None
 
+    ANNOUNCEMENT_WATCHLIST_TICKER = "__ANNOUNCEMENT_WATCHLIST__"
+    ANNOUNCEMENT_WATCHLIST_REPORT_TYPE = "announcement_watchlist"
+
     @st.cache_data(ttl=300, show_spinner=False)
     def run_data_source_healthcheck(sample_ts_code="000001.SZ", include_deepseek_ping=False, cache_version="healthcheck_v1", _supabase_client=None, _deepseek_keys=None):
         checked_at = datetime.datetime.now().isoformat(timespec="seconds")
@@ -2701,6 +2704,14 @@ else:
 
         def add_rows(source_table, rows):
             for row in rows or []:
+                if (
+                    source_table == "stock_reports"
+                    and (
+                        row.get("ticker") == ANNOUNCEMENT_WATCHLIST_TICKER
+                        or row.get("report_type") == ANNOUNCEMENT_WATCHLIST_REPORT_TYPE
+                    )
+                ):
+                    continue
                 candidates.append(parse_memory_row(row, source_table))
 
         def query_brain_by_content(term, row_limit=8):
@@ -4017,6 +4028,176 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         text = text.split(".")[0]
         digits = re.sub(r"\D", "", text)
         return digits.zfill(6) if digits else text
+
+    def normalize_announcement_watchlist_code(raw_code):
+        text = str(raw_code or "").upper().strip()
+        text = text.replace(" ", "").replace("。", ".")
+        text = text.replace(".SS", ".SH")
+        if not text:
+            return "", "", "请输入股票代码。"
+
+        suffix = ""
+        if text.endswith((".SZ", ".SH", ".BJ")):
+            suffix = text[-2:]
+            code = text[:-3]
+        else:
+            code = re.sub(r"\D", "", text)
+
+        if not re.fullmatch(r"\d{6}", code or ""):
+            return "", "", "免费公告自动扫描第一阶段仅支持 6 位 A 股代码。"
+
+        if not suffix:
+            if code.startswith(("6", "9")):
+                suffix = "SH"
+            elif code.startswith(("0", "2", "3")):
+                suffix = "SZ"
+            elif code.startswith(("4", "8")):
+                suffix = "BJ"
+            else:
+                return "", "", "免费公告自动扫描第一阶段仅支持 A 股。"
+
+        if suffix not in {"SZ", "SH", "BJ"}:
+            return "", "", "免费公告自动扫描第一阶段仅支持 A 股。"
+        return f"{code}.{suffix}", code, ""
+
+    def build_empty_announcement_watchlist():
+        return {
+            "version": 1,
+            "updated_at": "",
+            "source": "app_manual",
+            "targets": [],
+        }
+
+    def normalize_announcement_watchlist_payload(payload):
+        data = payload if isinstance(payload, dict) else build_empty_announcement_watchlist()
+        now_text = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        normalized = {
+            "version": int(data.get("version") or 1),
+            "updated_at": str(data.get("updated_at") or ""),
+            "source": str(data.get("source") or "app_manual"),
+            "targets": [],
+        }
+        seen = set()
+        for item in data.get("targets") or []:
+            if not isinstance(item, dict):
+                continue
+            ts_code, stock_code, error = normalize_announcement_watchlist_code(
+                item.get("ts_code") or item.get("ticker") or item.get("stock_code")
+            )
+            if error or not ts_code or ts_code in seen:
+                continue
+            seen.add(ts_code)
+            added_at = str(item.get("added_at") or item.get("created_at") or now_text)
+            normalized["targets"].append({
+                "ts_code": ts_code,
+                "stock_code": stock_code,
+                "name": str(item.get("name") or item.get("stock_name") or "").strip(),
+                "market_type": "A_SHARE",
+                "enabled": bool(item.get("enabled", True)),
+                "priority": str(item.get("priority") or "normal"),
+                "added_at": added_at,
+                "updated_at": str(item.get("updated_at") or added_at),
+                "note": str(item.get("note") or "").strip(),
+            })
+        return normalized
+
+    def load_announcement_watchlist():
+        if not supabase:
+            return build_empty_announcement_watchlist(), "Supabase 不可用，持续调查池暂不可读取。"
+        try:
+            res = (
+                supabase
+                .table("stock_reports")
+                .select("report_content, created_at")
+                .eq("ticker", ANNOUNCEMENT_WATCHLIST_TICKER)
+                .eq("report_type", ANNOUNCEMENT_WATCHLIST_REPORT_TYPE)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            rows = res.data or []
+            if not rows:
+                return build_empty_announcement_watchlist(), ""
+            payload, _ = parse_memory_payload(rows[0].get("report_content", ""))
+            return normalize_announcement_watchlist_payload(payload), ""
+        except Exception as exc:
+            return build_empty_announcement_watchlist(), f"读取持续调查池失败：{exc}"
+
+    def save_announcement_watchlist(payload):
+        payload = normalize_announcement_watchlist_payload(payload)
+        payload["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        payload["source"] = "app_manual"
+        return save_stock_report(
+            ANNOUNCEMENT_WATCHLIST_TICKER,
+            "A_SHARE",
+            ANNOUNCEMENT_WATCHLIST_REPORT_TYPE,
+            payload,
+        )
+
+    def upsert_announcement_watchlist_target(raw_code, name="", note=""):
+        ts_code, stock_code, error = normalize_announcement_watchlist_code(raw_code)
+        if error:
+            return False, error, None
+
+        payload, load_error = load_announcement_watchlist()
+        if load_error:
+            return False, load_error, None
+
+        now_text = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        targets = payload.get("targets") or []
+        matched = False
+        for item in targets:
+            if item.get("ts_code") != ts_code:
+                continue
+            matched = True
+            item["stock_code"] = stock_code
+            item["name"] = str(name or item.get("name") or "").strip()
+            item["enabled"] = True
+            item["priority"] = item.get("priority") or "normal"
+            item["updated_at"] = now_text
+            if note:
+                item["note"] = str(note).strip()
+            break
+
+        if not matched:
+            targets.append({
+                "ts_code": ts_code,
+                "stock_code": stock_code,
+                "name": str(name or "").strip(),
+                "market_type": "A_SHARE",
+                "enabled": True,
+                "priority": "normal",
+                "added_at": now_text,
+                "updated_at": now_text,
+                "note": str(note or "").strip(),
+            })
+        payload["targets"] = targets
+
+        if save_announcement_watchlist(payload):
+            return True, "已加入持续调查池。" if not matched else "已更新持续调查池，未重复添加。", ts_code
+        return False, "持续调查池写入失败。", ts_code
+
+    def disable_announcement_watchlist_target(raw_code):
+        ts_code, _, error = normalize_announcement_watchlist_code(raw_code)
+        if error:
+            return False, error
+        payload, load_error = load_announcement_watchlist()
+        if load_error:
+            return False, load_error
+
+        now_text = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        changed = False
+        for item in payload.get("targets") or []:
+            if item.get("ts_code") == ts_code:
+                item["enabled"] = False
+                item["updated_at"] = now_text
+                changed = True
+                break
+        if not changed:
+            return False, f"{ts_code} 不在持续调查池中。"
+        if save_announcement_watchlist(payload):
+            return True, f"已停用 {ts_code}。"
+        return False, "持续调查池写入失败。"
 
     @st.cache_data(ttl=900, show_spinner=False)
     def _cn_recent_trade_dates(days=30):
@@ -7364,6 +7545,89 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     with tab_risk:
         st.markdown(f"### 🛡️ 极高权限合规审计：{target}")
         st.info("消耗算力扫描内幕交易、消息抢跑、监管问询等风险。")
+
+        with st.expander("📡 持续调查池", expanded=True):
+            st.caption("公告自动调查第一阶段仅扫描这里 enabled=true 的 A 股标的；每次修改会写入 stock_reports 的最新 watchlist 版本。")
+            watchlist_payload, watchlist_error = load_announcement_watchlist()
+            if watchlist_error:
+                st.warning(watchlist_error)
+
+            add_c1, add_c2, add_c3 = st.columns([1, 1, 2])
+            with add_c1:
+                wl_code = st.text_input(
+                    "股票代码",
+                    value="",
+                    placeholder="002008 / 002008.SZ / 601138",
+                    key="announcement_watchlist_code",
+                )
+            with add_c2:
+                wl_name = st.text_input(
+                    "股票名称（可选）",
+                    value="",
+                    placeholder="大族激光",
+                    key="announcement_watchlist_name",
+                )
+            with add_c3:
+                wl_note = st.text_input(
+                    "备注（可选）",
+                    value="",
+                    placeholder="需要跟踪公告风险、订单、中标、减持等",
+                    key="announcement_watchlist_note",
+                )
+
+            action_c1, action_c2, action_c3 = st.columns([1, 1, 2])
+            with action_c1:
+                if st.button("加入持续调查池", key="btn_add_announcement_watchlist", width="stretch"):
+                    ok, message, added_code = upsert_announcement_watchlist_target(wl_code, wl_name, wl_note)
+                    if ok:
+                        st.success(f"{message} 标的：{added_code}")
+                        st.rerun()
+                    else:
+                        st.warning(message)
+            with action_c2:
+                if st.button("刷新调查池", key="btn_refresh_announcement_watchlist", width="stretch"):
+                    st.rerun()
+
+            targets_for_display = watchlist_payload.get("targets") or []
+            enabled_count = sum(1 for item in targets_for_display if item.get("enabled"))
+            st.caption(
+                f"当前调查池：{len(targets_for_display)} 只；启用扫描：{enabled_count} 只；"
+                f"最新更新时间：{watchlist_payload.get('updated_at') or '暂无'}"
+            )
+            if targets_for_display:
+                display_rows = [
+                    {
+                        "ts_code": item.get("ts_code", ""),
+                        "name": item.get("name", ""),
+                        "enabled": bool(item.get("enabled")),
+                        "priority": item.get("priority", "normal"),
+                        "added_at": item.get("added_at", ""),
+                        "note": item.get("note", ""),
+                    }
+                    for item in targets_for_display
+                ]
+                st.dataframe(pd.DataFrame(display_rows), width="stretch", hide_index=True)
+
+                enabled_codes = [item.get("ts_code") for item in targets_for_display if item.get("enabled")]
+                if enabled_codes:
+                    disable_c1, disable_c2 = st.columns([2, 1])
+                    with disable_c1:
+                        disable_code = st.selectbox(
+                            "停用标的",
+                            enabled_codes,
+                            key="announcement_watchlist_disable_code",
+                        )
+                    with disable_c2:
+                        st.caption(" ")
+                        if st.button("停用", key="btn_disable_announcement_watchlist", width="stretch"):
+                            ok, message = disable_announcement_watchlist_target(disable_code)
+                            if ok:
+                                st.success(message)
+                                st.rerun()
+                            else:
+                                st.warning(message)
+            else:
+                st.info("持续调查池为空。加入 A 股标的后，公告自动调查才会优先扫描这些股票。")
         
         if st.button("🚨 启动全网舆情风控网", key="btn_risk"):
             with st.spinner("正在渗透舆情数据源..."):

@@ -14,6 +14,13 @@ from config import get_deepseek_keys, get_supabase_config
 
 TARGETS_FILE = "announcement_targets.json"
 MAX_DEEP_READ_PER_STOCK = 3
+WATCHLIST_TICKER = "__ANNOUNCEMENT_WATCHLIST__"
+WATCHLIST_REPORT_TYPE = "announcement_watchlist"
+BUILTIN_DEFAULT_TARGETS = [
+    {"ts_code": "002008.SZ", "name": "大族激光"},
+    {"ts_code": "601138.SH", "name": "工业富联"},
+    {"ts_code": "600481.SH", "name": "双良节能"},
+]
 
 _token_index = 0
 
@@ -67,6 +74,76 @@ def load_json_targets(path=TARGETS_FILE):
         print(f"读取 {path} 失败：{exc}")
         return []
     return [target for target in (normalize_target(item) for item in data or []) if target.get("ts_code")]
+
+
+def load_builtin_default_targets():
+    return [target for target in (normalize_target(item) for item in BUILTIN_DEFAULT_TARGETS) if target.get("ts_code")]
+
+
+def parse_announcement_watchlist(content):
+    try:
+        data = json.loads(content) if isinstance(content, str) else (content or {})
+    except Exception as exc:
+        return [], f"watchlist JSON 解析失败：{exc}"
+
+    if not isinstance(data, dict):
+        return [], "watchlist 不是 JSON object"
+
+    raw_targets = data.get("targets")
+    if not isinstance(raw_targets, list):
+        return [], "watchlist.targets 不是数组"
+
+    enabled_targets = []
+    for item in raw_targets:
+        if not isinstance(item, dict):
+            continue
+        if item.get("enabled") is False:
+            continue
+        target = normalize_target(item)
+        if target.get("ts_code"):
+            enabled_targets.append(target)
+    return dedupe_targets(enabled_targets), ""
+
+
+def load_supabase_watchlist_targets(supabase):
+    if not supabase:
+        return None, "Supabase 不可用"
+    try:
+        res = (
+            supabase.table("stock_reports")
+            .select("report_content, created_at")
+            .eq("ticker", WATCHLIST_TICKER)
+            .eq("report_type", WATCHLIST_REPORT_TYPE)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        return None, f"读取 announcement_watchlist 失败：{exc}"
+
+    rows = res.data or []
+    if not rows:
+        return None, "Supabase 未找到 announcement_watchlist"
+
+    targets, error = parse_announcement_watchlist(rows[0].get("report_content", ""))
+    if error:
+        return None, error
+    return targets, ""
+
+
+def load_targets_for_run(supabase=None, dry_run=False, use_supabase_watchlist=False):
+    if supabase and (not dry_run or use_supabase_watchlist):
+        targets, error = load_supabase_watchlist_targets(supabase)
+        if targets is not None:
+            return targets, "supabase_watchlist", ""
+        print(f"Supabase watchlist 不可用，尝试 fallback：{error}")
+
+    json_targets = load_json_targets()
+    if json_targets:
+        return dedupe_targets(json_targets), "json_fallback", ""
+
+    builtin_targets = load_builtin_default_targets()
+    return dedupe_targets(builtin_targets), "builtin_default", ""
 
 
 def parse_focus_pool_tickers(content):
@@ -313,11 +390,20 @@ def save_announcement_summary(supabase, payload):
         return False
 
 
-def run_auto_announcement_feeder(dry_run=False, days=7, limit=20, force_read_one=False, simulate_summary=False):
-    supabase = None if dry_run else create_supabase_client()
-    targets = load_json_targets()
-    if supabase:
-        targets.extend(load_focus_pool_targets(supabase))
+def run_auto_announcement_feeder(
+    dry_run=False,
+    days=7,
+    limit=20,
+    force_read_one=False,
+    simulate_summary=False,
+    use_supabase_watchlist=False,
+):
+    supabase = None if dry_run and not use_supabase_watchlist else create_supabase_client()
+    targets, target_source, target_error = load_targets_for_run(
+        supabase=supabase,
+        dry_run=dry_run,
+        use_supabase_watchlist=use_supabase_watchlist,
+    )
     targets = dedupe_targets(targets)
 
     stats = {
@@ -330,8 +416,12 @@ def run_auto_announcement_feeder(dry_run=False, days=7, limit=20, force_read_one
         "dry_run": bool(dry_run),
         "force_read_one": bool(force_read_one),
         "simulate_summary": bool(simulate_summary),
+        "target_source": target_source,
+        "target_error": target_error,
     }
-    print(f"公告 auto 启动：dry_run={dry_run} targets={len(targets)}")
+    print(f"公告 auto 启动：dry_run={dry_run} targets={len(targets)} target_source={target_source}")
+    if target_error:
+        print(f"目标池提示：{target_error}")
 
     for target in targets:
         print(f"\n========== 扫描公告：{target.get('ts_code')} {target.get('name')} ==========")
@@ -427,6 +517,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只抓公告元数据，不写 Supabase，不调用 DeepSeek")
     parser.add_argument("--force-read-one", action="store_true", help="dry-run 下每只股票最多下载解析 1 篇公告 PDF")
     parser.add_argument("--simulate-summary", action="store_true", help="dry-run 下为解析成功公告打印模拟 stock_reports payload")
+    parser.add_argument("--use-supabase-watchlist", action="store_true", help="dry-run 下也优先读取 Supabase announcement_watchlist")
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--limit", type=int, default=20)
     args = parser.parse_args()
@@ -436,6 +527,7 @@ def main():
         limit=args.limit,
         force_read_one=args.force_read_one,
         simulate_summary=args.simulate_summary,
+        use_supabase_watchlist=args.use_supabase_watchlist,
     )
 
 
