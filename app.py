@@ -2004,6 +2004,7 @@ else:
 
     ANNOUNCEMENT_WATCHLIST_TICKER = "__ANNOUNCEMENT_WATCHLIST__"
     ANNOUNCEMENT_WATCHLIST_REPORT_TYPE = "announcement_watchlist"
+    NEWS_DIGEST_REPORT_TYPE = "news_digest"
 
     @st.cache_data(ttl=300, show_spinner=False)
     def run_data_source_healthcheck(sample_ts_code="000001.SZ", include_deepseek_ping=False, cache_version="healthcheck_v1", _supabase_client=None, _deepseek_keys=None):
@@ -2709,6 +2710,7 @@ else:
                     and (
                         row.get("ticker") == ANNOUNCEMENT_WATCHLIST_TICKER
                         or row.get("report_type") == ANNOUNCEMENT_WATCHLIST_REPORT_TYPE
+                        or row.get("report_type") == NEWS_DIGEST_REPORT_TYPE
                     )
                 ):
                     continue
@@ -3922,6 +3924,143 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             section["summary"] = f"近{days}天读取免费公告摘要 {len(section['rows'])} 条，其中 PDF 已解析 {parsed_count} 条。"
             section["message"] = ""
         return section
+
+    @st.cache_data(ttl=300, show_spinner=False)
+    def load_recent_news_digests(ticker, days=2, limit=5):
+        updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+        section = {
+            "available": False,
+            "source": "stock_reports.news_digest",
+            "window_days": days,
+            "rows": [],
+            "summary": "",
+            "risk_flags": [],
+            "message": "暂无新闻摘要线索",
+            "error": "",
+            "updated_at": updated_at,
+            "policy": {
+                "claims_are_clues_not_facts": True,
+                "evidence_is_supporting_material_not_official_fact": True,
+                "no_hard_facts": True,
+            },
+        }
+        if not supabase:
+            section["message"] = "Supabase 不可用，暂无新闻摘要线索。"
+            return section
+
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=int(days or 2))
+        rows = []
+        try:
+            terms = _announcement_report_ticker_terms(ticker)
+            query = (
+                supabase
+                .table("stock_reports")
+                .select("ticker, report_content, created_at")
+                .eq("report_type", NEWS_DIGEST_REPORT_TYPE)
+                .gte("created_at", cutoff.isoformat())
+                .order("created_at", desc=True)
+                .limit(max(limit * 4, 12))
+            )
+            if terms:
+                query = query.in_("ticker", terms)
+            res = query.execute()
+            rows = res.data or []
+        except Exception as exc:
+            section["error"] = str(exc)
+            section["message"] = "读取新闻摘要线索失败。"
+            return section
+
+        seen = set()
+        rows_out = []
+        latest_summary = ""
+        for row in rows:
+            payload = _parse_announcement_report_content(row.get("report_content"))
+            if not isinstance(payload, dict):
+                continue
+            if not latest_summary:
+                latest_summary = str(payload.get("one_line_summary") or "").strip()
+            items = payload.get("items") or []
+            if not isinstance(items, list):
+                items = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or "").strip()
+                if not title:
+                    continue
+                published_at = str(item.get("published_at") or row.get("created_at") or "").strip()
+                url = str(item.get("url") or "").strip()
+                key = (title, url, published_at)
+                if key in seen:
+                    continue
+                seen.add(key)
+                claims = item.get("claims") if isinstance(item.get("claims"), list) else []
+                clues = item.get("clues") if isinstance(item.get("clues"), list) else []
+                evidence = item.get("evidence") if isinstance(item.get("evidence"), list) else []
+                summary = item.get("digest_summary") or item.get("one_line_summary") or ""
+                risk_tags = item.get("risk_tags") if isinstance(item.get("risk_tags"), list) else []
+                rows_out.append({
+                    "ticker": payload.get("ticker") or row.get("ticker") or "",
+                    "stock_code": payload.get("stock_code") or "",
+                    "stock_name": payload.get("stock_name") or "",
+                    "market_type": payload.get("market_type") or "",
+                    "published_at": published_at,
+                    "title": title,
+                    "url": url,
+                    "source": item.get("source") or payload.get("source") or "news_digest",
+                    "relevance_score": item.get("relevance_score") or 0,
+                    "digest_summary": summary,
+                    "risk_tag": item.get("risk_tag") or "",
+                    "sentiment": item.get("sentiment") or "",
+                    "claims": claims,
+                    "clues": clues,
+                    "evidence": evidence,
+                    "verification_status": item.get("verification_status") or "待验证",
+                    "source_boundary": item.get("source_boundary") or "新闻只能作为待验证线索，不得进入硬事实层",
+                    "matched_aliases": item.get("matched_aliases") or [],
+                })
+
+        section["rows"] = rows_out[:limit]
+        section["summary"] = latest_summary or "；".join(
+            str(item.get("title") or "").strip()
+            for item in rows_out[:3]
+            if str(item.get("title") or "").strip()
+        )
+        section["available"] = bool(section["rows"])
+        if section["available"]:
+            section["message"] = f"已找到 {len(section['rows'])} 条新闻摘要线索。"
+        return section
+
+    def format_news_digest_radar(section):
+        section = section or {}
+        if not section.get("available"):
+            return section.get("message") or "暂无新闻摘要线索。"
+        lines = []
+        for item in (section.get("rows") or [])[:3]:
+            title = str(item.get("title") or "").strip()
+            if not title:
+                continue
+            published_at = str(item.get("published_at") or "").strip()
+            risk_tag = str(item.get("risk_tag") or "").strip()
+            sentiment = str(item.get("sentiment") or "").strip()
+            summary = str(item.get("digest_summary") or "").strip()
+            claims = item.get("claims") or []
+            clues = item.get("clues") or []
+            evidence = item.get("evidence") or []
+            line = f"{published_at}｜{title}｜来源:{item.get('source', '')}｜状态:{item.get('verification_status', '待验证')}"
+            if risk_tag or sentiment:
+                line += f"｜风险标签:{risk_tag or '普通新闻'}/{sentiment or '中性'}"
+            if summary:
+                line += f"｜摘要:{summary}"
+            if claims:
+                line += f"｜claims:{';'.join(str(x) for x in claims[:2] if str(x).strip())}"
+            if clues:
+                line += f"｜clues:{';'.join(str(x) for x in clues[:2] if str(x).strip())}"
+            if evidence:
+                line += f"｜evidence:{';'.join(str(x) for x in evidence[:2] if str(x).strip())}"
+            line += f"｜边界:{item.get('source_boundary', '新闻只能作为待验证线索，不得进入硬事实层')}"
+            lines.append(line)
+        return "；".join(lines) if lines else section.get("summary") or section.get("message") or "暂无新闻摘要线索。"
 
     def app_check_risk_veto(target, market_type, headlines):
         # Auto news/RSS headlines are intentionally not allowed to trigger a hard veto.
@@ -5788,14 +5927,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "market_news": [],
                 "processed_sources": [],
                 "yfinance_news": [],
-                "note": "processed_sources / brain_memory / manager_rules 只能作为待验证线索",
+                "news_digest": {},
+                "note": "processed_sources / brain_memory / manager_rules / news_digest 只能作为待验证线索",
             },
             "missing_items": [],
             "data_source_policy": {
                 "hard_fact_sources": ["Tushare"],
                 "announcement_summary_sources": ["stock_reports.announcement_summary parsed_pdf"],
-                "news_clue_sources": ["Supabase market_news title/url only", "yfinance.news title only"],
-                "unverified_sources": ["processed_sources", "brain_memory", "manager_rules"],
+                "news_clue_sources": [
+                    "Supabase market_news title/url only",
+                    "stock_reports.news_digest claims/clues/evidence only",
+                    "yfinance.news title only",
+                ],
+                "unverified_sources": ["processed_sources", "brain_memory", "manager_rules", "news_digest"],
             },
             "updated_at": updated_at,
         }
@@ -5835,6 +5979,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     },
                 }
             )
+            packet["sentiment_and_unverified_clues"]["news_digest"] = load_recent_news_digests(stock_code_6, days=2, limit=5)
         except Exception as exc:
             packet["verified_hard_risks"]["missing_items"] = [f"硬风险雷达构造失败：{type(exc).__name__}"]
 
@@ -7762,6 +7907,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         hard = packet.get("verified_hard_risks") or {}
                         clues = packet.get("sentiment_and_unverified_clues") or {}
                         free_ann = hard.get("free_announcement_radar") or {}
+                        news_digest = clues.get("news_digest") or {}
 
                         moneyflow = trading.get("moneyflow") or {}
                         if moneyflow.get("available"):
@@ -7854,6 +8000,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             "market_news": first_titles(clues.get("market_news"), limit=3),
                             "processed_sources": first_titles(clues.get("processed_sources"), prefix="待验证线索：", limit=3),
                             "yfinance_news": first_titles(clues.get("yfinance_news"), limit=3),
+                            "news_digest": format_news_digest_radar(news_digest),
                         }
 
                     # 1. 优先查 market_news 股票/市场舆情库
@@ -7930,7 +8077,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             "market_news": market_news_clues,
                             "processed_sources": processed_clues,
                             "yfinance_news": yf_news_clues,
-                            "note": "processed_sources / brain_memory / manager_rules 只能作为待验证线索",
+                            "news_digest": (tianyan_risk_fact_packet.get("sentiment_and_unverified_clues") or {}).get("news_digest") or {},
+                            "note": "processed_sources / brain_memory / manager_rules / news_digest 只能作为待验证线索",
                         }
                     )
 
@@ -7972,6 +8120,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.markdown(f"- Supabase market_news 新闻线索：{display_lines['market_news']}")
                     st.markdown(f"- processed_sources 待验证投喂线索：{display_lines['processed_sources']}")
                     st.markdown(f"- yfinance.news 备用新闻线索：{display_lines['yfinance_news']}")
+                    st.markdown(f"- news_digest 新闻摘要线索：{display_lines['news_digest']}")
 
                     tianyan_prompt_packet = json.dumps(
                         tianyan_risk_fact_packet,
@@ -8037,6 +8186,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 - market_news 新闻线索
 - processed_sources 待验证投喂线索
 - yfinance.news 备用新闻线索
+- stock_reports.news_digest 新闻摘要线索，只能引用 claims / clues / evidence，不能当官方事实
 - brain_memory
 - manager_rules
 
@@ -8073,6 +8223,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 23. 不得写必卖、必须减仓、立即清仓、满仓、梭哈。
 24. 投喂资料不是事实。
 25. 免费公告雷达中 parsed_pdf 是 AI 公告摘要线索，不是公告原文；metadata_only 不得作为处罚、诉讼、减持等事实结论。
+26. stock_reports.news_digest 只能作为新闻摘要线索，不能写成公告、监管、诉讼、处罚、减持、业绩预告等官方事实；与官方事实冲突时，以官方事实为准。
 """
 
                     st.markdown(
