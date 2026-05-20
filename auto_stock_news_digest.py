@@ -31,6 +31,14 @@ TARGETS_FILE = Path(__file__).resolve().with_name("announcement_targets.json")
 WATCHLIST_TICKER = "__ANNOUNCEMENT_WATCHLIST__"
 WATCHLIST_REPORT_TYPE = "announcement_watchlist"
 NEWS_DIGEST_REPORT_TYPE = "news_digest"
+BUILTIN_TARGET_NAME_MAP = {
+    "002008.SZ": "大族激光",
+    "002008": "大族激光",
+    "601138.SH": "工业富联",
+    "601138": "工业富联",
+    "600481.SH": "双良节能",
+    "600481": "双良节能",
+}
 DEFAULT_WINDOW_HOURS = 48
 DEFAULT_ITEM_LIMIT = 5
 DEFAULT_DIGEST_TOP = 8
@@ -105,10 +113,11 @@ def normalize_target_code(raw_code):
 
 def normalize_target(item):
     ts_code = normalize_target_code(item.get("ts_code") or item.get("ticker") or item.get("stock_code"))
+    name = resolve_target_name(ts_code, item.get("name") or item.get("stock_name"))
     return {
         "ts_code": ts_code,
         "stock_code": ts_code.split(".")[0] if ts_code else "",
-        "name": str(item.get("name") or item.get("stock_name") or "").strip(),
+        "name": name,
         "market_type": str(item.get("market_type") or infer_market_type(ts_code) or "").strip() or infer_market_type(ts_code),
     }
 
@@ -150,6 +159,33 @@ def load_builtin_targets():
             normalize_target({"ts_code": "600481.SH", "name": "双良节能"}),
         ]
     )
+
+
+def resolve_target_name(ts_code, stock_name=""):
+    name = str(stock_name or "").strip()
+    if name:
+        return name
+
+    normalized = normalize_target_code(ts_code)
+    core = ticker_core(normalized) if normalized else ""
+    try:
+        profile = get_supply_chain_profile(normalized or ts_code)
+    except Exception:
+        profile = {}
+    profile_name = str(profile.get("name") or "").strip()
+    normalized_terms = {
+        str(normalized or "").strip().upper(),
+        str(normalize_ticker(normalized or ts_code) or "").strip().upper(),
+        str(core or "").strip().upper(),
+    }
+    if profile_name and profile_name.strip().upper() not in normalized_terms:
+        return profile_name
+
+    for key in [normalized, core]:
+        mapped = BUILTIN_TARGET_NAME_MAP.get(str(key or "").strip().upper())
+        if mapped:
+            return mapped
+    return ""
 
 
 def parse_watchlist_payload(content):
@@ -222,6 +258,7 @@ def normalize_profile_aliases(ticker, stock_name=""):
     aliases = []
     normalized = normalize_target_code(ticker)
     core = ticker_core(normalized) if normalized else ""
+    resolved_name = resolve_target_name(normalized or ticker, stock_name)
     profile = {}
     try:
         profile = get_supply_chain_profile(normalized or ticker)
@@ -232,7 +269,7 @@ def normalize_profile_aliases(ticker, stock_name=""):
         ticker,
         normalized,
         core,
-        stock_name,
+        resolved_name,
         profile.get("name", ""),
     ]:
         text = str(value or "").strip()
@@ -468,7 +505,7 @@ def normalize_digest_candidate(candidate, target, aliases):
 
 def fetch_selected_candidates_for_target(target, supabase, hours, limit):
     ticker = target.get("ts_code") or ""
-    stock_name = target.get("name") or ""
+    stock_name = resolve_target_name(ticker, target.get("name") or "")
     aliases = normalize_profile_aliases(ticker, stock_name)
     rows = []
     rows.extend(fetch_supabase_candidates(supabase, ticker, stock_name, hours, limit))
@@ -478,6 +515,7 @@ def fetch_selected_candidates_for_target(target, supabase, hours, limit):
         rows,
         stock_code=ticker,
         stock_name=stock_name,
+        aliases=aliases,
         max_items=max(limit * 4, 15),
         hours=hours,
     )

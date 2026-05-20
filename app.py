@@ -4002,6 +4002,16 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             terms.extend([core, f"{core}.SZ", f"{core}.SH", f"{core}.SS"])
         return [term for term in dict.fromkeys(str(term or "").strip().upper() for term in terms) if term]
 
+    def _report_content_matches_ticker(content, ticker):
+        target_terms = set(_announcement_report_ticker_terms(ticker))
+        if not target_terms:
+            return False
+        for key in ["stock_code", "ticker", "ts_code"]:
+            value_terms = set(_announcement_report_ticker_terms(content.get(key)))
+            if value_terms and target_terms.intersection(value_terms):
+                return True
+        return False
+
     def _parse_announcement_report_content(content):
         if isinstance(content, dict):
             return content
@@ -4010,7 +4020,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         except Exception:
             return {}
 
-    def load_recent_announcement_summaries(ticker, days=7, limit=6):
+    def load_recent_announcement_summaries(ticker, days=14, limit=6):
         updated_at = datetime.datetime.now().isoformat(timespec="seconds")
         section = {
             "available": False,
@@ -4019,7 +4029,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "rows": [],
             "summary": "",
             "risk_flags": [],
-            "message": "暂无近7天免费公告摘要",
+            "message": f"暂无近{int(days or 14)}天免费公告摘要",
             "error": "",
             "updated_at": updated_at,
             "policy": {
@@ -4032,10 +4042,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             section["message"] = "Supabase 不可用，暂无免费公告雷达。"
             return section
 
-        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=int(days or 7))
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=int(days or 14))
         rows = []
         try:
             terms = _announcement_report_ticker_terms(ticker)
+            candidate_limit = min(max(limit * 4, 12), 50)
             query = (
                 supabase
                 .table("stock_reports")
@@ -4043,12 +4054,30 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 .eq("report_type", "announcement_summary")
                 .gte("created_at", cutoff.isoformat())
                 .order("created_at", desc=True)
-                .limit(max(limit * 4, 12))
+                .limit(candidate_limit)
             )
             if terms:
                 query = query.in_("ticker", terms)
             res = query.execute()
             rows = res.data or []
+            if not rows and terms:
+                fallback_res = (
+                    supabase
+                    .table("stock_reports")
+                    .select("ticker, report_content, created_at")
+                    .eq("report_type", "announcement_summary")
+                    .gte("created_at", cutoff.isoformat())
+                    .order("created_at", desc=True)
+                    .limit(candidate_limit)
+                    .execute()
+                )
+                rows = [
+                    row for row in (fallback_res.data or [])
+                    if _report_content_matches_ticker(
+                        _parse_announcement_report_content(row.get("report_content")),
+                        ticker,
+                    )
+                ]
         except Exception as exc:
             section["error"] = str(exc)
             section["message"] = "读取免费公告摘要失败。"
@@ -4104,7 +4133,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         return section
 
     @st.cache_data(ttl=300, show_spinner=False)
-    def load_recent_news_digests(ticker, days=2, limit=5):
+    def load_recent_news_digests(ticker, days=4, limit=5):
         updated_at = datetime.datetime.now().isoformat(timespec="seconds")
         section = {
             "available": False,
@@ -4113,7 +4142,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "rows": [],
             "summary": "",
             "risk_flags": [],
-            "message": "暂无新闻摘要线索",
+            "message": "暂无最近新闻摘要线索",
             "error": "",
             "updated_at": updated_at,
             "policy": {
@@ -4123,13 +4152,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             },
         }
         if not supabase:
-            section["message"] = "Supabase 不可用，暂无新闻摘要线索。"
+            section["message"] = "Supabase 不可用，暂无最近新闻摘要线索。"
             return section
 
-        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=int(days or 2))
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=int(days or 4))
         rows = []
         try:
             terms = _announcement_report_ticker_terms(ticker)
+            candidate_limit = min(max(limit * 4, 12), 50)
             query = (
                 supabase
                 .table("stock_reports")
@@ -4137,12 +4167,30 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 .eq("report_type", NEWS_DIGEST_REPORT_TYPE)
                 .gte("created_at", cutoff.isoformat())
                 .order("created_at", desc=True)
-                .limit(max(limit * 4, 12))
+                .limit(candidate_limit)
             )
             if terms:
                 query = query.in_("ticker", terms)
             res = query.execute()
             rows = res.data or []
+            if not rows and terms:
+                fallback_res = (
+                    supabase
+                    .table("stock_reports")
+                    .select("ticker, report_content, created_at")
+                    .eq("report_type", NEWS_DIGEST_REPORT_TYPE)
+                    .gte("created_at", cutoff.isoformat())
+                    .order("created_at", desc=True)
+                    .limit(candidate_limit)
+                    .execute()
+                )
+                rows = [
+                    row for row in (fallback_res.data or [])
+                    if _report_content_matches_ticker(
+                        _parse_announcement_report_content(row.get("report_content")),
+                        ticker,
+                    )
+                ]
         except Exception as exc:
             section["error"] = str(exc)
             section["message"] = "读取新闻摘要线索失败。"
@@ -4206,13 +4254,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         section["available"] = bool(section["rows"])
         if section["available"]:
-            section["message"] = f"已找到 {len(section['rows'])} 条新闻摘要线索。"
+            section["message"] = f"已找到 {len(section['rows'])} 条最近新闻摘要线索。"
         return section
 
     def format_news_digest_radar(section):
         section = section or {}
         if not section.get("available"):
-            return section.get("message") or "暂无新闻摘要线索。"
+            return section.get("message") or "暂无最近新闻摘要线索。"
         lines = []
         for item in (section.get("rows") or [])[:3]:
             title = str(item.get("title") or "").strip()
@@ -4238,7 +4286,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 line += f"｜evidence:{';'.join(str(x) for x in evidence[:2] if str(x).strip())}"
             line += f"｜边界:{item.get('source_boundary', '新闻只能作为待验证线索，不得进入硬事实层')}"
             lines.append(line)
-        return "；".join(lines) if lines else section.get("summary") or section.get("message") or "暂无新闻摘要线索。"
+        return "；".join(lines) if lines else section.get("summary") or section.get("message") or "暂无最近新闻摘要线索。"
 
     def app_check_risk_veto(target, market_type, headlines):
         # Auto news/RSS headlines are intentionally not allowed to trigger a hard veto.
@@ -6219,7 +6267,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             packet["verified_hard_risks"].update(
                 {
                     "announcements": hard_risks.get("announcements") or {},
-                    "free_announcement_radar": load_recent_announcement_summaries(stock_code_6, days=7, limit=6),
+                    "free_announcement_radar": load_recent_announcement_summaries(stock_code_6, days=14, limit=6),
                     "earnings_forecast": hard_risks.get("earnings_forecast") or {},
                     "holder_reduction": hard_risks.get("holder_reduction") or {},
                     "share_unlock": hard_risks.get("share_unlock") or {},
@@ -6235,7 +6283,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     },
                 }
             )
-            packet["sentiment_and_unverified_clues"]["news_digest"] = load_recent_news_digests(stock_code_6, days=2, limit=5)
+            packet["sentiment_and_unverified_clues"]["news_digest"] = load_recent_news_digests(stock_code_6, days=4, limit=5)
         except Exception as exc:
             packet["verified_hard_risks"]["missing_items"] = [f"硬风险雷达构造失败：{type(exc).__name__}"]
 
@@ -8385,6 +8433,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
                     free_ann = (tianyan_risk_fact_packet.get("verified_hard_risks") or {}).get("free_announcement_radar") or {}
                     st.markdown("#### 【免费公告雷达】")
+                    st.caption("免费公告雷达只展示已生成摘要的重要公告；普通公告可能仅作为 metadata 存在。")
                     if free_ann.get("available"):
                         st.markdown(f"- 摘要：{display_lines['free_announcement_radar']}")
                         for item in (free_ann.get("rows") or [])[:6]:
@@ -8399,13 +8448,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                                 f"｜边界:{item.get('source_boundary', '')}"
                             )
                     else:
-                        st.info(free_ann.get("message") or "暂无近7天免费公告摘要。")
+                        st.info(free_ann.get("message") or "暂无近14天免费公告摘要。")
 
                     st.markdown("#### 【舆情与待验证线索】")
                     st.markdown(f"- Supabase market_news 新闻线索：{display_lines['market_news']}")
                     st.markdown(f"- processed_sources 待验证投喂线索：{display_lines['processed_sources']}")
                     st.markdown(f"- yfinance.news 备用新闻线索：{display_lines['yfinance_news']}")
-                    st.markdown(f"- news_digest 新闻摘要线索：{display_lines['news_digest']}")
+                    st.markdown(f"- news_digest 最近新闻摘要线索：{display_lines['news_digest']}")
 
                     tianyan_prompt_packet = json.dumps(
                         tianyan_risk_fact_packet,

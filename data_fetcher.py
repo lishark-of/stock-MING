@@ -960,9 +960,17 @@ def _is_broad_news_row(row):
     return False
 
 
-def filter_news_clues_for_prompt(rows, stock_code=None, stock_name=None, max_items=8, hours=48):
-    aliases = [stock_code, ticker_core(stock_code or ""), stock_name]
-    aliases = [str(alias).strip() for alias in aliases if str(alias or "").strip()]
+def build_news_filter_aliases(stock_code=None, stock_name=None, aliases=None):
+    terms = []
+    for value in [stock_code, ticker_core(stock_code or ""), stock_name, *(aliases or [])]:
+        text = str(value or "").strip()
+        if len(text) >= 2:
+            terms.append(text)
+    return list(dict.fromkeys(terms))
+
+
+def filter_news_clues_for_prompt(rows, stock_code=None, stock_name=None, aliases=None, max_items=8, hours=48):
+    aliases = build_news_filter_aliases(stock_code=stock_code, stock_name=stock_name, aliases=aliases)
     cutoff_hours = float(hours or 48)
     scored = []
     seen = set()
@@ -1129,6 +1137,7 @@ def build_recent_news_context(supabase, ticker, aliases=None, days=2, limit=12, 
         filtered,
         stock_code=None,
         stock_name=None,
+        aliases=aliases,
         max_items=min(limit, 8),
         hours=days * 24,
     )
