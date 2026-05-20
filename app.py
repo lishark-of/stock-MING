@@ -4541,7 +4541,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         if not stock_code_6:
             return
         if st.button(
-            "🔄 刷新当前股票 Tushare 数据",
+            "🔄 刷新当前分析所用 Tushare 数据",
             key=f"btn_refresh_tushare_{ui_key}_{stock_code_6}",
             width="stretch",
         ):
@@ -4552,7 +4552,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "pulled_at": datetime.datetime.now().isoformat(timespec="seconds"),
             }
             st.rerun()
-        st.caption("刷新会重新请求 Tushare 当前可用最新数据；若 Tushare 尚未发布当天数据，仍会显示最新可得交易日。")
+        st.caption("刷新会清除本页相关 Tushare 缓存，并重新请求当前可用最新数据；若 Tushare 尚未发布当天数据，仍会显示最新可得交易日。")
 
     @st.cache_data(ttl=600, show_spinner=False)
     def build_market_style_fact_packet():
@@ -8990,8 +8990,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:
         st.markdown(f"### 📈 实时穿透：{target} ({market_badge})")
-        if is_a_share_market(market_type):
-            render_tushare_refresh_control(target, "main_diag")
         main_status = st.status("正在生成单票深度诊断...", expanded=True)
         main_progress = st.progress(0)
         stock_logic_rules = _run_progress_stage(
