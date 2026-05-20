@@ -313,6 +313,10 @@ def build_trade_explanation_summary(multi_result, position_profile=None):
             "total": _num(metrics.get("total_return_pct"), 0) or 0,
             "dd": _num(metrics.get("max_drawdown_pct"), 0) or 0,
             "trades": int(_num(metrics.get("trade_count"), 0) or 0),
+            "round_trip_win": _num(metrics.get("round_trip_win_rate"), 0) or 0,
+            "exit_action_win": _num(metrics.get("exit_action_win_rate", metrics.get("win_rate_pct")), 0) or 0,
+            "profit_factor": _num(metrics.get("profit_factor"), 0) or 0,
+            "reduce_count": int(_num(metrics.get("reduce_count"), 0) or 0),
             "sharpe": _num(metrics.get("sharpe"), 0) or 0,
         })
     if not rows:
@@ -320,30 +324,39 @@ def build_trade_explanation_summary(multi_result, position_profile=None):
 
     best_return = max(rows, key=lambda row: row["total"])
     best_dd = max(rows, key=lambda row: row["dd"])
+    best_round_trip = max(rows, key=lambda row: row["round_trip_win"])
+    best_profit_factor = max(rows, key=lambda row: row["profit_factor"])
+    most_reduce = max(rows, key=lambda row: row["reduce_count"])
     most_trades = max(rows, key=lambda row: row["trades"])
     least_trades = min(rows, key=lambda row: row["trades"])
     dynamic = next((row for row in rows if row["mode"] == "dynamic"), None)
     free = next((row for row in rows if row["mode"] == "free"), None)
     tech = next((row for row in rows if row["mode"] == "tech_growth"), None)
+    focus = _choose_focus_mode(rows, best_return)
 
     if max(row["trades"] for row in rows) == 0:
-        style = "只观察"
         style_reason = "多种模式都没有形成有效交易，不能把“无交易”误解成策略无效，更适合作为趋势体检。"
     elif tech and tech["total"] >= best_return["total"] - 3 and tech["dd"] >= best_dd["dd"] - 3:
-        style = "科技成长"
         style_reason = "科技成长股模式在趋势持有上叠加回撤风控，收益和回撤更接近均衡。"
     elif free and free["total"] >= best_return["total"] - 1 and free["dd"] > -22:
-        style = "趋势跟随"
         style_reason = "自由趋势模式能接住主要行情，说明这只票更吃趋势延续。"
     elif dynamic and (dynamic["dd"] >= best_dd["dd"] or dynamic["total"] >= best_return["total"] - 3):
-        style = "动态止盈"
         style_reason = "动态止盈止损对收益/回撤更均衡，适合用移动止盈保护利润。"
     elif best_dd["dd"] > -12:
-        style = "机械止损"
         style_reason = "回撤控制优先级较高，固定纪律比追求弹性更重要。"
     else:
-        style = "只观察"
         style_reason = "收益和回撤质量不够稳定，先把它作为观察样本。"
+
+    risk_notes = []
+    if most_reduce["reduce_count"] > 0:
+        risk_notes.append(
+            f"{most_reduce['label']} 的 REDUCE 次数最多（{most_reduce['reduce_count']} 次），"
+            "退出动作胜率可能被分批减仓抬高，判断胜率应优先看完整交易胜率。"
+        )
+    if free and free["exit_action_win"] - free["round_trip_win"] > 10:
+        risk_notes.append("自由趋势的退出动作胜率可能被 REDUCE 半仓减仓抬高，不能直接等同于完整交易胜率。")
+    if tech and _tech_growth_balanced(tech, rows):
+        risk_notes.append("科技成长股模式在当前样本中较好地保留趋势收益，同时减少过度减仓，适合与自由趋势对比观察。")
 
     pnl_pct = (position_profile or {}).get("pnl_pct")
     intent = (position_profile or {}).get("position_intent")
@@ -356,11 +369,43 @@ def build_trade_explanation_summary(multi_result, position_profile=None):
         position_note = " 想加仓时只看回踩加仓或突破确认加仓，若偏离均线过大就只持有不加。"
 
     return (
-        f"交易解释摘要：收益最好的是 {best_return['label']}（{best_return['total']}%）；"
-        f"最大回撤最小的是 {best_dd['label']}（{best_dd['dd']}%）；"
-        f"交易次数最多的是 {most_trades['label']}（{most_trades['trades']} 次），"
-        f"最少的是 {least_trades['label']}（{least_trades['trades']} 次）。"
-        f"综合看更偏向“{style}”：{style_reason}{position_note}"
+        f"回测解释：收益最高是 {best_return['label']}（{best_return['total']}%）；"
+        f"回撤控制最好是 {best_dd['label']}（{best_dd['dd']}%）；"
+        f"完整交易胜率最高是 {best_round_trip['label']}（{best_round_trip['round_trip_win']}%）；"
+        f"Profit Factor 最高是 {best_profit_factor['label']}（{best_profit_factor['profit_factor']}）。"
+        f"{''.join(risk_notes)}"
+        f"综合收益、回撤、完整交易胜率、Profit Factor 和 REDUCE 频率，建议重点关注 {focus['label']}。"
+        f"{style_reason}{position_note}"
+    )
+
+
+def _choose_focus_mode(rows, best_return):
+    close_return_floor = best_return["total"] - max(abs(best_return["total"]) * 0.08, 3)
+    candidates = [row for row in rows if row["total"] >= close_return_floor]
+    if not candidates:
+        candidates = rows
+    return max(
+        candidates,
+        key=lambda row: (
+            row["dd"],
+            row["round_trip_win"],
+            row["profit_factor"],
+            -row["reduce_count"],
+            row["total"],
+        ),
+    )
+
+
+def _tech_growth_balanced(tech, rows):
+    if not tech:
+        return False
+    best_return = max(row["total"] for row in rows)
+    min_reduce = min(row["reduce_count"] for row in rows)
+    return (
+        tech["total"] >= best_return - max(abs(best_return) * 0.12, 5)
+        and tech["reduce_count"] <= max(min_reduce + 5, 12)
+        and tech["round_trip_win"] >= 35
+        and tech["profit_factor"] >= 1
     )
 
 
@@ -399,6 +444,8 @@ def render_multi_mode_backtest(multi_result):
         })
     if rows:
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.caption("口径说明：退出动作胜率包含 SELL / TAKE_PROFIT / REDUCE，可能受到分批减仓影响；完整交易胜率按一轮 BUY 到最终清仓计算，更接近真实交易闭环质量。回测结果只用于历史纪律验证，不代表未来收益。")
+        st.caption("科技成长股模式适合高波动、强趋势、容易卖飞的科技成长票。它保留趋势持有，但加入 MA20/MA60 失效、ATR 回撤风控和 REDUCE 次数限制，用来检验“趋势继续拿、破位再降风险”是否优于固定止盈止损。")
 
     explanation = multi_result.get("trade_explanation")
     if not explanation:

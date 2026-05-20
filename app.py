@@ -8730,6 +8730,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.divider()
             st.markdown("### 科技股样本池批量验证")
             st.caption("用同一套四模式回测跑内置科技成长样本池，先判断自由趋势和科技成长股模式的优势是否能跨股票复现。")
+            st.caption("科技股样本池批量验证只用于历史纪律比较，不是买卖建议。它回答的是哪种规则更适配这类股票，而不是当前是否应该买入。")
             pool_df = pd.DataFrame(TECH_GROWTH_STOCK_POOL)
             st.dataframe(pool_df.rename(columns={"ts_code": "代码", "name": "名称"}), width="stretch", hide_index=True)
 
