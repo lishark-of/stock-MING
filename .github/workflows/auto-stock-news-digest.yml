@@ -12,7 +12,9 @@ on:
           - live
           - dry_run
   schedule:
-    - cron: "50 15 * * 1-5" # 北京时间周一到周五 23:50；schedule 直接跑 live，避开公告 feeder
+    - cron: "15 1 * * 1-5" # 北京时间 09:15；schedule 直接跑 live，只扫持续调查池
+    - cron: "0 4 * * 1-5" # 北京时间 12:00；schedule 直接跑 live，只扫持续调查池
+    - cron: "0 15 * * 1-5" # 北京时间 23:00；schedule 直接跑 live，只扫持续调查池
 
 jobs:
   digest:

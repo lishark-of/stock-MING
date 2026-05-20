@@ -12,7 +12,9 @@ on:
           - dry_run
           - live
   schedule:
-    - cron: "20 15 * * 1-5" # 北京时间周一到周五 23:20；schedule 永远只跑安全 dry-run
+    - cron: "10 1 * * 1-5" # 北京时间 09:10；schedule 直接跑 live，只扫持续调查池
+    - cron: "50 3 * * 1-5" # 北京时间 11:50；schedule 直接跑 live，只扫持续调查池
+    - cron: "50 14 * * 1-5" # 北京时间 22:50；schedule 直接跑 live，只扫持续调查池
 
 jobs:
   feed:
@@ -36,21 +38,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run schedule dry-run
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'dry_run')
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          python auto_announcement_feeder.py --dry-run --use-supabase-watchlist --days 14 --limit 50 --max-pdf-per-stock 10
-
       - name: Run live announcement feeder
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'live'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'live')
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DEEPSEEK_TOKEN_1: ${{ secrets.DEEPSEEK_TOKEN_1 }}
           DEEPSEEK_TOKEN_2: ${{ secrets.DEEPSEEK_TOKEN_2 }}
         run: |
-          # live 只建议手动触发；会写 Supabase，并可能调用 DeepSeek
+          # schedule 会真实写 Supabase，并可能调用 DeepSeek
+          # 只扫描持续调查池；公告 PDF 摘要只是 AI 摘要，不是交易指令
           python auto_announcement_feeder.py --days 14 --limit 50 --max-pdf-per-stock 10
+
+      - name: Run dry-run announcement feeder
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'dry_run'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python auto_announcement_feeder.py --dry-run --use-supabase-watchlist --days 14 --limit 50 --max-pdf-per-stock 10
