@@ -1631,8 +1631,112 @@ st.markdown("""
 	        line-height: 1.5;
 	        margin-bottom: 26px;
 	    }
-	</style>
-	""", unsafe_allow_html=True)
+		</style>
+		""", unsafe_allow_html=True)
+
+
+def inject_ui_animations():
+    st.markdown("""
+    <style>
+        :root {
+            --hf-ios-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+            --hf-ios-shadow-soft: 0 10px 24px rgba(17, 17, 20, 0.06);
+            --hf-ios-shadow-hover: 0 14px 30px rgba(17, 17, 20, 0.10);
+            --hf-ios-glow: 0 0 0 rgba(255, 59, 48, 0);
+            --hf-ios-glow-peak: 0 0 0 6px rgba(255, 59, 48, 0.06);
+        }
+
+        .hf-ios-section {
+            position: relative;
+        }
+
+        .hf-ios-fade-up {
+            opacity: 0;
+            transform: translateY(8px);
+            animation: hf-ios-fade-up 360ms var(--hf-ios-ease) both;
+            will-change: opacity, transform;
+        }
+
+        .hf-ios-fade-in {
+            opacity: 0;
+            animation: hf-ios-fade-in 260ms var(--hf-ios-ease) both;
+            will-change: opacity;
+        }
+
+        .hf-ios-stagger-1 { animation-delay: 40ms; }
+        .hf-ios-stagger-2 { animation-delay: 110ms; }
+        .hf-ios-stagger-3 { animation-delay: 180ms; }
+
+        .hf-ios-card {
+            transition: transform 220ms var(--hf-ios-ease), box-shadow 220ms var(--hf-ios-ease);
+            will-change: transform, box-shadow;
+        }
+
+        .hf-ios-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--hf-ios-shadow-hover);
+        }
+
+        .hf-ios-soft-glow {
+            box-shadow: var(--hf-ios-shadow-soft), var(--hf-ios-glow);
+            animation: hf-ios-soft-glow 2.8s ease-in-out 3 both;
+        }
+
+        .ming-hero {
+            box-shadow: var(--hf-ios-shadow-soft);
+            border-radius: 20px;
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        @keyframes hf-ios-fade-up {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes hf-ios-fade-in {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes hf-ios-soft-glow {
+            0%, 100% {
+                box-shadow: var(--hf-ios-shadow-soft), var(--hf-ios-glow);
+            }
+            50% {
+                box-shadow: var(--hf-ios-shadow-soft), var(--hf-ios-glow-peak);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .ming-hero {
+                border-radius: 16px;
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+inject_ui_animations()
 
 # ==========================================
 # 📊 Token 消耗计数器
@@ -6791,7 +6895,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             )
         )
         
-        st.markdown("#### 🇨🇳 A股专业数据穿透系统")
+        st.markdown("""
+        <div class="hf-ios-section hf-ios-fade-up hf-ios-stagger-1">
+            <h4 style="margin-bottom: 0;">🇨🇳 A股专业数据穿透系统</h4>
+        </div>
+        """, unsafe_allow_html=True)
         st.caption("A股专业区已加载｜chip radar feature present｜commit b96737a")
         st.caption("功能标记：chip radar enabled｜Tushare 15000 features active")
         st.caption("chip radar module loaded")
@@ -7647,10 +7755,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     # 4. 主界面
     # ==========================================
     st.markdown("""
-    <section class="ming-hero">
-        <div class="ming-kicker">PRIVATE TRADING ASSISTANT</div>
-        <h1 class="ming-title">MING 交易工作台</h1>
-        <div class="ming-subtitle">从成本价出发，合并量化、资金、舆情和经理规则，给出更克制的交易指令。</div>
+    <section class="ming-hero hf-ios-section hf-ios-card hf-ios-fade-up">
+        <div class="ming-kicker hf-ios-fade-in hf-ios-stagger-1">PRIVATE TRADING ASSISTANT</div>
+        <h1 class="ming-title hf-ios-fade-up hf-ios-stagger-2">MING 交易工作台</h1>
+        <div class="ming-subtitle hf-ios-fade-in hf-ios-stagger-3">从成本价出发，合并量化、资金、舆情和经理规则，给出更克制的交易指令。</div>
     </section>
     """, unsafe_allow_html=True)
     
@@ -7748,8 +7856,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     "🎯 大师选股 (策略雷达)"
 ])
     with tab_home:
-        st.markdown("### 🏠 今日关注池 / 投研驾驶舱")
-        st.caption("先判断今天该看什么，再决定用哪个大师人格和哪个诊股模块。")
+        st.markdown("""
+        <div class="hf-ios-section hf-ios-fade-up">
+            <h3 style="margin-bottom: 4px;">🏠 今日关注池 / 投研驾驶舱</h3>
+            <div style="color: #6E6E73; font-size: 0.92rem;">先判断今天该看什么，再决定用哪个大师人格和哪个诊股模块。</div>
+        </div>
+        """, unsafe_allow_html=True)
 
         market_style_fact_packet = build_market_style_fact_packet()
         st.markdown("#### 市场风格总览")
@@ -7846,7 +7958,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.warning("还没有看到自动任务心跳。可去 GitHub Actions 手动 Run workflow 验证 secrets 和权限。")
     # 模块 A：天眼风控
     with tab_risk:
-        st.markdown(f"### 🛡️ 极高权限合规审计：{target}")
+        st.markdown(
+            f"""
+            <div class="hf-ios-section hf-ios-fade-up">
+                <h3 style="margin-bottom: 0;">🛡️ 极高权限合规审计：{target}</h3>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.info("消耗算力扫描内幕交易、消息抢跑、监管问询等风险。")
         if is_a_share_market(market_type):
             render_tushare_refresh_control(target, "tianyan_risk")
@@ -8393,7 +8512,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 """
 
                     st.markdown(
-                        "<div class='risk-alert'>正在执行深度排雷协议，请留意红色警告...</div>",
+                        "<div class='risk-alert hf-ios-soft-glow'>正在执行深度排雷协议，请留意红色警告...</div>",
                         unsafe_allow_html=True
                     )
 
