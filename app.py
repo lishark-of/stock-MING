@@ -4476,6 +4476,84 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             return f"{text[:4]}-{text[4:6]}-{text[6:]}"
         return text or "未知"
 
+    def _format_cn_date_values(values, max_items=4):
+        unique_values = []
+        for value in values or []:
+            text = str(value or "").strip()
+            if not text or text in unique_values:
+                continue
+            unique_values.append(text)
+        if not unique_values:
+            return "暂无"
+        return " / ".join(_cn_fmt_date(item) for item in unique_values[:max_items])
+
+    def _extract_tushare_basic_data_dates(source_payload):
+        api_results = (source_payload or {}).get("api_results") or {}
+        return _format_cn_date_values(
+            [item.get("latest_date") for item in api_results.values() if isinstance(item, dict)]
+        )
+
+    def _extract_tianyan_packet_data_dates(packet):
+        trading = (packet or {}).get("verified_trading_structure_risks") or {}
+        chip = (packet or {}).get("verified_chip_risks") or {}
+        moneyflow = trading.get("moneyflow") or {}
+        dragon = trading.get("dragon_tiger") or {}
+        margin = trading.get("margin") or {}
+        limit_emotion = trading.get("limit_emotion") or {}
+        chip_radar = chip.get("chip_radar") or {}
+        return _format_cn_date_values(
+            [
+                moneyflow.get("date"),
+                dragon.get("latest_date") or dragon.get("trade_date"),
+                margin.get("date"),
+                limit_emotion.get("latest_date") or limit_emotion.get("concept_date"),
+                chip_radar.get("trade_date"),
+            ]
+        )
+
+    def clear_current_stock_tushare_caches():
+        cache_names = [
+            "cached_fetch_tushare_a_share_basics",
+            "cached_cn_dragon_tiger_board",
+            "cached_cn_margin_data",
+            "cached_cn_moneyflow_data",
+            "cached_cn_limit_emotion_data",
+            "get_cn_chip_radar_data",
+            "get_cn_hard_risk_radar_data",
+            "build_tianyan_risk_fact_packet",
+        ]
+        cleared = []
+        global_namespace = globals()
+        for cache_name in cache_names:
+            cache_func = global_namespace.get(cache_name)
+            clear_func = getattr(cache_func, "clear", None)
+            if not callable(clear_func):
+                continue
+            try:
+                clear_func()
+                cleared.append(cache_name)
+            except Exception:
+                continue
+        return cleared
+
+    def render_tushare_refresh_control(stock_code, ui_key):
+        stock_code_6 = _cn_stock_code_6(stock_code)
+        if not stock_code_6:
+            return
+        if st.button(
+            "🔄 刷新当前股票 Tushare 数据",
+            key=f"btn_refresh_tushare_{ui_key}_{stock_code_6}",
+            width="stretch",
+        ):
+            cleared = clear_current_stock_tushare_caches()
+            st.session_state["tushare_refresh_last"] = {
+                "stock_code": stock_code_6,
+                "cleared": cleared,
+                "pulled_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            }
+            st.rerun()
+        st.caption("刷新会重新请求 Tushare 当前可用最新数据；若 Tushare 尚未发布当天数据，仍会显示最新可得交易日。")
+
     @st.cache_data(ttl=600, show_spinner=False)
     def build_market_style_fact_packet():
         """构建今日关注池使用的 A 股市场情绪事实包，所有 Tushare 失败都降级为缺失项。"""
@@ -6718,6 +6796,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.caption("功能标记：chip radar enabled｜Tushare 15000 features active")
         st.caption("chip radar module loaded")
         st.caption("本页 A股专业事实在当前短时间内复用缓存，可刷新页面或等待缓存过期后重新拉取。")
+        render_tushare_refresh_control(stock_code, "a_share_professional")
 
         cn_status = st.status("正在检查 A股龙虎榜、融资融券、资金流向与筹码事实...", expanded=False)
         cn_progress = st.progress(0)
@@ -6779,6 +6858,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.markdown("**🐯 龙虎榜追踪**")
             if dragon_data and dragon_data.get("available"):
                 st.metric("上榜日期", _cn_fmt_date(dragon_data.get("latest_date")), "")
+                st.caption(f"数据日期：{_cn_fmt_date(dragon_data.get('latest_date'))}")
                 if dragon_data.get("reason"):
                     st.caption(f"上榜原因：{dragon_data.get('reason')}")
                 st.metric("收盘价 / 涨跌幅", f"{dragon_data.get('close') or '暂无'} / {dragon_data.get('pct_change') or '暂无'}%", "")
@@ -6787,7 +6867,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.caption(f"机构席位摘要：{dragon_data.get('inst_summary')}")
             else:
                 st.info((dragon_data or {}).get("message") or "近30日未见龙虎榜上榜记录")
-            st.caption(f"数据源：{(dragon_data or {}).get('source', 'Tushare')} {(dragon_data or {}).get('api', 'top_list')}｜更新时间：{(dragon_data or {}).get('updated_at', '未知')}")
+            st.caption(f"数据源：{(dragon_data or {}).get('source', 'Tushare')} {(dragon_data or {}).get('api', 'top_list')}｜本地拉取时间：{(dragon_data or {}).get('updated_at', '未知')}")
+            st.caption("龙虎榜与机构席位为盘后披露数据，不代表盘中实时席位行为。")
         
         with col_a2:
             st.markdown("**💰 融资融券监测**")
@@ -6802,7 +6883,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 st.caption(f"数据日期：{_cn_fmt_date(margin_data.get('date'))}")
             else:
                 st.info((margin_data or {}).get("message") or "融资融券数据暂不可用或权限不足")
-            st.caption(f"数据源：{(margin_data or {}).get('source', 'Tushare')} {(margin_data or {}).get('api', 'margin_detail')}｜更新时间：{(margin_data or {}).get('updated_at', '未知')}")
+            st.caption(f"数据源：{(margin_data or {}).get('source', 'Tushare')} {(margin_data or {}).get('api', 'margin_detail')}｜本地拉取时间：{(margin_data or {}).get('updated_at', '未知')}")
+            st.caption("融资融券为交易所/券商披露口径，通常反映上一交易日或已披露时点，不是盘中实时余额。")
         
         with col_a3:
             st.markdown("**💧 个股资金流向**")
@@ -6816,8 +6898,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 st.caption(f"资金结构评价：{moneyflow_data.get('structure') or '资金结构暂无法验证'}")
             else:
                 st.info((moneyflow_data or {}).get("message") or "近5日未取得可验证个股资金流向，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。")
-            st.caption(f"数据源：{(moneyflow_data or {}).get('source', 'Tushare')} {(moneyflow_data or {}).get('api', 'moneyflow')}｜更新时间：{(moneyflow_data or {}).get('updated_at', '未知')}")
-            st.caption("北向资金日度披露口径已调整，实时买卖方向不再作为核心交易信号。")
+            st.caption(f"数据源：{(moneyflow_data or {}).get('source', 'Tushare')} {(moneyflow_data or {}).get('api', 'moneyflow')}｜本地拉取时间：{(moneyflow_data or {}).get('updated_at', '未知')}")
+            st.caption("个股资金流为交易日盘后口径，不是盘中实时主力流。")
 
         st.markdown("**📈 A股情绪与涨跌停边界**")
 
@@ -6864,8 +6946,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "数据源："
             f"{(limit_emotion_data or {}).get('source', 'Tushare')} "
             f"{(limit_emotion_data or {}).get('api', 'stk_limit / limit_list_d / limit_cpt_list')}"
-            f"｜更新时间：{(limit_emotion_data or {}).get('updated_at', '未知')}"
+            f"｜本地拉取时间：{(limit_emotion_data or {}).get('updated_at', '未知')}"
         )
+        st.caption("涨跌停记录、炸板、概念强度为盘后统计结果，不是盘中实时热度流。")
         if (limit_emotion_data or {}).get("warning"):
             st.caption(f"提示：{(limit_emotion_data or {}).get('warning')}")
         if st.session_state.get("skip_limit_cpt_list"):
@@ -6918,8 +7001,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "数据源："
             f"{(chip_radar_data or {}).get('source', 'Tushare')} "
             f"{(chip_radar_data or {}).get('api', 'cyq_perf/cyq_chips')}"
-            f"｜更新时间：{(chip_radar_data or {}).get('updated_at', '未知')}"
+            f"｜本地拉取时间：{(chip_radar_data or {}).get('updated_at', '未知')}"
         )
+        st.caption("筹码/胜率为日度盘后更新结果，不是盘中实时筹码迁移。")
         
         st.markdown("---")
         
@@ -7764,6 +7848,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     with tab_risk:
         st.markdown(f"### 🛡️ 极高权限合规审计：{target}")
         st.info("消耗算力扫描内幕交易、消息抢跑、监管问询等风险。")
+        if is_a_share_market(market_type):
+            render_tushare_refresh_control(target, "tianyan_risk")
+            st.caption("天眼风控里的结构化资金/情绪/筹码事实同样以盘后或披露口径为主，不是盘中实时数据。")
 
         with st.expander("📡 持续调查池", expanded=True):
             st.caption("公告自动调查第一阶段仅扫描这里 enabled=true 的 A 股标的；每次修改会写入 stock_reports 的最新 watchlist 版本。")
@@ -8157,6 +8244,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     )
 
                     display_lines = build_tianyan_display_lines(tianyan_risk_fact_packet)
+                    st.caption(
+                        "天眼风控结构化事实"
+                        f"｜数据日期：{_extract_tianyan_packet_data_dates(tianyan_risk_fact_packet)}"
+                        f"｜本地拉取时间：{tianyan_risk_fact_packet.get('updated_at', '未知')}"
+                    )
                     st.markdown("#### 【已验证结构化风险】")
                     st.markdown(f"- 资金风险：{display_lines['moneyflow']}")
                     st.markdown(f"- 龙虎榜风险：{display_lines['dragon_tiger']}")
@@ -8898,6 +8990,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:
         st.markdown(f"### 📈 实时穿透：{target} ({market_badge})")
+        if is_a_share_market(market_type):
+            render_tushare_refresh_control(target, "main_diag")
         main_status = st.status("正在生成单票深度诊断...", expanded=True)
         main_progress = st.progress(0)
         stock_logic_rules = _run_progress_stage(
@@ -9247,7 +9341,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.caption(
                 "已验证数据来源：Tushare"
                 f"｜接口：{tushare_verified_source.get('api_name', '')}"
-                f"｜更新时间：{tushare_verified_source.get('updated_at', '')}"
+                f"｜数据日期：{_extract_tushare_basic_data_dates(tushare_verified_source)}"
+                f"｜本地拉取时间：{tushare_verified_source.get('updated_at', '')}"
                 f"｜{tushare_verified_source.get('status', '')}"
             )
         render_trade_instruction_card(position_profile, trade_instruction)
