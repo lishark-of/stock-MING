@@ -619,6 +619,41 @@ def fetch_price_history(ticker, period="2y"):
     return _fetch_price_history_cached(normalized, period).copy()
 
 
+def _period_to_start_date(period):
+    text = str(period or "2y").strip().lower()
+    today = datetime.date.today()
+    match = re.fullmatch(r"(\d+)([ymd])", text)
+    if not match:
+        return today - datetime.timedelta(days=365 * 2)
+    count = int(match.group(1))
+    unit = match.group(2)
+    if unit == "y":
+        return today - datetime.timedelta(days=365 * count)
+    if unit == "m":
+        return today - datetime.timedelta(days=31 * count)
+    return today - datetime.timedelta(days=count)
+
+
+def _ohlcv_to_price_history(frame):
+    if frame is None or frame.empty or "close" not in frame.columns:
+        return pd.DataFrame()
+    hist = pd.DataFrame(index=pd.to_datetime(frame.get("date"), errors="coerce"))
+    hist["Close"] = pd.to_numeric(frame.get("close"), errors="coerce").to_numpy()
+    if "volume" in frame.columns:
+        hist["Volume"] = pd.to_numeric(frame.get("volume"), errors="coerce").to_numpy()
+    if "open" in frame.columns:
+        hist["Open"] = pd.to_numeric(frame.get("open"), errors="coerce").to_numpy()
+    if "high" in frame.columns:
+        hist["High"] = pd.to_numeric(frame.get("high"), errors="coerce").to_numpy()
+    if "low" in frame.columns:
+        hist["Low"] = pd.to_numeric(frame.get("low"), errors="coerce").to_numpy()
+    hist = hist.dropna(subset=["Close"]).sort_index()
+    hist.attrs.update(frame.attrs)
+    if "source" in frame.columns and not frame.empty:
+        hist.attrs["source"] = str(frame["source"].iloc[-1])
+    return hist
+
+
 def compute_rsi(close, period=14):
     if close is None or len(close) < period + 2:
         return None
@@ -635,7 +670,28 @@ def compute_rsi(close, period=14):
 
 def compute_technical_snapshot(ticker, period="2y"):
     normalized = normalize_ticker(ticker)
-    hist = fetch_price_history(normalized, period=period)
+    source = "yfinance"
+    fallback_warning = ""
+    hist = pd.DataFrame()
+
+    if market_family(infer_market_type(normalized)) == "A_SHARE":
+        try:
+            start = _period_to_start_date(period).isoformat()
+            end = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+            ohlcv = fetch_ohlcv(normalized, market_type="A_SHARE", start=start, end=end, provider="tushare", adjust="qfq")
+            hist = _ohlcv_to_price_history(ohlcv)
+            if not hist.empty:
+                source = "tushare"
+            else:
+                fallback_warning = (ohlcv.attrs.get("warning") if hasattr(ohlcv, "attrs") else "") or "Tushare OHLCV empty"
+        except Exception as exc:
+            fallback_warning = str(exc)
+
+    if hist.empty:
+        hist = fetch_price_history(normalized, period=period)
+        if not hist.empty:
+            source = "yfinance_fallback" if market_family(infer_market_type(normalized)) == "A_SHARE" else "yfinance"
+
     missing = []
     if hist.empty or "Close" not in hist.columns:
         return {
@@ -643,14 +699,19 @@ def compute_technical_snapshot(ticker, period="2y"):
             "data_asof": "",
             "missing": ["price_history", "MA20", "MA60", "MA120", "RSI", "volume"],
             "confidence": 0,
+            "source": "unavailable",
+            "fallback_warning": fallback_warning,
         }
 
     close = hist["Close"].dropna()
     latest = float(close.iloc[-1]) if len(close) else None
+    ma5 = float(close.rolling(5).mean().iloc[-1]) if len(close) >= 5 else None
     ma20 = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
     ma60 = float(close.rolling(60).mean().iloc[-1]) if len(close) >= 60 else None
     ma120 = float(close.rolling(120).mean().iloc[-1]) if len(close) >= 120 else None
     rsi = compute_rsi(close, 14)
+    if ma5 is None:
+        missing.append("MA5")
     if ma20 is None:
         missing.append("MA20")
     if ma60 is None:
@@ -684,26 +745,49 @@ def compute_technical_snapshot(ticker, period="2y"):
         peak_60d = close.tail(60).cummax()
         drawdown_60d = round(float((close.tail(60) / peak_60d - 1).iloc[-1] * 100), 2)
 
+    macd = None
+    macd_signal = None
+    macd_hist = None
+    if len(close) >= 35:
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        macd = round(float(macd_line.iloc[-1]), 4)
+        macd_signal = round(float(signal_line.iloc[-1]), 4)
+        macd_hist = round(float((macd_line.iloc[-1] - signal_line.iloc[-1]) * 2), 4)
+    else:
+        missing.append("MACD")
+
     confidence = max(0, 100 - len(missing) * 22)
     return {
         "ticker": normalized,
         "data_asof": str(close.index[-1].date()) if len(close) else "",
         "latest_close": round(latest, 2) if latest else None,
+        "ma5": round(ma5, 2) if ma5 else None,
         "ma20": round(ma20, 2) if ma20 else None,
         "ma60": round(ma60, 2) if ma60 else None,
         "ma120": round(ma120, 2) if ma120 else None,
+        "ma20_state": "站上MA20" if latest and ma20 and latest >= ma20 else ("低于MA20" if latest and ma20 else "未知"),
         "ma60_state": "站上MA60" if latest and ma60 and latest >= ma60 else ("低于MA60" if latest and ma60 else "未知"),
         "ma120_state": "站上MA120" if latest and ma120 and latest >= ma120 else ("低于MA120" if latest and ma120 else "未知"),
         "rsi": rsi,
+        "macd": macd,
+        "macd_signal": macd_signal,
+        "macd_hist": macd_hist,
         "volume_vs_20d": volume_vs_20d,
         "return_20d": round(float((close.iloc[-1] / close.iloc[-21] - 1) * 100), 2) if len(close) >= 21 else None,
         "return_60d": round(float((close.iloc[-1] / close.iloc[-61] - 1) * 100), 2) if len(close) >= 61 else None,
+        "price_vs_ma20_pct": round(float((latest / ma20 - 1) * 100), 2) if latest and ma20 else None,
+        "price_vs_ma60_pct": round(float((latest / ma60 - 1) * 100), 2) if latest and ma60 else None,
         "drawdown": drawdown,
         "drawdown_20d": drawdown_20d,
         "drawdown_60d": drawdown_60d,
         "annualized_vol_20d": volatility_20d,
         "missing": missing,
         "confidence": confidence,
+        "source": source,
+        "fallback_warning": fallback_warning,
     }
 
 

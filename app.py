@@ -1758,11 +1758,73 @@ def estimate_tokens(text):
 # 2. 核心功能与缓存提速优化
 # ==========================================
 @st.cache_data(ttl=300)
-def get_current_price(ticker):
+def get_current_price_detail(ticker, market_type=None):
+    normalized = normalize_ticker(ticker)
+    detected_market = market_type or infer_market_type(normalized)
+
+    if str(detected_market or "").upper().startswith("A_SHARE"):
+        try:
+            quote = fetch_realtime_quote(normalized, market_type=detected_market, provider="tushare")
+            price = _num((quote or {}).get("price"))
+            if price is not None:
+                return {
+                    "ticker": normalized,
+                    "price": round(price, 2),
+                    "price_source": "tushare_daily_close",
+                    "data_date": (quote or {}).get("asof") or "",
+                    "raw_source": (quote or {}).get("source") or "tushare",
+                    "fallback": False,
+                    "warning": (quote or {}).get("warning") or "",
+                }
+        except Exception as exc:
+            tushare_warning = str(exc)
+        else:
+            tushare_warning = (quote or {}).get("warning") or "Tushare daily close unavailable"
+    else:
+        tushare_warning = ""
+
     try:
-        return round(yf.Ticker(ticker).history(period='1d')['Close'].iloc[0], 2)
-    except:
-        return None
+        hist = yf.Ticker(normalized).history(period='1d')
+        if hist is not None and not hist.empty and "Close" in hist.columns:
+            data_date = ""
+            try:
+                data_date = str(hist.index[-1].date())
+            except Exception:
+                data_date = ""
+            return {
+                "ticker": normalized,
+                "price": round(float(hist["Close"].iloc[-1]), 2),
+                "price_source": "yfinance_fallback" if str(detected_market or "").upper().startswith("A_SHARE") else "yfinance",
+                "data_date": data_date,
+                "raw_source": "yfinance",
+                "fallback": bool(str(detected_market or "").upper().startswith("A_SHARE")),
+                "warning": tushare_warning,
+            }
+    except Exception as exc:
+        return {
+            "ticker": normalized,
+            "price": None,
+            "price_source": "unavailable",
+            "data_date": "",
+            "raw_source": "",
+            "fallback": bool(str(detected_market or "").upper().startswith("A_SHARE")),
+            "warning": tushare_warning or str(exc),
+        }
+
+    return {
+        "ticker": normalized,
+        "price": None,
+        "price_source": "unavailable",
+        "data_date": "",
+        "raw_source": "",
+        "fallback": bool(str(detected_market or "").upper().startswith("A_SHARE")),
+        "warning": tushare_warning,
+    }
+
+
+@st.cache_data(ttl=300)
+def get_current_price(ticker):
+    return get_current_price_detail(ticker).get("price")
 
 @st.cache_data(ttl=3600)
 def get_historical_data(ticker, start_str, end_str):
@@ -7817,12 +7879,18 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         target, market_type, market_badge, currency = identify_market(raw_target)
 
     with top_c2:
-        price = get_current_price(target)
+        price_detail = get_current_price_detail(target, market_type)
+        price = price_detail.get("price")
         if price:
             p_display = f"{currency} {price}"
             st.metric(f"📡 卫星报价 ({market_badge})", p_display)
+            source_label = price_detail.get("price_source") or "unknown"
+            data_date = price_detail.get("data_date") or "日期未知"
+            st.caption(f"价格来源：{source_label}｜数据日期：{data_date}")
         else:
             st.metric(f"📡 信号丢��� ({market_badge})", "未查找到该标的")
+            if price_detail.get("warning"):
+                st.caption(f"价格读取失败：{price_detail.get('warning')}")
 
     pos_c1, pos_c2, pos_c3, pos_c4 = st.columns([1.5, 1, 1, 1])
     with pos_c1:
