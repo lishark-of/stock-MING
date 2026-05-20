@@ -291,11 +291,135 @@ def _fetch_ohlcv_akshare(ticker, start=None, end=None, adjust="qfq"):
         return frame
 
 
+def _tushare_ts_code(ticker):
+    text = normalize_ticker(ticker).upper().strip()
+    if text.endswith(".SS"):
+        return text[:-3] + ".SH"
+    if text.endswith((".SH", ".SZ", ".BJ")):
+        return text
+    code = ticker_core(text)
+    if code.isdigit() and len(code) == 6:
+        if code.startswith(("6", "9")):
+            return f"{code}.SH"
+        if code.startswith(("0", "2", "3")):
+            return f"{code}.SZ"
+        if code.startswith(("4", "8")):
+            return f"{code}.BJ"
+    return text
+
+
+def _tushare_result_frame(result):
+    if not isinstance(result, dict) or not result.get("ok") or result.get("data") is None:
+        return pd.DataFrame()
+    data = result.get("data")
+    return data.copy() if isinstance(data, pd.DataFrame) else pd.DataFrame(data)
+
+
+def _fetch_ohlcv_tushare(ticker, start=None, end=None, adjust="qfq"):
+    normalized = normalize_ticker(ticker)
+    market = market_family(infer_market_type(normalized))
+    if market != "A_SHARE":
+        frame = pd.DataFrame()
+        frame.attrs["warning"] = f"tushare 仅支持A股，当前为 {ticker}"
+        return frame
+
+    ts_code = _tushare_ts_code(normalized)
+    start_date = pd.to_datetime(start or datetime.date.today() - datetime.timedelta(days=365 * 2)).strftime("%Y%m%d")
+    end_date = pd.to_datetime(end or datetime.date.today()).strftime("%Y%m%d")
+
+    try:
+        import tushare_adapter
+    except Exception as exc:
+        frame = pd.DataFrame()
+        frame.attrs["warning"] = f"tushare_adapter 不可用：{exc}"
+        return frame
+
+    daily_result = tushare_adapter.get_daily(ts_code, start_date, end_date)
+    daily = _tushare_result_frame(daily_result)
+    if daily.empty:
+        frame = pd.DataFrame()
+        error = daily_result.get("error") if isinstance(daily_result, dict) else "daily 返回空数据"
+        frame.attrs["warning"] = f"tushare:{ts_code} daily 不可用：{error}"
+        return frame
+
+    df = daily.rename(
+        columns={
+            "trade_date": "date",
+            "vol": "volume",
+            "pct_chg": "pct_change",
+        }
+    ).copy()
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], format="%Y%m%d", errors="coerce")
+
+    for col in ["open", "high", "low", "close", "volume", "amount", "pct_change", "change"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    warnings = []
+    adjustment = "unadjusted"
+
+    basic_result = tushare_adapter.get_daily_basic(ts_code, start_date, end_date)
+    basic = _tushare_result_frame(basic_result)
+    if not basic.empty and "trade_date" in basic.columns:
+        keep_cols = [col for col in ["trade_date", "turnover_rate", "volume_ratio"] if col in basic.columns]
+        basic = basic[keep_cols].copy()
+        basic["date"] = pd.to_datetime(basic["trade_date"], format="%Y%m%d", errors="coerce")
+        for col in ["turnover_rate", "volume_ratio"]:
+            if col in basic.columns:
+                basic[col] = pd.to_numeric(basic[col], errors="coerce")
+        df = df.merge(basic.drop(columns=["trade_date"], errors="ignore"), on="date", how="left")
+    elif isinstance(basic_result, dict) and basic_result.get("error"):
+        warnings.append(f"daily_basic 不可用：{basic_result.get('error')}")
+
+    if str(adjust or "").lower() == "qfq":
+        adj_result = tushare_adapter.get_adj_factor(ts_code, start_date, end_date)
+        adj = _tushare_result_frame(adj_result)
+        if not adj.empty and {"trade_date", "adj_factor"}.issubset(adj.columns):
+            adj = adj[["trade_date", "adj_factor"]].copy()
+            adj["date"] = pd.to_datetime(adj["trade_date"], format="%Y%m%d", errors="coerce")
+            adj["adj_factor"] = pd.to_numeric(adj["adj_factor"], errors="coerce")
+            df = df.merge(adj.drop(columns=["trade_date"], errors="ignore"), on="date", how="left")
+            latest_adj = df.sort_values("date")["adj_factor"].dropna()
+            latest_adj_factor = float(latest_adj.iloc[-1]) if not latest_adj.empty else None
+            if latest_adj_factor and latest_adj_factor > 0:
+                ratio = df["adj_factor"] / latest_adj_factor
+                for col in ["open", "high", "low", "close"]:
+                    if col in df.columns:
+                        df[col] = df[col] * ratio
+                adjustment = "qfq"
+            else:
+                warnings.append("Tushare 当前使用未复权日线，adj_factor 不可用。")
+        else:
+            error = adj_result.get("error") if isinstance(adj_result, dict) else "adj_factor 返回空数据"
+            warnings.append(f"Tushare 当前使用未复权日线，adj_factor 不可用。{error}")
+
+    frame = standardize_ohlcv_frame(df, market_type="A_SHARE", source=f"tushare:{ts_code}:{adjustment}")
+    frame.attrs["provider"] = "tushare"
+    frame.attrs["price_adjustment"] = adjustment
+    if warnings:
+        frame.attrs["warning"] = "；".join(warnings)
+    if frame.empty and not frame.attrs.get("warning"):
+        frame.attrs["warning"] = f"tushare:{ts_code} 返回空数据，区间 {start_date}-{end_date}"
+    return frame
+
+
 def fetch_ohlcv(ticker, market_type=None, start=None, end=None, freq="1d", provider="auto", adjust="qfq"):
     normalized = normalize_ticker(ticker)
     market = market_family(market_type or infer_market_type(normalized))
     provider = (provider or "auto").lower()
     attempts = []
+
+    if market == "A_SHARE" and provider in {"auto", "tushare", "ts"}:
+        data = _fetch_ohlcv_tushare(normalized, start=start, end=end, adjust=adjust)
+        attempts.append(data.attrs.get("warning") or f"tushare:{_tushare_ts_code(normalized)} 成功 {len(data)} 行")
+        if not data.empty:
+            data.attrs["attempts"] = attempts
+            return data
+
+    if provider in {"tushare", "ts"} and market != "A_SHARE":
+        data = _fetch_ohlcv_tushare(normalized, start=start, end=end, adjust=adjust)
+        attempts.append(data.attrs.get("warning") or f"tushare:{normalized} 不支持非A股")
 
     if market == "A_SHARE" and provider in {"auto", "akshare"}:
         data = _fetch_ohlcv_akshare(normalized, start=start, end=end, adjust=adjust)
@@ -304,7 +428,7 @@ def fetch_ohlcv(ticker, market_type=None, start=None, end=None, freq="1d", provi
             data.attrs["attempts"] = attempts
             return data
 
-    if provider in {"auto", "yfinance", "yf"}:
+    if provider in {"auto", "yfinance", "yf", "tushare", "ts"}:
         data = _fetch_ohlcv_yfinance(normalized, market, start=start, end=end, interval=freq)
         attempts.append(data.attrs.get("warning") or f"yfinance:{_yf_symbol(normalized, market)} 成功 {len(data)} 行")
         if not data.empty:

@@ -8445,7 +8445,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             with b3:
                 bt_cash = st.number_input("回测本金", min_value=1000.0, value=float(capital_plan or 100000.0), step=5000.0, key="bt_cash")
             with b4:
-                bt_provider = st.selectbox("行情源", ["auto", "akshare", "yfinance"], index=0, key="bt_provider")
+                bt_provider = st.selectbox("行情源", ["auto", "tushare", "akshare", "yfinance"], index=0, key="bt_provider")
 
             preset_rules = {
                 "持仓体检（推荐）": {
