@@ -16,6 +16,15 @@ DEFAULT_RULES = {
     "max_drawdown_exit": 0.12,
     "position_size": 1.0,
     "mode": "default",
+    "tech_rsi_buy_max": 68,
+    "tech_rsi_extreme": 78,
+    "tech_reduce_gap_days": 5,
+    "tech_max_reduce_count": 3,
+    "tech_trailing_drawdown_pct": 0.12,
+    "tech_atr_multiplier": 2.5,
+    "tech_volume_min_ratio": 0.6,
+    "tech_break_volume_ratio": 1.3,
+    "tech_big_drop_pct": 0.06,
 }
 
 
@@ -23,7 +32,11 @@ BACKTEST_MODES = {
     "default": "默认纪律",
     "free": "自由趋势",
     "dynamic": "动态止盈止损",
+    "tech_growth": "科技成长股",
 }
+
+
+BACKTEST_MODE_ORDER = ["default", "free", "dynamic", "tech_growth"]
 
 
 TECH_GROWTH_STOCK_POOL = [
@@ -142,16 +155,22 @@ def generate_signals(price_df, rules=None, cost_price=None):
     in_position = False
     entry_price = None
     peak_since_entry = None
+    peak_rsi_since_entry = None
+    last_reduce_idx = None
+    reduce_count_since_entry = 0
+    big_down_streak = 0
     signals = []
     reasons = []
 
-    for _, row in df.iterrows():
+    for row_idx, row in df.iterrows():
         close = _num(row.get("close"))
         ma_mid = _num(row.get("ma_mid"))
         ma_slow = _num(row.get("ma_slow"))
         rsi = _num(row.get("rsi"))
         atr_pct = _num(row.get("atr_pct"))
         vol_pct = _num(row.get("volatility_20"))
+        daily_return = _num(row.get("daily_return"), 0) or 0
+        volume_ratio = _num(row.get("volume_ratio_20"))
         signal = "HOLD" if in_position else "WAIT"
         reason = "等待有效信号"
 
@@ -160,8 +179,15 @@ def generate_signals(price_df, rules=None, cost_price=None):
             reasons.append(reason)
             continue
 
+        if daily_return <= -float(rules.get("tech_big_drop_pct", 0.06)):
+            big_down_streak += 1
+        else:
+            big_down_streak = 0
+
         if in_position:
             peak_since_entry = max(peak_since_entry or close, close)
+            if rsi is not None:
+                peak_rsi_since_entry = max(peak_rsi_since_entry or rsi, rsi)
             stop_anchor = entry_price or cost or close
             dynamic_stop, dynamic_take = _dynamic_risk_pct(row, rules)
             if mode == "dynamic":
@@ -187,6 +213,41 @@ def generate_signals(price_df, rules=None, cost_price=None):
                 elif rsi is not None and rsi >= float(rules["rsi_sell_min"]) and ma_mid is not None and close < ma_mid:
                     signal = "REDUCE"
                     reason = "自由模式：高RSI后跌回中线，先降风险"
+            elif mode == "tech_growth":
+                tech_trailing_limit = _tech_trailing_limit(row, rules)
+                can_reduce = _can_reduce(row_idx, last_reduce_idx, reduce_count_since_entry, rules)
+                weak_ma20 = ma_mid is not None and close < ma_mid
+                volume_break = weak_ma20 and volume_ratio is not None and volume_ratio >= float(rules.get("tech_break_volume_ratio", 1.3))
+                momentum_break = weak_ma20 and rsi is not None and rsi < 45
+                overheat_rollover = (
+                    weak_ma20
+                    and peak_rsi_since_entry is not None
+                    and peak_rsi_since_entry >= float(rules.get("tech_rsi_extreme", 78))
+                )
+                big_break = weak_ma20 and big_down_streak >= 2
+                trailing_break = trailing_dd <= -tech_trailing_limit
+
+                if ma_slow is not None and close < ma_slow and (rsi is None or rsi < 52):
+                    signal = "SELL"
+                    reason = "科技成长股：跌破慢线且动能转弱，趋势失效"
+                elif trailing_break and (weak_ma20 or rsi is not None and rsi < 52):
+                    signal = "SELL"
+                    reason = "科技成长股：持仓回撤触发ATR/峰值风控"
+                elif big_break:
+                    signal = "SELL"
+                    reason = "科技成长股：连续大阴线跌破中线，强制退出"
+                elif can_reduce and (momentum_break or volume_break or overheat_rollover or trailing_break):
+                    signal = "REDUCE"
+                    if volume_break:
+                        reason = "科技成长股：放量跌破中线，先降风险"
+                    elif overheat_rollover:
+                        reason = "科技成长股：极端过热后跌回中线，先降风险"
+                    elif trailing_break:
+                        reason = "科技成长股：触发动态回撤风控，强减仓"
+                    else:
+                        reason = "科技成长股：跌破中线且动能转弱，先减仓"
+                elif weak_ma20 and not can_reduce:
+                    reason = "科技成长股：中线转弱但已达到减仓间隔/次数限制，等待确认"
             else:
                 if close <= stop_loss:
                     signal = "SELL"
@@ -208,10 +269,19 @@ def generate_signals(price_df, rules=None, cost_price=None):
             rsi_ok = rsi is None or rsi <= float(rules["rsi_buy_max"])
             if mode == "free":
                 rsi_ok = rsi is None or rsi <= max(float(rules["rsi_buy_max"]), 66)
-            if trend_ok and rsi_ok and cost_ok:
+            elif mode == "tech_growth":
+                cost_ok = True
+                rsi_ok = rsi is None or (
+                    rsi <= float(rules.get("tech_rsi_buy_max", 68))
+                    and rsi <= float(rules.get("tech_rsi_extreme", 78))
+                )
+                volume_ok = volume_ratio is None or volume_ratio >= float(rules.get("tech_volume_min_ratio", 0.6))
+                if not volume_ok:
+                    reason = "科技成长股：趋势合格但量能极端萎缩，暂不追"
+            if trend_ok and rsi_ok and cost_ok and (mode != "tech_growth" or volume_ok):
                 signal = "BUY"
-                reason = "趋势站稳且未明显过热"
-            elif mode != "free" and cost and close <= cost * (1 - float(rules["stop_loss_pct"])):
+                reason = "趋势站稳且未明显过热" if mode != "tech_growth" else "科技成长股：站上中线且中线强于慢线，量能未极端萎缩"
+            elif mode not in {"free", "tech_growth"} and cost and close <= cost * (1 - float(rules["stop_loss_pct"])):
                 signal = "AVOID"
                 reason = "低于参考成本且未确认止跌"
 
@@ -219,10 +289,21 @@ def generate_signals(price_df, rules=None, cost_price=None):
             in_position = True
             entry_price = close
             peak_since_entry = close
+            peak_rsi_since_entry = rsi
+            last_reduce_idx = None
+            reduce_count_since_entry = 0
+            big_down_streak = 0
+        elif signal == "REDUCE":
+            last_reduce_idx = row_idx
+            reduce_count_since_entry += 1
         elif signal in {"SELL", "TAKE_PROFIT"}:
             in_position = False
             entry_price = None
             peak_since_entry = None
+            peak_rsi_since_entry = None
+            last_reduce_idx = None
+            reduce_count_since_entry = 0
+            big_down_streak = 0
 
         signals.append(signal)
         reasons.append(reason)
@@ -242,6 +323,24 @@ def _dynamic_risk_pct(row, rules):
     stop_pct = min(0.18, max(0.04, base_vol * 1.8))
     take_pct = min(0.45, max(0.08, base_vol * 3.2))
     return float(stop_pct), float(take_pct)
+
+
+def _tech_trailing_limit(row, rules):
+    atr_pct = _num(row.get("atr_pct"))
+    base = float(rules.get("tech_trailing_drawdown_pct", 0.12))
+    if atr_pct is None or atr_pct <= 0:
+        return base
+    return max(base, atr_pct * float(rules.get("tech_atr_multiplier", 2.5)))
+
+
+def _can_reduce(row_idx, last_reduce_idx, reduce_count_since_entry, rules):
+    max_reduce = int(_num(rules.get("tech_max_reduce_count"), 3) or 3)
+    gap_days = int(_num(rules.get("tech_reduce_gap_days"), 5) or 5)
+    if reduce_count_since_entry >= max_reduce:
+        return False
+    if last_reduce_idx is None:
+        return True
+    return row_idx - last_reduce_idx >= gap_days
 
 
 def simulate_trades(signal_df, initial_cash=100000, position_size=1.0, fee_rate=0.0005):
@@ -509,7 +608,7 @@ def run_backtest(price_df, rules=None, cost_price=None, initial_cash=100000, mod
 
 
 def run_multi_mode_backtests(price_df, base_rules=None, cost_price=None, initial_cash=100000, modes=None):
-    modes = modes or ["default", "free", "dynamic"]
+    modes = modes or BACKTEST_MODE_ORDER
     reports = {}
     for mode in modes:
         rules = {**DEFAULT_RULES, **(base_rules or {}), "mode": mode}
@@ -530,7 +629,7 @@ def run_batch_strategy_mode_backtests(stock_pool, start_date, end_date, capital,
     pool = stock_pool or TECH_GROWTH_STOCK_POOL
     detail_rows = []
     failures = []
-    modes = ["default", "free", "dynamic"]
+    modes = BACKTEST_MODE_ORDER
 
     try:
         from data_fetcher import fetch_ohlcv, infer_market_type, normalize_ticker
@@ -630,6 +729,7 @@ def aggregate_batch_mode_metrics(details):
             "avg_round_trip_win_rate": _round_mean(group.get("round_trip_win_rate")),
             "avg_trade_count": _round_mean(group.get("trade_count")),
             "avg_round_trip_count": _round_mean(group.get("round_trip_count")),
+            "avg_profit_factor": _round_mean(group.get("profit_factor")),
             "avg_sharpe": _round_mean(group.get("sharpe")),
             "avg_calmar": _round_mean(group.get("calmar")),
             "positive_stock_count": int(group.get("positive_return", pd.Series(dtype=bool)).sum()),
@@ -652,11 +752,19 @@ def build_batch_backtest_summary(aggregate, details, failures=None):
     best_round_trip = aggregate.sort_values("avg_round_trip_win_rate", ascending=False).iloc[0]
     best_drawdown = aggregate.sort_values("avg_max_drawdown_pct", ascending=False).iloc[0]
     free_row = aggregate[aggregate["mode"] == "free"]
-    free_note = ""
+    tech_row = aggregate[aggregate["mode"] == "tech_growth"]
+    mode_notes = []
     if not free_row.empty:
         row = free_row.iloc[0]
-        free_note = (
+        mode_notes.append(
             f"自由趋势完整交易胜率 {row['avg_round_trip_win_rate']}%，"
+            f"退出动作胜率 {row['avg_exit_action_win_rate']}%，"
+            f"平均收益 {row['avg_return_pct']}%，平均回撤 {row['avg_max_drawdown_pct']}%。"
+        )
+    if not tech_row.empty:
+        row = tech_row.iloc[0]
+        mode_notes.append(
+            f"科技成长股完整交易胜率 {row['avg_round_trip_win_rate']}%，"
             f"退出动作胜率 {row['avg_exit_action_win_rate']}%，"
             f"平均收益 {row['avg_return_pct']}%，平均回撤 {row['avg_max_drawdown_pct']}%。"
         )
@@ -666,7 +774,7 @@ def build_batch_backtest_summary(aggregate, details, failures=None):
         f"平均收益领先：{best_return['mode_label']}；"
         f"完整交易胜率领先：{best_round_trip['mode_label']}；"
         f"平均回撤控制领先：{best_drawdown['mode_label']}。"
-        f"{free_note}"
+        f"{''.join(mode_notes)}"
     )
 
 
@@ -732,7 +840,7 @@ def build_multi_mode_summary(reports):
 
     traded = [row for row in usable if row["trade_count"] > 0]
     if not traded:
-        return "三种模式在当前区间都没有形成可验证交易，只能参考趋势状态，不能用收益率判断优劣。"
+        return "多种模式在当前区间都没有形成可验证交易，只能参考趋势状态，不能用收益率判断优劣。"
 
     best_return = max(traded, key=lambda row: row["total"])
     best_risk = max(traded, key=lambda row: (row["dd"], row["sharpe"]))
@@ -858,6 +966,8 @@ def build_trader_brief(signal_df, trades, metrics, cost_context, latest_signal, 
 
     if mode == "free":
         next_steps.append("自由趋势模式不靠固定止盈止损，适合观察趋势能否延续，但回撤可能更大。")
+    elif mode == "tech_growth":
+        next_steps.append("科技成长股模式保留趋势持有，同时用减仓间隔、减仓上限和ATR回撤线控制卖飞与回撤。")
     elif mode == "dynamic":
         next_steps.append("动态模式会随波动调整止盈止损，通常更贴合高波动股票，但可能提前卖飞。")
     else:

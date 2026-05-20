@@ -291,6 +291,16 @@ except Exception as module_error:
         "take_profit_pct": 0.18,
         "max_drawdown_exit": 0.12,
         "position_size": 1.0,
+        "mode": "default",
+        "tech_rsi_buy_max": 68,
+        "tech_rsi_extreme": 78,
+        "tech_reduce_gap_days": 5,
+        "tech_max_reduce_count": 3,
+        "tech_trailing_drawdown_pct": 0.12,
+        "tech_atr_multiplier": 2.5,
+        "tech_volume_min_ratio": 0.6,
+        "tech_break_volume_ratio": 1.3,
+        "tech_big_drop_pct": 0.06,
     }
     TECH_GROWTH_STOCK_POOL = [
         {"ts_code": "002008.SZ", "name": "大族激光"},
@@ -8455,7 +8465,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             with bm:
                 bt_mode_choice = st.selectbox(
                     "回测方式",
-                    ["三模式对比（推荐）", "默认模式", "自由模式", "动态止盈止损模式"],
+                    ["四模式对比（推荐）", "默认模式", "自由模式", "动态止盈止损模式", "科技成长股模式"],
                     key="bt_mode_choice_v1",
                 )
             with b1:
@@ -8557,10 +8567,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "默认模式": ["default"],
                 "自由模式": ["free"],
                 "动态止盈止损模式": ["dynamic"],
+                "科技成长股模式": ["tech_growth"],
                 "三模式对比（推荐）": ["default", "free", "dynamic"],
+                "四模式对比（推荐）": ["default", "free", "dynamic", "tech_growth"],
             }
-            selected_modes = mode_map.get(bt_mode_choice, ["default", "free", "dynamic"])
-            st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损。")
+            selected_modes = mode_map.get(bt_mode_choice, ["default", "free", "dynamic", "tech_growth"])
+            st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损；科技成长股模式在趋势持有上叠加减仓间隔和ATR回撤风控。")
 
             bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}|{selected_modes}"
             if st.button("运行回测", key="btn_run_backtest", type="primary", width="stretch"):
@@ -8717,7 +8729,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
             st.divider()
             st.markdown("### 科技股样本池批量验证")
-            st.caption("用同一套三模式回测跑内置科技成长样本池，先判断自由趋势的高胜率是否能跨股票复现。")
+            st.caption("用同一套四模式回测跑内置科技成长样本池，先判断自由趋势和科技成长股模式的优势是否能跨股票复现。")
             pool_df = pd.DataFrame(TECH_GROWTH_STOCK_POOL)
             st.dataframe(pool_df.rename(columns={"ts_code": "代码", "name": "名称"}), width="stretch", hide_index=True)
 
@@ -8733,7 +8745,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
             batch_key = f"tech_batch|{batch_start}|{batch_end}|{batch_provider}|{batch_cash}|{len(TECH_GROWTH_STOCK_POOL)}"
             if st.button("运行科技股样本池回测", key="btn_run_tech_batch_backtest", width="stretch"):
-                with st.spinner("正在批量拉取行情并运行三模式回测..."):
+                with st.spinner("正在批量拉取行情并运行四模式回测..."):
                     batch_result = run_batch_strategy_mode_backtests(
                         TECH_GROWTH_STOCK_POOL,
                         batch_start.isoformat(),
@@ -8761,6 +8773,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "avg_round_trip_win_rate": "平均完整交易胜率",
                         "avg_trade_count": "平均退出动作数",
                         "avg_round_trip_count": "平均完整交易数",
+                        "avg_profit_factor": "平均盈亏比",
                         "avg_sharpe": "平均夏普",
                         "avg_calmar": "平均收益回撤比",
                         "positive_stock_count": "正收益股票数",
@@ -8773,7 +8786,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     show_cols = [
                         "模式", "平均收益", "中位数收益", "平均最大回撤", "中位数最大回撤",
                         "平均退出动作胜率", "平均完整交易胜率", "平均退出动作数", "平均完整交易数",
-                        "平均夏普", "平均收益回撤比", "正收益股票数", "参与股票数", "收益胜出次数",
+                        "平均盈亏比", "平均夏普", "平均收益回撤比", "正收益股票数", "参与股票数", "收益胜出次数",
                         "最差股票收益", "最差股票回撤", "平均REDUCE次数",
                     ]
                     st.dataframe(agg_show[[col for col in show_cols if col in agg_show.columns]], width="stretch", hide_index=True)
@@ -8817,7 +8830,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     f"{batch_result.get('summary', '')} "
                     "不能只看单票；自由趋势高胜率必须看完整交易胜率，而不是只看包含 REDUCE 的退出动作胜率。"
                     "如果自由趋势完整交易胜率仍然领先，才说明它更适合科技趋势票；"
-                    "如果收益或回撤不占优，只能说明它可能更稳，不一定是最优策略。"
+                    "如果科技成长股模式能降低回撤和 REDUCE 次数且收益不过度掉队，才说明风控改造有效。"
                 )
                 failures = batch_result.get("failures") or []
                 if failures:

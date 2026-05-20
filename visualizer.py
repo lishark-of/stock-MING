@@ -257,6 +257,11 @@ def render_backtest_report(report):
     c7.metric("夏普", _fmt(metrics.get("sharpe")))
     c8.metric("平均持仓天数", _fmt(metrics.get("avg_holding_days")))
     c9.metric("样本天数", report.get("data_points", trader_brief.get("sample_days", 0)))
+
+    c10, c11, c12 = st.columns(3)
+    c10.metric("盈亏比", _fmt(metrics.get("profit_factor")))
+    c11.metric("最大单笔亏损", _pct(metrics.get("max_single_trade_loss")))
+    c12.metric("REDUCE次数", metrics.get("reduce_count", 0))
     st.caption("退出动作胜率包含 SELL / TAKE_PROFIT / REDUCE；完整交易胜率只统计 BUY 到最终 SELL / TAKE_PROFIT 的闭环交易。")
 
     p1, p2, p3 = st.columns(3)
@@ -319,10 +324,14 @@ def build_trade_explanation_summary(multi_result, position_profile=None):
     least_trades = min(rows, key=lambda row: row["trades"])
     dynamic = next((row for row in rows if row["mode"] == "dynamic"), None)
     free = next((row for row in rows if row["mode"] == "free"), None)
+    tech = next((row for row in rows if row["mode"] == "tech_growth"), None)
 
     if max(row["trades"] for row in rows) == 0:
         style = "只观察"
-        style_reason = "三种模式都没有形成有效交易，不能把“无交易”误解成策略无效，更适合作为趋势体检。"
+        style_reason = "多种模式都没有形成有效交易，不能把“无交易”误解成策略无效，更适合作为趋势体检。"
+    elif tech and tech["total"] >= best_return["total"] - 3 and tech["dd"] >= best_dd["dd"] - 3:
+        style = "科技成长"
+        style_reason = "科技成长股模式在趋势持有上叠加回撤风控，收益和回撤更接近均衡。"
     elif free and free["total"] >= best_return["total"] - 1 and free["dd"] > -22:
         style = "趋势跟随"
         style_reason = "自由趋势模式能接住主要行情，说明这只票更吃趋势延续。"
@@ -380,6 +389,9 @@ def render_multi_mode_backtest(multi_result):
             "完整交易数": metrics.get("round_trip_count", 0),
             "完整交易胜率": _pct(metrics.get("round_trip_win_rate")),
             "平均完整收益": _pct(metrics.get("avg_round_trip_return")),
+            "盈亏比": _fmt(metrics.get("profit_factor")),
+            "平均持仓天数": _fmt(metrics.get("avg_holding_days")),
+            "最大单笔亏损": _pct(metrics.get("max_single_trade_loss")),
             "REDUCE次数": metrics.get("reduce_count", 0),
             "夏普": _fmt(metrics.get("sharpe")),
             "当前信号": brief.get("action") or latest.get("action", "继续观察"),
