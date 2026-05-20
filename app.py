@@ -270,7 +270,14 @@ if render_multi_mode_backtest is None:
         _fallback_render("多模式回测可视化", result)
 
 try:
-    from backtester import DEFAULT_RULES, compact_report_for_prompt, run_backtest, run_multi_mode_backtests
+    from backtester import (
+        DEFAULT_RULES,
+        TECH_GROWTH_STOCK_POOL,
+        compact_report_for_prompt,
+        run_backtest,
+        run_batch_strategy_mode_backtests,
+        run_multi_mode_backtests,
+    )
 except Exception as module_error:
     BACKTESTER_MODULE_ERROR = module_error
     DEFAULT_RULES = {
@@ -285,12 +292,27 @@ except Exception as module_error:
         "max_drawdown_exit": 0.12,
         "position_size": 1.0,
     }
+    TECH_GROWTH_STOCK_POOL = [
+        {"ts_code": "002008.SZ", "name": "大族激光"},
+        {"ts_code": "002837.SZ", "name": "英维克"},
+        {"ts_code": "601138.SH", "name": "工业富联"},
+        {"ts_code": "002158.SZ", "name": "汉钟精机"},
+        {"ts_code": "002335.SZ", "name": "科华数据"},
+        {"ts_code": "603986.SH", "name": "兆易创新"},
+        {"ts_code": "300308.SZ", "name": "中际旭创"},
+        {"ts_code": "300394.SZ", "name": "天孚通信"},
+        {"ts_code": "688981.SH", "name": "中芯国际"},
+        {"ts_code": "300750.SZ", "name": "宁德时代"},
+    ]
 
     def run_backtest(price_df, rules=None, cost_price=None, initial_cash=100000):
         return {"summary": f"回测模块降级：{BACKTESTER_MODULE_ERROR}", "metrics": {}, "signals": pd.DataFrame(), "trades": pd.DataFrame(), "equity_curve": pd.DataFrame()}
 
     def run_multi_mode_backtests(price_df, base_rules=None, cost_price=None, initial_cash=100000, modes=None):
         return {"reports": {"default": run_backtest(price_df, base_rules, cost_price, initial_cash)}, "summary": f"多模式回测降级：{BACKTESTER_MODULE_ERROR}"}
+
+    def run_batch_strategy_mode_backtests(stock_pool, start_date, end_date, capital, provider="tushare"):
+        return {"aggregate": pd.DataFrame(), "details": pd.DataFrame(), "failures": [], "summary": f"批量回测降级：{BACKTESTER_MODULE_ERROR}"}
 
     def compact_report_for_prompt(report, max_trades=8):
         return {"summary": report.get("summary", "") if isinstance(report, dict) else str(report)}
@@ -8692,6 +8714,115 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         st.success("✅ 回测报告已写入 stock_reports，并同步一条摘要到云端外脑。")
             else:
                 st.info("先运行一次回测。建议起点覆盖近两年，成本价填真实持仓成本或计划买入价。")
+
+            st.divider()
+            st.markdown("### 科技股样本池批量验证")
+            st.caption("用同一套三模式回测跑内置科技成长样本池，先判断自由趋势的高胜率是否能跨股票复现。")
+            pool_df = pd.DataFrame(TECH_GROWTH_STOCK_POOL)
+            st.dataframe(pool_df.rename(columns={"ts_code": "代码", "name": "名称"}), width="stretch", hide_index=True)
+
+            bb1, bb2, bb3, bb4 = st.columns([1, 1, 1, 1])
+            with bb1:
+                batch_start = st.date_input("批量回测起点", default_start, key="batch_bt_start")
+            with bb2:
+                batch_end = st.date_input("批量回测终点", default_end, key="batch_bt_end")
+            with bb3:
+                batch_provider = st.selectbox("批量行情源", ["tushare", "auto", "akshare", "yfinance"], index=0, key="batch_bt_provider")
+            with bb4:
+                batch_cash = st.number_input("单票回测本金", min_value=1000.0, value=float(bt_cash), step=5000.0, key="batch_bt_cash")
+
+            batch_key = f"tech_batch|{batch_start}|{batch_end}|{batch_provider}|{batch_cash}|{len(TECH_GROWTH_STOCK_POOL)}"
+            if st.button("运行科技股样本池回测", key="btn_run_tech_batch_backtest", width="stretch"):
+                with st.spinner("正在批量拉取行情并运行三模式回测..."):
+                    batch_result = run_batch_strategy_mode_backtests(
+                        TECH_GROWTH_STOCK_POOL,
+                        batch_start.isoformat(),
+                        (batch_end + datetime.timedelta(days=1)).isoformat(),
+                        batch_cash,
+                        provider=batch_provider,
+                    )
+                    batch_result["date_range"] = {"start": batch_start.isoformat(), "end": batch_end.isoformat()}
+                    batch_result["provider"] = batch_provider
+                    st.session_state["last_tech_batch_backtest"] = batch_result
+                    st.session_state["last_tech_batch_key"] = batch_key
+
+            batch_result = st.session_state.get("last_tech_batch_backtest")
+            if batch_result:
+                st.markdown("#### 聚合结果表")
+                aggregate = batch_result.get("aggregate")
+                if aggregate is not None and not aggregate.empty:
+                    agg_show = aggregate.rename(columns={
+                        "mode_label": "模式",
+                        "avg_return_pct": "平均收益",
+                        "median_return_pct": "中位数收益",
+                        "avg_max_drawdown_pct": "平均最大回撤",
+                        "median_max_drawdown_pct": "中位数最大回撤",
+                        "avg_exit_action_win_rate": "平均退出动作胜率",
+                        "avg_round_trip_win_rate": "平均完整交易胜率",
+                        "avg_trade_count": "平均退出动作数",
+                        "avg_round_trip_count": "平均完整交易数",
+                        "avg_sharpe": "平均夏普",
+                        "avg_calmar": "平均收益回撤比",
+                        "positive_stock_count": "正收益股票数",
+                        "tested_stock_count": "参与股票数",
+                        "mode_win_count": "收益胜出次数",
+                        "worst_stock_return_pct": "最差股票收益",
+                        "worst_stock_drawdown_pct": "最差股票回撤",
+                        "avg_reduce_count": "平均REDUCE次数",
+                    })
+                    show_cols = [
+                        "模式", "平均收益", "中位数收益", "平均最大回撤", "中位数最大回撤",
+                        "平均退出动作胜率", "平均完整交易胜率", "平均退出动作数", "平均完整交易数",
+                        "平均夏普", "平均收益回撤比", "正收益股票数", "参与股票数", "收益胜出次数",
+                        "最差股票收益", "最差股票回撤", "平均REDUCE次数",
+                    ]
+                    st.dataframe(agg_show[[col for col in show_cols if col in agg_show.columns]], width="stretch", hide_index=True)
+                else:
+                    st.warning("批量回测没有形成可汇总结果。")
+
+                st.markdown("#### 单票明细表")
+                details = batch_result.get("details")
+                if details is not None and not details.empty:
+                    detail_show = details.rename(columns={
+                        "ticker": "代码",
+                        "name": "名称",
+                        "mode_label": "模式",
+                        "total_return_pct": "收益",
+                        "max_drawdown_pct": "最大回撤",
+                        "exit_action_win_rate": "退出动作胜率",
+                        "round_trip_win_rate": "完整交易胜率",
+                        "trade_count": "退出动作数",
+                        "round_trip_count": "完整交易数",
+                        "avg_round_trip_return": "平均完整收益",
+                        "profit_factor": "盈亏比",
+                        "avg_holding_days": "平均持仓天数",
+                        "max_single_trade_loss": "最大单笔亏损",
+                        "reduce_count": "REDUCE次数",
+                        "avg_reduce_per_round_trip": "每笔平均REDUCE",
+                        "sharpe": "夏普",
+                        "calmar": "收益回撤比",
+                        "source": "行情源",
+                    })
+                    detail_cols = [
+                        "代码", "名称", "模式", "收益", "最大回撤", "退出动作胜率", "完整交易胜率",
+                        "退出动作数", "完整交易数", "平均完整收益", "盈亏比", "平均持仓天数",
+                        "最大单笔亏损", "REDUCE次数", "每笔平均REDUCE", "夏普", "收益回撤比", "行情源",
+                    ]
+                    st.dataframe(detail_show[[col for col in detail_cols if col in detail_show.columns]], width="stretch", hide_index=True)
+                else:
+                    st.info("暂无单票明细。")
+
+                st.markdown("#### 策略解释摘要")
+                st.info(
+                    f"{batch_result.get('summary', '')} "
+                    "不能只看单票；自由趋势高胜率必须看完整交易胜率，而不是只看包含 REDUCE 的退出动作胜率。"
+                    "如果自由趋势完整交易胜率仍然领先，才说明它更适合科技趋势票；"
+                    "如果收益或回撤不占优，只能说明它可能更稳，不一定是最优策略。"
+                )
+                failures = batch_result.get("failures") or []
+                if failures:
+                    with st.expander(f"失败股票 {len(failures)} 只", expanded=False):
+                        st.dataframe(pd.DataFrame(failures), width="stretch", hide_index=True)
 
     # 模块 C：主干量化推演 - 多市场版
     with tab_main:

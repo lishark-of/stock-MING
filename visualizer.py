@@ -246,12 +246,18 @@ def render_backtest_report(report):
     c1, c2, c3 = st.columns(3)
     c1.metric("策略收益", _pct(metrics.get("total_return_pct")))
     c2.metric("最大回撤", _pct(metrics.get("max_drawdown_pct")))
-    c3.metric("交易次数", metrics.get("trade_count", 0))
+    c3.metric("退出动作数", metrics.get("exit_action_count", metrics.get("trade_count", 0)))
 
     c4, c5, c6 = st.columns(3)
-    c4.metric("胜率", _pct(metrics.get("win_rate_pct")))
-    c5.metric("夏普", _fmt(metrics.get("sharpe")))
-    c6.metric("样本天数", report.get("data_points", trader_brief.get("sample_days", 0)))
+    c4.metric("退出动作胜率", _pct(metrics.get("exit_action_win_rate", metrics.get("win_rate_pct"))))
+    c5.metric("完整交易胜率", _pct(metrics.get("round_trip_win_rate")))
+    c6.metric("完整交易数", metrics.get("round_trip_count", 0))
+
+    c7, c8, c9 = st.columns(3)
+    c7.metric("夏普", _fmt(metrics.get("sharpe")))
+    c8.metric("平均持仓天数", _fmt(metrics.get("avg_holding_days")))
+    c9.metric("样本天数", report.get("data_points", trader_brief.get("sample_days", 0)))
+    st.caption("退出动作胜率包含 SELL / TAKE_PROFIT / REDUCE；完整交易胜率只统计 BUY 到最终 SELL / TAKE_PROFIT 的闭环交易。")
 
     p1, p2, p3 = st.columns(3)
     p1.metric("当前信号", action)
@@ -369,8 +375,12 @@ def render_multi_mode_backtest(multi_result):
             "模式": report.get("mode_label", mode),
             "策略收益": _pct(metrics.get("total_return_pct")),
             "最大回撤": _pct(metrics.get("max_drawdown_pct")),
-            "交易次数": metrics.get("trade_count", 0),
-            "胜率": _pct(metrics.get("win_rate_pct")),
+            "退出动作数": metrics.get("exit_action_count", metrics.get("trade_count", 0)),
+            "退出动作胜率": _pct(metrics.get("exit_action_win_rate", metrics.get("win_rate_pct"))),
+            "完整交易数": metrics.get("round_trip_count", 0),
+            "完整交易胜率": _pct(metrics.get("round_trip_win_rate")),
+            "平均完整收益": _pct(metrics.get("avg_round_trip_return")),
+            "REDUCE次数": metrics.get("reduce_count", 0),
             "夏普": _fmt(metrics.get("sharpe")),
             "当前信号": brief.get("action") or latest.get("action", "继续观察"),
             "状态总结": brief.get("verdict", ""),

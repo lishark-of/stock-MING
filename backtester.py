@@ -26,6 +26,20 @@ BACKTEST_MODES = {
 }
 
 
+TECH_GROWTH_STOCK_POOL = [
+    {"ts_code": "002008.SZ", "name": "大族激光"},
+    {"ts_code": "002837.SZ", "name": "英维克"},
+    {"ts_code": "601138.SH", "name": "工业富联"},
+    {"ts_code": "002158.SZ", "name": "汉钟精机"},
+    {"ts_code": "002335.SZ", "name": "科华数据"},
+    {"ts_code": "603986.SH", "name": "兆易创新"},
+    {"ts_code": "300308.SZ", "name": "中际旭创"},
+    {"ts_code": "300394.SZ", "name": "天孚通信"},
+    {"ts_code": "688981.SH", "name": "中芯国际"},
+    {"ts_code": "300750.SZ", "name": "宁德时代"},
+]
+
+
 def normalize_price_frame(price_df):
     if price_df is None or price_df.empty:
         return pd.DataFrame()
@@ -312,7 +326,17 @@ def compute_backtest_metrics(equity_curve, trades=None, initial_cash=100000):
             "sharpe": 0,
             "max_drawdown_pct": 0,
             "win_rate_pct": 0,
+            "exit_action_win_rate": 0,
             "trade_count": 0,
+            "exit_action_count": 0,
+            "round_trip_win_rate": 0,
+            "round_trip_count": 0,
+            "avg_round_trip_return": 0,
+            "profit_factor": None,
+            "avg_holding_days": 0,
+            "max_single_trade_loss": 0,
+            "reduce_count": 0,
+            "avg_reduce_per_round_trip": 0,
         }
 
     equity = equity_curve["equity"].astype(float)
@@ -326,21 +350,109 @@ def compute_backtest_metrics(equity_curve, trades=None, initial_cash=100000):
     dd = equity / equity.cummax() - 1
 
     trade_count = 0
-    win_rate = 0
+    exit_action_win_rate = 0
+    round_trip_metrics = compute_round_trip_metrics(trades)
     if trades is not None and not trades.empty:
         exits = trades[trades["action"].isin(["SELL", "TAKE_PROFIT", "REDUCE"])]
         trade_count = len(exits)
         pnl = pd.to_numeric(exits.get("pnl_pct"), errors="coerce").dropna()
         if len(pnl):
-            win_rate = (pnl > 0).mean() * 100
+            exit_action_win_rate = (pnl > 0).mean() * 100
 
-    return {
+    result = {
         "total_return_pct": round(float(total_return * 100), 2),
         "annual_return_pct": round(float(annual_return * 100), 2),
         "sharpe": round(float(sharpe), 2),
         "max_drawdown_pct": round(float(dd.min() * 100), 2),
-        "win_rate_pct": round(float(win_rate), 2),
+        "win_rate_pct": round(float(exit_action_win_rate), 2),
+        "exit_action_win_rate": round(float(exit_action_win_rate), 2),
         "trade_count": int(trade_count),
+        "exit_action_count": int(trade_count),
+    }
+    result.update(round_trip_metrics)
+    return result
+
+
+def compute_round_trip_metrics(trades):
+    base = {
+        "round_trip_win_rate": 0,
+        "round_trip_count": 0,
+        "avg_round_trip_return": 0,
+        "profit_factor": None,
+        "avg_holding_days": 0,
+        "max_single_trade_loss": 0,
+        "reduce_count": 0,
+        "avg_reduce_per_round_trip": 0,
+    }
+    if trades is None or trades.empty:
+        return base
+
+    rows = trades.copy()
+    rows["action"] = rows.get("action", "").astype(str)
+    if "date" in rows.columns:
+        rows["date"] = pd.to_datetime(rows["date"], errors="coerce")
+    for col in ["price", "shares", "pnl_pct"]:
+        if col in rows.columns:
+            rows[col] = pd.to_numeric(rows[col], errors="coerce")
+
+    reduce_count = int((rows["action"] == "REDUCE").sum())
+    round_trips = []
+    current = None
+    for _, row in rows.iterrows():
+        action = row.get("action")
+        price = _num(row.get("price"))
+        shares = _num(row.get("shares"))
+        date = row.get("date")
+        if action == "BUY" and price is not None and shares is not None and shares > 0:
+            current = {
+                "entry_date": date,
+                "entry_price": price,
+                "entry_shares": shares,
+                "exit_value": 0.0,
+                "reduce_count": 0,
+            }
+        elif action == "REDUCE" and current and price is not None and shares is not None and shares > 0:
+            current["exit_value"] += price * shares
+            current["reduce_count"] += 1
+        elif action in {"SELL", "TAKE_PROFIT"} and current and price is not None and shares is not None and shares > 0:
+            current["exit_value"] += price * shares
+            entry_value = current["entry_price"] * current["entry_shares"]
+            if entry_value > 0:
+                return_pct = (current["exit_value"] / entry_value - 1) * 100
+                holding_days = None
+                if pd.notna(current.get("entry_date")) and pd.notna(date):
+                    holding_days = max((date - current["entry_date"]).days, 0)
+                round_trips.append({
+                    "return_pct": return_pct,
+                    "holding_days": holding_days,
+                    "reduce_count": current["reduce_count"],
+                })
+            current = None
+
+    count = len(round_trips)
+    if count == 0:
+        base["reduce_count"] = reduce_count
+        return base
+
+    returns = [item["return_pct"] for item in round_trips]
+    wins = [value for value in returns if value > 0]
+    losses = [value for value in returns if value < 0]
+    holding_days = [item["holding_days"] for item in round_trips if item["holding_days"] is not None]
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    profit_factor = None
+    if gross_loss > 0:
+        profit_factor = gross_profit / gross_loss
+
+    return {
+        "round_trip_win_rate": round(float(len(wins) / count * 100), 2),
+        "round_trip_count": int(count),
+        "avg_round_trip_return": round(float(np.mean(returns)), 2),
+        "profit_factor": round(float(profit_factor), 2) if profit_factor is not None else None,
+        "avg_holding_days": round(float(np.mean(holding_days)), 1) if holding_days else 0,
+        "max_single_trade_loss": round(float(min(returns)), 2),
+        "reduce_count": reduce_count,
+        "avg_reduce_per_round_trip": round(float(np.mean([item["reduce_count"] for item in round_trips])), 2),
     }
 
 
@@ -412,6 +524,193 @@ def run_multi_mode_backtests(price_df, base_rules=None, cost_price=None, initial
         "reports": reports,
         "summary": build_multi_mode_summary(reports),
     }
+
+
+def run_batch_strategy_mode_backtests(stock_pool, start_date, end_date, capital, provider="tushare"):
+    pool = stock_pool or TECH_GROWTH_STOCK_POOL
+    detail_rows = []
+    failures = []
+    modes = ["default", "free", "dynamic"]
+
+    try:
+        from data_fetcher import fetch_ohlcv, infer_market_type, normalize_ticker
+    except Exception as exc:
+        return {
+            "stock_pool": pool,
+            "aggregate": pd.DataFrame(),
+            "details": pd.DataFrame(),
+            "failures": [{"ticker": "", "name": "", "error": f"行情模块不可用：{exc}"}],
+            "summary": "批量回测失败：行情模块不可用。",
+        }
+
+    for item in pool:
+        ticker = item.get("ts_code") or item.get("ticker") or item.get("code") or ""
+        name = item.get("name", ticker)
+        normalized = normalize_ticker(ticker)
+        try:
+            price_frame = fetch_ohlcv(
+                normalized,
+                market_type=infer_market_type(normalized),
+                start=str(start_date),
+                end=str(end_date),
+                provider=provider,
+            )
+            if price_frame is None or price_frame.empty:
+                failures.append({"ticker": normalized, "name": name, "error": "没有抓到可用行情"})
+                continue
+
+            multi_result = run_multi_mode_backtests(
+                price_frame,
+                base_rules=DEFAULT_RULES,
+                cost_price=None,
+                initial_cash=capital,
+                modes=modes,
+            )
+            reports = multi_result.get("reports") or {}
+            best_mode = _best_mode_by_return(reports)
+            source = price_frame["source"].iloc[-1] if "source" in price_frame.columns and not price_frame.empty else provider
+            data_points = int(len(price_frame))
+            for mode, report in reports.items():
+                metrics = report.get("metrics", {}) or {}
+                total = _num(metrics.get("total_return_pct"), 0) or 0
+                dd = _num(metrics.get("max_drawdown_pct"), 0) or 0
+                detail_rows.append({
+                    "ticker": normalized,
+                    "name": name,
+                    "mode": mode,
+                    "mode_label": report.get("mode_label", BACKTEST_MODES.get(mode, mode)),
+                    "total_return_pct": total,
+                    "max_drawdown_pct": dd,
+                    "exit_action_win_rate": _num(metrics.get("exit_action_win_rate"), 0) or 0,
+                    "round_trip_win_rate": _num(metrics.get("round_trip_win_rate"), 0) or 0,
+                    "trade_count": int(_num(metrics.get("trade_count"), 0) or 0),
+                    "round_trip_count": int(_num(metrics.get("round_trip_count"), 0) or 0),
+                    "avg_round_trip_return": _num(metrics.get("avg_round_trip_return"), 0) or 0,
+                    "profit_factor": _num(metrics.get("profit_factor")),
+                    "avg_holding_days": _num(metrics.get("avg_holding_days"), 0) or 0,
+                    "max_single_trade_loss": _num(metrics.get("max_single_trade_loss"), 0) or 0,
+                    "reduce_count": int(_num(metrics.get("reduce_count"), 0) or 0),
+                    "avg_reduce_per_round_trip": _num(metrics.get("avg_reduce_per_round_trip"), 0) or 0,
+                    "sharpe": _num(metrics.get("sharpe"), 0) or 0,
+                    "calmar": _calmar_like(total, dd),
+                    "positive_return": total > 0,
+                    "best_return_mode": mode == best_mode,
+                    "data_points": data_points,
+                    "source": source,
+                })
+        except Exception as exc:
+            failures.append({"ticker": normalized, "name": name, "error": str(exc)})
+
+    details = pd.DataFrame(detail_rows)
+    aggregate = aggregate_batch_mode_metrics(details)
+    return {
+        "stock_pool": pool,
+        "aggregate": aggregate,
+        "details": details,
+        "failures": failures,
+        "summary": build_batch_backtest_summary(aggregate, details, failures),
+    }
+
+
+def aggregate_batch_mode_metrics(details):
+    if details is None or details.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for mode, group in details.groupby("mode", sort=False):
+        mode_label = group["mode_label"].iloc[0] if "mode_label" in group.columns else BACKTEST_MODES.get(mode, mode)
+        rows.append({
+            "mode": mode,
+            "mode_label": mode_label,
+            "avg_return_pct": _round_mean(group.get("total_return_pct")),
+            "median_return_pct": _round_median(group.get("total_return_pct")),
+            "avg_max_drawdown_pct": _round_mean(group.get("max_drawdown_pct")),
+            "median_max_drawdown_pct": _round_median(group.get("max_drawdown_pct")),
+            "avg_exit_action_win_rate": _round_mean(group.get("exit_action_win_rate")),
+            "avg_round_trip_win_rate": _round_mean(group.get("round_trip_win_rate")),
+            "avg_trade_count": _round_mean(group.get("trade_count")),
+            "avg_round_trip_count": _round_mean(group.get("round_trip_count")),
+            "avg_sharpe": _round_mean(group.get("sharpe")),
+            "avg_calmar": _round_mean(group.get("calmar")),
+            "positive_stock_count": int(group.get("positive_return", pd.Series(dtype=bool)).sum()),
+            "tested_stock_count": int(group["ticker"].nunique()),
+            "mode_win_count": int(group.get("best_return_mode", pd.Series(dtype=bool)).sum()),
+            "worst_stock_return_pct": _round_min(group.get("total_return_pct")),
+            "worst_stock_drawdown_pct": _round_min(group.get("max_drawdown_pct")),
+            "avg_reduce_count": _round_mean(group.get("reduce_count")),
+        })
+    return pd.DataFrame(rows)
+
+
+def build_batch_backtest_summary(aggregate, details, failures=None):
+    tested = int(details["ticker"].nunique()) if details is not None and not details.empty else 0
+    failed = len(failures or [])
+    if aggregate is None or aggregate.empty:
+        return f"科技股样本池批量回测没有形成可汇总结果；成功 {tested} 只，失败 {failed} 只。"
+
+    best_return = aggregate.sort_values("avg_return_pct", ascending=False).iloc[0]
+    best_round_trip = aggregate.sort_values("avg_round_trip_win_rate", ascending=False).iloc[0]
+    best_drawdown = aggregate.sort_values("avg_max_drawdown_pct", ascending=False).iloc[0]
+    free_row = aggregate[aggregate["mode"] == "free"]
+    free_note = ""
+    if not free_row.empty:
+        row = free_row.iloc[0]
+        free_note = (
+            f"自由趋势完整交易胜率 {row['avg_round_trip_win_rate']}%，"
+            f"退出动作胜率 {row['avg_exit_action_win_rate']}%，"
+            f"平均收益 {row['avg_return_pct']}%，平均回撤 {row['avg_max_drawdown_pct']}%。"
+        )
+
+    return (
+        f"批量回测成功 {tested} 只、失败 {failed} 只。"
+        f"平均收益领先：{best_return['mode_label']}；"
+        f"完整交易胜率领先：{best_round_trip['mode_label']}；"
+        f"平均回撤控制领先：{best_drawdown['mode_label']}。"
+        f"{free_note}"
+    )
+
+
+def _best_mode_by_return(reports):
+    best_mode = None
+    best_return = None
+    for mode, report in (reports or {}).items():
+        total = _num((report.get("metrics") or {}).get("total_return_pct"))
+        if total is None:
+            continue
+        if best_return is None or total > best_return:
+            best_return = total
+            best_mode = mode
+    return best_mode
+
+
+def _calmar_like(total_return_pct, max_drawdown_pct):
+    total = _num(total_return_pct)
+    dd = _num(max_drawdown_pct)
+    if total is None or dd is None or dd == 0:
+        return None
+    return round(float(total / abs(dd)), 2)
+
+
+def _clean_numeric(series):
+    if series is None:
+        return pd.Series(dtype=float)
+    values = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    return values
+
+
+def _round_mean(series):
+    values = _clean_numeric(series)
+    return round(float(values.mean()), 2) if len(values) else 0
+
+
+def _round_median(series):
+    values = _clean_numeric(series)
+    return round(float(values.median()), 2) if len(values) else 0
+
+
+def _round_min(series):
+    values = _clean_numeric(series)
+    return round(float(values.min()), 2) if len(values) else 0
 
 
 def build_multi_mode_summary(reports):
