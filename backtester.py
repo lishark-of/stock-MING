@@ -428,14 +428,20 @@ def compute_backtest_metrics(equity_curve, trades=None, initial_cash=100000):
             "exit_action_win_rate": 0,
             "trade_count": 0,
             "exit_action_count": 0,
+            "entry_count": 0,
             "round_trip_win_rate": 0,
             "round_trip_count": 0,
+            "open_position_count": 0,
+            "effective_round_count": 0,
+            "open_position_return_pct": None,
+            "open_position_holding_days": 0,
             "avg_round_trip_return": 0,
             "profit_factor": None,
             "avg_holding_days": 0,
             "max_single_trade_loss": 0,
             "reduce_count": 0,
             "avg_reduce_per_round_trip": 0,
+            "avg_reduce_per_effective_round": 0,
         }
 
     equity = equity_curve["equity"].astype(float)
@@ -450,10 +456,12 @@ def compute_backtest_metrics(equity_curve, trades=None, initial_cash=100000):
 
     trade_count = 0
     exit_action_win_rate = 0
-    round_trip_metrics = compute_round_trip_metrics(trades)
+    round_trip_metrics = compute_round_trip_metrics(trades, equity_curve=equity_curve)
+    entry_count = 0
     if trades is not None and not trades.empty:
         exits = trades[trades["action"].isin(["SELL", "TAKE_PROFIT", "REDUCE"])]
         trade_count = len(exits)
+        entry_count = int((trades["action"] == "BUY").sum()) if "action" in trades.columns else 0
         pnl = pd.to_numeric(exits.get("pnl_pct"), errors="coerce").dropna()
         if len(pnl):
             exit_action_win_rate = (pnl > 0).mean() * 100
@@ -467,21 +475,28 @@ def compute_backtest_metrics(equity_curve, trades=None, initial_cash=100000):
         "exit_action_win_rate": round(float(exit_action_win_rate), 2),
         "trade_count": int(trade_count),
         "exit_action_count": int(trade_count),
+        "entry_count": int(entry_count),
     }
     result.update(round_trip_metrics)
     return result
 
 
-def compute_round_trip_metrics(trades):
+def compute_round_trip_metrics(trades, equity_curve=None):
     base = {
+        "entry_count": 0,
         "round_trip_win_rate": 0,
         "round_trip_count": 0,
+        "open_position_count": 0,
+        "effective_round_count": 0,
+        "open_position_return_pct": None,
+        "open_position_holding_days": 0,
         "avg_round_trip_return": 0,
         "profit_factor": None,
         "avg_holding_days": 0,
         "max_single_trade_loss": 0,
         "reduce_count": 0,
         "avg_reduce_per_round_trip": 0,
+        "avg_reduce_per_effective_round": 0,
     }
     if trades is None or trades.empty:
         return base
@@ -494,6 +509,7 @@ def compute_round_trip_metrics(trades):
         if col in rows.columns:
             rows[col] = pd.to_numeric(rows[col], errors="coerce")
 
+    entry_count = int((rows["action"] == "BUY").sum())
     reduce_count = int((rows["action"] == "REDUCE").sum())
     round_trips = []
     current = None
@@ -507,11 +523,13 @@ def compute_round_trip_metrics(trades):
                 "entry_date": date,
                 "entry_price": price,
                 "entry_shares": shares,
+                "remaining_shares": shares,
                 "exit_value": 0.0,
                 "reduce_count": 0,
             }
         elif action == "REDUCE" and current and price is not None and shares is not None and shares > 0:
             current["exit_value"] += price * shares
+            current["remaining_shares"] = max(_num(current.get("remaining_shares"), 0) - shares, 0)
             current["reduce_count"] += 1
         elif action in {"SELL", "TAKE_PROFIT"} and current and price is not None and shares is not None and shares > 0:
             current["exit_value"] += price * shares
@@ -528,9 +546,38 @@ def compute_round_trip_metrics(trades):
                 })
             current = None
 
+    open_position_count = 0
+    open_position_return_pct = None
+    open_position_holding_days = 0
+    if current:
+        open_position_count = 1
+        last_close = None
+        last_date = None
+        if equity_curve is not None and not equity_curve.empty:
+            last_close = _num(equity_curve["close"].iloc[-1]) if "close" in equity_curve.columns else None
+            last_date = pd.to_datetime(equity_curve["date"].iloc[-1], errors="coerce") if "date" in equity_curve.columns else None
+        if last_close is None:
+            close_rows = rows[pd.to_numeric(rows.get("price"), errors="coerce").notna()]
+            if not close_rows.empty:
+                last_close = _num(close_rows["price"].iloc[-1])
+                last_date = pd.to_datetime(close_rows["date"].iloc[-1], errors="coerce") if "date" in close_rows.columns else last_date
+        entry_value = current["entry_price"] * current["entry_shares"]
+        remaining_value = (_num(current.get("remaining_shares"), 0) or 0) * (last_close or 0)
+        if entry_value > 0 and last_close is not None:
+            open_position_return_pct = round(float((current["exit_value"] + remaining_value) / entry_value - 1) * 100, 2)
+        if pd.notna(current.get("entry_date")) and pd.notna(last_date):
+            open_position_holding_days = max((last_date - current["entry_date"]).days, 0)
+
     count = len(round_trips)
+    effective_round_count = count + open_position_count
     if count == 0:
+        base["entry_count"] = entry_count
+        base["open_position_count"] = open_position_count
+        base["effective_round_count"] = effective_round_count
+        base["open_position_return_pct"] = open_position_return_pct
+        base["open_position_holding_days"] = open_position_holding_days
         base["reduce_count"] = reduce_count
+        base["avg_reduce_per_effective_round"] = round(float(reduce_count / effective_round_count), 2) if effective_round_count > 0 else 0
         return base
 
     returns = [item["return_pct"] for item in round_trips]
@@ -544,14 +591,20 @@ def compute_round_trip_metrics(trades):
         profit_factor = gross_profit / gross_loss
 
     return {
+        "entry_count": entry_count,
         "round_trip_win_rate": round(float(len(wins) / count * 100), 2),
         "round_trip_count": int(count),
+        "open_position_count": int(open_position_count),
+        "effective_round_count": int(effective_round_count),
+        "open_position_return_pct": open_position_return_pct,
+        "open_position_holding_days": int(open_position_holding_days),
         "avg_round_trip_return": round(float(np.mean(returns)), 2),
         "profit_factor": round(float(profit_factor), 2) if profit_factor is not None else None,
         "avg_holding_days": round(float(np.mean(holding_days)), 1) if holding_days else 0,
         "max_single_trade_loss": round(float(min(returns)), 2),
         "reduce_count": reduce_count,
         "avg_reduce_per_round_trip": round(float(np.mean([item["reduce_count"] for item in round_trips])), 2),
+        "avg_reduce_per_effective_round": round(float(reduce_count / effective_round_count), 2) if effective_round_count > 0 else 0,
     }
 
 
@@ -683,13 +736,19 @@ def run_batch_strategy_mode_backtests(stock_pool, start_date, end_date, capital,
                     "exit_action_win_rate": _num(metrics.get("exit_action_win_rate"), 0) or 0,
                     "round_trip_win_rate": _num(metrics.get("round_trip_win_rate"), 0) or 0,
                     "trade_count": int(_num(metrics.get("trade_count"), 0) or 0),
+                    "entry_count": int(_num(metrics.get("entry_count"), 0) or 0),
                     "round_trip_count": int(_num(metrics.get("round_trip_count"), 0) or 0),
+                    "open_position_count": int(_num(metrics.get("open_position_count"), 0) or 0),
+                    "effective_round_count": int(_num(metrics.get("effective_round_count"), 0) or 0),
+                    "open_position_return_pct": _num(metrics.get("open_position_return_pct")),
+                    "open_position_holding_days": int(_num(metrics.get("open_position_holding_days"), 0) or 0),
                     "avg_round_trip_return": _num(metrics.get("avg_round_trip_return"), 0) or 0,
                     "profit_factor": _num(metrics.get("profit_factor")),
                     "avg_holding_days": _num(metrics.get("avg_holding_days"), 0) or 0,
                     "max_single_trade_loss": _num(metrics.get("max_single_trade_loss"), 0) or 0,
                     "reduce_count": int(_num(metrics.get("reduce_count"), 0) or 0),
                     "avg_reduce_per_round_trip": _num(metrics.get("avg_reduce_per_round_trip"), 0) or 0,
+                    "avg_reduce_per_effective_round": _num(metrics.get("avg_reduce_per_effective_round"), 0) or 0,
                     "sharpe": _num(metrics.get("sharpe"), 0) or 0,
                     "calmar": _calmar_like(total, dd),
                     "positive_return": total > 0,
@@ -728,7 +787,10 @@ def aggregate_batch_mode_metrics(details):
             "avg_exit_action_win_rate": _round_mean(group.get("exit_action_win_rate")),
             "avg_round_trip_win_rate": _round_mean(group.get("round_trip_win_rate")),
             "avg_trade_count": _round_mean(group.get("trade_count")),
+            "avg_entry_count": _round_mean(group.get("entry_count")),
             "avg_round_trip_count": _round_mean(group.get("round_trip_count")),
+            "avg_open_position_count": _round_mean(group.get("open_position_count")),
+            "avg_effective_round_count": _round_mean(group.get("effective_round_count")),
             "avg_profit_factor": _round_mean(group.get("profit_factor")),
             "avg_sharpe": _round_mean(group.get("sharpe")),
             "avg_calmar": _round_mean(group.get("calmar")),
@@ -738,6 +800,7 @@ def aggregate_batch_mode_metrics(details):
             "worst_stock_return_pct": _round_min(group.get("total_return_pct")),
             "worst_stock_drawdown_pct": _round_min(group.get("max_drawdown_pct")),
             "avg_reduce_count": _round_mean(group.get("reduce_count")),
+            "avg_reduce_per_effective_round": _round_mean(group.get("avg_reduce_per_effective_round")),
         })
     return pd.DataFrame(rows)
 

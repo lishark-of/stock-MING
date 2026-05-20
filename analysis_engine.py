@@ -414,7 +414,7 @@ def build_backtest_explanation_prompt(ticker, backtest_report, stock_context=Non
 1. 本次回测是什么口径：单票 / 四模式 / 是否带科技股样本池批量结果。
 2. 哪个模式收益最好、哪个模式回撤控制最好、哪个模式完整交易胜率最好、哪个模式 Profit Factor 更好。
 3. 哪个模式 REDUCE 次数最多，是否存在退出动作胜率被分批减仓抬高的风险。
-4. 科技成长股模式相对自由趋势是否改善：收益、最大回撤、round_trip_win_rate、profit_factor、reduce_count、sharpe、max_single_trade_loss。
+4. 科技成长股模式相对自由趋势是否改善：收益、最大回撤、round_trip_win_rate、effective_round_count、open_position_return_pct、profit_factor、reduce_count、sharpe、max_single_trade_loss。
 5. 当前信号：观望 / 小仓尝试 / 分批止盈 / 减仓 / 禁止开仓。
 6. 成本价维度：若用户有成本价，说明当前是浮盈还是浮亏，以及止损/止盈应如何围绕成本价调整。
 7. 规则失效条件：列出 3 条以内，必须可由价格、均线、RSI、量能或回撤验证。
@@ -430,8 +430,15 @@ def build_backtest_explanation_prompt(ticker, backtest_report, stock_context=Non
   - exit_action_win_rate 是退出动作胜率，包含 SELL / TAKE_PROFIT / REDUCE。
   - round_trip_win_rate 是完整交易胜率，从 BUY 到最终清仓计算。
   - REDUCE 半仓减仓会抬高退出动作胜率，不能把它等同于真实交易胜率。
-- 判断模式优劣时，不能只看收益或 exit_action_win_rate，必须同时看 total_return_pct、max_drawdown_pct、round_trip_win_rate、profit_factor、reduce_count、sharpe、max_single_trade_loss、avg_holding_days。
+- 必须理解新增口径：
+  - entry_count 是 BUY 次数。
+  - open_position_count / open_position_return_pct / open_position_holding_days 表示回测结束时仍未闭合的持仓状态。
+  - effective_round_count = round_trip_count + open_position_count。
+  - 未闭合持仓浮盈只是浮动结果，不得当成已实现收益。
+- 判断模式优劣时，不能只看收益或 exit_action_win_rate，必须同时看 total_return_pct、max_drawdown_pct、round_trip_win_rate、effective_round_count、open_position_return_pct、profit_factor、reduce_count、sharpe、max_single_trade_loss、avg_holding_days。
 - 如果没有 tech_basket_batch_summary，必须说明“本次仅为单票回测，不能证明模式普适性”。
 - 如果有 tech_basket_batch_summary，必须结合批量结果判断模式适配性，但仍要说明它不代表未来收益。
+- 如果 round_trip_count 较少，必须明确“完整交易胜率置信度有限”，不得过度依赖它。
+- 对自由趋势、科技成长股这类长持策略，必须结合 effective_round_count、open_position_return_pct、profit_factor、最大回撤和总收益判断，不得只看闭环胜率。
 - 如果交易次数或 round_trip_count 太少、回撤太大、完整交易胜率低、max_single_trade_loss 偏大，要明确降低仓位或只观察，不得把高收益解释成确定性优势。
 """

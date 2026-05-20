@@ -358,7 +358,10 @@ def compact_tech_batch_for_prompt(batch_result):
             "avg_exit_action_win_rate",
             "avg_round_trip_win_rate",
             "avg_trade_count",
+            "avg_entry_count",
             "avg_round_trip_count",
+            "avg_open_position_count",
+            "avg_effective_round_count",
             "avg_profit_factor",
             "avg_sharpe",
             "avg_calmar",
@@ -368,6 +371,7 @@ def compact_tech_batch_for_prompt(batch_result):
             "worst_stock_return_pct",
             "worst_stock_drawdown_pct",
             "avg_reduce_count",
+            "avg_reduce_per_effective_round",
         ]
         show = aggregate[[col for col in keep_cols if col in aggregate.columns]].copy()
         aggregate_rows = show.to_dict("records")
@@ -8814,7 +8818,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "avg_exit_action_win_rate": "平均退出动作胜率",
                         "avg_round_trip_win_rate": "平均完整交易胜率",
                         "avg_trade_count": "平均退出动作数",
+                        "avg_entry_count": "平均买入次数",
                         "avg_round_trip_count": "平均完整交易数",
+                        "avg_open_position_count": "平均未闭合持仓",
+                        "avg_effective_round_count": "平均有效交易周期数",
                         "avg_profit_factor": "平均盈亏比",
                         "avg_sharpe": "平均夏普",
                         "avg_calmar": "平均收益回撤比",
@@ -8824,12 +8831,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "worst_stock_return_pct": "最差股票收益",
                         "worst_stock_drawdown_pct": "最差股票回撤",
                         "avg_reduce_count": "平均REDUCE次数",
+                        "avg_reduce_per_effective_round": "每有效周期平均REDUCE",
                     })
                     show_cols = [
                         "模式", "平均收益", "中位数收益", "平均最大回撤", "中位数最大回撤",
-                        "平均退出动作胜率", "平均完整交易胜率", "平均退出动作数", "平均完整交易数",
+                        "平均退出动作胜率", "平均完整交易胜率", "平均退出动作数", "平均买入次数", "平均完整交易数",
+                        "平均未闭合持仓", "平均有效交易周期数",
                         "平均盈亏比", "平均夏普", "平均收益回撤比", "正收益股票数", "参与股票数", "收益胜出次数",
-                        "最差股票收益", "最差股票回撤", "平均REDUCE次数",
+                        "最差股票收益", "最差股票回撤", "平均REDUCE次数", "每有效周期平均REDUCE",
                     ]
                     st.dataframe(agg_show[[col for col in show_cols if col in agg_show.columns]], width="stretch", hide_index=True)
                 else:
@@ -8847,21 +8856,28 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "exit_action_win_rate": "退出动作胜率",
                         "round_trip_win_rate": "完整交易胜率",
                         "trade_count": "退出动作数",
+                        "entry_count": "买入次数",
                         "round_trip_count": "完整交易数",
+                        "open_position_count": "期末未闭合持仓",
+                        "effective_round_count": "有效交易周期数",
+                        "open_position_return_pct": "期末未闭合持仓收益",
+                        "open_position_holding_days": "未闭合持仓天数",
                         "avg_round_trip_return": "平均完整收益",
                         "profit_factor": "盈亏比",
                         "avg_holding_days": "平均持仓天数",
                         "max_single_trade_loss": "最大单笔亏损",
                         "reduce_count": "REDUCE次数",
                         "avg_reduce_per_round_trip": "每笔平均REDUCE",
+                        "avg_reduce_per_effective_round": "每有效周期REDUCE",
                         "sharpe": "夏普",
                         "calmar": "收益回撤比",
                         "source": "行情源",
                     })
                     detail_cols = [
                         "代码", "名称", "模式", "收益", "最大回撤", "退出动作胜率", "完整交易胜率",
-                        "退出动作数", "完整交易数", "平均完整收益", "盈亏比", "平均持仓天数",
-                        "最大单笔亏损", "REDUCE次数", "每笔平均REDUCE", "夏普", "收益回撤比", "行情源",
+                        "退出动作数", "买入次数", "完整交易数", "期末未闭合持仓", "有效交易周期数", "期末未闭合持仓收益",
+                        "未闭合持仓天数", "平均完整收益", "盈亏比", "平均持仓天数",
+                        "最大单笔亏损", "REDUCE次数", "每笔平均REDUCE", "每有效周期REDUCE", "夏普", "收益回撤比", "行情源",
                     ]
                     st.dataframe(detail_show[[col for col in detail_cols if col in detail_show.columns]], width="stretch", hide_index=True)
                 else:

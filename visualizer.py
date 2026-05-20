@@ -262,7 +262,19 @@ def render_backtest_report(report):
     c10.metric("盈亏比", _fmt(metrics.get("profit_factor")))
     c11.metric("最大单笔亏损", _pct(metrics.get("max_single_trade_loss")))
     c12.metric("REDUCE次数", metrics.get("reduce_count", 0))
+
+    c13, c14, c15 = st.columns(3)
+    c13.metric("买入次数", metrics.get("entry_count", 0))
+    c14.metric("期末未闭合持仓", metrics.get("open_position_count", 0))
+    c15.metric("有效交易周期数", metrics.get("effective_round_count", metrics.get("round_trip_count", 0)))
+
+    c16, c17, c18 = st.columns(3)
+    c16.metric("期末未闭合持仓收益", _pct(metrics.get("open_position_return_pct")))
+    c17.metric("未闭合持仓天数", _fmt(metrics.get("open_position_holding_days")))
+    c18.metric("每有效周期REDUCE", _fmt(metrics.get("avg_reduce_per_effective_round")))
     st.caption("退出动作胜率包含 SELL / TAKE_PROFIT / REDUCE；完整交易胜率只统计 BUY 到最终 SELL / TAKE_PROFIT 的闭环交易。")
+    for note in _build_confidence_notes(metrics):
+        st.caption(note)
 
     p1, p2, p3 = st.columns(3)
     p1.metric("当前信号", action)
@@ -313,11 +325,15 @@ def build_trade_explanation_summary(multi_result, position_profile=None):
             "total": _num(metrics.get("total_return_pct"), 0) or 0,
             "dd": _num(metrics.get("max_drawdown_pct"), 0) or 0,
             "trades": int(_num(metrics.get("trade_count"), 0) or 0),
+            "round_trip_count": int(_num(metrics.get("round_trip_count"), 0) or 0),
+            "effective_round_count": int(_num(metrics.get("effective_round_count"), 0) or 0),
             "round_trip_win": _num(metrics.get("round_trip_win_rate"), 0) or 0,
             "exit_action_win": _num(metrics.get("exit_action_win_rate", metrics.get("win_rate_pct")), 0) or 0,
             "profit_factor": _num(metrics.get("profit_factor"), 0) or 0,
             "reduce_count": int(_num(metrics.get("reduce_count"), 0) or 0),
             "sharpe": _num(metrics.get("sharpe"), 0) or 0,
+            "open_position_count": int(_num(metrics.get("open_position_count"), 0) or 0),
+            "open_position_return": _num(metrics.get("open_position_return_pct")),
         })
     if not rows:
         return "暂无足够回测数据生成交易解释摘要。"
@@ -357,6 +373,28 @@ def build_trade_explanation_summary(multi_result, position_profile=None):
         risk_notes.append("自由趋势的退出动作胜率可能被 REDUCE 半仓减仓抬高，不能直接等同于完整交易胜率。")
     if tech and _tech_growth_balanced(tech, rows):
         risk_notes.append("科技成长股模式在当前样本中较好地保留趋势收益，同时减少过度减仓，适合与自由趋势对比观察。")
+    low_confidence_modes = [
+        f"{row['label']}（完整交易 {row['round_trip_count']} 笔 / 有效周期 {row['effective_round_count']}）"
+        for row in rows
+        if row["round_trip_count"] < 10
+    ]
+    if low_confidence_modes:
+        risk_notes.append(
+            "以下模式完整交易数较少，完整交易胜率置信度有限："
+            + "，".join(low_confidence_modes)
+            + "；应结合收益、回撤、Profit Factor、最大单笔亏损、持仓天数和批量样本判断。"
+        )
+    open_modes = [
+        f"{row['label']}（期末未闭合持仓 {row['open_position_count']} 笔，浮动收益 {_pct(row['open_position_return'])}）"
+        for row in rows
+        if row["open_position_count"] > 0
+    ]
+    if open_modes:
+        risk_notes.append(
+            "以下模式在回测结束时仍有未闭合持仓："
+            + "，".join(open_modes)
+            + "；完整交易胜率不包含该持仓，请同时参考期末浮盈/浮亏。"
+        )
 
     pnl_pct = (position_profile or {}).get("pnl_pct")
     intent = (position_profile or {}).get("position_intent")
@@ -431,13 +469,18 @@ def render_multi_mode_backtest(multi_result):
             "最大回撤": _pct(metrics.get("max_drawdown_pct")),
             "退出动作数": metrics.get("exit_action_count", metrics.get("trade_count", 0)),
             "退出动作胜率": _pct(metrics.get("exit_action_win_rate", metrics.get("win_rate_pct"))),
+            "买入次数": metrics.get("entry_count", 0),
             "完整交易数": metrics.get("round_trip_count", 0),
+            "期末未闭合持仓": metrics.get("open_position_count", 0),
+            "有效交易周期数": metrics.get("effective_round_count", metrics.get("round_trip_count", 0)),
             "完整交易胜率": _pct(metrics.get("round_trip_win_rate")),
+            "期末未闭合持仓收益": _pct(metrics.get("open_position_return_pct")),
             "平均完整收益": _pct(metrics.get("avg_round_trip_return")),
             "盈亏比": _fmt(metrics.get("profit_factor")),
             "平均持仓天数": _fmt(metrics.get("avg_holding_days")),
             "最大单笔亏损": _pct(metrics.get("max_single_trade_loss")),
             "REDUCE次数": metrics.get("reduce_count", 0),
+            "每有效周期REDUCE": _fmt(metrics.get("avg_reduce_per_effective_round")),
             "夏普": _fmt(metrics.get("sharpe")),
             "当前信号": brief.get("action") or latest.get("action", "继续观察"),
             "状态总结": brief.get("verdict", ""),
@@ -446,6 +489,10 @@ def render_multi_mode_backtest(multi_result):
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         st.caption("口径说明：退出动作胜率包含 SELL / TAKE_PROFIT / REDUCE，可能受到分批减仓影响；完整交易胜率按一轮 BUY 到最终清仓计算，更接近真实交易闭环质量。回测结果只用于历史纪律验证，不代表未来收益。")
         st.caption("科技成长股模式适合高波动、强趋势、容易卖飞的科技成长票。它保留趋势持有，但加入 MA20/MA60 失效、ATR 回撤风控和 REDUCE 次数限制，用来检验“趋势继续拿、破位再降风险”是否优于固定止盈止损。")
+        for mode, report in reports.items():
+            metrics = report.get("metrics", {}) or {}
+            for note in _build_confidence_notes(metrics, report.get("mode_label", mode)):
+                st.caption(note)
 
     explanation = multi_result.get("trade_explanation")
     if not explanation:
@@ -501,3 +548,19 @@ def _pct(value):
         return f"{float(value):.2f}%"
     except Exception:
         return "N/A"
+
+
+def _build_confidence_notes(metrics, mode_label=None):
+    notes = []
+    prefix = f"{mode_label}：" if mode_label else ""
+    round_trip_count = int(_num(metrics.get("round_trip_count"), 0) or 0)
+    open_position_count = int(_num(metrics.get("open_position_count"), 0) or 0)
+    if round_trip_count < 10:
+        notes.append(
+            f"{prefix}完整交易数较少，完整交易胜率置信度有限，应结合收益、回撤、Profit Factor、最大单笔亏损、持仓天数、期末未闭合持仓和批量样本池结果判断。"
+        )
+    if open_position_count > 0:
+        notes.append(
+            f"{prefix}当前模式在回测结束时仍有未闭合持仓，完整交易胜率不包含该持仓；请同时参考期末浮盈/浮亏。"
+        )
+    return notes
