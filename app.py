@@ -342,6 +342,44 @@ def call_with_supported_kwargs(func, *args, **kwargs):
     return func(*args, **kwargs)
 
 
+def compact_tech_batch_for_prompt(batch_result):
+    if not batch_result:
+        return None
+    aggregate = batch_result.get("aggregate")
+    aggregate_rows = []
+    if aggregate is not None and not aggregate.empty:
+        keep_cols = [
+            "mode",
+            "mode_label",
+            "avg_return_pct",
+            "median_return_pct",
+            "avg_max_drawdown_pct",
+            "median_max_drawdown_pct",
+            "avg_exit_action_win_rate",
+            "avg_round_trip_win_rate",
+            "avg_trade_count",
+            "avg_round_trip_count",
+            "avg_profit_factor",
+            "avg_sharpe",
+            "avg_calmar",
+            "positive_stock_count",
+            "tested_stock_count",
+            "mode_win_count",
+            "worst_stock_return_pct",
+            "worst_stock_drawdown_pct",
+            "avg_reduce_count",
+        ]
+        show = aggregate[[col for col in keep_cols if col in aggregate.columns]].copy()
+        aggregate_rows = show.to_dict("records")
+    return {
+        "summary": batch_result.get("summary", ""),
+        "date_range": batch_result.get("date_range", {}),
+        "provider": batch_result.get("provider", ""),
+        "aggregate": aggregate_rows,
+        "failure_count": len(batch_result.get("failures") or []),
+    }
+
+
 def build_strict_risk_decision_safe(
     valuation,
     news_rows,
@@ -8698,6 +8736,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "cost_price": cost_price,
                         "current_price": price,
                         "stock_logic_rules": replay_rules_for_bt[:1200] if replay_rules_for_bt else "",
+                        "tech_basket_batch_summary": compact_tech_batch_for_prompt(
+                            st.session_state.get("last_tech_batch_backtest")
+                        ),
                     }
                     prompt = build_backtest_explanation_prompt(target, compact_report, context_for_bt)
                     call_deepseek_stream(
