@@ -16,6 +16,35 @@ import numpy as np
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
 try:
+    from visual_components import (
+        render_action_matrix,
+        render_moneyflow_conflict,
+        render_position_waterline,
+        render_price_simulator,
+        render_risk_radar_summary,
+    )
+except Exception as module_error:
+    VISUAL_COMPONENTS_MODULE_ERROR = module_error
+
+    def _visual_component_unavailable(name):
+        st.warning(f"{name} 暂不可用：{VISUAL_COMPONENTS_MODULE_ERROR}")
+
+    def render_action_matrix(*args, **kwargs):
+        _visual_component_unavailable("动作辅助矩阵")
+
+    def render_moneyflow_conflict(*args, **kwargs):
+        _visual_component_unavailable("资金流冲突仪表")
+
+    def render_position_waterline(*args, **kwargs):
+        _visual_component_unavailable("持仓盈亏水位")
+
+    def render_price_simulator(*args, **kwargs):
+        _visual_component_unavailable("盘中价格情景推演")
+
+    def render_risk_radar_summary(*args, **kwargs):
+        _visual_component_unavailable("本地风险雷达摘要")
+
+try:
     from analysis_engine import (
         build_ai_context_packet,
         build_backtest_explanation_prompt,
@@ -1110,6 +1139,111 @@ def _fmt_price(value, currency=""):
         return "N/A"
     prefix = f"{currency} " if currency else ""
     return f"{prefix}{value:,.2f}"
+
+
+def _section_has_rows(section):
+    section = section or {}
+    return bool(section.get("available") or section.get("rows") or section.get("records_available"))
+
+
+def _extract_pledge_ratio(pledge_section):
+    pledge_section = pledge_section or {}
+    for row in pledge_section.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        for key in ["pledge_ratio", "p_total_ratio", "h_total_ratio"]:
+            value = _num(row.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _date_age_days_yyyymmdd(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    try:
+        if re.fullmatch(r"\d{8}", text):
+            parsed = datetime.datetime.strptime(text, "%Y%m%d")
+            return max(0, (datetime.datetime.now() - parsed).days)
+    except Exception:
+        return None
+    return _age_days(text)
+
+
+def build_local_risk_radar_items(tianyan_packet):
+    """Coarse local risk tiering from structured facts. Does not parse DeepSeek text."""
+    packet = tianyan_packet or {}
+    trading = packet.get("verified_trading_structure_risks") or {}
+    hard = packet.get("verified_hard_risks") or {}
+    chip_risks = packet.get("verified_chip_risks") or {}
+    clues = packet.get("sentiment_and_unverified_clues") or {}
+
+    moneyflow = trading.get("moneyflow") or {}
+    dragon_tiger = trading.get("dragon_tiger") or {}
+    chip_radar = chip_risks.get("chip_radar") or {}
+    announcements = hard.get("announcements") or {}
+    free_ann = hard.get("free_announcement_radar") or {}
+    holder_reduction = hard.get("holder_reduction") or {}
+    pledge = hard.get("pledge") or {}
+    news_digest = clues.get("news_digest") or {}
+
+    today_main = _num(moneyflow.get("main_net_yi") if moneyflow.get("main_net_yi") != "" else moneyflow.get("main_net_inflow_yi"))
+    five_day_main = _num(
+        moneyflow.get("five_day_main_net_yi")
+        if moneyflow.get("five_day_main_net_yi") != ""
+        else moneyflow.get("five_day_main_net_inflow_yi")
+    )
+    pledge_ratio = _extract_pledge_ratio(pledge)
+    has_reduction = _section_has_rows(holder_reduction) or any("减持" in str(flag) for flag in holder_reduction.get("risk_flags") or [])
+    has_announcement_gap = not (_section_has_rows(announcements) or _section_has_rows(free_ann))
+    has_news_gap = not _section_has_rows(news_digest)
+
+    red_items = []
+    orange_items = []
+    yellow_items = []
+    improvement_items = []
+
+    if has_reduction and pledge_ratio is not None and pledge_ratio > 15 and five_day_main is not None and five_day_main < 0:
+        red_items.append("减持、较高质押与近5日主力流出叠加，风险权重上升")
+    if has_reduction:
+        orange_items.append("存在股东减持记录，需跟踪进展公告")
+    if pledge_ratio is not None and pledge_ratio > 15:
+        orange_items.append(f"质押比例约 {pledge_ratio:.2f}%，高于 15% 观察阈值")
+    if five_day_main is not None and five_day_main < 0:
+        orange_items.append(f"近5日主力净流出 {five_day_main:.2f} 亿，中期资金面仍需验证")
+    if today_main is not None and five_day_main is not None and today_main > 0 and five_day_main < 0:
+        orange_items.append("今日主力净流入但近5日仍流出，中期资金面仍未扭转")
+    if has_announcement_gap:
+        yellow_items.append("公告结构化结果缺失，这是信息缺口，不是无风险")
+    if has_news_gap:
+        yellow_items.append("news_digest 缺失，最新新闻摘要线索不足")
+    if not _section_has_rows(chip_radar):
+        yellow_items.append("筹码/胜率数据缺失，关键成交密集区需要降级处理")
+    dragon_age = _date_age_days_yyyymmdd(dragon_tiger.get("latest_date") or dragon_tiger.get("trade_date"))
+    if dragon_age is not None and dragon_age > 5:
+        yellow_items.append("龙虎榜超过5天，只能作为历史参考")
+    elif not _section_has_rows(dragon_tiger):
+        yellow_items.append("龙虎榜结构化结果缺失或未上榜，席位线索不足")
+    if today_main is not None and today_main > 0 and five_day_main is not None and five_day_main < 0:
+        improvement_items.append("短线修复，未确认反转")
+    elif today_main is not None and today_main > 0 and five_day_main is not None and five_day_main > 0:
+        improvement_items.append("资金趋势改善")
+    elif today_main is not None and today_main > 0:
+        improvement_items.append("今日主力资金边际流入")
+
+    return {
+        "red_items": red_items,
+        "orange_items": orange_items,
+        "yellow_items": yellow_items,
+        "improvement_items": improvement_items,
+        "has_reduction_risk": has_reduction,
+        "pledge_ratio": pledge_ratio,
+        "has_announcement_gap": has_announcement_gap,
+        "has_news_gap": has_news_gap,
+        "today_main_net_yi": today_main,
+        "five_day_main_net_yi": five_day_main,
+    }
 
 
 def build_position_profile(ticker, current_price, cost_price, holding_units, capital_plan, position_status, currency):
@@ -7086,7 +7220,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             else:
                 st.info((dragon_data or {}).get("message") or "近30日未见龙虎榜上榜记录")
             st.caption(f"数据源：{(dragon_data or {}).get('source', 'Tushare')} {(dragon_data or {}).get('api', 'top_list')}｜本地拉取时间：{(dragon_data or {}).get('updated_at', '未知')}")
-            st.caption("龙虎榜与机构席位为盘后披露数据，不代表盘中实时席位行为。")
         
         with col_a2:
             st.markdown("**💰 融资融券监测**")
@@ -7102,7 +7235,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             else:
                 st.info((margin_data or {}).get("message") or "融资融券数据暂不可用或权限不足")
             st.caption(f"数据源：{(margin_data or {}).get('source', 'Tushare')} {(margin_data or {}).get('api', 'margin_detail')}｜本地拉取时间：{(margin_data or {}).get('updated_at', '未知')}")
-            st.caption("融资融券为交易所/券商披露口径，通常反映上一交易日或已披露时点，不是盘中实时余额。")
         
         with col_a3:
             st.markdown("**💧 个股资金流向**")
@@ -7117,7 +7249,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             else:
                 st.info((moneyflow_data or {}).get("message") or "近5日未取得可验证个股资金流向，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。")
             st.caption(f"数据源：{(moneyflow_data or {}).get('source', 'Tushare')} {(moneyflow_data or {}).get('api', 'moneyflow')}｜本地拉取时间：{(moneyflow_data or {}).get('updated_at', '未知')}")
-            st.caption("个股资金流为交易日盘后口径，不是盘中实时主力流。")
 
         st.markdown("**📈 A股情绪与涨跌停边界**")
 
@@ -7166,7 +7297,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             f"{(limit_emotion_data or {}).get('api', 'stk_limit / limit_list_d / limit_cpt_list')}"
             f"｜本地拉取时间：{(limit_emotion_data or {}).get('updated_at', '未知')}"
         )
-        st.caption("涨跌停记录、炸板、概念强度为盘后统计结果，不是盘中实时热度流。")
         if (limit_emotion_data or {}).get("warning"):
             st.caption(f"提示：{(limit_emotion_data or {}).get('warning')}")
         if st.session_state.get("skip_limit_cpt_list"):
@@ -7221,11 +7351,18 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             f"{(chip_radar_data or {}).get('api', 'cyq_perf/cyq_chips')}"
             f"｜本地拉取时间：{(chip_radar_data or {}).get('updated_at', '未知')}"
         )
-        st.caption("筹码/胜率为日度盘后更新结果，不是盘中实时筹码迁移。")
+
+        with st.expander("数据口径说明", expanded=False):
+            st.caption("龙虎榜与机构席位为盘后披露数据，不代表盘中实时席位行为。")
+            st.caption("融资融券为交易所/券商披露口径，通常反映上一交易日或已披露时点，不是盘中实时余额。")
+            st.caption("个股资金流为交易日盘后口径，不是盘中实时主力流。")
+            st.caption("涨跌停记录、炸板、概念强度为盘后统计结果，不是盘中实时热度流。")
+            st.caption("筹码/胜率为日度盘后更新结果，不是盘中实时筹码迁移。")
+            st.caption("新闻/公告缺失是信息缺口，不是无风险；历史回测不代表未来收益。")
         
         st.markdown("---")
         
-        # 第二排：A股主路径按钮
+        # 第二排：专项扫描 + 单票持仓作战室
         btn_whale = False
         btn_next_day_plan = False
         btn_war_room = False
@@ -7234,37 +7371,98 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         next_day_plan_fact_packet = None
         single_stock_war_room_fact_packet = None
 
-        col_whale, col_plan, col_war_room = st.columns(3)
+        st.markdown("#### 🐳 专项资金扫描")
+        st.caption("独立检查资金结构、龙虎榜、融资融券和短线资金验证，不自动生成持仓动作。")
+        btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
+        whale_output = st.container()
 
-        with col_whale:
-            btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
+        visual_chip_center = _num((chip_radar_data or {}).get("weight_avg"))
+        visual_ma20 = _num((verified_technical_facts or {}).get("ma20") or (verified_technical_facts or {}).get("ma20_value"))
+        if visual_ma20 is None:
+            visual_ma20 = _num((globals().get("technical_snapshot") or {}).get("ma20"))
+        visual_ma60 = _num((verified_technical_facts or {}).get("ma60"))
+        visual_limit_up = _num((limit_emotion_data or {}).get("up_limit"))
+        visual_limit_down = _num((limit_emotion_data or {}).get("down_limit"))
+        visual_today_flow = _num((moneyflow_data or {}).get("main_net_yi"))
+        visual_five_day_flow = _num((moneyflow_data or {}).get("five_day_main_net_yi"))
+        visual_profile = globals().get("position_profile") or {}
+        visual_is_holding = visual_profile.get("normalized_position_state") == "已持仓"
+        visual_cost = visual_profile.get("cost_price") if visual_profile.get("cost_price") else None
+        visual_shares = visual_profile.get("holding_units") if visual_profile.get("allow_pnl") else None
 
-        with col_plan:
-            btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
+        st.markdown("#### 🎮 单票持仓作战室")
+        with st.container():
+            st.caption("先看持仓水位、资金冲突和动作矩阵，再进入次日计划、做T/减仓和外脑推演。所有内容均为辅助判断，不构成买卖建议。")
+            render_position_waterline(
+                price,
+                cost_price=visual_cost,
+                shares=visual_shares,
+                chip_center=visual_chip_center,
+                ma20=visual_ma20,
+                ma60=visual_ma60,
+                limit_up=visual_limit_up,
+                limit_down=visual_limit_down,
+            )
+            render_action_matrix(
+                price,
+                cost_price=visual_cost,
+                chip_center=visual_chip_center,
+                ma20=visual_ma20,
+                ma60=visual_ma60,
+                today_main_net_yi=visual_today_flow,
+                five_day_main_net_yi=visual_five_day_flow,
+                position_status=visual_profile.get("normalized_position_state") or position_status,
+            )
+            render_moneyflow_conflict(
+                visual_today_flow,
+                visual_five_day_flow,
+            )
+            if visual_is_holding:
+                render_price_simulator(
+                    price,
+                    cost_price=visual_cost,
+                    shares=visual_shares,
+                    chip_center=visual_chip_center,
+                    ma20=visual_ma20,
+                    ma60=visual_ma60,
+                    limit_up=visual_limit_up,
+                    limit_down=visual_limit_down,
+                    key=f"price_simulator_cn_{stock_code}",
+                )
+            else:
+                st.caption("未确认实际持仓：价格模拟不计算浮盈金额，也不生成做T状态。")
 
-        with col_war_room:
-            btn_war_room = st.button("🎯 单票作战室 / 换仓雷达", width="stretch", key="btn_cn_war_room")
-
-        with st.expander("🧩 更多推演 / 扩展工具", expanded=False):
-            st.caption("用于补充深度研报、扩展推演，不作为主路径交易计划。")
-            btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
+            tab_next_plan, tab_t_reduce, tab_deep = st.tabs(["次日计划", "做T / 减仓推演", "外脑深度推演"])
+            with tab_next_plan:
+                st.caption("次日计划是验证清单，不是交易指令。")
+                btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
+                next_day_plan_output = st.container()
+            with tab_t_reduce:
+                st.caption("围绕当前票的持有、做T、减仓条件做推演；换仓雷达仅作为可选横向观察。")
+                btn_war_room = st.button("🎯 生成做T / 减仓推演", width="stretch", key="btn_cn_war_room")
+                war_room_output = st.container()
+            with tab_deep:
+                st.caption("外脑深度推演需要手动触发，不自动调用 DeepSeek。输出长文收纳在下方折叠区。")
+                btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
+                deepseek_output = st.container()
         
         if btn_deepseek:
-            with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
-                db = load_cloud_knowledge() 
-                all_rules = db["strategies"] + db["reflections"]
-                filtered_rules = [r for r in all_rules if "🇨🇳" in r or "A股" in r]
-                stock_logic = load_stock_logic_rules(target)
-                unverified_items = [f"brain_memory｜{rule}" for rule in filtered_rules]
-                if stock_logic:
-                    unverified_items.append(f"stock_reports.auto_replay_rules｜{stock_logic}")
-                unverified_inject = build_limited_unverified_prompt_block(
-                    unverified_items,
-                    "brain_memory 云记忆 / stock_reports 历史自动炼丹规则",
-                    max_items=10,
-                    max_chars=4000,
-                    per_item_chars=700,
-                )
+            with deepseek_output:
+                with st.spinner("正在从云端调取适配当前市场的量化纪律..."):
+                    db = load_cloud_knowledge() 
+                    all_rules = db["strategies"] + db["reflections"]
+                    filtered_rules = [r for r in all_rules if "🇨🇳" in r or "A股" in r]
+                    stock_logic = load_stock_logic_rules(target)
+                    unverified_items = [f"brain_memory｜{rule}" for rule in filtered_rules]
+                    if stock_logic:
+                        unverified_items.append(f"stock_reports.auto_replay_rules｜{stock_logic}")
+                    unverified_inject = build_limited_unverified_prompt_block(
+                        unverified_items,
+                        "brain_memory 云记忆 / stock_reports 历史自动炼丹规则",
+                        max_items=10,
+                        max_chars=4000,
+                        per_item_chars=700,
+                    )
             
             p_val = price if price else "未知"
             verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
@@ -7291,11 +7489,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             {unverified_inject}
             """
             
-            st.markdown("### 📋 A股专用深度研报")
-            call_deepseek_stream(improved_prompt, system_role="作为顶级A股量化基金经理")
+            with deepseek_output:
+                with st.expander("📋 深度研报 / 长文分析", expanded=False):
+                    st.markdown("### 📋 A股专用深度研报")
+                    call_deepseek_stream(improved_prompt, system_role="作为顶级A股量化基金经理")
 
         if btn_next_day_plan:
-            plan_status = st.status("正在生成次日交易计划...", expanded=True)
+            with next_day_plan_output:
+                plan_status = st.status("正在生成次日交易计划...", expanded=True)
             next_day_plan_fact_packet = build_next_day_plan_fact_packet(
                 stock_code,
                 target,
@@ -7401,16 +7602,18 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 27. 筹码集中不是必涨，获利盘高不是必卖，套牢盘重不是必买。
 28. 必须把筹码压力分为获利盘兑现压力、套牢盘压力、当前价相对筹码中枢三类观察项。
 	"""
-            plan_status.write("调用 DeepSeek 推理：生成六段式观察计划")
-            st.markdown("### 🧾 次日交易计划")
-            call_deepseek_stream(
-                plan_prompt,
-                system_role="你是严格的A股次日观察计划生成器，只能基于已验证数据生成观察预案。",
-            )
-            plan_status.update(label="完成：次日交易计划", state="complete")
+            with next_day_plan_output:
+                plan_status.write("调用 DeepSeek 推理：生成六段式观察计划")
+                st.markdown("### 🧾 次日交易计划")
+                call_deepseek_stream(
+                    plan_prompt,
+                    system_role="你是严格的A股次日观察计划生成器，只能基于已验证数据生成观察预案。",
+                )
+                plan_status.update(label="完成：次日交易计划", state="complete")
 
         if btn_war_room:
-            war_room_status = st.status("正在生成单票作战室...", expanded=True)
+            with war_room_output:
+                war_room_status = st.status("正在生成单票作战室...", expanded=True)
             single_stock_war_room_fact_packet = build_single_stock_war_room_fact_packet(
                 stock_code,
                 target,
@@ -7513,17 +7716,21 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 24. 筹码只能用于主升浪健康度、风险压力和持仓纪律验证。
 25. 不得把筹码数据写成确定性买卖信号。
 	"""
-            war_room_status.write("调用 DeepSeek 推理：生成单票作战室 / 换仓雷达")
-            st.markdown("### 🎯 单票作战室 / 换仓雷达")
-            call_deepseek_stream(
-                war_room_prompt,
-                system_role="你是严格的A股单票作战室，只能基于已验证数据生成持仓与换仓观察预案。",
-            )
-            war_room_status.update(label="完成：单票作战室 / 换仓雷达", state="complete")
+            with war_room_output:
+                war_room_status.write("调用 DeepSeek 推理：生成单票作战室 / 换仓雷达")
+                st.markdown("### 🎯 单票作战室 / 换仓雷达")
+                call_deepseek_stream(
+                    war_room_prompt,
+                    system_role="你是严格的A股单票作战室，只能基于已验证数据生成持仓与换仓观察预案。",
+                )
+                with st.expander("横向换仓雷达（可选）", expanded=False):
+                    st.caption("当前版本沿用原单票作战室输出，换仓候选仍必须标注为待验证线索；后续可拆成独立横向比较模块。")
+                war_room_status.update(label="完成：单票作战室 / 换仓雷达", state="complete")
 
         if btn_whale:
-            whale_status = st.status("正在分析巨鲸资金...", expanded=True)
-            whale_progress = st.progress(0)
+            with whale_output:
+                whale_status = st.status("正在分析巨鲸资金...", expanded=True)
+                whale_progress = st.progress(0)
             hist_5d = _run_progress_stage(
                 "读取近 5 日量价",
                 lambda: get_historical_data(target, 
@@ -7706,8 +7913,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 """
 
             def run_whale_deepseek():
-                st.markdown("### 🐳 巨鲸资金嗅探")
-                call_deepseek_stream(whale_prompt, system_role="你是A股盘口与机构解剖机器")
+                with whale_output:
+                    st.markdown("### 🐳 巨鲸资金嗅探")
+                    call_deepseek_stream(whale_prompt, system_role="你是A股盘口与机构解剖机器")
                 return True
 
             _run_progress_stage(
@@ -8670,6 +8878,37 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.markdown(f"- yfinance.news 备用新闻线索：{display_lines['yfinance_news']}")
                     st.markdown(f"- news_digest 最近新闻摘要线索：{display_lines['news_digest']}")
 
+                    local_risk_radar = build_local_risk_radar_items(tianyan_risk_fact_packet)
+                    render_risk_radar_summary(
+                        red_items=local_risk_radar.get("red_items"),
+                        orange_items=local_risk_radar.get("orange_items"),
+                        yellow_items=local_risk_radar.get("yellow_items"),
+                        improvement_items=local_risk_radar.get("improvement_items"),
+                    )
+                    risk_position_is_holding = position_profile_preview.get("normalized_position_state") == "已持仓"
+                    if risk_position_is_holding:
+                        risk_chip_center = _num(
+                            (
+                                (
+                                    tianyan_risk_fact_packet.get("verified_chip_risks") or {}
+                                ).get("chip_radar") or {}
+                            ).get("weight_avg")
+                        )
+                        render_action_matrix(
+                            price,
+                            cost_price=position_profile_preview.get("cost_price"),
+                            chip_center=risk_chip_center,
+                            ma20=None,
+                            ma60=None,
+                            today_main_net_yi=local_risk_radar.get("today_main_net_yi"),
+                            five_day_main_net_yi=local_risk_radar.get("five_day_main_net_yi"),
+                            has_reduction_risk=bool(local_risk_radar.get("has_reduction_risk")),
+                            pledge_ratio=local_risk_radar.get("pledge_ratio"),
+                            has_announcement_gap=bool(local_risk_radar.get("has_announcement_gap")),
+                            has_news_gap=bool(local_risk_radar.get("has_news_gap")),
+                            position_status=position_profile_preview.get("normalized_position_state") or position_status,
+                        )
+
                     tianyan_prompt_packet = json.dumps(
                         tianyan_risk_fact_packet,
                         ensure_ascii=False,
@@ -9000,6 +9239,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             }
             selected_modes = mode_map.get(bt_mode_choice, ["default", "free", "dynamic", "tech_growth"])
             st.caption("默认模式看固定止盈/止损；自由模式只看趋势/RSI/均线；动态模式会按ATR/波动率自动调止盈止损；科技成长股模式在趋势持有上叠加减仓间隔和ATR回撤风控。")
+            st.info("模式选择不是交易指令；历史回测不代表未来收益。")
 
             bt_key = f"{target}|{market_type}|{bt_start}|{bt_end}|{bt_provider}|{cost_price}|{bt_cash}|{bt_rules}|{selected_modes}"
             if st.button("运行回测", key="btn_run_backtest", type="primary", width="stretch"):
