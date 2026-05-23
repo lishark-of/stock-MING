@@ -19,6 +19,8 @@ try:
     from visual_components import (
         render_action_matrix,
         render_moneyflow_conflict,
+        render_next_ticket_holding_card,
+        render_next_ticket_research_summary,
         render_position_waterline,
         render_price_simulator,
         render_risk_radar_summary,
@@ -35,6 +37,12 @@ except Exception as module_error:
     def render_moneyflow_conflict(*args, **kwargs):
         _visual_component_unavailable("资金流冲突仪表")
 
+    def render_next_ticket_holding_card(*args, **kwargs):
+        _visual_component_unavailable("下一票持仓卡")
+
+    def render_next_ticket_research_summary(*args, **kwargs):
+        _visual_component_unavailable("下一票深度研究摘要")
+
     def render_position_waterline(*args, **kwargs):
         _visual_component_unavailable("持仓盈亏水位")
 
@@ -43,6 +51,14 @@ except Exception as module_error:
 
     def render_risk_radar_summary(*args, **kwargs):
         _visual_component_unavailable("本地风险雷达摘要")
+
+try:
+    from next_stock_radar import render_next_ticket_radar
+except Exception as module_error:
+    NEXT_STOCK_RADAR_MODULE_ERROR = module_error
+
+    def render_next_ticket_radar(*args, **kwargs):
+        st.warning(f"下一票作战雷达暂不可用：{NEXT_STOCK_RADAR_MODULE_ERROR}")
 
 try:
     from analysis_engine import (
@@ -8177,7 +8193,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     "📈 量化推演 (多市场)",
     "☁️ 云端外脑 (数据中心)",
     "⚙️ 数据源与权限体检",
-    "🎯 大师选股 (策略雷达)"
+    "🧭 下一票作战雷达"
 ])
     with tab_home:
         st.markdown("""
@@ -10251,88 +10267,25 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             }
             st.table(pd.DataFrame([deepseek_display]))
 
-    # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
-       # ------------------ 大师选股 Tab：独立 manager_rules 版本 ------------------
+    # ------------------ 下一票作战雷达：规则优先，深度研究手动触发 ------------------
     with tab_screener:
-        st.markdown("### 🎯 大师选股雷达")
-        st.caption("这个模块已经和诊股外脑分离：只读取 manager_rules，不再读取 brain_memory。")
-
-        manager_names = load_manager_names()
-
-        if not manager_names:
-            st.warning("⚠️ manager_rules 表里还没有基金经理规则。请先在 Supabase 添加至少一条规则。")
-            st.stop()
-
-        manager_name = st.selectbox(
-            "🧠 选择基金经理模型",
-            manager_names
+        radar_callbacks = {
+            "compute_technical_snapshot": compute_technical_snapshot,
+            "get_current_price_detail": get_current_price_detail,
+            "build_tianyan_risk_fact_packet": build_tianyan_risk_fact_packet,
+            "build_local_risk_radar_items": build_local_risk_radar_items,
+            "load_announcement_watchlist": load_announcement_watchlist,
+            "call_deepseek_non_stream": call_deepseek_non_stream,
+            "tushare_adapter": _tushare_adapter,
+        }
+        render_next_ticket_radar(
+            supabase=supabase,
+            current_ticker=target,
+            current_name="",
+            current_price=price,
+            position_profile=position_profile_preview,
+            callbacks=radar_callbacks,
         )
-
-        scan_sector = st.text_input(
-            "🔍 输入要扫描的板块或主线",
-            "有色金属",
-            placeholder="例如：有色金属、商业航天、港股互联网、AI算力"
-        )
-
-        col_a, col_b = st.columns(2)
-
-        with col_a:
-            run_scan = st.button("🚀 启动大师选股", type="primary", width="stretch")
-
-        with col_b:
-            show_rules = st.button("📚 查看该大师规则库", width="stretch")
-
-        if show_rules:
-            rules = load_manager_rules(manager_name, limit=50)
-
-            if rules:
-                st.success(f"已读取 {len(rules)} 条 {manager_name} 的规则")
-                for r in rules:
-                    st.markdown(f"""
-                    <div class='knowledge-card'>
-                        {r}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.warning(f"⚠️ 暂时没有找到 {manager_name} 的规则。请先在 Supabase 的 manager_rules 表里添加。")
-
-        if run_scan:
-            rules = load_manager_rules(manager_name, limit=30)
-
-            if rules:
-                manager_inject = "\n".join(rules)
-                st.success(f"✅ 已读取 {len(rules)} 条 {manager_name} 的独立规则")
-            else:
-                manager_inject = "暂无该基金经理的规则库。请根据公开投资风格进行保守分析。"
-                st.warning(f"⚠️ 暂时没有找到 {manager_name} 的规则，将使用 DeepSeek 通用知识分析。")
-
-            screener_prompt = f"""
-你现在扮演基金经理【{manager_name}】的投研助手。
-
-用户想扫描的板块/主线是：【{scan_sector}】
-
-以下是该基金经理的独立规则库：
-{manager_inject}
-
-请根据这些规则，输出一份大师选股报告。
-
-要求：
-1. 先总结【{manager_name}】看这个板块时最关心什么。
-2. 判断【{scan_sector}】是否符合他的风格。
-3. 给出 2-3 个可能符合逻辑的股票方向或典型标的。
-4. 每个标的必须说明：为什么符合、风险是什么、什么情况下不能买。
-5. 如果这个板块不符合他的风格，要直接拒绝，不要硬选。
-6. 最后给出一句冷静操作结论。
-
-注意：
-你是投研助手，重点是筛选逻辑和风险控制。
-"""
-
-            st.markdown(f"### 📡 {manager_name} 选股报告")
-            call_deepseek_stream(
-                screener_prompt,
-                system_role=f"你是{manager_name}的投研助手，必须严格遵守他的投资纪律。"
-            )
     # 模块 D：云端外脑
     with tab_brain:
         st.markdown("### ☁️ 云端 RAG 向量记忆中心")

@@ -893,3 +893,94 @@ def render_risk_radar_summary(
                     st.markdown(f"- {item}")
             else:
                 st.caption("暂无结构化条目。")
+
+
+def render_next_ticket_holding_card(holding_context: dict | None = None):
+    """Render the current holding comparison card for the next-ticket radar."""
+    _inject_component_css()
+    context = holding_context or {}
+    ticker = context.get("current_holding_ticker") or "暂无"
+    name = context.get("current_holding_name") or ""
+    price = _fmt_price(context.get("current_price"))
+    pnl_pct = _fmt_pct(context.get("floating_profit_pct"))
+    action_state = context.get("holding_action_state") or "只观察"
+    next_mode = context.get("next_ticket_mode") or "只观察"
+    risks = _dedupe(context.get("holding_biggest_risks") or [])[:4]
+    risk_text = "；".join(risks) if risks else "暂无可验证风险"
+    metrics = [
+        ("当前持仓票", f"{ticker} {name}".strip()),
+        ("当前价", price),
+        ("浮盈", pnl_pct),
+        ("当前动作状态", action_state),
+        ("当前持仓最大风险", risk_text),
+        ("下一票模式", next_mode),
+    ]
+    mode_color = {
+        "接力": "blue",
+        "低吸": "purple",
+        "防守": "orange",
+        "只观察": "gray",
+    }.get(str(next_mode), "gray")
+    action_color = "orange" if "减仓" in str(action_state) or "暂停" in str(action_state) else ("red" if "风险" in str(action_state) else "green")
+    _render_html(
+        """
+        <div class="vc-shell">
+            <div class="vc-title">当前持仓卡</div>
+            <div class="vc-caption">这是候选票对比标尺，不输出交易指令。</div>
+        """
+        + _metric_html(metrics)
+        + "<div class='vc-badges'>"
+        + _badge_html(action_state, action_color)
+        + _badge_html(f"下一票模式：{next_mode}", mode_color)
+        + "</div></div>"
+    )
+
+
+def _result_list(items):
+    values = _dedupe(items if isinstance(items, list) else [items])
+    if not values:
+        st.caption("暂无可验证数据。")
+        return
+    for item in values:
+        st.markdown(f"- {item}")
+
+
+def render_next_ticket_research_summary(result: dict | None = None, generated_at: str = "", cached: bool = False):
+    """Render one DeepSeek research result in a controlled structure."""
+    payload = result or {}
+    if payload.get("parse_status") == "markdown":
+        st.caption(f"generated_at：{generated_at or '暂无'}" + ("｜缓存" if cached else ""))
+        st.markdown(payload.get("raw_output") or "暂无可验证数据。")
+        return
+
+    state = payload.get("battle_state") or payload.get("作战状态") or "只观察"
+    score = payload.get("total_score") or payload.get("综合评分") or 0
+    relation = payload.get("relation_to_current_holding") or payload.get("与当前持仓票的关系") or "暂不替代"
+    conclusion = payload.get("one_sentence_conclusion") or payload.get("一句话结论") or "暂无可验证数据。"
+    breakdown = payload.get("score_breakdown") or payload.get("评分拆解") or {}
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("作战状态", state)
+    c2.metric("综合评分", score)
+    c3.metric("与当前持仓票关系", relation)
+    st.caption(f"generated_at：{generated_at or '暂无'}" + ("｜缓存结果" if cached else "｜新生成结果"))
+    st.markdown(f"**一句话结论**：{conclusion}")
+
+    if isinstance(breakdown, dict) and breakdown:
+        st.markdown("**评分拆解**")
+        st.dataframe(
+            [{"维度": key, "评分": value} for key, value in breakdown.items()],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.markdown("**入手触发条件**")
+    _result_list(payload.get("entry_triggers") or payload.get("入手触发条件") or [])
+    st.markdown("**失效条件**")
+    _result_list(payload.get("invalid_conditions") or payload.get("失效条件") or [])
+    st.markdown("**最大风险**")
+    _result_list(payload.get("biggest_risks") or payload.get("最大风险") or [])
+    st.markdown("**数据缺口**")
+    _result_list(payload.get("data_gaps") or payload.get("数据缺口") or [])
+    st.markdown("**为什么不是直接行动**")
+    st.write(payload.get("why_not_direct_action") or payload.get("为什么不是直接买") or "需要等待验证，且不构成交易建议。")
