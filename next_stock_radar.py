@@ -60,6 +60,24 @@ STOCK_NAME_MAP.update(
 RADAR_SCAN_STATE_KEY = "radar_scan_results"
 DEEP_RESEARCH_STATE_KEY = "deep_research_results"
 
+SCAN_STRENGTH_PRESETS = {
+    "标准模式": {
+        "refine_candidate_limit": 100,
+        "display_limit": 20,
+        "description": "全量横截面粗筛，精筛 Top 100，展示 Top 20。",
+    },
+    "深度模式": {
+        "refine_candidate_limit": 300,
+        "display_limit": 50,
+        "description": "全量横截面粗筛，精筛 Top 300，展示 Top 50。",
+    },
+    "火力全开模式": {
+        "refine_candidate_limit": 500,
+        "display_limit": 100,
+        "description": "全量横截面粗筛，精筛 Top 500；可手动提高到 Top 1000，展示 Top 100。",
+    },
+}
+
 
 def _now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
@@ -94,6 +112,23 @@ def _num(value: Any, default: float | None = None) -> float | None:
 def _clip_score(value: Any) -> int:
     number = _num(value, 0) or 0
     return int(max(0, min(100, round(number))))
+
+
+def _metric(value: Any, default: float | None = None) -> float | None:
+    """Read a scalar number after an explicit pandas missing-value check."""
+    try:
+        missing = pd.isna(value)
+        if isinstance(missing, bool) and missing:
+            return default
+        if np is not None and isinstance(missing, np.bool_) and bool(missing):
+            return default
+    except Exception:
+        pass
+    return _num(value, default)
+
+
+def _nonzero_metric(value: Any) -> float:
+    return _metric(value, 0.0) or 0.0
 
 
 def _ticker_core(ticker: str) -> str:
@@ -523,8 +558,7 @@ def fetch_cross_section_window(
 def build_cross_section_rough_candidates(
     callbacks: dict[str, Callable[..., Any]],
     *,
-    scan_limit: int,
-    refine_limit: int,
+    refine_candidate_limit: int,
     exclude_st: bool,
     exclude_chinext: bool,
     exclude_star: bool,
@@ -542,9 +576,16 @@ def build_cross_section_rough_candidates(
     if pool_meta.get("degraded"):
         candidates = [
             {**item, "scan_source": "fallback_tech_sample", "rough_context": {"data_gaps": ["A股主板横截面池不可用"]}}
-            for item in TECH_SAMPLE_POOL[:refine_limit]
+            for item in TECH_SAMPLE_POOL[:refine_candidate_limit]
         ]
-        return candidates, {"pool": pool_meta, "degraded": True, "message": pool_meta.get("message"), "rough_count": len(candidates)}
+        return candidates, {
+            "pool": pool_meta,
+            "degraded": True,
+            "message": pool_meta.get("message"),
+            "rough_count": len(candidates),
+            "refine_candidate_limit": refine_candidate_limit,
+            "refine_candidate_count": len(candidates),
+        }
 
     dates = recent_trade_dates(callbacks, days=150)
     window_dates = dates[-90:] if len(dates) >= 90 else dates
@@ -552,18 +593,34 @@ def build_cross_section_rough_candidates(
     if daily.empty:
         candidates = [
             {**item, "scan_source": "fallback_tech_sample", "rough_context": {"data_gaps": ["daily 横截面不可用"]}}
-            for item in TECH_SAMPLE_POOL[:refine_limit]
+            for item in TECH_SAMPLE_POOL[:refine_candidate_limit]
         ]
-        return candidates, {"pool": pool_meta, "cross_section": data_meta, "degraded": True, "message": data_meta.get("message"), "rough_count": len(candidates)}
+        return candidates, {
+            "pool": pool_meta,
+            "cross_section": data_meta,
+            "degraded": True,
+            "message": data_meta.get("message"),
+            "rough_count": len(candidates),
+            "refine_candidate_limit": refine_candidate_limit,
+            "refine_candidate_count": len(candidates),
+        }
 
     pool_tickers = set(pool["ticker"].astype(str))
     daily = daily[daily["ticker"].isin(pool_tickers)].copy()
     if daily.empty:
         candidates = [
             {**item, "scan_source": "fallback_tech_sample", "rough_context": {"data_gaps": ["daily 与主板池无交集"]}}
-            for item in TECH_SAMPLE_POOL[:refine_limit]
+            for item in TECH_SAMPLE_POOL[:refine_candidate_limit]
         ]
-        return candidates, {"pool": pool_meta, "cross_section": data_meta, "degraded": True, "message": "daily 与主板池无交集", "rough_count": len(candidates)}
+        return candidates, {
+            "pool": pool_meta,
+            "cross_section": data_meta,
+            "degraded": True,
+            "message": "daily 与主板池无交集",
+            "rough_count": len(candidates),
+            "refine_candidate_limit": refine_candidate_limit,
+            "refine_candidate_count": len(candidates),
+        }
 
     daily["close"] = pd.to_numeric(daily.get("close"), errors="coerce")
     daily["amount"] = pd.to_numeric(daily.get("amount"), errors="coerce")
@@ -613,26 +670,34 @@ def build_cross_section_rough_candidates(
     stale = ~latest["is_latest_trade_date"]
     latest.loc[stale, "rough_score"] -= 25
     latest.loc[stale, "rough_notes"] += "疑似停牌或非最新交易日；"
-    if exclude_low_amount and "amount" in latest.columns:
-        low_amount = latest["amount"].fillna(0).lt(100000)
-        latest.loc[low_amount, "rough_score"] -= 12
-        latest.loc[low_amount, "rough_notes"] += "成交额偏低；"
-        low_amount_pass_count = int((~low_amount).sum())
+    if "amount" in latest.columns:
+        low_amount_mask = latest["amount"].fillna(0).lt(100000)
     else:
-        low_amount_pass_count = len(latest)
+        low_amount_mask = pd.Series(False, index=latest.index)
+    if exclude_low_amount:
+        latest.loc[low_amount_mask, "rough_score"] -= 12
+        latest.loc[low_amount_mask, "rough_notes"] += "成交额偏低；"
     evaluable_mask = ~incomplete & ~stale
-    trend_pass_count = int((trend_mask & ~hot_mask & ~incomplete & ~stale).sum())
     evaluable_count = int(evaluable_mask.sum())
-    if trend_up_only:
-        latest = latest[trend_mask & ~hot_mask & ~incomplete & ~stale].copy()
+    base_filter_mask = evaluable_mask.copy()
+    if exclude_low_amount:
+        base_filter_mask &= ~low_amount_mask
+        low_amount_pass_count = int(base_filter_mask.sum())
     else:
-        latest = latest[~incomplete & ~stale].copy()
+        low_amount_pass_count = evaluable_count
+    trend_pass_count = int((base_filter_mask & trend_mask & ~hot_mask).sum())
+    filter_mask = base_filter_mask.copy()
+    if trend_up_only:
+        filter_mask &= trend_mask & ~hot_mask
+    latest = latest[filter_mask].copy()
     post_filter_count = len(latest)
 
     latest["rough_score"] = latest["rough_score"].clip(0, 100)
-    latest = latest.sort_values("rough_score", ascending=False).head(int(scan_limit)).copy()
-    rough_sample_count = len(latest)
-    latest = latest.head(int(refine_limit))
+    latest = latest.sort_values("rough_score", ascending=False).copy()
+    full_rough_ranked_count = len(latest)
+    refine_candidate_limit = max(1, int(refine_candidate_limit))
+    latest = latest.head(refine_candidate_limit).copy()
+    refine_candidate_count = len(latest)
 
     candidates = []
     for _, row in latest.iterrows():
@@ -675,9 +740,10 @@ def build_cross_section_rough_candidates(
         "low_amount_pass_count": low_amount_pass_count,
         "trend_up_pass_count": trend_pass_count,
         "post_filter_count": post_filter_count,
-        "rough_sample_count": rough_sample_count,
-        "scan_limit": scan_limit,
-        "refine_limit": refine_limit,
+        "full_rough_ranked_count": full_rough_ranked_count,
+        "refine_candidate_limit": refine_candidate_limit,
+        "refine_candidate_count": refine_candidate_count,
+        "full_scan_mode": True,
         "message": "",
     }
     return candidates, sanitize_for_json(meta)
@@ -790,6 +856,427 @@ def _risk_flags_from_sections(sections: dict[str, Any], risk_summary: dict[str, 
     return list(dict.fromkeys(flags))[:8]
 
 
+def _rule_dimension_scores(context: dict[str, Any]) -> dict[str, Any]:
+    price = _metric(context.get("current_price"))
+    ma20 = _metric(context.get("MA20"))
+    ma60 = _metric(context.get("MA60"))
+    rsi = _metric(context.get("RSI"))
+    return_20d = _metric(context.get("twenty_day_return_pct"))
+    today_main = _metric(context.get("today_main_net_yi"))
+    five_day_main = _metric(context.get("five_day_main_net_yi"))
+    pledge_ratio = _metric(context.get("pledge_ratio"))
+    chip_center = _metric(context.get("chip_center"))
+    winner_rate = _metric(context.get("winner_rate"))
+    data_gaps = list(context.get("data_gaps") or [])
+
+    trend = 45
+    trend_notes = []
+    if price is not None and ma20 is not None and ma60 is not None and price > ma20 > ma60:
+        trend += 35
+        trend_notes.append("当前价 > MA20 > MA60")
+    elif price is not None and ma20 is not None and price < ma20:
+        trend -= 18
+        trend_notes.append("跌破 MA20")
+    if price is not None and ma60 is not None and price < ma60:
+        trend -= 28
+        trend_notes.append("跌破 MA60")
+    if return_20d is not None and return_20d > 25:
+        trend -= 6
+        trend_notes.append("20日涨幅偏快")
+    if rsi is not None and rsi > 78:
+        trend -= 8
+        trend_notes.append("RSI 偏热")
+    if ma20 is None or ma60 is None:
+        trend = min(trend, 42)
+        trend_notes.append("MA20/MA60 缺口")
+
+    money = 45
+    money_wait = False
+    money_notes = []
+    if today_main is not None and today_main > 0:
+        money += 15
+        money_notes.append("今日主力净流入")
+    if five_day_main is not None and five_day_main > 0:
+        money += 20
+        money_notes.append("近5日主力净流入")
+    if today_main is not None and five_day_main is not None and today_main > 0 and five_day_main < 0:
+        money_wait = True
+        money -= 4
+        money_notes.append("今日回流但5日仍流出")
+    if today_main is not None and five_day_main is not None and today_main < 0 and five_day_main < 0:
+        money -= 26
+        money_notes.append("今日与近5日都流出")
+    if today_main is None and five_day_main is None:
+        money = 40
+        money_notes.append("资金数据缺失")
+
+    risk = 82
+    risk_notes = []
+    if context.get("has_reduction_risk"):
+        risk -= 22
+        risk_notes.append("控股股东减持")
+    if pledge_ratio is not None and pledge_ratio > 15:
+        risk -= 16
+        risk_notes.append("质押比例 >15%")
+    financing_balance = _metric(((context.get("margin") or {}).get("financing_balance_yi")))
+    if financing_balance is not None and financing_balance >= 20 and "跌破" in str(context.get("trend_state")):
+        risk -= 10
+        risk_notes.append("融资余额高且价格转弱")
+    if context.get("dragon_tiger_expired"):
+        risk -= 4
+        risk_notes.append("龙虎榜超过5个交易日，仅作历史参考")
+    if "公告" in data_gaps:
+        risk -= 5
+        risk_notes.append("公告缺口")
+    if "news_digest" in data_gaps:
+        risk -= 5
+        risk_notes.append("news_digest 缺口")
+
+    position = 48
+    position_notes = []
+    if price is not None and chip_center is not None and chip_center > 0:
+        gap = (price / chip_center - 1) * 100
+        if 0 <= gap <= 12:
+            position += 24
+            position_notes.append("高于筹码中枢但未明显过热")
+        elif gap < 0:
+            position -= 18
+            position_notes.append("跌破筹码中枢")
+        elif gap > 18:
+            position -= 10
+            position_notes.append("高于筹码中枢较多")
+    else:
+        position = min(position, 42)
+        position_notes.append("筹码中枢缺失")
+    if context.get("near_limit_up") or context.get("chase_zone"):
+        position -= 18
+        position_notes.append("离涨停太近或处于追高区")
+    if winner_rate is not None and winner_rate > 75:
+        position -= 6
+        position_notes.append("获利盘比例偏高")
+
+    completeness = 100 - len(data_gaps) * 10
+    if not data_gaps:
+        completeness += 5
+    completeness = _clip_score(completeness)
+
+    return {
+        "trend_score": _clip_score(trend),
+        "money_score": _clip_score(money),
+        "risk_score": _clip_score(risk),
+        "position_score": _clip_score(position),
+        "information_score": completeness,
+        "money_wait": bool(money_wait),
+        "score_notes": {
+            "trend": trend_notes,
+            "money": money_notes,
+            "risk": risk_notes,
+            "position": position_notes,
+            "data_gaps": data_gaps,
+        },
+    }
+
+
+def _weighted_rule_total(dimensions: dict[str, Any], compare_score: int = 50) -> int:
+    total = (
+        _clip_score(dimensions.get("trend_score")) * 0.25
+        + _clip_score(dimensions.get("money_score")) * 0.22
+        + _clip_score(dimensions.get("risk_score")) * 0.22
+        + _clip_score(dimensions.get("position_score")) * 0.16
+        + _clip_score(dimensions.get("information_score")) * 0.10
+        + _clip_score(compare_score) * 0.05
+    )
+    return _clip_score(total)
+
+
+def _holding_score_baseline(holding_context: dict[str, Any]) -> dict[str, Any]:
+    data_gaps = []
+    if _metric(holding_context.get("holding_ma20")) is None or _metric(holding_context.get("holding_ma60")) is None:
+        data_gaps.append("趋势")
+    if (
+        _metric(holding_context.get("holding_today_main_net_yi")) is None
+        and _metric(holding_context.get("holding_five_day_main_net_yi")) is None
+    ):
+        data_gaps.append("资金")
+    if holding_context.get("holding_has_announcement_gap"):
+        data_gaps.append("公告")
+    if holding_context.get("holding_has_news_gap"):
+        data_gaps.append("news_digest")
+    if any("筹码" in str(item) for item in holding_context.get("holding_biggest_risks") or []):
+        data_gaps.append("筹码")
+
+    comparable_context = {
+        "current_price": holding_context.get("current_price"),
+        "MA20": holding_context.get("holding_ma20"),
+        "MA60": holding_context.get("holding_ma60"),
+        "RSI": holding_context.get("holding_rsi"),
+        "MACD": holding_context.get("holding_macd"),
+        "twenty_day_return_pct": holding_context.get("holding_20d_return_pct"),
+        "today_main_net_yi": holding_context.get("holding_today_main_net_yi"),
+        "five_day_main_net_yi": holding_context.get("holding_five_day_main_net_yi"),
+        "moneyflow_state": holding_context.get("holding_moneyflow_state"),
+        "has_reduction_risk": holding_context.get("holding_has_reduction_risk"),
+        "pledge_ratio": holding_context.get("holding_pledge_ratio"),
+        "trend_state": holding_context.get("holding_trend_state"),
+        "data_gaps": list(dict.fromkeys(data_gaps)),
+        "chip_center": None,
+        "winner_rate": None,
+        "near_limit_up": False,
+        "chase_zone": False,
+    }
+    dimensions = _rule_dimension_scores(comparable_context)
+    return {
+        "holding_trend_score": dimensions["trend_score"],
+        "holding_money_score": dimensions["money_score"],
+        "holding_risk_score": dimensions["risk_score"],
+        "holding_position_score": dimensions["position_score"],
+        "holding_information_score": dimensions["information_score"],
+        "holding_total_score": _weighted_rule_total(dimensions),
+        "holding_score_notes": dimensions["score_notes"],
+    }
+
+
+def _compare_label(candidate_score: int, holding_score: int, higher_label: str, lower_label: str, tolerance: int = 8) -> str:
+    if candidate_score >= holding_score + tolerance:
+        return higher_label
+    if holding_score >= candidate_score + tolerance:
+        return lower_label
+    return "接近"
+
+
+def _holding_has_reduce_pressure(holding_context: dict[str, Any]) -> bool:
+    action = str(holding_context.get("holding_action_state") or "")
+    if any(keyword in action for keyword in ["减仓", "暂停加仓", "风险升级"]):
+        return True
+    risks = "；".join(str(item) for item in holding_context.get("holding_biggest_risks") or [])
+    return any(keyword in risks for keyword in ["减持", "质押", "资金流出", "公告缺失"])
+
+
+def determine_candidate_vs_holding_relation(candidate: dict[str, Any], holding_context: dict[str, Any]) -> dict[str, Any]:
+    candidate_dimensions = _rule_dimension_scores(candidate)
+    holding_baseline = {
+        **_holding_score_baseline(holding_context),
+        **{key: holding_context.get(key) for key in [
+            "holding_trend_score",
+            "holding_money_score",
+            "holding_risk_score",
+            "holding_position_score",
+            "holding_information_score",
+            "holding_total_score",
+        ] if holding_context.get(key) is not None},
+    }
+
+    candidate_trend = _clip_score(candidate_dimensions.get("trend_score"))
+    candidate_money = _clip_score(candidate_dimensions.get("money_score"))
+    candidate_risk = _clip_score(candidate_dimensions.get("risk_score"))
+    candidate_position = _clip_score(candidate_dimensions.get("position_score"))
+    candidate_info = _clip_score(candidate_dimensions.get("information_score"))
+    candidate_total = _weighted_rule_total(candidate_dimensions)
+
+    holding_trend = _clip_score(holding_baseline.get("holding_trend_score"))
+    holding_money = _clip_score(holding_baseline.get("holding_money_score"))
+    holding_risk = _clip_score(holding_baseline.get("holding_risk_score"))
+    holding_position = _clip_score(holding_baseline.get("holding_position_score"))
+    holding_total = _clip_score(holding_baseline.get("holding_total_score"))
+
+    today_main = _nonzero_metric(candidate.get("today_main_net_yi"))
+    five_day_main = _nonzero_metric(candidate.get("five_day_main_net_yi"))
+    return_20d = _nonzero_metric(candidate.get("twenty_day_return_pct"))
+    overheated = bool(candidate.get("near_limit_up") or candidate.get("chase_zone") or return_20d > 60 or candidate_position < 45)
+    reduce_pressure = _holding_has_reduce_pressure(holding_context)
+
+    trend_advantage = _compare_label(candidate_trend, holding_trend, "候选趋势更强", "当前持仓趋势更强")
+    money_advantage = _compare_label(candidate_money, holding_money, "候选资金更强", "当前持仓资金更强")
+    risk_advantage = _compare_label(candidate_risk, holding_risk, "候选风险更低", "当前持仓风险更低")
+    position_advantage = _compare_label(candidate_position, holding_position, "候选位置更健康", "当前持仓位置更健康")
+
+    if (
+        candidate_risk < 42
+        or candidate_info < 45
+        or candidate_total < max(50, holding_total - 14)
+        or (overheated and candidate_money < 62)
+        or (today_main < 0 and five_day_main < 0)
+    ):
+        relation = "暂不替代"
+    elif (
+        reduce_pressure
+        and candidate_total >= holding_total + 8
+        and candidate_risk >= holding_risk + 14
+        and candidate_trend >= holding_trend - 8
+        and candidate_money >= holding_money - 5
+        and candidate_position >= 68
+    ):
+        relation = "替代观察"
+    elif (
+        candidate_trend >= max(75, holding_trend - 2)
+        and candidate_money >= max(62, holding_money + 8)
+        and candidate_risk >= holding_risk - 8
+        and candidate_position >= 55
+        and not overheated
+    ):
+        relation = "接力观察"
+    elif candidate_risk >= max(64, holding_risk + 5) and candidate_position >= 52:
+        relation = "防守观察"
+    elif (not reduce_pressure) and candidate_total >= holding_total + 8 and candidate_risk >= holding_risk + 8 and candidate_position >= 50:
+        relation = "替代观察"
+    else:
+        relation = "暂不替代"
+
+    return {
+        "candidate_vs_holding_trend_advantage": trend_advantage,
+        "candidate_vs_holding_moneyflow_advantage": money_advantage,
+        "candidate_vs_holding_risk_advantage": risk_advantage,
+        "candidate_vs_holding_position_advantage": position_advantage,
+        "candidate_switch_relation": relation,
+        "candidate_comparable_scores": {
+            "candidate_trend_score": candidate_trend,
+            "candidate_money_score": candidate_money,
+            "candidate_risk_score": candidate_risk,
+            "candidate_position_score": candidate_position,
+            "candidate_information_score": candidate_info,
+            "candidate_total_score_before_relation": candidate_total,
+            "holding_trend_score": holding_trend,
+            "holding_money_score": holding_money,
+            "holding_risk_score": holding_risk,
+            "holding_position_score": holding_position,
+            "holding_total_score": holding_total,
+        },
+    }
+
+
+def build_candidate_trigger_conditions(candidate: dict[str, Any], holding_context: dict[str, Any]) -> list[str]:
+    today_main = _nonzero_metric(candidate.get("today_main_net_yi"))
+    five_day_main = _nonzero_metric(candidate.get("five_day_main_net_yi"))
+    price = _metric(candidate.get("current_price"))
+    ma20 = _metric(candidate.get("MA20"))
+    ma60 = _metric(candidate.get("MA60"))
+    chip_center = _metric(candidate.get("chip_center"))
+    return_20d = _nonzero_metric(candidate.get("twenty_day_return_pct"))
+    dimensions = _rule_dimension_scores(candidate)
+    relation = candidate.get("candidate_switch_relation") or "暂不替代"
+    data_gaps = set(candidate.get("data_gaps") or [])
+
+    conditions = []
+    if today_main > 0 and five_day_main > 0:
+        conditions.append("资金连续性较好，需验证次日主力资金不转流出")
+    elif today_main > 0 and five_day_main < 0:
+        conditions.append("今日资金回流但中期未扭转，需连续 2 日主力净流入确认")
+    elif today_main < 0 and five_day_main < 0:
+        conditions.append("资金仍处压力段，需先看到主力资金由流出转为回流")
+    else:
+        conditions.append("资金方向仍有分歧，需补一日资金确认")
+
+    if price is not None and ma20 is not None and ma60 is not None and price > ma20 > ma60:
+        conditions.append("趋势结构保持 MA20 在 MA60 上方，回踩 MA20 不破可继续观察")
+    elif price is not None and ma20 is not None and price < ma20:
+        conditions.append("当前未站稳 MA20，需先收回 MA20 后再提升准备级别")
+    elif ma20 is None or ma60 is None:
+        conditions.append("均线数据不完整，需补齐 MA20/MA60 后再确认趋势结构")
+
+    if candidate.get("near_limit_up") or candidate.get("chase_zone") or return_20d > 60 or _clip_score(dimensions.get("position_score")) < 55:
+        conditions.append("不追高，需等待回踩后仍站稳关键均线或筹码中枢")
+    elif chip_center is not None and price is not None and price >= chip_center:
+        conditions.append("价格高于筹码中枢但未明显过热，需确认回踩中枢不破")
+
+    if chip_center is None or "筹码" in data_gaps:
+        conditions.append("筹码中枢缺失，需用 MA20/MA60 替代验证，不提高动作级别")
+    if "公告" in data_gaps or "news_digest" in data_gaps:
+        conditions.append("公告/news_digest 缺口未补齐前，只能进入观察，不进入直接动作")
+
+    if relation == "接力观察":
+        conditions.append("当前持仓出现减仓触发后，候选强趋势仍延续才作为接力观察")
+    elif relation == "替代观察":
+        conditions.append("若当前持仓出现减仓触发，可作为替代观察对象")
+    elif relation == "防守观察":
+        conditions.append("只有当前持仓风险继续升高时，才把该票作为防守备选")
+    else:
+        conditions.append("相比当前持仓优势不足，需分数和资金同时改善后再纳入准备池")
+
+    if not _holding_has_reduce_pressure(holding_context):
+        conditions.append("当前持仓未触发减仓条件前，候选仅作为准备池，不直接切换")
+
+    return list(dict.fromkeys(conditions))[:5]
+
+
+def build_candidate_invalidation_conditions(candidate: dict[str, Any], holding_context: dict[str, Any]) -> list[str]:
+    dimensions = _rule_dimension_scores(candidate)
+    relation = candidate.get("candidate_switch_relation") or "暂不替代"
+    data_gaps = set(candidate.get("data_gaps") or [])
+    today_main = _nonzero_metric(candidate.get("today_main_net_yi"))
+    five_day_main = _nonzero_metric(candidate.get("five_day_main_net_yi"))
+
+    conditions = []
+    if _clip_score(dimensions.get("trend_score")) >= 70:
+        conditions.append("跌破 MA20 且无法快速收回，趋势观察失效")
+        conditions.append("跌破 MA60，中期结构失效")
+    else:
+        conditions.append("不能重新站稳 MA20，趋势修复假设失效")
+
+    if _clip_score(dimensions.get("money_score")) >= 62:
+        conditions.append("主力资金重新连续流出，资金优势失效")
+    elif today_main < 0 and five_day_main < 0:
+        conditions.append("主力资金继续双周期流出，剔除准备池")
+    else:
+        conditions.append("资金回流无法延续，维持观察不升级")
+
+    if _clip_score(dimensions.get("position_score")) < 55 or candidate.get("chase_zone") or candidate.get("near_limit_up"):
+        conditions.append("高位回落跌破筹码中枢，说明追高风险兑现")
+    elif _metric(candidate.get("chip_center")) is not None:
+        conditions.append("跌破筹码中枢后无法收回，位置优势失效")
+
+    if _clip_score(dimensions.get("risk_score")) < 62:
+        conditions.append("新增减持、质押、监管、业绩或公告负面，直接降级")
+    if _clip_score(dimensions.get("information_score")) < 75 or "公告" in data_gaps or "news_digest" in data_gaps:
+        conditions.append("公告/news_digest 长时间缺失且出现价格异动，降低置信度")
+
+    if relation == "接力观察":
+        conditions.append("候选强势无法延续，不能作为当前持仓接力标的")
+    elif relation == "替代观察":
+        conditions.append("候选风险优势消失，不能作为当前持仓替代备选")
+    elif relation == "防守观察":
+        conditions.append("防守属性失效，例如资金转弱或跌破 MA60，则剔除观察池")
+    else:
+        conditions.append("相比当前持仓仍无优势，继续留在观察外层")
+
+    return list(dict.fromkeys(conditions))[:5]
+
+
+def _battle_state_from_scores(
+    candidate: dict[str, Any],
+    dimensions: dict[str, Any],
+    total: int,
+    relation: str,
+) -> tuple[str, str]:
+    trend = _clip_score(dimensions.get("trend_score"))
+    money = _clip_score(dimensions.get("money_score"))
+    risk = _clip_score(dimensions.get("risk_score"))
+    position = _clip_score(dimensions.get("position_score"))
+    information = _clip_score(dimensions.get("information_score"))
+    money_wait = bool(dimensions.get("money_wait"))
+    today_main = _nonzero_metric(candidate.get("today_main_net_yi"))
+    five_day_main = _nonzero_metric(candidate.get("five_day_main_net_yi"))
+    overheated = bool(candidate.get("near_limit_up") or candidate.get("chase_zone") or position < 45)
+    has_hard_risk = bool(candidate.get("has_reduction_risk") or (_metric(candidate.get("pledge_ratio")) or 0) > 20)
+
+    if risk < 35 or (has_hard_risk and money < 45):
+        return "风险过高", "硬风险或资金压力叠加，优先降级处理"
+    if trend < 35 or money < 30 or position < 28:
+        return "暂不纳入", "趋势、资金或位置结构不足，不进入作战准备"
+    if total >= 72 and risk >= 58 and (trend >= 72 or money >= 72) and position >= 50 and not overheated:
+        return "可准备", f"{relation}下趋势/资金至少一项较强，风险未明显失控"
+    if money_wait or (today_main > 0 and five_day_main < 0):
+        return "等验证", "短线资金改善但近5日尚未确认，需要连续性验证"
+    if total >= 58 and (trend >= 62 or money >= 58) and risk >= 45:
+        if overheated:
+            return "等验证", "趋势有看点但位置偏热，需要回踩确认"
+        if information < 70:
+            return "等验证", "规则分尚可但信息缺口影响置信度"
+        return "等验证", "结构有改善，但仍需资金、位置或持仓切换条件确认"
+    if total >= 44 or trend >= 58:
+        return "只观察", "题材或趋势有线索，但风险、位置或信息完整度不足"
+    return "暂不纳入", "相比当前持仓没有可验证优势，暂不进入准备池"
+
+
 def build_current_holding_context(
     current_ticker: str,
     current_name: str,
@@ -843,42 +1330,42 @@ def build_current_holding_context(
     if ma60:
         reduce_triggers.append("跌破 MA60")
 
-    return sanitize_for_json(
-        {
-            "current_holding_ticker": display_ticker,
-            "current_holding_name": name,
-            "position_status": position_profile.get("normalized_position_state") or position_profile.get("position_status") or "暂无数据",
-            "cost_price": position_profile.get("cost_price"),
-            "shares": position_profile.get("holding_units"),
-            "current_price": price,
-            "floating_profit_pct": position_profile.get("pnl_pct"),
-            "floating_profit_amount": position_profile.get("pnl_amount"),
-            "holding_ma20": ma20,
-            "holding_ma60": ma60,
-            "holding_rsi": rsi,
-            "holding_macd": macd,
-            "holding_price_vs_ma20_pct": price_vs_ma20,
-            "holding_price_vs_ma60_pct": price_vs_ma60,
-            "holding_20d_return_pct": return_20d,
-            "holding_trend_state": trend_state,
-            "holding_today_main_net_yi": today_main,
-            "holding_five_day_main_net_yi": five_day_main,
-            "holding_moneyflow_state": money_state,
-            "holding_has_reduction_risk": bool(risk_summary.get("has_reduction_risk")),
-            "holding_pledge_ratio": _num(risk_summary.get("pledge_ratio")),
-            "holding_has_announcement_gap": bool(risk_summary.get("has_announcement_gap")),
-            "holding_has_news_gap": bool(risk_summary.get("has_news_gap")),
-            "holding_biggest_risks": risks or ["暂无可验证数据"],
-            "holding_action_state": action_state,
-            "holding_reduce_triggers": list(dict.fromkeys(reduce_triggers))[:6],
-            "next_ticket_mode": next_ticket_mode,
-            "data_date": (technical or {}).get("data_asof") or "",
-            "raw_data_quality": {
-                "technical_missing": (technical or {}).get("missing") or [],
-                "risk_missing": sections.get("missing_items") or [],
-            },
-        }
-    )
+    context = {
+        "current_holding_ticker": display_ticker,
+        "current_holding_name": name,
+        "position_status": position_profile.get("normalized_position_state") or position_profile.get("position_status") or "暂无数据",
+        "cost_price": position_profile.get("cost_price"),
+        "shares": position_profile.get("holding_units"),
+        "current_price": price,
+        "floating_profit_pct": position_profile.get("pnl_pct"),
+        "floating_profit_amount": position_profile.get("pnl_amount"),
+        "holding_ma20": ma20,
+        "holding_ma60": ma60,
+        "holding_rsi": rsi,
+        "holding_macd": macd,
+        "holding_price_vs_ma20_pct": price_vs_ma20,
+        "holding_price_vs_ma60_pct": price_vs_ma60,
+        "holding_20d_return_pct": return_20d,
+        "holding_trend_state": trend_state,
+        "holding_today_main_net_yi": today_main,
+        "holding_five_day_main_net_yi": five_day_main,
+        "holding_moneyflow_state": money_state,
+        "holding_has_reduction_risk": bool(risk_summary.get("has_reduction_risk")),
+        "holding_pledge_ratio": _num(risk_summary.get("pledge_ratio")),
+        "holding_has_announcement_gap": bool(risk_summary.get("has_announcement_gap")),
+        "holding_has_news_gap": bool(risk_summary.get("has_news_gap")),
+        "holding_biggest_risks": risks or ["暂无可验证数据"],
+        "holding_action_state": action_state,
+        "holding_reduce_triggers": list(dict.fromkeys(reduce_triggers))[:6],
+        "next_ticket_mode": next_ticket_mode,
+        "data_date": (technical or {}).get("data_asof") or "",
+        "raw_data_quality": {
+            "technical_missing": (technical or {}).get("missing") or [],
+            "risk_missing": sections.get("missing_items") or [],
+        },
+    }
+    context.update(_holding_score_baseline(context))
+    return sanitize_for_json(context)
 
 
 def build_candidate_context(
@@ -1021,212 +1508,44 @@ def build_candidate_context(
 
 
 def compare_candidate_to_holding(candidate_context: dict[str, Any], holding_context: dict[str, Any]) -> dict[str, Any]:
-    candidate_trend_gap = _num(candidate_context.get("price_vs_MA20_pct"), 0) or 0
-    holding_trend_gap = _num(holding_context.get("holding_price_vs_ma20_pct"), 0) or 0
-    candidate_money = _num(candidate_context.get("five_day_main_net_yi"), 0) or 0
-    holding_money = _num(holding_context.get("holding_five_day_main_net_yi"), 0) or 0
-    candidate_risk_count = len(candidate_context.get("data_gaps") or [])
-    holding_risk_count = len(holding_context.get("holding_biggest_risks") or [])
-    candidate_position = _num(candidate_context.get("price_vs_MA20_pct"), 0) or 0
-    holding_position = _num(holding_context.get("holding_price_vs_ma20_pct"), 0) or 0
-
-    trend_advantage = "候选更强" if candidate_trend_gap > holding_trend_gap + 2 else ("持仓更强" if holding_trend_gap > candidate_trend_gap + 2 else "接近")
-    money_advantage = "候选更强" if candidate_money > holding_money else ("持仓更强" if holding_money > candidate_money else "接近")
-    risk_advantage = "候选更安全" if candidate_risk_count < holding_risk_count else ("持仓风险更低" if holding_risk_count < candidate_risk_count else "接近")
-    position_advantage = "候选位置更低" if candidate_position < holding_position - 5 else ("持仓位置更低" if holding_position < candidate_position - 5 else "接近")
-
-    holding_action = str(holding_context.get("holding_action_state") or "")
-    if "风险" in holding_action or "减仓" in holding_action:
-        relation = "替代观察" if trend_advantage in {"候选更强", "接近"} else "防守观察"
-    elif trend_advantage == "候选更强" and money_advantage == "候选更强":
-        relation = "接力观察"
-    elif risk_advantage == "候选更安全" and position_advantage == "候选位置更低":
-        relation = "防守观察"
-    else:
-        relation = "暂不替代"
-
-    return {
-        "candidate_vs_holding_trend_advantage": trend_advantage,
-        "candidate_vs_holding_moneyflow_advantage": money_advantage,
-        "candidate_vs_holding_risk_advantage": risk_advantage,
-        "candidate_vs_holding_position_advantage": position_advantage,
-        "candidate_switch_relation": relation,
-    }
+    return determine_candidate_vs_holding_relation(candidate_context, holding_context)
 
 
 def score_candidate(candidate_context: dict[str, Any], holding_context: dict[str, Any]) -> dict[str, Any]:
-    price = _num(candidate_context.get("current_price"))
-    ma20 = _num(candidate_context.get("MA20"))
-    ma60 = _num(candidate_context.get("MA60"))
-    rsi = _num(candidate_context.get("RSI"))
-    return_20d = _num(candidate_context.get("twenty_day_return_pct"))
-    today_main = _num(candidate_context.get("today_main_net_yi"))
-    five_day_main = _num(candidate_context.get("five_day_main_net_yi"))
-    pledge_ratio = _num(candidate_context.get("pledge_ratio"))
-    chip_center = _num(candidate_context.get("chip_center"))
-    winner_rate = _num(candidate_context.get("winner_rate"))
-    data_gaps = list(candidate_context.get("data_gaps") or [])
-
-    trend = 45
-    trend_notes = []
-    if price and ma20 and ma60 and price > ma20 > ma60:
-        trend += 35
-        trend_notes.append("当前价 > MA20 > MA60")
-    elif price and ma20 and price < ma20:
-        trend -= 18
-        trend_notes.append("跌破 MA20")
-    if price and ma60 and price < ma60:
-        trend -= 28
-        trend_notes.append("跌破 MA60")
-    if return_20d is not None and return_20d > 25:
-        trend -= 6
-        trend_notes.append("20日涨幅偏快")
-    if rsi is not None and rsi > 78:
-        trend -= 8
-        trend_notes.append("RSI 偏热")
-    if not ma20 or not ma60:
-        trend = min(trend, 42)
-        trend_notes.append("MA20/MA60 缺口")
-
-    money = 45
-    money_wait = False
-    money_notes = []
-    if today_main is not None and today_main > 0:
-        money += 15
-        money_notes.append("今日主力净流入")
-    if five_day_main is not None and five_day_main > 0:
-        money += 20
-        money_notes.append("近5日主力净流入")
-    if today_main is not None and five_day_main is not None and today_main > 0 and five_day_main < 0:
-        money_wait = True
-        money -= 4
-        money_notes.append("今日回流但5日仍流出")
-    if today_main is not None and five_day_main is not None and today_main < 0 and five_day_main < 0:
-        money -= 26
-        money_notes.append("今日与近5日都流出")
-    if today_main is None and five_day_main is None:
-        money = 40
-        money_notes.append("资金数据缺失")
-
-    risk = 82
-    risk_notes = []
-    if candidate_context.get("has_reduction_risk"):
-        risk -= 22
-        risk_notes.append("控股股东减持")
-    if pledge_ratio is not None and pledge_ratio > 15:
-        risk -= 16
-        risk_notes.append("质押比例 >15%")
-    financing_balance = _num(((candidate_context.get("margin") or {}).get("financing_balance_yi")))
-    if financing_balance is not None and financing_balance >= 20 and "跌破" in str(candidate_context.get("trend_state")):
-        risk -= 10
-        risk_notes.append("融资余额高且价格转弱")
-    if candidate_context.get("dragon_tiger_expired"):
-        risk -= 4
-        risk_notes.append("龙虎榜超过5个交易日，仅作历史参考")
-    if "公告" in data_gaps:
-        risk -= 5
-        risk_notes.append("公告缺口")
-    if "news_digest" in data_gaps:
-        risk -= 5
-        risk_notes.append("news_digest 缺口")
-
-    position = 48
-    position_notes = []
-    if price and chip_center:
-        gap = (price / chip_center - 1) * 100
-        if 0 <= gap <= 12:
-            position += 24
-            position_notes.append("高于筹码中枢但未明显过热")
-        elif gap < 0:
-            position -= 18
-            position_notes.append("跌破筹码中枢")
-        elif gap > 18:
-            position -= 10
-            position_notes.append("高于筹码中枢较多")
-    else:
-        position = min(position, 42)
-        position_notes.append("筹码中枢缺失")
-    if candidate_context.get("near_limit_up") or candidate_context.get("chase_zone"):
-        position -= 18
-        position_notes.append("离涨停太近或处于追高区")
-    if winner_rate is not None and winner_rate > 75:
-        position -= 6
-        position_notes.append("获利盘比例偏高")
-
-    completeness = 100 - len(data_gaps) * 10
-    if not data_gaps:
-        completeness += 5
-    completeness = _clip_score(completeness)
-
+    dimensions = _rule_dimension_scores(candidate_context)
     compare = 50
     relation = candidate_context.get("candidate_switch_relation") or "暂不替代"
     if relation == "接力观察":
         compare += 18
-    elif relation in {"替代观察", "防守观察"}:
-        compare += 10
+    elif relation == "替代观察":
+        compare += 14
+    elif relation == "防守观察":
+        compare += 8
     elif relation == "暂不替代":
         compare -= 6
 
-    total = (
-        _clip_score(trend) * 0.25
-        + _clip_score(money) * 0.22
-        + _clip_score(risk) * 0.22
-        + _clip_score(position) * 0.16
-        + completeness * 0.10
-        + _clip_score(compare) * 0.05
-    )
-    total = _clip_score(total)
-
-    if _clip_score(risk) < 35:
-        battle_state = "风险过高"
-    elif total >= 72 and _clip_score(risk) >= 58 and _clip_score(trend) >= 62 and _clip_score(money) >= 58:
-        battle_state = "可准备"
-    elif total >= 58 or money_wait:
-        battle_state = "等验证"
-    elif total >= 44:
-        battle_state = "只观察"
-    else:
-        battle_state = "暂不纳入"
-
-    triggers = [
-        "连续资金回流",
-        "站稳 MA20 / 筹码中枢",
-        "公告/news_digest 无新增负面",
-    ]
-    if relation in {"接力观察", "替代观察", "防守观察"}:
-        triggers.append("当前持仓票出现减仓触发后再考虑切换")
-    invalidations = [
-        "跌破 MA20",
-        "跌破 MA60",
-        "主力资金重新流出",
-        "新增减持/质押/公告风险",
-        "题材退潮",
-    ]
-    if chip_center:
-        invalidations.append("跌破筹码中枢")
+    total = _weighted_rule_total(dimensions, _clip_score(compare))
+    battle_state, battle_reason = _battle_state_from_scores(candidate_context, dimensions, total, relation)
+    triggers = build_candidate_trigger_conditions(candidate_context, holding_context)
+    invalidations = build_candidate_invalidation_conditions(candidate_context, holding_context)
 
     return sanitize_for_json(
         {
             "ticker": candidate_context.get("ticker"),
             "name": candidate_context.get("name"),
             "battle_state": battle_state,
+            "battle_state_reason": battle_reason,
             "total_score": total,
-            "trend_score": _clip_score(trend),
-            "money_score": _clip_score(money),
-            "risk_score": _clip_score(risk),
-            "position_score": _clip_score(position),
-            "information_score": completeness,
+            "trend_score": dimensions["trend_score"],
+            "money_score": dimensions["money_score"],
+            "risk_score": dimensions["risk_score"],
+            "position_score": dimensions["position_score"],
+            "information_score": dimensions["information_score"],
             "holding_compare_score": _clip_score(compare),
             "switch_relation": relation,
             "trigger_conditions": list(dict.fromkeys(triggers))[:5],
-            "invalid_conditions": list(dict.fromkeys(invalidations))[:6],
-            "score_notes": {
-                "trend": trend_notes,
-                "money": money_notes,
-                "risk": risk_notes,
-                "position": position_notes,
-                "data_gaps": data_gaps,
-            },
+            "invalid_conditions": list(dict.fromkeys(invalidations))[:5],
+            "score_notes": dimensions["score_notes"],
         }
     )
 
@@ -1269,6 +1588,7 @@ def build_rule_radar(
                         "ticker": ticker,
                         "name": candidate_name(ticker, candidate.get("name") or ""),
                         "battle_state": "只观察",
+                        "battle_state_reason": "候选数据构造失败，规则层只能保守观察",
                         "total_score": 0,
                         "trend_score": 0,
                         "money_score": 0,
@@ -1300,6 +1620,7 @@ def _radar_dataframe(rule_rows: list[dict[str, Any]]) -> pd.DataFrame:
                 "排名": rank,
                 "股票": f"{candidate.get('ticker', '')} {candidate.get('name', '')}".strip(),
                 "搞不搞": score.get("battle_state") or "只观察",
+                "状态理由": score.get("battle_state_reason") or "",
                 "综合分": score.get("total_score", 0),
                 "趋势": score.get("trend_score", 0),
                 "资金": score.get("money_score", 0),
@@ -1668,21 +1989,43 @@ def render_next_ticket_radar(
     )
 
     st.markdown("#### A股主板广域扫描参数")
-    p1, p2, p3 = st.columns(3)
+    strength_options = list(SCAN_STRENGTH_PRESETS.keys())
+    scan_strength = st.radio(
+        "扫描强度",
+        strength_options,
+        index=1,
+        horizontal=True,
+        key="next_ticket_scan_strength",
+        help="15000 积分档可承受更高频次，但仍建议用横截面粗筛 + Top 精筛，避免逐票请求导致页面卡顿。",
+    )
+    strength_preset = SCAN_STRENGTH_PRESETS.get(scan_strength, SCAN_STRENGTH_PRESETS["深度模式"])
+    st.caption(f"{scan_strength}：{strength_preset['description']}")
+
+    p1, p2 = st.columns(2)
+    refine_options = [100, 300, 500, 1000]
+    display_options = [20, 50, 100]
+    strength_key = {"标准模式": "standard", "深度模式": "deep", "火力全开模式": "full"}.get(scan_strength, "deep")
     with p1:
-        scan_limit = st.radio(
-            "扫描数量上限",
-            [50, 100, 200, 300],
-            index=1,
+        refine_candidate_limit = st.radio(
+            "进入精筛候选上限",
+            refine_options,
+            index=refine_options.index(int(strength_preset["refine_candidate_limit"])),
             horizontal=True,
-            key="next_ticket_scan_limit",
-            help="这是粗筛样本上限，不代表只读取这些股票；系统会先做 A股主板横截面过滤，再截取 Top 样本进入精筛。",
+            key=f"next_ticket_refine_candidate_limit_{strength_key}",
+            help="不是只扫描这些股票。系统会先对 A股主板全量候选池做横截面粗筛，再取 Top N 进入精筛。",
         )
     with p2:
-        refine_limit = st.radio("精筛数量", [20, 30, 50], index=1, horizontal=True, key="next_ticket_refine_limit")
-    with p3:
-        display_limit = st.radio("规则雷达展示", [10, 20], index=1, horizontal=True, key="next_ticket_display_limit")
-    st.caption("扫描数量上限是粗筛样本上限，不代表只读取对应数量股票；系统会先做 A股主板横截面过滤，再截取 Top 样本进入精筛。")
+        display_limit = st.radio(
+            "规则雷达展示数量",
+            display_options,
+            index=display_options.index(int(strength_preset["display_limit"])),
+            horizontal=True,
+            key=f"next_ticket_display_limit_{strength_key}",
+        )
+    st.caption(
+        "进入精筛候选上限不是初始扫描股票数，而是全量横截面粗筛后进入精筛的候选数量。"
+        "系统会先尽量覆盖 A股主板全量股票，再截取 Top 候选进入精筛。"
+    )
 
     f1, f2, f3, f4, f5 = st.columns(5)
     with f1:
@@ -1702,8 +2045,8 @@ def render_next_ticket_radar(
             "source_mode": source_mode,
             "manual_text": manual_text,
             "include_focus": include_focus,
-            "scan_limit": scan_limit,
-            "refine_limit": refine_limit,
+            "scan_strength": scan_strength,
+            "refine_candidate_limit": refine_candidate_limit,
             "display_limit": display_limit,
             "exclude_st": exclude_st,
             "exclude_chinext": exclude_chinext,
@@ -1760,7 +2103,7 @@ def render_next_ticket_radar(
     scan_state = st.session_state.get(RADAR_SCAN_STATE_KEY) or {}
     should_scan = bool(start_scan or rescan)
     if should_scan:
-        status_box = st.status("正在进行 A股主板广域扫描……", expanded=False)
+        status_box = st.status("正在进行 A股主板全量横截面粗筛……", expanded=False)
         progress = st.progress(0)
         source_notes = []
         candidates: list[dict[str, Any]] = []
@@ -1768,11 +2111,10 @@ def render_next_ticket_radar(
 
         try:
             if source_mode in {"A股主板广域扫描", "混合扫描"}:
-                status_box.update(label="正在进行 A股主板横截面粗筛……", state="running")
+                status_box.update(label="正在进行 A股主板全量横截面粗筛……", state="running")
                 broad_candidates, broad_meta = build_cross_section_rough_candidates(
                     callbacks,
-                    scan_limit=int(scan_limit),
-                    refine_limit=int(refine_limit),
+                    refine_candidate_limit=int(refine_candidate_limit),
                     exclude_st=bool(exclude_st),
                     exclude_chinext=bool(exclude_chinext),
                     exclude_star=bool(exclude_star),
@@ -1782,28 +2124,36 @@ def render_next_ticket_radar(
                 )
                 candidates.extend(broad_candidates)
                 scan_meta["broad_scan"] = broad_meta
-                source_notes.append(f"A股主板广域扫描粗筛 {broad_meta.get('rough_count', len(broad_candidates))} 只")
+                source_notes.append(
+                    f"A股主板全量横截面粗筛 {broad_meta.get('evaluable_count') or 0} 只；"
+                    f"进入精筛候选上限 Top {refine_candidate_limit}；"
+                    f"实际进入精筛 {broad_meta.get('refine_candidate_count') or len(broad_candidates)} 只"
+                )
                 pool_meta = broad_meta.get("pool") or {}
                 cross_meta = broad_meta.get("cross_section") or {}
+                full_pool_count = pool_meta.get("filtered_count") or 0
+                evaluable_count = broad_meta.get("evaluable_count") or 0
+                filter_count = broad_meta.get("post_filter_count") or 0
+                actual_refine_count = broad_meta.get("refine_candidate_count") or len(broad_candidates)
                 status_box.write(f"Tushare 股票基础池：{pool_meta.get('raw_count') or 0} 只")
                 status_box.write(f"只保留上市状态 L 后：{pool_meta.get('listed_count') or pool_meta.get('raw_count') or 0} 只")
                 status_box.write(f"排除 ST / 退市整理后：{pool_meta.get('after_st_exclusion_count') or pool_meta.get('listed_count') or 0} 只")
                 status_box.write(f"排除创业板 / 科创板 / 北交所后：{pool_meta.get('after_board_exclusion_count') or 0} 只")
-                status_box.write(f"A股主板候选池：{pool_meta.get('filtered_count') or 0} 只")
+                status_box.write(f"A股主板全量候选池：{full_pool_count} 只")
                 status_box.write(f"横截面 daily 行数：{cross_meta.get('daily_rows') or 0}，取数模式：{cross_meta.get('daily_fetch_mode') or '未知'}")
-                status_box.write(f"横截面可评估样本：{broad_meta.get('evaluable_count') or 0} 只")
-                status_box.write(f"排除低成交额阈值后可优先入选：{broad_meta.get('low_amount_pass_count') or 0} 只")
+                status_box.write(f"横截面可评估样本：{evaluable_count} 只")
+                status_box.write(f"排除低成交额后：{broad_meta.get('low_amount_pass_count') or 0} 只")
                 status_box.write(f"只看趋势向上后：{broad_meta.get('trend_up_pass_count') or 0} 只")
-                status_box.write(f"过滤条件后进入粗筛排序：{broad_meta.get('post_filter_count') or 0} 只")
-                status_box.write(f"本次粗筛样本上限：Top {scan_limit}；实际粗筛样本：{broad_meta.get('rough_sample_count') or len(broad_candidates)} 只")
-                status_box.write(f"精筛数量：Top {refine_limit}；最终展示数量：Top {display_limit}")
+                status_box.write(f"过滤后样本：{filter_count} 只")
+                status_box.write(f"进入精筛候选：Top {refine_candidate_limit}；实际进入精筛：{actual_refine_count} 只")
+                status_box.write(f"规则雷达展示：Top {display_limit}")
                 if broad_meta.get("degraded"):
                     status_box.write(f"广域扫描降级：{broad_meta.get('message') or '已降级为小样本扫描'}")
                 else:
                     status_box.update(
                         label=(
-                            f"第一层横截面粗筛已完成：从 A股主板池中筛出 Top {scan_limit}；"
-                            f"准备精筛 Top {refine_limit}；最终展示规则雷达 Top {display_limit}。"
+                            f"全量横截面粗筛完成：A股主板 {full_pool_count} 只，可评估 {evaluable_count} 只；"
+                            f"进入精筛 Top {refine_candidate_limit}。"
                         ),
                         state="running",
                     )
@@ -1819,8 +2169,8 @@ def render_next_ticket_radar(
 
             status_box.update(
                 label=(
-                    f"第二层正在精筛 Top {refine_limit}：0/{len(candidates)}；"
-                    f"最终将展示规则雷达 Top {display_limit}。"
+                    f"正在精筛 Top {refine_candidate_limit}：0/{len(candidates)}；"
+                    f"最终展示规则雷达 Top {display_limit}。"
                 ),
                 state="running",
             )
@@ -1830,8 +2180,8 @@ def render_next_ticket_radar(
                 name = candidate.get("name") or ""
                 status_box.update(
                     label=(
-                        f"第二层正在精筛 Top {refine_limit}：{index}/{total}，当前 {ticker} {name}；"
-                        f"最终将展示规则雷达 Top {display_limit}。"
+                        f"正在精筛 Top {refine_candidate_limit}：{index}/{total}，当前 {ticker} {name}；"
+                        f"最终展示规则雷达 Top {display_limit}。"
                     ),
                     state="running",
                 )
@@ -1841,8 +2191,17 @@ def render_next_ticket_radar(
             status_box.update(label=f"正在生成规则雷达 Top {display_limit}……", state="running")
             success_count = sum(1 for row in rule_rows if not row.get("error"))
             failed_count = len(rule_rows) - success_count
-            status_box.write(f"成功/失败数量：成功 {success_count} 只，失败 {failed_count} 只。")
-            status_box.update(label=f"✅ A股主板广域扫描完成：展示规则雷达 Top {display_limit}", state="complete", expanded=False)
+            status_box.write(f"精筛完成：成功 {success_count} 只，失败 {failed_count} 只。")
+            broad_summary = scan_meta.get("broad_scan") or {}
+            full_pool_count = ((broad_summary.get("pool") or {}).get("filtered_count") or 0)
+            status_box.update(
+                label=(
+                    f"✅ A股主板广域扫描完成：全量粗筛 {full_pool_count} 只，"
+                    f"精筛 Top {refine_candidate_limit}，展示规则雷达 Top {display_limit}。"
+                ),
+                state="complete",
+                expanded=False,
+            )
             scan_state = {
                 "params_hash": params_hash,
                 "params": scan_params,
@@ -1879,7 +2238,21 @@ def render_next_ticket_radar(
         st.json(scan_meta or {"message": "非广域扫描或暂无横截面元数据"})
 
     st.markdown("#### 规则雷达表")
-    st.dataframe(_radar_dataframe(rule_rows[: int(display_limit)]), use_container_width=True, hide_index=True)
+    radar_df = _radar_dataframe(rule_rows[: int(display_limit)])
+    st.dataframe(
+        radar_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "股票": st.column_config.TextColumn("股票", width="medium"),
+            "搞不搞": st.column_config.TextColumn("搞不搞", width="small"),
+            "状态理由": st.column_config.TextColumn("状态理由", width="large"),
+            "与当前持仓关系": st.column_config.TextColumn("与当前持仓关系", width="medium"),
+            "触发条件": st.column_config.TextColumn("触发条件", width="large"),
+            "失效条件": st.column_config.TextColumn("失效条件", width="large"),
+            "数据缺口": st.column_config.TextColumn("数据缺口", width="medium"),
+        },
+    )
 
     with st.expander("规则评分口径", expanded=False):
         st.markdown(
