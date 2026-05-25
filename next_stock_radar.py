@@ -59,6 +59,17 @@ STOCK_NAME_MAP.update(
 
 RADAR_SCAN_STATE_KEY = "radar_scan_results"
 DEEP_RESEARCH_STATE_KEY = "deep_research_results"
+RADAR_SCAN_STATUS_KEY = "radar_scan_status"
+RADAR_SCAN_STARTED_AT_KEY = "radar_scan_started_at"
+RADAR_SCAN_FINISHED_AT_KEY = "radar_scan_finished_at"
+RADAR_SCAN_SUMMARY_KEY = "radar_scan_summary"
+RADAR_SCAN_ERRORS_KEY = "radar_scan_errors"
+
+RADAR_SCAN_IDLE = "idle"
+RADAR_SCAN_RUNNING = "running"
+RADAR_SCAN_COMPLETED = "completed"
+RADAR_SCAN_PARTIAL_FAILED = "partial_failed"
+RADAR_SCAN_FAILED = "failed"
 
 SCAN_STRENGTH_PRESETS = {
     "标准模式": {
@@ -77,6 +88,103 @@ SCAN_STRENGTH_PRESETS = {
         "description": "全量横截面粗筛，精筛 Top 500；可手动提高到 Top 1000，展示 Top 100。",
     },
 }
+
+INDEX_POOL_OPTIONS = {
+    "沪深300": {
+        "index_code": "000300.SH",
+        "description": "沪深两市大盘代表性成分。",
+        "default_refine_candidate_limit": 100,
+        "default_display_limit": 20,
+    },
+    "中证500": {
+        "index_code": "000905.SH",
+        "description": "中盘代表性成分。",
+        "default_refine_candidate_limit": 100,
+        "default_display_limit": 20,
+    },
+    "中证1000": {
+        "index_code": "000852.SH",
+        "description": "小盘成长与行业覆盖更宽。",
+        "default_refine_candidate_limit": 100,
+        "default_display_limit": 20,
+    },
+    "中证2000": {
+        "index_code": "932000.CSI",
+        "description": "覆盖更长尾的小微盘成分，样本更多。",
+        "default_refine_candidate_limit": 300,
+        "default_display_limit": 50,
+    },
+    "中证A500": {
+        "index_code": "000510.SH",
+        "description": "A500 指数代码依 Tushare 权限与收录为准，可能无数据。",
+        "default_refine_candidate_limit": 100,
+        "default_display_limit": 20,
+    },
+    "自定义指数代码": {
+        "index_code": "",
+        "description": "手动输入 Tushare index_code，例如 000300.SH。",
+        "default_refine_candidate_limit": 100,
+        "default_display_limit": 20,
+    },
+}
+
+
+def _ensure_radar_scan_session_state() -> None:
+    if RADAR_SCAN_STATUS_KEY not in st.session_state:
+        st.session_state[RADAR_SCAN_STATUS_KEY] = RADAR_SCAN_IDLE
+    if RADAR_SCAN_STARTED_AT_KEY not in st.session_state:
+        st.session_state[RADAR_SCAN_STARTED_AT_KEY] = ""
+    if RADAR_SCAN_FINISHED_AT_KEY not in st.session_state:
+        st.session_state[RADAR_SCAN_FINISHED_AT_KEY] = ""
+    if RADAR_SCAN_SUMMARY_KEY not in st.session_state:
+        st.session_state[RADAR_SCAN_SUMMARY_KEY] = {}
+    if RADAR_SCAN_ERRORS_KEY not in st.session_state:
+        st.session_state[RADAR_SCAN_ERRORS_KEY] = []
+    if RADAR_SCAN_STATE_KEY not in st.session_state:
+        st.session_state[RADAR_SCAN_STATE_KEY] = {}
+
+
+def _scan_error(stage: str, message: Any, ticker: str = "") -> dict[str, Any]:
+    return sanitize_for_json(
+        {
+            "time": _now_iso(),
+            "stage": str(stage or "未知阶段"),
+            "ticker": str(ticker or ""),
+            "message": str(message or "未知错误"),
+        }
+    )
+
+
+def _limit_scan_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sanitize_for_json((errors or [])[-20:])
+
+
+def _parse_iso_datetime(value: Any) -> datetime.datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+        return parsed
+    except Exception:
+        return None
+
+
+def _elapsed_seconds(started_at: Any, finished_at: Any) -> float:
+    start = _parse_iso_datetime(started_at)
+    finish = _parse_iso_datetime(finished_at)
+    if not start or not finish:
+        return 0.0
+    return round(max(0.0, (finish - start).total_seconds()), 1)
+
+
+def _fmt_count(value: Any) -> str:
+    number = _num(value)
+    if number is None:
+        return "0"
+    return f"{int(number):,}"
 
 
 def _now_iso() -> str:
@@ -343,6 +451,188 @@ def _scan_params_hash(params: dict[str, Any]) -> str:
     return hashlib.sha256(safe_json_dumps(params, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+def _primary_scan_meta(scan_meta: dict[str, Any]) -> dict[str, Any]:
+    scan_meta = scan_meta or {}
+    if scan_meta.get("index_scan") and not scan_meta.get("broad_scan"):
+        return scan_meta.get("index_scan") or {}
+    if scan_meta.get("broad_scan"):
+        return scan_meta.get("broad_scan") or {}
+    if scan_meta.get("index_scan"):
+        return scan_meta.get("index_scan") or {}
+    return {}
+
+
+def _scan_total_label(scan_meta: dict[str, Any]) -> str:
+    primary = _primary_scan_meta(scan_meta)
+    if primary.get("scan_kind") == "index_pool":
+        return "指数成分股"
+    return "A股主板全量候选池"
+
+
+def _scan_status_subject(source_mode: str, scan_meta: dict[str, Any]) -> str:
+    primary = _primary_scan_meta(scan_meta)
+    pool_meta = primary.get("pool") or {}
+    if primary.get("scan_kind") == "index_pool":
+        index_name = primary.get("index_name") or pool_meta.get("index_name") or "指数"
+        count = pool_meta.get("filtered_count") or primary.get("rough_universe_count") or 0
+        return f"指数精选池扫描完成：{index_name} 成分 {_fmt_count(count)} 只"
+    if (scan_meta or {}).get("broad_scan"):
+        count = pool_meta.get("filtered_count") or primary.get("rough_universe_count") or 0
+        return f"A股主板广域扫描完成：全量粗筛 {_fmt_count(count)} 只"
+    return f"{source_mode or '规则雷达'}扫描完成"
+
+
+def _build_scan_summary(
+    *,
+    source_mode: str,
+    scan_strength: str,
+    refine_candidate_limit: int,
+    display_limit: int,
+    scan_meta: dict[str, Any],
+    rule_rows: list[dict[str, Any]],
+    started_at: str,
+    finished_at: str,
+    failed_stage: str = "",
+    error_message: str = "",
+) -> dict[str, Any]:
+    primary_meta = _primary_scan_meta(scan_meta)
+    pool_meta = primary_meta.get("pool") or {}
+    cross_meta = primary_meta.get("cross_section") or {}
+    success_count = sum(1 for row in rule_rows or [] if not row.get("error"))
+    failure_count = len(rule_rows or []) - success_count
+    total_pool_count = pool_meta.get("filtered_count")
+    if total_pool_count is None:
+        total_pool_count = primary_meta.get("rough_universe_count") or len(rule_rows or [])
+    evaluable_count = primary_meta.get("evaluable_count") or len(rule_rows or [])
+    filtered_count = primary_meta.get("post_filter_count") or len(rule_rows or [])
+    used_fallback = bool(primary_meta.get("degraded"))
+    used_cross_section = bool((cross_meta.get("daily_rows") or 0) > 0 and not used_fallback)
+    return sanitize_for_json(
+        {
+            "total_pool_label": _scan_total_label(scan_meta),
+            "total_pool_count": total_pool_count,
+            "evaluable_count": evaluable_count,
+            "filtered_count": filtered_count,
+            "refine_candidate_limit": int(refine_candidate_limit or 0),
+            "refined_success_count": success_count,
+            "refined_failure_count": failure_count,
+            "display_count": min(len(rule_rows or []), int(display_limit or 0)),
+            "display_limit": int(display_limit or 0),
+            "elapsed_seconds": _elapsed_seconds(started_at, finished_at),
+            "scan_source": source_mode,
+            "scan_mode": scan_strength,
+            "used_cross_section": used_cross_section,
+            "used_fallback": used_fallback,
+            "deepseek_called": False,
+            "deepseek_detail": "未调用",
+            "failed_stage": failed_stage,
+            "error_message": error_message,
+        }
+    )
+
+
+def _set_scan_state(
+    *,
+    status: str,
+    scan_state: dict[str, Any],
+    summary: dict[str, Any],
+    errors: list[dict[str, Any]],
+    started_at: str,
+    finished_at: str,
+) -> None:
+    st.session_state[RADAR_SCAN_STATUS_KEY] = status
+    st.session_state[RADAR_SCAN_STARTED_AT_KEY] = started_at
+    st.session_state[RADAR_SCAN_FINISHED_AT_KEY] = finished_at
+    st.session_state[RADAR_SCAN_SUMMARY_KEY] = sanitize_for_json(summary or {})
+    st.session_state[RADAR_SCAN_ERRORS_KEY] = _limit_scan_errors(errors or [])
+    st.session_state[RADAR_SCAN_STATE_KEY] = sanitize_for_json(scan_state or {})
+
+
+def _clear_scan_state() -> None:
+    st.session_state[RADAR_SCAN_STATUS_KEY] = RADAR_SCAN_IDLE
+    st.session_state[RADAR_SCAN_STARTED_AT_KEY] = ""
+    st.session_state[RADAR_SCAN_FINISHED_AT_KEY] = ""
+    st.session_state[RADAR_SCAN_SUMMARY_KEY] = {}
+    st.session_state[RADAR_SCAN_ERRORS_KEY] = []
+    st.session_state[RADAR_SCAN_STATE_KEY] = {}
+
+
+def _render_scan_result_panel() -> None:
+    _ensure_radar_scan_session_state()
+    status = st.session_state.get(RADAR_SCAN_STATUS_KEY) or RADAR_SCAN_IDLE
+    summary = st.session_state.get(RADAR_SCAN_SUMMARY_KEY) or {}
+    errors = st.session_state.get(RADAR_SCAN_ERRORS_KEY) or []
+    if status == RADAR_SCAN_IDLE and not summary and not errors:
+        return
+
+    st.markdown("#### 📌 本次扫描结果")
+    if status == RADAR_SCAN_COMPLETED:
+        st.success("✅ 扫描完成")
+    elif status == RADAR_SCAN_PARTIAL_FAILED:
+        st.warning("⚠️ 扫描部分完成")
+    elif status == RADAR_SCAN_FAILED:
+        st.error("❌ 扫描失败")
+    elif status == RADAR_SCAN_RUNNING:
+        st.warning("上次扫描可能被中断，请点击重新扫描。")
+    else:
+        st.info("尚未开始本次扫描。")
+
+    deepseek_called = bool(summary.get("deepseek_called"))
+    deepseek_text = summary.get("deepseek_detail") or ("是" if deepseek_called else "未调用")
+    total_pool_label = summary.get("total_pool_label") or "A股主板全量候选池"
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(total_pool_label, f"{_fmt_count(summary.get('total_pool_count'))} 只")
+        st.metric("进入精筛候选", f"Top {summary.get('refine_candidate_limit') or 0}")
+        st.metric("精筛成功", f"{_fmt_count(summary.get('refined_success_count'))} 只")
+    with col2:
+        st.metric("横截面可评估样本", f"{_fmt_count(summary.get('evaluable_count'))} 只")
+        st.metric("规则雷达展示", f"Top {summary.get('display_limit') or summary.get('display_count') or 0}")
+        st.metric("精筛失败", f"{_fmt_count(summary.get('refined_failure_count'))} 只")
+    with col3:
+        st.metric("过滤后样本", f"{_fmt_count(summary.get('filtered_count'))} 只")
+        st.metric("耗时", f"{_num(summary.get('elapsed_seconds'), 0) or 0} 秒")
+        st.metric("DeepSeek", deepseek_text)
+
+    status_text = "已保存到本页 radar_scan_results" if st.session_state.get(RADAR_SCAN_STATE_KEY) else "暂无结果"
+    st.caption(
+        f"结果状态：{status_text} ｜ "
+        f"扫描来源：{summary.get('scan_source') or '暂无'} ｜ "
+        f"扫描强度：{summary.get('scan_mode') or '暂无'} ｜ "
+        f"横截面：{'已使用' if summary.get('used_cross_section') else '未使用'} ｜ "
+        f"fallback：{'是' if summary.get('used_fallback') else '否'}"
+    )
+
+    if status == RADAR_SCAN_PARTIAL_FAILED:
+        st.warning("已保留成功生成的规则雷达结果；失败项可在下方摘要查看。")
+    if status == RADAR_SCAN_FAILED:
+        st.error(
+            f"失败阶段：{summary.get('failed_stage') or '未知'}；"
+            f"错误信息：{summary.get('error_message') or '暂无'}。"
+        )
+        st.info("建议降低进入精筛候选上限，或调整过滤条件后点击重新扫描。")
+    if errors:
+        with st.expander("失败原因摘要", expanded=status in {RADAR_SCAN_PARTIAL_FAILED, RADAR_SCAN_FAILED}):
+            for item in errors[-20:]:
+                ticker = f"｜{item.get('ticker')}" if item.get("ticker") else ""
+                st.write(f"{item.get('stage')}{ticker}：{item.get('message')}")
+
+
+def _mark_scan_deepseek_called(top_n: int) -> None:
+    summary = dict(st.session_state.get(RADAR_SCAN_SUMMARY_KEY) or {})
+    if not summary:
+        return
+    summary["deepseek_called"] = True
+    summary["deepseek_top_n"] = int(top_n or 0)
+    summary["deepseek_detail"] = f"是，仅对 Top {int(top_n or 0)} 候选"
+    summary["deepseek_called_at"] = _now_iso()
+    st.session_state[RADAR_SCAN_SUMMARY_KEY] = sanitize_for_json(summary)
+    scan_state = dict(st.session_state.get(RADAR_SCAN_STATE_KEY) or {})
+    if scan_state:
+        scan_state["summary"] = sanitize_for_json(summary)
+        st.session_state[RADAR_SCAN_STATE_KEY] = sanitize_for_json(scan_state)
+
+
 def _adapter_from_callbacks(callbacks: dict[str, Callable[..., Any]]) -> Any:
     adapter = callbacks.get("tushare_adapter")
     if adapter is not None:
@@ -553,6 +843,391 @@ def fetch_cross_section_window(
         except Exception as exc:
             meta["daily_basic_message"] = f"daily_basic 横截面读取失败：{exc}"
     return daily, daily_basic, meta
+
+
+def _normalize_index_code(value: Any) -> str:
+    return str(value or "").strip().upper().replace(".SS", ".SH")
+
+
+def _index_option_config(index_name: str, custom_index_code: str = "") -> dict[str, Any]:
+    config = dict(INDEX_POOL_OPTIONS.get(index_name) or {})
+    if index_name == "自定义指数代码":
+        config["index_code"] = _normalize_index_code(custom_index_code)
+        config["description"] = "自定义 Tushare 指数代码。"
+    config["index_name"] = index_name if index_name != "自定义指数代码" else (config.get("index_code") or "自定义指数")
+    return config
+
+
+def load_index_constituent_pool(
+    callbacks: dict[str, Callable[..., Any]],
+    *,
+    index_name: str,
+    index_code: str,
+    exclude_st: bool = True,
+    exclude_chinext: bool = True,
+    exclude_star: bool = True,
+    exclude_bj: bool = True,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    adapter = _adapter_from_callbacks(callbacks)
+    index_code = _normalize_index_code(index_code)
+    meta = {
+        "source": "Tushare index_weight",
+        "scan_kind": "index_pool",
+        "index_name": index_name,
+        "index_code": index_code,
+        "degraded": False,
+        "message": "",
+        "raw_count": 0,
+        "filtered_count": 0,
+    }
+    if not index_code:
+        meta["degraded"] = True
+        meta["message"] = "未提供指数代码，已降级为科技股样本池。"
+        return pd.DataFrame(TECH_SAMPLE_POOL), meta
+    if adapter is None or not hasattr(adapter, "get_index_weight"):
+        meta["degraded"] = True
+        meta["message"] = "Tushare index_weight 接口不可用，已降级为科技股样本池。"
+        return pd.DataFrame(TECH_SAMPLE_POOL), meta
+
+    dates = recent_trade_dates(callbacks, days=520)
+    end_date = max(dates) if dates else datetime.date.today().strftime("%Y%m%d")
+    start_candidates = []
+    if dates:
+        start_candidates.append(dates[-180] if len(dates) > 180 else dates[0])
+        start_candidates.append(dates[-360] if len(dates) > 360 else dates[0])
+    else:
+        start_candidates.extend(
+            [
+                (datetime.date.today() - datetime.timedelta(days=280)).strftime("%Y%m%d"),
+                (datetime.date.today() - datetime.timedelta(days=560)).strftime("%Y%m%d"),
+            ]
+        )
+
+    frame = pd.DataFrame()
+    last_error = ""
+    for start_date in list(dict.fromkeys(start_candidates)):
+        try:
+            result = adapter.get_index_weight(index_code=index_code, start_date=start_date, end_date=end_date)
+            frame = _result_frame(result)
+            if not frame.empty:
+                break
+            last_error = (result or {}).get("error") or "index_weight 返回为空"
+        except Exception as exc:
+            last_error = str(exc)
+            frame = pd.DataFrame()
+
+    if frame.empty:
+        meta["degraded"] = True
+        meta["message"] = f"指数成分接口不可用或无数据（{index_name} {index_code}）：{last_error or '暂无返回'}；已降级为科技股样本池。"
+        return pd.DataFrame(TECH_SAMPLE_POOL), meta
+
+    meta["raw_count"] = len(frame)
+    if "con_code" not in frame.columns:
+        meta["degraded"] = True
+        meta["message"] = f"index_weight 返回缺少 con_code（{index_name} {index_code}），已降级为科技股样本池。"
+        return pd.DataFrame(TECH_SAMPLE_POOL), meta
+
+    frame["ticker"] = frame["con_code"].map(_display_from_ts_code)
+    frame["trade_date"] = frame["trade_date"].astype(str) if "trade_date" in frame.columns else ""
+    latest_member_date = max(frame["trade_date"].dropna().astype(str)) if "trade_date" in frame.columns else ""
+    if latest_member_date:
+        frame = frame[frame["trade_date"].astype(str).eq(latest_member_date)].copy()
+    frame["index_weight"] = pd.to_numeric(frame.get("weight"), errors="coerce") if "weight" in frame.columns else None
+    frame["index_name"] = index_name
+    frame["index_code"] = index_code
+    frame["index_member_date"] = latest_member_date
+    meta["latest_member_date"] = latest_member_date
+    meta["latest_member_count"] = len(frame)
+
+    a_share_mask = frame["ticker"].astype(str).str.endswith((".SH", ".SZ", ".BJ"))
+    board_mask = frame["ticker"].map(lambda value: _is_main_board_ticker(value, exclude_chinext, exclude_star, exclude_bj))
+    frame = frame[a_share_mask & board_mask].copy()
+    meta["after_board_exclusion_count"] = len(frame)
+
+    stock_basic = pd.DataFrame()
+    stock_basic_error = ""
+    if adapter is not None and hasattr(adapter, "get_stock_basic"):
+        try:
+            basic_result = adapter.get_stock_basic(exchange="", list_status="L")
+            stock_basic = _result_frame(basic_result)
+            if stock_basic.empty:
+                stock_basic_error = (basic_result or {}).get("error") or "stock_basic 返回为空"
+        except Exception as exc:
+            stock_basic_error = str(exc)
+    if not stock_basic.empty:
+        stock_basic["ticker"] = stock_basic["ts_code"].map(_display_from_ts_code) if "ts_code" in stock_basic.columns else ""
+        if "list_status" in stock_basic.columns:
+            stock_basic = stock_basic[stock_basic["list_status"].astype(str).str.upper().eq("L")].copy()
+        keep_cols = [col for col in ["ticker", "symbol", "name", "market", "exchange"] if col in stock_basic.columns]
+        frame = frame.merge(stock_basic[keep_cols].drop_duplicates(subset=["ticker"]), on="ticker", how="left")
+    else:
+        meta["stock_basic_message"] = stock_basic_error or "stock_basic 不可用，指数成分名称使用本地映射兜底。"
+
+    frame["name"] = frame["name"].fillna("") if "name" in frame.columns else ""
+    if exclude_st:
+        frame = frame[~frame["name"].map(_is_st_or_delisting)].copy()
+    meta["after_st_exclusion_count"] = len(frame)
+
+    frame["symbol"] = frame["symbol"].astype(str) if "symbol" in frame.columns else frame["ticker"].map(_ticker_core)
+    frame["name"] = frame.apply(lambda row: candidate_name(row.get("ticker"), row.get("name") or ""), axis=1)
+    frame["market"] = frame["market"].astype(str) if "market" in frame.columns else ""
+    frame["exchange"] = frame["exchange"].astype(str) if "exchange" in frame.columns else ""
+    frame = frame.drop_duplicates(subset=["ticker"]).reset_index(drop=True)
+    meta["filtered_count"] = len(frame)
+    if frame.empty:
+        meta["degraded"] = True
+        meta["message"] = f"{index_name} 成分过滤后为空，已降级为科技股样本池。"
+        return pd.DataFrame(TECH_SAMPLE_POOL), meta
+    return frame[
+        [
+            "ticker",
+            "symbol",
+            "name",
+            "market",
+            "exchange",
+            "index_name",
+            "index_code",
+            "index_weight",
+            "index_member_date",
+        ]
+    ], sanitize_for_json(meta)
+
+
+def build_index_pool_rough_candidates(
+    callbacks: dict[str, Callable[..., Any]],
+    *,
+    index_name: str,
+    index_code: str,
+    refine_candidate_limit: int,
+    exclude_st: bool,
+    exclude_chinext: bool,
+    exclude_star: bool,
+    exclude_bj: bool,
+    exclude_low_amount: bool,
+    trend_up_only: bool,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    pool, pool_meta = load_index_constituent_pool(
+        callbacks,
+        index_name=index_name,
+        index_code=index_code,
+        exclude_st=exclude_st,
+        exclude_chinext=exclude_chinext,
+        exclude_star=exclude_star,
+        exclude_bj=exclude_bj,
+    )
+    if pool_meta.get("degraded"):
+        candidates = [
+            {
+                **item,
+                "scan_source": "指数精选池 fallback_tech_sample",
+                "candidate_source": "指数精选池",
+                "rough_context": {"data_gaps": ["指数成分接口不可用"]},
+            }
+            for item in TECH_SAMPLE_POOL[:refine_candidate_limit]
+        ]
+        return candidates, {
+            "pool": pool_meta,
+            "scan_kind": "index_pool",
+            "degraded": True,
+            "message": pool_meta.get("message"),
+            "rough_count": len(candidates),
+            "refine_candidate_limit": refine_candidate_limit,
+            "refine_candidate_count": len(candidates),
+        }
+
+    dates = recent_trade_dates(callbacks, days=150)
+    window_dates = dates[-90:] if len(dates) >= 90 else dates
+    daily, daily_basic, data_meta = fetch_cross_section_window(callbacks, window_dates)
+    if daily.empty:
+        candidates = [
+            {
+                **item,
+                "scan_source": "指数精选池 fallback_tech_sample",
+                "candidate_source": "指数精选池",
+                "rough_context": {"data_gaps": ["daily 横截面不可用"]},
+            }
+            for item in TECH_SAMPLE_POOL[:refine_candidate_limit]
+        ]
+        return candidates, {
+            "pool": pool_meta,
+            "cross_section": data_meta,
+            "scan_kind": "index_pool",
+            "degraded": True,
+            "message": data_meta.get("message"),
+            "rough_count": len(candidates),
+            "refine_candidate_limit": refine_candidate_limit,
+            "refine_candidate_count": len(candidates),
+        }
+
+    pool_tickers = set(pool["ticker"].astype(str))
+    daily = daily[daily["ticker"].isin(pool_tickers)].copy()
+    if daily.empty:
+        candidates = [
+            {
+                **item,
+                "scan_source": "指数精选池 fallback_tech_sample",
+                "candidate_source": "指数精选池",
+                "rough_context": {"data_gaps": ["daily 与指数成分无交集"]},
+            }
+            for item in TECH_SAMPLE_POOL[:refine_candidate_limit]
+        ]
+        return candidates, {
+            "pool": pool_meta,
+            "cross_section": data_meta,
+            "scan_kind": "index_pool",
+            "degraded": True,
+            "message": "daily 与指数成分无交集",
+            "rough_count": len(candidates),
+            "refine_candidate_limit": refine_candidate_limit,
+            "refine_candidate_count": len(candidates),
+        }
+
+    daily["close"] = pd.to_numeric(daily.get("close"), errors="coerce")
+    daily["amount"] = pd.to_numeric(daily.get("amount"), errors="coerce")
+    daily = daily.dropna(subset=["ticker", "trade_date", "close"]).sort_values(["ticker", "trade_date"])
+    grouped = daily.groupby("ticker", group_keys=False)
+    daily["MA20"] = grouped["close"].transform(lambda series: series.rolling(20, min_periods=20).mean())
+    daily["MA60"] = grouped["close"].transform(lambda series: series.rolling(60, min_periods=60).mean())
+    daily["close_20d_ago"] = grouped["close"].shift(20)
+    daily["twenty_day_return_pct"] = (daily["close"] / daily["close_20d_ago"] - 1) * 100
+
+    latest = grouped.tail(1).copy()
+    latest_trade_date = max(daily["trade_date"].dropna().astype(str)) if not daily.empty else data_meta.get("latest_trade_date", "")
+    latest["is_latest_trade_date"] = latest["trade_date"].astype(str).eq(str(latest_trade_date))
+    latest = latest.merge(pool, on="ticker", how="left", suffixes=("", "_pool"))
+    if not daily_basic.empty:
+        keep = [
+            col for col in ["ticker", "turnover_rate", "volume_ratio", "total_mv", "circ_mv", "pe_ttm", "pb"]
+            if col in daily_basic.columns
+        ]
+        if keep:
+            latest = latest.merge(daily_basic[keep].drop_duplicates(subset=["ticker"]), on="ticker", how="left")
+
+    latest["price_vs_ma20_pct"] = (latest["close"] / latest["MA20"] - 1) * 100
+    latest["price_vs_ma60_pct"] = (latest["close"] / latest["MA60"] - 1) * 100
+    latest["rough_score"] = 42.0
+    latest["rough_notes"] = ""
+    latest_pre_filter_count = len(latest)
+
+    trend_mask = latest["close"].gt(latest["MA20"]) & latest["MA20"].gt(latest["MA60"])
+    latest.loc[trend_mask, "rough_score"] += 35
+    latest.loc[trend_mask, "rough_notes"] += "当前价>MA20>MA60；"
+    ma20_break = latest["close"].lt(latest["MA20"])
+    latest.loc[ma20_break, "rough_score"] -= 12
+    latest.loc[ma20_break, "rough_notes"] += "跌破MA20；"
+    ma60_break = latest["close"].lt(latest["MA60"])
+    latest.loc[ma60_break, "rough_score"] -= 28
+    latest.loc[ma60_break, "rough_notes"] += "跌破MA60；"
+    hot_mask = latest["twenty_day_return_pct"].gt(60)
+    latest.loc[hot_mask, "rough_score"] -= 20
+    latest.loc[hot_mask, "rough_notes"] += "20日涨幅>60%，追高风险；"
+    moderate = latest["twenty_day_return_pct"].between(3, 35, inclusive="both")
+    latest.loc[moderate, "rough_score"] += 8
+    latest.loc[moderate, "rough_notes"] += "20日趋势温和；"
+    if "index_weight" in latest.columns:
+        latest["index_weight"] = pd.to_numeric(latest["index_weight"], errors="coerce")
+        valid_weights = latest["index_weight"].dropna()
+        if not valid_weights.empty:
+            high_weight_threshold = valid_weights.quantile(0.75)
+            high_weight_mask = latest["index_weight"].fillna(0).ge(high_weight_threshold) & latest["index_weight"].fillna(0).gt(0)
+            latest.loc[high_weight_mask, "rough_score"] += 3
+            latest.loc[high_weight_mask, "rough_notes"] += "指数权重较高，轻微优先；"
+    incomplete = latest[["MA20", "MA60"]].isna().any(axis=1)
+    latest.loc[incomplete, "rough_score"] -= 25
+    latest.loc[incomplete, "rough_notes"] += "MA数据不完整；"
+    stale = ~latest["is_latest_trade_date"]
+    latest.loc[stale, "rough_score"] -= 25
+    latest.loc[stale, "rough_notes"] += "疑似停牌或非最新交易日；"
+    if "amount" in latest.columns:
+        low_amount_mask = latest["amount"].fillna(0).lt(100000)
+    else:
+        low_amount_mask = pd.Series(False, index=latest.index)
+    if exclude_low_amount:
+        latest.loc[low_amount_mask, "rough_score"] -= 12
+        latest.loc[low_amount_mask, "rough_notes"] += "成交额偏低；"
+    evaluable_mask = ~incomplete & ~stale
+    evaluable_count = int(evaluable_mask.sum())
+    base_filter_mask = evaluable_mask.copy()
+    if exclude_low_amount:
+        base_filter_mask &= ~low_amount_mask
+        low_amount_pass_count = int(base_filter_mask.sum())
+    else:
+        low_amount_pass_count = evaluable_count
+    trend_pass_count = int((base_filter_mask & trend_mask & ~hot_mask).sum())
+    filter_mask = base_filter_mask.copy()
+    if trend_up_only:
+        filter_mask &= trend_mask & ~hot_mask
+    latest = latest[filter_mask].copy()
+    post_filter_count = len(latest)
+
+    latest["rough_score"] = latest["rough_score"].clip(0, 100)
+    latest = latest.sort_values("rough_score", ascending=False).copy()
+    full_rough_ranked_count = len(latest)
+    refine_candidate_limit = max(1, int(refine_candidate_limit))
+    latest = latest.head(refine_candidate_limit).copy()
+    refine_candidate_count = len(latest)
+
+    candidates = []
+    for _, row in latest.iterrows():
+        ticker = normalize_display_ticker(row.get("ticker"))
+        rough_context = {
+            "cross_section_available": True,
+            "ticker": ticker,
+            "name": str(row.get("name") or candidate_name(ticker)),
+            "current_price": _num(row.get("close")),
+            "data_date": str(row.get("trade_date") or ""),
+            "MA20": _num(row.get("MA20")),
+            "MA60": _num(row.get("MA60")),
+            "twenty_day_return_pct": _num(row.get("twenty_day_return_pct")),
+            "price_vs_MA20_pct": _num(row.get("price_vs_ma20_pct")),
+            "price_vs_MA60_pct": _num(row.get("price_vs_ma60_pct")),
+            "amount": _num(row.get("amount")),
+            "turnover_rate": _num(row.get("turnover_rate")),
+            "rough_score": _num(row.get("rough_score")),
+            "rough_notes": str(row.get("rough_notes") or "").strip("；"),
+            "scan_source": "指数精选池",
+            "candidate_source": "指数精选池",
+            "index_name": row.get("index_name") or index_name,
+            "index_code": row.get("index_code") or index_code,
+            "index_weight": _num(row.get("index_weight")),
+            "index_member_date": str(row.get("index_member_date") or ""),
+        }
+        candidates.append(
+            {
+                "ticker": ticker,
+                "name": rough_context["name"],
+                "scan_source": "指数精选池",
+                "candidate_source": "指数精选池",
+                "index_name": rough_context["index_name"],
+                "index_code": rough_context["index_code"],
+                "index_weight": rough_context["index_weight"],
+                "index_member_date": rough_context["index_member_date"],
+                "rough_context": rough_context,
+            }
+        )
+
+    meta = {
+        "pool": pool_meta,
+        "cross_section": data_meta,
+        "scan_kind": "index_pool",
+        "degraded": False,
+        "index_name": index_name,
+        "index_code": index_code,
+        "latest_trade_date": latest_trade_date,
+        "rough_count": len(candidates),
+        "rough_universe_count": len(daily["ticker"].unique()),
+        "latest_pre_filter_count": latest_pre_filter_count,
+        "evaluable_count": evaluable_count,
+        "low_amount_pass_count": low_amount_pass_count,
+        "trend_up_pass_count": trend_pass_count,
+        "post_filter_count": post_filter_count,
+        "full_rough_ranked_count": full_rough_ranked_count,
+        "refine_candidate_limit": refine_candidate_limit,
+        "refine_candidate_count": refine_candidate_count,
+        "full_scan_mode": False,
+        "message": "",
+    }
+    return candidates, sanitize_for_json(meta)
 
 
 def build_cross_section_rough_candidates(
@@ -1501,6 +2176,11 @@ def build_candidate_context(
             "limit_emotion": limit_emotion,
         },
         "scan_source": candidate.get("scan_source") or rough_context.get("scan_source") or "手动输入",
+        "candidate_source": candidate.get("candidate_source") or rough_context.get("candidate_source") or candidate.get("scan_source") or "手动输入",
+        "index_name": candidate.get("index_name") or rough_context.get("index_name") or "",
+        "index_code": candidate.get("index_code") or rough_context.get("index_code") or "",
+        "index_weight": _num(candidate.get("index_weight") if candidate.get("index_weight") != "" else rough_context.get("index_weight")),
+        "index_member_date": candidate.get("index_member_date") or rough_context.get("index_member_date") or "",
         "rough_context": rough_context,
     }
     context.update(compare_candidate_to_holding(context, holding_context))
@@ -1525,6 +2205,15 @@ def score_candidate(candidate_context: dict[str, Any], holding_context: dict[str
         compare -= 6
 
     total = _weighted_rule_total(dimensions, _clip_score(compare))
+    index_weight = _num(candidate_context.get("index_weight"))
+    index_weight_bonus = 0
+    if index_weight is not None and index_weight >= 1:
+        index_weight_bonus = 2
+    elif index_weight is not None and index_weight >= 0.3:
+        index_weight_bonus = 1
+    if index_weight_bonus:
+        total = _clip_score(total + index_weight_bonus)
+        dimensions["score_notes"]["index_weight_bonus"] = f"指数权重 {index_weight:.3f}，轻微加分 {index_weight_bonus}"
     battle_state, battle_reason = _battle_state_from_scores(candidate_context, dimensions, total, relation)
     triggers = build_candidate_trigger_conditions(candidate_context, holding_context)
     invalidations = build_candidate_invalidation_conditions(candidate_context, holding_context)
@@ -1632,6 +2321,8 @@ def _radar_dataframe(rule_rows: list[dict[str, Any]]) -> pd.DataFrame:
                 "失效条件": "；".join(score.get("invalid_conditions") or []),
                 "数据缺口": "；".join(str(item) for item in gaps) if gaps else "无",
                 "扫描来源": item.get("scan_source") or context.get("scan_source") or "手动输入",
+                "来源指数": context.get("index_name") or "",
+                "指数权重": context.get("index_weight") if context.get("index_weight") is not None else None,
             }
         )
     return pd.DataFrame(table_rows)
@@ -1940,9 +2631,9 @@ def render_next_ticket_radar(
     st.markdown("### 🧭 下一票作战雷达")
     st.caption("不是荐股，只判断候选票是否值得进入作战准备。")
     st.warning("该模块不是荐股，不构成买卖建议；广域扫描仅用于发现候选观察对象。加仓需要验证，减仓需要条件触发。")
+    st.info("指数精选池不是荐股池；指数成分仅代表被指数规则纳入，不代表当前适合买入。系统只判断候选票是否值得进入作战准备。")
 
-    if RADAR_SCAN_STATE_KEY not in st.session_state:
-        st.session_state[RADAR_SCAN_STATE_KEY] = {}
+    _ensure_radar_scan_session_state()
     if DEEP_RESEARCH_STATE_KEY not in st.session_state:
         st.session_state[DEEP_RESEARCH_STATE_KEY] = {}
 
@@ -1962,7 +2653,7 @@ def render_next_ticket_radar(
     if "next_ticket_manual_candidates" not in st.session_state:
         st.session_state["next_ticket_manual_candidates"] = _candidate_text(DEFAULT_CANDIDATES)
 
-    source_options = ["手动输入候选", "科技股样本池", "持续调查池", "A股主板广域扫描", "混合扫描"]
+    source_options = ["手动输入候选", "科技股样本池", "持续调查池", "A股主板广域扫描", "📊 指数精选池", "混合扫描"]
     source_mode = st.selectbox("候选池来源选择器", source_options, index=3, key="next_ticket_source_mode")
 
     quick1, quick2, quick3 = st.columns(3)
@@ -1988,7 +2679,40 @@ def render_next_ticket_radar(
         help="规则雷达和广域扫描都不调用 DeepSeek。深度研究按钮才会调用。",
     )
 
-    st.markdown("#### A股主板广域扫描参数")
+    index_name = "沪深300"
+    index_code = INDEX_POOL_OPTIONS[index_name]["index_code"]
+    index_config = _index_option_config(index_name)
+    if source_mode in {"📊 指数精选池", "混合扫描"}:
+        st.markdown("#### 📊 指数精选池 / 机构筛选池")
+        st.caption(
+            "指数精选池不是荐股池，只是使用已被指数规则筛选过的成分股作为候选范围，"
+            "再由本系统进行趋势、资金、风险、位置和当前持仓对比评分。"
+        )
+        idx1, idx2 = st.columns([1.2, 1])
+        index_option_names = list(INDEX_POOL_OPTIONS.keys())
+        with idx1:
+            index_name = st.selectbox(
+                "指数选择",
+                index_option_names,
+                index=index_option_names.index("中证500"),
+                key="next_ticket_index_pool_name",
+            )
+        with idx2:
+            custom_index_code = st.text_input(
+                "自定义指数代码",
+                value="",
+                key="next_ticket_custom_index_code",
+                placeholder="例如 000300.SH",
+                disabled=index_name != "自定义指数代码",
+            )
+        index_config = _index_option_config(index_name, custom_index_code)
+        index_code = index_config.get("index_code") or ""
+        st.caption(
+            f"{index_name}：{index_code or '待输入'}｜{index_config.get('description') or ''} "
+            "指数成分只代表被机构化规则纳入，不构成动作信号。"
+        )
+
+    st.markdown("#### 扫描参数")
     strength_options = list(SCAN_STRENGTH_PRESETS.keys())
     scan_strength = st.radio(
         "扫描强度",
@@ -2005,26 +2729,32 @@ def render_next_ticket_radar(
     refine_options = [100, 300, 500, 1000]
     display_options = [20, 50, 100]
     strength_key = {"标准模式": "standard", "深度模式": "deep", "火力全开模式": "full"}.get(scan_strength, "deep")
+    scope_key = "index" if source_mode == "📊 指数精选池" else ("mixed" if source_mode == "混合扫描" else "broad")
+    default_refine_limit = int(strength_preset["refine_candidate_limit"])
+    default_display_limit = int(strength_preset["display_limit"])
+    if source_mode == "📊 指数精选池":
+        default_refine_limit = int(index_config.get("default_refine_candidate_limit") or default_refine_limit)
+        default_display_limit = int(index_config.get("default_display_limit") or default_display_limit)
     with p1:
         refine_candidate_limit = st.radio(
             "进入精筛候选上限",
             refine_options,
-            index=refine_options.index(int(strength_preset["refine_candidate_limit"])),
+            index=refine_options.index(default_refine_limit if default_refine_limit in refine_options else 100),
             horizontal=True,
-            key=f"next_ticket_refine_candidate_limit_{strength_key}",
-            help="不是只扫描这些股票。系统会先对 A股主板全量候选池做横截面粗筛，再取 Top N 进入精筛。",
+            key=f"next_ticket_refine_candidate_limit_{strength_key}_{scope_key}",
+            help="不是只扫描这些股票。系统会先对全量候选池做横截面粗筛，再取 Top N 进入精筛。",
         )
     with p2:
         display_limit = st.radio(
             "规则雷达展示数量",
             display_options,
-            index=display_options.index(int(strength_preset["display_limit"])),
+            index=display_options.index(default_display_limit if default_display_limit in display_options else 20),
             horizontal=True,
-            key=f"next_ticket_display_limit_{strength_key}",
+            key=f"next_ticket_display_limit_{strength_key}_{scope_key}",
         )
     st.caption(
         "进入精筛候选上限不是初始扫描股票数，而是全量横截面粗筛后进入精筛的候选数量。"
-        "系统会先尽量覆盖 A股主板全量股票，再截取 Top 候选进入精筛。"
+        "系统会先尽量覆盖所选候选池，再截取 Top 候选进入精筛。"
     )
 
     f1, f2, f3, f4, f5 = st.columns(5)
@@ -2045,6 +2775,8 @@ def render_next_ticket_radar(
             "source_mode": source_mode,
             "manual_text": manual_text,
             "include_focus": include_focus,
+            "index_name": index_name,
+            "index_code": index_code,
             "scan_strength": scan_strength,
             "refine_candidate_limit": refine_candidate_limit,
             "display_limit": display_limit,
@@ -2093,24 +2825,115 @@ def render_next_ticket_radar(
                 st.info(focus_error)
         return _dedupe_candidates(rows), notes
 
-    start_label = "开始广域扫描" if source_mode in {"A股主板广域扫描", "混合扫描"} else "生成规则雷达"
-    b1, b2 = st.columns(2)
+    if source_mode == "A股主板广域扫描":
+        start_label = "开始广域扫描"
+    elif source_mode == "📊 指数精选池":
+        start_label = "开始指数池扫描"
+    elif source_mode == "混合扫描":
+        start_label = "开始混合扫描"
+    else:
+        start_label = "生成规则雷达"
+    b1, b2, b3 = st.columns(3)
     with b1:
         start_scan = st.button(start_label, type="primary", key="next_ticket_start_scan", width="stretch")
     with b2:
         rescan = st.button("重新扫描", key="next_ticket_rescan", width="stretch")
+    with b3:
+        clear_scan = st.button("清除本次扫描结果", key="next_ticket_clear_scan", width="stretch")
+    if clear_scan:
+        _clear_scan_state()
+        st.rerun()
 
     scan_state = st.session_state.get(RADAR_SCAN_STATE_KEY) or {}
     should_scan = bool(start_scan or rescan)
     if should_scan:
-        status_box = st.status("正在进行 A股主板全量横截面粗筛……", expanded=False)
+        started_at = _now_iso()
+        initial_summary = _build_scan_summary(
+            source_mode=source_mode,
+            scan_strength=scan_strength,
+            refine_candidate_limit=int(refine_candidate_limit),
+            display_limit=int(display_limit),
+            scan_meta={},
+            rule_rows=[],
+            started_at=started_at,
+            finished_at=started_at,
+        )
+        _set_scan_state(
+            status=RADAR_SCAN_RUNNING,
+            scan_state={},
+            summary=initial_summary,
+            errors=[],
+            started_at=started_at,
+            finished_at="",
+        )
+        st.session_state[DEEP_RESEARCH_STATE_KEY] = {}
+        if source_mode == "📊 指数精选池":
+            initial_status_label = "正在获取指数成分……"
+        elif source_mode in {"A股主板广域扫描", "混合扫描"}:
+            initial_status_label = "正在进行 A股主板全量横截面粗筛……"
+        else:
+            initial_status_label = "正在生成规则雷达……"
+        status_box = st.status(initial_status_label, expanded=False)
         progress = st.progress(0)
         source_notes = []
         candidates: list[dict[str, Any]] = []
         scan_meta: dict[str, Any] = {}
+        rule_rows: list[dict[str, Any]] = []
+        scan_errors: list[dict[str, Any]] = []
+        failed_stage = "初始化"
 
         try:
+            if source_mode in {"📊 指数精选池", "混合扫描"}:
+                failed_stage = "指数成分获取"
+                status_box.update(label=f"正在获取指数成分并做横截面粗筛：{index_name} {index_code or '待输入'}……", state="running")
+                index_candidates, index_meta = build_index_pool_rough_candidates(
+                    callbacks,
+                    index_name=index_name,
+                    index_code=index_code,
+                    refine_candidate_limit=int(refine_candidate_limit),
+                    exclude_st=bool(exclude_st),
+                    exclude_chinext=bool(exclude_chinext),
+                    exclude_star=bool(exclude_star),
+                    exclude_bj=bool(exclude_bj),
+                    exclude_low_amount=bool(exclude_low_amount),
+                    trend_up_only=bool(trend_up_only),
+                )
+                candidates.extend(index_candidates)
+                scan_meta["index_scan"] = index_meta
+                pool_meta = index_meta.get("pool") or {}
+                cross_meta = index_meta.get("cross_section") or {}
+                index_pool_count = pool_meta.get("filtered_count") or 0
+                evaluable_count = index_meta.get("evaluable_count") or 0
+                filter_count = index_meta.get("post_filter_count") or 0
+                actual_refine_count = index_meta.get("refine_candidate_count") or len(index_candidates)
+                source_notes.append(
+                    f"{index_name}({index_code or '无代码'}) 指数成分 {index_pool_count} 只；"
+                    f"横截面可评估 {evaluable_count} 只；"
+                    f"进入精筛 {actual_refine_count} 只"
+                )
+                status_box.write(f"指数：{index_name}｜代码：{index_code or '待输入'}")
+                status_box.write(f"指数成分原始返回：{pool_meta.get('raw_count') or 0} 行")
+                status_box.write(f"最新成分日期：{pool_meta.get('latest_member_date') or '暂无'}")
+                status_box.write(f"指数成分股：{index_pool_count} 只")
+                status_box.write(f"横截面 daily 行数：{cross_meta.get('daily_rows') or 0}，取数模式：{cross_meta.get('daily_fetch_mode') or '未知'}")
+                status_box.write(f"横截面可评估样本：{evaluable_count} 只")
+                status_box.write(f"过滤后样本：{filter_count} 只")
+                status_box.write(f"进入精筛候选：Top {refine_candidate_limit}；实际进入精筛：{actual_refine_count} 只")
+                status_box.write(f"规则雷达展示：Top {display_limit}")
+                if index_meta.get("degraded"):
+                    degraded_message = index_meta.get("message") or "指数池已降级为科技股样本池"
+                    status_box.write(f"指数精选池降级：{degraded_message}")
+                    scan_errors.append(_scan_error("指数成分接口降级", degraded_message))
+                else:
+                    status_box.update(
+                        label=(
+                            f"指数成分获取完成：{index_name} {index_pool_count} 只，"
+                            f"横截面可评估 {evaluable_count} 只；进入精筛 Top {refine_candidate_limit}。"
+                        ),
+                        state="running",
+                    )
             if source_mode in {"A股主板广域扫描", "混合扫描"}:
+                failed_stage = "A股主板横截面粗筛"
                 status_box.update(label="正在进行 A股主板全量横截面粗筛……", state="running")
                 broad_candidates, broad_meta = build_cross_section_rough_candidates(
                     callbacks,
@@ -2148,7 +2971,9 @@ def render_next_ticket_radar(
                 status_box.write(f"进入精筛候选：Top {refine_candidate_limit}；实际进入精筛：{actual_refine_count} 只")
                 status_box.write(f"规则雷达展示：Top {display_limit}")
                 if broad_meta.get("degraded"):
-                    status_box.write(f"广域扫描降级：{broad_meta.get('message') or '已降级为小样本扫描'}")
+                    degraded_message = broad_meta.get("message") or "已降级为小样本扫描"
+                    status_box.write(f"广域扫描降级：{degraded_message}")
+                    scan_errors.append(_scan_error("横截面粗筛降级", degraded_message))
                 else:
                     status_box.update(
                         label=(
@@ -2157,50 +2982,150 @@ def render_next_ticket_radar(
                         ),
                         state="running",
                     )
+            failed_stage = "候选池补充"
             extra_candidates, extra_notes = gather_non_broad_candidates()
             candidates.extend(extra_candidates)
             source_notes.extend(extra_notes)
             candidates = _dedupe_candidates(candidates)
 
             if not candidates:
-                status_box.update(label="候选池为空", state="error")
-                st.warning("候选池为空，无法生成规则雷达。")
-                return
-
-            status_box.update(
-                label=(
-                    f"正在精筛 Top {refine_candidate_limit}：0/{len(candidates)}；"
-                    f"最终展示规则雷达 Top {display_limit}。"
-                ),
-                state="running",
-            )
-
-            def progress_callback(index: int, total: int, candidate: dict[str, Any]) -> None:
-                ticker = candidate.get("ticker") or ""
-                name = candidate.get("name") or ""
+                finished_at = _now_iso()
+                status_subject = _scan_status_subject(source_mode, scan_meta)
                 status_box.update(
                     label=(
-                        f"正在精筛 Top {refine_candidate_limit}：{index}/{total}，当前 {ticker} {name}；"
+                        f"✅ {status_subject}，没有满足过滤条件的候选，"
+                        f"展示规则雷达 Top {display_limit}。"
+                    ),
+                    state="complete",
+                    expanded=False,
+                )
+                summary = _build_scan_summary(
+                    source_mode=source_mode,
+                    scan_strength=scan_strength,
+                    refine_candidate_limit=int(refine_candidate_limit),
+                    display_limit=int(display_limit),
+                    scan_meta=scan_meta,
+                    rule_rows=[],
+                    started_at=started_at,
+                    finished_at=finished_at,
+                )
+                scan_state = {
+                    "params_hash": params_hash,
+                    "params": scan_params,
+                    "source_mode": source_mode,
+                    "source_notes": source_notes,
+                    "rule_rows": [],
+                    "results": [],
+                    "scan_meta": scan_meta,
+                    "summary": summary,
+                    "generated_at": finished_at,
+                }
+                _set_scan_state(
+                    status=RADAR_SCAN_COMPLETED,
+                    scan_state=scan_state,
+                    summary=summary,
+                    errors=scan_errors,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                )
+            else:
+                failed_stage = "Top N 精筛"
+                status_box.update(
+                    label=(
+                        f"正在精筛 Top {refine_candidate_limit}：0/{len(candidates)}；"
                         f"最终展示规则雷达 Top {display_limit}。"
                     ),
                     state="running",
                 )
-                progress.progress(index / max(total, 1))
 
-            rule_rows = build_rule_radar(candidates, holding_context, callbacks, progress_callback=progress_callback)
-            status_box.update(label=f"正在生成规则雷达 Top {display_limit}……", state="running")
-            success_count = sum(1 for row in rule_rows if not row.get("error"))
-            failed_count = len(rule_rows) - success_count
-            status_box.write(f"精筛完成：成功 {success_count} 只，失败 {failed_count} 只。")
-            broad_summary = scan_meta.get("broad_scan") or {}
-            full_pool_count = ((broad_summary.get("pool") or {}).get("filtered_count") or 0)
-            status_box.update(
-                label=(
-                    f"✅ A股主板广域扫描完成：全量粗筛 {full_pool_count} 只，"
-                    f"精筛 Top {refine_candidate_limit}，展示规则雷达 Top {display_limit}。"
-                ),
-                state="complete",
-                expanded=False,
+                def progress_callback(index: int, total: int, candidate: dict[str, Any]) -> None:
+                    ticker = candidate.get("ticker") or ""
+                    name = candidate.get("name") or ""
+                    status_box.update(
+                        label=(
+                            f"正在精筛 Top {refine_candidate_limit}：{index}/{total}，当前 {ticker} {name}；"
+                            f"最终展示规则雷达 Top {display_limit}。"
+                        ),
+                        state="running",
+                    )
+                    progress.progress(index / max(total, 1))
+
+                rule_rows = build_rule_radar(candidates, holding_context, callbacks, progress_callback=progress_callback)
+                failed_stage = "规则雷达表生成"
+                status_box.update(label=f"正在生成规则雷达 Top {display_limit}……", state="running")
+                success_count = sum(1 for row in rule_rows if not row.get("error"))
+                failed_count = len(rule_rows) - success_count
+                for row in rule_rows:
+                    if row.get("error"):
+                        candidate = row.get("candidate") or {}
+                        scan_errors.append(_scan_error("单票精筛", row.get("error"), candidate.get("ticker") or ""))
+                status_box.write(f"精筛完成：成功 {success_count} 只，失败 {failed_count} 只。")
+                status_subject = _scan_status_subject(source_mode, scan_meta)
+                finished_at = _now_iso()
+                summary = _build_scan_summary(
+                    source_mode=source_mode,
+                    scan_strength=scan_strength,
+                    refine_candidate_limit=int(refine_candidate_limit),
+                    display_limit=int(display_limit),
+                    scan_meta=scan_meta,
+                    rule_rows=rule_rows,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                )
+                if success_count > 0 and failed_count > 0:
+                    terminal_status = RADAR_SCAN_PARTIAL_FAILED
+                    complete_label = (
+                        f"⚠️ {status_subject}，"
+                        f"精筛成功 {success_count} 只、失败 {failed_count} 只，展示规则雷达 Top {display_limit}。"
+                    )
+                    status_state = "complete"
+                elif success_count == 0 and failed_count > 0:
+                    terminal_status = RADAR_SCAN_FAILED
+                    summary["failed_stage"] = "Top N 精筛"
+                    summary["error_message"] = "全部候选精筛失败"
+                    complete_label = "❌ 规则雷达扫描失败：全部候选精筛失败"
+                    status_state = "error"
+                else:
+                    terminal_status = RADAR_SCAN_COMPLETED
+                    complete_label = (
+                        f"✅ {status_subject}，"
+                        f"精筛 Top {refine_candidate_limit}，展示规则雷达 Top {display_limit}。"
+                    )
+                    status_state = "complete"
+                status_box.update(label=complete_label, state=status_state, expanded=False)
+                scan_state = {
+                    "params_hash": params_hash,
+                    "params": scan_params,
+                    "source_mode": source_mode,
+                    "source_notes": source_notes,
+                    "rule_rows": sanitize_for_json(rule_rows),
+                    "results": sanitize_for_json(rule_rows),
+                    "scan_meta": scan_meta,
+                    "summary": summary,
+                    "generated_at": finished_at,
+                }
+                _set_scan_state(
+                    status=terminal_status,
+                    scan_state=scan_state,
+                    summary=summary,
+                    errors=scan_errors,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                )
+        except Exception as exc:
+            finished_at = _now_iso()
+            scan_errors.append(_scan_error(failed_stage, exc))
+            summary = _build_scan_summary(
+                source_mode=source_mode,
+                scan_strength=scan_strength,
+                refine_candidate_limit=int(refine_candidate_limit),
+                display_limit=int(display_limit),
+                scan_meta=scan_meta,
+                rule_rows=rule_rows,
+                started_at=started_at,
+                finished_at=finished_at,
+                failed_stage=failed_stage,
+                error_message=str(exc),
             )
             scan_state = {
                 "params_hash": params_hash,
@@ -2208,20 +3133,42 @@ def render_next_ticket_radar(
                 "source_mode": source_mode,
                 "source_notes": source_notes,
                 "rule_rows": sanitize_for_json(rule_rows),
+                "results": sanitize_for_json(rule_rows),
                 "scan_meta": scan_meta,
-                "generated_at": _now_iso(),
+                "summary": summary,
+                "generated_at": finished_at,
             }
-            st.session_state[RADAR_SCAN_STATE_KEY] = scan_state
-            st.session_state[DEEP_RESEARCH_STATE_KEY] = {}
-        except Exception as exc:
-            status_box.update(label="规则雷达扫描失败", state="error")
-            st.error(f"扫描失败：{exc}")
-            return
+            _set_scan_state(
+                status=RADAR_SCAN_FAILED,
+                scan_state=scan_state,
+                summary=summary,
+                errors=scan_errors,
+                started_at=started_at,
+                finished_at=finished_at,
+            )
+            status_box.update(label=f"❌ 规则雷达扫描失败：{failed_stage}", state="error", expanded=True)
 
     scan_state = st.session_state.get(RADAR_SCAN_STATE_KEY) or {}
     rule_rows = scan_state.get("rule_rows") or []
+    if rule_rows and st.session_state.get("next_ticket_run_deep"):
+        _mark_scan_deepseek_called(int(st.session_state.get("next_ticket_top_n") or 5))
+    _render_scan_result_panel()
+    scan_status = st.session_state.get(RADAR_SCAN_STATUS_KEY) or RADAR_SCAN_IDLE
     if not rule_rows:
-        st.info("尚未扫描。A股主板广域扫描不会在页面加载时自动执行，请点击“开始广域扫描”。")
+        if scan_status in {RADAR_SCAN_COMPLETED, RADAR_SCAN_PARTIAL_FAILED}:
+            st.info(
+                "本次扫描没有满足过滤条件的候选。可以尝试：\n"
+                "1. 取消只看趋势向上\n"
+                "2. 放宽低成交额过滤\n"
+                "3. 提高进入精筛候选上限\n"
+                "4. 改用混合扫描"
+            )
+        elif scan_status == RADAR_SCAN_FAILED:
+            st.info("本次扫描未生成可展示的规则雷达表，请根据上方失败信息调整后重新扫描。")
+        elif scan_status == RADAR_SCAN_RUNNING:
+            st.info("上次扫描可能被中断，请点击重新扫描。")
+        else:
+            st.info("尚未扫描。规则雷达不会在页面加载时自动执行，请点击扫描按钮。")
         return
     if scan_state.get("params_hash") != params_hash:
         st.warning("扫描参数或当前持仓标尺已变化。当前展示的是上一次扫描结果；请点击“重新扫描”刷新规则雷达。")
@@ -2234,7 +3181,9 @@ def render_next_ticket_radar(
     scan_meta = scan_state.get("scan_meta") or {}
     if (scan_meta.get("broad_scan") or {}).get("degraded"):
         st.warning((scan_meta.get("broad_scan") or {}).get("message") or "广域扫描已降级为小样本扫描。")
-    with st.expander("广域扫描横截面信息", expanded=False):
+    if (scan_meta.get("index_scan") or {}).get("degraded"):
+        st.warning((scan_meta.get("index_scan") or {}).get("message") or "指数成分接口不可用，已降级为科技股样本池。")
+    with st.expander("扫描横截面信息", expanded=False):
         st.json(scan_meta or {"message": "非广域扫描或暂无横截面元数据"})
 
     st.markdown("#### 规则雷达表")
@@ -2251,6 +3200,8 @@ def render_next_ticket_radar(
             "触发条件": st.column_config.TextColumn("触发条件", width="large"),
             "失效条件": st.column_config.TextColumn("失效条件", width="large"),
             "数据缺口": st.column_config.TextColumn("数据缺口", width="medium"),
+            "来源指数": st.column_config.TextColumn("来源指数", width="small"),
+            "指数权重": st.column_config.NumberColumn("指数权重", width="small", format="%.3f"),
         },
     )
 
@@ -2288,6 +3239,7 @@ def render_next_ticket_radar(
                 _render_result_expander(item)
         return
 
+    _mark_scan_deepseek_called(int(top_n))
     results = []
     status_box = st.status("准备深度研究 Top 候选", expanded=True)
     progress = st.progress(0)

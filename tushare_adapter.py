@@ -132,6 +132,16 @@ def get_stock_basic(exchange="", list_status="L"):
     )
 
 
+def get_index_weight(index_code=None, trade_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "index_weight",
+        index_code=(index_code or "").strip().upper(),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
 def get_daily(ts_code, start_date=None, end_date=None):
     return _call_pro(
         "daily",
