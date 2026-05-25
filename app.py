@@ -603,13 +603,14 @@ def cached_realtime_quote(ticker, market_type, provider="auto"):
     return fetch_realtime_quote(ticker, market_type=market_type, provider=provider)
 
 
-@st.cache_data(ttl=900)
-def cached_money_flow_snapshot(ticker, market_type, deep=False):
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_money_flow_snapshot(ticker, market_type, deep=False, refresh_token=""):
     return call_with_supported_kwargs(
         collect_money_flow_snapshot,
         ticker,
         market_type=market_type,
         deep=deep,
+        refresh_token=refresh_token,
     )
 
 
@@ -621,6 +622,108 @@ def cached_micro_data(ticker, market_type, deep=False):
         market_type=market_type,
         deep=deep,
     )
+
+
+def build_money_flow_snapshot_placeholder(ticker, market_type, message):
+    updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+    return {
+        "ticker": ticker,
+        "market_type": market_type,
+        "mode": "quick",
+        "available": False,
+        "partial": False,
+        "updated_at": updated_at,
+        "data_time": updated_at,
+        "warnings": [message] if message else [],
+        "errors": [],
+        "source_status": {},
+        "summary": {"positive": [], "negative": [], "stance": "未运行"},
+        "coverage": {"score": 0, "available": [], "missing": []},
+        "individual_fund_flow": [],
+        "dragon_tiger": [],
+        "block_trade": [],
+    }
+
+
+def render_money_flow_snapshot_status(flow):
+    flow = flow or {}
+    updated_at = flow.get("updated_at") or flow.get("data_time") or ""
+    source_status = flow.get("source_status") or {}
+    errors = [str(item) for item in flow.get("errors") or [] if str(item).strip()]
+    warnings = [str(item) for item in flow.get("warnings") or [] if str(item).strip()]
+
+    if flow.get("available") and not flow.get("partial"):
+        st.success("资金穿透数据已更新")
+    elif flow.get("available"):
+        st.warning("部分资金数据暂不可用，已使用可得数据")
+    elif errors:
+        st.error("资金快照暂不可用，请稍后刷新；页面继续展示 Tushare 专业事实。")
+    elif warnings:
+        st.info(warnings[0])
+    else:
+        st.info("AkShare 资金穿透暂未运行。")
+
+    if updated_at:
+        st.caption(f"AkShare 快照时间：{updated_at}")
+    if errors:
+        for item in errors:
+            st.caption(f"AkShare 错误：{item}")
+    if source_status:
+        with st.expander("AkShare 数据源状态", expanded=False):
+            st.json(source_status)
+
+
+def render_a_share_tushare_money_summary(moneyflow_data, margin_data, dragon_data, chip_radar_data):
+    st.markdown("##### Tushare 可验证资金事实")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(
+        "moneyflow",
+        "可用" if (moneyflow_data or {}).get("available") else "暂无",
+        (_fmt_price((moneyflow_data or {}).get("main_net_yi"), "亿") if (moneyflow_data or {}).get("available") else "主力待验证"),
+    )
+    c2.metric(
+        "融资融券",
+        "可用" if (margin_data or {}).get("available") else "暂无",
+        (_fmt_price((margin_data or {}).get("financing_balance_yi"), "亿") if (margin_data or {}).get("available") else "余额待验证"),
+    )
+    c3.metric(
+        "龙虎榜",
+        "可用" if (dragon_data or {}).get("available") else "暂无",
+        ((dragon_data or {}).get("latest_date") or (dragon_data or {}).get("message") or "未见上榜"),
+    )
+    c4.metric(
+        "筹码/胜率",
+        "可用" if (chip_radar_data or {}).get("available") else "暂无",
+        (_fmt_price((chip_radar_data or {}).get("weight_avg")) if (chip_radar_data or {}).get("available") else "筹码待验证"),
+    )
+
+    if (moneyflow_data or {}).get("available"):
+        st.caption(
+            "Tushare moneyflow："
+            f"日期 {(moneyflow_data or {}).get('date') or '未知'}，"
+            f"主力净流入 {_fmt_price((moneyflow_data or {}).get('main_net_yi'), '亿')}，"
+            f"近5日 {_fmt_price((moneyflow_data or {}).get('five_day_main_net_yi'), '亿')}。"
+        )
+    if (margin_data or {}).get("available"):
+        st.caption(
+            "Tushare margin_detail："
+            f"日期 {(margin_data or {}).get('date') or '未知'}，"
+            f"融资余额 {_fmt_price((margin_data or {}).get('financing_balance_yi'), '亿')}，"
+            f"融资买入 {_fmt_price((margin_data or {}).get('financing_buy_yi'), '亿')}。"
+        )
+    if (dragon_data or {}).get("available"):
+        st.caption(
+            "Tushare top_list："
+            f"上榜日期 {(dragon_data or {}).get('latest_date') or '未知'}，"
+            f"原因 {(dragon_data or {}).get('reason') or '待核验'}。"
+        )
+    if (chip_radar_data or {}).get("available"):
+        st.caption(
+            "Tushare 筹码/胜率："
+            f"交易日 {(chip_radar_data or {}).get('trade_date') or '未知'}，"
+            f"筹码中枢 {_fmt_price((chip_radar_data or {}).get('weight_avg'))}，"
+            f"{(chip_radar_data or {}).get('chip_pressure_comment') or '筹码压力待验证'}"
+        )
 
 
 def _progress_result_has_data(result):
@@ -9608,13 +9711,22 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             )
             verified_technical_facts = build_verified_technical_fact_packet(technical_snapshot)
             verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
-            money_flow_snapshot = _run_progress_stage(
-                "合并资金面数据",
-                lambda: cached_money_flow_snapshot(normalized_target, market_type, deep=False),
-                main_status,
-                main_progress,
-                40,
-            )
+            money_flow_session_key = f"akshare_money_flow_{normalized_target}_{market_type}"
+            money_flow_refresh_key = f"{money_flow_session_key}_refresh_token"
+            if is_a_share_market(market_type):
+                money_flow_snapshot = st.session_state.get(money_flow_session_key) or build_money_flow_snapshot_placeholder(
+                    normalized_target,
+                    market_type,
+                    "默认未自动运行 AkShare 资金穿透；下方优先展示 Tushare 可验证事实。",
+                )
+            else:
+                money_flow_snapshot = _run_progress_stage(
+                    "合并资金面数据",
+                    lambda: cached_money_flow_snapshot(normalized_target, market_type, deep=False),
+                    main_status,
+                    main_progress,
+                    40,
+                )
             recent_news_rows = _run_progress_stage(
                 "召回近48小时舆情",
                 lambda: call_with_supported_kwargs(
@@ -9924,9 +10036,41 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             with base_tab6:
                 render_portfolio_health_module(portfolio_health)
             with base_tab7:
+                st.caption("AkShare 资金穿透为补充数据源，可能受远端接口影响。默认优先展示 Tushare 可验证事实；如需更细资金穿透，可手动刷新。")
+                if market_type == "A_SHARE":
+                    if st.button("刷新 AkShare 资金穿透快照", key=f"btn_{money_flow_session_key}"):
+                        refresh_token = datetime.datetime.now().isoformat(timespec="seconds")
+                        st.session_state[money_flow_refresh_key] = refresh_token
+                        quick_status = st.status("正在刷新 AkShare 资金穿透快照...", expanded=True)
+                        quick_progress = st.progress(0)
+                        money_flow_snapshot = _run_progress_stage(
+                            "读取 AkShare 个股资金流",
+                            lambda: cached_money_flow_snapshot(
+                                normalized_target,
+                                market_type,
+                                deep=False,
+                                refresh_token=refresh_token,
+                            ),
+                            quick_status,
+                            quick_progress,
+                            100,
+                            has_data=lambda data: bool(data and (data.get("available") or data.get("partial"))),
+                        )
+                        st.session_state[money_flow_session_key] = money_flow_snapshot
+                        quick_status.update(label="AkShare 资金穿透快照已结束", state="complete")
+                    money_flow_snapshot = st.session_state.get(money_flow_session_key) or money_flow_snapshot
+                    render_a_share_tushare_money_summary(
+                        a_share_moneyflow_data,
+                        a_share_margin_data,
+                        a_share_dragon_data,
+                        a_share_chip_radar_data,
+                    )
+                    render_money_flow_snapshot_status(money_flow_snapshot)
+                else:
+                    render_money_flow_snapshot_status(money_flow_snapshot)
                 render_money_flow_module(money_flow_snapshot)
                 if market_type == "A_SHARE":
-                    st.caption("主报告默认使用快速资金模式；完整龙虎榜/大宗交易扫描需要手动触发，避免阻塞诊股。")
+                    st.caption("即使 AkShare 资金穿透暂不可用，也不影响下方 Tushare 龙虎榜、融资融券、moneyflow、筹码等专业事实。")
                     deep_key = f"deep_money_flow_{normalized_target}_{market_type}"
                     if st.button("深度资金扫描 / 运行完整龙虎榜与资金流", key=f"btn_{deep_key}"):
                         deep_status = st.status("正在运行完整资金扫描，可能较慢...", expanded=True)
@@ -9938,6 +10082,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                                 deep_status,
                                 deep_progress,
                                 35,
+                                has_data=lambda data: bool(data and (data.get("available") or data.get("partial"))),
                             )
                             _run_progress_stage(
                                 "检查龙虎榜",

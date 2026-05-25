@@ -1,9 +1,83 @@
+import concurrent.futures
 import datetime
 import json
 import math
 
 import pandas as pd
 import yfinance as yf
+
+
+QUICK_TIMEOUT_SECONDS = 10
+DEEP_TIMEOUT_SECONDS = 15
+
+
+def _now_iso():
+    return datetime.datetime.utcnow().isoformat()
+
+
+def _default_source_status(source, timeout_seconds):
+    return {
+        "source": source,
+        "ok": False,
+        "used": False,
+        "timed_out": False,
+        "timeout_seconds": timeout_seconds,
+        "error": "",
+    }
+
+
+def _run_with_timeout(label, func, timeout_seconds):
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="moneyflow")
+    future = executor.submit(func)
+    try:
+        data = future.result(timeout=timeout_seconds)
+        return {
+            "ok": True,
+            "data": data,
+            "error": "",
+            "timed_out": False,
+            "timeout_seconds": timeout_seconds,
+            "label": label,
+        }
+    except concurrent.futures.TimeoutError:
+        future.cancel()
+        return {
+            "ok": False,
+            "data": None,
+            "error": f"{label} 超时（>{timeout_seconds}s）",
+            "timed_out": True,
+            "timeout_seconds": timeout_seconds,
+            "label": label,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "data": None,
+            "error": f"{label} 失败：{exc}",
+            "timed_out": False,
+            "timeout_seconds": timeout_seconds,
+            "label": label,
+        }
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _finalize_flow_result(result):
+    result["updated_at"] = _now_iso()
+    result["available"] = bool(
+        result.get("individual_fund_flow")
+        or result.get("dragon_tiger")
+        or result.get("block_trade")
+        or result.get("institutional_holders")
+        or result.get("insider_transactions")
+        or result.get("options_signal")
+        or result.get("etf_proxy_flow")
+        or result.get("volume_signal")
+    )
+    result["partial"] = bool(result.get("errors"))
+    result["coverage"] = money_flow_coverage(result)
+    result["summary"] = summarize_money_flow(result)
+    return result
 
 
 def ticker_plain(ticker):
@@ -70,12 +144,17 @@ def collect_us_money_flow(ticker):
     result = {
         "ticker": ticker,
         "market_type": "US_STOCK",
-        "data_time": datetime.datetime.utcnow().isoformat(),
+        "data_time": _now_iso(),
+        "updated_at": _now_iso(),
         "institutional_holders": [],
         "insider_transactions": [],
         "options_signal": {},
         "etf_proxy_flow": [],
         "warnings": [],
+        "errors": [],
+        "source_status": {},
+        "available": False,
+        "partial": False,
     }
 
     stock = yf.Ticker(ticker)
@@ -87,6 +166,7 @@ def collect_us_money_flow(ticker):
         else:
             result["warnings"].append("13F/institutional_holders empty from public source")
     except Exception as e:
+        result["errors"].append(f"13F/institutional_holders unavailable: {e}")
         result["warnings"].append(f"13F/institutional_holders unavailable: {e}")
 
     try:
@@ -96,6 +176,7 @@ def collect_us_money_flow(ticker):
         else:
             result["warnings"].append("insider_transactions empty from public source")
     except Exception as e:
+        result["errors"].append(f"insider_transactions unavailable: {e}")
         result["warnings"].append(f"insider_transactions unavailable: {e}")
 
     try:
@@ -122,14 +203,11 @@ def collect_us_money_flow(ticker):
         else:
             result["warnings"].append("options chain empty from public source")
     except Exception as e:
+        result["errors"].append(f"options unavailable: {e}")
         result["warnings"].append(f"options unavailable: {e}")
 
     result["etf_proxy_flow"] = collect_us_etf_proxy_flow(ticker)
-    result["coverage"] = money_flow_coverage(result)
-
-    result["coverage"] = money_flow_coverage(result)
-    result["summary"] = summarize_money_flow(result)
-    return result
+    return _finalize_flow_result(result)
 
 
 def collect_us_etf_proxy_flow(ticker):
@@ -179,81 +257,113 @@ def _filter_code_frame(df, code):
     return df
 
 
-def _collect_a_share_fund_flow(code, ticker):
-    try:
-        import akshare as ak
-        try:
-            flow_df = ak.stock_individual_fund_flow(
-                stock=code,
-                market="sh" if str(ticker).upper().endswith(".SS") else "sz",
-            )
-        except Exception:
-            try:
-                flow_df = ak.stock_fund_flow_individual(symbol=code)
-            except TypeError:
-                flow_df = ak.stock_fund_flow_individual(indicator="即时")
-        flow_df = _filter_code_frame(flow_df, code)
-        return frame_records(flow_df, 8), ""
-    except Exception as e:
-        return [], f"个股资金流暂不可用：{e}"
-
-
 def collect_a_share_money_flow(ticker, deep=False):
     result = {
         "ticker": ticker,
         "market_type": "A_SHARE",
-        "data_time": datetime.datetime.utcnow().isoformat(),
+        "data_time": _now_iso(),
+        "updated_at": _now_iso(),
         "mode": "deep" if deep else "quick",
         "individual_fund_flow": [],
         "dragon_tiger": [],
         "block_trade": [],
         "warnings": [],
+        "errors": [],
+        "source_status": {
+            "individual_fund_flow_primary": _default_source_status("ak.stock_individual_fund_flow", QUICK_TIMEOUT_SECONDS),
+            "individual_fund_flow_fallback": _default_source_status("ak.stock_fund_flow_individual", QUICK_TIMEOUT_SECONDS),
+            "dragon_tiger": _default_source_status("ak.stock_lhb_detail_em", DEEP_TIMEOUT_SECONDS),
+            "block_trade": _default_source_status("ak.stock_dzjy_mrmx", DEEP_TIMEOUT_SECONDS),
+        },
+        "available": False,
+        "partial": False,
     }
 
     code = ticker_plain(ticker)
 
-    rows, warning = _collect_a_share_fund_flow(code, ticker)
-    result["individual_fund_flow"] = rows
-    if warning:
-        result["warnings"].append(warning)
+    primary_result = _run_with_timeout(
+        "AkShare 个股资金流主接口",
+        lambda: _collect_a_share_fund_flow_primary(code, ticker),
+        QUICK_TIMEOUT_SECONDS,
+    )
+    primary_status = result["source_status"]["individual_fund_flow_primary"]
+    primary_status["used"] = True
+    primary_status["ok"] = primary_result["ok"]
+    primary_status["timed_out"] = primary_result["timed_out"]
+    primary_status["error"] = primary_result["error"]
+
+    if primary_result["ok"]:
+        result["individual_fund_flow"] = primary_result["data"] or []
+    else:
+        result["errors"].append(primary_result["error"])
+        fallback_result = _run_with_timeout(
+            "AkShare 个股资金流回退接口",
+            lambda: _collect_a_share_fund_flow_fallback(code),
+            QUICK_TIMEOUT_SECONDS,
+        )
+        fallback_status = result["source_status"]["individual_fund_flow_fallback"]
+        fallback_status["used"] = True
+        fallback_status["ok"] = fallback_result["ok"]
+        fallback_status["timed_out"] = fallback_result["timed_out"]
+        fallback_status["error"] = fallback_result["error"]
+        if fallback_result["ok"]:
+            result["individual_fund_flow"] = fallback_result["data"] or []
+            result["warnings"].append("AkShare 个股资金流主接口失败，已回退到备用接口。")
+        else:
+            result["errors"].append(fallback_result["error"])
+            result["warnings"].append("AkShare 个股资金流暂不可用，已跳过该补充数据源。")
 
     if not deep:
         result["warnings"].append("快速资金模式：未自动运行完整龙虎榜/大宗交易扫描。")
-        result["coverage"] = money_flow_coverage(result)
-        result["summary"] = summarize_money_flow(result)
-        return result
+        return _finalize_flow_result(result)
 
-    try:
-        import akshare as ak
-        today = datetime.datetime.now().strftime("%Y%m%d")
-        lhb_df = ak.stock_lhb_detail_em(start_date=today, end_date=today)
-        if lhb_df is not None and not lhb_df.empty:
-            lhb_df = _filter_code_frame(lhb_df, code)
-            result["dragon_tiger"] = frame_records(lhb_df, 8)
-    except Exception as e:
-        result["warnings"].append(f"stock_lhb_detail_em unavailable: {e}")
+    dragon_result = _run_with_timeout(
+        "AkShare 龙虎榜接口",
+        lambda: _collect_a_share_dragon_tiger(code),
+        DEEP_TIMEOUT_SECONDS,
+    )
+    dragon_status = result["source_status"]["dragon_tiger"]
+    dragon_status["used"] = True
+    dragon_status["ok"] = dragon_result["ok"]
+    dragon_status["timed_out"] = dragon_result["timed_out"]
+    dragon_status["error"] = dragon_result["error"]
+    if dragon_result["ok"]:
+        result["dragon_tiger"] = dragon_result["data"] or []
+    else:
+        result["errors"].append(dragon_result["error"])
+        result["warnings"].append("AkShare 龙虎榜补充暂不可用。")
 
-    try:
-        import akshare as ak
-        block_df = ak.stock_dzjy_mrmx(symbol=datetime.datetime.now().strftime("%Y%m%d"))
-        if block_df is not None and not block_df.empty:
-            block_df = _filter_code_frame(block_df, code)
-            result["block_trade"] = frame_records(block_df, 8)
-    except Exception as e:
-        result["warnings"].append(f"block_trade unavailable: {e}")
+    block_result = _run_with_timeout(
+        "AkShare 大宗交易接口",
+        lambda: _collect_a_share_block_trade(code),
+        DEEP_TIMEOUT_SECONDS,
+    )
+    block_status = result["source_status"]["block_trade"]
+    block_status["used"] = True
+    block_status["ok"] = block_result["ok"]
+    block_status["timed_out"] = block_result["timed_out"]
+    block_status["error"] = block_result["error"]
+    if block_result["ok"]:
+        result["block_trade"] = block_result["data"] or []
+    else:
+        result["errors"].append(block_result["error"])
+        result["warnings"].append("AkShare 大宗交易补充暂不可用。")
 
-    result["coverage"] = money_flow_coverage(result)
-    result["summary"] = summarize_money_flow(result)
-    return result
+    return _finalize_flow_result(result)
 
 
 def collect_hk_money_flow(ticker):
     result = {
         "ticker": ticker,
         "market_type": "HK_STOCK",
-        "data_time": datetime.datetime.utcnow().isoformat(),
+        "data_time": _now_iso(),
+        "updated_at": _now_iso(),
         "volume_signal": {},
         "warnings": [],
+        "errors": [],
+        "source_status": {},
+        "available": False,
+        "partial": False,
     }
     try:
         hist = yf.Ticker(ticker).history(period="3mo")
@@ -265,10 +375,50 @@ def collect_hk_money_flow(ticker):
                 "volume_vs_20d": round(latest_volume / max(avg20, 1), 2),
             }
     except Exception as e:
+        result["errors"].append(f"hk volume unavailable: {e}")
         result["warnings"].append(f"hk volume unavailable: {e}")
-    result["coverage"] = money_flow_coverage(result)
-    result["summary"] = summarize_money_flow(result)
-    return result
+    return _finalize_flow_result(result)
+
+
+def _collect_a_share_fund_flow_primary(code, ticker):
+    import akshare as ak
+
+    flow_df = ak.stock_individual_fund_flow(
+        stock=code,
+        market="sh" if str(ticker).upper().endswith(".SS") else "sz",
+    )
+    flow_df = _filter_code_frame(flow_df, code)
+    return frame_records(flow_df, 8)
+
+
+def _collect_a_share_fund_flow_fallback(code):
+    import akshare as ak
+
+    try:
+        flow_df = ak.stock_fund_flow_individual(symbol=code)
+    except TypeError:
+        flow_df = ak.stock_fund_flow_individual(indicator="即时")
+    flow_df = _filter_code_frame(flow_df, code)
+    return frame_records(flow_df, 8)
+
+
+def _collect_a_share_dragon_tiger(code):
+    import akshare as ak
+
+    today = datetime.datetime.now().strftime("%Y%m%d")
+    lhb_df = ak.stock_lhb_detail_em(start_date=today, end_date=today)
+    if lhb_df is not None and not lhb_df.empty:
+        lhb_df = _filter_code_frame(lhb_df, code)
+    return frame_records(lhb_df, 8)
+
+
+def _collect_a_share_block_trade(code):
+    import akshare as ak
+
+    block_df = ak.stock_dzjy_mrmx(symbol=datetime.datetime.now().strftime("%Y%m%d"))
+    if block_df is not None and not block_df.empty:
+        block_df = _filter_code_frame(block_df, code)
+    return frame_records(block_df, 8)
 
 
 def summarize_money_flow(flow):
