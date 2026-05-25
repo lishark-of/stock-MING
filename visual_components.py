@@ -624,6 +624,78 @@ def render_moneyflow_conflict(
     st.caption("今日流入只能视为线索；需要后续资金、价格和公告共同验证。")
 
 
+def render_margin_allocator_chart(allocation_result: dict):
+    allocation_result = allocation_result or {}
+    allocation = allocation_result.get("recommended_etf_allocation") or {}
+    rows = []
+    for label in ["宽基ETF", "科技成长ETF", "防守ETF", "商品周期ETF", "现金"]:
+        item = allocation.get(label) or {}
+        ratio = _to_float(item.get("ratio_pct"))
+        if ratio is None:
+            continue
+        rows.append((label, ratio))
+
+    if not rows:
+        st.info("暂无可视化仓位建议。")
+        return
+
+    if go is None:
+        for label, ratio in rows:
+            st.caption(f"{label}: {_fmt_pct(ratio)}")
+        return
+
+    colors = {
+        "宽基ETF": "#2563eb",
+        "科技成长ETF": "#f97316",
+        "防守ETF": "#16a34a",
+        "商品周期ETF": "#a855f7",
+        "现金": "#6b7280",
+    }
+
+    donut = go.Figure(
+        data=[
+            go.Pie(
+                labels=[label for label, _ in rows],
+                values=[ratio for _, ratio in rows],
+                hole=0.54,
+                marker=dict(colors=[colors.get(label, "#94a3b8") for label, _ in rows]),
+                textinfo="label+percent",
+                hovertemplate="%{label}: %{value:.2f}%<extra></extra>",
+            )
+        ]
+    )
+    donut.update_layout(
+        height=320,
+        margin=dict(l=10, r=10, t=18, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(donut, use_container_width=True)
+
+    bars = go.Figure()
+    bars.add_trace(
+        go.Bar(
+            x=[ratio for _, ratio in rows],
+            y=[label for label, _ in rows],
+            orientation="h",
+            text=[f"{ratio:.1f}%" for _, ratio in rows],
+            textposition="outside",
+            marker_color=[colors.get(label, "#94a3b8") for label, _ in rows],
+            hovertemplate="%{y}: %{x:.2f}%<extra></extra>",
+            showlegend=False,
+        )
+    )
+    bars.update_layout(
+        height=280,
+        margin=dict(l=30, r=24, t=10, b=24),
+        xaxis=dict(title="占净资产比例（%）", gridcolor="#eef2f7"),
+        yaxis=dict(autorange="reversed"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(bars, use_container_width=True)
+
+
 def render_action_matrix(
     current_price: float,
     cost_price: float | None,

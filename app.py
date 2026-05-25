@@ -18,6 +18,7 @@ from config import get_config_value as read_config_value, get_deepseek_keys, get
 try:
     from visual_components import (
         render_action_matrix,
+        render_margin_allocator_chart,
         render_moneyflow_conflict,
         render_next_ticket_holding_card,
         render_next_ticket_research_summary,
@@ -33,6 +34,9 @@ except Exception as module_error:
 
     def render_action_matrix(*args, **kwargs):
         _visual_component_unavailable("动作辅助矩阵")
+
+    def render_margin_allocator_chart(*args, **kwargs):
+        _visual_component_unavailable("融资ETF配置图")
 
     def render_moneyflow_conflict(*args, **kwargs):
         _visual_component_unavailable("资金流冲突仪表")
@@ -206,6 +210,27 @@ except Exception as module_error:
 
     def money_flow_text(flow):
         return str(flow)
+
+try:
+    from margin_etf_allocator import calculate_margin_etf_allocation, get_margin_etf_catalog
+    MARGIN_ALLOCATOR_MODULE_ERROR = ""
+except Exception as module_error:
+    MARGIN_ALLOCATOR_MODULE_ERROR = module_error
+
+    def calculate_margin_etf_allocation(account, market_state, risk_profile):
+        return {
+            "action_state": "禁止加融资",
+            "risk_level": "模块降级",
+            "notes": [f"融资ETF模块降级：{MARGIN_ALLOCATOR_MODULE_ERROR}"],
+            "recommended_etf_allocation": {},
+            "risk_lines": [],
+            "trigger_conditions": [],
+            "invalid_conditions": [],
+            "scores": {},
+        }
+
+    def get_margin_etf_catalog():
+        return {}
 
 try:
     import visualizer as _visualizer
@@ -724,6 +749,96 @@ def render_a_share_tushare_money_summary(moneyflow_data, margin_data, dragon_dat
             f"筹码中枢 {_fmt_price((chip_radar_data or {}).get('weight_avg'))}，"
             f"{(chip_radar_data or {}).get('chip_pressure_comment') or '筹码压力待验证'}"
         )
+
+
+def render_margin_allocator_module(result, catalog):
+    result = result or {}
+    catalog = catalog or {}
+    account_state = result.get("account_state") or {}
+    action_state = result.get("action_state") or "只允许调仓"
+    risk_level = result.get("risk_level") or "待评估"
+
+    st.markdown("#### 当前账户状态")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("净资产", _fmt_price(result.get("net_asset"), "¥"))
+    c2.metric("当前风险敞口", _fmt_price(result.get("gross_exposure"), "¥"))
+    c3.metric("当前融资比例", f"{result.get('current_margin_debt_ratio', 0):.2f}%")
+    c4.metric("当前杠杆倍数", f"{result.get('current_leverage_ratio', 0):.2f}x")
+    c5.metric("现金缓冲", f"{account_state.get('cash_buffer_ratio', 0):.2f}%")
+
+    st.markdown("#### 建议状态")
+    s1, s2, s3, s4, s5 = st.columns(5)
+    s1.metric("动作状态", action_state)
+    s2.metric("建议融资比例", f"{result.get('recommended_margin_ratio', 0):.2f}%")
+    s3.metric("建议总仓位", f"{result.get('recommended_total_exposure_ratio', 0):.2f}%")
+    s4.metric("建议现金比例", f"{result.get('recommended_cash_ratio', 0):.2f}%")
+    s5.metric("风险预算分", f"{result.get('risk_budget_score', 0):.2f}")
+
+    if action_state == "融资过高，建议降杠杆":
+        st.error("融资比例已偏高，建议先降杠杆，再考虑 ETF 轮动。")
+    elif action_state == "禁止加融资":
+        st.warning("当前不允许新增融资，优先保留现金缓冲。")
+    elif action_state == "只允许调仓":
+        st.info("当前只建议在存量仓位内做 ETF 替换，不建议新增明显杠杆。")
+    elif action_state == "可小幅融资":
+        st.success("当前只适合小步试错式融资，不做一次性放大。")
+    else:
+        st.success("可在风险线有效前提下执行中等强度融资。")
+
+    st.caption(
+        f"市场状态：{result.get('market_state') or '未知'}｜账户风格：{result.get('style') or '未知'}｜"
+        f"融资模式：{result.get('leverage_mode') or '未知'}｜风险级别：{risk_level}"
+    )
+    for note in result.get("notes") or []:
+        st.caption(f"提示：{note}")
+    for item in result.get("risk_flags") or []:
+        st.caption(f"风险：{item}")
+
+    st.markdown("#### ETF 权宜配置")
+    render_margin_allocator_chart(result)
+    allocation = result.get("recommended_etf_allocation") or {}
+    allocation_rows = []
+    for label, payload in allocation.items():
+        allocation_rows.append(
+            {
+                "资产桶": label,
+                "建议占净资产比例": f"{payload.get('ratio_pct', 0):.2f}%",
+                "建议金额": _fmt_price(payload.get("amount"), "¥"),
+                "样例ETF": " / ".join((payload.get("candidate_etfs") or [])[:3]) or "现金缓冲",
+            }
+        )
+    if allocation_rows:
+        st.dataframe(pd.DataFrame(allocation_rows), use_container_width=True, hide_index=True)
+
+    if catalog:
+        with st.expander("内置 ETF 池", expanded=False):
+            st.json(catalog)
+
+    st.markdown("#### 风险线")
+    for item in result.get("risk_lines") or []:
+        st.markdown(f"- {item}")
+
+    risk_cols = st.columns(2)
+    with risk_cols[0]:
+        st.markdown("#### 触发条件")
+        for item in result.get("trigger_conditions") or []:
+            st.markdown(f"- {item}")
+    with risk_cols[1]:
+        st.markdown("#### 失效条件")
+        for item in result.get("invalid_conditions") or []:
+            st.markdown(f"- {item}")
+
+    scores = result.get("scores") or {}
+    if scores:
+        st.markdown("#### 风险预算分解")
+        score_rows = [
+            {"维度": label, "分值": value}
+            for label, value in scores.items()
+        ]
+        st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
+
+    st.button("让 DeepSeek 解释本次融资 ETF 配置", disabled=True, key="margin_etf_deepseek_disabled")
+    st.caption("第一阶段默认不调用 DeepSeek，只输出结构化仓位与风险预算测算。")
 
 
 def _progress_result_has_data(result):
@@ -8289,11 +8404,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
     st.markdown("---")
 
-    tab_home, tab_risk, tab_discipline, tab_main, tab_brain, tab_health, tab_screener = st.tabs([
+    tab_home, tab_risk, tab_discipline, tab_main, tab_margin_etf, tab_brain, tab_health, tab_screener = st.tabs([
     "🏠 今日关注池",
     "🛡️ 天眼风控 (排雷)",
     "🧪 交易纪律实验室",
     "📈 量化推演 (多市场)",
+    "🧮 融资版 ETF 投资法",
     "☁️ 云端外脑 (数据中心)",
     "⚙️ 数据源与权限体检",
     "🧭 下一票作战雷达"
@@ -10308,6 +10424,70 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         elif market_type in ["A_SHARE_SH", "A_SHARE_SZ"]:
             # A股的核心按钮和逻辑已经内嵌在这个函数里了
             display_cn_stock_analysis(target, price, professional_facts=a_share_professional_facts)
+
+    with tab_margin_etf:
+        st.markdown("### 🧮 融资版 ETF 投资法")
+        st.caption("该模块只做仓位与风险预算测算，不构成买卖建议。融资会放大收益和亏损，必须设置风险线。")
+        st.info("融资会放大收益和亏损。本模块只做风险预算和仓位测算，不构成买卖建议。")
+
+        input_col1, input_col2, input_col3 = st.columns(3)
+        with input_col1:
+            margin_total_asset = st.number_input("账户总资产", min_value=0.0, value=1000000.0, step=10000.0, key="margin_total_asset")
+            margin_cash_balance = st.number_input("现金余额", min_value=0.0, value=200000.0, step=10000.0, key="margin_cash_balance")
+            margin_stock_value = st.number_input("股票持仓市值", min_value=0.0, value=600000.0, step=10000.0, key="margin_stock_value")
+            margin_etf_value = st.number_input("ETF 持仓市值", min_value=0.0, value=100000.0, step=10000.0, key="margin_etf_value")
+        with input_col2:
+            margin_debt = st.number_input("当前融资负债", min_value=0.0, value=100000.0, step=10000.0, key="margin_debt")
+            available_margin = st.number_input(
+                "可用保证金（可选）",
+                min_value=0.0,
+                value=0.0,
+                step=10000.0,
+                key="margin_available_margin",
+                help="如果不清楚，可先保持 0，系统会按保守方式处理。",
+            )
+            maintenance_ratio = st.number_input(
+                "当前维持担保比例（可选）",
+                min_value=0.0,
+                value=0.0,
+                step=5.0,
+                key="margin_maintenance_ratio",
+                help="如未知可填 0；低于 180% 时会直接禁止新增融资。",
+            )
+            margin_interest_rate = st.number_input("融资年利率（%）", min_value=0.0, value=6.8, step=0.1, key="margin_interest_rate")
+        with input_col3:
+            max_drawdown_pct = st.selectbox("最大可接受回撤", [10, 15, 20], index=1, key="margin_max_drawdown")
+            margin_style = st.selectbox("账户风格", ["防守", "平衡", "进攻"], index=1, key="margin_style")
+            market_state_choice = st.selectbox("市场状态", ["弱势", "震荡", "强趋势", "极强趋势"], index=2, key="margin_market_state")
+            leverage_mode = st.selectbox(
+                "是否允许使用融资",
+                ["不使用", "小幅使用", "中等使用", "火力全开，但默认关闭"],
+                index=1,
+                key="margin_leverage_mode",
+            )
+
+        margin_account = {
+            "total_asset": margin_total_asset,
+            "cash_balance": margin_cash_balance,
+            "stock_market_value": margin_stock_value,
+            "etf_market_value": margin_etf_value,
+            "margin_debt": margin_debt,
+            "available_margin": available_margin,
+            "maintenance_ratio": maintenance_ratio,
+            "margin_interest_rate": margin_interest_rate,
+            "max_drawdown_pct": max_drawdown_pct,
+        }
+        margin_profile = {
+            "style": margin_style,
+            "leverage_mode": leverage_mode,
+        }
+        allocation_result = calculate_margin_etf_allocation(
+            margin_account,
+            market_state_choice,
+            margin_profile,
+        )
+
+        render_margin_allocator_module(allocation_result, get_margin_etf_catalog())
 
     with tab_health:
         st.markdown("### ⚙️ 数据源与权限体检")
