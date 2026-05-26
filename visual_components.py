@@ -762,6 +762,15 @@ def render_theme_comparison_table(comparison_packet: dict | None = None, holding
     if not rows:
         st.info("当前主题暂无可比较的 ETF。")
         return
+    summary = payload.get("comparison_summary") or ""
+    summary_tone = payload.get("summary_tone") or "info"
+    if summary:
+        if summary_tone == "warning":
+            st.warning(summary)
+        elif summary_tone == "success":
+            st.success(summary)
+        else:
+            st.info(summary)
     holdings_snapshot = holdings_snapshot or {}
     snapshots = holdings_snapshot.get("snapshots") or {}
     display_rows = []
@@ -856,7 +865,7 @@ def render_intraday_etf_snapshot(snapshot: dict | None = None):
 def render_margin_etf_research_summary(result: dict | None = None, generated_at: str = "", cached: bool = False):
     payload = result or {}
     if not payload:
-        st.caption("尚未生成 DeepSeek ETF 调研解释。")
+        st.info("当前暂无 DeepSeek 调研解释。点击按钮后，系统会基于账户状态、ETF 强弱评分、动态配置和风险线生成解释；DeepSeek 只负责解释，不直接决定仓位。")
         return
 
     conclusion = payload.get("one_sentence_conclusion") or "暂无结论。"

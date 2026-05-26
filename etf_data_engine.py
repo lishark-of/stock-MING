@@ -522,43 +522,12 @@ def get_etf_catalog_by_bucket(universe=None):
     return {key: _dedupe_strings(value) for key, value in catalog.items()}
 
 
-def classify_etf_theme(etf_row):
-    row = dict(etf_row or {})
-    name_text = _normalize_text(row.get("name")).lower()
-    text_parts = [
-        row.get("name"),
-        row.get("benchmark"),
-        row.get("index_name"),
-        row.get("fund_type"),
-        row.get("invest_type"),
-        row.get("index_code"),
-    ]
-    text = " | ".join(_normalize_text(value).lower() for value in text_parts if _normalize_text(value))
-    if "半导体设备" in name_text:
-        return {
-            "bucket": "科技成长ETF",
-            "theme": "半导体/芯片",
-            "sub_theme": "半导体设备",
-            "risk_level": "高",
-            "classification_reason": "名称直接命中关键词：半导体设备",
-        }
-    if "券商" in name_text:
-        return {
-            "bucket": "金融券商ETF",
-            "theme": "券商/证券",
-            "sub_theme": "券商",
-            "risk_level": "高",
-            "classification_reason": "名称直接命中关键词：券商",
-        }
-    if "证券" in name_text:
-        return {
-            "bucket": "金融券商ETF",
-            "theme": "券商/证券",
-            "sub_theme": "证券",
-            "risk_level": "高",
-            "classification_reason": "名称直接命中关键词：证券",
-        }
-    priority_buckets = [
+def _match_classification_rule(text, priority_buckets=None, blocked_keywords=None):
+    text = _normalize_text(text).lower()
+    if not text:
+        return None, None
+    blocked_keywords = {str(item).lower() for item in (blocked_keywords or set())}
+    buckets = priority_buckets or [
         "科技成长ETF",
         "金融券商ETF",
         "防守ETF",
@@ -567,23 +536,92 @@ def classify_etf_theme(etf_row):
         "港股/海外ETF",
         "宽基ETF",
     ]
-    for bucket in priority_buckets:
+    for bucket in buckets:
         for rule in CLASSIFICATION_RULES:
             if rule["bucket"] != bucket:
                 continue
             for keyword in rule["keywords"]:
-                if keyword.lower() in text:
-                    return {
-                        "bucket": rule["bucket"],
-                        "theme": rule["theme"],
-                        "sub_theme": rule["sub_theme"],
-                        "risk_level": rule["risk_level"],
-                        "classification_reason": f"名称/基准命中关键词：{keyword}",
-                    }
+                normalized_keyword = keyword.lower()
+                if normalized_keyword in blocked_keywords:
+                    continue
+                if normalized_keyword in text:
+                    return rule, keyword
+    return None, None
+
+
+def classify_etf_theme(etf_row):
+    row = dict(etf_row or {})
+    name_text = _normalize_text(row.get("name")).lower()
+    benchmark_text = " | ".join(
+        _normalize_text(value).lower()
+        for value in [row.get("benchmark"), row.get("index_name"), row.get("index_code")]
+        if _normalize_text(value)
+    )
+    supporting_text = " | ".join(
+        _normalize_text(value).lower()
+        for value in [row.get("fund_type"), row.get("invest_type")]
+        if _normalize_text(value)
+    )
+    combined_text = " | ".join(text for text in [name_text, benchmark_text, supporting_text] if text)
+    if "半导体设备" in name_text:
+        return {
+            "bucket": "科技成长ETF",
+            "theme": "半导体/芯片",
+            "sub_theme": "半导体设备",
+            "risk_level": "高",
+            "classification_reason": "名称直接命中关键词：半导体设备",
+        }
+    broker_keywords = ["证券公司", "证券公司指数", "券商", "全指证券", "证券龙头"]
+    if any(keyword in benchmark_text for keyword in broker_keywords):
+        return {
+            "bucket": "金融券商ETF",
+            "theme": "券商/证券",
+            "sub_theme": "券商",
+            "risk_level": "高",
+            "classification_reason": "跟踪指数/benchmark 命中券商证券关键词。",
+        }
+    benchmark_rule, benchmark_keyword = _match_classification_rule(
+        benchmark_text,
+        priority_buckets=[
+            "科技成长ETF",
+            "防守ETF",
+            "商品周期ETF",
+            "消费医药ETF",
+            "港股/海外ETF",
+            "宽基ETF",
+            "金融券商ETF",
+        ],
+        blocked_keywords={"证券"},
+    )
+    if benchmark_rule:
+        return {
+            "bucket": benchmark_rule["bucket"],
+            "theme": benchmark_rule["theme"],
+            "sub_theme": benchmark_rule["sub_theme"],
+            "risk_level": benchmark_rule["risk_level"],
+            "classification_reason": f"跟踪指数/benchmark 命中关键词：{benchmark_keyword}",
+        }
+    if any(keyword in name_text for keyword in ["券商etf", "证券etf", "证券公司etf", "证券龙头etf", "全指证券"]):
+        return {
+            "bucket": "金融券商ETF",
+            "theme": "券商/证券",
+            "sub_theme": "券商",
+            "risk_level": "高",
+            "classification_reason": "ETF 产品名称命中券商证券主题关键词。",
+        }
+    matched_rule, matched_keyword = _match_classification_rule(combined_text, blocked_keywords={"证券"})
+    if matched_rule:
+        return {
+            "bucket": matched_rule["bucket"],
+            "theme": matched_rule["theme"],
+            "sub_theme": matched_rule["sub_theme"],
+            "risk_level": matched_rule["risk_level"],
+            "classification_reason": f"名称/指数命中关键词：{matched_keyword}",
+        }
 
     default_bucket = "其他ETF"
     default_reason = "未命中预设主题关键词，保留为其他ETF。"
-    if "etf" in text and any(keyword in text for keyword in ["bond", "债", "货币"]):
+    if "etf" in combined_text and any(keyword in combined_text for keyword in ["bond", "债", "货币"]):
         default_bucket = "防守ETF"
         default_reason = "根据 fund_type / 名称推断为防守类 ETF。"
     return {
@@ -1284,6 +1322,27 @@ def compare_etfs_within_theme(etf_scores, theme=None):
     if warning_rows:
         reasons.append("部分 ETF 出现过热、破位或流动性不足，只适合观察，不适合简单叠加配置。")
 
+    avg_score = sum(_safe_float(item.get("total_score")) or 0 for item in filtered) / max(len(filtered), 1)
+    overheat_count = sum(1 for item in filtered if item.get("state") == "过热等待")
+    weak_count = sum(1 for item in filtered if item.get("state") in {"破位回避", "震荡观察"})
+    strong_count = sum(1 for item in filtered if item.get("state") in {"强趋势", "温和向上"})
+    theme_name = theme or filtered[0].get("theme") or filtered[0].get("sub_theme") or "当前主题"
+    if theme_name in {"黄金/黄金股", "红利/低波"}:
+        comparison_summary = f"{theme_name}：防守属性较强，可作为现金替代观察。同赛道 ETF 高度重叠，不建议重复配置多只同类产品。"
+        summary_tone = "info"
+    elif weak_count >= max(len(filtered) / 2, 1):
+        comparison_summary = f"{theme_name}：整体偏弱，暂不作为主攻方向。同赛道 ETF 高度重叠，不建议重复配置多只同类产品。"
+        summary_tone = "warning"
+    elif overheat_count >= 1 and avg_score >= 68:
+        comparison_summary = f"{theme_name}：趋势强，但多只 ETF 过热，适合观察，不适合追高。同赛道 ETF 高度重叠，不建议重复配置多只同类产品。"
+        summary_tone = "warning"
+    elif strong_count >= max(len(filtered) / 2, 1):
+        comparison_summary = f"{theme_name}：趋势偏强，优先看更均衡或趋势更强的产品。同赛道 ETF 高度重叠，不建议重复配置多只同类产品。"
+        summary_tone = "success"
+    else:
+        comparison_summary = f"{theme_name}：强弱分化，优先看更均衡、流动性更好的产品。同赛道 ETF 高度重叠，不建议重复配置多只同类产品。"
+        summary_tone = "info"
+
     return {
         "theme": theme or filtered[0].get("sub_theme") or filtered[0].get("theme") or "",
         "best_liquidity_etf": liquidity_best.get("etf_code"),
@@ -1291,6 +1350,8 @@ def compare_etfs_within_theme(etf_scores, theme=None):
         "lowest_volatility_etf": low_vol_best.get("etf_code"),
         "most_balanced_etf": most_balanced.get("etf_code"),
         "warning_etfs": [item.get("etf_code") for item in warning_rows],
+        "comparison_summary": comparison_summary,
+        "summary_tone": summary_tone,
         "comparison_reason": reasons,
         "rows": filtered,
     }

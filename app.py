@@ -983,13 +983,61 @@ def render_margin_allocator_module(result, catalog, etf_data_status=None, intrad
     result = result or {}
     catalog = catalog or {}
     account_state = result.get("account_state") or {}
-    action_state = result.get("action_state") or "只允许调仓"
+    action_state = result.get("action_state") or "只允许调仓，不新增杠杆"
     risk_level = result.get("risk_level") or "待评估"
+    input_snapshot = result.get("input_snapshot") or {}
+    style_tilt = result.get("style_tilt") or "平衡"
+    execution_reasons = result.get("execution_reasons") or []
+    must_reduce_risk_conditions = result.get("must_reduce_risk_conditions") or []
+    no_chase_warning = result.get("no_chase_warning") or ""
+    overweight_buckets = " / ".join(result.get("overweight_buckets") or []) or "暂无明显增配"
+    underweight_buckets = " / ".join(result.get("underweight_buckets") or []) or "暂无明显降配"
 
     if etf_data_status:
         st.markdown("#### ETF 数据状态")
         render_margin_etf_data_status(etf_data_status)
         st.caption("ETF 实时强弱来自 Tushare 数据与本地规则模型，DeepSeek 仅用于解释，不直接决定仓位。")
+
+    st.markdown("#### 今日执行结论卡")
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("今日动作状态", action_state)
+    k2.metric("建议融资比例", f"{result.get('recommended_margin_ratio', 0):.2f}%")
+    k3.metric("建议现金比例", f"{result.get('recommended_cash_ratio', 0):.2f}%")
+    k4.metric("当前融资比例", f"{result.get('current_margin_debt_ratio', 0):.2f}%")
+    k5.metric("当前现金缓冲", f"{account_state.get('cash_buffer_ratio', 0):.2f}%")
+    k6.metric("今日风格判断", style_tilt)
+    st.caption(
+        f"输入快照：可用保证金 {_fmt_price(input_snapshot.get('available_margin'), '¥')}｜"
+        f"维持担保比例 {float(input_snapshot.get('maintenance_ratio') or 0):.2f}%｜"
+        f"融资年利率 {float(input_snapshot.get('margin_interest_rate') or 0):.2f}%"
+    )
+    st.caption(
+        f"进攻预算上限：{float(result.get('attack_budget_upper_ratio') or 0):.2f}%｜"
+        f"增配 Bucket：{overweight_buckets}｜降配 Bucket：{underweight_buckets}"
+    )
+    if action_state == "融资过高，优先降杠杆":
+        st.error("当前先处理风险暴露，再考虑任何进攻动作。")
+    elif action_state == "暂停融资，保留现金":
+        st.warning("当前不建议新增融资，优先保留现金缓冲和回撤空间。")
+    elif action_state == "只允许调仓，不新增杠杆":
+        st.info("当前适合做结构优化和 ETF 替换，不适合直接新增杠杆。")
+    elif action_state == "可用现金进攻，暂不加融资":
+        st.success("当前可以按既定风格用现金执行，但暂不需要动用新增融资。")
+    elif action_state == "可小幅融资进攻":
+        st.success("当前允许小幅融资进攻，但必须分步执行，不一次性加满。")
+    else:
+        st.success("当前允许中等融资进攻，但要严格遵守退场线和现金缓冲。")
+
+    if execution_reasons:
+        st.markdown("**核心原因**")
+        for item in execution_reasons[:3]:
+            st.markdown(f"- {item}")
+    if no_chase_warning:
+        st.warning(no_chase_warning)
+    if must_reduce_risk_conditions:
+        st.markdown("**必须降风险条件**")
+        for item in must_reduce_risk_conditions[:3]:
+            st.markdown(f"- {item}")
 
     st.markdown("#### 当前账户状态")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -1007,13 +1055,15 @@ def render_margin_allocator_module(result, catalog, etf_data_status=None, intrad
     s4.metric("建议现金比例", f"{result.get('recommended_cash_ratio', 0):.2f}%")
     s5.metric("风险预算分", f"{result.get('risk_budget_score', 0):.2f}")
 
-    if action_state == "融资过高，建议降杠杆":
+    if action_state == "融资过高，优先降杠杆":
         st.error("融资比例已偏高，建议先降杠杆，再考虑 ETF 轮动。")
-    elif action_state == "禁止加融资":
+    elif action_state == "暂停融资，保留现金":
         st.warning("当前不允许新增融资，优先保留现金缓冲。")
-    elif action_state == "只允许调仓":
+    elif action_state == "只允许调仓，不新增杠杆":
         st.info("当前只建议在存量仓位内做 ETF 替换，不建议新增明显杠杆。")
-    elif action_state == "可小幅融资":
+    elif action_state == "可用现金进攻，暂不加融资":
+        st.success("当前可以先用现金执行风格内进攻，不急于加融资。")
+    elif action_state == "可小幅融资进攻":
         st.success("当前只适合小步试错式融资，不做一次性放大。")
     else:
         st.success("可在风险线有效前提下执行中等强度融资。")
@@ -1116,9 +1166,8 @@ def render_margin_allocator_module(result, catalog, etf_data_status=None, intrad
         ]
         st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
 
-    if research_payload:
-        st.markdown("#### DeepSeek 调研解释")
-        render_margin_etf_research_summary(research_payload, generated_at=research_generated_at, cached=research_cached)
+    st.markdown("#### DeepSeek 调研解释")
+    render_margin_etf_research_summary(research_payload, generated_at=research_generated_at, cached=research_cached)
 
 
 def _progress_result_has_data(result):
@@ -10801,19 +10850,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             )
 
         margin_account = {
-            "total_asset": margin_total_asset,
-            "cash_balance": margin_cash_balance,
-            "stock_market_value": margin_stock_value,
-            "etf_market_value": margin_etf_value,
-            "margin_debt": margin_debt,
-            "available_margin": available_margin,
-            "maintenance_ratio": maintenance_ratio,
-            "margin_interest_rate": margin_interest_rate,
-            "max_drawdown_pct": max_drawdown_pct,
+            "total_asset": float(st.session_state.get("margin_total_asset", margin_total_asset) or 0.0),
+            "cash_balance": float(st.session_state.get("margin_cash_balance", margin_cash_balance) or 0.0),
+            "stock_market_value": float(st.session_state.get("margin_stock_value", margin_stock_value) or 0.0),
+            "etf_market_value": float(st.session_state.get("margin_etf_value", margin_etf_value) or 0.0),
+            "margin_debt": float(st.session_state.get("margin_debt", margin_debt) or 0.0),
+            "available_margin": float(st.session_state.get("margin_available_margin", available_margin) or 0.0),
+            "maintenance_ratio": float(st.session_state.get("margin_maintenance_ratio", maintenance_ratio) or 0.0),
+            "margin_interest_rate": float(st.session_state.get("margin_interest_rate", margin_interest_rate) or 0.0),
+            "max_drawdown_pct": float(st.session_state.get("margin_max_drawdown", max_drawdown_pct) or 0.0),
         }
         margin_profile = {
-            "style": margin_style,
-            "leverage_mode": leverage_mode,
+            "style": st.session_state.get("margin_style", margin_style),
+            "leverage_mode": st.session_state.get("margin_leverage_mode", leverage_mode),
         }
 
         refresh_token = st.session_state.get("margin_etf_daily_refresh_token", "base")

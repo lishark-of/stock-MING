@@ -5,7 +5,7 @@ from etf_data_engine import compare_etfs_within_theme, classify_etf_theme, fetch
 
 
 class MarginEtfAllocatorTest(unittest.TestCase):
-    def test_strong_trend_balanced_account_allows_small_margin(self):
+    def test_strong_trend_balanced_account_prefers_rebalance_when_stock_heavy(self):
         result = calculate_margin_etf_allocation(
             {
                 "total_asset": 1000000,
@@ -22,7 +22,7 @@ class MarginEtfAllocatorTest(unittest.TestCase):
             {"style": "平衡", "leverage_mode": "中等使用"},
         )
 
-        self.assertEqual(result["action_state"], "只允许调仓")
+        self.assertEqual(result["action_state"], "只允许调仓，不新增杠杆")
         self.assertGreater(result["recommended_margin_ratio"], 0)
         self.assertIn("宽基ETF", result["recommended_etf_allocation"])
         self.assertIn("科技成长ETF", result["recommended_etf_allocation"])
@@ -46,7 +46,7 @@ class MarginEtfAllocatorTest(unittest.TestCase):
         )
 
         self.assertTrue(result["need_deleverage"])
-        self.assertEqual(result["action_state"], "融资过高，建议降杠杆")
+        self.assertEqual(result["action_state"], "融资过高，优先降杠杆")
         self.assertEqual(result["recommended_margin_ratio"], 0)
         self.assertTrue(result["risk_flags"])
 
@@ -127,6 +127,52 @@ class MarginEtfAllocatorTest(unittest.TestCase):
         self.assertGreaterEqual(result["recommended_cash_ratio"], 15)
         self.assertTrue(any("趋势偏弱" in item for item in result["daily_adjustment_reason"]))
 
+    def test_input_snapshot_uses_current_margin_fields(self):
+        result = calculate_margin_etf_allocation(
+            {
+                "total_asset": 1000000,
+                "cash_balance": 200000,
+                "stock_market_value": 450000,
+                "etf_market_value": 150000,
+                "margin_debt": 80000,
+                "available_margin": 50000,
+                "maintenance_ratio": 250,
+                "margin_interest_rate": 7.0,
+                "max_drawdown_pct": 15,
+            },
+            "强趋势",
+            {"style": "平衡", "leverage_mode": "中等使用"},
+        )
+
+        self.assertEqual(result["input_snapshot"]["available_margin"], 50000)
+        self.assertEqual(result["input_snapshot"]["maintenance_ratio"], 250)
+        self.assertEqual(result["input_snapshot"]["margin_interest_rate"], 7.0)
+        self.assertTrue(result["input_snapshot"]["available_margin_provided"])
+        self.assertTrue(result["input_snapshot"]["maintenance_ratio_provided"])
+        self.assertFalse(any("未填写" in item for item in result["notes"]))
+        self.assertTrue(any("7.00%" in item for item in result["trigger_conditions"]))
+
+    def test_aggressive_style_in_strong_trend_is_not_forced_to_rebalance(self):
+        result = calculate_margin_etf_allocation(
+            {
+                "total_asset": 1000000,
+                "cash_balance": 250000,
+                "stock_market_value": 350000,
+                "etf_market_value": 250000,
+                "margin_debt": 50000,
+                "available_margin": 120000,
+                "maintenance_ratio": 260,
+                "margin_interest_rate": 7.0,
+                "max_drawdown_pct": 15,
+            },
+            "强趋势",
+            {"style": "进攻", "leverage_mode": "中等使用"},
+        )
+
+        self.assertIn(result["action_state"], {"可小幅融资进攻", "可中等融资进攻", "可用现金进攻，暂不加融资"})
+        self.assertNotEqual(result["action_state"], "只允许调仓，不新增杠杆")
+        self.assertEqual(result["style_tilt"], "偏进攻")
+
     def test_classify_semiconductor_equipment_etf(self):
         result = classify_etf_theme(
             {
@@ -153,6 +199,33 @@ class MarginEtfAllocatorTest(unittest.TestCase):
 
         self.assertEqual(result["bucket"], "金融券商ETF")
         self.assertEqual(result["theme"], "券商/证券")
+
+    def test_classify_broker_etf_512000_sh(self):
+        result = classify_etf_theme(
+            {
+                "name": "券商ETF",
+                "benchmark": "中证全指证券公司指数",
+                "index_name": "中证全指证券公司指数",
+                "fund_type": "股票型ETF",
+            }
+        )
+
+        self.assertEqual(result["bucket"], "金融券商ETF")
+        self.assertEqual(result["theme"], "券商/证券")
+
+    def test_classify_manager_name_with_securities_company_does_not_override_benchmark(self):
+        result = classify_etf_theme(
+            {
+                "name": "中银证券中证500ETF",
+                "benchmark": "中证500指数",
+                "index_name": "中证500",
+                "fund_type": "股票型ETF",
+            }
+        )
+
+        self.assertEqual(result["bucket"], "宽基ETF")
+        self.assertEqual(result["theme"], "宽基")
+        self.assertIn("跟踪指数/benchmark", result["classification_reason"])
 
     def test_compare_etfs_within_theme_returns_multiple_products(self):
         score_packet = {
