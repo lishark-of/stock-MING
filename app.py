@@ -18,13 +18,19 @@ from config import get_config_value as read_config_value, get_deepseek_keys, get
 try:
     from visual_components import (
         render_action_matrix,
+        render_etf_score_table,
+        render_holdings_snapshot_summary,
+        render_intraday_etf_snapshot,
         render_margin_allocator_chart,
+        render_margin_etf_data_status,
+        render_margin_etf_research_summary,
         render_moneyflow_conflict,
         render_next_ticket_holding_card,
         render_next_ticket_research_summary,
         render_position_waterline,
         render_price_simulator,
         render_risk_radar_summary,
+        render_theme_comparison_table,
     )
 except Exception as module_error:
     VISUAL_COMPONENTS_MODULE_ERROR = module_error
@@ -35,8 +41,23 @@ except Exception as module_error:
     def render_action_matrix(*args, **kwargs):
         _visual_component_unavailable("动作辅助矩阵")
 
+    def render_etf_score_table(*args, **kwargs):
+        _visual_component_unavailable("ETF 强弱表")
+
+    def render_intraday_etf_snapshot(*args, **kwargs):
+        _visual_component_unavailable("ETF 实时快照")
+
+    def render_holdings_snapshot_summary(*args, **kwargs):
+        _visual_component_unavailable("ETF 持仓差异")
+
     def render_margin_allocator_chart(*args, **kwargs):
         _visual_component_unavailable("融资ETF配置图")
+
+    def render_margin_etf_data_status(*args, **kwargs):
+        _visual_component_unavailable("ETF 数据状态卡")
+
+    def render_margin_etf_research_summary(*args, **kwargs):
+        _visual_component_unavailable("ETF 调研解释")
 
     def render_moneyflow_conflict(*args, **kwargs):
         _visual_component_unavailable("资金流冲突仪表")
@@ -55,6 +76,9 @@ except Exception as module_error:
 
     def render_risk_radar_summary(*args, **kwargs):
         _visual_component_unavailable("本地风险雷达摘要")
+
+    def render_theme_comparison_table(*args, **kwargs):
+        _visual_component_unavailable("同赛道 ETF 对比")
 
 try:
     from next_stock_radar import render_next_ticket_radar
@@ -217,7 +241,7 @@ try:
 except Exception as module_error:
     MARGIN_ALLOCATOR_MODULE_ERROR = module_error
 
-    def calculate_margin_etf_allocation(account, market_state, risk_profile):
+    def calculate_margin_etf_allocation(account, market_state, risk_profile, etf_scores=None):
         return {
             "action_state": "禁止加融资",
             "risk_level": "模块降级",
@@ -231,6 +255,84 @@ except Exception as module_error:
 
     def get_margin_etf_catalog():
         return {}
+
+try:
+    from etf_data_engine import (
+        COMPARISON_THEMES,
+        build_dynamic_etf_universe,
+        compare_etfs_within_theme,
+        discover_etf_universe_from_tushare,
+        fetch_etf_holdings_snapshot,
+        fetch_etf_universe_data,
+        fetch_intraday_etf_snapshot,
+        get_default_etf_universe,
+        get_etf_catalog_by_bucket,
+        score_etf_universe,
+    )
+    ETF_DATA_ENGINE_MODULE_ERROR = ""
+except Exception as module_error:
+    ETF_DATA_ENGINE_MODULE_ERROR = module_error
+
+    def fetch_etf_universe_data(*args, **kwargs):
+        return {"available": False, "errors": [str(ETF_DATA_ENGINE_MODULE_ERROR)], "items": [], "latest_data_date": "", "sample_count": 0, "available_count": 0, "has_data_gap": True}
+
+    COMPARISON_THEMES = [
+        "半导体/芯片",
+        "半导体设备",
+        "券商/证券",
+        "人工智能",
+        "云计算",
+        "电网设备",
+        "高端装备",
+        "黄金/黄金股",
+        "红利/低波",
+        "宽基",
+        "商品周期",
+    ]
+
+    def discover_etf_universe_from_tushare(*args, **kwargs):
+        return {"available": False, "used_fallback": True, "items": get_default_etf_universe(), "discovered_count": len(get_default_etf_universe()), "classified_count": len(get_default_etf_universe()), "data_gaps": [str(ETF_DATA_ENGINE_MODULE_ERROR)]}
+
+    def build_dynamic_etf_universe(*args, **kwargs):
+        universe = get_default_etf_universe()
+        dataset = fetch_etf_universe_data(universe)
+        score_packet = score_etf_universe(dataset)
+        return {"universe": universe, "score_packet": score_packet, "raw_score_packet": score_packet, "data_status": dataset, "discovery": discover_etf_universe_from_tushare()}
+
+    def compare_etfs_within_theme(*args, **kwargs):
+        return {"rows": [], "comparison_reason": [str(ETF_DATA_ENGINE_MODULE_ERROR)]}
+
+    def fetch_etf_holdings_snapshot(*args, **kwargs):
+        return {"holdings_available": False, "holdings_errors": [str(ETF_DATA_ENGINE_MODULE_ERROR)], "snapshots": {}}
+
+    def fetch_intraday_etf_snapshot(*args, **kwargs):
+        return {"available": False, "errors": [str(ETF_DATA_ENGINE_MODULE_ERROR)], "rows": []}
+
+    def get_default_etf_universe():
+        return []
+
+    def get_etf_catalog_by_bucket(universe=None):
+        return {}
+
+    def score_etf_universe(etf_market_data):
+        return {"rows": [], "data_date": "", "data_source": "rules_only", "sample_count": 0}
+
+try:
+    from margin_etf_research import (
+        REPORT_TYPE as MARGIN_ETF_DAILY_RESEARCH_REPORT_TYPE,
+        build_margin_etf_allocation_hash,
+        build_margin_etf_research_prompt,
+    )
+    MARGIN_ETF_RESEARCH_MODULE_ERROR = ""
+except Exception as module_error:
+    MARGIN_ETF_RESEARCH_MODULE_ERROR = module_error
+    MARGIN_ETF_DAILY_RESEARCH_REPORT_TYPE = "margin_etf_daily_research"
+
+    def build_margin_etf_allocation_hash(allocation_result):
+        return hashlib.sha256(json.dumps(allocation_result or {}, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+    def build_margin_etf_research_prompt(packet):
+        return f"融资 ETF 调研模块降级：{MARGIN_ETF_RESEARCH_MODULE_ERROR}\n{json.dumps(packet, ensure_ascii=False, default=str)}"
 
 try:
     import visualizer as _visualizer
@@ -751,12 +853,143 @@ def render_a_share_tushare_money_summary(moneyflow_data, margin_data, dragon_dat
         )
 
 
-def render_margin_allocator_module(result, catalog):
+MARGIN_ETF_POOL_MODES = [
+    "精简核心 ETF 池",
+    "Tushare 全量发现",
+    "同赛道横向比较",
+    "人工重点关注池",
+]
+
+
+def _margin_etf_theme_filter_value(theme_label):
+    theme_label = (theme_label or "").strip()
+    if theme_label == "半导体设备":
+        return "半导体设备"
+    return theme_label
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_margin_etf_discovery_dataset(refresh_token=""):
+    result = discover_etf_universe_from_tushare(tushare_adapter=_tushare_adapter)
+    result["refresh_token"] = refresh_token
+    return result
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_margin_etf_daily_dataset(refresh_token="", universe_mode="core", theme_label=""):
+    if universe_mode == "manual_focus":
+        universe = [item for item in get_default_etf_universe() if item.get("manual_focus", True)]
+    else:
+        universe = get_default_etf_universe()
+    result = fetch_etf_universe_data(
+        universe,
+        tushare_adapter=_tushare_adapter,
+        include_nav=False,
+    )
+    result["refresh_token"] = refresh_token
+    result["universe_mode"] = universe_mode
+    result["theme_label"] = theme_label
+    return result
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_margin_etf_dynamic_packet(refresh_token="", theme_label="", max_per_theme=5, min_amount_ma20=0.0):
+    discovery = cached_margin_etf_discovery_dataset(refresh_token)
+    dynamic_packet = build_dynamic_etf_universe(
+        max_per_theme=max_per_theme,
+        min_amount_ma20=min_amount_ma20 or None,
+        tushare_adapter=_tushare_adapter,
+        discovery_payload=discovery,
+    )
+    score_packet = dynamic_packet.get("score_packet") or {}
+    if theme_label:
+        theme_filter = _margin_etf_theme_filter_value(theme_label)
+        filtered_rows = [
+            row for row in (score_packet.get("rows") or [])
+            if theme_filter in {(row.get("theme") or "").strip(), (row.get("sub_theme") or "").strip()}
+        ]
+        dynamic_packet["theme_score_packet"] = {
+            **score_packet,
+            "sample_count": len(filtered_rows),
+            "rows": filtered_rows,
+        }
+        dynamic_packet["theme_comparison"] = compare_etfs_within_theme(dynamic_packet["theme_score_packet"], theme=theme_filter)
+    else:
+        dynamic_packet["theme_score_packet"] = score_packet
+        dynamic_packet["theme_comparison"] = {}
+    dynamic_packet["refresh_token"] = refresh_token
+    return dynamic_packet
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_margin_etf_intraday_dataset(refresh_token="", universe_mode="core", theme_label=""):
+    if universe_mode == "dynamic":
+        packet = cached_margin_etf_dynamic_packet(refresh_token=refresh_token, theme_label=theme_label, max_per_theme=8)
+        universe = packet.get("universe") or get_default_etf_universe()
+    elif universe_mode == "manual_focus":
+        universe = [item for item in get_default_etf_universe() if item.get("manual_focus", True)]
+    else:
+        universe = get_default_etf_universe()
+    result = fetch_intraday_etf_snapshot(
+        universe,
+        tushare_adapter=_tushare_adapter,
+    )
+    result["refresh_token"] = refresh_token
+    result["universe_mode"] = universe_mode
+    result["theme_label"] = theme_label
+    return result
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_margin_etf_holdings_snapshot(refresh_token="", etf_codes=None):
+    snapshot = fetch_etf_holdings_snapshot(etf_codes or [], max_etfs=20, tushare_adapter=_tushare_adapter)
+    snapshot["refresh_token"] = refresh_token
+    return snapshot
+
+
+def _margin_etf_research_ticker():
+    return "__MARGIN_ETF_ALLOCATOR__"
+
+
+def load_margin_etf_research_cache(data_date, profile_hash, market_state, allocation_hash):
+    if not supabase:
+        return None, ""
+    try:
+        res = (
+            supabase
+            .table("stock_reports")
+            .select("report_content, created_at")
+            .eq("ticker", _margin_etf_research_ticker())
+            .eq("report_type", MARGIN_ETF_DAILY_RESEARCH_REPORT_TYPE)
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        for row in res.data or []:
+            payload, _ = parse_memory_payload(row.get("report_content", ""))
+            if (
+                str(payload.get("data_date") or "") == str(data_date or "")
+                and str(payload.get("account_risk_profile") or "") == str(profile_hash or "")
+                and str(payload.get("market_state") or "") == str(market_state or "")
+                and str(payload.get("allocation_hash") or "") == str(allocation_hash or "")
+            ):
+                return payload, row.get("created_at", "")
+    except Exception as exc:
+        return None, str(exc)
+    return None, ""
+
+
+def render_margin_allocator_module(result, catalog, etf_data_status=None, intraday_snapshot=None, research_payload=None, research_generated_at="", research_cached=False):
     result = result or {}
     catalog = catalog or {}
     account_state = result.get("account_state") or {}
     action_state = result.get("action_state") or "只允许调仓"
     risk_level = result.get("risk_level") or "待评估"
+
+    if etf_data_status:
+        st.markdown("#### ETF 数据状态")
+        render_margin_etf_data_status(etf_data_status)
+        st.caption("ETF 实时强弱来自 Tushare 数据与本地规则模型，DeepSeek 仅用于解释，不直接决定仓位。")
 
     st.markdown("#### 当前账户状态")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -794,6 +1027,16 @@ def render_margin_allocator_module(result, catalog):
     for item in result.get("risk_flags") or []:
         st.caption(f"风险：{item}")
 
+    if result.get("daily_adjustment_reason"):
+        st.markdown("#### 今日动态调整原因")
+        for item in result.get("daily_adjustment_reason") or []:
+            st.markdown(f"- {item}")
+    st.caption(
+        f"数据日期：{result.get('data_date') or '暂无'}｜数据源：{result.get('data_source') or 'rules_only'}｜"
+        f"配置生成时间：{result.get('generated_at') or datetime.datetime.now().isoformat(timespec='seconds')}"
+    )
+    st.caption(result.get("previous_day_change_text") or "暂无上一交易日配置，后续可接入历史配置对比。")
+
     st.markdown("#### ETF 权宜配置")
     render_margin_allocator_chart(result)
     allocation = result.get("recommended_etf_allocation") or {}
@@ -809,6 +1052,42 @@ def render_margin_allocator_module(result, catalog):
         )
     if allocation_rows:
         st.dataframe(pd.DataFrame(allocation_rows), use_container_width=True, hide_index=True)
+
+    dynamic_weights = result.get("dynamic_bucket_weights") or {}
+    if dynamic_weights:
+        st.markdown("#### 动态 Bucket 权重")
+        st.dataframe(
+            [
+                {"Bucket": key, "建议权重": f"{value:.2f}%"}
+                for key, value in dynamic_weights.items()
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    if result.get("selected_etf_candidates"):
+        st.markdown("#### 候选 ETF")
+        candidate_rows = []
+        for bucket, items in (result.get("selected_etf_candidates") or {}).items():
+            for item in items or []:
+                candidate_rows.append(
+                    {
+                        "Bucket": bucket,
+                        "ETF": item.get("etf_name") or item.get("etf_code"),
+                        "状态": item.get("state"),
+                        "综合分": item.get("total_score"),
+                        "20日涨跌": f"{float(item.get('return_20d_pct') or 0):.2f}%",
+                    }
+                )
+        if candidate_rows:
+            st.dataframe(candidate_rows, use_container_width=True, hide_index=True)
+
+    st.markdown("#### ETF 实时强弱表")
+    render_etf_score_table({"rows": result.get("etf_score_table") or []})
+
+    if intraday_snapshot:
+        st.markdown("#### 盘中 ETF 实时补充")
+        render_intraday_etf_snapshot(intraday_snapshot)
 
     if catalog:
         with st.expander("内置 ETF 池", expanded=False):
@@ -837,8 +1116,9 @@ def render_margin_allocator_module(result, catalog):
         ]
         st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
 
-    st.button("让 DeepSeek 解释本次融资 ETF 配置", disabled=True, key="margin_etf_deepseek_disabled")
-    st.caption("第一阶段默认不调用 DeepSeek，只输出结构化仓位与风险预算测算。")
+    if research_payload:
+        st.markdown("#### DeepSeek 调研解释")
+        render_margin_etf_research_summary(research_payload, generated_at=research_generated_at, cached=research_cached)
 
 
 def _progress_result_has_data(result):
@@ -10429,6 +10709,60 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.markdown("### 🧮 融资版 ETF 投资法")
         st.caption("该模块只做仓位与风险预算测算，不构成买卖建议。融资会放大收益和亏损，必须设置风险线。")
         st.info("融资会放大收益和亏损。本模块只做风险预算和仓位测算，不构成买卖建议。")
+        st.caption("ETF 实时强弱来自 Tushare 数据与本地规则模型，DeepSeek 仅用于解释，不直接决定仓位。")
+
+        if "margin_etf_daily_refresh_token" not in st.session_state:
+            st.session_state["margin_etf_daily_refresh_token"] = "base"
+        if "margin_etf_intraday_refresh_token" not in st.session_state:
+            st.session_state["margin_etf_intraday_refresh_token"] = ""
+        if "margin_etf_calc_refresh_token" not in st.session_state:
+            st.session_state["margin_etf_calc_refresh_token"] = "base"
+
+        pool_col1, pool_col2, pool_col3 = st.columns(3)
+        with pool_col1:
+            etf_pool_source = st.selectbox("ETF 池来源", MARGIN_ETF_POOL_MODES, index=0, key="margin_etf_pool_source")
+        with pool_col2:
+            compare_theme = st.selectbox(
+                "主题选择",
+                COMPARISON_THEMES,
+                index=0,
+                key="margin_etf_compare_theme",
+                disabled=etf_pool_source != "同赛道横向比较",
+            )
+        with pool_col3:
+            dynamic_max_per_theme = st.selectbox(
+                "每主题候选上限",
+                [3, 4, 5, 6, 8],
+                index=2,
+                key="margin_etf_dynamic_max_per_theme",
+            )
+
+        min_amount_ma20 = st.number_input(
+            "成交额 MA20 最低门槛（万元，可选）",
+            min_value=0.0,
+            value=0.0,
+            step=5000.0,
+            key="margin_etf_min_amount_ma20",
+            help="仅用于动态全量发现/同赛道比较的候选筛选；填 0 表示不过滤。",
+        )
+
+        action_col1, action_col2, action_col3 = st.columns(3)
+        with action_col1:
+            if st.button("刷新 Tushare ETF 日线数据", key="btn_margin_etf_refresh_daily", width="stretch"):
+                st.session_state["margin_etf_daily_refresh_token"] = datetime.datetime.now().isoformat(timespec="seconds")
+                st.session_state.pop("margin_etf_intraday_snapshot", None)
+                st.rerun()
+        with action_col2:
+            if st.button("刷新盘中 ETF 实时数据", key="btn_margin_etf_refresh_intraday", width="stretch"):
+                token = datetime.datetime.now().isoformat(timespec="seconds")
+                st.session_state["margin_etf_intraday_refresh_token"] = token
+                intraday_mode = "dynamic" if etf_pool_source in {"Tushare 全量发现", "同赛道横向比较"} else ("manual_focus" if etf_pool_source == "人工重点关注池" else "core")
+                intraday_theme = compare_theme if etf_pool_source == "同赛道横向比较" else ""
+                st.session_state["margin_etf_intraday_snapshot"] = cached_margin_etf_intraday_dataset(token, intraday_mode, intraday_theme)
+        with action_col3:
+            if st.button("重新计算权宜比例", key="btn_margin_etf_recalc", width="stretch"):
+                st.session_state["margin_etf_calc_refresh_token"] = datetime.datetime.now().isoformat(timespec="seconds")
+                st.rerun()
 
         input_col1, input_col2, input_col3 = st.columns(3)
         with input_col1:
@@ -10481,13 +10815,201 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "style": margin_style,
             "leverage_mode": leverage_mode,
         }
+
+        refresh_token = st.session_state.get("margin_etf_daily_refresh_token", "base")
+        theme_comparison = {}
+        holdings_snapshot = {}
+        if etf_pool_source == "Tushare 全量发现":
+            dynamic_packet = cached_margin_etf_dynamic_packet(
+                refresh_token=refresh_token,
+                max_per_theme=dynamic_max_per_theme,
+                min_amount_ma20=min_amount_ma20,
+            )
+            daily_dataset = dynamic_packet.get("data_status") or {}
+            score_packet = dynamic_packet.get("score_packet") or {"rows": []}
+            current_universe = dynamic_packet.get("universe") or get_default_etf_universe()
+        elif etf_pool_source == "同赛道横向比较":
+            dynamic_packet = cached_margin_etf_dynamic_packet(
+                refresh_token=refresh_token,
+                theme_label=compare_theme,
+                max_per_theme=max(dynamic_max_per_theme, 8),
+                min_amount_ma20=min_amount_ma20,
+            )
+            daily_dataset = dynamic_packet.get("data_status") or {}
+            score_packet = dynamic_packet.get("score_packet") or {"rows": []}
+            current_universe = dynamic_packet.get("universe") or get_default_etf_universe()
+            theme_comparison = dynamic_packet.get("theme_comparison") or {}
+            comparison_codes = [row.get("etf_code") for row in (theme_comparison.get("rows") or []) if row.get("etf_code")][:8]
+            holdings_snapshot = cached_margin_etf_holdings_snapshot(refresh_token=refresh_token, etf_codes=comparison_codes)
+        elif etf_pool_source == "人工重点关注池":
+            current_universe = [item for item in get_default_etf_universe() if item.get("manual_focus", True)]
+            daily_dataset = cached_margin_etf_daily_dataset(refresh_token, "manual_focus", "")
+            score_packet = score_etf_universe(daily_dataset)
+        else:
+            current_universe = get_default_etf_universe()
+            daily_dataset = cached_margin_etf_daily_dataset(refresh_token, "core", "")
+            score_packet = score_etf_universe(daily_dataset)
+
+        intraday_snapshot = st.session_state.get("margin_etf_intraday_snapshot")
+        expected_intraday_mode = "dynamic" if etf_pool_source in {"Tushare 全量发现", "同赛道横向比较"} else ("manual_focus" if etf_pool_source == "人工重点关注池" else "core")
+        expected_intraday_theme = compare_theme if etf_pool_source == "同赛道横向比较" else ""
+        if intraday_snapshot and (
+            intraday_snapshot.get("universe_mode") != expected_intraday_mode
+            or (expected_intraday_theme and intraday_snapshot.get("theme_label") not in ["", expected_intraday_theme])
+        ):
+            intraday_snapshot = None
+
+        etf_status_packet = dict(daily_dataset or {})
+        if intraday_snapshot:
+            etf_status_packet["used_realtime"] = bool((intraday_snapshot or {}).get("used_realtime"))
+            etf_status_packet["latest_realtime_update"] = (intraday_snapshot or {}).get("updated_at", "")
+
         allocation_result = calculate_margin_etf_allocation(
             margin_account,
             market_state_choice,
             margin_profile,
+            etf_scores=score_packet,
+        )
+        allocation_result["etf_universe_mode"] = etf_pool_source
+        allocation_result["discovered_etf_count"] = etf_status_packet.get("discovered_etf_count") or etf_status_packet.get("sample_count") or len(current_universe)
+        allocation_result["scored_etf_count"] = etf_status_packet.get("scored_etf_count") or len(score_packet.get("rows") or [])
+        allocation_result["theme_comparison"] = theme_comparison
+        allocation_result["holdings_snapshot"] = holdings_snapshot
+        allocation_result["holdings_data_gaps"] = (
+            holdings_snapshot.get("holdings_errors")
+            or (["持仓明细暂不可用，当前仅按行情、跟踪指数和流动性比较。"] if etf_pool_source == "同赛道横向比较" else [])
+        )
+        allocation_result["generated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+
+        account_risk_profile = {
+            "account": margin_account,
+            "risk_profile": margin_profile,
+            "market_state": market_state_choice,
+        }
+        account_risk_profile_hash = hashlib.sha256(
+            json.dumps(account_risk_profile, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        allocation_hash = build_margin_etf_allocation_hash(allocation_result)
+        if st.session_state.get("margin_etf_research_allocation_hash") not in [None, allocation_hash]:
+            st.session_state.pop("margin_etf_research_result", None)
+            st.session_state.pop("margin_etf_research_generated_at", None)
+            st.session_state.pop("margin_etf_research_cached", None)
+
+        research_result = st.session_state.get("margin_etf_research_result")
+        research_generated_at = st.session_state.get("margin_etf_research_generated_at", "")
+        research_cached = bool(st.session_state.get("margin_etf_research_cached"))
+
+        render_margin_allocator_module(
+            allocation_result,
+            get_etf_catalog_by_bucket(current_universe) or get_margin_etf_catalog(),
+            etf_data_status=etf_status_packet,
+            intraday_snapshot=intraday_snapshot,
+            research_payload=research_result,
+            research_generated_at=research_generated_at,
+            research_cached=research_cached,
         )
 
-        render_margin_allocator_module(allocation_result, get_margin_etf_catalog())
+        st.warning("同赛道 ETF 可能高度重叠，不应简单叠加配置。")
+        st.warning("ETF 持仓会随季报/公告变化，Tushare 持仓数据可能有滞后，配置结论必须结合最新行情和风险线。")
+
+        if etf_pool_source == "同赛道横向比较":
+            st.markdown(f"#### 同主题 ETF 横向比较：{compare_theme}")
+            render_theme_comparison_table(theme_comparison, holdings_snapshot=holdings_snapshot)
+            render_holdings_snapshot_summary(holdings_snapshot)
+
+        research_col1, research_col2 = st.columns([1, 1.2])
+        with research_col1:
+            force_research = st.checkbox("强制重新调研", value=False, key="margin_etf_force_research")
+        with research_col2:
+            if st.button("🧠 让 DeepSeek 调研本次 ETF 融资配置", key="btn_margin_etf_deepseek_research", width="stretch"):
+                cached_payload = None
+                cached_created_at = ""
+                cache_error = ""
+                if not force_research:
+                    cached_payload, cache_error = load_margin_etf_research_cache(
+                        allocation_result.get("data_date"),
+                        account_risk_profile_hash,
+                        market_state_choice,
+                        allocation_hash,
+                    )
+                    cached_created_at = (cached_payload or {}).get("generated_at") or ""
+                if cache_error:
+                    st.caption(f"缓存读取告警：{cache_error}")
+                if cached_payload and not force_research:
+                    st.session_state["margin_etf_research_result"] = cached_payload.get("research_result") or cached_payload
+                    st.session_state["margin_etf_research_generated_at"] = cached_created_at or cached_payload.get("generated_at", "")
+                    st.session_state["margin_etf_research_cached"] = True
+                    st.session_state["margin_etf_research_allocation_hash"] = allocation_hash
+                    st.rerun()
+
+                research_packet = {
+                    "account_state": allocation_result.get("account_state"),
+                    "margin_state": {
+                        "current_margin_debt_ratio": allocation_result.get("current_margin_debt_ratio"),
+                        "recommended_margin_ratio": allocation_result.get("recommended_margin_ratio"),
+                        "action_state": allocation_result.get("action_state"),
+                    },
+                    "market_state": market_state_choice,
+                    "risk_profile": margin_profile,
+                    "etf_score_table": allocation_result.get("etf_score_table"),
+                    "allocation_result": allocation_result,
+                    "risk_lines": allocation_result.get("risk_lines"),
+                    "data_date": allocation_result.get("data_date"),
+                    "data_source": allocation_result.get("data_source"),
+                    "etf_universe_mode": etf_pool_source,
+                    "discovered_etf_count": allocation_result.get("discovered_etf_count"),
+                    "scored_etf_count": allocation_result.get("scored_etf_count"),
+                    "theme_comparison": theme_comparison,
+                    "selected_etf_candidates": allocation_result.get("selected_etf_candidates"),
+                    "holdings_snapshot": holdings_snapshot if holdings_snapshot.get("holdings_available") else {},
+                    "holdings_data_gaps": allocation_result.get("holdings_data_gaps"),
+                    "intraday_etf_snapshot": intraday_snapshot or {},
+                }
+                prompt = build_margin_etf_research_prompt(research_packet)
+                raw_output = call_deepseek_non_stream(
+                    prompt,
+                    system_role="你是克制、专业的 ETF 两融配置解释员，只解释规则结果，不直接下交易指令。",
+                    max_tokens=2200,
+                )
+                if raw_output:
+                    parsed_payload, _ = parse_memory_payload(raw_output)
+                    if not isinstance(parsed_payload, dict) or not parsed_payload:
+                        parsed_payload = {
+                            "one_sentence_conclusion": str(raw_output)[:80],
+                            "today_allocation_explanation": [str(raw_output)],
+                            "why_margin_ratio": [],
+                            "bucket_adjustments": [],
+                            "theme_comparison_explanation": [],
+                            "overlap_and_substitution": [],
+                            "watch_not_chase": [],
+                            "add_margin_triggers": [],
+                            "deleverage_triggers": [],
+                            "tomorrow_checklist": [],
+                            "data_gaps": ["DeepSeek 输出未严格命中 JSON，已按原文降级展示。"],
+                            "risk_disclaimer": "融资会放大收益和亏损。本模块只做风险预算和仓位测算，不构成买卖建议。",
+                        }
+                    generated_at = datetime.datetime.now().isoformat(timespec="seconds")
+                    cache_payload = {
+                        "report_type": MARGIN_ETF_DAILY_RESEARCH_REPORT_TYPE,
+                        "data_date": allocation_result.get("data_date"),
+                        "account_risk_profile": account_risk_profile_hash,
+                        "market_state": market_state_choice,
+                        "allocation_hash": allocation_hash,
+                        "generated_at": generated_at,
+                        "research_result": parsed_payload,
+                        "raw_output": raw_output,
+                    }
+                    save_stock_report(
+                        _margin_etf_research_ticker(),
+                        "A_SHARE",
+                        MARGIN_ETF_DAILY_RESEARCH_REPORT_TYPE,
+                        cache_payload,
+                    )
+                    st.session_state["margin_etf_research_result"] = parsed_payload
+                    st.session_state["margin_etf_research_generated_at"] = generated_at
+                    st.session_state["margin_etf_research_cached"] = False
+                    st.session_state["margin_etf_research_allocation_hash"] = allocation_hash
+                    st.rerun()
 
     with tab_health:
         st.markdown("### ⚙️ 数据源与权限体检")

@@ -628,12 +628,19 @@ def render_margin_allocator_chart(allocation_result: dict):
     allocation_result = allocation_result or {}
     allocation = allocation_result.get("recommended_etf_allocation") or {}
     rows = []
-    for label in ["宽基ETF", "科技成长ETF", "防守ETF", "商品周期ETF", "现金"]:
+    preferred_order = ["宽基ETF", "科技成长ETF", "金融券商ETF", "防守ETF", "商品周期ETF", "现金"]
+    for label in preferred_order:
         item = allocation.get(label) or {}
         ratio = _to_float(item.get("ratio_pct"))
         if ratio is None:
             continue
         rows.append((label, ratio))
+    for label, item in allocation.items():
+        if label in {row[0] for row in rows}:
+            continue
+        ratio = _to_float(item.get("ratio_pct"))
+        if ratio is not None:
+            rows.append((label, ratio))
 
     if not rows:
         st.info("暂无可视化仓位建议。")
@@ -647,6 +654,7 @@ def render_margin_allocator_chart(allocation_result: dict):
     colors = {
         "宽基ETF": "#2563eb",
         "科技成长ETF": "#f97316",
+        "金融券商ETF": "#dc2626",
         "防守ETF": "#16a34a",
         "商品周期ETF": "#a855f7",
         "现金": "#6b7280",
@@ -694,6 +702,184 @@ def render_margin_allocator_chart(allocation_result: dict):
         plot_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(bars, use_container_width=True)
+
+
+def render_margin_etf_data_status(data_status: dict | None = None):
+    payload = data_status or {}
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Tushare 数据日期", payload.get("latest_data_date") or "暂无")
+    c2.metric("ETF 总数", int(payload.get("discovered_etf_count") or payload.get("sample_count") or 0))
+    c3.metric("可分类数量", int(payload.get("classified_count") or payload.get("available_count") or 0))
+    c4.metric("可评分数量", int(payload.get("scored_etf_count") or payload.get("available_count") or 0))
+    c5.metric("最终入池数量", int(payload.get("selected_count") or payload.get("sample_count") or 0))
+    c6.metric("数据缺口", "有" if payload.get("has_data_gap") or payload.get("data_gaps") else "无")
+    if payload.get("updated_at"):
+        st.caption(f"最新拉取时间：{payload.get('updated_at')}")
+    if payload.get("used_fallback"):
+        st.warning("etf_basic 拉取失败，当前已回退到人工重点关注 ETF 池。")
+    if payload.get("has_data_gap"):
+        st.warning("ETF 数据存在缺口，已按可得样本继续计算。")
+    else:
+        st.caption("ETF 主评分使用 Tushare 日线；实时数据仅作补充，不覆盖日线主结论。")
+    gaps = payload.get("data_gaps") or []
+    if gaps:
+        st.caption("数据缺口：" + "；".join(str(item) for item in gaps[:5]))
+
+
+def render_etf_score_table(score_packet: dict | None = None):
+    payload = score_packet or {}
+    rows = payload.get("rows") or payload.get("etf_score_table") or []
+    if not rows:
+        st.info("暂无 ETF 强弱评分。")
+        return
+    display_rows = []
+    for item in rows:
+        display_rows.append(
+            {
+                "ETF": item.get("etf_name") or item.get("etf_code"),
+                "分类": item.get("bucket"),
+                "主题": item.get("sub_theme") or item.get("theme"),
+                "基金公司/管理人": item.get("manager") or "暂无",
+                "跟踪指数": item.get("benchmark") or item.get("index_name") or item.get("index_code") or "暂无",
+                "最新价": item.get("latest_price"),
+                "数据日期": item.get("data_date"),
+                "20日涨跌": _fmt_pct(item.get("return_20d_pct")),
+                "60日涨跌": _fmt_pct(item.get("return_60d_pct")),
+                "相对MA20": _fmt_pct(item.get("price_vs_ma20_pct")),
+                "相对MA60": _fmt_pct(item.get("price_vs_ma60_pct")),
+                "波动率": _fmt_pct(item.get("volatility_20d")),
+                "成交额MA20": _fmt_money(item.get("amount_ma20")),
+                "状态": item.get("state"),
+                "综合分": item.get("total_score"),
+            }
+        )
+    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+
+
+def render_theme_comparison_table(comparison_packet: dict | None = None, holdings_snapshot: dict | None = None):
+    payload = comparison_packet or {}
+    rows = payload.get("rows") or []
+    if not rows:
+        st.info("当前主题暂无可比较的 ETF。")
+        return
+    holdings_snapshot = holdings_snapshot or {}
+    snapshots = holdings_snapshot.get("snapshots") or {}
+    display_rows = []
+    for item in rows:
+        code = item.get("etf_code")
+        holding_state = "暂不可用"
+        if snapshots.get(code, {}).get("available"):
+            holding_state = "可用"
+        elif snapshots.get(code, {}).get("error"):
+            holding_state = "失败"
+
+        evaluation = []
+        if code == payload.get("most_balanced_etf"):
+            evaluation.append("综合更均衡")
+        if code == payload.get("best_trend_etf"):
+            evaluation.append("趋势更强")
+        if code == payload.get("best_liquidity_etf"):
+            evaluation.append("流动性更好")
+        if code == payload.get("lowest_volatility_etf"):
+            evaluation.append("波动更低")
+        if code in (payload.get("warning_etfs") or []):
+            evaluation.append("仅观察")
+
+        display_rows.append(
+            {
+                "ETF": item.get("etf_name") or code,
+                "基金公司/管理人": item.get("manager") or "暂无",
+                "跟踪指数": item.get("benchmark") or item.get("index_name") or item.get("index_code") or "暂无",
+                "最新价": item.get("latest_price") or "暂无",
+                "20日涨跌": _fmt_pct(item.get("return_20d_pct")),
+                "60日涨跌": _fmt_pct(item.get("return_60d_pct")),
+                "成交额MA20": _fmt_money(item.get("amount_ma20")),
+                "波动率": _fmt_pct(item.get("volatility_20d")),
+                "状态": item.get("state") or "暂无",
+                "综合分": item.get("total_score"),
+                "持仓明细状态": holding_state,
+                "适配评价": " / ".join(evaluation) or "待比较",
+            }
+        )
+    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+    for reason in payload.get("comparison_reason") or []:
+        st.caption(f"对比结论：{reason}")
+    errors = holdings_snapshot.get("holdings_errors") or []
+    if errors and not holdings_snapshot.get("holdings_available"):
+        st.info("持仓明细暂不可用，当前仅按行情、跟踪指数和流动性比较。")
+    elif errors:
+        st.caption("部分持仓接口失败：" + "；".join(errors[:4]))
+
+
+def render_holdings_snapshot_summary(holdings_snapshot: dict | None = None):
+    payload = holdings_snapshot or {}
+    snapshots = payload.get("snapshots") or {}
+    if not snapshots:
+        return
+    st.markdown("#### ETF 持仓差异提示")
+    for code, item in snapshots.items():
+        if not item.get("available"):
+            continue
+        top_names = [holding.get("stock_name") or holding.get("stock_code") for holding in (item.get("holdings") or [])[:5]]
+        top_names = [name for name in top_names if name]
+        st.caption(
+            f"{code}｜来源 {item.get('source_api') or '未知'}｜最新报告期 {item.get('latest_report_date') or '未知'}｜"
+            f"前五持仓：{' / '.join(top_names) if top_names else '暂无'}"
+        )
+
+
+def render_intraday_etf_snapshot(snapshot: dict | None = None):
+    payload = snapshot or {}
+    rows = payload.get("rows") or []
+    if not rows:
+        st.caption("暂无盘中 ETF 实时补充。")
+        return
+    display_rows = []
+    for item in rows:
+        display_rows.append(
+            {
+                "ETF": item.get("etf_name") or item.get("etf_code"),
+                "分类": item.get("bucket"),
+                "实时价": item.get("realtime_price") or "暂无",
+                "实时IOPV": item.get("realtime_iopv") or "暂无",
+                "溢价/折价": _fmt_pct(item.get("premium_discount_pct")),
+                "时间": item.get("trade_time") or "暂无",
+                "状态": "部分可用" if item.get("errors") else "可用",
+            }
+        )
+    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+    errors = payload.get("errors") or []
+    if errors:
+        st.caption("部分实时 ETF 接口失败，已按可得样本展示。")
+
+
+def render_margin_etf_research_summary(result: dict | None = None, generated_at: str = "", cached: bool = False):
+    payload = result or {}
+    if not payload:
+        st.caption("尚未生成 DeepSeek ETF 调研解释。")
+        return
+
+    conclusion = payload.get("one_sentence_conclusion") or "暂无结论。"
+    st.caption(f"generated_at：{generated_at or '暂无'}" + ("｜缓存结果" if cached else "｜新生成结果"))
+    st.markdown(f"**一句话结论**：{conclusion}")
+
+    sections = [
+        ("今日 ETF 配置解释", payload.get("today_allocation_explanation")),
+        ("为什么这个融资比例", payload.get("why_margin_ratio")),
+        ("Bucket 增减配原因", payload.get("bucket_adjustments")),
+        ("同赛道 ETF 为什么选 A 不选 B", payload.get("theme_comparison_explanation")),
+        ("同赛道替代与重叠", payload.get("overlap_and_substitution")),
+        ("只观察不追", payload.get("watch_not_chase")),
+        ("加融资触发条件", payload.get("add_margin_triggers")),
+        ("降融资触发条件", payload.get("deleverage_triggers")),
+        ("明日验证清单", payload.get("tomorrow_checklist")),
+        ("数据缺口", payload.get("data_gaps")),
+    ]
+    for title, items in sections:
+        st.markdown(f"**{title}**")
+        _result_list(items or [])
+    st.markdown("**风险提示**")
+    st.write(payload.get("risk_disclaimer") or "融资会放大收益和亏损。本模块只做风险预算和仓位测算，不构成买卖建议。")
 
 
 def render_action_matrix(

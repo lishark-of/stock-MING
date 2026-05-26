@@ -169,6 +169,97 @@ def get_adj_factor(ts_code, start_date=None, end_date=None):
     )
 
 
+def get_fund_daily(ts_code=None, trade_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "fund_daily",
+        ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_etf_basic(ts_code=None, market=None, status=None, exchange=None):
+    return _call_pro(
+        "etf_basic",
+        ts_code=_normalize_ts_code(ts_code),
+        market=market,
+        status=status,
+        exchange=exchange,
+    )
+
+
+def get_etf_index(ts_code=None, index_code=None):
+    return _call_pro(
+        "etf_index",
+        ts_code=_normalize_ts_code(ts_code),
+        index_code=index_code,
+    )
+
+
+def get_fund_nav(ts_code=None, end_date=None, market=None):
+    return _call_pro(
+        "fund_nav",
+        ts_code=_normalize_ts_code(ts_code),
+        end_date=_normalize_date(end_date),
+        market=market,
+    )
+
+
+def get_fund_portfolio(ts_code=None, ann_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "fund_portfolio",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_fund_holdings(ts_code=None, ann_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "fund_holdings",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_fund_top10(ts_code=None, ann_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "fund_top10",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_fund_report_stock(ts_code=None, ann_date=None, start_date=None, end_date=None):
+    return _call_pro(
+        "fund_report_stock",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+    )
+
+
+def get_rt_etf_k(ts_code=None):
+    return _call_pro(
+        "rt_etf_k",
+        ts_code=_normalize_ts_code(ts_code),
+    )
+
+
+def get_rt_etf_sz_iopv(ts_code=None):
+    return _call_pro(
+        "rt_etf_sz_iopv",
+        ts_code=_normalize_ts_code(ts_code),
+    )
+
+
 def get_top_list(trade_date=None, ts_code=None):
     return _call_pro(
         "top_list",

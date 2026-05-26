@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import datetime
 
 
 ETF_CATALOG = {
@@ -10,14 +11,19 @@ ETF_CATALOG = {
         "中证1000 ETF",
         "中证A500 ETF",
         "双创50 ETF",
+        "科创50 ETF",
     ],
     "科技成长ETF": [
-        "科创50 ETF",
         "半导体 ETF",
+        "半导体设备ETF广发",
         "人工智能 ETF",
         "云计算 ETF",
         "高端装备 ETF",
         "电网设备 ETF",
+    ],
+    "金融券商ETF": [
+        "券商ETF",
+        "证券ETF",
     ],
     "防守ETF": [
         "红利 ETF",
@@ -30,8 +36,21 @@ ETF_CATALOG = {
         "有色 ETF",
         "煤炭 ETF",
         "能源 ETF",
+        "稀土 ETF",
     ],
 }
+
+
+ETF_BUCKETS = [
+    "宽基ETF",
+    "科技成长ETF",
+    "金融券商ETF",
+    "防守ETF",
+    "商品周期ETF",
+]
+
+
+HIGH_BETA_BUCKETS = {"科技成长ETF", "金融券商ETF"}
 
 
 MARKET_STATE_CONFIG = {
@@ -43,8 +62,9 @@ MARKET_STATE_CONFIG = {
         "margin_range": (0, 5),
         "cash_range": (30, 45),
         "weights": {
-            "宽基ETF": 0.24,
-            "科技成长ETF": 0.06,
+            "宽基ETF": 0.22,
+            "科技成长ETF": 0.05,
+            "金融券商ETF": 0.03,
             "防守ETF": 0.50,
             "商品周期ETF": 0.04,
             "现金": 0.16,
@@ -60,9 +80,10 @@ MARKET_STATE_CONFIG = {
         "margin_range": (0, 15),
         "cash_range": (20, 30),
         "weights": {
-            "宽基ETF": 0.38,
-            "科技成长ETF": 0.18,
-            "防守ETF": 0.26,
+            "宽基ETF": 0.34,
+            "科技成长ETF": 0.16,
+            "金融券商ETF": 0.08,
+            "防守ETF": 0.24,
             "商品周期ETF": 0.06,
             "现金": 0.12,
         },
@@ -77,10 +98,11 @@ MARKET_STATE_CONFIG = {
         "margin_range": (10, 25),
         "cash_range": (10, 20),
         "weights": {
-            "宽基ETF": 0.34,
-            "科技成长ETF": 0.34,
+            "宽基ETF": 0.30,
+            "科技成长ETF": 0.26,
+            "金融券商ETF": 0.10,
             "防守ETF": 0.14,
-            "商品周期ETF": 0.10,
+            "商品周期ETF": 0.12,
             "现金": 0.08,
         },
         "risk_level": "进攻可控",
@@ -94,10 +116,11 @@ MARKET_STATE_CONFIG = {
         "margin_range": (20, 35),
         "cash_range": (10, 15),
         "weights": {
-            "宽基ETF": 0.28,
-            "科技成长ETF": 0.42,
+            "宽基ETF": 0.24,
+            "科技成长ETF": 0.30,
+            "金融券商ETF": 0.12,
             "防守ETF": 0.08,
-            "商品周期ETF": 0.12,
+            "商品周期ETF": 0.16,
             "现金": 0.10,
         },
         "risk_level": "高弹性高风险",
@@ -112,10 +135,11 @@ STYLE_ADJUSTMENTS = {
         "cash_shift": 10,
         "margin_shift": -8,
         "weight_shift": {
-            "科技成长ETF": -0.10,
+            "科技成长ETF": -0.08,
+            "金融券商ETF": -0.03,
             "商品周期ETF": -0.03,
             "防守ETF": 0.09,
-            "宽基ETF": 0.04,
+            "宽基ETF": 0.05,
         },
     },
     "平衡": {
@@ -129,10 +153,11 @@ STYLE_ADJUSTMENTS = {
         "cash_shift": -5,
         "margin_shift": 5,
         "weight_shift": {
-            "科技成长ETF": 0.09,
+            "科技成长ETF": 0.07,
+            "金融券商ETF": 0.03,
             "商品周期ETF": 0.04,
             "防守ETF": -0.09,
-            "宽基ETF": -0.02,
+            "宽基ETF": -0.03,
         },
     },
 }
@@ -163,11 +188,182 @@ def _round2(value):
     return round(float(value), 2)
 
 
+def _safe_round(value, default=0.0):
+    try:
+        if value in [None, ""]:
+            return default
+        return round(float(value), 2)
+    except Exception:
+        return default
+
+
+def _normalize_score_rows(etf_scores):
+    if not etf_scores:
+        return []
+    if isinstance(etf_scores, dict):
+        rows = etf_scores.get("rows") or etf_scores.get("etf_score_table") or []
+        return rows if isinstance(rows, list) else []
+    if isinstance(etf_scores, list):
+        return etf_scores
+    return []
+
+
+def _normalize_bucket_weights(weights):
+    weights = dict(weights or {})
+    cash_weight = max(weights.get("现金", 0.0), 0.05)
+    investable = {key: max(float(weights.get(key, 0.0)), 0.0) for key in ETF_BUCKETS}
+    investable_total = sum(investable.values())
+    target_total = max(1.0 - cash_weight, 0.0)
+    if investable_total <= 0:
+        base = target_total / max(len(ETF_BUCKETS), 1)
+        investable = {key: base for key in ETF_BUCKETS}
+    else:
+        scale = target_total / investable_total if investable_total else 1.0
+        investable = {key: value * scale for key, value in investable.items()}
+    normalized = {**investable, "现金": cash_weight}
+    return normalized
+
+
+def _candidate_rows_for_bucket(rows, bucket):
+    candidates = [item for item in rows if item.get("bucket") == bucket]
+    candidates.sort(
+        key=lambda item: (
+            item.get("manual_focus", False),
+            item.get("total_score") or 0,
+            item.get("return_20d_pct") or -999,
+            item.get("amount_ma20") or 0,
+        ),
+        reverse=True,
+    )
+    return candidates
+
+
+def _bucket_statistics(etf_rows):
+    stats = {}
+    for bucket in ETF_BUCKETS:
+        rows = _candidate_rows_for_bucket(etf_rows, bucket)
+        valid_scores = [float(item.get("total_score") or 0) for item in rows if item.get("state") != "数据不足"]
+        avg_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0.0
+        overheat_count = sum(1 for item in rows if item.get("state") == "过热等待")
+        weak_count = sum(1 for item in rows if item.get("state") in {"破位回避", "震荡观察"})
+        avg_vol = (
+            sum(float(item.get("volatility_20d") or 0) for item in rows if item.get("volatility_20d") is not None) / len(rows)
+            if rows
+            else 0.0
+        )
+        avg_return20 = (
+            sum(float(item.get("return_20d_pct") or 0) for item in rows if item.get("return_20d_pct") is not None) / len(rows)
+            if rows
+            else 0.0
+        )
+        stats[bucket] = {
+            "avg_score": avg_score,
+            "count": len(rows),
+            "overheat_count": overheat_count,
+            "weak_count": weak_count,
+            "avg_volatility": avg_vol,
+            "avg_return_20d": avg_return20,
+        }
+    return stats
+
+
+def _apply_etf_score_adjustments(weights, target_margin, target_cash, etf_rows):
+    reasons = []
+    overweight = []
+    underweight = []
+    bucket_stats = _bucket_statistics(etf_rows)
+
+    tech_score = bucket_stats["科技成长ETF"]["avg_score"]
+    broker_score = bucket_stats["金融券商ETF"]["avg_score"]
+    broad_score = bucket_stats["宽基ETF"]["avg_score"]
+    defense_score = bucket_stats["防守ETF"]["avg_score"]
+    cycle_score = bucket_stats["商品周期ETF"]["avg_score"]
+    high_beta_score = (tech_score + broker_score) / 2
+    overall_score = sum(item["avg_score"] for item in bucket_stats.values()) / max(len(bucket_stats), 1)
+    avg_volatility = sum(item["avg_volatility"] for item in bucket_stats.values()) / max(len(bucket_stats), 1)
+
+    if tech_score >= broad_score + 8 and tech_score >= 65:
+        shift = 0.07 if tech_score >= broad_score + 15 else 0.04
+        weights["科技成长ETF"] += shift
+        weights["宽基ETF"] = max(weights["宽基ETF"] - shift * 0.5, 0.05)
+        weights["现金"] = max(weights["现金"] - shift * 0.5, 0.05)
+        reasons.append("科技成长 ETF 平均分明显高于宽基，今日提高科技成长权重。")
+        overweight.append("科技成长ETF")
+        underweight.append("宽基ETF")
+
+    if broker_score >= broad_score + 6 and broker_score >= 62:
+        shift = 0.05 if broker_score >= broad_score + 12 else 0.03
+        weights["金融券商ETF"] += shift
+        weights["宽基ETF"] = max(weights["宽基ETF"] - shift * 0.45, 0.05)
+        weights["现金"] = max(weights["现金"] - shift * 0.55, 0.05)
+        reasons.append("金融券商 ETF 强于宽基，允许提高同类配置权重，但不单独放宽融资比例。")
+        overweight.append("金融券商ETF")
+        underweight.append("宽基ETF")
+
+    if defense_score >= high_beta_score + 8 and defense_score >= 62:
+        shift = 0.08 if defense_score >= high_beta_score + 15 else 0.05
+        weights["防守ETF"] += shift
+        weights["科技成长ETF"] = max(weights["科技成长ETF"] - shift * 0.35, 0.03)
+        weights["金融券商ETF"] = max(weights["金融券商ETF"] - shift * 0.25, 0.02)
+        weights["商品周期ETF"] = max(weights["商品周期ETF"] - shift * 0.15, 0.02)
+        target_margin = max(target_margin - 5, 0)
+        target_cash = min(target_cash + 5, 60)
+        reasons.append("防守 ETF 强于进攻 ETF，今日提高防守权重并压低融资比例。")
+        overweight.append("防守ETF")
+        underweight.extend(["科技成长ETF", "金融券商ETF"])
+
+    if overall_score and overall_score < 55:
+        target_margin = max(target_margin - 5, 0)
+        target_cash = min(target_cash + 8, 60)
+        weights["现金"] += 0.06
+        weights["防守ETF"] += 0.03
+        weights["科技成长ETF"] = max(weights["科技成长ETF"] - 0.04, 0.03)
+        weights["金融券商ETF"] = max(weights["金融券商ETF"] - 0.02, 0.02)
+        reasons.append("全市场 ETF 趋势偏弱，今日提高现金缓冲并压低融资。")
+        overweight.append("现金")
+        underweight.extend(["科技成长ETF", "金融券商ETF"])
+
+    if bucket_stats["科技成长ETF"]["overheat_count"] > 0 or bucket_stats["金融券商ETF"]["overheat_count"] > 0:
+        weights["科技成长ETF"] = max(weights["科技成长ETF"] - 0.03, 0.03)
+        weights["金融券商ETF"] = max(weights["金融券商ETF"] - 0.02, 0.02)
+        weights["宽基ETF"] += 0.02
+        weights["现金"] += 0.03
+        reasons.append("高 beta ETF 中存在过热品种，降低追高比例，等待回踩 MA20 或量能确认。")
+
+    if cycle_score >= 65 and defense_score < 60:
+        weights["商品周期ETF"] += 0.03
+        weights["宽基ETF"] = max(weights["宽基ETF"] - 0.02, 0.05)
+        reasons.append("商品周期 ETF 评分回升，允许保留小幅周期弹性。")
+        overweight.append("商品周期ETF")
+
+    if avg_volatility >= 28 or high_beta_score >= 72 and (bucket_stats["科技成长ETF"]["avg_volatility"] > 24 or bucket_stats["金融券商ETF"]["avg_volatility"] > 24):
+        target_margin = max(target_margin - 5, 0)
+        target_cash = min(target_cash + 3, 60)
+        reasons.append("高 beta / 高波动 ETF 占优时，融资比例按波动约束下调。")
+
+    high_beta_weight = weights.get("科技成长ETF", 0.0) + weights.get("金融券商ETF", 0.0)
+    if high_beta_weight > 0.42:
+        excess = high_beta_weight - 0.42
+        weights["科技成长ETF"] = max(weights["科技成长ETF"] - excess * 0.6, 0.03)
+        weights["金融券商ETF"] = max(weights["金融券商ETF"] - excess * 0.4, 0.02)
+        weights["宽基ETF"] += excess * 0.45
+        weights["现金"] += excess * 0.55
+        reasons.append("同属高 beta 的科技成长与金融券商不能无限叠加，已自动限制合计权重。")
+
+    weights["现金"] = max(weights.get("现金", 0.0) + (target_cash / 100.0 - weights.get("现金", 0.0)), 0.05)
+    dynamic_weights = _normalize_bucket_weights(weights)
+    if not reasons:
+        reasons.append("ETF 强弱分布未触发明显偏离，维持基础 bucket 结构。")
+    overweight = list(dict.fromkeys(overweight))
+    underweight = [item for item in list(dict.fromkeys(underweight)) if item not in overweight]
+    return dynamic_weights, target_margin, target_cash, reasons, overweight, underweight, bucket_stats
+
+
 def get_margin_etf_catalog():
     return deepcopy(ETF_CATALOG)
 
 
-def calculate_margin_etf_allocation(account, market_state, risk_profile):
+def calculate_margin_etf_allocation(account, market_state, risk_profile, etf_scores=None):
     account = account or {}
     risk_profile = risk_profile or {}
     market_state = market_state if market_state in MARKET_STATE_CONFIG else "震荡"
@@ -183,6 +379,10 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
     maintenance_ratio = _num(account.get("maintenance_ratio"), 0.0)
     margin_interest_rate = _num(account.get("margin_interest_rate"), 6.8)
     max_drawdown_pct = max(_num(account.get("max_drawdown_pct"), 15.0), 1.0)
+    score_rows = _normalize_score_rows(etf_scores)
+    score_packet = etf_scores if isinstance(etf_scores, dict) else {"rows": score_rows}
+    data_date = score_packet.get("data_date") or ""
+    score_source = score_packet.get("data_source") or ("tushare" if score_rows else "rules_only")
 
     position_assets = stock_market_value + etf_market_value
     gross_assets = max(total_asset, cash_balance + position_assets, margin_debt)
@@ -275,6 +475,33 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
         weights[key] = max(weights.get(key, 0) + shift, 0.0)
     weights["现金"] = max(weights.get("现金", 0) + (target_cash / 100.0 - weights.get("现金", 0)), 0.05)
 
+    dynamic_reasons = []
+    overweight_buckets = []
+    underweight_buckets = []
+    bucket_score_stats = {}
+    if score_rows:
+        weights, target_margin, target_cash, dynamic_reasons, overweight_buckets, underweight_buckets, bucket_score_stats = _apply_etf_score_adjustments(
+            weights,
+            target_margin,
+            target_cash,
+            score_rows,
+        )
+        if data_date:
+            notes.append(f"已接入 Tushare ETF 数据，评分日期 {data_date}。")
+    else:
+        weights = _normalize_bucket_weights(weights)
+        dynamic_reasons.append("暂无 ETF 强弱评分，当前按基础规则模板测算。")
+
+    high_beta_strength = (
+        bucket_score_stats.get("科技成长ETF", {}).get("avg_score", 0)
+        + bucket_score_stats.get("金融券商ETF", {}).get("avg_score", 0)
+    ) / 2 if bucket_score_stats else 0
+    defensive_strength = bucket_score_stats.get("防守ETF", {}).get("avg_score", 0) if bucket_score_stats else 0
+    if high_beta_strength >= 70:
+        notes.append("高 beta ETF 整体偏强时，只提高内部配置权重，不自动突破账户融资硬约束。")
+    if defensive_strength >= high_beta_strength + 6 and score_rows:
+        notes.append("防守 ETF 强、进攻 ETF 弱时，模型会优先降低融资比例。")
+
     investable_weight_total = sum(value for key, value in weights.items() if key != "现金")
     if investable_weight_total <= 0:
         investable_weight_total = 1.0
@@ -293,7 +520,7 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
         notes.append("当前股票仓位已高于建议总仓位，新增 ETF 需要以替换为主。")
 
     recommended_allocation = {}
-    for category in ["宽基ETF", "科技成长ETF", "防守ETF", "商品周期ETF"]:
+    for category in ETF_BUCKETS:
         normalized_weight = weights.get(category, 0.0) / investable_weight_total
         ratio_to_net_asset = recommended_etf_capacity_ratio * normalized_weight
         recommended_allocation[category] = {
@@ -309,8 +536,14 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
         "weight_in_etf_bucket_pct": 0.0,
     }
 
+    dynamic_bucket_weights = {key: _round2(value * 100) for key, value in weights.items()}
+
     account_risk_score = 100 - _clamp(current_margin_debt_ratio * 1.4 + max(stock_position_ratio - 50, 0) * 0.6, 0, 100)
-    margin_pressure_score = _clamp(100 - current_margin_debt_ratio * 2 - max(180 - maintenance_ratio, 0) * 1.5, 0, 100) if maintenance_ratio else _clamp(100 - current_margin_debt_ratio * 2, 0, 100)
+    margin_pressure_score = (
+        _clamp(100 - current_margin_debt_ratio * 2 - max(180 - maintenance_ratio, 0) * 1.5, 0, 100)
+        if maintenance_ratio
+        else _clamp(100 - current_margin_debt_ratio * 2, 0, 100)
+    )
     risk_budget_score = _round2(
         (
             state_config["market_score"]
@@ -333,7 +566,9 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
         action_state = "可中等融资"
 
     risk_lines = [
-        f"维持担保比例接近 180% 或自设红线时，停止新增融资并优先降杠杆。",
+        "同赛道 ETF 可能高度重叠，不应简单叠加配置。",
+        "ETF 持仓会随季报/公告变化，Tushare 持仓数据可能有滞后，配置结论必须结合最新行情和风险线。",
+        "维持担保比例接近 180% 或自设红线时，停止新增融资并优先降杠杆。",
         "ETF 跌破 MA20：停止加融资，只允许观察或调仓。",
         "ETF 跌破 MA60：降低融资，优先回收现金缓冲。",
         f"账户净值回撤达到 {max_drawdown_pct:.0f}% 附近时，触发降融资或缩减总仓位。",
@@ -349,8 +584,12 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
         [
             "禁止输出绝对化、高杠杆、保证收益类表述。",
             "没有新增胜率验证前，不把单一行业 ETF 当作唯一仓位。",
+            "同赛道 ETF 高度重叠时，不应简单叠加配置。",
         ]
     )
+    if score_rows:
+        trigger_conditions.append("ETF 主评分使用 Tushare 日线，不把盘中实时快照直接覆盖日线结论。")
+        invalid_conditions.append("ETF 过热时不追高，等待回踩 MA20 或成交额二次确认。")
 
     if current_margin_debt_ratio > target_margin + 5:
         notes.append("当前融资比例已高于建议值，优先降杠杆后再谈轮动。")
@@ -358,6 +597,26 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
             need_deleverage = True
     elif current_margin_debt_ratio < target_margin and not need_deleverage and not only_rebalance and leverage_mode != "不使用":
         notes.append("融资空间尚有余量，但只适合分步执行，不宜一次性加满。")
+
+    selected_candidates = {}
+    for category in ETF_BUCKETS:
+        ranked = _candidate_rows_for_bucket(score_rows, category)
+        selected_candidates[category] = [
+            {
+                "etf_code": item.get("etf_code"),
+                "etf_name": item.get("etf_name"),
+                "state": item.get("state"),
+                "total_score": _safe_round(item.get("total_score")),
+                "return_20d_pct": _safe_round(item.get("return_20d_pct")),
+                "theme": item.get("theme"),
+                "sub_theme": item.get("sub_theme"),
+                "manager": item.get("manager"),
+                "benchmark": item.get("benchmark"),
+            }
+            for item in ranked[:3]
+        ]
+
+    previous_change_message = "暂无上一交易日配置，后续可接入历史配置对比。"
 
     return {
         "account_state": {
@@ -387,6 +646,7 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
         "recommended_etf_capacity_amount": _round2(recommended_etf_capacity_amount),
         "recommended_etf_capacity_ratio": _round2(recommended_etf_capacity_ratio),
         "recommended_etf_allocation": recommended_allocation,
+        "dynamic_bucket_weights": dynamic_bucket_weights,
         "risk_level": state_config["risk_level"],
         "action_state": action_state,
         "allow_margin_add": action_state in {"可小幅融资", "可中等融资"},
@@ -406,4 +666,14 @@ def calculate_margin_etf_allocation(account, market_state, risk_profile):
         "invalid_conditions": invalid_conditions,
         "notes": notes,
         "risk_flags": risk_flags,
+        "etf_score_table": score_rows,
+        "selected_etf_candidates": selected_candidates,
+        "overweight_buckets": overweight_buckets,
+        "underweight_buckets": underweight_buckets,
+        "daily_adjustment_reason": dynamic_reasons,
+        "bucket_score_stats": bucket_score_stats,
+        "data_date": data_date or datetime.date.today().strftime("%Y%m%d"),
+        "data_source": score_source,
+        "latest_market_update": data_date or "",
+        "previous_day_change_text": previous_change_message,
     }
