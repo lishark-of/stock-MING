@@ -187,6 +187,63 @@ class MarginEtfAllocatorTest(unittest.TestCase):
         self.assertEqual(result["theme"], "半导体/芯片")
         self.assertEqual(result["sub_theme"], "半导体设备")
 
+    def test_classify_scitech_semiconductor_etf(self):
+        result = classify_etf_theme(
+            {
+                "name": "科创半导体ETF华夏",
+                "benchmark": "科创半导体指数",
+                "index_name": "科创半导体指数",
+                "fund_type": "股票型ETF",
+            }
+        )
+
+        self.assertEqual(result["bucket"], "科技成长ETF")
+        self.assertEqual(result["theme"], "半导体/芯片")
+        self.assertEqual(result["sub_theme"], "科创半导体")
+
+    def test_classify_cross_market_semiconductor_etf(self):
+        result = classify_etf_theme(
+            {
+                "name": "中韩半导体ETF华泰柏瑞",
+                "benchmark": "KRX中韩半导体指数",
+                "index_name": "KRX中韩半导体指数",
+                "fund_type": "QDII-ETF",
+                "invest_type": "QDII",
+            }
+        )
+
+        self.assertEqual(result["bucket"], "科技成长ETF")
+        self.assertEqual(result["theme"], "半导体/芯片")
+        self.assertEqual(result["sub_theme"], "中韩半导体")
+
+    def test_classify_chip_industry_etf(self):
+        result = classify_etf_theme(
+            {
+                "name": "广发国证半导体芯片ETF",
+                "benchmark": "国证半导体芯片指数",
+                "index_name": "国证半导体芯片指数",
+                "fund_type": "股票型ETF",
+            }
+        )
+
+        self.assertEqual(result["bucket"], "科技成长ETF")
+        self.assertEqual(result["theme"], "半导体/芯片")
+        self.assertEqual(result["sub_theme"], "芯片产业")
+
+    def test_classify_chip_etf_not_wide(self):
+        result = classify_etf_theme(
+            {
+                "name": "芯片ETF华夏",
+                "benchmark": "中证芯片产业指数",
+                "index_name": "中证芯片产业指数",
+                "fund_type": "股票型ETF",
+            }
+        )
+
+        self.assertEqual(result["bucket"], "科技成长ETF")
+        self.assertEqual(result["theme"], "半导体/芯片")
+        self.assertEqual(result["sub_theme"], "芯片产业")
+
     def test_classify_broker_etf(self):
         result = classify_etf_theme(
             {

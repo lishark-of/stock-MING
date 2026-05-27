@@ -22,8 +22,12 @@ try:
         render_holdings_snapshot_summary,
         render_intraday_etf_snapshot,
         render_margin_allocator_chart,
+        render_margin_bucket_weights_table,
+        render_margin_candidate_table,
         render_margin_etf_data_status,
         render_margin_etf_research_summary,
+        render_margin_execution_summary,
+        render_margin_recommended_etf_plan,
         render_moneyflow_conflict,
         render_next_ticket_holding_card,
         render_next_ticket_research_summary,
@@ -53,11 +57,23 @@ except Exception as module_error:
     def render_margin_allocator_chart(*args, **kwargs):
         _visual_component_unavailable("融资ETF配置图")
 
+    def render_margin_bucket_weights_table(*args, **kwargs):
+        _visual_component_unavailable("Bucket 权重表")
+
+    def render_margin_candidate_table(*args, **kwargs):
+        _visual_component_unavailable("候选 ETF 表")
+
     def render_margin_etf_data_status(*args, **kwargs):
         _visual_component_unavailable("ETF 数据状态卡")
 
     def render_margin_etf_research_summary(*args, **kwargs):
         _visual_component_unavailable("ETF 调研解释")
+
+    def render_margin_execution_summary(*args, **kwargs):
+        _visual_component_unavailable("今日执行摘要")
+
+    def render_margin_recommended_etf_plan(*args, **kwargs):
+        _visual_component_unavailable("今日建议 ETF 配置清单")
 
     def render_moneyflow_conflict(*args, **kwargs):
         _visual_component_unavailable("资金流冲突仪表")
@@ -279,6 +295,9 @@ except Exception as module_error:
     COMPARISON_THEMES = [
         "半导体/芯片",
         "半导体设备",
+        "科创半导体",
+        "中韩半导体",
+        "芯片产业",
         "券商/证券",
         "人工智能",
         "云计算",
@@ -983,99 +1002,28 @@ def render_margin_allocator_module(result, catalog, etf_data_status=None, intrad
     result = result or {}
     catalog = catalog or {}
     account_state = result.get("account_state") or {}
-    action_state = result.get("action_state") or "只允许调仓，不新增杠杆"
-    risk_level = result.get("risk_level") or "待评估"
-    input_snapshot = result.get("input_snapshot") or {}
-    style_tilt = result.get("style_tilt") or "平衡"
-    execution_reasons = result.get("execution_reasons") or []
-    must_reduce_risk_conditions = result.get("must_reduce_risk_conditions") or []
-    no_chase_warning = result.get("no_chase_warning") or ""
-    overweight_buckets = " / ".join(result.get("overweight_buckets") or []) or "暂无明显增配"
-    underweight_buckets = " / ".join(result.get("underweight_buckets") or []) or "暂无明显降配"
-
-    if etf_data_status:
-        st.markdown("#### ETF 数据状态")
-        render_margin_etf_data_status(etf_data_status)
-        st.caption("ETF 实时强弱来自 Tushare 数据与本地规则模型，DeepSeek 仅用于解释，不直接决定仓位。")
-
-    st.markdown("#### 今日执行结论卡")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    k1.metric("今日动作状态", action_state)
-    k2.metric("建议融资比例", f"{result.get('recommended_margin_ratio', 0):.2f}%")
-    k3.metric("建议现金比例", f"{result.get('recommended_cash_ratio', 0):.2f}%")
-    k4.metric("当前融资比例", f"{result.get('current_margin_debt_ratio', 0):.2f}%")
-    k5.metric("当前现金缓冲", f"{account_state.get('cash_buffer_ratio', 0):.2f}%")
-    k6.metric("今日风格判断", style_tilt)
-    st.caption(
-        f"输入快照：可用保证金 {_fmt_price(input_snapshot.get('available_margin'), '¥')}｜"
-        f"维持担保比例 {float(input_snapshot.get('maintenance_ratio') or 0):.2f}%｜"
-        f"融资年利率 {float(input_snapshot.get('margin_interest_rate') or 0):.2f}%"
-    )
-    st.caption(
-        f"进攻预算上限：{float(result.get('attack_budget_upper_ratio') or 0):.2f}%｜"
-        f"增配 Bucket：{overweight_buckets}｜降配 Bucket：{underweight_buckets}"
-    )
-    if action_state == "融资过高，优先降杠杆":
-        st.error("当前先处理风险暴露，再考虑任何进攻动作。")
-    elif action_state == "暂停融资，保留现金":
-        st.warning("当前不建议新增融资，优先保留现金缓冲和回撤空间。")
-    elif action_state == "只允许调仓，不新增杠杆":
-        st.info("当前适合做结构优化和 ETF 替换，不适合直接新增杠杆。")
-    elif action_state == "可用现金进攻，暂不加融资":
-        st.success("当前可以按既定风格用现金执行，但暂不需要动用新增融资。")
-    elif action_state == "可小幅融资进攻":
-        st.success("当前允许小幅融资进攻，但必须分步执行，不一次性加满。")
-    else:
-        st.success("当前允许中等融资进攻，但要严格遵守退场线和现金缓冲。")
-
-    if execution_reasons:
-        st.markdown("**核心原因**")
-        for item in execution_reasons[:3]:
-            st.markdown(f"- {item}")
-    if no_chase_warning:
-        st.warning(no_chase_warning)
-    if must_reduce_risk_conditions:
-        st.markdown("**必须降风险条件**")
-        for item in must_reduce_risk_conditions[:3]:
-            st.markdown(f"- {item}")
+    render_margin_execution_summary(result)
 
     st.markdown("#### 当前账户状态")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("净资产", _fmt_price(result.get("net_asset"), "¥"))
     c2.metric("当前风险敞口", _fmt_price(result.get("gross_exposure"), "¥"))
     c3.metric("当前融资比例", f"{result.get('current_margin_debt_ratio', 0):.2f}%")
     c4.metric("当前杠杆倍数", f"{result.get('current_leverage_ratio', 0):.2f}x")
-    c5.metric("现金缓冲", f"{account_state.get('cash_buffer_ratio', 0):.2f}%")
-
-    st.markdown("#### 建议状态")
-    s1, s2, s3, s4, s5 = st.columns(5)
-    s1.metric("动作状态", action_state)
-    s2.metric("建议融资比例", f"{result.get('recommended_margin_ratio', 0):.2f}%")
-    s3.metric("建议总仓位", f"{result.get('recommended_total_exposure_ratio', 0):.2f}%")
-    s4.metric("建议现金比例", f"{result.get('recommended_cash_ratio', 0):.2f}%")
-    s5.metric("风险预算分", f"{result.get('risk_budget_score', 0):.2f}")
-
-    if action_state == "融资过高，优先降杠杆":
-        st.error("融资比例已偏高，建议先降杠杆，再考虑 ETF 轮动。")
-    elif action_state == "暂停融资，保留现金":
-        st.warning("当前不允许新增融资，优先保留现金缓冲。")
-    elif action_state == "只允许调仓，不新增杠杆":
-        st.info("当前只建议在存量仓位内做 ETF 替换，不建议新增明显杠杆。")
-    elif action_state == "可用现金进攻，暂不加融资":
-        st.success("当前可以先用现金执行风格内进攻，不急于加融资。")
-    elif action_state == "可小幅融资进攻":
-        st.success("当前只适合小步试错式融资，不做一次性放大。")
-    else:
-        st.success("可在风险线有效前提下执行中等强度融资。")
 
     st.caption(
         f"市场状态：{result.get('market_state') or '未知'}｜账户风格：{result.get('style') or '未知'}｜"
-        f"融资模式：{result.get('leverage_mode') or '未知'}｜风险级别：{risk_level}"
+        f"融资模式：{result.get('leverage_mode') or '未知'}｜风险级别：{result.get('risk_level') or '待评估'}"
     )
     for note in result.get("notes") or []:
         st.caption(f"提示：{note}")
     for item in result.get("risk_flags") or []:
         st.caption(f"风险：{item}")
+
+    if etf_data_status:
+        st.markdown("#### ETF 数据状态")
+        render_margin_etf_data_status(etf_data_status)
+        st.caption("ETF 实时强弱来自 Tushare 数据与本地规则模型，DeepSeek 仅用于解释，不直接决定仓位。")
 
     if result.get("daily_adjustment_reason"):
         st.markdown("#### 今日动态调整原因")
@@ -1087,8 +1035,12 @@ def render_margin_allocator_module(result, catalog, etf_data_status=None, intrad
     )
     st.caption(result.get("previous_day_change_text") or "暂无上一交易日配置，后续可接入历史配置对比。")
 
-    st.markdown("#### ETF 权宜配置")
+    st.markdown("#### 今日建议 ETF 执行清单")
+    render_margin_recommended_etf_plan(result)
+    st.markdown("#### bucket 权重概览")
+    st.caption("用于查看方向权重，具体 ETF 以上方执行清单为准。")
     render_margin_allocator_chart(result)
+
     allocation = result.get("recommended_etf_allocation") or {}
     allocation_rows = []
     for label, payload in allocation.items():
@@ -1101,36 +1053,21 @@ def render_margin_allocator_module(result, catalog, etf_data_status=None, intrad
             }
         )
     if allocation_rows:
-        st.dataframe(pd.DataFrame(allocation_rows), use_container_width=True, hide_index=True)
+        with st.expander("查看 Bucket 金额拆分", expanded=False):
+            st.dataframe(pd.DataFrame(allocation_rows), width="stretch", hide_index=True)
 
     dynamic_weights = result.get("dynamic_bucket_weights") or {}
     if dynamic_weights:
         st.markdown("#### 动态 Bucket 权重")
-        st.dataframe(
-            [
-                {"Bucket": key, "建议权重": f"{value:.2f}%"}
-                for key, value in dynamic_weights.items()
-            ],
-            use_container_width=True,
-            hide_index=True,
+        render_margin_bucket_weights_table(
+            dynamic_weights,
+            overweight_buckets=result.get("overweight_buckets"),
+            underweight_buckets=result.get("underweight_buckets"),
         )
 
     if result.get("selected_etf_candidates"):
         st.markdown("#### 候选 ETF")
-        candidate_rows = []
-        for bucket, items in (result.get("selected_etf_candidates") or {}).items():
-            for item in items or []:
-                candidate_rows.append(
-                    {
-                        "Bucket": bucket,
-                        "ETF": item.get("etf_name") or item.get("etf_code"),
-                        "状态": item.get("state"),
-                        "综合分": item.get("total_score"),
-                        "20日涨跌": f"{float(item.get('return_20d_pct') or 0):.2f}%",
-                    }
-                )
-        if candidate_rows:
-            st.dataframe(candidate_rows, use_container_width=True, hide_index=True)
+        render_margin_candidate_table(result.get("selected_etf_candidates"))
 
     st.markdown("#### ETF 实时强弱表")
     render_etf_score_table({"rows": result.get("etf_score_table") or []})
@@ -1160,11 +1097,12 @@ def render_margin_allocator_module(result, catalog, etf_data_status=None, intrad
     scores = result.get("scores") or {}
     if scores:
         st.markdown("#### 风险预算分解")
+        st.caption("风险预算分只解释建议背后的结构，不直接替代执行摘要。")
         score_rows = [
             {"维度": label, "分值": value}
             for label, value in scores.items()
         ]
-        st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(score_rows), width="stretch", hide_index=True)
 
     st.markdown("#### DeepSeek 调研解释")
     render_margin_etf_research_summary(research_payload, generated_at=research_generated_at, cached=research_cached)
@@ -10759,6 +10697,69 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.caption("该模块只做仓位与风险预算测算，不构成买卖建议。融资会放大收益和亏损，必须设置风险线。")
         st.info("融资会放大收益和亏损。本模块只做风险预算和仓位测算，不构成买卖建议。")
         st.caption("ETF 实时强弱来自 Tushare 数据与本地规则模型，DeepSeek 仅用于解释，不直接决定仓位。")
+        st.markdown(
+            """
+            <style>
+            .st-key-btn_margin_etf_refresh_daily button,
+            .st-key-btn_margin_etf_refresh_intraday button,
+            [class*="st-key-btn_margin_etf_refresh_daily"] button,
+            [class*="st-key-btn_margin_etf_refresh_intraday"] button,
+            .st-key-btn_margin_etf_refresh_daily [data-testid^="stBaseButton"],
+            .st-key-btn_margin_etf_refresh_intraday [data-testid^="stBaseButton"],
+            [class*="st-key-btn_margin_etf_refresh_daily"] [data-testid^="stBaseButton"],
+            [class*="st-key-btn_margin_etf_refresh_intraday"] [data-testid^="stBaseButton"] {
+                background: rgba(0, 122, 255, 0.08) !important;
+                color: rgba(0, 122, 255, 0.92) !important;
+                border: 1px solid rgba(0, 122, 255, 0.14) !important;
+                box-shadow: none !important;
+            }
+            .st-key-btn_margin_etf_refresh_daily button:hover,
+            .st-key-btn_margin_etf_refresh_intraday button:hover,
+            [class*="st-key-btn_margin_etf_refresh_daily"] button:hover,
+            [class*="st-key-btn_margin_etf_refresh_intraday"] button:hover,
+            .st-key-btn_margin_etf_refresh_daily [data-testid^="stBaseButton"]:hover,
+            .st-key-btn_margin_etf_refresh_intraday [data-testid^="stBaseButton"]:hover,
+            [class*="st-key-btn_margin_etf_refresh_daily"] [data-testid^="stBaseButton"]:hover,
+            [class*="st-key-btn_margin_etf_refresh_intraday"] [data-testid^="stBaseButton"]:hover {
+                background: rgba(0, 122, 255, 0.12) !important;
+                color: rgba(0, 122, 255, 0.98) !important;
+                border-color: rgba(0, 122, 255, 0.18) !important;
+            }
+            .st-key-btn_margin_etf_recalc button,
+            [class*="st-key-btn_margin_etf_recalc"] button,
+            .st-key-btn_margin_etf_recalc [data-testid^="stBaseButton"],
+            [class*="st-key-btn_margin_etf_recalc"] [data-testid^="stBaseButton"] {
+                background: rgba(120, 120, 128, 0.10) !important;
+                color: rgba(60, 60, 67, 0.88) !important;
+                border: 1px solid rgba(60, 60, 67, 0.12) !important;
+                box-shadow: none !important;
+            }
+            .st-key-btn_margin_etf_recalc button:hover,
+            [class*="st-key-btn_margin_etf_recalc"] button:hover,
+            .st-key-btn_margin_etf_recalc [data-testid^="stBaseButton"]:hover,
+            [class*="st-key-btn_margin_etf_recalc"] [data-testid^="stBaseButton"]:hover {
+                background: rgba(120, 120, 128, 0.14) !important;
+                color: rgba(29, 29, 31, 0.92) !important;
+                border-color: rgba(60, 60, 67, 0.16) !important;
+            }
+            .st-key-btn_margin_etf_refresh_daily button p,
+            .st-key-btn_margin_etf_refresh_intraday button p,
+            .st-key-btn_margin_etf_recalc button p,
+            [class*="st-key-btn_margin_etf_refresh_daily"] button p,
+            [class*="st-key-btn_margin_etf_refresh_intraday"] button p,
+            [class*="st-key-btn_margin_etf_recalc"] button p,
+            .st-key-btn_margin_etf_refresh_daily [data-testid^="stBaseButton"] p,
+            .st-key-btn_margin_etf_refresh_intraday [data-testid^="stBaseButton"] p,
+            .st-key-btn_margin_etf_recalc [data-testid^="stBaseButton"] p,
+            [class*="st-key-btn_margin_etf_refresh_daily"] [data-testid^="stBaseButton"] p,
+            [class*="st-key-btn_margin_etf_refresh_intraday"] [data-testid^="stBaseButton"] p,
+            [class*="st-key-btn_margin_etf_recalc"] [data-testid^="stBaseButton"] p {
+                color: inherit !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
         if "margin_etf_daily_refresh_token" not in st.session_state:
             st.session_state["margin_etf_daily_refresh_token"] = "base"

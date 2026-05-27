@@ -4,6 +4,7 @@ import math
 from html import escape
 from textwrap import dedent
 
+import pandas as pd
 import streamlit as st
 
 try:
@@ -20,6 +21,33 @@ SAFE_ACTION_STATES = {
     "未触发",
     "风险升级",
     "谨慎允许",
+}
+
+BUCKET_ORDER = ["宽基ETF", "科技成长ETF", "金融券商ETF", "防守ETF", "商品周期ETF", "现金"]
+NON_CASH_BUCKETS = [item for item in BUCKET_ORDER if item != "现金"]
+BUCKET_COLORS = {
+    "宽基ETF": "#4C78A8",
+    "科技成长ETF": "#F58518",
+    "金融券商ETF": "#B279A2",
+    "防守ETF": "#54A24B",
+    "商品周期ETF": "#E45756",
+    "现金": "#A0A0A0",
+}
+BUCKET_BG_COLORS = {
+    "宽基ETF": "rgba(76, 120, 168, 0.10)",
+    "科技成长ETF": "rgba(245, 133, 24, 0.11)",
+    "金融券商ETF": "rgba(178, 121, 162, 0.11)",
+    "防守ETF": "rgba(84, 162, 75, 0.10)",
+    "商品周期ETF": "rgba(228, 87, 86, 0.10)",
+    "现金": "rgba(160, 160, 160, 0.12)",
+}
+BUCKET_TEXT_COLORS = {
+    "宽基ETF": "#355A86",
+    "科技成长ETF": "#A96511",
+    "金融券商ETF": "#885D7F",
+    "防守ETF": "#3D7D36",
+    "商品周期ETF": "#B94B4A",
+    "现金": "#6F6F74",
 }
 
 
@@ -47,9 +75,11 @@ def _to_float(value, default=None):
         return default
 
 
-def _fmt_price(value):
+def _fmt_price(value, currency="¥"):
     number = _to_float(value)
-    return "暂无" if number is None else f"¥{number:,.2f}"
+    if number is None:
+        return "暂无"
+    return f"{currency}{number:,.2f}" if currency else f"{number:,.2f}"
 
 
 def _fmt_money(value):
@@ -69,6 +99,18 @@ def _fmt_pct(value):
 def _fmt_yi(value):
     number = _to_float(value)
     return "暂无" if number is None else f"{number:+.2f} 亿"
+
+
+def _bucket_color(value):
+    return BUCKET_COLORS.get(str(value or "").strip(), "#8E8E93")
+
+
+def _bucket_bg(value):
+    return BUCKET_BG_COLORS.get(str(value or "").strip(), "rgba(142, 142, 147, 0.12)")
+
+
+def _bucket_text_color(value):
+    return BUCKET_TEXT_COLORS.get(str(value or "").strip(), "#6F6F74")
 
 
 def _dedupe(items):
@@ -100,22 +142,46 @@ def _inject_component_css():
     _render_html(
         """
         <style>
+        :root {
+            --ios-bg: #F5F5F7;
+            --ios-card: #FFFFFF;
+            --ios-card-subtle: #F2F2F7;
+            --ios-border: rgba(60, 60, 67, 0.16);
+            --ios-label: #1D1D1F;
+            --ios-secondary-label: rgba(60, 60, 67, 0.72);
+            --ios-tertiary-label: rgba(60, 60, 67, 0.48);
+            --ios-blue: #007AFF;
+            --ios-green: #34C759;
+            --ios-orange: #FF9500;
+            --ios-red: #FF3B30;
+            --ios-purple: #AF52DE;
+            --ios-teal: #30B0C7;
+            --ios-gray: #8E8E93;
+            --ios-blue-bg: rgba(0, 122, 255, 0.10);
+            --ios-green-bg: rgba(52, 199, 89, 0.10);
+            --ios-orange-bg: rgba(255, 149, 0, 0.12);
+            --ios-red-bg: rgba(255, 59, 48, 0.10);
+            --ios-purple-bg: rgba(175, 82, 222, 0.10);
+            --ios-gray-bg: rgba(142, 142, 147, 0.12);
+            --ios-shadow-soft: 0 12px 28px rgba(15, 23, 42, 0.06);
+            --ios-shadow-card: 0 8px 20px rgba(15, 23, 42, 0.04);
+        }
         .vc-shell {
-            background: rgba(255, 255, 255, 0.86);
-            border: 1px solid rgba(0, 0, 0, 0.06);
-            border-radius: 18px;
-            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-            padding: 14px 14px 12px;
-            margin: 8px 0 10px;
+            background: var(--ios-card);
+            border: 1px solid var(--ios-border);
+            border-radius: 22px;
+            box-shadow: var(--ios-shadow-soft);
+            padding: 16px 16px 14px;
+            margin: 10px 0 12px;
         }
         .vc-title {
             font-size: 1rem;
             font-weight: 700;
-            color: #111827;
+            color: var(--ios-label);
             margin-bottom: 4px;
         }
         .vc-caption {
-            color: #6b7280;
+            color: var(--ios-secondary-label);
             font-size: 0.82rem;
             line-height: 1.45;
             margin-top: 5px;
@@ -127,19 +193,19 @@ def _inject_component_css():
             margin: 10px 0 6px;
         }
         .vc-metric {
-            border-radius: 14px;
-            background: rgba(249, 250, 251, 0.92);
-            border: 1px solid rgba(17, 24, 39, 0.06);
-            padding: 9px 10px;
+            border-radius: 16px;
+            background: var(--ios-card-subtle);
+            border: 1px solid var(--ios-border);
+            padding: 10px 11px;
             min-height: 62px;
         }
         .vc-label {
-            color: #6b7280;
+            color: var(--ios-secondary-label);
             font-size: 0.75rem;
             margin-bottom: 4px;
         }
         .vc-value {
-            color: #111827;
+            color: var(--ios-label);
             font-size: 1rem;
             font-weight: 720;
             line-height: 1.25;
@@ -156,27 +222,165 @@ def _inject_component_css():
             padding: 6px 10px;
             font-size: 0.78rem;
             font-weight: 650;
-            border: 1px solid rgba(17, 24, 39, 0.07);
+            border: 1px solid transparent;
+            animation: vc-fade-in 240ms ease both;
         }
-        .vc-green { background: #e8f7ef; color: #137a3f; }
-        .vc-red { background: #fdecec; color: #b42318; }
-        .vc-orange { background: #fff3e3; color: #b45309; }
-        .vc-yellow { background: #fff9db; color: #8a5a00; }
-        .vc-gray { background: #f3f4f6; color: #374151; }
-        .vc-blue { background: #eaf2ff; color: #1d4ed8; }
-        .vc-purple { background: #f1edff; color: #6d28d9; }
+        .vc-green { background: var(--ios-green-bg); color: var(--ios-green); border-color: rgba(52, 199, 89, 0.14); }
+        .vc-red { background: var(--ios-red-bg); color: var(--ios-red); border-color: rgba(255, 59, 48, 0.14); }
+        .vc-orange { background: var(--ios-orange-bg); color: var(--ios-orange); border-color: rgba(255, 149, 0, 0.14); }
+        .vc-soft-red { background: var(--ios-red-bg); color: rgba(122, 50, 45, 0.92); border-color: rgba(255, 59, 48, 0.10); }
+        .vc-soft-orange { background: var(--ios-orange-bg); color: rgba(128, 91, 26, 0.94); border-color: rgba(255, 149, 0, 0.10); }
+        .vc-yellow { background: rgba(255, 204, 0, 0.12); color: #B88700; border-color: rgba(255, 204, 0, 0.16); }
+        .vc-gray { background: var(--ios-gray-bg); color: var(--ios-gray); border-color: rgba(142, 142, 147, 0.16); }
+        .vc-blue { background: var(--ios-blue-bg); color: var(--ios-blue); border-color: rgba(0, 122, 255, 0.14); }
+        .vc-purple { background: var(--ios-purple-bg); color: var(--ios-purple); border-color: rgba(175, 82, 222, 0.14); }
+        .vc-teal { background: rgba(48, 176, 199, 0.12); color: var(--ios-teal); border-color: rgba(48, 176, 199, 0.14); }
         .vc-status-row {
-            border-radius: 14px;
-            background: rgba(248, 250, 252, 0.92);
-            border: 1px solid rgba(17, 24, 39, 0.06);
-            padding: 9px 10px 10px;
+            border-radius: 16px;
+            background: var(--ios-card-subtle);
+            border: 1px solid var(--ios-border);
+            padding: 10px 11px 11px;
             margin-top: 10px;
         }
         .vc-status-heading {
-            color: #374151;
+            color: var(--ios-label);
             font-size: 0.78rem;
             font-weight: 720;
             margin-bottom: 4px;
+        }
+        .vc-summary-shell {
+            background: var(--ios-card);
+            border: 1px solid var(--ios-border);
+            border-radius: 24px;
+            box-shadow: var(--ios-shadow-soft);
+            padding: 18px 18px 16px;
+            margin: 8px 0 14px;
+            animation: vc-fade-up 260ms ease both;
+        }
+        .vc-summary-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .vc-summary-title {
+            font-size: 1.08rem;
+            font-weight: 760;
+            color: var(--ios-label);
+            margin: 0;
+        }
+        .vc-summary-subtitle {
+            color: var(--ios-secondary-label);
+            font-size: 0.82rem;
+            line-height: 1.4;
+            margin-top: 4px;
+        }
+        .vc-summary-lines {
+            margin-top: 14px;
+            display: grid;
+            gap: 8px;
+        }
+        .vc-summary-line {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 16px;
+            background: var(--ios-card-subtle);
+            border: 1px solid var(--ios-border);
+        }
+        .vc-summary-key {
+            min-width: 46px;
+            color: var(--ios-secondary-label);
+            font-size: 0.78rem;
+            font-weight: 700;
+            flex-shrink: 0;
+            padding-top: 1px;
+        }
+        .vc-summary-value {
+            color: var(--ios-label);
+            font-size: 0.9rem;
+            line-height: 1.42;
+            font-weight: 620;
+        }
+        .vc-divider {
+            height: 1px;
+            background: var(--ios-border);
+            margin: 14px 0 12px;
+        }
+        .vc-chip-stack {
+            display: grid;
+            gap: 10px;
+        }
+        .vc-chip-line {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .vc-chip-label {
+            min-width: 68px;
+            color: var(--ios-secondary-label);
+            font-size: 0.79rem;
+            font-weight: 700;
+            padding-top: 6px;
+        }
+        .vc-soft-note {
+            border-radius: 16px;
+            background: var(--ios-card-subtle);
+            border: 1px solid var(--ios-border);
+            padding: 10px 12px;
+            color: var(--ios-secondary-label);
+            font-size: 0.82rem;
+            line-height: 1.45;
+            margin: 8px 0 10px;
+        }
+        .vc-table-shell {
+            background: var(--ios-card);
+            border: 1px solid var(--ios-border);
+            border-radius: 20px;
+            box-shadow: var(--ios-shadow-card);
+            overflow: hidden;
+            margin: 8px 0 10px;
+        }
+        .vc-table-note {
+            color: var(--ios-secondary-label);
+            font-size: 0.82rem;
+            line-height: 1.45;
+            margin: 4px 0 8px;
+        }
+        .vc-html-table-wrap {
+            overflow-x: auto;
+        }
+        .vc-html-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: auto;
+        }
+        .vc-html-table th {
+            text-align: left;
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: var(--ios-tertiary-label);
+            background: var(--ios-card-subtle);
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--ios-border);
+            white-space: nowrap;
+        }
+        .vc-html-table td {
+            padding: 11px 12px;
+            border-bottom: 1px solid rgba(60, 60, 67, 0.08);
+            color: var(--ios-label);
+            font-size: 0.84rem;
+            line-height: 1.35;
+            vertical-align: top;
+            white-space: nowrap;
+        }
+        .vc-html-table tr:last-child td {
+            border-bottom: none;
+        }
+        .vc-muted-cell {
+            color: var(--ios-secondary-label);
         }
         .vc-card-grid {
             display: grid;
@@ -243,9 +447,280 @@ def _inject_component_css():
             color: #111827;
         }
         .vc-risk-label {
-            color: #4b5563;
+            color: var(--ios-secondary-label);
             font-size: 0.82rem;
             margin-top: 6px;
+        }
+        .vc-bucket-summary-grid {
+            display: grid;
+            gap: 10px;
+            margin: 8px 0 10px;
+        }
+        .vc-bucket-summary-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 11px 12px;
+            border-radius: 16px;
+            border: 1px solid var(--ios-border);
+            background: var(--ios-card-subtle);
+        }
+        .vc-bucket-summary-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+        .vc-bucket-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            flex-shrink: 0;
+        }
+        .vc-bucket-summary-name {
+            color: var(--ios-label);
+            font-size: 0.86rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .vc-bucket-summary-note {
+            color: var(--ios-secondary-label);
+            font-size: 0.76rem;
+            margin-top: 2px;
+        }
+        .vc-bucket-summary-ratio {
+            color: var(--ios-label);
+            font-size: 0.98rem;
+            font-weight: 760;
+            flex-shrink: 0;
+        }
+        .vc-allocation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+            margin: 8px 0 12px;
+        }
+        .vc-allocation-card {
+            border-radius: 20px;
+            border: 1px solid var(--ios-border);
+            background: var(--ios-card);
+            box-shadow: var(--ios-shadow-card);
+            padding: 14px 14px 13px;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+        }
+        .vc-allocation-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        }
+        .vc-allocation-card.is-selected {
+            border-color: var(--bucket-accent, rgba(76, 120, 168, 0.55));
+            box-shadow: 0 12px 26px rgba(15, 23, 42, 0.10);
+        }
+        .vc-allocation-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .vc-allocation-title {
+            color: var(--ios-label);
+            font-size: 0.98rem;
+            font-weight: 760;
+            line-height: 1.22;
+        }
+        .vc-allocation-role {
+            color: var(--ios-secondary-label);
+            font-size: 0.78rem;
+            margin-top: 3px;
+        }
+        .vc-allocation-weight {
+            color: var(--ios-label);
+            font-size: 1.02rem;
+            font-weight: 780;
+            white-space: nowrap;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .vc-allocation-status {
+            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .vc-allocation-bar {
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(60, 60, 67, 0.08);
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .vc-allocation-fill {
+            height: 100%;
+            border-radius: inherit;
+            transition: width 200ms ease;
+        }
+        .vc-allocation-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .vc-allocation-list {
+            color: var(--ios-label);
+            font-size: 0.8rem;
+            line-height: 1.45;
+        }
+        .vc-allocation-risk {
+            color: var(--ios-secondary-label);
+            font-size: 0.76rem;
+            line-height: 1.45;
+            margin-top: 7px;
+        }
+        .vc-allocation-mini-shell {
+            border-radius: 20px;
+            border: 1px solid var(--ios-border);
+            background: var(--ios-card-subtle);
+            box-shadow: var(--ios-shadow-soft);
+            padding: 12px;
+        }
+        .vc-allocation-mini-title {
+            color: var(--ios-label);
+            font-size: 0.86rem;
+            font-weight: 720;
+            margin-bottom: 4px;
+        }
+        .vc-allocation-mini-note {
+            color: var(--ios-secondary-label);
+            font-size: 0.76rem;
+            line-height: 1.45;
+            margin-bottom: 8px;
+        }
+        .vc-etf-card-list {
+            display: grid;
+            gap: 12px;
+            margin: 8px 0 12px;
+        }
+        .vc-etf-card {
+            border-radius: 22px;
+            background: var(--ios-card);
+            border: 1px solid var(--ios-border);
+            box-shadow: var(--ios-shadow-card);
+            padding: 15px 15px 14px;
+            position: relative;
+            overflow: hidden;
+        }
+        .vc-etf-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: var(--bucket-accent, var(--ios-blue));
+        }
+        .vc-etf-card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .vc-etf-card-title {
+            color: var(--ios-label);
+            font-size: 1rem;
+            font-weight: 760;
+            line-height: 1.25;
+        }
+        .vc-etf-card-subtitle {
+            color: var(--ios-secondary-label);
+            font-size: 0.8rem;
+            line-height: 1.4;
+            margin-top: 4px;
+        }
+        .vc-etf-card-ratio {
+            color: var(--ios-label);
+            font-size: 1.1rem;
+            font-weight: 780;
+            white-space: nowrap;
+            flex-shrink: 0;
+            text-align: right;
+            line-height: 1.15;
+        }
+        .vc-etf-card-amount {
+            color: var(--ios-secondary-label);
+            font-size: 0.78rem;
+            font-weight: 650;
+            margin-top: 3px;
+        }
+        .vc-etf-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .vc-etf-card-reason {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(60, 60, 67, 0.10);
+            color: var(--ios-secondary-label);
+            font-size: 0.84rem;
+            line-height: 1.5;
+        }
+        .vc-selector-shell {
+            border: 1px solid var(--ios-border);
+            border-radius: 20px;
+            background: var(--ios-card);
+            box-shadow: var(--ios-shadow-card);
+            padding: 12px 12px 10px;
+            margin: 8px 0 10px;
+        }
+        .vc-selector-shell .stSegmentedControl {
+            width: 100%;
+        }
+        .vc-cash-strip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            border-radius: 16px;
+            border: 1px solid var(--ios-border);
+            background: rgba(142, 142, 147, 0.10);
+            padding: 10px 12px;
+            margin-top: 10px;
+        }
+        .vc-cash-strip-title {
+            color: var(--ios-label);
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+        .vc-cash-strip-note {
+            color: var(--ios-secondary-label);
+            font-size: 0.76rem;
+            margin-top: 3px;
+        }
+        .vc-cash-strip-value {
+            color: var(--ios-gray);
+            font-size: 1rem;
+            font-weight: 780;
+            white-space: nowrap;
+        }
+        @keyframes vc-fade-up {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes vc-fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .vc-summary-shell, .vc-badge, .vc-allocation-card, .vc-allocation-fill {
+                animation: none !important;
+                transition: none !important;
+                transform: none !important;
+            }
         }
         </style>
         """
@@ -280,6 +755,322 @@ def _metric_html(items):
 
 def _badge_html(text, color="gray"):
     return f"<span class='vc-badge vc-{escape(str(color))}'>{escape(str(text))}</span>"
+
+
+def _soft_badge_html(text, color="gray"):
+    tone = str(color or "").strip()
+    if tone in {"red", "orange"}:
+        return f"<span class='vc-badge vc-soft-{escape(tone)}'>{escape(str(text))}</span>"
+    return _badge_html(text, tone or "gray")
+
+
+def _fmt_money_compact(value):
+    number = _to_float(value)
+    if number is None:
+        return "暂无"
+    abs_number = abs(number)
+    if abs_number >= 100000000:
+        return f"{number / 100000000:+.2f} 亿" if number < 0 else f"{number / 100000000:.2f} 亿"
+    if abs_number >= 10000:
+        return f"{number / 10000:+.2f} 万" if number < 0 else f"{number / 10000:.2f} 万"
+    return f"{number:,.2f}"
+
+
+def _fmt_score(value):
+    number = _to_float(value)
+    if number is None:
+        return "暂无"
+    if abs(number - round(number)) < 0.05:
+        return f"{round(number):.0f}"
+    return f"{number:.1f}"
+
+
+def _state_color_label(value):
+    text = str(value or "").strip()
+    mapping = {
+        "强趋势": "blue",
+        "温和向上": "green",
+        "震荡观察": "gray",
+        "过热等待": "orange",
+        "破位回避": "red",
+        "优先配置": "blue",
+        "可观察": "green",
+        "观察不追": "orange",
+        "只观察不追": "orange",
+        "暂不纳入": "red",
+        "待确认": "gray",
+        "观察": "gray",
+        "增配": "blue",
+        "降配": "orange",
+        "中性": "gray",
+        "数据不足": "gray",
+        "部分可用": "gray",
+        "可用": "green",
+        "失败": "orange",
+        "综合更均衡": "blue",
+        "趋势更强": "purple",
+        "流动性更好": "teal",
+        "波动更低": "gray",
+        "仅观察": "orange",
+        "待比较": "gray",
+    }
+    for key, color in mapping.items():
+        if key in text:
+            return color
+    if "风险" in text or "降杠杆" in text:
+        return "red"
+    if "进攻" in text:
+        return "blue"
+    return "gray"
+
+
+def _action_state_color(value):
+    mapping = {
+        "可小幅融资进攻": "blue",
+        "可中等融资进攻": "purple",
+        "可用现金进攻，暂不加融资": "green",
+        "只允许调仓，不新增杠杆": "orange",
+        "暂停融资，保留现金": "gray",
+        "融资过高，优先降杠杆": "red",
+    }
+    return mapping.get(str(value or "").strip(), "gray")
+
+
+def _recommendation_state_label(state, bucket, overweight_buckets=None, underweight_buckets=None):
+    bucket = str(bucket or "").strip()
+    state = str(state or "").strip()
+    overweight = set(overweight_buckets or [])
+    underweight = set(underweight_buckets or [])
+    if state == "破位回避":
+        return "暂不纳入"
+    if state == "过热等待":
+        return "只观察不追"
+    if bucket in underweight and state in {"震荡观察", "数据不足"}:
+        return "暂不纳入"
+    if bucket in overweight and state in {"强趋势", "温和向上"}:
+        return "优先配置"
+    if state == "强趋势":
+        return "优先配置"
+    if state == "温和向上":
+        return "可观察"
+    if state == "震荡观察":
+        return "可观察"
+    return "暂不纳入"
+
+
+def _bucket_label(value):
+    mapping = {
+        "宽基ETF": "宽基",
+        "科技成长ETF": "科技成长",
+        "金融券商ETF": "金融券商",
+        "防守ETF": "防守",
+        "商品周期ETF": "商品周期",
+        "现金": "现金",
+    }
+    return mapping.get(str(value or "").strip(), str(value or "").strip() or "暂无")
+
+
+def _html_table_cell(value, as_badge=False):
+    text = str(value or "").strip() or "暂无"
+    if as_badge:
+        return _badge_html(text, _state_color_label(text))
+    return escape(text)
+
+
+def _render_compact_table(
+    rows,
+    *,
+    badge_columns=None,
+    muted_columns=None,
+    max_rows=10,
+    expander_label="查看完整表",
+    always_expander=False,
+    expanded_rows=None,
+    show_expander=True,
+):
+    rows = list(rows or [])
+    if not rows:
+        st.info("暂无可展示数据。")
+        return
+    badge_columns = set(badge_columns or set())
+    muted_columns = set(muted_columns or set())
+    display_rows = rows[: max(max_rows, 1)]
+    columns = list(display_rows[0].keys())
+
+    header_html = "".join(f"<th>{escape(str(column))}</th>" for column in columns)
+    body_rows = []
+    for row in display_rows:
+        cells = []
+        for column in columns:
+            classes = " class='vc-muted-cell'" if column in muted_columns else ""
+            cell_html = _html_table_cell(row.get(column), as_badge=column in badge_columns)
+            cells.append(f"<td{classes}>{cell_html}</td>")
+        body_rows.append("<tr>" + "".join(cells) + "</tr>")
+    _render_html(
+        "<div class='vc-table-shell'><div class='vc-html-table-wrap'><table class='vc-html-table'>"
+        f"<thead><tr>{header_html}</tr></thead><tbody>{''.join(body_rows)}</tbody></table></div></div>"
+    )
+    if show_expander and (always_expander or len(rows) > len(display_rows)):
+        with st.expander(f"{expander_label}（{len(rows)} 行）", expanded=False):
+            st.dataframe(expanded_rows or rows, width="stretch", hide_index=True)
+
+
+def _bucket_summary_cards(rows, weights=None):
+    blocks = []
+    weight_lookup = weights or {}
+    for label, ratio in rows:
+        blocks.append(
+            f"""
+            <div class="vc-bucket-summary-card">
+                <div class="vc-bucket-summary-left">
+                    <span class="vc-bucket-dot" style="background:{escape(_bucket_color(label))};"></span>
+                    <div>
+                        <div class="vc-bucket-summary-name">{escape(str(label))}</div>
+                        <div class="vc-bucket-summary-note">动态权重 {float(weight_lookup.get(label, ratio) or 0.0):.2f}%</div>
+                    </div>
+                </div>
+                <div class="vc-bucket-summary-ratio">{float(ratio or 0.0):.2f}%</div>
+            </div>
+            """
+        )
+    return _clean_html(f"<div class='vc-bucket-summary-grid'>{''.join(blocks)}</div>")
+
+
+def _cash_buffer_strip(ratio, amount=None):
+    ratio_text = f"{float(ratio or 0.0):.2f}%"
+    amount_text = _fmt_money(amount) if amount is not None else "现金缓冲"
+    return _clean_html(
+        f"""
+        <div class="vc-cash-strip">
+            <div>
+                <div class="vc-cash-strip-title">现金缓冲</div>
+                <div class="vc-cash-strip-note">今日保留，不抢 ETF 主视觉</div>
+            </div>
+            <div class="vc-cash-strip-value">{escape(str(amount_text))} · {escape(str(ratio_text))}</div>
+        </div>
+        """
+    )
+
+
+def _etf_recommendation_card_html(row):
+    bucket = row.get("所属 bucket") or "暂无"
+    theme = row.get("主题") or "暂无"
+    sub_theme = row.get("细分方向") or "暂无"
+    title = row.get("ETF 名称") or "暂无"
+    ticker = row.get("Ticker") or "暂无"
+    ratio = row.get("建议占净资产比例") or "暂无"
+    amount = row.get("建议金额") or "暂无"
+    status = row.get("推荐状态") or "暂无"
+    reason = row.get("一句理由") or "暂无"
+    accent = _bucket_color(bucket)
+    badge_color = _state_color_label(status)
+    return _clean_html(
+        f"""
+        <article class="vc-etf-card" style="--bucket-accent:{escape(accent)};">
+            <div class="vc-etf-card-head">
+                <div>
+                    <div class="vc-etf-card-title">{escape(str(title))}</div>
+                    <div class="vc-etf-card-subtitle">{escape(str(ticker))}｜{escape(str(bucket))}</div>
+                </div>
+                <div class="vc-etf-card-ratio">
+                    <div>{escape(str(ratio))}</div>
+                    <div class="vc-etf-card-amount">{escape(str(amount))}</div>
+                </div>
+            </div>
+            <div class="vc-etf-card-meta">
+                {_soft_badge_html(f"主题：{theme}", "blue")}
+                {_soft_badge_html(f"细分：{sub_theme}", "teal")}
+                {_soft_badge_html(str(status), badge_color)}
+            </div>
+            <div class="vc-etf-card-reason">{escape(str(reason))}</div>
+        </article>
+        """
+    )
+
+
+def render_margin_execution_summary(result: dict | None = None):
+    payload = result or {}
+    account_state = payload.get("account_state") or {}
+    action_state = payload.get("action_state") or "暂停融资，保留现金"
+    style_tilt = payload.get("style_tilt") or "平衡"
+    action_color = _action_state_color(action_state)
+    top_buckets = []
+    for bucket, item in (payload.get("recommended_etf_allocation") or {}).items():
+        if bucket == "现金":
+            continue
+        ratio = _to_float((item or {}).get("ratio_pct"), 0.0) or 0.0
+        top_buckets.append((bucket, ratio))
+    top_buckets.sort(key=lambda item: item[1], reverse=True)
+    priority_labels = [_bucket_label(bucket) for bucket, ratio in top_buckets if ratio > 0][:2]
+    overweight = [_bucket_label(item) for item in (payload.get("overweight_buckets") or [])][:3]
+    underweight = [_bucket_label(item) for item in (payload.get("underweight_buckets") or [])][:3]
+    watch_names = _dedupe(payload.get("watch_not_chase_etfs") or [])[:5]
+    no_chase = payload.get("no_chase_warning") or ""
+    risk_conditions = _dedupe(payload.get("must_reduce_risk_conditions") or [])[:3]
+    direction_parts = []
+    if priority_labels:
+        direction_parts.append("优先 " + " + ".join(priority_labels))
+    if underweight:
+        direction_parts.append("降配 " + " / ".join(underweight[:2]))
+    if (_to_float(payload.get("recommended_cash_ratio")) or 0) >= 10:
+        direction_parts.append("防守保留")
+    discipline_parts = []
+    if watch_names or no_chase:
+        discipline_parts.append("高 beta 过热不追")
+    if risk_conditions:
+        if any("MA20" in item for item in risk_conditions):
+            discipline_parts.append("跌破 MA20 降风险")
+        if any("MA60" in item for item in risk_conditions):
+            discipline_parts.append("跌破 MA60 降风险")
+        if not discipline_parts:
+            discipline_parts.append(risk_conditions[0])
+    lines = [
+        ("动作", action_state),
+        (
+            "融资",
+            f"当前 {float(payload.get('current_margin_debt_ratio') or 0):.2f}%，建议上限 {float(payload.get('recommended_margin_ratio') or 0):.2f}%",
+        ),
+        (
+            "现金",
+            f"当前缓冲 {float(account_state.get('cash_buffer_ratio') or 0):.2f}%，建议不低于 {float(payload.get('recommended_cash_ratio') or 0):.2f}%",
+        ),
+        ("方向", "；".join(direction_parts) if direction_parts else "按当前 bucket 结构执行，不额外扩张方向。"),
+        ("纪律", "；".join(_dedupe(discipline_parts)) if discipline_parts else "融资会放大收益和亏损，触发风险线先降风险。"),
+    ]
+
+    chip_lines = [
+        ("增配方向", overweight or priority_labels or ["暂无明显增配"], "blue"),
+        ("降配方向", underweight or ["暂无明显降配"], "orange"),
+        ("只观察不追", watch_names or ["暂无明确不追名单"], "gray" if not watch_names else "orange"),
+    ]
+    summary_lines_html = "".join(
+        f"<div class='vc-summary-line'><div class='vc-summary-key'>{escape(label)}</div><div class='vc-summary-value'>{escape(value)}</div></div>"
+        for label, value in lines
+    )
+    chips_html = "".join(
+        f"<div class='vc-chip-line'><div class='vc-chip-label'>{escape(label)}</div><div class='vc-badges'>{''.join(_badge_html(item, color) for item in items)}</div></div>"
+        for label, items, color in chip_lines
+    )
+    _inject_component_css()
+    _render_html(
+        f"""
+        <section class="vc-summary-shell">
+            <div class="vc-summary-head">
+                <div>
+                    <div class="vc-summary-title">今日执行摘要</div>
+                    <div class="vc-summary-subtitle">先看今天如何执行，再看下面的数据和表格。</div>
+                </div>
+                <div class="vc-badges">
+                    {_soft_badge_html(action_state, action_color)}
+                    {_soft_badge_html(style_tilt, "teal" if "进攻" in style_tilt else ("orange" if "防守" in style_tilt else "gray"))}
+                </div>
+            </div>
+            <div class="vc-summary-lines">{summary_lines_html}</div>
+            <div class="vc-divider"></div>
+            <div class="vc-chip-stack">{chips_html}</div>
+        </section>
+        """
+    )
 
 
 def _action_color(state):
@@ -541,7 +1332,7 @@ def render_position_waterline(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.caption("涨停价/跌停价仅作为交易边界参考；历史回测不代表未来收益。")
 
@@ -617,7 +1408,7 @@ def render_moneyflow_conflict(
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("Plotly 未安装，资金流方向条暂以文字降级展示。")
 
@@ -627,81 +1418,210 @@ def render_moneyflow_conflict(
 def render_margin_allocator_chart(allocation_result: dict):
     allocation_result = allocation_result or {}
     allocation = allocation_result.get("recommended_etf_allocation") or {}
-    rows = []
-    preferred_order = ["宽基ETF", "科技成长ETF", "金融券商ETF", "防守ETF", "商品周期ETF", "现金"]
-    for label in preferred_order:
-        item = allocation.get(label) or {}
-        ratio = _to_float(item.get("ratio_pct"))
-        if ratio is None:
-            continue
-        rows.append((label, ratio))
-    for label, item in allocation.items():
-        if label in {row[0] for row in rows}:
-            continue
-        ratio = _to_float(item.get("ratio_pct"))
-        if ratio is not None:
-            rows.append((label, ratio))
+    overweight = _dedupe(allocation_result.get("overweight_buckets") or [])
+    underweight = _dedupe(allocation_result.get("underweight_buckets") or [])
+    selected_bucket = (
+        st.session_state.get("margin_etf_bucket_selector__selected")
+        or st.session_state.get("margin_etf_bucket_selector")
+        or ""
+    )
+    candidate_payload = allocation_result.get("selected_etf_candidates") or {}
 
-    if not rows:
+    bucket_rows = []
+    for label in BUCKET_ORDER:
+        item = allocation.get(label) or {}
+        ratio = _to_float(item.get("ratio_pct"), 0.0) or 0.0
+        if label == "现金":
+            role = "现金缓冲"
+            status = "只观察"
+            note = "保留缓冲，不抢 ETF 主视觉。"
+        else:
+            if label in {"宽基ETF", "科技成长ETF"}:
+                role = "主配"
+            elif label == "防守ETF":
+                role = "防守"
+            elif label == "商品周期ETF":
+                role = "次配"
+            else:
+                role = "观察"
+            if label in overweight:
+                status = "增配"
+            elif label in underweight:
+                status = "降配"
+            else:
+                status = "持平"
+            note_map = {
+                "宽基ETF": "承担底仓和仓位稳定器。",
+                "科技成长ETF": "看半导体 / 芯片 / 成长弹性。",
+                "金融券商ETF": "偏交易弹性，没信号先观察。",
+                "防守ETF": "提供防守缓冲和现金替代。",
+                "商品周期ETF": "跟随资源品和周期链条。",
+            }
+            note = note_map.get(label, "作为方向补充观察。")
+        bucket_items = list(candidate_payload.get(label) or [])
+        rep_names = []
+        for item_row in bucket_items:
+            name = item_row.get("etf_name") or item_row.get("etf_code")
+            if name and name not in rep_names:
+                rep_names.append(name)
+            if len(rep_names) >= 2:
+                break
+        if not rep_names:
+            rep_names = [str(x) for x in (item.get("candidate_etfs") or [])[:2] if x]
+        if not rep_names and label == "现金":
+            rep_names = ["现金缓冲"]
+        bucket_rows.append(
+            {
+                "bucket": label,
+                "ratio": ratio,
+                "role": role,
+                "status": status,
+                "note": note,
+                "representatives": rep_names,
+                "selected": label == selected_bucket,
+                "color": _bucket_color(label),
+            }
+        )
+
+    if not bucket_rows:
         st.info("暂无可视化仓位建议。")
         return
 
-    if go is None:
-        for label, ratio in rows:
-            st.caption(f"{label}: {_fmt_pct(ratio)}")
-        return
+    investable_rows = [row for row in bucket_rows if row["bucket"] != "现金"]
+    top_rows = sorted(investable_rows, key=lambda item: item["ratio"], reverse=True)
+    top_one = top_rows[0]["bucket"] if top_rows else "暂无"
+    top_two = top_rows[1]["bucket"] if len(top_rows) > 1 else top_one
+    watch_rows = [row["bucket"] for row in bucket_rows if row["bucket"] not in {top_one, top_two, "现金"}][:3]
+    if go is not None:
+        mini_note = "图只作为辅助提示，具体 ETF 以上方卡片和清单为准。"
+    else:
+        mini_note = "Plotly 未安装时仅显示卡片矩阵。"
 
-    colors = {
-        "宽基ETF": "#2563eb",
-        "科技成长ETF": "#f97316",
-        "金融券商ETF": "#dc2626",
-        "防守ETF": "#16a34a",
-        "商品周期ETF": "#a855f7",
-        "现金": "#6b7280",
-    }
-
-    donut = go.Figure(
-        data=[
-            go.Pie(
-                labels=[label for label, _ in rows],
-                values=[ratio for _, ratio in rows],
-                hole=0.54,
-                marker=dict(colors=[colors.get(label, "#94a3b8") for label, _ in rows]),
-                textinfo="label+percent",
-                hovertemplate="%{label}: %{value:.2f}%<extra></extra>",
-            )
-        ]
+    header_html = _clean_html(
+        f"""
+        <div class="vc-summary-shell">
+            <div class="vc-summary-head">
+                <div>
+                    <div class="vc-summary-title">Bucket 权重概览</div>
+                    <div class="vc-summary-subtitle">{escape(mini_note)}</div>
+                </div>
+                <div class="vc-badges">
+                    {_soft_badge_html(f"主看：{top_one}", "blue")}
+                    {_soft_badge_html(f"次看：{top_two}", "teal")}
+                </div>
+            </div>
+        </div>
+        """
     )
-    donut.update_layout(
-        height=320,
-        margin=dict(l=10, r=10, t=18, b=10),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-    st.plotly_chart(donut, use_container_width=True)
+    _render_html(header_html)
 
-    bars = go.Figure()
-    bars.add_trace(
-        go.Bar(
-            x=[ratio for _, ratio in rows],
-            y=[label for label, _ in rows],
-            orientation="h",
-            text=[f"{ratio:.1f}%" for _, ratio in rows],
-            textposition="outside",
-            marker_color=[colors.get(label, "#94a3b8") for label, _ in rows],
-            hovertemplate="%{y}: %{x:.2f}%<extra></extra>",
-            showlegend=False,
+    def _chips(items):
+        return "".join(_soft_badge_html(item, _state_color_label(item)) for item in items) if items else _badge_html("暂无", "gray")
+
+    grid_html = []
+    for row in bucket_rows:
+        progress_width = max(min(row["ratio"], 100.0), 0.0)
+        selected_class = " is-selected" if row["selected"] else ""
+        representative_html = "".join(f"<div>{escape(name)}</div>" for name in row["representatives"][:2]) or "<div>暂无</div>"
+        grid_html.append(
+            f"""
+            <article class="vc-allocation-card{selected_class}" style="--bucket-accent:{escape(row['color'])};">
+                <div class="vc-allocation-head">
+                    <div>
+                        <div class="vc-allocation-title">{escape(row['bucket'])}</div>
+                        <div class="vc-allocation-role">{escape(row['role'])}</div>
+                    </div>
+                    <div class="vc-allocation-weight">{progress_width:.2f}%</div>
+                </div>
+                <div class="vc-allocation-status">
+                    {_soft_badge_html(row['status'], _state_color_label(row['status']))}
+                    {_soft_badge_html(f"建议：{_bucket_label(row['bucket'])}", "gray")}
+                </div>
+                <div class="vc-allocation-bar">
+                    <div class="vc-allocation-fill" style="width:{progress_width:.2f}%;background:{escape(row['color'])};"></div>
+                </div>
+                <div class="vc-allocation-row">
+                    <div>
+                        <div class="vc-label">代表 ETF</div>
+                        <div class="vc-allocation-list">{representative_html}</div>
+                    </div>
+                    <div style="min-width: 0; max-width: 42%;">
+                        <div class="vc-label">提示</div>
+                        <div class="vc-allocation-risk">{escape(str(row['note']))}</div>
+                    </div>
+                </div>
+            </article>
+            """
         )
-    )
-    bars.update_layout(
-        height=280,
-        margin=dict(l=30, r=24, t=10, b=24),
-        xaxis=dict(title="占净资产比例（%）", gridcolor="#eef2f7"),
-        yaxis=dict(autorange="reversed"),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-    st.plotly_chart(bars, use_container_width=True)
+
+    left_col, right_col = st.columns([1.18, 0.82], gap="medium")
+    with left_col:
+        _render_html(f"<section class='vc-allocation-grid'>{''.join(grid_html)}</section>")
+    with right_col:
+        cash_item = allocation.get("现金") or {}
+        _render_html(
+            f"""
+            <div class="vc-allocation-mini-shell">
+                <div class="vc-allocation-mini-title">现金缓冲</div>
+                <div class="vc-allocation-mini-note">不并入主图，单独作为缓冲位。</div>
+                {_cash_buffer_strip(cash_item.get('ratio_pct'), cash_item.get('amount')) if cash_item else _cash_buffer_strip(0, None)}
+            </div>
+            """
+        )
+        _render_html(
+            f"""
+            <div class="vc-allocation-mini-shell" style="margin-top:10px;">
+                <div class="vc-allocation-mini-title">执行速览</div>
+                <div class="vc-allocation-mini-note">主配 / 次配 / 观察只做方向提示，具体 ETF 以上方清单为准。</div>
+                <div class="vc-summary-lines">
+                    <div class="vc-summary-line">
+                        <div class="vc-summary-key">主配</div>
+                        <div class="vc-badges">{_chips([row['bucket'] for row in top_rows[:2]])}</div>
+                    </div>
+                    <div class="vc-summary-line">
+                        <div class="vc-summary-key">观察</div>
+                        <div class="vc-badges">{_chips(watch_rows)}</div>
+                    </div>
+                </div>
+            </div>
+            """
+        )
+        if go is not None:
+            with st.expander("方向权重小图", expanded=False):
+                mini = go.Figure()
+                mini.add_trace(
+                    go.Bar(
+                        x=[row["ratio"] for row in investable_rows],
+                        y=[row["bucket"] for row in investable_rows],
+                        orientation="h",
+                        marker=dict(
+                            color=[row["color"] for row in investable_rows],
+                            line=dict(color="rgba(255,255,255,0.75)", width=1),
+                        ),
+                        text=[f"{row['ratio']:.1f}%" for row in investable_rows],
+                        textposition="outside",
+                        hovertemplate="%{y}: %{x:.2f}%<extra></extra>",
+                        showlegend=False,
+                    )
+                )
+                mini.update_layout(
+                    height=190,
+                    margin=dict(l=8, r=12, t=2, b=14),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    showlegend=False,
+                    xaxis=dict(
+                        title="权重",
+                        gridcolor="rgba(60, 60, 67, 0.10)",
+                        zeroline=False,
+                        tickfont=dict(color="#4A4A4F", size=10),
+                    ),
+                    yaxis=dict(
+                        autorange="reversed",
+                        tickfont=dict(color="#1D1D1F", size=10),
+                    ),
+                )
+                st.plotly_chart(mini, width="stretch")
 
 
 def render_margin_etf_data_status(data_status: dict | None = None):
@@ -726,34 +1646,342 @@ def render_margin_etf_data_status(data_status: dict | None = None):
         st.caption("数据缺口：" + "；".join(str(item) for item in gaps[:5]))
 
 
+def render_margin_bucket_weights_table(dynamic_weights: dict | None = None, overweight_buckets=None, underweight_buckets=None):
+    weights = dynamic_weights or {}
+    if not weights:
+        return
+    rows = []
+    for bucket, value in weights.items():
+        action_hint = "中性"
+        if bucket in set(overweight_buckets or []):
+            action_hint = "增配"
+        elif bucket in set(underweight_buckets or []):
+            action_hint = "降配"
+        rows.append(
+            {
+                "Bucket": _bucket_label(bucket),
+                "建议权重": f"{float(value or 0):.2f}%",
+                "执行提示": action_hint,
+            }
+        )
+    st.caption("Bucket 权重只是执行映射，先看首屏摘要，再看这里的方向细分。")
+    _render_compact_table(rows, badge_columns={"执行提示"}, max_rows=8, expander_label="查看完整 Bucket 权重")
+
+
+def render_margin_candidate_table(candidate_packet: dict | None = None):
+    payload = candidate_packet or {}
+    rows = []
+    for bucket, items in payload.items():
+        for item in items or []:
+            rows.append(
+                {
+                    "Bucket": _bucket_label(bucket),
+                    "ETF": item.get("etf_name") or item.get("etf_code") or "暂无",
+                    "状态": item.get("state") or "暂无",
+                    "综合分": _fmt_score(item.get("total_score")),
+                    "20日涨跌": _fmt_pct(item.get("return_20d_pct")),
+                }
+            )
+    if not rows:
+        st.info("暂无候选 ETF。")
+        return
+    st.caption("候选 ETF 只保留每个方向的前排产品，完整候选放在展开区。")
+    _render_compact_table(rows, badge_columns={"状态"}, max_rows=10, expander_label="查看完整候选 ETF", always_expander=True)
+
+
+def render_margin_recommended_etf_plan(result: dict | None = None, selector_key: str = "margin_etf_bucket_selector"):
+    payload = result or {}
+    allocation = payload.get("recommended_etf_allocation") or {}
+    candidates = payload.get("selected_etf_candidates") or {}
+    overweight = payload.get("overweight_buckets") or []
+    underweight = payload.get("underweight_buckets") or []
+    bucket_packets = []
+    for bucket in BUCKET_ORDER:
+        item = allocation.get(bucket) or {}
+        ratio = _to_float((item or {}).get("ratio_pct"), 0.0) or 0.0
+        bucket_candidates = list(candidates.get(bucket) or [])
+        if bucket != "现金" and ratio <= 0 and not bucket_candidates:
+            continue
+        bucket_packets.append(
+            {
+                "bucket": bucket,
+                "ratio_pct": ratio,
+                "items": bucket_candidates[:5],
+            }
+        )
+    if not bucket_packets:
+        st.info("暂无可展开的 ETF 配置清单。")
+        return
+
+    bucket_packets.sort(
+        key=lambda item: (
+            1 if item.get("bucket") != "现金" else 0,
+            float(item.get("ratio_pct") or 0.0),
+        ),
+        reverse=True,
+    )
+    bucket_options = [str(item.get("bucket") or "暂无") for item in bucket_packets]
+    packet_lookup = {str(item.get("bucket") or "暂无"): item for item in bucket_packets}
+    option_labels = {
+        str(item.get("bucket") or "暂无"): f"{str(item.get('bucket') or '暂无')} {float(item.get('ratio_pct') or 0.0):.1f}%"
+        for item in bucket_packets
+    }
+    def _normalize_bucket_value(raw_value):
+        if raw_value in bucket_options:
+            return raw_value
+        if isinstance(raw_value, int) and 0 <= raw_value < len(bucket_options):
+            return bucket_options[raw_value]
+        if isinstance(raw_value, str):
+            text = raw_value.strip()
+            if text in bucket_options:
+                return text
+            for bucket_name, label in option_labels.items():
+                if text == label or text.startswith(f"{bucket_name} "):
+                    return bucket_name
+            for bucket_name in bucket_options:
+                if text.startswith(bucket_name):
+                    return bucket_name
+        return None
+
+    sorted_non_cash = [item for item in bucket_packets if item.get("bucket") != "现金"]
+    default_bucket = str((sorted_non_cash[0] if sorted_non_cash else bucket_packets[0]).get("bucket") or "暂无")
+    selector_state_key = f"{selector_key}__selected"
+    normalized_bucket = (
+        _normalize_bucket_value(st.session_state.get(selector_state_key))
+        or _normalize_bucket_value(st.session_state.get(selector_key))
+        or default_bucket
+    )
+    if st.session_state.get(selector_key) != normalized_bucket:
+        st.session_state[selector_key] = normalized_bucket
+
+    def _candidate_mix_weights(items):
+        weights = []
+        state_scale = {
+            "强趋势": 1.18,
+            "温和向上": 1.0,
+            "震荡观察": 0.72,
+            "过热等待": 0.55,
+            "破位回避": 0.22,
+            "数据不足": 0.45,
+        }
+        for index, item in enumerate(items):
+            score = max(_to_float(item.get("total_score"), 55.0) or 55.0, 1.0)
+            rank_scale = [1.0, 0.62, 0.36][index] if index < 3 else 0.24
+            weights.append(score * state_scale.get(item.get("state"), 0.66) * rank_scale)
+        total = sum(weights) or float(len(items) or 1)
+        return [value / total for value in weights]
+
+    def _candidate_reason(bucket, item, status, action_hint):
+        theme = item.get("sub_theme") or item.get("theme") or _bucket_label(bucket)
+        state = item.get("state") or "待确认"
+        state_hint = {
+            "强趋势": "趋势在该 bucket 里靠前",
+            "温和向上": "趋势保持向上但仍需分步",
+            "震荡观察": "仍在观察区，先小仓位跟踪",
+            "过热等待": "当前偏热，先列观察不追",
+            "破位回避": "趋势未修复，暂不作为主攻",
+            "数据不足": "数据还不完整，先放低权重",
+        }.get(state, "作为该方向的备选补充")
+        action_prefix = {
+            "增配": f"{_bucket_label(bucket)}是今日增配方向",
+            "降配": f"{_bucket_label(bucket)}暂不主攻",
+            "中性": f"用于承接{_bucket_label(bucket)}仓位",
+        }.get(action_hint, f"用于承接{_bucket_label(bucket)}仓位")
+        return20 = _to_float(item.get("return_20d_pct"))
+        tail = f"近20日{_fmt_pct(return20)}" if return20 is not None else "优先看状态和风险线"
+        return f"{action_prefix}；主看{theme}；{state_hint}，{tail}。"
+
+    def _build_rows(packet):
+        bucket = packet.get("bucket")
+        ratio_pct = float(packet.get("ratio_pct") or 0.0)
+        amount_total = _to_float(allocation.get(bucket, {}).get("amount"), 0.0) or 0.0
+        items = list(packet.get("items") or [])
+        if not items:
+            return []
+        action_hint = "中性"
+        if bucket in set(overweight):
+            action_hint = "增配"
+        elif bucket in set(underweight):
+            action_hint = "降配"
+        mix_weights = _candidate_mix_weights(items)
+        rows = []
+        for item, mix_weight in zip(items, mix_weights):
+            status = _recommendation_state_label(item.get("state"), bucket, overweight, underweight)
+            rows.append(
+                {
+                    "ETF 名称": item.get("etf_name") or item.get("etf_code") or "暂无",
+                    "Ticker": item.get("etf_code") or "暂无",
+                    "所属 bucket": str(bucket or "暂无"),
+                    "主题": item.get("theme") or "暂无",
+                    "细分方向": item.get("sub_theme") or item.get("theme") or "暂无",
+                    "建议占净资产比例": f"{ratio_pct * mix_weight:.2f}%",
+                    "建议金额": _fmt_money(amount_total * mix_weight),
+                    "推荐状态": status,
+                    "一句理由": _candidate_reason(bucket, item, status, action_hint),
+                }
+            )
+        return rows
+
+    all_rows = []
+    for packet in bucket_packets:
+        all_rows.extend(_build_rows(packet))
+    actionable_rows = [row for row in all_rows if row.get("推荐状态") != "暂不纳入"] or all_rows
+    top_rows = actionable_rows[:8]
+
+    st.caption("先看执行清单，再切 bucket。具体 ETF 比方向图更重要。")
+    if top_rows:
+        section_order = ["优先配置", "可观察", "只观察不追"]
+        top_grouped = {label: [] for label in section_order}
+        for row in top_rows:
+            status = row.get("推荐状态") or "暂不纳入"
+            if status in top_grouped:
+                top_grouped[status].append(row)
+        if not top_grouped["优先配置"]:
+            st.info("今日无明确优先配置，当前以观察和等待回踩为主。")
+        for status_label in section_order:
+            group_rows = top_grouped.get(status_label) or []
+            if not group_rows:
+                continue
+            st.markdown(f"##### {status_label}")
+            _render_html(f"<section class='vc-etf-card-list'>{''.join(_etf_recommendation_card_html(row) for row in group_rows)}</section>")
+    else:
+        st.info("暂无明确 ETF 执行清单，先看 bucket 权重与风险线。")
+
+    st.markdown("##### 选择 bucket")
+    st.caption("点击 / 切换 bucket，下面的推荐卡会同步刷新。")
+    selected_bucket = normalized_bucket
+    if hasattr(st, "segmented_control"):
+        selected_bucket = st.segmented_control(
+            "bucket",
+            options=bucket_options,
+            default=normalized_bucket,
+            required=True,
+            format_func=lambda bucket: option_labels.get(bucket, str(bucket or "暂无")),
+            key=selector_state_key,
+            width="stretch",
+            label_visibility="collapsed",
+        )
+        st.session_state[selector_key] = selected_bucket
+    else:
+        for row_start in range(0, len(bucket_options), 3):
+            row_buckets = bucket_options[row_start : row_start + 3]
+            row_cols = st.columns(len(row_buckets), gap="small")
+            for col, bucket in zip(row_cols, row_buckets):
+                button_label = option_labels.get(bucket, str(bucket or "暂无"))
+                if bucket == selected_bucket:
+                    button_label = f"● {button_label}"
+                button_type = "primary" if bucket == selected_bucket else "secondary"
+                if col.button(button_label, key=f"{selector_key}__btn__{bucket}", use_container_width=True, type=button_type):
+                    st.session_state[selector_state_key] = bucket
+                    st.session_state[selector_key] = bucket
+                    st.rerun()
+    selected_packet = packet_lookup.get(selected_bucket, bucket_packets[0])
+    selected_ratio = float(selected_packet.get("ratio_pct") or 0.0)
+    selected_action = "中性"
+    if selected_bucket in set(overweight):
+        selected_action = "增配"
+    elif selected_bucket in set(underweight):
+        selected_action = "降配"
+
+    st.markdown(f"##### {selected_bucket}｜今日推荐")
+    _render_html(
+        f"""
+        <div class="vc-soft-note">
+            <div class="vc-badges">
+                {_badge_html(str(selected_bucket or "暂无"), "blue")}
+                {_badge_html(f"建议占净资产 {selected_ratio:.2f}%", "teal")}
+                {_badge_html(f"执行提示：{selected_action}", _state_color_label(selected_action))}
+            </div>
+        </div>
+        """
+    )
+    selected_rows = _build_rows(selected_packet)
+    if not selected_rows:
+        st.info("该方向今日暂无明确推荐 ETF，可仅观察或等待数据补齐。")
+    else:
+        card_html = "".join(_etf_recommendation_card_html(row) for row in selected_rows[:5])
+        _render_html(f"<section class='vc-etf-card-list'>{card_html}</section>")
+
+    if all_rows:
+        with st.expander("查看完整今日建议 ETF 配置清单", expanded=False):
+            _render_compact_table(
+                all_rows,
+                badge_columns={"推荐状态"},
+                muted_columns={"Ticker", "所属 bucket", "主题", "细分方向"},
+                max_rows=min(max(len(all_rows), 1), 10),
+            )
+
+
 def render_etf_score_table(score_packet: dict | None = None):
     payload = score_packet or {}
     rows = payload.get("rows") or payload.get("etf_score_table") or []
     if not rows:
         st.info("暂无 ETF 强弱评分。")
         return
-    display_rows = []
-    for item in rows:
-        display_rows.append(
+    state_priority = {"强趋势": 0, "温和向上": 1, "震荡观察": 2, "过热等待": 3, "破位回避": 4, "数据不足": 5}
+    ranked_rows = sorted(
+        rows,
+        key=lambda item: (
+            state_priority.get(item.get("state"), 9),
+            -(_to_float(item.get("total_score"), 0.0) or 0.0),
+            -(_to_float(item.get("amount_ma20"), 0.0) or 0.0),
+        ),
+    )
+    strong_count = sum(1 for item in ranked_rows if item.get("state") in {"强趋势", "温和向上"})
+    hot_count = sum(1 for item in ranked_rows if item.get("state") == "过热等待")
+    weak_count = sum(1 for item in ranked_rows if item.get("state") == "破位回避")
+    if hot_count >= 2:
+        st.caption("ETF 强弱表显示部分方向偏热，适合观察排序，不适合直接追高。")
+    elif strong_count >= max(len(ranked_rows) / 2, 1):
+        st.caption("ETF 强弱表显示当前仍有可执行方向，优先看强趋势与温和向上的前排产品。")
+    elif weak_count >= max(len(ranked_rows) / 3, 1):
+        st.caption("ETF 强弱表偏弱，先看风险线和现金缓冲，再考虑方向细节。")
+    else:
+        st.caption("ETF 强弱表用于确认方向先后顺序，不替代首屏执行结论。")
+    core_rows = []
+    full_rows = []
+    for item in ranked_rows:
+        full_row = {
+            "ETF": item.get("etf_name") or item.get("etf_code"),
+            "分类": item.get("bucket"),
+            "主题": item.get("sub_theme") or item.get("theme"),
+            "最新价": _fmt_price(item.get("latest_price")),
+            "20日涨跌": _fmt_pct(item.get("return_20d_pct")),
+            "60日涨跌": _fmt_pct(item.get("return_60d_pct")),
+            "状态": item.get("state"),
+            "综合分": _fmt_score(item.get("total_score")),
+            "基金公司/管理人": item.get("manager") or "暂无",
+            "跟踪指数": item.get("benchmark") or item.get("index_name") or item.get("index_code") or "暂无",
+            "相对MA20": _fmt_pct(item.get("price_vs_ma20_pct")),
+            "相对MA60": _fmt_pct(item.get("price_vs_ma60_pct")),
+            "波动率": _fmt_pct(item.get("volatility_20d")),
+            "成交额MA20": _fmt_money_compact(item.get("amount_ma20")),
+        }
+        full_rows.append(full_row)
+        core_rows.append(
             {
                 "ETF": item.get("etf_name") or item.get("etf_code"),
                 "分类": item.get("bucket"),
                 "主题": item.get("sub_theme") or item.get("theme"),
-                "基金公司/管理人": item.get("manager") or "暂无",
-                "跟踪指数": item.get("benchmark") or item.get("index_name") or item.get("index_code") or "暂无",
-                "最新价": item.get("latest_price"),
-                "数据日期": item.get("data_date"),
+                "最新价": _fmt_price(item.get("latest_price")),
                 "20日涨跌": _fmt_pct(item.get("return_20d_pct")),
                 "60日涨跌": _fmt_pct(item.get("return_60d_pct")),
-                "相对MA20": _fmt_pct(item.get("price_vs_ma20_pct")),
-                "相对MA60": _fmt_pct(item.get("price_vs_ma60_pct")),
-                "波动率": _fmt_pct(item.get("volatility_20d")),
-                "成交额MA20": _fmt_money(item.get("amount_ma20")),
                 "状态": item.get("state"),
-                "综合分": item.get("total_score"),
+                "综合分": _fmt_score(item.get("total_score")),
             }
         )
-    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+    _render_compact_table(
+        core_rows,
+        badge_columns={"状态"},
+        muted_columns={"分类", "主题"},
+        max_rows=10,
+        expander_label="查看完整 ETF 强弱表",
+        always_expander=False,
+        expanded_rows=full_rows,
+        show_expander=False,
+    )
+    with st.expander("查看完整 ETF 强弱表（详细列）", expanded=False):
+        st.dataframe(pd.DataFrame(full_rows), width="stretch", hide_index=True)
 
 
 def render_theme_comparison_table(comparison_packet: dict | None = None, holdings_snapshot: dict | None = None):
@@ -771,6 +1999,23 @@ def render_theme_comparison_table(comparison_packet: dict | None = None, holding
             st.success(summary)
         else:
             st.info(summary)
+    row_map = {item.get("etf_code"): item for item in rows if item.get("etf_code")}
+    tag_specs = [
+        ("趋势更强", payload.get("best_trend_etf")),
+        ("更均衡", payload.get("most_balanced_etf")),
+        ("流动性更好", payload.get("best_liquidity_etf")),
+        ("仅观察 / 不追高", " / ".join(row_map.get(code, {}).get("etf_name") or code for code in (payload.get("warning_etfs") or [])[:3])),
+    ]
+    tag_badges = []
+    for label, raw_value in tag_specs:
+        text = str(raw_value or "").strip()
+        if not text:
+            text = "暂无明确胜出"
+        elif text in row_map:
+            text = row_map.get(text, {}).get("etf_name") or text
+        color = "orange" if "观察" in label else ("teal" if "流动性" in label else ("purple" if "趋势" in label else "blue"))
+        tag_badges.append(_badge_html(f"{label}：{text}", color if text != "暂无明确胜出" else "gray"))
+    _render_html(f"<div class='vc-soft-note'><div class='vc-badges'>{''.join(tag_badges)}</div></div>")
     holdings_snapshot = holdings_snapshot or {}
     snapshots = holdings_snapshot.get("snapshots") or {}
     display_rows = []
@@ -799,18 +2044,25 @@ def render_theme_comparison_table(comparison_packet: dict | None = None, holding
                 "ETF": item.get("etf_name") or code,
                 "基金公司/管理人": item.get("manager") or "暂无",
                 "跟踪指数": item.get("benchmark") or item.get("index_name") or item.get("index_code") or "暂无",
-                "最新价": item.get("latest_price") or "暂无",
+                "最新价": _fmt_price(item.get("latest_price")),
                 "20日涨跌": _fmt_pct(item.get("return_20d_pct")),
                 "60日涨跌": _fmt_pct(item.get("return_60d_pct")),
-                "成交额MA20": _fmt_money(item.get("amount_ma20")),
+                "成交额MA20": _fmt_money_compact(item.get("amount_ma20")),
                 "波动率": _fmt_pct(item.get("volatility_20d")),
                 "状态": item.get("state") or "暂无",
-                "综合分": item.get("total_score"),
+                "综合分": _fmt_score(item.get("total_score")),
                 "持仓明细状态": holding_state,
                 "适配评价": " / ".join(evaluation) or "待比较",
             }
         )
-    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+    _render_compact_table(
+        display_rows,
+        badge_columns={"状态", "持仓明细状态", "适配评价"},
+        muted_columns={"基金公司/管理人", "跟踪指数"},
+        max_rows=10,
+        expander_label="查看完整同赛道比较",
+        always_expander=True,
+    )
     for reason in payload.get("comparison_reason") or []:
         st.caption(f"对比结论：{reason}")
     errors = holdings_snapshot.get("holdings_errors") or []
@@ -856,7 +2108,7 @@ def render_intraday_etf_snapshot(snapshot: dict | None = None):
                 "状态": "部分可用" if item.get("errors") else "可用",
             }
         )
-    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+    _render_compact_table(display_rows, badge_columns={"状态"}, max_rows=8, expander_label="查看完整盘中 ETF 实时补充", always_expander=True)
     errors = payload.get("errors") or []
     if errors:
         st.caption("部分实时 ETF 接口失败，已按可得样本展示。")
@@ -865,28 +2117,42 @@ def render_intraday_etf_snapshot(snapshot: dict | None = None):
 def render_margin_etf_research_summary(result: dict | None = None, generated_at: str = "", cached: bool = False):
     payload = result or {}
     if not payload:
-        st.info("当前暂无 DeepSeek 调研解释。点击按钮后，系统会基于账户状态、ETF 强弱评分、动态配置和风险线生成解释；DeepSeek 只负责解释，不直接决定仓位。")
+        _render_html(
+            """
+            <div class="vc-shell">
+                <div class="vc-title">DeepSeek 调研解释</div>
+                <div class="vc-caption">当前暂无 DeepSeek 调研解释。点击按钮后，系统会基于账户状态、ETF 强弱评分、动态配置和风险线生成解释；DeepSeek 只负责解释，不直接决定仓位。</div>
+            </div>
+            """
+        )
         return
 
     conclusion = payload.get("one_sentence_conclusion") or "暂无结论。"
     st.caption(f"generated_at：{generated_at or '暂无'}" + ("｜缓存结果" if cached else "｜新生成结果"))
-    st.markdown(f"**一句话结论**：{conclusion}")
-
+    st.markdown(f"**一句话投资解释**：{conclusion}")
+    reason_pool = []
+    for section in [
+        payload.get("today_allocation_explanation"),
+        payload.get("why_margin_ratio"),
+        payload.get("theme_comparison_explanation"),
+        payload.get("overlap_and_substitution"),
+    ]:
+        reason_pool.extend(section or [])
+    key_reasons = _dedupe(reason_pool)[:3]
+    st.markdown("**执行原因**")
+    _result_list(key_reasons)
     sections = [
-        ("今日 ETF 配置解释", payload.get("today_allocation_explanation")),
-        ("为什么这个融资比例", payload.get("why_margin_ratio")),
         ("Bucket 增减配原因", payload.get("bucket_adjustments")),
-        ("同赛道 ETF 为什么选 A 不选 B", payload.get("theme_comparison_explanation")),
-        ("同赛道替代与重叠", payload.get("overlap_and_substitution")),
         ("只观察不追", payload.get("watch_not_chase")),
         ("加融资触发条件", payload.get("add_margin_triggers")),
         ("降融资触发条件", payload.get("deleverage_triggers")),
         ("明日验证清单", payload.get("tomorrow_checklist")),
         ("数据缺口", payload.get("data_gaps")),
     ]
-    for title, items in sections:
-        st.markdown(f"**{title}**")
-        _result_list(items or [])
+    with st.expander("展开查看完整 DeepSeek 调研解释", expanded=False):
+        for title, items in sections:
+            st.markdown(f"**{title}**")
+            _result_list(items or [])
     st.markdown("**风险提示**")
     st.write(payload.get("risk_disclaimer") or "融资会放大收益和亏损。本模块只做风险预算和仓位测算，不构成买卖建议。")
 
@@ -1237,7 +2503,7 @@ def render_next_ticket_research_summary(result: dict | None = None, generated_at
         st.markdown("**评分拆解**")
         st.dataframe(
             [{"维度": key, "评分": value} for key, value in breakdown.items()],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 

@@ -16,6 +16,10 @@ ETF_UNIVERSE = [
     {"code": "588000.SH", "name": "科创50 ETF", "bucket": "宽基ETF", "risk_level": "高", "theme": "宽基", "sub_theme": "科创50", "manual_focus": True},
     {"code": "512480.SH", "name": "半导体 ETF", "bucket": "科技成长ETF", "risk_level": "高", "theme": "半导体/芯片", "sub_theme": "半导体/芯片", "manual_focus": True},
     {"code": "560780.SH", "name": "半导体设备ETF广发", "bucket": "科技成长ETF", "risk_level": "高", "theme": "半导体/芯片", "sub_theme": "半导体设备", "manual_focus": True},
+    {"code": "588170.SH", "name": "科创半导体ETF华夏", "bucket": "科技成长ETF", "risk_level": "高", "theme": "半导体/芯片", "sub_theme": "科创半导体", "manual_focus": True},
+    {"code": "513310.SH", "name": "中韩半导体ETF华泰柏瑞", "bucket": "科技成长ETF", "risk_level": "高", "theme": "半导体/芯片", "sub_theme": "中韩半导体", "manual_focus": True},
+    {"code": "159801.SZ", "name": "广发国证半导体芯片ETF", "bucket": "科技成长ETF", "risk_level": "高", "theme": "半导体/芯片", "sub_theme": "芯片产业", "manual_focus": True},
+    {"code": "159995.SZ", "name": "芯片ETF华夏", "bucket": "科技成长ETF", "risk_level": "高", "theme": "半导体/芯片", "sub_theme": "芯片产业", "manual_focus": True},
     {"code": "515980.SH", "name": "人工智能 ETF", "bucket": "科技成长ETF", "risk_level": "高", "theme": "人工智能", "sub_theme": "人工智能", "manual_focus": True},
     {"code": "516510.SH", "name": "云计算 ETF", "bucket": "科技成长ETF", "risk_level": "高", "theme": "云计算", "sub_theme": "云计算", "manual_focus": True},
     {"code": "516320.SH", "name": "高端装备 ETF", "bucket": "科技成长ETF", "risk_level": "中高", "theme": "高端装备", "sub_theme": "高端装备", "manual_focus": True},
@@ -118,6 +122,27 @@ CLASSIFICATION_RULES = [
         "sub_theme": "半导体设备",
         "risk_level": "高",
         "keywords": ["半导体设备"],
+    },
+    {
+        "bucket": "科技成长ETF",
+        "theme": "半导体/芯片",
+        "sub_theme": "科创半导体",
+        "risk_level": "高",
+        "keywords": ["科创半导体"],
+    },
+    {
+        "bucket": "科技成长ETF",
+        "theme": "半导体/芯片",
+        "sub_theme": "中韩半导体",
+        "risk_level": "高",
+        "keywords": ["中韩半导体"],
+    },
+    {
+        "bucket": "科技成长ETF",
+        "theme": "半导体/芯片",
+        "sub_theme": "芯片产业",
+        "risk_level": "高",
+        "keywords": ["国证半导体芯片", "芯片ETF"],
     },
     {
         "bucket": "科技成长ETF",
@@ -372,6 +397,9 @@ DEFAULT_DYNAMIC_BUCKETS = [
 COMPARISON_THEMES = [
     "半导体/芯片",
     "半导体设备",
+    "科创半导体",
+    "中韩半导体",
+    "芯片产业",
     "券商/证券",
     "人工智能",
     "云计算",
@@ -563,6 +591,30 @@ def classify_etf_theme(etf_row):
         if _normalize_text(value)
     )
     combined_text = " | ".join(text for text in [name_text, benchmark_text, supporting_text] if text)
+    if "中韩半导体" in combined_text or ("半导体" in combined_text and any(keyword in combined_text for keyword in ["krx", "韩交所", "korea"])):
+        return {
+            "bucket": "科技成长ETF",
+            "theme": "半导体/芯片",
+            "sub_theme": "中韩半导体",
+            "risk_level": "高",
+            "classification_reason": "名称/指数命中关键词：中韩半导体（跨市场半导体）",
+        }
+    if "科创半导体" in combined_text:
+        return {
+            "bucket": "科技成长ETF",
+            "theme": "半导体/芯片",
+            "sub_theme": "科创半导体",
+            "risk_level": "高",
+            "classification_reason": "名称/指数命中关键词：科创半导体",
+        }
+    if "国证半导体芯片" in combined_text or "芯片etf" in name_text:
+        return {
+            "bucket": "科技成长ETF",
+            "theme": "半导体/芯片",
+            "sub_theme": "芯片产业",
+            "risk_level": "高",
+            "classification_reason": "名称/指数命中关键词：芯片产业",
+        }
     if "半导体设备" in name_text:
         return {
             "bucket": "科技成长ETF",
