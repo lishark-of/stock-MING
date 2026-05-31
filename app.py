@@ -18,7 +18,12 @@ from config import get_config_value as read_config_value, get_deepseek_keys, get
 try:
     from visual_components import (
         render_action_matrix,
+        render_command_center_account_budget_card,
+        render_command_center_shell,
+        render_command_center_shell_end,
         render_etf_score_table,
+        render_discipline_validation_grid,
+        render_fusion_summary_card,
         render_holdings_snapshot_summary,
         render_intraday_etf_snapshot,
         render_margin_allocator_chart,
@@ -31,9 +36,13 @@ try:
         render_moneyflow_conflict,
         render_next_ticket_holding_card,
         render_next_ticket_research_summary,
+        render_observation_pool_card,
+        render_path_projection_card,
         render_position_waterline,
+        render_process_stepper,
         render_price_simulator,
         render_risk_radar_summary,
+        render_signal_confluence_card,
         render_theme_comparison_table,
     )
 except Exception as module_error:
@@ -45,8 +54,23 @@ except Exception as module_error:
     def render_action_matrix(*args, **kwargs):
         _visual_component_unavailable("动作辅助矩阵")
 
+    def render_command_center_account_budget_card(*args, **kwargs):
+        _visual_component_unavailable("账户金额与预算")
+
+    def render_command_center_shell(*args, **kwargs):
+        _visual_component_unavailable("综合推演中心框架")
+
+    def render_command_center_shell_end(*args, **kwargs):
+        pass
+
+    def render_discipline_validation_grid(*args, **kwargs):
+        _visual_component_unavailable("纪律校验区")
+
     def render_etf_score_table(*args, **kwargs):
         _visual_component_unavailable("ETF 强弱表")
+
+    def render_fusion_summary_card(*args, **kwargs):
+        _visual_component_unavailable("融合结论卡")
 
     def render_intraday_etf_snapshot(*args, **kwargs):
         _visual_component_unavailable("ETF 实时快照")
@@ -84,14 +108,26 @@ except Exception as module_error:
     def render_next_ticket_research_summary(*args, **kwargs):
         _visual_component_unavailable("下一票深度研究摘要")
 
+    def render_observation_pool_card(*args, **kwargs):
+        _visual_component_unavailable("观察池")
+
+    def render_path_projection_card(*args, **kwargs):
+        _visual_component_unavailable("路径推演图")
+
     def render_position_waterline(*args, **kwargs):
         _visual_component_unavailable("持仓盈亏水位")
+
+    def render_process_stepper(*args, **kwargs):
+        _visual_component_unavailable("流程步骤条")
 
     def render_price_simulator(*args, **kwargs):
         _visual_component_unavailable("盘中价格情景推演")
 
     def render_risk_radar_summary(*args, **kwargs):
         _visual_component_unavailable("本地风险雷达摘要")
+
+    def render_signal_confluence_card(*args, **kwargs):
+        _visual_component_unavailable("信号共振")
 
     def render_theme_comparison_table(*args, **kwargs):
         _visual_component_unavailable("同赛道 ETF 对比")
@@ -2835,6 +2871,367 @@ def identify_market(raw_input):
     
     # 默认美股
     return raw_input, "US_STOCK", "🇺🇸 美股 (NASDAQ/NYSE)", "$"
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_command_center_mock_packet(cache_version="command_center_2_mock_v1"):
+    updated_at = datetime.datetime.now().isoformat(timespec="seconds")
+    return {
+        "score": 78,
+        "trend_label": "偏强震荡上行",
+        "probability": 67,
+        "confidence": "中高",
+        "one_sentence": "下一波更可能先分化后强化，主线偏 AI 硬件 / 电力设备。",
+        "updated_at": updated_at,
+        "account_snapshot": {
+            "net_asset": 900000,
+            "cash": 200000,
+            "stock_value": 600000,
+            "etf_value": 100000,
+            "margin_debt": 100000,
+            "available_cash": 200000,
+            "available_margin": 50000,
+        },
+        "allocation_budget": {
+            "risk_budget_amount": 108000,
+            "next_ticket_budget_amount": 45000,
+            "etf_budget_amount": 180000,
+            "cash_buffer_amount": 180000,
+            "max_add_amount": 50000,
+            "suggested_adjustment_amount": 30000,
+        },
+        "market_context": {
+            "source": "mock_packet",
+            "status": "缓存 / mock 展示",
+            "risk_temperature": "中性偏暖",
+            "note": "页面加载不触发 Tushare 批量请求、AkShare 资金扫描或 DeepSeek。",
+        },
+        "quant_output": {
+            "label": "中性偏强",
+            "summary": "未来 5-10 个交易日更像震荡抬升，确认点在量能与主线持续性。",
+        },
+        "discipline_output": {
+            "label": "纪律允许观察",
+            "summary": "仓位动作必须等待验证信号，不因单日强势直接追高。",
+        },
+        "fusion_output": {
+            "label": "条件看多",
+            "summary": "只有资金、趋势、量价至少三项共振时才升级动作。",
+            "composite_score": 78,
+            "win_rate": "62%",
+            "suggested_position": "12% 观察仓",
+            "suggested_amount": 108000,
+            "amount_basis": "按风险预算",
+        },
+        "path_projection": [
+            {"day": 1, "乐观路径": 100, "中性路径": 100, "谨慎路径": 100},
+            {"day": 2, "乐观路径": 102, "中性路径": 101, "谨慎路径": 99},
+            {"day": 3, "乐观路径": 104, "中性路径": 101.5, "谨慎路径": 98},
+            {"day": 5, "乐观路径": 107, "中性路径": 103, "谨慎路径": 97},
+            {"day": 8, "乐观路径": 111, "中性路径": 105, "谨慎路径": 95},
+            {"day": 10, "乐观路径": 114, "中性路径": 106, "谨慎路径": 94},
+        ],
+        "discipline_checks": [
+            {"title": "历史胜率", "value": "62%", "status": "满足", "description": "mock 回测摘要显示规则胜率高于最低阈值。"},
+            {"title": "回撤容忍", "value": "12%", "status": "待验证", "description": "当前仅为纪律阈值，未读取最新真实组合回撤。"},
+            {"title": "加仓条件", "value": "三信号共振", "status": "待验证", "description": "需要资金、趋势、量价至少三项同步。"},
+            {"title": "止盈/减仓规则", "value": "跌破 MA20 或放量失守", "status": "满足", "description": "规则已明确，但未自动执行。"},
+            {"title": "验证信号", "value": "次日延续", "status": "待验证", "description": "等待下一交易日量价与资金确认。"},
+        ],
+        "validated_data": [
+            "当前页面使用 mock packet；真实数据接入尚未启用。",
+            "DeepSeek 调用次数由顶部 token counter 验证。",
+            "旧交易纪律实验室和量化推演页面保留在旧版工作台。",
+        ],
+        "cautious_inference": [
+            "谨慎推断：如果量能无法延续，偏强判断需要降级。",
+            "投喂资料观点 / 待验证：AI 硬件和电力设备可能继续占优。",
+            "谨慎推断：下一波可能先分化，再由核心主线强化。",
+        ],
+        "watchlist": [
+            "观察资金是否从高位题材扩散到低位补涨。",
+            "观察主线 ETF 是否保持相对强度。",
+            "观察风险因子是否从黄色信息缺口升级为橙色风险。",
+        ],
+        "signal_confluence": [
+            {"name": "资金流", "strength": "中高", "status": "短线正向", "evaluation": "正向", "comment": "mock：资金回流但仍需次日验证。"},
+            {"name": "趋势强度", "strength": "高", "status": "偏强", "evaluation": "正向", "comment": "mock：趋势仍在上行通道内。"},
+            {"name": "量价结构", "strength": "中", "status": "待确认", "evaluation": "观察", "comment": "mock：量能延续性是关键。"},
+            {"name": "题材热度", "strength": "中高", "status": "分化强化", "evaluation": "正向", "comment": "mock：核心题材占优，非核心分化。"},
+            {"name": "风险因子", "strength": "中", "status": "黄色信息缺口", "evaluation": "观察", "comment": "mock：未读取公告和实时监管数据。"},
+        ],
+        "next_observation_targets": [
+            {"code": "002008", "name": "大族激光", "theme": "AI 硬件 / 设备", "focus": "量价能否延续", "action_state": "观察", "observation_budget": 45000, "single_ticket_amount": 15000, "budget_basis": "按风险预算", "ticket_basis": "按可用现金"},
+            {"code": "512480", "name": "半导体 ETF", "theme": "芯片", "focus": "相对强度与成交额", "action_state": "等待验证", "observation_budget": 45000, "single_ticket_amount": 15000, "budget_basis": "按风险预算", "ticket_basis": "按可用现金"},
+            {"code": "159819", "name": "AI ETF", "theme": "人工智能", "focus": "主线热度是否扩散", "action_state": "观察", "observation_budget": 45000, "single_ticket_amount": 15000, "budget_basis": "按风险预算", "ticket_basis": "按可用现金"},
+        ],
+    }
+
+
+def clone_command_center_packet(packet):
+    return json.loads(json.dumps(packet or {}, ensure_ascii=False, default=str))
+
+
+def refresh_command_center_market_context(packet):
+    payload = clone_command_center_packet(packet)
+    payload["market_context"] = {
+        "source": "local_light_refresh",
+        "status": "已轻量刷新",
+        "risk_temperature": "中性偏暖",
+        "note": "本次只更新本地 mock 市场环境，不调用 Tushare / AkShare 批量接口。",
+    }
+    payload["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+    payload.setdefault("validated_data", [])
+    payload["validated_data"] = [
+        "已轻量刷新市场环境：未触发外部重接口。",
+        *payload["validated_data"][:5],
+    ]
+    return payload
+
+
+def generate_command_center_fusion(packet, target="", market_badge=""):
+    payload = clone_command_center_packet(packet)
+    allocation = payload.get("allocation_budget") or {}
+    payload.update(
+        {
+            "score": 80,
+            "trend_label": "偏强但需验证",
+            "probability": 69,
+            "confidence": "中高",
+            "one_sentence": f"{target or '当前标的'} 下一波更适合等资金、趋势、量价三项共振后再升级动作。",
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+    )
+    payload["fusion_output"] = {
+        "label": "等待三信号共振",
+        "summary": f"{market_badge or '当前市场'} 采用条件化观察，DeepSeek 不参与本地评分。",
+        "composite_score": 80,
+        "win_rate": "64%",
+        "suggested_position": "12% 观察仓",
+        "suggested_amount": allocation.get("risk_budget_amount", 108000),
+        "amount_basis": "按风险预算",
+    }
+    return payload
+
+
+def run_command_center_discipline_validation(packet):
+    payload = clone_command_center_packet(packet)
+    payload["discipline_checks"] = [
+        {"title": "历史胜率", "value": "64%", "status": "满足", "description": "使用缓存 / mock 回测摘要，达到观察阈值。"},
+        {"title": "回撤容忍", "value": "12%", "status": "满足", "description": "当前纪律允许的最大回撤边界清晰。"},
+        {"title": "加仓条件", "value": "资金 + 趋势 + 量价", "status": "待验证", "description": "加仓必须等待三项共振，不因单项信号行动。"},
+        {"title": "止盈/减仓规则", "value": "失守关键位减仓", "status": "满足", "description": "减仓条件已明确，可用于后续真实链路接入。"},
+        {"title": "验证信号", "value": "次日确认", "status": "待验证", "description": "仍需下一交易日验证，不把假设写成事实。"},
+    ]
+    payload["discipline_output"] = {
+        "label": "纪律通过但需验证",
+        "summary": "允许观察，不允许因为单次推演直接提高仓位。",
+    }
+    payload["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+    return payload
+
+
+def render_command_center_2_page(target, market_badge, price, position_profile=None):
+    packet_key = "command_center_2_packet"
+    explanation_key = "command_center_2_deepseek_explanation"
+    explanation_at_key = "command_center_2_deepseek_generated_at"
+    if packet_key not in st.session_state:
+        st.session_state[packet_key] = get_command_center_mock_packet()
+
+    st.markdown(
+        """
+        <style>
+        .st-key-btn_cc_refresh_market button,
+        .st-key-btn_cc_generate_fusion button,
+        .st-key-btn_cc_run_discipline button,
+        .st-key-btn_cc_deepseek_explain button {
+            border-radius: 14px !important;
+            border: 1px solid rgba(20, 184, 166, 0.24) !important;
+            background: linear-gradient(135deg, rgba(14,165,233,0.10), rgba(20,184,166,0.12)) !important;
+            color: #0f766e !important;
+            box-shadow: 0 10px 28px rgba(15,23,42,0.06) !important;
+        }
+        .st-key-btn_cc_deepseek_explain button {
+            background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(14,165,233,0.10)) !important;
+            color: #6d28d9 !important;
+            border-color: rgba(139, 92, 246, 0.20) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    render_command_center_shell()
+    render_process_stepper(active_step=4)
+
+    packet = st.session_state[packet_key]
+    control_cols = st.columns([1, 1, 1, 1.2])
+    with control_cols[0]:
+        if st.button("刷新市场环境", key="btn_cc_refresh_market", width="stretch"):
+            status = st.status("轻量刷新市场环境...", expanded=True)
+            status.write("只更新本地缓存 packet，不调用 Tushare / AkShare 批量接口。")
+            st.session_state[packet_key] = refresh_command_center_market_context(packet)
+            status.update(label="市场环境轻量刷新完成", state="complete")
+    with control_cols[1]:
+        if st.button("生成综合推演", key="btn_cc_generate_fusion", width="stretch"):
+            status = st.status("生成综合推演...", expanded=True)
+            status.write("融合 mock 推演输出与纪律校验结果，不调用 DeepSeek。")
+            st.session_state[packet_key] = generate_command_center_fusion(packet, target=target, market_badge=market_badge)
+            status.update(label="综合推演已写入 session_state", state="complete")
+    with control_cols[2]:
+        if st.button("运行纪律校验", key="btn_cc_run_discipline", width="stretch"):
+            status = st.status("运行纪律校验...", expanded=True)
+            status.write("使用缓存 / mock 纪律规则，结果写入 session_state。")
+            st.session_state[packet_key] = run_command_center_discipline_validation(packet)
+            status.update(label="纪律校验完成", state="complete")
+    with control_cols[3]:
+        if st.button("生成综合推演解释", key="btn_cc_deepseek_explain", width="stretch"):
+            status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
+            current_packet = st.session_state.get(packet_key) or packet
+            prompt = f"""
+请基于以下综合推演中心 packet 输出一段克制解释。
+要求：
+1. 不得把 mock 或投喂资料观点写成事实。
+2. 必须说明 DeepSeek 只辅助解释，不直接决定仓位。
+3. 输出包含：综合结论、需要验证的信号、纪律边界、数据缺口。
+
+当前标的：{target}
+市场：{market_badge}
+当前价：{price}
+packet:
+{json.dumps(current_packet, ensure_ascii=False, indent=2, default=str)}
+"""
+            result = call_deepseek_non_stream(
+                prompt,
+                system_role="你是克制的交易推演解释员，只解释缓存事实和待验证假设，不输出直接交易指令。",
+                max_tokens=1600,
+            )
+            st.session_state[explanation_key] = result or ""
+            st.session_state[explanation_at_key] = datetime.datetime.now().isoformat(timespec="seconds")
+            status.update(label="DeepSeek 解释已写入 session_state", state="complete")
+
+    packet = st.session_state.get(packet_key) or get_command_center_mock_packet()
+    st.caption(
+        f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
+        "页面加载和控件切换不会自动调用 DeepSeek。"
+    )
+    render_command_center_account_budget_card(packet)
+    render_fusion_summary_card(packet)
+    render_path_projection_card(packet)
+    render_discipline_validation_grid(packet)
+    render_observation_pool_card(packet)
+    render_signal_confluence_card(packet.get("signal_confluence"))
+
+    st.markdown("#### DeepSeek 深度解释缓存")
+    explanation = st.session_state.get(explanation_key)
+    if explanation:
+        st.caption(f"生成时间：{st.session_state.get(explanation_at_key) or '暂无'}")
+        st.markdown(explanation)
+    else:
+        st.info("当前无 DeepSeek 解释缓存，点击按钮后生成；解释只辅助，不直接决定仓位。")
+
+    render_command_center_shell_end()
+
+
+COMMAND_CENTER_NAV_ITEMS = [
+    "首页",
+    "今日关注池",
+    "个股诊断",
+    "天眼风控",
+    "推演",
+    "交易纪律实验室",
+    "综合推演中心 2.0",
+    "策略库",
+    "复盘与记录",
+    "数据中心",
+    "系统设置",
+]
+
+
+def render_command_center_placeholder(nav_name, message=None):
+    st.markdown(
+        f"""
+        <section class="cc-card">
+          <div class="cc-card-title">{nav_name}</div>
+          <div class="cc-card-caption">轻量占位入口；页面切换只更新 session_state，不触发 DeepSeek、Tushare 批量请求或旧版重型 tabs。</div>
+          <div class="cc-mini-card">
+            <div class="cc-mini-title">当前状态</div>
+            <div class="cc-mini-value">入口保留</div>
+            <div class="cc-mini-desc">{message or '模块后续接入；当前只提供导航反馈和占位内容。'}</div>
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_command_center_workspace(target, market_badge, price, position_profile=None):
+    if "command_center_nav" not in st.session_state:
+        st.session_state["command_center_nav"] = "综合推演中心 2.0"
+    if st.session_state["command_center_nav"] not in COMMAND_CENTER_NAV_ITEMS:
+        st.session_state["command_center_nav"] = "综合推演中心 2.0"
+
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stRadio"] [role="radiogroup"] {
+            gap: 4px;
+        }
+        div[data-testid="stRadio"] label {
+            border-radius: 14px;
+            padding: 7px 10px;
+            border: 1px solid transparent;
+        }
+        div[data-testid="stRadio"] label:has(input:checked) {
+            background: rgba(20, 184, 166, 0.10);
+            border-color: rgba(20, 184, 166, 0.18);
+            color: #0f766e;
+            font-weight: 750;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    nav_col, content_col = st.columns([0.22, 0.78], gap="large")
+    with nav_col:
+        st.markdown(
+            """
+            <div class="cc-sidebar">
+              <div class="cc-logo">
+                <div class="cc-logo-mark">M</div>
+                <div>stock-MING<br><span style="color:#64748b;font-size:11px;font-weight:700;">Command Center</span></div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.radio(
+            "主导航",
+            COMMAND_CENTER_NAV_ITEMS,
+            key="command_center_nav",
+            label_visibility="collapsed",
+        )
+
+    selected_nav = st.session_state.get("command_center_nav", "综合推演中心 2.0")
+    with content_col:
+        if selected_nav == "综合推演中心 2.0":
+            render_command_center_2_page(
+                target=target,
+                market_badge=market_badge,
+                price=price,
+                position_profile=position_profile,
+            )
+        elif selected_nav == "交易纪律实验室":
+            render_command_center_shell(active_nav=selected_nav)
+            render_command_center_placeholder(selected_nav, "旧版入口保留，点击旧版工作台进入。")
+        elif selected_nav == "推演":
+            render_command_center_shell(active_nav=selected_nav)
+            render_command_center_placeholder(selected_nav, "量化推演入口保留，后续接入。")
+        else:
+            render_command_center_shell(active_nav=selected_nav)
+            render_command_center_placeholder(selected_nav)
+
 
 # ==========================================
 # 3. 权限认证与 Supabase 云端连线
@@ -8580,6 +8977,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         <div class="ming-subtitle hf-ios-fade-in hf-ios-stagger-3">从成本价出发，合并量化、资金、舆情和经理规则，给出更克制的交易指令。</div>
     </section>
     """, unsafe_allow_html=True)
+
+    workspace_mode = st.radio(
+        "主导航",
+        ["综合推演中心 2.0", "旧版工作台（保留旧 tabs）"],
+        horizontal=True,
+        key="workspace_mode_v2",
+        label_visibility="collapsed",
+    )
     
     top_c1, top_c2 = st.columns([3, 1])
     with top_c1: 
@@ -8588,18 +8993,30 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         target, market_type, market_badge, currency = identify_market(raw_target)
 
     with top_c2:
-        price_detail = get_current_price_detail(target, market_type)
-        price = price_detail.get("price")
-        if price:
-            p_display = f"{currency} {price}"
-            st.metric(f"📡 卫星报价 ({market_badge})", p_display)
-            source_label = price_detail.get("price_source") or "unknown"
-            data_date = price_detail.get("data_date") or "日期未知"
-            st.caption(f"价格来源：{source_label}｜数据日期：{data_date}")
+        if workspace_mode == "综合推演中心 2.0":
+            price_detail = {
+                "ticker": target,
+                "price": None,
+                "price_source": "lightweight_mock_mode",
+                "data_date": "",
+                "warning": "综合推演中心 2.0 默认不自动读取实时行情，避免打开页面触发外部接口。",
+            }
+            price = None
+            st.metric(f"📡 轻量模式 ({market_badge})", "未自动读取")
+            st.caption("默认展示缓存 / mock packet；需要真实行情时进入旧版工作台或后续接按钮触发链路。")
         else:
-            st.metric(f"📡 信号丢��� ({market_badge})", "未查找到该标的")
-            if price_detail.get("warning"):
-                st.caption(f"价格读取失败：{price_detail.get('warning')}")
+            price_detail = get_current_price_detail(target, market_type)
+            price = price_detail.get("price")
+            if price:
+                p_display = f"{currency} {price}"
+                st.metric(f"📡 卫星报价 ({market_badge})", p_display)
+                source_label = price_detail.get("price_source") or "unknown"
+                data_date = price_detail.get("data_date") or "日期未知"
+                st.caption(f"价格来源：{source_label}｜数据日期：{data_date}")
+            else:
+                st.metric(f"📡 信号丢失 ({market_badge})", "未查找到该标的")
+                if price_detail.get("warning"):
+                    st.caption(f"价格读取失败：{price_detail.get('warning')}")
 
     pos_c1, pos_c2, pos_c3, pos_c4 = st.columns([1.5, 1, 1, 1])
     with pos_c1:
@@ -8670,6 +9087,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.rerun()
 
     st.markdown("---")
+    if workspace_mode == "综合推演中心 2.0":
+        render_command_center_workspace(
+            target=target,
+            market_badge=market_badge,
+            price=price,
+            position_profile=position_profile_preview,
+        )
+        st.stop()
 
     tab_home, tab_risk, tab_discipline, tab_main, tab_margin_etf, tab_brain, tab_health, tab_screener = st.tabs([
     "🏠 今日关注池",

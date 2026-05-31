@@ -3002,3 +3002,671 @@ def render_next_ticket_research_summary(result: dict | None = None, generated_at
     _result_list(payload.get("data_gaps") or payload.get("数据缺口") or [])
     st.markdown("**为什么不是直接行动**")
     st.write(payload.get("why_not_direct_action") or payload.get("为什么不是直接买") or "需要等待验证，且不构成交易建议。")
+
+
+def _inject_command_center_css():
+    st.markdown(
+        """
+        <style>
+        .cc-shell {
+            background:
+                radial-gradient(circle at 8% 6%, rgba(14, 165, 233, 0.12), transparent 26%),
+                radial-gradient(circle at 94% 14%, rgba(139, 92, 246, 0.10), transparent 24%),
+                linear-gradient(135deg, #f5f7fb 0%, #eef4f7 48%, #f8fafc 100%);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 28px;
+            padding: 22px;
+            margin: 8px 0 18px;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.08);
+        }
+        .cc-grid {
+            display: grid;
+            grid-template-columns: 230px minmax(0, 1fr);
+            gap: 18px;
+            align-items: start;
+        }
+        .cc-sidebar {
+            position: sticky;
+            top: 72px;
+            background: rgba(255, 255, 255, 0.84);
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            border-radius: 24px;
+            padding: 16px;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+            backdrop-filter: blur(12px);
+        }
+        .cc-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 850;
+            letter-spacing: -0.03em;
+            color: #0f172a;
+            margin-bottom: 14px;
+        }
+        .cc-logo-mark {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+            color: #fff;
+            font-weight: 900;
+            box-shadow: 0 10px 24px rgba(20, 184, 166, 0.28);
+        }
+        .cc-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 10px;
+            margin: 4px 0;
+            border-radius: 14px;
+            color: #475569;
+            font-size: 13px;
+            border: 1px solid transparent;
+        }
+        .cc-nav-item.active {
+            color: #0f766e;
+            background: rgba(20, 184, 166, 0.10);
+            border-color: rgba(20, 184, 166, 0.18);
+            font-weight: 750;
+        }
+        .cc-main {
+            min-width: 0;
+        }
+        .cc-hero {
+            background: rgba(255,255,255,0.78);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 26px;
+            padding: 22px;
+            box-shadow: 0 18px 52px rgba(15, 23, 42, 0.07);
+        }
+        .cc-kicker {
+            color: #0f766e;
+            font-size: 12px;
+            letter-spacing: 0.12em;
+            font-weight: 800;
+            text-transform: uppercase;
+            margin-bottom: 7px;
+        }
+        .cc-title {
+            margin: 0;
+            color: #0f172a;
+            font-size: clamp(28px, 4vw, 48px);
+            line-height: 1.02;
+            letter-spacing: -0.055em;
+        }
+        .cc-subtitle {
+            color: #64748b;
+            max-width: 760px;
+            margin-top: 10px;
+            font-size: 14px;
+            line-height: 1.65;
+        }
+        .cc-card {
+            background: rgba(255, 255, 255, 0.90);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 24px;
+            padding: 18px;
+            box-shadow: 0 16px 44px rgba(15, 23, 42, 0.06);
+            margin: 14px 0;
+        }
+        .cc-card-title {
+            color: #0f172a;
+            font-weight: 820;
+            font-size: 17px;
+            margin-bottom: 5px;
+            letter-spacing: -0.02em;
+        }
+        .cc-card-caption {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.55;
+            margin-bottom: 12px;
+        }
+        .cc-stepper {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 10px;
+            margin: 14px 0;
+        }
+        .cc-step {
+            min-height: 104px;
+            border-radius: 20px;
+            padding: 13px;
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            color: #475569;
+        }
+        .cc-step.active {
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(20, 184, 166, 0.14));
+            border-color: rgba(20, 184, 166, 0.34);
+            color: #0f766e;
+            box-shadow: 0 14px 32px rgba(20, 184, 166, 0.14);
+        }
+        .cc-step-icon {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            background: rgba(15, 118, 110, 0.10);
+            margin-bottom: 9px;
+        }
+        .cc-step-title {
+            font-weight: 800;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+        .cc-step-desc {
+            font-size: 11px;
+            line-height: 1.45;
+            color: #64748b;
+        }
+        .cc-summary-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+            gap: 14px;
+        }
+        .cc-score {
+            font-size: 64px;
+            line-height: 0.95;
+            font-weight: 900;
+            letter-spacing: -0.08em;
+            color: #0f172a;
+        }
+        .cc-score span {
+            font-size: 22px;
+            color: #94a3b8;
+            letter-spacing: -0.04em;
+        }
+        .cc-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 12px 0;
+        }
+        .cc-pill {
+            display: inline-flex;
+            gap: 6px;
+            align-items: center;
+            border-radius: 999px;
+            padding: 7px 10px;
+            background: rgba(14, 165, 233, 0.08);
+            color: #0369a1;
+            border: 1px solid rgba(14, 165, 233, 0.15);
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .cc-pill.green {
+            background: rgba(20, 184, 166, 0.10);
+            color: #0f766e;
+            border-color: rgba(20, 184, 166, 0.18);
+        }
+        .cc-pill.purple {
+            background: rgba(139, 92, 246, 0.10);
+            color: #6d28d9;
+            border-color: rgba(139, 92, 246, 0.16);
+        }
+        .cc-fusion-flow {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr auto 1fr;
+            gap: 9px;
+            align-items: center;
+        }
+        .cc-mini-card {
+            background: #f8fafc;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 18px;
+            padding: 14px;
+            min-height: 118px;
+        }
+        .cc-mini-title {
+            color: #0f172a;
+            font-weight: 800;
+            font-size: 13px;
+            margin-bottom: 7px;
+        }
+        .cc-mini-value {
+            color: #0f766e;
+            font-size: 18px;
+            font-weight: 850;
+            letter-spacing: -0.04em;
+            margin-bottom: 5px;
+        }
+        .cc-mini-desc {
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.45;
+        }
+        .cc-arrow {
+            color: #14b8a6;
+            font-weight: 900;
+            font-size: 20px;
+        }
+        .cc-three-grid,
+        .cc-validation-grid,
+        .cc-signal-grid {
+            display: grid;
+            gap: 12px;
+        }
+        .cc-three-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .cc-validation-grid {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+        .cc-signal-grid {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+        .cc-money-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .cc-money-card {
+            min-height: 88px;
+            border-radius: 18px;
+            padding: 13px;
+            background: #f8fafc;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+        }
+        .cc-money-value {
+            color: #0f172a;
+            font-size: 16px;
+            line-height: 1.35;
+            font-weight: 850;
+            letter-spacing: 0;
+            overflow-wrap: anywhere;
+        }
+        .cc-check {
+            display: inline-flex;
+            border-radius: 999px;
+            padding: 5px 8px;
+            font-size: 11px;
+            font-weight: 800;
+            margin-top: 7px;
+        }
+        .cc-check.ok { background: rgba(20, 184, 166, 0.10); color: #0f766e; }
+        .cc-check.wait { background: rgba(245, 158, 11, 0.12); color: #b45309; }
+        .cc-check.risk { background: rgba(239, 68, 68, 0.10); color: #b91c1c; }
+        .cc-list {
+            margin: 0;
+            padding-left: 17px;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.7;
+        }
+        .cc-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px;
+            font-size: 13px;
+        }
+        .cc-table th {
+            color: #64748b;
+            font-size: 12px;
+            text-align: left;
+            font-weight: 800;
+            padding: 0 10px;
+        }
+        .cc-table td {
+            background: #f8fafc;
+            padding: 11px 10px;
+            color: #334155;
+            border-top: 1px solid rgba(148, 163, 184, 0.16);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+        }
+        .cc-table td:first-child {
+            border-left: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 13px 0 0 13px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .cc-table td:last-child {
+            border-right: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 0 13px 13px 0;
+        }
+        .cc-muted-note {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+            margin-top: 8px;
+        }
+        @media (max-width: 980px) {
+            .cc-grid,
+            .cc-summary-grid,
+            .cc-three-grid,
+            .cc-validation-grid,
+            .cc-signal-grid,
+            .cc-money-grid,
+            .cc-stepper {
+                grid-template-columns: 1fr;
+            }
+            .cc-sidebar {
+                position: relative;
+                top: auto;
+            }
+            .cc-fusion-flow {
+                grid-template-columns: 1fr;
+            }
+            .cc-arrow {
+                transform: rotate(90deg);
+                text-align: center;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _html_list(items):
+    values = items if isinstance(items, list) else []
+    if not values:
+        values = ["暂无缓存结果。"]
+    return "<ul class='cc-list'>" + "".join(f"<li>{escape(str(item))}</li>" for item in values[:6]) + "</ul>"
+
+
+def _status_class(value):
+    text = str(value or "")
+    if any(key in text for key in ["满足", "通过", "正向", "确认", "强"]):
+        return "ok"
+    if any(key in text for key in ["风险", "不满足", "恶化", "降低"]):
+        return "risk"
+    return "wait"
+
+
+def _fmt_cc_money(value):
+    number = _to_float(value)
+    if number is None:
+        return "暂无"
+    return f"¥{number:,.0f}"
+
+
+def _cc_money_line(value, basis):
+    basis_text = str(basis or "按净资产")
+    return f"{_fmt_cc_money(value)} · {basis_text}"
+
+
+def render_command_center_shell(active_nav: str = "综合推演中心 2.0"):
+    _inject_command_center_css()
+    title = active_nav or "综合推演中心 2.0"
+    subtitle = "把量化推演、交易纪律实验室和风险验证放在同一张工作台。默认展示缓存或 mock packet；重型扫描、DeepSeek、Tushare 批量请求都必须手动触发。"
+    if title != "综合推演中心 2.0":
+        subtitle = "左侧导航为真实 Streamlit 控件；当前模块为轻量占位，不触发 DeepSeek、Tushare 批量请求或旧版重型 tabs。"
+    st.markdown(
+        f"""
+        <div class="cc-shell">
+          <main class="cc-main">
+            <section class="cc-hero">
+              <div class="cc-kicker">Integrated Simulation Center</div>
+              <h1 class="cc-title">{escape(str(title))}</h1>
+              <div class="cc-subtitle">{escape(subtitle)}</div>
+            </section>
+          </main>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_command_center_shell_end():
+    return None
+
+
+def render_process_stepper(steps=None, active_step: int = 2):
+    _inject_command_center_css()
+    default_steps = [
+        ("市场环境", "☁", "先判断风格与风险温度"),
+        ("结构化数据", "▦", "只引用可验证事实"),
+        ("个股推演", "↗", "输出未来路径假设"),
+        ("交易纪律实验室", "▣", "用规则校验动作边界"),
+        ("下一波趋势结论", "✦", "融合为条件化结论"),
+    ]
+    steps = steps or default_steps
+    html = "<div class='cc-stepper'>"
+    for idx, item in enumerate(steps):
+        title, icon, desc = item
+        html += (
+            f"<div class='cc-step {'active' if idx == active_step else ''}'>"
+            f"<div class='cc-step-icon'>{escape(str(icon))}</div>"
+            f"<div class='cc-step-title'>{escape(str(title))}</div>"
+            f"<div class='cc-step-desc'>{escape(str(desc))}</div>"
+            "</div>"
+        )
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_command_center_account_budget_card(packet: dict | None = None):
+    _inject_command_center_css()
+    payload = packet or {}
+    account = payload.get("account_snapshot") or {}
+    budget = payload.get("allocation_budget") or {}
+    metrics = [
+        ("净资产", _cc_money_line(account.get("net_asset"), "按净资产")),
+        ("现金", _cc_money_line(account.get("cash"), "按可用现金")),
+        ("股票市值", _cc_money_line(account.get("stock_value"), "按建议总敞口")),
+        ("ETF 市值", _cc_money_line(account.get("etf_value"), "按建议总敞口")),
+        ("融资负债", _cc_money_line(account.get("margin_debt"), "按净资产")),
+        ("可用融资", _cc_money_line(account.get("available_margin"), "按可用现金")),
+    ]
+    budget_metrics = [
+        ("建议风险预算", _cc_money_line(budget.get("risk_budget_amount"), "按净资产")),
+        ("下一票观察预算", _cc_money_line(budget.get("next_ticket_budget_amount"), "按风险预算")),
+        ("ETF 预算", _cc_money_line(budget.get("etf_budget_amount"), "按净资产")),
+        ("现金缓冲", _cc_money_line(budget.get("cash_buffer_amount"), "按净资产")),
+        ("可加仓金额", _cc_money_line(budget.get("max_add_amount"), "按可用现金")),
+        ("建议调整金额", _cc_money_line(budget.get("suggested_adjustment_amount"), "按建议总敞口")),
+    ]
+    html = "<section class='cc-card'><div class='cc-card-title'>账户金额与配置预算</div><div class='cc-card-caption'>金额均为人民币整数口径；mock packet 仅用于展示页面口径，不触发外部接口。</div><div class='cc-money-grid'>"
+    for label, value in [*metrics, *budget_metrics]:
+        html += (
+            "<div class='cc-money-card'>"
+            f"<div class='cc-mini-title'>{escape(label)}</div>"
+            f"<div class='cc-money-value'>{escape(value)}</div>"
+            "</div>"
+        )
+    html += "</div></section>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_fusion_summary_card(packet: dict | None = None):
+    _inject_command_center_css()
+    payload = packet or {}
+    allocation = payload.get("allocation_budget") or {}
+    quant = payload.get("quant_output") or {}
+    discipline = payload.get("discipline_output") or {}
+    fusion = payload.get("fusion_output") or {}
+    risk_budget = _cc_money_line(allocation.get("risk_budget_amount"), "按净资产")
+    observation_budget = _cc_money_line(allocation.get("next_ticket_budget_amount"), "按风险预算")
+    suggested_amount = _cc_money_line(
+        fusion.get("suggested_amount") or allocation.get("risk_budget_amount"),
+        fusion.get("amount_basis") or "按风险预算",
+    )
+    st.markdown(
+        f"""
+        <div class="cc-summary-grid">
+          <section class="cc-card">
+            <div class="cc-card-title">下一波趋势综合结论</div>
+            <div class="cc-card-caption">结论来自缓存或 mock packet；不自动调用 DeepSeek。</div>
+            <div class="cc-score">{int(payload.get('score') or 0)}<span>/100</span></div>
+            <div class="cc-pill-row">
+              <span class="cc-pill green">趋势：{escape(str(payload.get('trend_label') or '暂无'))}</span>
+              <span class="cc-pill">概率：{escape(str(payload.get('probability') or 0))}%</span>
+              <span class="cc-pill purple">置信度：{escape(str(payload.get('confidence') or '暂无'))}</span>
+              <span class="cc-pill green">建议风险预算金额：{escape(risk_budget)}</span>
+              <span class="cc-pill">建议观察仓位金额：{escape(observation_budget)}</span>
+            </div>
+            <div style="font-size:18px;font-weight:800;color:#0f172a;line-height:1.45;">{escape(str(payload.get('one_sentence') or '暂无结论。'))}</div>
+            <div class="cc-muted-note">结论更新时间：{escape(str(payload.get('updated_at') or '暂无'))}</div>
+          </section>
+          <section class="cc-card">
+            <div class="cc-card-title">融合图</div>
+            <div class="cc-card-caption">推演输出 + 纪律实验室输出 → 综合推演引擎。</div>
+            <div class="cc-fusion-flow">
+              <div class="cc-mini-card">
+                <div class="cc-mini-title">推演输出</div>
+                <div class="cc-mini-value">{escape(str(quant.get('label') or '中性偏强'))}</div>
+                <div class="cc-mini-desc">{escape(str(quant.get('summary') or '路径推演等待刷新。'))}</div>
+              </div>
+              <div class="cc-arrow">＋</div>
+              <div class="cc-mini-card">
+                <div class="cc-mini-title">纪律实验室输出</div>
+                <div class="cc-mini-value">{escape(str(discipline.get('label') or '等待验证'))}</div>
+                <div class="cc-mini-desc">{escape(str(discipline.get('summary') or '纪律校验等待运行。'))}</div>
+              </div>
+              <div class="cc-arrow">→</div>
+              <div class="cc-mini-card">
+                <div class="cc-mini-title">综合推演引擎</div>
+                <div class="cc-mini-value">{escape(str(fusion.get('label') or '条件看多'))}</div>
+                <div class="cc-mini-desc">
+                  综合分：{escape(str(fusion.get('composite_score') or payload.get('score') or 0))}/100<br>
+                  胜率：{escape(str(fusion.get('win_rate') or '暂无'))}<br>
+                  建议仓位：{escape(str(fusion.get('suggested_position') or '暂无'))}<br>
+                  建议金额：{escape(suggested_amount)}<br>
+                  {escape(str(fusion.get('summary') or '只输出条件化观察，不直接决定仓位。'))}
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_path_projection_card(packet: dict | None = None):
+    _inject_command_center_css()
+    payload = packet or {}
+    rows = payload.get("path_projection") or []
+    if not rows:
+        rows = [
+            {"day": 1, "乐观路径": 100, "中性路径": 100, "谨慎路径": 100},
+            {"day": 2, "乐观路径": 102, "中性路径": 101, "谨慎路径": 99},
+            {"day": 3, "乐观路径": 104, "中性路径": 101.5, "谨慎路径": 98},
+            {"day": 5, "乐观路径": 107, "中性路径": 103, "谨慎路径": 97},
+            {"day": 8, "乐观路径": 111, "中性路径": 105, "谨慎路径": 95},
+            {"day": 10, "乐观路径": 114, "中性路径": 106, "谨慎路径": 94},
+        ]
+    frame = pd.DataFrame(rows).set_index("day")
+    st.markdown(
+        """
+        <section class="cc-card">
+          <div class="cc-card-title">未来 5-10 个交易日趋势推演</div>
+          <div class="cc-card-caption">三条路径为 mock / 缓存推演路径，不自动接入真实 DeepSeek。</div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.line_chart(frame, height=260)
+    st.markdown(
+        "<div class='cc-muted-note'>基于历史交易经验、资金方向和纪律规则的路径推演，不构成投资建议。</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_discipline_validation_grid(items=None):
+    _inject_command_center_css()
+    payload = items if isinstance(items, dict) else {}
+    rows = payload.get("discipline_checks") if payload else items
+    rows = rows or []
+    account = payload.get("account_snapshot") or {}
+    budget = payload.get("allocation_budget") or {}
+    current_position_amount = _to_float(account.get("stock_value"), 0) + _to_float(account.get("etf_value"), 0)
+    money_rows = [
+        {
+            "title": "当前仓位金额",
+            "value": _cc_money_line(current_position_amount, "按建议总敞口"),
+            "status": "待验证",
+            "description": "股票市值 + ETF 市值，来自账户快照。",
+        },
+        {
+            "title": "可加仓金额",
+            "value": _cc_money_line(budget.get("max_add_amount"), "按可用现金"),
+            "status": "待验证",
+            "description": "不超过可用现金与本轮加仓上限。",
+        },
+        {
+            "title": "最大允许回撤金额",
+            "value": _cc_money_line(budget.get("risk_budget_amount"), "按风险预算"),
+            "status": "满足",
+            "description": "按净资产风险预算折算的回撤边界。",
+        },
+        {
+            "title": "触发减仓金额",
+            "value": _cc_money_line(budget.get("suggested_adjustment_amount"), "按建议总敞口"),
+            "status": "待验证",
+            "description": "若跌破纪律阈值，优先按该金额做减仓观察。",
+        },
+    ]
+    display_rows = money_rows + list(rows)
+    html = "<section class='cc-card'><div class='cc-card-title'>纪律校验区</div><div class='cc-card-caption'>每项显示当前值、是否满足和简短说明；金额均标注预算口径。</div><div class='cc-validation-grid'>"
+    for item in display_rows[:9]:
+        status = item.get("status") or "待验证"
+        html += (
+            "<div class='cc-mini-card'>"
+            f"<div class='cc-mini-title'>{escape(str(item.get('title') or '纪律项'))}</div>"
+            f"<div class='cc-mini-value'>{escape(str(item.get('value') or '暂无'))}</div>"
+            f"<div class='cc-mini-desc'>{escape(str(item.get('description') or '等待校验。'))}</div>"
+            f"<span class='cc-check {_status_class(status)}'>{escape(str(status))}</span>"
+            "</div>"
+        )
+    html += "</div></section>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_signal_confluence_card(items=None):
+    _inject_command_center_css()
+    rows = items or []
+    html = "<section class='cc-card'><div class='cc-card-title'>关键信号共振</div><div class='cc-card-caption'>强度是结构化状态，不把假设写成事实。</div><div class='cc-signal-grid'>"
+    for item in rows[:5]:
+        status = item.get("status") or "待观察"
+        html += (
+            "<div class='cc-mini-card'>"
+            f"<div class='cc-mini-title'>{escape(str(item.get('name') or '信号'))}</div>"
+            f"<div class='cc-mini-value'>{escape(str(item.get('strength') or '中'))}</div>"
+            f"<div class='cc-mini-desc'>状态：{escape(str(status))}<br>{escape(str(item.get('comment') or '等待确认。'))}</div>"
+            f"<span class='cc-check {_status_class(status)}'>{escape(str(item.get('evaluation') or '观察'))}</span>"
+            "</div>"
+        )
+    html += "</div></section>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_observation_pool_card(packet: dict | None = None):
+    _inject_command_center_css()
+    payload = packet or {}
+    validated = payload.get("validated_data") or []
+    cautious = payload.get("cautious_inference") or []
+    watchlist = payload.get("watchlist") or []
+    next_targets = payload.get("next_observation_targets") or []
+    st.markdown(
+        "<section class='cc-card'><div class='cc-card-title'>验证边界与观察池</div><div class='cc-card-caption'>投喂资料观点必须标记为“投喂资料观点 / 待验证”。</div>"
+        "<div class='cc-three-grid'>"
+        f"<div class='cc-mini-card'><div class='cc-mini-title'>已验证数据</div>{_html_list(validated)}</div>"
+        f"<div class='cc-mini-card'><div class='cc-mini-title'>谨慎推断</div>{_html_list(cautious)}</div>"
+        f"<div class='cc-mini-card'><div class='cc-mini-title'>观察清单</div>{_html_list(watchlist)}</div>"
+        "</div></section>",
+        unsafe_allow_html=True,
+    )
+    if next_targets:
+        header = "<tr><th>代码</th><th>简称</th><th>所属方向</th><th>关注点</th><th>观察预算</th><th>单票建议金额</th><th>动作状态</th></tr>"
+        body = "".join(
+            "<tr>"
+            f"<td>{escape(str(item.get('code') or ''))}</td>"
+            f"<td>{escape(str(item.get('name') or ''))}</td>"
+            f"<td>{escape(str(item.get('theme') or ''))}</td>"
+            f"<td>{escape(str(item.get('focus') or ''))}</td>"
+            f"<td>{escape(_cc_money_line(item.get('observation_budget'), item.get('budget_basis') or '按风险预算'))}</td>"
+            f"<td>{escape(_cc_money_line(item.get('single_ticket_amount'), item.get('ticket_basis') or '按可用现金'))}</td>"
+            f"<td>{escape(str(item.get('action_state') or '观察'))}</td>"
+            "</tr>"
+            for item in next_targets[:8]
+        )
+        st.markdown(
+            f"<section class='cc-card'><div class='cc-card-title'>下一次观察标的</div><table class='cc-table'>{header}{body}</table></section>",
+            unsafe_allow_html=True,
+        )
