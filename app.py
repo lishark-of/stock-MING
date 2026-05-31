@@ -2425,6 +2425,17 @@ def log_token_usage(prompt_tokens_estimate=2000, completion_tokens_estimate=1500
 def estimate_tokens(text):
     return max(1, int(len(str(text)) / 1.7))
 
+
+def render_legacy_data_status(module_name, status="未刷新", updated_at="", data_source="未加载", deepseek_status="未调用"):
+    st.caption(
+        f"{module_name}｜当前数据状态：{status}｜"
+        f"最后刷新时间：{updated_at or '暂无'}｜"
+        f"数据来源：{data_source or '未加载'}｜"
+        f"DeepSeek：{deepseek_status or '未调用'}"
+    )
+    if status == "未刷新":
+        st.info("当前未运行，请点击按钮获取最新数据。")
+
 # ==========================================
 # 2. 核心功能与缓存提速优化
 # ==========================================
@@ -9096,17 +9107,23 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         st.stop()
 
-    tab_home, tab_risk, tab_discipline, tab_main, tab_margin_etf, tab_brain, tab_health, tab_screener = st.tabs([
-    "🏠 今日关注池",
-    "🛡️ 天眼风控 (排雷)",
-    "🧪 交易纪律实验室",
-    "📈 量化推演 (多市场)",
-    "🧮 融资版 ETF 投资法",
-    "☁️ 云端外脑 (数据中心)",
-    "⚙️ 数据源与权限体检",
-    "🧭 下一票作战雷达"
-])
-    with tab_home:
+    legacy_tab = st.radio(
+        "旧版模块",
+        [
+            "今日关注池",
+            "天眼风控",
+            "交易纪律实验室",
+            "量化推演",
+            "融资 ETF",
+            "云端外脑",
+            "数据源体检",
+            "下一票雷达",
+        ],
+        horizontal=True,
+        key="legacy_workspace_selected_tab",
+    )
+
+    if legacy_tab == "今日关注池":
         st.markdown("""
         <div class="hf-ios-section hf-ios-fade-up">
             <h3 style="margin-bottom: 4px;">🏠 今日关注池 / 投研驾驶舱</h3>
@@ -9114,7 +9131,46 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         </div>
         """, unsafe_allow_html=True)
 
-        market_style_fact_packet = build_market_style_fact_packet()
+        market_style_key = "legacy_market_style_fact_packet"
+        market_style_refreshed_now = False
+        if st.button("刷新市场风格数据", key="btn_refresh_market_style_fact_packet", width="stretch"):
+            with st.spinner("正在刷新市场风格数据..."):
+                st.session_state[market_style_key] = build_market_style_fact_packet()
+                market_style_refreshed_now = True
+
+        market_style_fact_packet = st.session_state.get(market_style_key)
+        if market_style_fact_packet:
+            market_sources = market_style_fact_packet.get("verified_sources") or []
+            render_legacy_data_status(
+                "今日关注池",
+                status="已刷新" if market_style_refreshed_now else "使用缓存",
+                updated_at=market_style_fact_packet.get("updated_at", ""),
+                data_source=" / ".join(market_sources[:4]) if market_sources else "Tushare 市场风格事实包",
+            )
+        else:
+            render_legacy_data_status(
+                "今日关注池",
+                status="未刷新",
+                data_source="Tushare 市场风格事实包",
+            )
+        if not market_style_fact_packet:
+            market_style_fact_packet = {
+                "trade_date": "",
+                "limit_up_count": 0,
+                "limit_down_count": 0,
+                "break_limit_count": 0,
+                "break_limit_rate": None,
+                "max_consecutive_limit": None,
+                "recent_active_limit_samples": [],
+                "dragon_tiger_activity": {"list_count": 0, "sample_rows": []},
+                "moneyflow_samples": {"positive_samples": [], "negative_samples": []},
+                "concept_strength_top": [],
+                "market_state": "尚未刷新",
+                "risk_switch": "等待刷新",
+                "verified_sources": [],
+                "missing_sources": ["点击“刷新市场风格数据”后读取 Tushare 市场风格事实包。"],
+                "updated_at": "",
+            }
         st.markdown("#### 市场风格总览")
 
         st.markdown(
@@ -9208,7 +9264,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 else:
                     st.warning("还没有看到自动任务心跳。可去 GitHub Actions 手动 Run workflow 验证 secrets 和权限。")
     # 模块 A：天眼风控
-    with tab_risk:
+    if legacy_tab == "天眼风控":
         st.markdown(
             f"""
             <div class="hf-ios-section hf-ios-fade-up">
@@ -9865,7 +9921,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.error(f"舆情风控模块运行失败: {e}")
 
     # 模块 B：交易纪律实验室
-    with tab_discipline:
+    if legacy_tab == "交易纪律实验室":
         st.markdown("### 🧪 交易纪律实验室")
         st.caption("先把交易经验和投喂资料炼成纪律，再用历史回测验证纪律是否有效。")
 
@@ -10448,7 +10504,39 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         st.dataframe(pd.DataFrame(failures), width="stretch", hide_index=True)
 
     # 模块 C：主干量化推演 - 多市场版
-    with tab_main:
+    if legacy_tab == "量化推演":
+        quant_run_now = st.button(
+            "生成量化推演",
+            key="btn_legacy_quant_generate",
+            type="primary",
+            width="stretch",
+        )
+        quant_result = st.session_state.get("legacy_quant_result") or {}
+        if quant_run_now:
+            quant_result = {
+                "status": "running",
+                "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "target": target,
+                "market_type": market_type,
+            }
+            st.session_state["legacy_quant_result"] = quant_result
+        quant_status = "使用缓存" if quant_result.get("status") == "completed" else "未刷新"
+        if quant_run_now or quant_result.get("status") == "running":
+            quant_status = "已刷新"
+        render_legacy_data_status(
+            "量化推演",
+            status=quant_status,
+            updated_at=quant_result.get("generated_at", ""),
+            data_source="Supabase 记忆 / 估值技术情景 / Tushare A股事实 / 自动回测",
+        )
+        if not quant_run_now:
+            if quant_result:
+                st.caption(
+                    "上次量化推演状态："
+                    f"{quant_result.get('status', '已运行')}｜"
+                    f"{quant_result.get('generated_at', '时间未知')}"
+                )
+            st.stop()
         st.markdown(f"### 📈 实时穿透：{target} ({market_badge})")
         main_status = st.status("正在生成单票深度诊断...", expanded=True)
         main_progress = st.progress(0)
@@ -11117,7 +11205,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             # A股的核心按钮和逻辑已经内嵌在这个函数里了
             display_cn_stock_analysis(target, price, professional_facts=a_share_professional_facts)
 
-    with tab_margin_etf:
+        st.session_state["legacy_quant_result"] = {
+            "status": "completed",
+            "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "target": target,
+            "market_type": market_type,
+        }
+
+    if legacy_tab == "融资 ETF":
         st.markdown("### 🧮 融资版 ETF 投资法")
         st.caption("该模块只做仓位与风险预算测算，不构成买卖建议。融资会放大收益和亏损，必须设置风险线。")
         st.info("融资会放大收益和亏损。本模块只做风险预算和仓位测算，不构成买卖建议。")
@@ -11221,12 +11316,78 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             help="仅用于动态全量发现/同赛道比较的候选筛选；填 0 表示不过滤。",
         )
 
+        margin_etf_daily_packet_key = "legacy_margin_etf_daily_packet"
+        margin_etf_daily_params = {
+            "pool_source": etf_pool_source,
+            "compare_theme": compare_theme if etf_pool_source == "同赛道横向比较" else "",
+            "dynamic_max_per_theme": int(dynamic_max_per_theme),
+            "min_amount_ma20": float(min_amount_ma20 or 0.0),
+        }
+        margin_etf_daily_params_hash = hashlib.sha256(
+            json.dumps(margin_etf_daily_params, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        def build_margin_etf_daily_packet(refresh_token):
+            packet_theme_comparison = {}
+            packet_holdings_snapshot = {}
+            if etf_pool_source == "Tushare 全量发现":
+                dynamic_packet = cached_margin_etf_dynamic_packet(
+                    refresh_token=refresh_token,
+                    max_per_theme=dynamic_max_per_theme,
+                    min_amount_ma20=min_amount_ma20,
+                )
+                packet_daily_dataset = dynamic_packet.get("data_status") or {}
+                packet_score_packet = dynamic_packet.get("score_packet") or {"rows": []}
+                packet_universe = dynamic_packet.get("universe") or get_default_etf_universe()
+            elif etf_pool_source == "同赛道横向比较":
+                dynamic_packet = cached_margin_etf_dynamic_packet(
+                    refresh_token=refresh_token,
+                    theme_label=compare_theme,
+                    max_per_theme=max(dynamic_max_per_theme, 8),
+                    min_amount_ma20=min_amount_ma20,
+                )
+                packet_daily_dataset = dynamic_packet.get("data_status") or {}
+                packet_score_packet = dynamic_packet.get("score_packet") or {"rows": []}
+                packet_universe = dynamic_packet.get("universe") or get_default_etf_universe()
+                packet_theme_comparison = dynamic_packet.get("theme_comparison") or {}
+                comparison_codes = [
+                    row.get("etf_code")
+                    for row in (packet_theme_comparison.get("rows") or [])
+                    if row.get("etf_code")
+                ][:8]
+                packet_holdings_snapshot = cached_margin_etf_holdings_snapshot(
+                    refresh_token=refresh_token,
+                    etf_codes=comparison_codes,
+                )
+            elif etf_pool_source == "人工重点关注池":
+                packet_universe = [item for item in get_default_etf_universe() if item.get("manual_focus", True)]
+                packet_daily_dataset = cached_margin_etf_daily_dataset(refresh_token, "manual_focus", "")
+                packet_score_packet = score_etf_universe(packet_daily_dataset)
+            else:
+                packet_universe = get_default_etf_universe()
+                packet_daily_dataset = cached_margin_etf_daily_dataset(refresh_token, "core", "")
+                packet_score_packet = score_etf_universe(packet_daily_dataset)
+            return {
+                "params_hash": margin_etf_daily_params_hash,
+                "params": margin_etf_daily_params,
+                "refresh_token": refresh_token,
+                "daily_dataset": packet_daily_dataset,
+                "score_packet": packet_score_packet,
+                "current_universe": packet_universe,
+                "theme_comparison": packet_theme_comparison,
+                "holdings_snapshot": packet_holdings_snapshot,
+                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            }
+
         action_col1, action_col2, action_col3 = st.columns(3)
+        margin_etf_refreshed_now = False
         with action_col1:
             if st.button("刷新 Tushare ETF 日线数据", key="btn_margin_etf_refresh_daily", width="stretch"):
-                st.session_state["margin_etf_daily_refresh_token"] = datetime.datetime.now().isoformat(timespec="seconds")
+                token = datetime.datetime.now().isoformat(timespec="seconds")
+                st.session_state["margin_etf_daily_refresh_token"] = token
+                with st.spinner("正在刷新 Tushare ETF 日线数据..."):
+                    st.session_state[margin_etf_daily_packet_key] = build_margin_etf_daily_packet(token)
+                    margin_etf_refreshed_now = True
                 st.session_state.pop("margin_etf_intraday_snapshot", None)
-                st.rerun()
         with action_col2:
             if st.button("刷新盘中 ETF 实时数据", key="btn_margin_etf_refresh_intraday", width="stretch"):
                 token = datetime.datetime.now().isoformat(timespec="seconds")
@@ -11238,6 +11399,26 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             if st.button("重新计算权宜比例", key="btn_margin_etf_recalc", width="stretch"):
                 st.session_state["margin_etf_calc_refresh_token"] = datetime.datetime.now().isoformat(timespec="seconds")
                 st.rerun()
+
+        margin_etf_existing_packet = st.session_state.get(margin_etf_daily_packet_key) or {}
+        margin_etf_status = (
+            "使用缓存"
+            if margin_etf_existing_packet.get("params_hash") == margin_etf_daily_params_hash
+            else "未刷新"
+        )
+        if margin_etf_refreshed_now:
+            margin_etf_status = "已刷新"
+        margin_etf_source = (
+            ((margin_etf_existing_packet.get("daily_dataset") or {}).get("data_source") or "")
+            if margin_etf_status in {"已刷新", "使用缓存"}
+            else ""
+        )
+        render_legacy_data_status(
+            "融资 ETF",
+            status=margin_etf_status,
+            updated_at=margin_etf_existing_packet.get("updated_at", ""),
+            data_source=margin_etf_source or "Tushare ETF 日线 / 本地规则评分",
+        )
 
         input_col1, input_col2, input_col3 = st.columns(3)
         with input_col1:
@@ -11294,36 +11475,28 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         refresh_token = st.session_state.get("margin_etf_daily_refresh_token", "base")
         theme_comparison = {}
         holdings_snapshot = {}
-        if etf_pool_source == "Tushare 全量发现":
-            dynamic_packet = cached_margin_etf_dynamic_packet(
-                refresh_token=refresh_token,
-                max_per_theme=dynamic_max_per_theme,
-                min_amount_ma20=min_amount_ma20,
-            )
-            daily_dataset = dynamic_packet.get("data_status") or {}
-            score_packet = dynamic_packet.get("score_packet") or {"rows": []}
-            current_universe = dynamic_packet.get("universe") or get_default_etf_universe()
-        elif etf_pool_source == "同赛道横向比较":
-            dynamic_packet = cached_margin_etf_dynamic_packet(
-                refresh_token=refresh_token,
-                theme_label=compare_theme,
-                max_per_theme=max(dynamic_max_per_theme, 8),
-                min_amount_ma20=min_amount_ma20,
-            )
-            daily_dataset = dynamic_packet.get("data_status") or {}
-            score_packet = dynamic_packet.get("score_packet") or {"rows": []}
-            current_universe = dynamic_packet.get("universe") or get_default_etf_universe()
-            theme_comparison = dynamic_packet.get("theme_comparison") or {}
-            comparison_codes = [row.get("etf_code") for row in (theme_comparison.get("rows") or []) if row.get("etf_code")][:8]
-            holdings_snapshot = cached_margin_etf_holdings_snapshot(refresh_token=refresh_token, etf_codes=comparison_codes)
-        elif etf_pool_source == "人工重点关注池":
-            current_universe = [item for item in get_default_etf_universe() if item.get("manual_focus", True)]
-            daily_dataset = cached_margin_etf_daily_dataset(refresh_token, "manual_focus", "")
-            score_packet = score_etf_universe(daily_dataset)
+        daily_packet = st.session_state.get(margin_etf_daily_packet_key) or {}
+        if daily_packet.get("params_hash") == margin_etf_daily_params_hash:
+            daily_dataset = daily_packet.get("daily_dataset") or {}
+            score_packet = daily_packet.get("score_packet") or {"rows": []}
+            current_universe = daily_packet.get("current_universe") or get_default_etf_universe()
+            theme_comparison = daily_packet.get("theme_comparison") or {}
+            holdings_snapshot = daily_packet.get("holdings_snapshot") or {}
+            st.caption(f"ETF 日线数据缓存时间：{daily_packet.get('updated_at') or '未知'}")
         else:
-            current_universe = get_default_etf_universe()
-            daily_dataset = cached_margin_etf_daily_dataset(refresh_token, "core", "")
-            score_packet = score_etf_universe(daily_dataset)
+            current_universe = (
+                [item for item in get_default_etf_universe() if item.get("manual_focus", True)]
+                if etf_pool_source == "人工重点关注池"
+                else get_default_etf_universe()
+            )
+            daily_dataset = {
+                "data_source": "not_loaded",
+                "status": "尚未刷新 Tushare ETF 日线数据",
+                "errors": ["点击“刷新 Tushare ETF 日线数据”后生成。"],
+                "sample_count": len(current_universe),
+            }
+            score_packet = {"rows": [], "data_source": "not_loaded"}
+            st.info("ETF 日线数据尚未刷新。默认不拉取 Tushare，点击按钮后生成。")
 
         intraday_snapshot = st.session_state.get("margin_etf_intraday_snapshot")
         expected_intraday_mode = "dynamic" if etf_pool_source in {"Tushare 全量发现", "同赛道横向比较"} else ("manual_focus" if etf_pool_source == "人工重点关注池" else "core")
@@ -11486,7 +11659,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     st.session_state["margin_etf_research_allocation_hash"] = allocation_hash
                     st.rerun()
 
-    with tab_health:
+    if legacy_tab == "数据源体检":
         st.markdown("### ⚙️ 数据源与权限体检")
         st.caption("默认不自动运行；点击按钮后只检查连接、权限和返回行数，不展示 token、secrets 或原始数据。")
 
@@ -11590,7 +11763,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.table(pd.DataFrame([deepseek_display]))
 
     # ------------------ 下一票作战雷达：规则优先，深度研究手动触发 ------------------
-    with tab_screener:
+    if legacy_tab == "下一票雷达":
         radar_callbacks = {
             "compute_technical_snapshot": compute_technical_snapshot,
             "get_current_price_detail": get_current_price_detail,
@@ -11609,7 +11782,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             callbacks=radar_callbacks,
         )
     # 模块 D：云端外脑
-    with tab_brain:
+    if legacy_tab == "云端外脑":
         st.markdown("### ☁️ 云端 RAG 向量记忆中心")
         st.caption("作为外脑数据库，支持策略碎片的投喂和投研文档的学习。")
         

@@ -2637,13 +2637,62 @@ def render_next_ticket_radar(
     if DEEP_RESEARCH_STATE_KEY not in st.session_state:
         st.session_state[DEEP_RESEARCH_STATE_KEY] = {}
 
-    holding_context = build_current_holding_context(
-        current_ticker=current_ticker,
-        current_name=current_name,
-        current_price=current_price,
-        position_profile=position_profile or {},
-        callbacks=callbacks,
+    holding_context_key = f"next_ticket_holding_context_{normalize_display_ticker(current_ticker)}"
+    refresh_holding_context = st.button(
+        "刷新当前持仓风险上下文",
+        key="next_ticket_refresh_holding_context",
+        width="stretch",
     )
+    if refresh_holding_context:
+        with st.spinner("正在刷新当前持仓技术与风控上下文..."):
+            holding_context = build_current_holding_context(
+                current_ticker=current_ticker,
+                current_name=current_name,
+                current_price=current_price,
+                position_profile=position_profile or {},
+                callbacks=callbacks,
+            )
+            holding_context["refreshed_at"] = _now_iso()
+            holding_context["data_source"] = "技术快照 / Tushare 风控事实包 / 本地规则"
+            st.session_state[holding_context_key] = holding_context
+    else:
+        holding_context = st.session_state.get(holding_context_key)
+        if not holding_context:
+            display_ticker = normalize_display_ticker(current_ticker)
+            holding_context = sanitize_for_json(
+                {
+                    "current_holding_ticker": display_ticker,
+                    "current_holding_name": current_name or candidate_name(display_ticker),
+                    "position_status": (position_profile or {}).get("normalized_position_state")
+                    or (position_profile or {}).get("position_status")
+                    or "暂无数据",
+                    "cost_price": (position_profile or {}).get("cost_price"),
+                    "shares": (position_profile or {}).get("holding_units"),
+                    "current_price": current_price,
+                    "floating_profit_pct": (position_profile or {}).get("pnl_pct"),
+                    "floating_profit_amount": (position_profile or {}).get("pnl_amount"),
+                    "holding_biggest_risks": ["尚未刷新当前持仓风险上下文"],
+                    "holding_action_state": "待刷新",
+                    "holding_reduce_triggers": [],
+                    "next_ticket_mode": "只观察",
+                    "data_date": "",
+                    "refreshed_at": "",
+                    "data_source": "未加载",
+                    "raw_data_quality": {
+                        "technical_missing": ["未刷新"],
+                        "risk_missing": ["未刷新"],
+                    },
+                }
+            )
+            holding_context.update(_holding_score_baseline(holding_context))
+    holding_status = "已刷新" if refresh_holding_context else ("使用缓存" if holding_context.get("refreshed_at") else "未刷新")
+    st.caption(
+        "下一票雷达｜当前数据状态："
+        f"{holding_status}｜最后刷新时间：{holding_context.get('refreshed_at') or '暂无'}｜"
+        f"数据来源：{holding_context.get('data_source') or '未加载'}｜DeepSeek：未调用"
+    )
+    if holding_status == "未刷新":
+        st.info("当前未运行，请点击按钮获取最新数据。")
     if render_next_ticket_holding_card:
         render_next_ticket_holding_card(holding_context)
     else:
