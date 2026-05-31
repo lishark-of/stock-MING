@@ -10,8 +10,15 @@ from typing import Optional
 
 try:
     import webview
-except ImportError:
-    print("pywebview is not installed. Install it with: python3 -m pip install pywebview")
+except ImportError as exc:
+    print(
+        "pywebview import failed. The package name is pywebview, "
+        "but the import name is webview.",
+        file=sys.stderr,
+    )
+    print(f"Python executable: {sys.executable}", file=sys.stderr)
+    print("Run: python -m pip install pywebview", file=sys.stderr)
+    print(f"Original error: {exc}", file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -67,6 +74,8 @@ def _signal_handler(signum: int, _frame: object) -> None:
 
 def _build_streamlit_cmd(port: int) -> list[str]:
     return [
+        sys.executable,
+        "-m",
         "streamlit",
         "run",
         "app.py",

@@ -2,21 +2,25 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PYTHON_BIN="${PROJECT_ROOT}/.venv/bin/python"
 
 cd "$PROJECT_ROOT" || {
   echo "Failed to enter project directory: $PROJECT_ROOT"
   exit 1
 }
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 not found. Please install Python 3 first."
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "Python virtual environment not found: $PYTHON_BIN"
   exit 1
 fi
 
-if ! python3 -c "import webview" >/dev/null 2>&1; then
-  echo "pywebview is not installed. Install it with:"
-  echo "python3 -m pip install pywebview"
+"$PYTHON_BIN" -c "import webview" 2>/tmp/stock-ming-pywebview-error.log
+if [ $? -ne 0 ]; then
+  echo "pywebview import failed. The package name is pywebview, but the import name is webview."
+  echo "Run:"
+  echo "$PYTHON_BIN -m pip install pywebview"
+  cat /tmp/stock-ming-pywebview-error.log
   exit 1
 fi
 
-python3 desktop_app.py
+"$PYTHON_BIN" "$PROJECT_ROOT/desktop_app.py"

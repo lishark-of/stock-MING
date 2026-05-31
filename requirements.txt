@@ -1,4 +1,5 @@
 streamlit>=1.32.0
+pywebview>=6.2.1
 yfinance>=0.2.28
 openai>=1.0.0
 pandas>=2.0.0
@@ -10,6 +11,8 @@ numpy>=1.24.0
 akshare>=1.10.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
+lxml>=5.0.0
 feedparser>=6.0.11
+python-dotenv>=1.0.0
 tushare
 plotly>=5.20.0

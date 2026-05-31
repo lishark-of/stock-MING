@@ -9,12 +9,7 @@ MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 EXECUTABLE_PATH="${MACOS_DIR}/${APP_NAME}"
 ICON_SOURCE="${PROJECT_ROOT}/assets/stock_ming_icon.svg"
-PYTHON_BIN="$(command -v python3 || true)"
-
-if [ -z "${PYTHON_BIN}" ]; then
-  echo "python3 not found. Please install Python 3 first."
-  exit 1
-fi
+PYTHON_BIN="${PROJECT_ROOT}/.venv/bin/python"
 
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
@@ -62,7 +57,7 @@ PYTHON_BIN="${PYTHON_BIN}"
 cd "${PROJECT_ROOT}" || exit 1
 
 if [ ! -x "\${PYTHON_BIN}" ]; then
-  MESSAGE="python3 not found. Please install Python 3 first."
+  MESSAGE="Python virtual environment not found: \${PYTHON_BIN}"
   echo "\${MESSAGE}"
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
@@ -70,17 +65,20 @@ if [ ! -x "\${PYTHON_BIN}" ]; then
   exit 1
 fi
 
-if ! "\${PYTHON_BIN}" -c "import webview" >/dev/null 2>&1; then
-  MESSAGE="pywebview is not installed. Install it with:\n\${PYTHON_BIN} -m pip install pywebview"
-  echo "pywebview is not installed. Install it with:"
-  echo "\${PYTHON_BIN} -m pip install pywebview"
+"\${PYTHON_BIN}" -c "import webview" 2>/tmp/stock-ming-pywebview-error.log
+if [ \$? -ne 0 ]; then
+  MESSAGE="pywebview import failed. The package name is pywebview, but the import name is webview.
+Run:
+\${PYTHON_BIN} -m pip install pywebview"
+  echo "\${MESSAGE}"
+  cat /tmp/stock-ming-pywebview-error.log
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
   fi
   exit 1
 fi
 
-exec "\${PYTHON_BIN}" desktop_app.py
+exec "\${PYTHON_BIN}" "\${PROJECT_ROOT}/desktop_app.py"
 APP
 
 chmod +x "${EXECUTABLE_PATH}"
