@@ -3042,6 +3042,443 @@ def run_command_center_discipline_validation(packet):
     return payload
 
 
+def _cc_first_text(*values, default=""):
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return default
+
+
+def _cc_round(value, digits=2):
+    parsed = _num(value)
+    if parsed is None:
+        return None
+    return round(float(parsed), digits)
+
+
+def _cc_list(value, limit=3):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()][:limit]
+    return [str(value).strip()][:limit]
+
+
+def _cc_ticker_base(value):
+    text = str(value or "").strip().upper()
+    return text.split(".")[0] if text else ""
+
+
+def _build_market_live_section():
+    packet = st.session_state.get("legacy_market_style_fact_packet") or {}
+    if not packet:
+        return {
+            "status": "未刷新",
+            "summary": "未刷新，请点击按钮生成。请到旧版今日关注池刷新市场风格数据。",
+            "updated_at": "",
+            "source": "Tushare 市场风格事实包",
+        }
+    limit_up = packet.get("limit_up_count", 0)
+    limit_down = packet.get("limit_down_count", 0)
+    break_count = packet.get("break_limit_count", 0)
+    summary = (
+        f"{packet.get('market_state') or '市场状态待判断'}；"
+        f"{packet.get('risk_switch') or '风险开关待判断'}。"
+        f"涨停 {limit_up}，跌停 {limit_down}，炸板 {break_count}。"
+    )
+    sources = packet.get("verified_sources") or []
+    return {
+        "status": "已刷新",
+        "summary": summary,
+        "updated_at": packet.get("updated_at", ""),
+        "source": " / ".join(sources[:4]) if sources else "Tushare 市场风格事实包",
+    }
+
+
+def _build_quant_live_section():
+    packet = st.session_state.get("legacy_quant_result") or {}
+    if not packet:
+        return {
+            "status": "未刷新",
+            "score": None,
+            "summary": "未刷新，请点击按钮生成。请点击旧版量化推演生成。",
+            "updated_at": "",
+            "source": "量化推演",
+        }
+    status = "已刷新" if packet.get("status") == "completed" else "使用缓存"
+    target_text = _cc_first_text(packet.get("target"), default="当前标的")
+    market_text = _cc_first_text(packet.get("market_type"), default="当前市场")
+    summary = _cc_first_text(
+        packet.get("summary"),
+        f"{target_text} / {market_text} 已生成量化推演记录；旧版当前只保存状态、标的和市场，详细推演长文暂未结构化接入。",
+    )
+    return {
+        "status": status,
+        "score": _cc_round(packet.get("score"), 0),
+        "direction": _cc_first_text(packet.get("direction"), packet.get("label"), default="已生成"),
+        "summary": summary,
+        "updated_at": packet.get("generated_at", ""),
+        "source": "量化推演",
+    }
+
+
+def _build_discipline_live_section(target=""):
+    report = st.session_state.get("last_backtest_report") or {}
+    multi_result = st.session_state.get("last_multi_backtest") or {}
+    if report and target and _cc_ticker_base(report.get("ticker")) != _cc_ticker_base(target):
+        report = {}
+        multi_result = {}
+    if not report:
+        return {
+            "status": "未刷新",
+            "score": None,
+            "summary": "未刷新，请点击按钮生成。交易纪律实验室当前没有可结构化接入的回测结果。",
+            "updated_at": "",
+            "source": "交易纪律实验室",
+            "action_state": "待刷新",
+            "key_rules": ["请到旧版交易纪律实验室运行回测或纪律校验。"],
+        }
+    metrics = report.get("metrics") or report
+    win_rate = _cc_round(metrics.get("win_rate") or metrics.get("win_rate_pct"), 2)
+    max_dd = _cc_round(metrics.get("max_drawdown_pct") or metrics.get("max_drawdown"), 2)
+    score = None
+    if win_rate is not None:
+        score = max(0, min(100, win_rate if win_rate <= 100 else win_rate * 100))
+    action_state = "只调仓"
+    if max_dd is not None and max_dd > 20:
+        action_state = "降风险"
+    elif win_rate is not None and win_rate >= 60:
+        action_state = "允许进攻"
+    key_rules = _cc_list(
+        report.get("key_rules")
+        or report.get("discipline_rules")
+        or (multi_result.get("summary") if isinstance(multi_result, dict) else ""),
+        limit=3,
+    )
+    if not key_rules:
+        key_rules = [
+            f"胜率：{win_rate if win_rate is not None else '暂无'}",
+            f"最大回撤：{max_dd if max_dd is not None else '暂无'}",
+            "仅按已缓存回测摘要判断，不自动抓取新行情。",
+        ]
+    summary = _cc_first_text(
+        report.get("summary"),
+        f"已读取 {report.get('ticker') or target or '当前标的'} 的旧版回测缓存，动作边界为：{action_state}。",
+    )
+    updated_at = _cc_first_text(
+        (report.get("date_range") or {}).get("end") if isinstance(report.get("date_range"), dict) else "",
+        st.session_state.get("last_backtest_key"),
+    )
+    return {
+        "status": "已刷新",
+        "score": score,
+        "summary": summary,
+        "updated_at": updated_at,
+        "source": "交易纪律实验室",
+        "action_state": action_state,
+        "key_rules": key_rules[:3],
+    }
+
+
+def _build_next_ticket_live_section():
+    scan_state = st.session_state.get("radar_scan_results") or {}
+    summary = st.session_state.get("radar_scan_summary") or scan_state.get("summary") or {}
+    status_raw = st.session_state.get("radar_scan_status") or ""
+    rule_rows = scan_state.get("rule_rows") or scan_state.get("results") or []
+    if not scan_state or status_raw not in {"completed", "partial_failed", "failed"}:
+        return {
+            "status": "未刷新",
+            "top_candidates": [],
+            "summary": "未刷新，请点击按钮生成。请到旧版下一票雷达扫描。",
+            "updated_at": "",
+            "source": "下一票雷达",
+            "action_state": "待刷新",
+        }
+    top_candidates = []
+    action_states = []
+    for row in rule_rows[:3]:
+        candidate = row.get("candidate") or {}
+        score = row.get("score") or {}
+        action = score.get("battle_state") or "只观察"
+        action_states.append(action)
+        top_candidates.append(
+            {
+                "ticker": candidate.get("ticker") or score.get("ticker") or "",
+                "name": candidate.get("name") or score.get("name") or "",
+                "score": score.get("total_score"),
+                "action_state": action,
+            }
+        )
+    aggregate_action = "只观察"
+    if "可准备" in action_states:
+        aggregate_action = "可准备"
+    elif "等验证" in action_states:
+        aggregate_action = "等验证"
+    scan_status = "已刷新" if status_raw in {"completed", "partial_failed"} else "使用缓存"
+    deepseek_detail = summary.get("deepseek_detail") or "未调用"
+    return {
+        "status": scan_status,
+        "top_candidates": top_candidates,
+        "summary": (
+            f"规则雷达已保存 {len(rule_rows)} 条候选；"
+            f"展示 Top {summary.get('display_count') or len(top_candidates)}；DeepSeek：{deepseek_detail}。"
+        ),
+        "updated_at": scan_state.get("generated_at") or st.session_state.get("radar_scan_finished_at") or "",
+        "source": "下一票雷达",
+        "action_state": aggregate_action,
+    }
+
+
+def _build_margin_etf_live_section():
+    daily_packet = st.session_state.get("legacy_margin_etf_daily_packet") or {}
+    allocation = st.session_state.get("legacy_margin_etf_allocation_result") or {}
+    if not daily_packet:
+        return {
+            "status": "未刷新",
+            "recommended_margin_ratio": None,
+            "recommended_cash_ratio": None,
+            "summary": "未刷新，请点击按钮生成。请到旧版融资 ETF 刷新日线数据。",
+            "updated_at": "",
+            "source": "融资 ETF",
+        }
+    if not allocation:
+        score_packet = daily_packet.get("score_packet") or {"rows": []}
+        account = {
+            "total_asset": float(st.session_state.get("margin_total_asset", 1000000.0) or 0.0),
+            "cash_balance": float(st.session_state.get("margin_cash_balance", 200000.0) or 0.0),
+            "stock_market_value": float(st.session_state.get("margin_stock_value", 600000.0) or 0.0),
+            "etf_market_value": float(st.session_state.get("margin_etf_value", 100000.0) or 0.0),
+            "margin_debt": float(st.session_state.get("margin_debt", 100000.0) or 0.0),
+            "available_margin": float(st.session_state.get("margin_available_margin", 0.0) or 0.0),
+            "maintenance_ratio": float(st.session_state.get("margin_maintenance_ratio", 0.0) or 0.0),
+            "margin_interest_rate": float(st.session_state.get("margin_interest_rate", 6.8) or 0.0),
+            "max_drawdown_pct": float(st.session_state.get("margin_max_drawdown", 15) or 0.0),
+        }
+        profile = {
+            "style": st.session_state.get("margin_style", "平衡"),
+            "leverage_mode": st.session_state.get("margin_leverage_mode", "小幅使用"),
+        }
+        allocation = calculate_margin_etf_allocation(
+            account,
+            st.session_state.get("margin_market_state", "强趋势"),
+            profile,
+            etf_scores=score_packet,
+        )
+    candidates = allocation.get("selected_etf_candidates") or {}
+    if isinstance(candidates, dict):
+        direction_items = []
+        for bucket, rows in candidates.items():
+            if isinstance(rows, list) and rows:
+                first = rows[0]
+                direction_items.append(_cc_first_text(first.get("name"), first.get("etf_name"), bucket))
+        main_direction = " / ".join(direction_items[:3])
+    else:
+        main_direction = ""
+    summary = _cc_first_text(
+        allocation.get("action_state"),
+        daily_packet.get("daily_dataset", {}).get("status") if isinstance(daily_packet.get("daily_dataset"), dict) else "",
+        "ETF 日线数据已刷新，使用本地规则读取配置摘要。",
+    )
+    if main_direction:
+        summary = f"{summary}；今日 ETF 主方向：{main_direction}。"
+    return {
+        "status": "已刷新",
+        "recommended_margin_ratio": _cc_round(allocation.get("recommended_margin_ratio")),
+        "recommended_cash_ratio": _cc_round(allocation.get("recommended_cash_ratio")),
+        "summary": summary,
+        "updated_at": daily_packet.get("updated_at") or allocation.get("generated_at") or "",
+        "source": "融资 ETF",
+        "today_main_direction": main_direction or "待 ETF 强弱表确认",
+        "action_state": allocation.get("action_state") or "待判断",
+    }
+
+
+def _build_command_center_live_conclusion(live_packet):
+    module_names = {
+        "market": "市场环境",
+        "quant": "量化推演",
+        "discipline": "交易纪律",
+        "next_ticket": "下一票雷达",
+        "margin_etf": "融资 ETF",
+    }
+    refreshed = [
+        module_names[key]
+        for key, section in (live_packet or {}).items()
+        if isinstance(section, dict) and section.get("status") != "未刷新"
+    ]
+    if not refreshed:
+        return {
+            "mode": "当前为示例/待刷新状态",
+            "included_modules": [],
+            "summary": "当前为示例/待刷新状态：市场、量化、纪律、ETF、雷达均未刷新，不能假装已有真实综合结论。",
+            "score": 0,
+            "action": "只观察",
+        }
+    score = min(85, 40 + len(refreshed) * 9)
+    action = "只观察"
+    discipline_action = (live_packet.get("discipline") or {}).get("action_state") or ""
+    next_action = (live_packet.get("next_ticket") or {}).get("action_state") or ""
+    etf_action = (live_packet.get("margin_etf") or {}).get("action_state") or ""
+    market_summary = (live_packet.get("market") or {}).get("summary") or ""
+    if any(text in discipline_action for text in ["降风险"]) or "只观察" in market_summary:
+        action = "降风险 / 只观察"
+    elif "可准备" in next_action and any(text in etf_action for text in ["进攻", "可"]):
+        action = "可准备，但必须等验证"
+        score = min(90, score + 6)
+    elif "等验证" in next_action or "只调仓" in discipline_action:
+        action = "等验证 / 只调仓"
+    mode = "综合推演结论" if len(refreshed) == 5 else "部分刷新结论"
+    return {
+        "mode": mode,
+        "included_modules": refreshed,
+        "summary": (
+            f"{mode}：已纳入 {'、'.join(refreshed)}。"
+            f"当前动作倾向为 {action}；该判断只来自已缓存摘要，不调用 DeepSeek，也不输出确定性买卖结论。"
+        ),
+        "score": score,
+        "action": action,
+    }
+
+
+def build_command_center_live_packet(target=""):
+    """Aggregate cached legacy results only. No external data source or DeepSeek call."""
+    live_packet = {
+        "market": _build_market_live_section(),
+        "quant": _build_quant_live_section(),
+        "discipline": _build_discipline_live_section(target=target),
+        "next_ticket": _build_next_ticket_live_section(),
+        "margin_etf": _build_margin_etf_live_section(),
+    }
+    live_packet["conclusion"] = _build_command_center_live_conclusion(live_packet)
+    st.session_state["command_center_live_packet"] = clone_command_center_packet(live_packet)
+    return live_packet
+
+
+def build_command_center_display_packet(live_packet, fallback_packet=None):
+    fallback = fallback_packet or get_command_center_mock_packet()
+    conclusion = live_packet.get("conclusion") or {}
+    market = live_packet.get("market") or {}
+    quant = live_packet.get("quant") or {}
+    discipline = live_packet.get("discipline") or {}
+    next_ticket = live_packet.get("next_ticket") or {}
+    candidates = next_ticket.get("top_candidates") or []
+    display = clone_command_center_packet(fallback)
+    display.update(
+        {
+            "score": int(conclusion.get("score") or 0),
+            "trend_label": conclusion.get("mode") or "待刷新",
+            "probability": int(conclusion.get("score") or 0),
+            "confidence": "待刷新" if not conclusion.get("included_modules") else "中",
+            "one_sentence": conclusion.get("summary") or "当前为示例/待刷新状态。",
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "quant_output": {
+                "label": quant.get("direction") or quant.get("status") or "未刷新",
+                "summary": quant.get("summary") or "请点击旧版量化推演生成。",
+            },
+            "discipline_output": {
+                "label": discipline.get("action_state") or discipline.get("status") or "未刷新",
+                "summary": discipline.get("summary") or "交易纪律实验室暂未生成结构化缓存。",
+            },
+            "fusion_output": {
+                "label": conclusion.get("action") or "只观察",
+                "summary": conclusion.get("summary") or "",
+                "composite_score": int(conclusion.get("score") or 0),
+                "win_rate": "待验证",
+                "suggested_position": conclusion.get("action") or "只观察",
+                "suggested_amount": (fallback.get("allocation_budget") or {}).get("risk_budget_amount"),
+                "amount_basis": "沿用预算展示",
+            },
+            "validated_data": [
+                f"{name}：已纳入缓存摘要"
+                for name in conclusion.get("included_modules") or []
+            ] or ["当前没有真实刷新模块，综合结论处于待刷新状态。"],
+            "cautious_inference": [
+                market.get("summary", ""),
+                quant.get("summary", ""),
+                discipline.get("summary", ""),
+            ],
+            "watchlist": [
+                "没有结果的模块显示空态，不自动拉取外部接口。",
+                "DeepSeek 仍需手动点击解释按钮才会调用。",
+                "旧版按钮刷新后回到本页即可读取 session_state 摘要。",
+            ],
+            "next_observation_targets": [
+                {
+                    "code": item.get("ticker", ""),
+                    "name": item.get("name", ""),
+                    "theme": "下一票雷达",
+                    "focus": f"规则分 {item.get('score', '暂无')}",
+                    "action_state": item.get("action_state", "只观察"),
+                    "observation_budget": (fallback.get("allocation_budget") or {}).get("next_ticket_budget_amount"),
+                    "single_ticket_amount": None,
+                    "budget_basis": "沿用预算展示",
+                    "ticket_basis": "待验证",
+                }
+                for item in candidates[:3]
+            ],
+            "signal_confluence": [
+                {"name": "市场环境", "strength": market.get("status"), "status": market.get("status"), "evaluation": "观察", "comment": market.get("summary")},
+                {"name": "量化推演", "strength": quant.get("status"), "status": quant.get("status"), "evaluation": "观察", "comment": quant.get("summary")},
+                {"name": "交易纪律", "strength": discipline.get("action_state"), "status": discipline.get("status"), "evaluation": "观察", "comment": discipline.get("summary")},
+                {"name": "下一票雷达", "strength": next_ticket.get("action_state"), "status": next_ticket.get("status"), "evaluation": "观察", "comment": next_ticket.get("summary")},
+                {"name": "融资 ETF", "strength": (live_packet.get("margin_etf") or {}).get("action_state"), "status": (live_packet.get("margin_etf") or {}).get("status"), "evaluation": "观察", "comment": (live_packet.get("margin_etf") or {}).get("summary")},
+            ],
+        }
+    )
+    return display
+
+
+def render_command_center_live_cards(live_packet):
+    st.markdown("#### 真实摘要接入")
+    cards = [
+        ("市场环境", "market", "请到旧版今日关注池刷新市场风格数据", "去旧版今日关注池刷新"),
+        ("量化推演", "quant", "请点击旧版量化推演生成", "去旧版量化推演生成"),
+        ("交易纪律", "discipline", "请到旧版交易纪律实验室运行回测或纪律校验", "去旧版交易纪律实验室"),
+        ("下一票雷达", "next_ticket", "请到旧版下一票雷达扫描", "去旧版下一票雷达扫描"),
+        ("融资 ETF", "margin_etf", "请到旧版融资 ETF 刷新日线数据", "去旧版融资 ETF 刷新"),
+    ]
+    for row_start in range(0, len(cards), 2):
+        cols = st.columns(2)
+        for col, (title, key, empty_hint, button_label) in zip(cols, cards[row_start: row_start + 2]):
+            section = live_packet.get(key) or {}
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"##### {title}")
+                    st.caption(
+                        f"状态：{section.get('status') or '未刷新'}｜"
+                        f"最后刷新：{section.get('updated_at') or '暂无'}｜"
+                        f"来源：{section.get('source') or '未加载'}"
+                    )
+                    if key == "quant":
+                        st.metric("评分 / 方向", section.get("score") if section.get("score") is not None else section.get("direction", "暂无"))
+                    elif key == "discipline":
+                        st.metric("动作边界", section.get("action_state") or "待刷新")
+                        for item in (section.get("key_rules") or [])[:3]:
+                            st.write(f"- {item}")
+                    elif key == "next_ticket":
+                        st.metric("动作状态", section.get("action_state") or "待刷新")
+                        candidates = section.get("top_candidates") or []
+                        if candidates:
+                            for item in candidates[:3]:
+                                st.write(
+                                    f"- {item.get('ticker', '')} {item.get('name', '')}："
+                                    f"{item.get('action_state', '只观察')} / {item.get('score', '暂无')}"
+                                )
+                        else:
+                            st.write("- 暂无 Top 候选")
+                    elif key == "margin_etf":
+                        ratio_col1, ratio_col2 = st.columns(2)
+                        ratio_col1.metric("建议融资比例", section.get("recommended_margin_ratio") if section.get("recommended_margin_ratio") is not None else "暂无")
+                        ratio_col2.metric("建议现金比例", section.get("recommended_cash_ratio") if section.get("recommended_cash_ratio") is not None else "暂无")
+                        st.write(f"今日 ETF 主方向：{section.get('today_main_direction') or '暂无'}")
+                    st.write(section.get("summary") or empty_hint)
+                    if st.button(button_label, key=f"btn_cc_live_hint_{key}", width="stretch"):
+                        st.info(f"{empty_hint}。当前版本先提示入口，不强行切换 Streamlit 导航。")
+
+
 def render_command_center_2_page(target, market_badge, price, position_profile=None):
     packet_key = "command_center_2_packet"
     explanation_key = "command_center_2_deepseek_explanation"
@@ -3076,33 +3513,26 @@ def render_command_center_2_page(target, market_badge, price, position_profile=N
     render_process_stepper(active_step=4)
 
     packet = st.session_state[packet_key]
+    live_packet = build_command_center_live_packet(target=target)
+    display_packet = build_command_center_display_packet(live_packet, fallback_packet=packet)
     control_cols = st.columns([1, 1, 1, 1.2])
     with control_cols[0]:
-        if st.button("刷新市场环境", key="btn_cc_refresh_market", width="stretch"):
-            status = st.status("轻量刷新市场环境...", expanded=True)
-            status.write("只更新本地缓存 packet，不调用 Tushare / AkShare 批量接口。")
-            st.session_state[packet_key] = refresh_command_center_market_context(packet)
-            status.update(label="市场环境轻量刷新完成", state="complete")
+        if st.button("旧版今日关注池入口", key="btn_cc_refresh_market", width="stretch"):
+            st.info("请切换到“旧版工作台（保留旧 tabs）”中的“今日关注池”，点击“刷新市场风格数据”。")
     with control_cols[1]:
-        if st.button("生成综合推演", key="btn_cc_generate_fusion", width="stretch"):
-            status = st.status("生成综合推演...", expanded=True)
-            status.write("融合 mock 推演输出与纪律校验结果，不调用 DeepSeek。")
-            st.session_state[packet_key] = generate_command_center_fusion(packet, target=target, market_badge=market_badge)
-            status.update(label="综合推演已写入 session_state", state="complete")
+        if st.button("旧版量化推演入口", key="btn_cc_generate_fusion", width="stretch"):
+            st.info("请切换到旧版工作台中的“量化推演”，点击“生成量化推演”。")
     with control_cols[2]:
-        if st.button("运行纪律校验", key="btn_cc_run_discipline", width="stretch"):
-            status = st.status("运行纪律校验...", expanded=True)
-            status.write("使用缓存 / mock 纪律规则，结果写入 session_state。")
-            st.session_state[packet_key] = run_command_center_discipline_validation(packet)
-            status.update(label="纪律校验完成", state="complete")
+        if st.button("旧版雷达 / ETF 入口", key="btn_cc_run_discipline", width="stretch"):
+            st.info("请切换到旧版工作台中的“下一票雷达”或“融资 ETF”，点击对应刷新按钮。")
     with control_cols[3]:
         if st.button("生成综合推演解释", key="btn_cc_deepseek_explain", width="stretch"):
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
-            current_packet = st.session_state.get(packet_key) or packet
+            current_packet = st.session_state.get("command_center_live_packet") or live_packet
             prompt = f"""
 请基于以下综合推演中心 packet 输出一段克制解释。
 要求：
-1. 不得把 mock 或投喂资料观点写成事实。
+1. 不得把未刷新模块、mock 或投喂资料观点写成事实。
 2. 必须说明 DeepSeek 只辅助解释，不直接决定仓位。
 3. 输出包含：综合结论、需要验证的信号、纪律边界、数据缺口。
 
@@ -3121,11 +3551,12 @@ packet:
             st.session_state[explanation_at_key] = datetime.datetime.now().isoformat(timespec="seconds")
             status.update(label="DeepSeek 解释已写入 session_state", state="complete")
 
-    packet = st.session_state.get(packet_key) or get_command_center_mock_packet()
+    packet = display_packet
     st.caption(
         f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
-        "页面加载和控件切换不会自动调用 DeepSeek。"
+        "页面加载和控件切换不会自动调用 DeepSeek、Tushare、AkShare 或 yfinance。"
     )
+    render_command_center_live_cards(live_packet)
     render_command_center_account_budget_card(packet)
     render_fusion_summary_card(packet)
     render_path_projection_card(packet)
@@ -11528,6 +11959,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             or (["持仓明细暂不可用，当前仅按行情、跟踪指数和流动性比较。"] if etf_pool_source == "同赛道横向比较" else [])
         )
         allocation_result["generated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+        st.session_state["legacy_margin_etf_allocation_result"] = clone_command_center_packet(allocation_result)
 
         account_risk_profile = {
             "account": margin_account,
