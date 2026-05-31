@@ -9,6 +9,9 @@ __pycache__/
 .python-user/
 *.bak*
 app.py.bak_before_tushare_app_integration
+dist/
+build/
+*.spec
 
 # Local secrets
 .streamlit/secrets.toml

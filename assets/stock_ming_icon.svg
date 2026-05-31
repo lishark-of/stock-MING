@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="stock MING icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b2d5c"/>
+      <stop offset="100%" stop-color="#12b5c9"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7ce9ff"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bg)"/>
+
+  <circle cx="256" cy="256" r="172" fill="none" stroke="rgba(255,255,255,0.24)" stroke-width="14"/>
+
+  <path d="M118 324 L186 260 L234 298 L292 208 L354 248 L402 170" fill="none" stroke="url(#line)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M124 382 L124 152 L184 152 L236 270 L288 152 L348 152 L348 382" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity="0.96"/>
+</svg>
