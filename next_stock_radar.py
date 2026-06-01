@@ -633,6 +633,171 @@ def _mark_scan_deepseek_called(top_n: int) -> None:
         st.session_state[RADAR_SCAN_STATE_KEY] = sanitize_for_json(scan_state)
 
 
+def run_light_rule_scan_for_command_center(
+    *,
+    supabase: Any,
+    current_ticker: str,
+    current_name: str,
+    current_price: float | None,
+    position_profile: dict[str, Any],
+    callbacks: dict[str, Callable[..., Any]],
+    candidate_limit: int = 12,
+    display_limit: int = 5,
+) -> dict[str, Any]:
+    """Run a compact rules-only radar scan for Command Center 2.0.
+
+    This intentionally avoids DeepSeek and reuses the same session_state keys as
+    the full legacy radar.
+    """
+    del supabase  # Reserved for parity with the full radar entrypoint.
+    _ensure_radar_scan_session_state()
+    started_at = _now_iso()
+    display_ticker = normalize_display_ticker(current_ticker)
+    holding_context_key = f"next_ticket_holding_context_{display_ticker}"
+    source_mode = "综合中心轻量雷达"
+    scan_strength = "轻量模式"
+    candidate_limit = max(1, int(candidate_limit or 12))
+    display_limit = max(1, int(display_limit or 5))
+    previous_scan_state = st.session_state.get(RADAR_SCAN_STATE_KEY) or {}
+    scan_errors: list[dict[str, Any]] = []
+    rule_rows: list[dict[str, Any]] = []
+    scan_meta: dict[str, Any] = {
+        "light_scan": {
+            "scan_kind": "command_center_light",
+            "total_pool_count": min(candidate_limit, len(TECH_SAMPLE_POOL)),
+            "refine_candidate_limit": candidate_limit,
+            "display_limit": display_limit,
+            "deepseek_called": False,
+        }
+    }
+
+    try:
+        holding_context = build_current_holding_context(
+            current_ticker=current_ticker,
+            current_name=current_name,
+            current_price=current_price,
+            position_profile=position_profile or {},
+            callbacks=callbacks,
+        )
+        holding_context["refreshed_at"] = started_at
+        holding_context["data_source"] = "技术快照 / Tushare 风控事实包 / 本地规则"
+        st.session_state[holding_context_key] = sanitize_for_json(holding_context)
+
+        candidates = [
+            {**item, "scan_source": source_mode}
+            for item in TECH_SAMPLE_POOL[:candidate_limit]
+        ]
+        rule_rows = build_rule_radar(candidates, holding_context, callbacks)
+        success_count = sum(1 for row in rule_rows if not row.get("error"))
+        failed_count = len(rule_rows) - success_count
+        for row in rule_rows:
+            if row.get("error"):
+                candidate = row.get("candidate") or {}
+                scan_errors.append(_scan_error("综合中心轻量精筛", row.get("error"), candidate.get("ticker") or ""))
+
+        finished_at = _now_iso()
+        summary = _build_scan_summary(
+            source_mode=source_mode,
+            scan_strength=scan_strength,
+            refine_candidate_limit=candidate_limit,
+            display_limit=display_limit,
+            scan_meta=scan_meta,
+            rule_rows=rule_rows,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        summary["deepseek_called"] = False
+        summary["deepseek_detail"] = "未调用"
+        summary["mode"] = "command_center_light_scan"
+        terminal_status = RADAR_SCAN_COMPLETED if failed_count == 0 else RADAR_SCAN_PARTIAL_FAILED
+        if success_count == 0 and failed_count > 0:
+            terminal_status = RADAR_SCAN_FAILED
+            summary["failed_stage"] = "综合中心轻量精筛"
+            summary["error_message"] = "全部候选精筛失败"
+        scan_state = {
+            "params_hash": _scan_params_hash(
+                {
+                    "source_mode": source_mode,
+                    "candidate_limit": candidate_limit,
+                    "display_limit": display_limit,
+                    "current_holding_ticker": display_ticker,
+                    "current_price": current_price,
+                }
+            ),
+            "params": {
+                "source_mode": source_mode,
+                "candidate_limit": candidate_limit,
+                "display_limit": display_limit,
+                "current_holding_ticker": display_ticker,
+                "current_price": current_price,
+            },
+            "source_mode": source_mode,
+            "source_notes": [f"综合中心轻量样本池 Top {candidate_limit}"],
+            "rule_rows": sanitize_for_json(rule_rows),
+            "results": sanitize_for_json(rule_rows),
+            "scan_meta": scan_meta,
+            "summary": summary,
+            "generated_at": finished_at,
+        }
+        _set_scan_state(
+            status=terminal_status,
+            scan_state=scan_state,
+            summary=summary,
+            errors=scan_errors,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        return sanitize_for_json(scan_state)
+    except Exception as exc:
+        finished_at = _now_iso()
+        scan_errors.append(_scan_error("综合中心轻量雷达", exc))
+        summary = _build_scan_summary(
+            source_mode=source_mode,
+            scan_strength=scan_strength,
+            refine_candidate_limit=candidate_limit,
+            display_limit=display_limit,
+            scan_meta=scan_meta,
+            rule_rows=rule_rows,
+            started_at=started_at,
+            finished_at=finished_at,
+            failed_stage="综合中心轻量雷达",
+            error_message=str(exc),
+        )
+        summary["deepseek_called"] = False
+        summary["deepseek_detail"] = "未调用"
+        scan_state = {
+            "params": {
+                "source_mode": source_mode,
+                "candidate_limit": candidate_limit,
+                "display_limit": display_limit,
+                "current_holding_ticker": display_ticker,
+                "current_price": current_price,
+            },
+            "source_mode": source_mode,
+            "source_notes": ["综合中心轻量雷达失败，保留上次成功结果。"],
+            "rule_rows": sanitize_for_json(rule_rows),
+            "results": sanitize_for_json(rule_rows),
+            "scan_meta": scan_meta,
+            "summary": summary,
+            "generated_at": finished_at,
+        }
+        if previous_scan_state:
+            scan_state = {
+                **previous_scan_state,
+                "summary": summary,
+                "last_failed_refresh": scan_state,
+            }
+        _set_scan_state(
+            status=RADAR_SCAN_FAILED,
+            scan_state=scan_state,
+            summary=summary,
+            errors=scan_errors,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        return sanitize_for_json(scan_state)
+
+
 def _adapter_from_callbacks(callbacks: dict[str, Callable[..., Any]]) -> Any:
     adapter = callbacks.get("tushare_adapter")
     if adapter is not None:
