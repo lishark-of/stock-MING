@@ -3710,6 +3710,159 @@ def _inject_command_center_css():
             font-size: 12px;
             line-height: 1.6;
         }
+        .cc-home-snapshot {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, rgba(255,255,255,0.94), rgba(248,250,252,0.88));
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            border-radius: 28px;
+            box-shadow: 0 24px 68px rgba(15,23,42,0.075), inset 0 1px 0 rgba(255,255,255,0.72);
+            padding: 22px;
+            margin: 12px 0 16px;
+            animation: cc-decision-fade-up 280ms ease-out both;
+        }
+        .cc-home-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+            gap: 14px;
+            align-items: stretch;
+        }
+        .cc-home-kicker {
+            color: #0f766e;
+            font-size: 12px;
+            font-weight: 850;
+            letter-spacing: 0;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .cc-home-action {
+            color: #0f172a;
+            font-size: clamp(30px, 4.6vw, 56px);
+            line-height: 1.02;
+            font-weight: 900;
+            letter-spacing: 0;
+            margin: 0 0 8px;
+            word-break: keep-all;
+        }
+        .cc-home-meta-row,
+        .cc-home-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .cc-home-chip {
+            border-radius: 999px;
+            padding: 7px 10px;
+            font-size: 12px;
+            font-weight: 800;
+            border: 1px solid rgba(148,163,184,0.18);
+            background: rgba(255,255,255,0.74);
+            color: #334155;
+        }
+        .cc-home-chip.ready { background: rgba(20,184,166,0.10); color: #0f766e; border-color: rgba(20,184,166,0.18); }
+        .cc-home-chip.stale,
+        .cc-home-chip.partial_failed { background: rgba(245,158,11,0.12); color: #b45309; border-color: rgba(245,158,11,0.18); }
+        .cc-home-chip.missing { background: rgba(148,163,184,0.13); color: #475569; border-color: rgba(148,163,184,0.18); }
+        .cc-home-side {
+            border-radius: 24px;
+            background: rgba(255,255,255,0.75);
+            border: 1px solid rgba(148,163,184,0.18);
+            padding: 16px;
+            box-shadow: 0 12px 34px rgba(15,23,42,0.045);
+        }
+        .cc-home-side-label {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 850;
+            margin-bottom: 5px;
+        }
+        .cc-home-risk {
+            color: #0f172a;
+            font-size: 34px;
+            line-height: 1;
+            font-weight: 900;
+        }
+        .cc-home-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr) minmax(0, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .cc-home-panel {
+            border-radius: 22px;
+            background: rgba(248,250,252,0.84);
+            border: 1px solid rgba(148,163,184,0.16);
+            padding: 15px;
+            min-height: 224px;
+        }
+        .cc-home-panel-title {
+            color: #0f172a;
+            font-size: 14px;
+            font-weight: 850;
+            margin-bottom: 10px;
+        }
+        .cc-home-big-value {
+            color: #0f766e;
+            font-size: 20px;
+            font-weight: 900;
+            line-height: 1.25;
+            margin-bottom: 8px;
+            overflow-wrap: anywhere;
+        }
+        .cc-home-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            border-top: 1px solid rgba(148,163,184,0.14);
+            padding-top: 8px;
+            margin-top: 8px;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+        .cc-home-row strong {
+            color: #0f172a;
+            font-weight: 850;
+        }
+        .cc-home-candidate,
+        .cc-home-etf {
+            border-radius: 16px;
+            background: rgba(255,255,255,0.74);
+            border: 1px solid rgba(148,163,184,0.14);
+            padding: 10px;
+            margin-top: 8px;
+        }
+        .cc-home-item-title {
+            color: #0f172a;
+            font-size: 13px;
+            font-weight: 850;
+            margin-bottom: 4px;
+        }
+        .cc-home-item-meta {
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.45;
+        }
+        .cc-home-bottom {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .cc-home-list {
+            margin: 0;
+            padding-left: 18px;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.7;
+        }
+        .cc-home-foot {
+            margin-top: 12px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+        }
         @keyframes cc-decision-fade-up {
             from { opacity: 0; transform: translateY(12px); }
             to { opacity: 1; transform: translateY(0); }
@@ -3728,6 +3881,7 @@ def _inject_command_center_css():
             .cc-decision-tile,
             .cc-strategy-card,
             .cc-strategy-action,
+            .cc-home-snapshot,
             .cc-coverage-fill {
                 animation: none !important;
                 transition: none !important;
@@ -3763,6 +3917,9 @@ def _inject_command_center_css():
             .cc-strategy-condition-grid,
             .cc-strategy-path-grid,
             .cc-strategy-foot-grid,
+            .cc-home-head,
+            .cc-home-grid,
+            .cc-home-bottom,
             .cc-strategy-status-row {
                 grid-template-columns: 1fr;
             }
@@ -4080,6 +4237,159 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
         <br>{escape(str(vm.get("evidence_summary_text") or ""))}
       </div>
+    </section>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _home_text(value, fallback="暂无"):
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def _home_number(value, suffix=""):
+    if value in [None, ""]:
+        return "暂无"
+    number = _to_float(value)
+    if number is None:
+        return str(value)
+    if suffix == "%":
+        return f"{number:.1f}%"
+    if abs(number) >= 1000:
+        return f"{number:,.0f}{suffix}"
+    return f"{number:g}{suffix}"
+
+
+def _home_list(items, fallback, limit=5):
+    values = [str(item or "").strip() for item in (items or []) if str(item or "").strip()]
+    if not values:
+        values = [fallback]
+    return "<ul class='cc-home-list'>" + "".join(f"<li>{escape(item)}</li>" for item in values[:limit]) + "</ul>"
+
+
+def _home_freshness_class(state):
+    text = str(state or "")
+    if text == "today":
+        return "ready"
+    if text in {"stale", "partial_failed"}:
+        return text
+    return "missing"
+
+
+def render_home_action_snapshot(snapshot: dict | None = None):
+    _inject_command_center_css()
+    payload = snapshot or {}
+    today_action = payload.get("today_action") or {}
+    holding = payload.get("holding_action") or {}
+    margin_etf = payload.get("margin_etf_summary") or {}
+    risk_alerts = payload.get("risk_alerts") or {}
+    freshness = payload.get("data_freshness") or {}
+    candidates = payload.get("next_ticket_candidates") or []
+    etfs = margin_etf.get("recommended_etfs") or []
+    errors = payload.get("errors") or []
+    coverage = payload.get("data_coverage") or {}
+
+    freshness_state = str(freshness.get("state") or "missing")
+    freshness_label = freshness.get("label") or "待刷新"
+    coverage_ready = len([state for state in coverage.values() if state == "ready"])
+    coverage_cached = len([state for state in coverage.values() if state == "cached"])
+    coverage_missing = len([state for state in coverage.values() if state == "missing"])
+    safety_line = payload.get("safety_line") or "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。"
+
+    if candidates:
+        candidate_html = ""
+        for item in candidates[:3]:
+            candidate_html += f"""
+            <div class="cc-home-candidate">
+              <div class="cc-home-item-title">{escape(_home_text(item.get("ticker"), "候选"))} {escape(_home_text(item.get("name"), ""))}</div>
+              <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("action_state"), "只观察"))} ｜ 综合分：{escape(_home_number(item.get("score")))}</div>
+              <div class="cc-home-item-meta">触发：{escape(_home_text(item.get("trigger_condition"), "等待触发条件确认。"))}</div>
+              <div class="cc-home-item-meta">失效：{escape(_home_text(item.get("invalidation_condition"), "条件失效或风险转弱。"))}</div>
+              <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "下一票雷达缓存"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无时间"))}</div>
+            </div>
+            """
+    else:
+        candidate_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>暂无可执行候选</div><div class='cc-home-item-meta'>点击刷新今日基础数据生成；不会自动全市场扫描。</div></div>"
+
+    if etfs:
+        etf_html = ""
+        for item in etfs[:3]:
+            etf_html += f"""
+            <div class="cc-home-etf">
+              <div class="cc-home-item-title">{escape(_home_text(item.get("code"), "ETF"))} {escape(_home_text(item.get("name"), ""))}</div>
+              <div class="cc-home-item-meta">{escape(_home_text(item.get("bucket"), "ETF"))} ｜ 分数：{escape(_home_number(item.get("score")))} ｜ {escape(_home_text(item.get("action_state"), "只观察不追"))}</div>
+            </div>
+            """
+    else:
+        etf_html = "<div class='cc-home-etf'><div class='cc-home-item-title'>暂无 ETF 推荐缓存</div><div class='cc-home-item-meta'>刷新今日基础数据后读取本地 ETF 配置快照；不自动全量发现。</div></div>"
+
+    error_line = "无" if not errors else f"{len(errors)} 个失败/错误"
+    html = f"""
+    <section class="cc-home-snapshot">
+      <div class="cc-home-head">
+        <div>
+          <div class="cc-home-kicker">Home Action Snapshot</div>
+          <h2 class="cc-home-action">{escape(_home_text(today_action.get("overall_action"), "等待"))}</h2>
+          <div class="cc-strategy-summary">
+            市场：{escape(_home_text(today_action.get("market_bias"), "未刷新"))} ｜
+            主账户：{escape(_home_text(today_action.get("position_mode"), "空仓等待"))} ｜
+            融资：{escape(_home_text(today_action.get("margin_mode"), "不使用融资"))}
+          </div>
+          <div class="cc-home-chip-row">
+            <span class="cc-home-chip {_home_freshness_class(freshness_state)}">数据状态：{escape(str(freshness_label))}</span>
+            <span class="cc-home-chip">已刷新 {coverage_ready}</span>
+            <span class="cc-home-chip stale">缓存 {coverage_cached}</span>
+            <span class="cc-home-chip missing">待刷新 {coverage_missing}</span>
+            <span class="cc-home-chip">DeepSeek：{'已调用' if payload.get('deepseek_called') else '未调用'}</span>
+          </div>
+        </div>
+        <aside class="cc-home-side">
+          <div class="cc-home-side-label">风险等级</div>
+          <div class="cc-home-risk">{escape(_home_text(today_action.get("risk_level"), "中"))}</div>
+          <div class="cc-muted-note">最后更新时间：{escape(_home_text(freshness.get("last_updated"), "暂无"))}</div>
+          <div class="cc-muted-note">失败/错误：{escape(error_line)}</div>
+        </aside>
+      </div>
+      <div class="cc-home-grid">
+        <div class="cc-home-panel">
+          <div class="cc-home-panel-title">当前持仓动作</div>
+          <div class="cc-home-big-value">{escape(_home_text(holding.get("action_state"), "待刷新"))}</div>
+          <div class="cc-home-row"><span>标的</span><strong>{escape(_home_text(holding.get("ticker"), "未锁定"))} {escape(_home_text(holding.get("name"), ""))}</strong></div>
+          <div class="cc-home-row"><span>成本 / 数量</span><strong>{escape(_home_number(holding.get("cost")))} / {escape(_home_number(holding.get("shares")))}</strong></div>
+          <div class="cc-home-row"><span>现价 / 浮盈亏</span><strong>{escape(_home_number(holding.get("current_price")))} / {escape(_home_text(holding.get("floating_pnl_text"), "暂无"))}</strong></div>
+          <div class="cc-home-row"><span>加仓条件</span><strong>{escape(_home_text(holding.get("add_condition"), "等待验证。"))}</strong></div>
+          <div class="cc-home-row"><span>减仓条件</span><strong>{escape(_home_text(holding.get("reduce_condition"), "触发风险线时优先降低暴露。"))}</strong></div>
+          <div class="cc-home-row"><span>失效条件</span><strong>{escape(_home_text(holding.get("invalidation_condition"), "市场转弱或纪律反向。"))}</strong></div>
+        </div>
+        <div class="cc-home-panel">
+          <div class="cc-home-panel-title">下一票候选 Top 3</div>
+          {candidate_html}
+        </div>
+        <div class="cc-home-panel">
+          <div class="cc-home-panel-title">ETF / 融资动作</div>
+          <div class="cc-home-big-value">{escape(_home_text(margin_etf.get("today_main_direction"), "待刷新"))}</div>
+          <div class="cc-home-row"><span>建议融资比例</span><strong>{escape(_home_number(margin_etf.get("recommended_margin_ratio"), "%"))}</strong></div>
+          <div class="cc-home-row"><span>建议现金比例</span><strong>{escape(_home_number(margin_etf.get("recommended_cash_ratio"), "%"))}</strong></div>
+          {etf_html}
+        </div>
+      </div>
+      <div class="cc-home-bottom">
+        <div class="cc-home-panel">
+          <div class="cc-home-panel-title">风险警报</div>
+          {_home_list(risk_alerts.get("must_not_do"), "不追高、不满仓、不在未刷新数据下加融资。")}
+          <div class="cc-muted-note">必须降风险条件：{escape("；".join(risk_alerts.get("reduce_conditions") or ["暂无新增条件"]))}</div>
+          <div class="cc-muted-note">数据缺口：{escape("、".join(risk_alerts.get("data_gaps") or ["暂无"]))}</div>
+        </div>
+        <div class="cc-home-panel">
+          <div class="cc-home-panel-title">数据新鲜度</div>
+          <div class="cc-home-big-value">{escape(str(freshness_label))}</div>
+          <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
+          <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
+          <div class="cc-home-row"><span>DeepSeek</span><strong>{'已调用' if payload.get('deepseek_called') else '未调用'}</strong></div>
+          <div class="cc-muted-note">{escape(str(safety_line))}</div>
+        </div>
+      </div>
+      <div class="cc-home-foot">快照只读取本地结构化结果；页面打开不会自动调用 DeepSeek、回测、全市场扫描或重型行情接口。</div>
     </section>
     """
     st.markdown(html, unsafe_allow_html=True)

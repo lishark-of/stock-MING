@@ -14,6 +14,7 @@ import pandas as pd
 import numpy as np
 
 import command_center_adapter as cc_adapter
+import command_center_home_snapshot as home_snapshot_service
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
@@ -35,6 +36,7 @@ try:
         render_etf_score_table,
         render_discipline_validation_grid,
         render_fusion_summary_card,
+        render_home_action_snapshot,
         render_holdings_snapshot_summary,
         render_intraday_etf_snapshot,
         render_margin_allocator_chart,
@@ -71,6 +73,9 @@ except Exception as module_error:
 
     def render_command_center_decision_hero(*args, **kwargs):
         _visual_component_unavailable("今日总决策主卡")
+
+    def render_home_action_snapshot(*args, **kwargs):
+        _visual_component_unavailable("首页交易快照")
 
     def render_command_center_shell(*args, **kwargs):
         _visual_component_unavailable("综合推演中心框架")
@@ -3734,6 +3739,37 @@ def build_command_center_view_model(live_packet=None):
     return view_model
 
 
+def _build_home_action_snapshot_display(live_packet=None, target="", position_profile=None):
+    local_snapshot = home_snapshot_service.load_home_action_snapshot()
+    session_snapshot = home_snapshot_service.build_home_action_snapshot(
+        st.session_state,
+        target=target,
+        position_profile=position_profile,
+        live_packet=live_packet,
+        decision_packet=_get_command_center_decision_display_packet(),
+        strategy_packet=_get_strategy_execution_display_packet(),
+        refresh_summary=st.session_state.get("command_center_refresh_summary") or {},
+    )
+    snapshot = home_snapshot_service.choose_home_action_snapshot(session_snapshot, local_snapshot)
+    st.session_state["command_center_home_snapshot"] = snapshot
+    return snapshot
+
+
+def _persist_home_action_snapshot(live_packet=None, target="", position_profile=None, decision_packet=None, strategy_packet=None, refresh_summary=None):
+    snapshot = home_snapshot_service.build_home_action_snapshot(
+        st.session_state,
+        target=target,
+        position_profile=position_profile,
+        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        decision_packet=decision_packet or _get_command_center_decision_display_packet(),
+        strategy_packet=strategy_packet or _get_strategy_execution_display_packet(),
+        refresh_summary=refresh_summary or st.session_state.get("command_center_refresh_summary") or {},
+    )
+    home_snapshot_service.save_home_action_snapshot(snapshot)
+    st.session_state["command_center_home_snapshot"] = snapshot
+    return snapshot
+
+
 def _get_strategy_execution_display_packet():
     return cc_state_adapter.get_display_packet(
         st.session_state,
@@ -3782,8 +3818,7 @@ def _generate_command_center_decision(live_packet, refresh_summary=None):
     return decision_packet, live_packet
 
 
-def render_command_center_decision_card(live_packet, position_profile=None):
-    del position_profile
+def render_command_center_decision_card(live_packet, target="", position_profile=None):
     live_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(live_packet))
     packet = _get_command_center_decision_display_packet()
     notice = st.session_state.pop("command_center_decision_notice", "")
@@ -3809,6 +3844,12 @@ def render_command_center_decision_card(live_packet, position_profile=None):
         else:
             st.session_state["command_center_decision_notice"] = "今日总决策已生成；DeepSeek：未调用。"
             st.session_state["command_center_decision_notice_kind"] = "success"
+        _persist_home_action_snapshot(
+            live_packet=live_packet,
+            target=target,
+            position_profile=position_profile,
+            decision_packet=packet,
+        )
         st.rerun()
     return live_packet
 
@@ -3832,6 +3873,12 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
             st.warning(f"策略执行建议生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}")
         else:
             st.success("策略执行建议已生成；DeepSeek：未调用。")
+        _persist_home_action_snapshot(
+            live_packet=live_packet,
+            target=target,
+            position_profile=position_profile,
+            strategy_packet=packet,
+        )
 
     strategy_vm = build_strategy_summary_view_model(packet)
     render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
@@ -3943,6 +3990,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     packet = st.session_state[packet_key]
     live_packet = run_command_center_auto_light_snapshot(target=target)
     decision_hero_slot = st.empty()
+    home_snapshot_slot = st.empty()
     control_cols = st.columns([1.4, 1.2])
     with control_cols[0]:
         if st.button("刷新今日基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
@@ -3977,6 +4025,13 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 live_packet,
                 refresh_summary=refresh_summary,
             )
+            _persist_home_action_snapshot(
+                live_packet=live_packet,
+                target=target,
+                position_profile=position_profile,
+                decision_packet=decision_packet,
+                refresh_summary=refresh_summary,
+            )
             status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}；DeepSeek：未调用")
             refresh_status_view = build_refresh_summary_view_model(
                 live_packet=live_packet,
@@ -3994,6 +4049,11 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
             current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
             current_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(current_packet))
+            current_packet["home_action_snapshot"] = st.session_state.get("command_center_home_snapshot") or _build_home_action_snapshot_display(
+                live_packet=current_packet,
+                target=target,
+                position_profile=position_profile,
+            )
             current_packet["refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             prompt = f"""
 请基于以下综合推演中心 packet 输出一段克制解释。
@@ -4069,14 +4129,18 @@ packet:
         f"{overview_vm.get('deepseek_text') or 'DeepSeek：未调用'} ｜ "
         "页面加载和控件切换不会自动调用 Tushare、AkShare 或 yfinance。"
     )
-    st.info(
-        f"{overview_vm.get('usage_boundary_text')} "
-        f"数据覆盖：{overview_vm.get('coverage_summary_text') or '暂无'}。"
+    home_snapshot = _build_home_action_snapshot_display(
+        live_packet=live_packet,
+        target=target,
+        position_profile=position_profile,
     )
-    st.caption("安全路径：先刷新今日基础数据 → 再生成策略执行建议 → 再看今日总决策 → 可选 DeepSeek 综合解释。")
+    with home_snapshot_slot.container():
+        render_home_action_snapshot(home_snapshot)
+    st.caption("本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释。")
     with decision_hero_slot.container():
         live_packet = render_command_center_decision_card(
             live_packet,
+            target=target,
             position_profile=position_profile,
         )
     live_packet = render_strategy_execution_card(
