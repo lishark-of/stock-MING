@@ -4008,6 +4008,118 @@ def _inject_command_center_css():
             color: #c2410c;
             border-color: rgba(249,115,22,0.16);
         }
+        .cc-analysis-card {
+            background: rgba(255,255,255,0.94);
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            border-radius: 26px;
+            box-shadow: 0 18px 54px rgba(15,23,42,0.060);
+            padding: 18px;
+            margin: 12px 0 16px;
+            animation: cc-decision-fade-up 280ms ease-out both;
+        }
+        .cc-analysis-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+        .cc-analysis-kicker {
+            color: #2563eb;
+            font-size: 12px;
+            font-weight: 850;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .cc-analysis-title {
+            color: #0f172a;
+            font-size: 24px;
+            line-height: 1.15;
+            font-weight: 900;
+            margin: 0;
+        }
+        .cc-analysis-summary {
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.55;
+            margin-top: 7px;
+        }
+        .cc-analysis-market {
+            border-radius: 999px;
+            background: rgba(37,99,235,0.10);
+            color: #1d4ed8;
+            border: 1px solid rgba(37,99,235,0.16);
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+        .cc-analysis-method-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .cc-analysis-method {
+            border-radius: 18px;
+            background: rgba(248,250,252,0.78);
+            border: 1px solid rgba(148,163,184,0.16);
+            padding: 12px;
+            min-height: 168px;
+        }
+        .cc-analysis-method.passed {
+            background: rgba(20,184,166,0.08);
+            border-color: rgba(20,184,166,0.18);
+        }
+        .cc-analysis-method.pending {
+            background: rgba(245,158,11,0.08);
+            border-color: rgba(245,158,11,0.16);
+        }
+        .cc-analysis-method.failed {
+            background: rgba(249,115,22,0.08);
+            border-color: rgba(249,115,22,0.18);
+        }
+        .cc-analysis-method.na {
+            background: rgba(148,163,184,0.09);
+            border-color: rgba(148,163,184,0.16);
+        }
+        .cc-analysis-method-title {
+            color: #0f172a;
+            font-size: 13px;
+            font-weight: 870;
+            line-height: 1.35;
+            margin-bottom: 8px;
+        }
+        .cc-analysis-status {
+            display: inline-flex;
+            border-radius: 999px;
+            padding: 5px 8px;
+            font-size: 11px;
+            font-weight: 850;
+            margin-bottom: 8px;
+            border: 1px solid rgba(148,163,184,0.14);
+            background: rgba(255,255,255,0.72);
+            color: #475569;
+        }
+        .cc-analysis-status.passed { color: #0f766e; border-color: rgba(20,184,166,0.18); }
+        .cc-analysis-status.pending { color: #b45309; border-color: rgba(245,158,11,0.18); }
+        .cc-analysis-status.failed { color: #c2410c; border-color: rgba(249,115,22,0.18); }
+        .cc-analysis-line {
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.5;
+            margin-top: 6px;
+            overflow-wrap: anywhere;
+        }
+        .cc-analysis-line span {
+            color: #64748b;
+            font-weight: 850;
+        }
+        .cc-analysis-foot {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+            margin-top: 12px;
+        }
         @keyframes cc-decision-fade-up {
             from { opacity: 0; transform: translateY(12px); }
             to { opacity: 1; transform: translateY(0); }
@@ -4065,6 +4177,8 @@ def _inject_command_center_css():
             .cc-home-head,
             .cc-home-grid,
             .cc-projection-action-grid,
+            .cc-analysis-head,
+            .cc-analysis-method-grid,
             .cc-home-bottom,
             .cc-strategy-status-row {
                 grid-template-columns: 1fr;
@@ -4733,6 +4847,69 @@ def _projection_path_cards(paths):
                 st.write(str(item.get("action") or "只观察。"))
                 st.caption("风险提示")
                 st.write(str(item.get("risk") or "不追高、不满仓。"))
+
+
+def _analysis_status_class(status):
+    text = str(status or "").strip()
+    if text == "通过":
+        return "passed"
+    if text in {"失败", "风险"}:
+        return "failed"
+    if text == "不适用":
+        return "na"
+    return "pending"
+
+
+def render_analysis_methods_card(packet: dict | None = None):
+    _inject_command_center_css()
+    payload = packet or {}
+    market = str(payload.get("market") or "").strip()
+    market_label = market if market and market not in {"未知", "UNKNOWN"} else "市场类型待确认"
+    methods = [item for item in (payload.get("methods") or []) if isinstance(item, dict)]
+    if not methods:
+        methods = [
+            {
+                "name": "市场画像",
+                "status": "待验证",
+                "evidence": "当前缺少 ticker 或市场类型，无法套用 A股 / 美股 / ETF 专属框架。",
+                "risk": "不要把通用说明当成交易依据。",
+                "action_hint": "先刷新今日基础数据或确认当前标的。",
+            }
+        ]
+
+    method_html = ""
+    for item in methods:
+        status = str(item.get("status") or "待验证")
+        status_class = _analysis_status_class(status)
+        method_html += (
+            f"<div class='cc-analysis-method {status_class}'>"
+            f"<div class='cc-analysis-method-title'>{escape(str(item.get('name') or '分析方法'))}</div>"
+            f"<span class='cc-analysis-status {status_class}'>{escape(status)}</span>"
+            f"<div class='cc-analysis-line'><span>证据</span> {escape(str(item.get('evidence') or '数据不足，待刷新验证。'))}</div>"
+            f"<div class='cc-analysis-line'><span>风险</span> {escape(str(item.get('risk') or '数据缺口'))}</div>"
+            f"<div class='cc-analysis-line'><span>动作</span> {escape(str(item.get('action_hint') or '待验证后再行动。'))}</div>"
+            "</div>"
+        )
+
+    html = f"""
+    <section class="cc-analysis-card">
+      <div class="cc-analysis-head">
+        <div>
+          <div class="cc-analysis-kicker">Analysis Methods</div>
+          <h2 class="cc-analysis-title">市场分析方法</h2>
+          <div class="cc-analysis-summary">{escape(str(payload.get("summary") or "市场类型待确认；数据不足时所有方法都必须保持待验证。"))}</div>
+        </div>
+        <div class="cc-analysis-market">{escape(market_label)}</div>
+      </div>
+      <div class="cc-analysis-method-grid">{method_html}</div>
+      <div class="cc-analysis-foot">
+        来源：{escape(str(payload.get("source") or "rule-based market profile"))} ｜
+        更新时间：{escape(str(payload.get("updated_at") or "暂无"))} ｜
+        DeepSeek：未调用。该卡只解释当前市场适用的分析口径，不改变交易结论。
+      </div>
+    </section>
+    """
+    _render_html(html)
 
 
 def _projection_static_frame(packet):

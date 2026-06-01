@@ -68,6 +68,11 @@ class MarketAnalysisProfileTests(unittest.TestCase):
         self.assertFalse(result["deepseek_called"])
         json.dumps(result, ensure_ascii=False)
 
+    def test_app_internal_market_aliases_are_supported(self):
+        self.assertEqual(profile.get_market_analysis_profile("A_SHARE_SH")["market"], "A股")
+        self.assertEqual(profile.get_market_analysis_profile("A_SHARE_SZ")["market"], "A股")
+        self.assertEqual(profile.get_market_analysis_profile("US_STOCK")["market"], "美股")
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("market_analysis_profile.py").read_text())
         imports = []
@@ -83,4 +88,3 @@ class MarketAnalysisProfileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -202,11 +202,12 @@ def get_market_analysis_profile(
     market = _to_text(market_type)
     if not market or market in {"auto", "AUTO", MARKET_UNKNOWN}:
         market = identify_market_type(ticker=ticker, name=name, packet=packet)
-    if market in {MARKET_ETF, "A股ETF", "ETF/基金"}:
+    upper_market = market.upper()
+    if market in {MARKET_ETF, "A股ETF", "ETF/基金"} or "ETF" in upper_market:
         profile = _etf_profile()
-    elif market in {MARKET_A_SHARE, "A_SHARE", "A股个股"}:
+    elif market in {MARKET_A_SHARE, "A_SHARE", "A股个股"} or upper_market.startswith("A_SHARE"):
         profile = _a_share_profile()
-    elif market in {MARKET_US_STOCK, "US", "US_STOCK", "美股个股"}:
+    elif market in {MARKET_US_STOCK, "US", "US_STOCK", "美股个股"} or upper_market.startswith("US_"):
         profile = _us_stock_profile()
     else:
         profile = _generic_profile(market)

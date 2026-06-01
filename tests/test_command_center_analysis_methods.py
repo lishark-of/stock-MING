@@ -57,16 +57,27 @@ class CommandCenterAnalysisMethodsTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
 
     def test_etf_packet_marks_etf_allocation_applicable(self):
-        packet = methods.build_analysis_method_packet(
-            ticker="560780.SH",
-            live_packet={"margin_etf": {"status": "ready"}},
-            now="2026-06-01T09:30:00",
-        )
+        for ticker in ["560780.SH", "159801.SZ"]:
+            with self.subTest(ticker=ticker):
+                packet = methods.build_analysis_method_packet(
+                    ticker=ticker,
+                    live_packet={"margin_etf": {"status": "ready"}},
+                    now="2026-06-01T09:30:00",
+                )
 
-        self.assertEqual(packet["market"], "ETF")
-        by_name = {item["name"]: item for item in packet["methods"]}
-        self.assertEqual(by_name["ETF 赛道配置"]["status"], "通过")
-        self.assertIn("跟踪指数", json.dumps(packet, ensure_ascii=False))
+                self.assertEqual(packet["market"], "ETF")
+                by_name = {item["name"]: item for item in packet["methods"]}
+                self.assertEqual(by_name["ETF 赛道配置"]["status"], "通过")
+                self.assertIn("跟踪指数", json.dumps(packet, ensure_ascii=False))
+
+    def test_internal_app_market_aliases_map_to_profiles(self):
+        a_share = methods.build_analysis_method_packet(market_type="A_SHARE_SH", ticker="002008.SS")
+        us_stock = methods.build_analysis_method_packet(market_type="US_STOCK", ticker="AAPL")
+
+        self.assertEqual(a_share["market"], "A股")
+        self.assertEqual(us_stock["market"], "美股")
+        self.assertIn("龙虎榜", json.dumps(a_share, ensure_ascii=False))
+        self.assertIn("52周新高", json.dumps(us_stock, ensure_ascii=False))
 
     def test_insufficient_data_is_pending_not_fake_pass(self):
         packet = methods.build_analysis_method_packet(ticker="AAPL", now="2026-06-01T09:30:00")
@@ -99,6 +110,13 @@ class CommandCenterAnalysisMethodsTests(unittest.TestCase):
         self.assertEqual(packet["data_coverage"]["market"], "missing")
         json.dumps(packet, ensure_ascii=False)
 
+    def test_unknown_market_does_not_pretend_to_be_a_share_or_us_stock(self):
+        packet = methods.build_analysis_method_packet(market_type="", ticker="", now="2026-06-01T09:30:00")
+
+        self.assertEqual(packet["market"], "未知")
+        self.assertIn("等待数据刷新", packet["summary"])
+        self.assertFalse(packet["deepseek_called"])
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_analysis_methods.py").read_text())
         imports = []
@@ -114,4 +132,3 @@ class CommandCenterAnalysisMethodsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

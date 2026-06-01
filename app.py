@@ -16,6 +16,7 @@ import numpy as np
 import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
+import command_center_analysis_methods as analysis_methods_service
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
@@ -33,6 +34,7 @@ try:
         render_command_center_account_budget_card,
         render_command_center_decision_hero,
         render_command_center_projection_chart,
+        render_analysis_methods_card,
         render_command_center_shell,
         render_command_center_shell_end,
         render_etf_score_table,
@@ -78,6 +80,9 @@ except Exception as module_error:
 
     def render_command_center_projection_chart(*args, **kwargs):
         _visual_component_unavailable("趋势推演主视觉")
+
+    def render_analysis_methods_card(*args, **kwargs):
+        _visual_component_unavailable("市场分析方法")
 
     def render_home_action_snapshot(*args, **kwargs):
         _visual_component_unavailable("首页交易快照")
@@ -3907,6 +3912,21 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
     return live_packet
 
 
+def _build_analysis_methods_display_packet(live_packet=None, target="", market_type="", home_snapshot=None):
+    snapshot = home_snapshot or st.session_state.get("command_center_home_snapshot") or {}
+    holding = cc_adapter.as_mapping(snapshot.get("holding_action"))
+    ticker = target or holding.get("ticker") or ""
+    name = holding.get("name") or ""
+    return analysis_methods_service.build_analysis_method_packet(
+        market_type=market_type,
+        ticker=ticker,
+        name=name,
+        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        strategy_packet=_get_strategy_execution_display_packet(),
+        decision_packet=_get_command_center_decision_display_packet(),
+    )
+
+
 def render_command_center_live_cards(live_packet, target="", market_type="", price=None, position_profile=None):
     st.markdown("#### 真实摘要接入")
     cards = [
@@ -4176,6 +4196,14 @@ packet:
     st.session_state["command_center_projection_packet"] = projection_packet
     with projection_slot.container():
         render_command_center_projection_chart(projection_packet)
+    analysis_method_packet = _build_analysis_methods_display_packet(
+        live_packet=live_packet,
+        target=target,
+        market_type=market_type,
+        home_snapshot=home_snapshot,
+    )
+    st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
+    render_analysis_methods_card(analysis_method_packet)
     live_packet = render_strategy_execution_card(
         live_packet,
         target=target,
