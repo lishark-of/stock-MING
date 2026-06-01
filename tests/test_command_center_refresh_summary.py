@@ -57,6 +57,60 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
 
         self.assertEqual(len(errors), summary.MAX_ERRORS)
 
+    def test_extract_completed_modules_handles_empty_and_ok_results(self):
+        self.assertEqual(summary.extract_completed_modules(), [])
+        self.assertEqual(summary.extract_completed_modules(object()), [])
+        self.assertEqual(summary.extract_completed_modules({"results": "bad"}), [])
+
+        completed = summary.extract_completed_modules(
+            {
+                "results": [
+                    {"ok": True, "module": "市场环境"},
+                    {"ok": False, "module": "量化推演"},
+                    {"ok": True, "module": "市场环境"},
+                    {"ok": True, "module_key": "discipline"},
+                ]
+            }
+        )
+
+        self.assertEqual(completed, ["市场环境", "discipline"])
+
+    def test_extract_refresh_error_items_handles_multiple_shapes_without_mutation(self):
+        payload = {
+            "module": "市场环境",
+            "updated_at": "2026-06-01T09:30:00",
+            "source": "缓存",
+            "errors": [
+                "timeout",
+                {"module": "量化推演", "message": "missing cache", "source": "本地缓存"},
+                {"error": "bad packet", "updated_at": "2026-06-01T09:31:00"},
+                "",
+            ],
+        }
+        before = copy.deepcopy(payload)
+
+        items = summary.extract_refresh_error_items(
+            payload,
+            {"last_error": "fallback error", "module": "纪律"},
+            {"error": "hard fail"},
+            max_errors=8,
+        )
+
+        self.assertEqual(payload, before)
+        self.assertTrue(all(set(item) >= {"module", "message", "updated_at", "source"} for item in items))
+        self.assertEqual(items[0]["module"], "市场环境")
+        self.assertEqual(items[0]["message"], "timeout")
+        self.assertEqual(items[1]["module"], "量化推演")
+        self.assertEqual(items[1]["message"], "missing cache")
+        self.assertIn("fallback error", [item["message"] for item in items])
+        self.assertIn("hard fail", [item["message"] for item in items])
+        json.dumps(items, ensure_ascii=False)
+
+    def test_extract_refresh_error_items_limits_growth(self):
+        items = summary.extract_refresh_error_items({"errors": [str(index) for index in range(20)]})
+
+        self.assertEqual(len(items), summary.MAX_ERRORS)
+
     def test_summarize_refresh_result_covers_empty_success_partial_and_errors(self):
         empty = summary.summarize_refresh_result()
         self.assertEqual(empty["status"], "unknown")
@@ -71,6 +125,7 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         self.assertEqual(partial["status"], "partial")
         self.assertEqual(partial["error_count"], 1)
         self.assertTrue(partial["stale"])
+        self.assertEqual(partial["error_items"][0]["message"], "module failed")
 
         failed = summary.summarize_refresh_result({
             "ok": False,
@@ -84,6 +139,24 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         bad = summary.summarize_refresh_result(object())
         self.assertEqual(bad["status"], "unknown")
         json.dumps(bad, ensure_ascii=False)
+
+    def test_summarize_refresh_result_includes_completed_modules_and_error_items(self):
+        result = {
+            "ok": True,
+            "results": [
+                {"ok": True, "module": "市场环境"},
+                {"ok": True, "module": "纪律"},
+                {"ok": False, "module": "下一票"},
+            ],
+            "errors": [{"module": "下一票", "message": "scan skipped"}],
+        }
+
+        payload = summary.summarize_refresh_result(result)
+
+        self.assertEqual(payload["completed_modules"], ["市场环境", "纪律"])
+        self.assertEqual(payload["error_items"][0]["module"], "下一票")
+        self.assertEqual(payload["error_items"][0]["message"], "scan skipped")
+        self.assertEqual(payload["error_count"], 1)
 
     def test_module_statuses_are_json_friendly_and_do_not_mutate_input(self):
         live_packet = {
@@ -123,8 +196,34 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         self.assertIn("summary", view_model)
         self.assertIn("module_statuses", view_model)
         self.assertIn("errors", view_model)
+        self.assertIn("completed_modules", view_model)
+        self.assertIn("error_items", view_model)
         self.assertTrue(view_model["has_errors"])
         self.assertEqual(view_model["generated_at"], "2026-06-01T09:30:00+09:00")
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_build_refresh_summary_view_model_keeps_new_fields_json_friendly(self):
+        live_packet = {
+            "market": {"status": "已刷新", "is_fresh": True},
+            "next_ticket": {"errors": [{"message": "scan skipped", "module": "下一票"}]},
+        }
+        before = copy.deepcopy(live_packet)
+
+        view_model = summary.build_refresh_summary_view_model(
+            live_packet=live_packet,
+            refresh_result={
+                "ok": True,
+                "results": [{"ok": True, "module": "市场环境"}],
+                "errors": [{"module": "量化推演", "message": "cache missing"}],
+            },
+            refresh_level="light",
+            generated_at="2026-06-01T09:30:00+09:00",
+        )
+
+        self.assertEqual(live_packet, before)
+        self.assertEqual(view_model["completed_modules"], ["市场环境"])
+        self.assertEqual(view_model["error_items"][0]["module"], "量化推演")
+        self.assertTrue(view_model["has_errors"])
         json.dumps(view_model, ensure_ascii=False)
 
     def test_empty_none_and_non_mapping_inputs_do_not_raise(self):

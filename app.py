@@ -3975,7 +3975,13 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 refresh_summary=refresh_summary,
             )
             status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}；DeepSeek：未调用")
-            errors = refresh_summary.get("errors") or []
+            refresh_status_view = build_refresh_summary_view_model(
+                live_packet=live_packet,
+                refresh_result=refresh_summary,
+                refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
+                generated_at=refresh_summary.get("finished_at"),
+            )
+            errors = refresh_status_view.get("error_items") or refresh_status_view.get("errors") or []
             if errors:
                 status.update(label=f"今日基础数据刷新完成，{len(errors)} 个模块失败", state="complete", expanded=False)
             else:
@@ -4009,28 +4015,35 @@ packet:
             st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             status.update(label="DeepSeek 解释已写入 session_state", state="complete")
 
-    refresh_summary = st.session_state.get("command_center_refresh_summary") or {}
-    if refresh_summary:
-        errors = refresh_summary.get("errors") or []
-        ok_modules = [
-            item.get("module")
-            for item in (refresh_summary.get("results") or [])
-            if item.get("ok")
-        ]
-        st.caption(
-            f"最近一次基础数据刷新：{refresh_summary.get('finished_at') or '暂无'} ｜ "
-            f"已完成：{'、'.join(ok_modules) if ok_modules else '无'} ｜ "
-            f"失败：{len(errors)} ｜ DeepSeek：未调用"
-        )
-        if errors:
-            with st.expander("刷新失败明细", expanded=False):
-                for item in errors:
-                    st.write(f"- {item.get('module')}: {item.get('message') or item.get('error')}")
-
     live_packet = live_packet or run_command_center_auto_light_snapshot(target=target)
     command_center_view_model = build_command_center_view_model(live_packet)
+    refresh_summary = st.session_state.get("command_center_refresh_summary") or {}
+    refresh_summary_view = command_center_view_model.get("refresh_summary") or {}
+    if refresh_summary:
+        summary_payload = refresh_summary_view.get("summary") or {}
+        error_items = refresh_summary_view.get("error_items") or []
+        errors = refresh_summary_view.get("errors") or []
+        ok_modules = (
+            refresh_summary_view.get("completed_modules")
+            or summary_payload.get("completed_modules")
+            or []
+        )
+        st.caption(
+            f"最近一次基础数据刷新：{refresh_summary_view.get('generated_at') or '暂无'} ｜ "
+            f"已完成：{'、'.join(ok_modules) if ok_modules else '无'} ｜ "
+            f"失败：{len(error_items) if error_items else len(errors)} ｜ DeepSeek：未调用"
+        )
+        if error_items or errors:
+            with st.expander("刷新失败明细", expanded=False):
+                if error_items:
+                    for item in error_items:
+                        st.write(f"- {item.get('module') or '未知模块'}: {item.get('message') or '未知错误'}")
+                else:
+                    for item in errors:
+                        st.write(f"- {item}")
+
     live_packet = command_center_view_model["live_packet"]
-    live_errors = live_packet.get("errors") or []
+    live_errors = refresh_summary_view.get("error_items") or []
     if live_errors:
         st.warning(f"基础数据有 {len(live_errors)} 个模块刷新失败，当前继续展示可用缓存和上次成功结果。")
         with st.expander("当前错误状态", expanded=False):

@@ -126,7 +126,153 @@ def _append_error(errors: list[str], seen: set[str], value: Any, max_errors: int
         errors.append(text)
 
 
+def extract_completed_modules(refresh_result: Any = None) -> list[str]:
+    payload = as_mapping(refresh_result)
+    results = payload.get("results") or []
+    if not isinstance(results, (list, tuple)):
+        return []
+
+    completed: list[str] = []
+    seen: set[str] = set()
+    for item in results:
+        result = as_mapping(item)
+        if result.get("ok") is not True:
+            continue
+        module = _to_text(
+            result.get("module")
+            or result.get("label")
+            or result.get("module_key")
+            or result.get("key")
+            or result.get("source")
+        )
+        if module and module not in seen:
+            seen.add(module)
+            completed.append(module)
+    return completed
+
+
+def _error_message(value: Any) -> str:
+    payload = as_mapping(value)
+    if payload:
+        return _to_text(
+            payload.get("message")
+            or payload.get("error")
+            or payload.get("last_error")
+            or payload.get("summary")
+        )
+    return _to_text(value)
+
+
+def _error_item(value: Any, parent: Any = None) -> dict | None:
+    payload = as_mapping(value)
+    parent_payload = as_mapping(parent)
+    if not payload and not isinstance(value, (str, bool, Number)):
+        return None
+    message = _error_message(payload or value)
+    if not message:
+        return None
+
+    module = _to_text(
+        payload.get("module")
+        or payload.get("module_key")
+        or payload.get("key")
+        or parent_payload.get("module")
+        or parent_payload.get("module_key")
+        or parent_payload.get("key")
+    )
+    updated_at = _to_text(
+        payload.get("updated_at")
+        or payload.get("finished_at")
+        or parent_payload.get("updated_at")
+        or parent_payload.get("finished_at")
+    )
+    source = _to_text(
+        payload.get("source")
+        or parent_payload.get("source")
+        or module
+    )
+    return {
+        "module": module,
+        "message": message,
+        "updated_at": updated_at,
+        "source": source,
+    }
+
+
+def _append_error_item(
+    items: list[dict],
+    seen: set[tuple[str, str, str, str]],
+    value: Any,
+    parent: Any,
+    max_errors: int,
+) -> None:
+    if len(items) >= max_errors:
+        return
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _append_error_item(items, seen, item, parent, max_errors)
+            if len(items) >= max_errors:
+                break
+        return
+
+    payload = as_mapping(value)
+    if payload and "errors" in payload:
+        _append_error_item(items, seen, payload.get("errors"), payload, max_errors)
+
+    if payload:
+        raw_status = str(payload.get("status") or "").strip().lower()
+        message_is_error = parent is not None or payload.get("ok") is False or raw_status in FAILED_STATUSES
+        keys = ("last_error", "error", "message") if message_is_error else ("last_error", "error")
+        for key in keys:
+            if payload.get(key):
+                item = _error_item(payload, parent)
+                break
+        else:
+            item = None
+    else:
+        item = _error_item(value, parent)
+
+    if not item:
+        return
+    dedupe_key = (
+        item.get("module") or "",
+        item.get("message") or "",
+        item.get("updated_at") or "",
+        item.get("source") or "",
+    )
+    if dedupe_key not in seen and item.get("message"):
+        seen.add(dedupe_key)
+        items.append(item)
+
+
+def extract_refresh_error_items(*packets_or_results: Any, max_errors: int = MAX_ERRORS) -> list[dict]:
+    items: list[dict] = []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    for value in packets_or_results:
+        if len(items) >= max_errors:
+            break
+        _append_error_item(items, seen, value, None, max_errors)
+
+    return clone_packet({"items": items}).get("items", [])
+
+
 def extract_refresh_errors(*packets_or_results: Any, max_errors: int = MAX_ERRORS) -> list[str]:
+    error_items = extract_refresh_error_items(*packets_or_results, max_errors=max_errors)
+    if error_items:
+        errors: list[str] = []
+        seen: set[str] = set()
+        for item in error_items:
+            module = _to_text(item.get("module"))
+            message = _to_text(item.get("message"))
+            text = f"{module}: {message}" if module and module not in message else message
+            if text and text not in seen:
+                seen.add(text)
+                errors.append(text)
+            if len(errors) >= max_errors:
+                break
+        return errors[:max_errors]
+
     errors: list[str] = []
     seen: set[str] = set()
 
@@ -190,7 +336,9 @@ def _result_status(result: Mapping[str, Any], live_packet: Mapping[str, Any], er
 def summarize_refresh_result(result: Any = None, live_packet: Any = None) -> dict:
     result_payload = as_mapping(result)
     live_payload = as_mapping(live_packet)
-    errors = extract_refresh_errors(result_payload, live_payload, max_errors=MAX_SUMMARY_ERRORS)
+    error_items = extract_refresh_error_items(result_payload, live_payload, max_errors=MAX_SUMMARY_ERRORS)
+    errors = extract_refresh_errors(error_items, max_errors=MAX_SUMMARY_ERRORS)
+    completed_modules = extract_completed_modules(result_payload)
     stale = bool(result_payload.get("stale") or live_payload.get("stale"))
     status = _result_status(result_payload, live_payload, errors, stale)
     label = {
@@ -214,6 +362,8 @@ def summarize_refresh_result(result: Any = None, live_packet: Any = None) -> dic
         "stale": stale,
         "error_count": len(errors),
         "errors": errors,
+        "error_items": error_items,
+        "completed_modules": completed_modules,
         "last_success": _last_success_text(result_payload) or _last_success_text(live_payload),
         "last_error": _last_error_text(result_payload, errors) or _last_error_text(live_payload, errors),
     }
@@ -255,6 +405,8 @@ def summarize_module_refresh_statuses(live_packet: Any = None) -> list[dict]:
                 "label": MODULE_LABELS.get(key, key),
                 "status": _module_status(section, errors),
                 "stale": bool(section.get("stale")),
+                "updated_at": _to_text(section.get("updated_at")) or None,
+                "source": _to_text(section.get("source")) or None,
                 "last_success": _last_success_text(section),
                 "last_error": last_error,
                 "error": last_error,
@@ -282,8 +434,23 @@ def build_refresh_summary_view_model(
         for item in module_statuses
         if item.get("error")
     ]
+    module_error_items = [
+        {
+            "module": item.get("label") or item.get("key") or "",
+            "message": item.get("error") or "",
+            "updated_at": item.get("updated_at") or "",
+            "source": item.get("source") or item.get("label") or "",
+        }
+        for item in module_statuses
+        if item.get("error")
+    ]
+    error_items = extract_refresh_error_items(
+        {"errors": summary.get("error_items") or []},
+        {"errors": module_error_items},
+        max_errors=MAX_ERRORS,
+    )
     errors = extract_refresh_errors(
-        {"errors": summary.get("errors") or []},
+        {"errors": error_items or summary.get("errors") or []},
         {"errors": module_errors},
         max_errors=MAX_ERRORS,
     )
@@ -299,6 +466,8 @@ def build_refresh_summary_view_model(
         ) or None,
         "summary": summary,
         "module_statuses": module_statuses,
+        "completed_modules": summary.get("completed_modules") or [],
+        "error_items": error_items,
         "errors": errors,
         "has_errors": bool(errors),
         "has_stale": bool(summary.get("stale") or any(item.get("stale") for item in module_statuses)),
