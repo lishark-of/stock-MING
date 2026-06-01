@@ -47,6 +47,7 @@ try:
         render_price_simulator,
         render_risk_radar_summary,
         render_signal_confluence_card,
+        render_strategy_execution_command_card,
         render_theme_comparison_table,
     )
 except Exception as module_error:
@@ -135,6 +136,9 @@ except Exception as module_error:
 
     def render_signal_confluence_card(*args, **kwargs):
         _visual_component_unavailable("信号共振")
+
+    def render_strategy_execution_command_card(*args, **kwargs):
+        _visual_component_unavailable("策略执行操作卡")
 
     def render_theme_comparison_table(*args, **kwargs):
         _visual_component_unavailable("同赛道 ETF 对比")
@@ -3796,82 +3800,25 @@ def render_command_center_decision_card(live_packet, position_profile=None):
 def render_strategy_execution_card(live_packet, target="", position_profile=None):
     live_packet = _attach_strategy_execution_packet(live_packet)
     packet = _get_strategy_execution_display_packet()
-    with st.container(border=True):
-        st.markdown("##### 策略执行实验室")
-        st.caption("默认只读缓存；点击按钮后融合量化摘要和纪律缓存，不调用 DeepSeek，不跑回测。")
-        if st.button("生成策略执行建议", key="btn_strategy_execution_generate", width="stretch"):
-            packet = strategy_service.safe_generate_strategy_execution_packet(
-                st.session_state,
-                target=target,
-                position_profile=position_profile,
-                live_packet=live_packet,
-            )
-            live_packet["strategy_execution"] = clone_command_center_packet(packet)
-            current_packet = st.session_state.get("command_center_live_packet") or {}
-            if isinstance(current_packet, dict):
-                current_packet["strategy_execution"] = clone_command_center_packet(packet)
-                st.session_state["command_center_live_packet"] = current_packet
-            if packet.get("status") == "failed":
-                st.warning(f"策略执行建议生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}")
-            else:
-                st.success("策略执行建议已生成；DeepSeek：未调用。")
-
-        if not packet:
-            st.info("策略执行建议尚未生成。页面打开只展示上次成功结果或空态。")
-            return live_packet
-
-        st.caption(
-            f"状态：{packet.get('status') or 'waiting'}｜"
-            f"最后生成：{packet.get('updated_at') or '暂无'}｜"
-            f"来源：{packet.get('source') or strategy_service.SOURCE}｜"
-            "DeepSeek：未调用"
+    st.caption("路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释")
+    if st.button("生成策略执行建议", key="btn_strategy_execution_generate", width="stretch"):
+        packet = strategy_service.safe_generate_strategy_execution_packet(
+            st.session_state,
+            target=target,
+            position_profile=position_profile,
+            live_packet=live_packet,
         )
-        if packet.get("stale"):
-            st.caption("当前展示为上次成功结果；最近一次生成失败。")
-        if packet.get("last_error"):
-            st.warning(f"上次生成失败：{packet.get('last_error')}")
+        live_packet["strategy_execution"] = clone_command_center_packet(packet)
+        current_packet = st.session_state.get("command_center_live_packet") or {}
+        if isinstance(current_packet, dict):
+            current_packet["strategy_execution"] = clone_command_center_packet(packet)
+            st.session_state["command_center_live_packet"] = current_packet
+        if packet.get("status") == "failed":
+            st.warning(f"策略执行建议生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}")
+        else:
+            st.success("策略执行建议已生成；DeepSeek：未调用。")
 
-        action_col, confidence_col = st.columns(2)
-        action_col.metric("动作", packet.get("action") or "等待")
-        confidence_col.metric("置信度", packet.get("confidence") or "低")
-        st.write(packet.get("summary") or "暂无摘要。")
-        st.write(f"仓位建议：{packet.get('position_advice') or '暂无'}")
-        st.write(f"加仓条件：{packet.get('add_condition') or '暂无'}")
-        st.write(f"减仓条件：{packet.get('reduce_condition') or '暂无'}")
-        st.write(f"失效条件：{packet.get('invalidation_condition') or '暂无'}")
-
-        paths = packet.get("next_5_10_day_paths") or []
-        if paths:
-            st.markdown("###### 未来 5-10 日路径")
-            for item in paths[:3]:
-                st.write(f"- {item.get('name', '路径')}：{item.get('condition', '')} → {item.get('action', '')}")
-
-        discipline = packet.get("discipline_check") or {}
-        risk_budget = packet.get("risk_budget") or {}
-        data_status = packet.get("data_status") or {}
-        st.caption(
-            "纪律："
-            f"{discipline.get('status', 'missing')}｜"
-            f"胜率 {discipline.get('win_rate', '暂无')}｜"
-            f"最大回撤 {discipline.get('max_drawdown', '暂无')}｜"
-            f"最新信号 {discipline.get('latest_signal') or '暂无'}"
-        )
-        warnings = discipline.get("warnings") or []
-        for warning in warnings[:3]:
-            st.caption(f"纪律提示：{warning}")
-        st.caption(
-            "风险预算："
-            f"{risk_budget.get('risk_level', '未知')}｜"
-            f"最大新增 {risk_budget.get('max_add_amount', '暂无')}｜"
-            f"现金缓冲 {risk_budget.get('cash_buffer', '暂无')}｜"
-            f"{risk_budget.get('position_mode', '未知')}"
-        )
-        st.caption(
-            "数据状态："
-            f"量化 {data_status.get('quant', 'missing')}｜"
-            f"回测 {data_status.get('backtest', 'missing')}｜"
-            f"综合包 {data_status.get('live_packet', 'missing')}"
-        )
+    render_strategy_execution_command_card(packet, live_packet=live_packet)
     return live_packet
 
 
@@ -4091,16 +4038,16 @@ packet:
             live_packet,
             position_profile=position_profile,
         )
+    live_packet = render_strategy_execution_card(
+        live_packet,
+        target=target,
+        position_profile=position_profile,
+    )
     render_command_center_live_cards(
         live_packet,
         target=target,
         market_type=market_type,
         price=price,
-        position_profile=position_profile,
-    )
-    live_packet = render_strategy_execution_card(
-        live_packet,
-        target=target,
         position_profile=position_profile,
     )
     live_packet = build_command_center_live_packet(target=target)

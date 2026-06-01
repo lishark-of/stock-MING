@@ -3520,6 +3520,193 @@ def _inject_command_center_css():
             font-size: 12px;
             line-height: 1.6;
         }
+        .cc-strategy-card {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, rgba(255,255,255,0.93), rgba(248,250,252,0.88));
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            border-radius: 28px;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255,255,255,0.72);
+            backdrop-filter: blur(16px);
+            padding: 22px;
+            margin: 14px 0 16px;
+            animation: cc-decision-fade-up 280ms ease-out both;
+        }
+        .cc-strategy-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(210px, 0.9fr);
+            gap: 14px;
+            align-items: stretch;
+        }
+        .cc-strategy-kicker {
+            color: #0f766e;
+            font-size: 12px;
+            font-weight: 850;
+            letter-spacing: 0;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .cc-strategy-action {
+            color: #0f172a;
+            font-size: clamp(34px, 5.2vw, 60px);
+            line-height: 1.02;
+            font-weight: 900;
+            letter-spacing: 0;
+            margin: 0 0 10px;
+            animation: cc-decision-label 260ms ease-out both;
+            word-break: keep-all;
+        }
+        .cc-strategy-summary {
+            color: #475569;
+            font-size: 14px;
+            line-height: 1.65;
+            max-width: 760px;
+        }
+        .cc-strategy-side {
+            border-radius: 24px;
+            background: rgba(255,255,255,0.76);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            padding: 16px;
+            box-shadow: 0 12px 36px rgba(15,23,42,0.045);
+        }
+        .cc-strategy-side-label {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 850;
+            margin-bottom: 5px;
+        }
+        .cc-strategy-confidence {
+            color: #0f172a;
+            font-size: 34px;
+            line-height: 1;
+            font-weight: 900;
+            letter-spacing: 0;
+        }
+        .cc-strategy-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+        .cc-strategy-pill {
+            border-radius: 999px;
+            padding: 7px 10px;
+            font-size: 12px;
+            font-weight: 800;
+            border: 1px solid rgba(148,163,184,0.18);
+            background: rgba(255,255,255,0.70);
+            color: #334155;
+        }
+        .cc-strategy-pill.ok { background: rgba(20,184,166,0.10); color: #0f766e; border-color: rgba(20,184,166,0.18); }
+        .cc-strategy-pill.wait { background: rgba(245,158,11,0.12); color: #b45309; border-color: rgba(245,158,11,0.18); }
+        .cc-strategy-pill.risk { background: rgba(239,68,68,0.10); color: #b91c1c; border-color: rgba(239,68,68,0.18); }
+        .cc-strategy-budget-grid,
+        .cc-strategy-condition-grid,
+        .cc-strategy-path-grid {
+            display: grid;
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .cc-strategy-budget-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .cc-strategy-condition-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .cc-strategy-path-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .cc-strategy-tile,
+        .cc-strategy-condition,
+        .cc-strategy-path {
+            border-radius: 20px;
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(148,163,184,0.17);
+            padding: 14px;
+            box-shadow: 0 10px 28px rgba(15,23,42,0.04);
+            min-height: 104px;
+        }
+        .cc-strategy-condition {
+            background: rgba(248,250,252,0.86);
+            min-height: 132px;
+        }
+        .cc-strategy-path {
+            background: rgba(248,250,252,0.80);
+            min-height: 148px;
+        }
+        .cc-strategy-label {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 850;
+            margin-bottom: 8px;
+        }
+        .cc-strategy-value {
+            color: #0f172a;
+            font-size: 17px;
+            line-height: 1.42;
+            font-weight: 850;
+            overflow-wrap: anywhere;
+        }
+        .cc-strategy-text {
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.68;
+            overflow-wrap: anywhere;
+        }
+        .cc-strategy-section-title {
+            color: #0f172a;
+            font-size: 13px;
+            font-weight: 850;
+            margin: 16px 0 8px;
+        }
+        .cc-strategy-foot-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .cc-strategy-foot-card {
+            border-radius: 20px;
+            background: rgba(248,250,252,0.82);
+            border: 1px solid rgba(148,163,184,0.16);
+            padding: 14px;
+        }
+        .cc-strategy-list {
+            margin: 0;
+            padding-left: 18px;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.75;
+        }
+        .cc-strategy-status-row {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .cc-strategy-status {
+            border-radius: 14px;
+            background: rgba(255,255,255,0.70);
+            border: 1px solid rgba(148,163,184,0.15);
+            padding: 9px;
+        }
+        .cc-strategy-status-name {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+        .cc-strategy-status-value {
+            color: #0f172a;
+            font-size: 13px;
+            font-weight: 850;
+        }
+        .cc-strategy-foot {
+            margin-top: 12px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+        }
         @keyframes cc-decision-fade-up {
             from { opacity: 0; transform: translateY(12px); }
             to { opacity: 1; transform: translateY(0); }
@@ -3536,6 +3723,8 @@ def _inject_command_center_css():
             .cc-decision-hero,
             .cc-decision-action,
             .cc-decision-tile,
+            .cc-strategy-card,
+            .cc-strategy-action,
             .cc-coverage-fill {
                 animation: none !important;
                 transition: none !important;
@@ -3565,7 +3754,13 @@ def _inject_command_center_css():
             .cc-decision-top,
             .cc-decision-grid,
             .cc-decision-lists,
-            .cc-coverage-grid {
+            .cc-coverage-grid,
+            .cc-strategy-head,
+            .cc-strategy-budget-grid,
+            .cc-strategy-condition-grid,
+            .cc-strategy-path-grid,
+            .cc-strategy-foot-grid,
+            .cc-strategy-status-row {
                 grid-template-columns: 1fr;
             }
         }
@@ -3630,6 +3825,226 @@ def _coverage_label(key):
         "strategy_execution": "策略执行",
     }
     return mapping.get(str(key or ""), str(key or "模块"))
+
+
+def _strategy_action_label(action):
+    text = str(action or "").strip()
+    mapping = {
+        "小幅试探": "可轻仓试探",
+        "小幅进攻": "可轻仓试探",
+        "持仓观察": "可持有",
+        "允许进攻": "可加仓",
+    }
+    return mapping.get(text, text or "等待")
+
+
+def _strategy_pill_class(value):
+    text = str(value or "").lower()
+    if any(key in text for key in ["降风险", "减仓", "退出", "止损", "高", "failed", "风险"]):
+        return "risk"
+    if any(key in text for key in ["等待", "观察", "missing", "cached", "低", "不足", "谨慎"]):
+        return "wait"
+    return "ok"
+
+
+def _strategy_list(items, fallback, limit=5):
+    values = [str(item or "").strip() for item in (items or []) if str(item or "").strip()]
+    if not values:
+        values = [fallback]
+    return "<ul class='cc-strategy-list'>" + "".join(f"<li>{escape(item)}</li>" for item in values[:limit]) + "</ul>"
+
+
+def _fmt_strategy_value(value):
+    if value in [None, ""]:
+        return "暂无"
+    number = _to_float(value)
+    if number is not None:
+        return f"¥{number:,.0f}"
+    return str(value)
+
+
+def _strategy_path_items(packet):
+    paths = packet.get("next_5_10_day_paths") or packet.get("paths") or packet.get("scenario_paths") or []
+    if not isinstance(paths, list):
+        paths = []
+    fallback = [
+        {"name": "乐观路径", "condition": "数据补齐且市场、量化、纪律转为同向。", "action": "只允许小幅试探。"},
+        {"name": "中性路径", "condition": "信号继续分歧或缺少新增验证。", "action": "等待或只观察。"},
+        {"name": "防守路径", "condition": "纪律信号转弱、回撤扩大或数据失败。", "action": "降风险。"},
+    ]
+    merged = paths[:3] if paths else fallback
+    names = ["乐观路径", "中性路径", "防守路径"]
+    normalized = []
+    for index, item in enumerate(merged[:3]):
+        if isinstance(item, dict):
+            normalized.append(
+                {
+                    "name": item.get("name") or names[index],
+                    "condition": item.get("condition") or item.get("trigger") or "等待验证条件。",
+                    "action": item.get("action") or item.get("advice") or "只观察。",
+                }
+            )
+        else:
+            normalized.append({"name": names[index], "condition": str(item), "action": "按纪律执行。"})
+    return normalized
+
+
+def render_strategy_execution_command_card(strategy_execution_packet: dict | None = None, live_packet: dict | None = None):
+    _inject_command_center_css()
+    payload = strategy_execution_packet or {}
+    live = live_packet or {}
+    status = str(payload.get("status") or ("waiting" if not payload else "ready"))
+    is_empty = not bool(payload)
+    action = _strategy_action_label(payload.get("action") or payload.get("overall_action"))
+    confidence = str(payload.get("confidence") or "低")
+    summary = str(
+        payload.get("summary")
+        or ("尚未生成策略执行建议。点击按钮后只读取缓存、量化摘要和纪律结果，不调用 DeepSeek，不跑回测。")
+    )
+    if is_empty:
+        action = "尚未生成"
+        confidence = "待生成"
+    data_status = payload.get("data_status") or {}
+    discipline = payload.get("discipline_check") or {}
+    risk_budget = payload.get("risk_budget") or {}
+    warnings = discipline.get("warnings") or payload.get("warnings") or []
+    errors = payload.get("errors") or live.get("errors") or []
+    last_success = payload.get("last_success") or {}
+    stale = bool(payload.get("stale"))
+    last_error = payload.get("last_error") or ""
+    position_mode = risk_budget.get("position_mode") or payload.get("position_mode") or "待确认"
+    position_advice = payload.get("position_advice") or f"{position_mode}：等待策略执行建议补齐。"
+    max_add_amount = risk_budget.get("max_add_amount")
+    cash_buffer = risk_budget.get("cash_buffer")
+    risk_level = risk_budget.get("risk_level") or "未知"
+    financing_advice = (
+        risk_budget.get("margin_mode")
+        or risk_budget.get("financing_advice")
+        or payload.get("margin_mode")
+        or payload.get("financing_advice")
+        or ""
+    )
+    budget_tiles = [
+        ("仓位建议", position_advice),
+        ("当前建议仓位", position_mode),
+        ("最大风险预算", _fmt_strategy_value(max_add_amount)),
+        ("现金缓冲", _fmt_strategy_value(cash_buffer)),
+    ]
+    if financing_advice:
+        budget_tiles.append(("融资建议", financing_advice))
+    budget_html = "".join(
+        "<div class='cc-strategy-tile'>"
+        f"<div class='cc-strategy-label'>{escape(label)}</div>"
+        f"<div class='cc-strategy-value'>{escape(str(value))}</div>"
+        "</div>"
+        for label, value in budget_tiles[:5]
+    )
+    conditions = [
+        ("加仓条件", payload.get("add_condition") or "等待量化、纪律和市场至少两项同向后再考虑。"),
+        ("减仓条件", payload.get("reduce_condition") or "触发止损、减仓或风险预算失效时优先降低暴露。"),
+        ("失效条件", payload.get("invalidation_condition") or "市场环境转弱或纪律信号反向时，本轮建议失效。"),
+    ]
+    condition_html = "".join(
+        "<div class='cc-strategy-condition'>"
+        f"<div class='cc-strategy-label'>{escape(label)}</div>"
+        f"<div class='cc-strategy-text'>{escape(str(value))}</div>"
+        "</div>"
+        for label, value in conditions
+    )
+    path_html = "".join(
+        "<div class='cc-strategy-path'>"
+        f"<div class='cc-strategy-label'>{escape(str(item.get('name') or '路径'))}</div>"
+        f"<div class='cc-strategy-text'>{escape(str(item.get('condition') or '等待验证。'))}</div>"
+        f"<div class='cc-strategy-value' style='font-size:14px;margin-top:8px;'>{escape(str(item.get('action') or '只观察。'))}</div>"
+        "</div>"
+        for item in _strategy_path_items(payload)
+    )
+    data_status_keys = [
+        ("quant", "量化"),
+        ("backtest", "纪律/回测"),
+        ("live_packet", "综合包"),
+    ]
+    status_html = "".join(
+        "<div class='cc-strategy-status'>"
+        f"<div class='cc-strategy-status-name'>{escape(label)}</div>"
+        f"<div class='cc-strategy-status-value'>{escape(str(data_status.get(key) or 'missing'))}</div>"
+        "</div>"
+        for key, label in data_status_keys
+    )
+    discipline_lines = [
+        f"是否违反交易纪律：{'待确认' if discipline.get('status') in [None, '', 'missing'] else ('需复核' if warnings else '未发现明确违反')}",
+        f"是否需要等待确认：{'是' if action in {'等待', '只观察', '尚未生成'} else '按条件执行'}",
+        f"纪律状态：{discipline.get('status') or 'missing'}",
+        f"最新信号：{discipline.get('latest_signal') or '暂无'}",
+        f"胜率：{discipline.get('win_rate') if discipline.get('win_rate') is not None else '暂无'}",
+        f"最大回撤：{discipline.get('max_drawdown') if discipline.get('max_drawdown') is not None else '暂无'}",
+        "是否禁止追高：是。",
+        "是否禁止自动重仓：是。",
+    ]
+    if confidence in {"低", "待生成"} or "missing" in set(str(v) for v in data_status.values()):
+        discipline_lines.append("数据覆盖不足 / 建议谨慎。")
+    warning_lines = [str(item) for item in warnings[:4]]
+    if errors:
+        warning_lines.extend(
+            f"{item.get('module') or '模块'}：{item.get('message') or item.get('error') or '未知错误'}"
+            for item in errors[:3]
+            if isinstance(item, dict)
+        )
+    if stale:
+        warning_lines.append("当前展示为上次成功结果。")
+    if last_error:
+        warning_lines.append(f"上次生成失败：{last_error}")
+    if last_success and not stale:
+        warning_lines.append("已有上次成功结果可回退。")
+    pill_items = [
+        (f"状态：{status}", status),
+        (f"风险：{risk_level}", risk_level),
+        ("DeepSeek：未调用", "等待"),
+    ]
+    pill_html = "".join(
+        f"<span class='cc-strategy-pill {_strategy_pill_class(flag)}'>{escape(text)}</span>"
+        for text, flag in pill_items
+    )
+    html = f"""
+    <section class="cc-strategy-card">
+      <div class="cc-strategy-head">
+        <div>
+          <div class="cc-strategy-kicker">Strategy Execution</div>
+          <h2 class="cc-strategy-action">{escape(action)}</h2>
+          <div class="cc-strategy-summary">{escape(summary)}</div>
+          <div class="cc-strategy-pill-row">{pill_html}</div>
+        </div>
+        <aside class="cc-strategy-side">
+          <div class="cc-strategy-side-label">置信度</div>
+          <div class="cc-strategy-confidence">{escape(confidence)}</div>
+          <div class="cc-muted-note">不放大确定性；缺少量化或纪律缓存时，只能作为待验证路径。</div>
+        </aside>
+      </div>
+      <div class="cc-strategy-budget-grid">{budget_html}</div>
+      <div class="cc-strategy-section-title">操作条件</div>
+      <div class="cc-strategy-condition-grid">{condition_html}</div>
+      <div class="cc-strategy-section-title">未来 5-10 日路径</div>
+      <div class="cc-strategy-path-grid">{path_html}</div>
+      <div class="cc-strategy-foot-grid">
+        <div class="cc-strategy-foot-card">
+          <div class="cc-strategy-section-title" style="margin-top:0;">纪律校验</div>
+          {_strategy_list(discipline_lines, "暂无纪律校验缓存。")}
+        </div>
+        <div class="cc-strategy-foot-card">
+          <div class="cc-strategy-section-title" style="margin-top:0;">风险红线 / 异常</div>
+          {_strategy_list(warning_lines, "暂无新增异常；仍需遵守不追高、不自动重仓。")}
+        </div>
+      </div>
+      <div class="cc-strategy-section-title">数据状态</div>
+      <div class="cc-strategy-status-row">{status_html}</div>
+      <div class="cc-strategy-foot">
+        最后更新时间：{escape(str(payload.get("updated_at") or "暂无"))} ｜
+        来源：{escape(str(payload.get("source") or "strategy_execution_service / session_state cache"))} ｜
+        DeepSeek：未调用
+      </div>
+    </section>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_command_center_decision_hero(packet: dict | None = None):
