@@ -17,6 +17,10 @@ from typing import Any
 COMMAND_CENTER_MODULE_META_KEY = "command_center_module_refresh_meta"
 COMMAND_CENTER_MODULE_STATE_KEY = "command_center_module_state"
 
+REFRESH_LEVEL_AUTO_LIGHT = "auto_light"
+REFRESH_LEVEL_MANUAL_BASIC = "manual_basic"
+REFRESH_LEVEL_MANUAL_DEEP = "manual_deep"
+
 MODULE_NAMES = {
     "market": "市场环境",
     "quant": "量化推演",
@@ -93,6 +97,42 @@ def _summary_from_result(result: dict[str, Any], label: str) -> str:
     return f"{label}刷新完成"
 
 
+def _is_today(value: Any, today: datetime.date | None = None) -> bool:
+    if not value:
+        return False
+    today = today or datetime.datetime.now().date()
+    text = str(value)
+    try:
+        return datetime.datetime.fromisoformat(text).date() == today
+    except ValueError:
+        try:
+            return datetime.date.fromisoformat(text[:10]) == today
+        except ValueError:
+            return False
+
+
+def get_refresh_label(section: dict[str, Any] | None) -> str:
+    payload = section or {}
+    status = str(payload.get("status") or "").lower()
+    refresh_level = payload.get("refresh_level") or payload.get("refresh_tier") or ""
+    has_last_success = bool(payload.get("last_success"))
+    updated_today = _is_today(payload.get("updated_at"))
+
+    if status in {"failed", "failure", "失败"} and has_last_success:
+        return "使用缓存"
+    if payload.get("needs_deep_refresh") or refresh_level == REFRESH_LEVEL_MANUAL_DEEP:
+        return "需要深度刷新"
+    if not payload.get("is_fresh") and not has_last_success and not payload.get("updated_at"):
+        return "需要深度刷新"
+    if refresh_level == REFRESH_LEVEL_AUTO_LIGHT and not payload.get("stale"):
+        return "实时轻量"
+    if refresh_level == REFRESH_LEVEL_MANUAL_BASIC and updated_today:
+        return "今日已刷新"
+    if has_last_success:
+        return "使用缓存"
+    return "需要深度刷新"
+
+
 def _success_record(
     *,
     module_key: str,
@@ -100,8 +140,10 @@ def _success_record(
     result: dict[str, Any],
     started_at: str,
     finished_at: str,
+    refresh_level: str = REFRESH_LEVEL_MANUAL_BASIC,
 ) -> dict[str, Any]:
     payload = clone_packet(result)
+    payload["refresh_level"] = payload.get("refresh_level") or refresh_level
     updated_at = str(payload.get("updated_at") or payload.get("generated_at") or finished_at)
     source = str(payload.get("source") or label)
     summary = _summary_from_result(payload, label)
@@ -113,6 +155,7 @@ def _success_record(
         "source": source,
         "summary": summary,
         "data": payload,
+        "refresh_level": payload["refresh_level"],
         "deepseek_called": False,
     }
     return {
@@ -129,7 +172,8 @@ def _success_record(
         "last_error": "",
         "stale": False,
         "deepseek_called": False,
-        "refresh_tier": payload.get("refresh_tier") or "basic",
+        "refresh_level": payload["refresh_level"],
+        "refresh_tier": payload.get("refresh_tier") or payload["refresh_level"],
     }
 
 
@@ -164,24 +208,52 @@ def _normalize_module_section(
     state: MutableMapping[str, Any],
     module_key: str,
     section: dict[str, Any] | None,
+    default_refresh_level: str = REFRESH_LEVEL_AUTO_LIGHT,
 ) -> dict[str, Any]:
     raw_section = clone_packet(section or {})
     record = get_module_record(state, module_key)
     label = _module_label(module_key)
+    last_success = record.get("last_success") or raw_section.get("last_success") or {}
+    last_success_data = last_success.get("data") if isinstance(last_success, dict) else {}
+    use_last_success = bool(record.get("last_error") and last_success and not raw_section.get("is_fresh"))
     last_error = record.get("last_error") or raw_section.get("last_error") or ""
+    refresh_level = (
+        raw_section.get("refresh_level")
+        or record.get("refresh_level")
+        or (last_success or {}).get("refresh_level")
+        or default_refresh_level
+    )
     normalized = {
         **raw_section,
-        "status": raw_section.get("status") or record.get("status") or "未刷新",
-        "updated_at": raw_section.get("updated_at") or record.get("updated_at") or "",
-        "source": raw_section.get("source") or record.get("source") or "未加载",
-        "summary": raw_section.get("summary") or record.get("summary") or f"{label}待刷新。",
-        "data": raw_section.get("data") or record.get("data") or raw_section,
-        "last_success": record.get("last_success") or raw_section.get("last_success") or {},
+        "status": (
+            "使用缓存"
+            if use_last_success
+            else raw_section.get("status") or record.get("status") or "未刷新"
+        ),
+        "updated_at": (
+            (last_success or {}).get("updated_at")
+            if use_last_success
+            else raw_section.get("updated_at") or record.get("updated_at") or ""
+        ),
+        "source": (
+            (last_success or {}).get("source")
+            if use_last_success
+            else raw_section.get("source") or record.get("source") or "未加载"
+        ),
+        "summary": (
+            (last_success or {}).get("summary")
+            if use_last_success
+            else raw_section.get("summary") or record.get("summary") or f"{label}待刷新。"
+        ),
+        "data": raw_section.get("data") or record.get("data") or last_success_data or raw_section,
+        "last_success": last_success,
         "last_error": str(last_error or ""),
         "stale": bool(record.get("stale") or raw_section.get("stale")),
+        "refresh_level": refresh_level,
         "deepseek_called": False,
     }
-    normalized.setdefault("refresh_tier", record.get("refresh_tier") or raw_section.get("refresh_tier") or "basic")
+    normalized.setdefault("refresh_tier", record.get("refresh_tier") or raw_section.get("refresh_tier") or refresh_level)
+    normalized["refresh_label"] = get_refresh_label(normalized)
     return normalized
 
 
@@ -190,6 +262,7 @@ def safe_refresh_module(
     module_key: str,
     label: str,
     handler: Callable[..., dict[str, Any] | None],
+    refresh_level: str = REFRESH_LEVEL_MANUAL_BASIC,
     **handler_kwargs: Any,
 ) -> dict[str, Any]:
     """Run one manual refresh with a durable last-success fallback."""
@@ -202,6 +275,7 @@ def safe_refresh_module(
         raw_result = handler(**handler_kwargs) or {}
         if not isinstance(raw_result, dict):
             raw_result = {"status": "ok", "summary": str(raw_result)}
+        raw_result["refresh_level"] = raw_result.get("refresh_level") or refresh_level
         raw_status = str(raw_result.get("status") or "").lower()
         if raw_result.get("ok") is False or raw_status in {"failed", "failure", "失败"}:
             raise RuntimeError(
@@ -218,6 +292,7 @@ def safe_refresh_module(
             result=raw_result,
             started_at=started_at,
             finished_at=finished_at,
+            refresh_level=refresh_level,
         )
         records[module_key] = record
         state[COMMAND_CENTER_MODULE_STATE_KEY] = records
@@ -244,7 +319,8 @@ def safe_refresh_module(
             "error": error_text,
             "stale": bool(previous_success),
             "deepseek_called": False,
-            "refresh_tier": "basic",
+            "refresh_level": refresh_level,
+            "refresh_tier": refresh_level,
         }
         records[module_key] = record
         state[COMMAND_CENTER_MODULE_STATE_KEY] = records
@@ -256,8 +332,9 @@ def merge_module_state(
     state: MutableMapping[str, Any],
     module_key: str,
     section: dict[str, Any] | None,
+    default_refresh_level: str = REFRESH_LEVEL_AUTO_LIGHT,
 ) -> dict[str, Any]:
-    merged = _normalize_module_section(state, module_key, section)
+    merged = _normalize_module_section(state, module_key, section, default_refresh_level)
     record = get_module_record(state, module_key)
     if not record:
         return merged
@@ -269,7 +346,9 @@ def merge_module_state(
         merged.setdefault("stale", False)
     merged["last_success"] = record.get("last_success") or {}
     merged["deepseek_called"] = False
-    merged.setdefault("refresh_tier", record.get("refresh_tier") or "basic")
+    merged.setdefault("refresh_level", record.get("refresh_level") or default_refresh_level)
+    merged.setdefault("refresh_tier", record.get("refresh_tier") or merged["refresh_level"])
+    merged["refresh_label"] = get_refresh_label(merged)
     return merged
 
 
@@ -320,10 +399,11 @@ def build_live_conclusion(live_packet: dict[str, Any]) -> dict[str, Any]:
 def build_live_packet(
     state: MutableMapping[str, Any],
     section_builders: dict[str, Callable[[], dict[str, Any]]],
+    refresh_level: str = REFRESH_LEVEL_AUTO_LIGHT,
 ) -> dict[str, Any]:
     """Aggregate cached sections only. It never invokes refresh handlers."""
     live_packet = {
-        key: merge_module_state(state, key, builder())
+        key: merge_module_state(state, key, builder(), refresh_level)
         for key, builder in section_builders.items()
     }
     live_packet["conclusion"] = build_live_conclusion(live_packet)
@@ -414,6 +494,7 @@ def run_refresh_sequence(
     steps: list[tuple[str, str, Callable[..., dict[str, Any] | None]]],
     runner: Callable[[str, str], dict[str, Any]],
     progress_callback: Callable[[str, str, dict[str, Any] | None], None] | None = None,
+    refresh_level: str = REFRESH_LEVEL_MANUAL_BASIC,
 ) -> dict[str, Any]:
     results = []
     errors = []
@@ -421,6 +502,7 @@ def run_refresh_sequence(
         if progress_callback:
             progress_callback("start", label, None)
         result = runner(module_key, label)
+        result["refresh_level"] = result.get("refresh_level") or refresh_level
         results.append(result)
         if result.get("ok"):
             if progress_callback:
@@ -440,5 +522,6 @@ def run_refresh_sequence(
         "finished_at": command_center_now(),
         "results": clone_packet(results),
         "errors": clone_packet(errors),
+        "refresh_level": refresh_level,
         "deepseek_called": False,
     }

@@ -3096,8 +3096,10 @@ def _cc_get_module_meta(module_key):
     return cc_service.get_module_meta(st.session_state, module_key)
 
 
-def _cc_build_margin_etf_daily_params():
+def _cc_build_margin_etf_daily_params(force_light=False):
     pool_source = st.session_state.get("margin_etf_pool_source") or MARGIN_ETF_POOL_MODES[0]
+    if force_light and pool_source in {"Tushare 全量发现", "同赛道横向比较"}:
+        pool_source = "精简核心 ETF 池"
     compare_theme = st.session_state.get("margin_etf_compare_theme") or (COMPARISON_THEMES[0] if COMPARISON_THEMES else "")
     dynamic_max_per_theme = int(st.session_state.get("margin_etf_dynamic_max_per_theme") or 5)
     min_amount_ma20 = float(st.session_state.get("margin_etf_min_amount_ma20") or 0.0)
@@ -3113,8 +3115,8 @@ def _cc_build_margin_etf_daily_params():
     return params, params_hash
 
 
-def build_command_center_margin_etf_daily_packet(refresh_token):
-    params, params_hash = _cc_build_margin_etf_daily_params()
+def build_command_center_margin_etf_daily_packet(refresh_token, force_light=False):
+    params, params_hash = _cc_build_margin_etf_daily_params(force_light=force_light)
     pool_source = params["pool_source"]
     compare_theme = params["compare_theme"]
     dynamic_max_per_theme = int(params["dynamic_max_per_theme"])
@@ -3307,33 +3309,72 @@ def _cc_refresh_margin_etf_config(target="", market_type="", price=None, positio
     del target, market_type, price, position_profile
     token = _cc_now()
     st.session_state["margin_etf_daily_refresh_token"] = token
-    daily_packet = build_command_center_margin_etf_daily_packet(token)
+    params, params_hash = _cc_build_margin_etf_daily_params(force_light=True)
+    previous_daily_packet = st.session_state.get("legacy_margin_etf_daily_packet") or {}
+    previous_score_packet = previous_daily_packet.get("score_packet") or {"rows": []}
+    current_universe = get_default_etf_universe()
+    daily_packet = {
+        "params_hash": params_hash,
+        "params": params,
+        "refresh_token": token,
+        "daily_dataset": {
+            "status": "manual_basic_local_config",
+            "sample_count": len(current_universe),
+            "note": "综合中心 manual_basic 只刷新本地 ETF 配置快照，不触发 ETF 全量发现或慢速行情批量请求。",
+        },
+        "score_packet": previous_score_packet,
+        "current_universe": current_universe,
+        "theme_comparison": {},
+        "holdings_snapshot": {},
+        "updated_at": token,
+        "source": "融资 ETF 本地配置快照",
+        "refresh_level": cc_service.REFRESH_LEVEL_MANUAL_BASIC,
+    }
     st.session_state["legacy_margin_etf_daily_packet"] = clone_command_center_packet(daily_packet)
     allocation = build_command_center_margin_etf_allocation(daily_packet)
+    allocation["summary"] = "已刷新融资 ETF 本地配置快照；深度行情、全量发现和同赛道比较仍需在旧版/深度入口手动触发。"
     st.session_state["legacy_margin_etf_allocation_result"] = clone_command_center_packet(allocation)
     st.session_state.pop("margin_etf_intraday_snapshot", None)
-    _cc_mark_module("margin_etf", "已刷新", "Tushare ETF 日线 / 本地规则配置")
-    return {"module": "融资 ETF", "status": "ok", "updated_at": daily_packet.get("updated_at", "")}
+    _cc_mark_module("margin_etf", "已刷新", "融资 ETF 本地配置快照")
+    return {
+        "module": "融资 ETF",
+        "status": "ok",
+        "updated_at": daily_packet.get("updated_at", ""),
+        "source": "融资 ETF 精简核心配置",
+    }
 
 
 def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_profile=None):
-    del market_type
-    scan_state = run_light_rule_scan_for_command_center(
-        supabase=supabase,
-        current_ticker=target,
-        current_name="",
-        current_price=price,
-        position_profile=position_profile or {},
-        callbacks=_cc_build_next_ticket_callbacks(),
-        candidate_limit=12,
-        display_limit=5,
-    )
-    status = st.session_state.get("radar_scan_status") or "unknown"
-    if status == "failed":
-        _cc_mark_module("next_ticket", "失败", "下一票雷达轻量规则扫描", (scan_state.get("summary") or {}).get("error_message", ""))
-    else:
-        _cc_mark_module("next_ticket", "已刷新", "下一票雷达轻量规则扫描")
-    return {"module": "下一票雷达", "status": status, "updated_at": scan_state.get("generated_at", "")}
+    del market_type, price, position_profile
+    token = _cc_now()
+    previous_scan = st.session_state.get("radar_scan_results") or {}
+    previous_rows = previous_scan.get("rule_rows") or previous_scan.get("results") or []
+    summary = {
+        "source_mode": "综合中心 manual_basic 本地快照",
+        "deepseek_called": False,
+        "deepseek_detail": "未调用",
+        "display_count": min(3, len(previous_rows)),
+        "note": "综合中心今日基础刷新只读取已有雷达缓存，不触发全市场扫描、候选精筛或 DeepSeek 深研。",
+    }
+    scan_state = {
+        "generated_at": token,
+        "status": "completed" if previous_rows else "skipped",
+        "summary": summary,
+        "rule_rows": previous_rows[:3],
+        "refresh_level": cc_service.REFRESH_LEVEL_MANUAL_BASIC,
+    }
+    st.session_state["radar_scan_results"] = clone_command_center_packet(scan_state)
+    st.session_state["radar_scan_summary"] = clone_command_center_packet(summary)
+    st.session_state["radar_scan_status"] = scan_state["status"]
+    st.session_state["radar_scan_finished_at"] = token
+    _cc_mark_module("next_ticket", "已刷新", "下一票雷达本地缓存快照")
+    return {
+        "module": "下一票雷达",
+        "status": "ok",
+        "updated_at": token,
+        "source": "下一票雷达本地缓存快照",
+        "summary": summary["note"],
+    }
 
 
 COMMAND_CENTER_REFRESH_STEPS = [
@@ -3342,6 +3383,12 @@ COMMAND_CENTER_REFRESH_STEPS = [
     ("discipline", "交易纪律", _cc_run_discipline_check),
     ("margin_etf", "融资 ETF", _cc_refresh_margin_etf_config),
     ("next_ticket", "下一票雷达", _cc_run_next_ticket_radar),
+]
+
+COMMAND_CENTER_AUTO_LIGHT_STEPS = [
+    ("live_packet", "缓存 / last_success 聚合"),
+    ("account", "本地账户快照"),
+    ("freshness", "缓存新鲜度检查"),
 ]
 
 
@@ -3353,6 +3400,7 @@ def _cc_run_refresh_step(module_key, target="", market_type="", price=None, posi
         module_key,
         label,
         handler,
+        refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
         target=target,
         market_type=market_type,
         price=price,
@@ -3614,7 +3662,7 @@ def _build_command_center_live_conclusion(live_packet):
     return cc_service.build_live_conclusion(live_packet)
 
 
-def build_command_center_live_packet(target=""):
+def build_command_center_live_packet(target="", refresh_level=cc_service.REFRESH_LEVEL_AUTO_LIGHT):
     """Aggregate cached legacy results only. No external data source or DeepSeek call."""
     section_builders = {
         "market": _build_market_live_section,
@@ -3623,7 +3671,23 @@ def build_command_center_live_packet(target=""):
         "next_ticket": _build_next_ticket_live_section,
         "margin_etf": _build_margin_etf_live_section,
     }
-    return cc_service.build_live_packet(st.session_state, section_builders)
+    return cc_service.build_live_packet(st.session_state, section_builders, refresh_level=refresh_level)
+
+
+def run_command_center_auto_light_snapshot(target=""):
+    """Only aggregates local/session_state state; never calls external refresh handlers."""
+    packet = build_command_center_live_packet(
+        target=target,
+        refresh_level=cc_service.REFRESH_LEVEL_AUTO_LIGHT,
+    )
+    st.session_state["command_center_auto_light_summary"] = {
+        "refresh_level": cc_service.REFRESH_LEVEL_AUTO_LIGHT,
+        "steps": COMMAND_CENTER_AUTO_LIGHT_STEPS,
+        "updated_at": cc_service.command_center_now(),
+        "deepseek_called": False,
+        "note": "仅聚合 session_state、last_success、本地账户快照与缓存新鲜度，不触发外部数据刷新。",
+    }
+    return packet
 
 
 def build_command_center_display_packet(live_packet, fallback_packet=None):
@@ -3654,7 +3718,8 @@ def render_command_center_live_cards(live_packet, target="", market_type="", pri
             with col:
                 with st.container(border=True):
                     st.markdown(f"##### {title}")
-                    if st.button(button_label, key=f"btn_cc_refresh_{key}", width="stretch"):
+                    st.caption(f"数据状态：{section.get('refresh_label') or cc_service.get_refresh_label(section)}")
+                    if st.button(f"单卡{button_label}", key=f"btn_cc_refresh_{key}", width="stretch"):
                         with st.spinner(f"正在{button_label}..."):
                             result = _cc_run_refresh_step(
                                 key,
@@ -3736,10 +3801,11 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     render_process_stepper(active_step=4)
 
     packet = st.session_state[packet_key]
+    live_packet = run_command_center_auto_light_snapshot(target=target)
     control_cols = st.columns([1.4, 1.2])
     with control_cols[0]:
-        if st.button("刷新全部基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
-            status = st.status("正在刷新全部基础数据...", expanded=True)
+        if st.button("刷新今日基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
+            status = st.status("正在刷新今日基础数据...", expanded=True)
 
             def _progress(event, label, result):
                 if event == "start":
@@ -3759,18 +3825,23 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                     position_profile=position_profile,
                 ),
                 progress_callback=_progress,
+                refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
             )
             st.session_state["command_center_refresh_summary"] = refresh_summary
-            build_command_center_live_packet(target=target)
+            live_packet = build_command_center_live_packet(
+                target=target,
+                refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
+            )
             errors = refresh_summary.get("errors") or []
             if errors:
-                status.update(label=f"基础数据刷新完成，{len(errors)} 个模块失败", state="complete", expanded=False)
+                status.update(label=f"今日基础数据刷新完成，{len(errors)} 个模块失败", state="complete", expanded=False)
             else:
-                status.update(label="基础数据刷新完成", state="complete", expanded=False)
+                status.update(label="今日基础数据刷新完成", state="complete", expanded=False)
     with control_cols[1]:
-        if st.button("生成综合推演解释", key="btn_cc_deepseek_explain", width="stretch"):
+        if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
             current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
+            current_packet["refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             prompt = f"""
 请基于以下综合推演中心 packet 输出一段克制解释。
 要求：
@@ -3791,6 +3862,7 @@ packet:
             )
             st.session_state[explanation_key] = result or ""
             st.session_state[explanation_at_key] = datetime.datetime.now().isoformat(timespec="seconds")
+            st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             status.update(label="DeepSeek 解释已写入 session_state", state="complete")
 
     refresh_summary = st.session_state.get("command_center_refresh_summary") or {}
@@ -3811,7 +3883,7 @@ packet:
                 for item in errors:
                     st.write(f"- {item.get('module')}: {item.get('message') or item.get('error')}")
 
-    live_packet = build_command_center_live_packet(target=target)
+    live_packet = live_packet or run_command_center_auto_light_snapshot(target=target)
     live_errors = live_packet.get("errors") or []
     if live_errors:
         st.warning(f"基础数据有 {len(live_errors)} 个模块刷新失败，当前继续展示可用缓存和上次成功结果。")
