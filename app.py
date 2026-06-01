@@ -9378,16 +9378,21 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             else:
                 st.caption("未确认实际持仓：价格模拟不计算浮盈金额，也不生成做T状态。")
 
-            tab_next_plan, tab_t_reduce, tab_deep = st.tabs(["次日计划", "做T / 减仓推演", "外脑深度推演"])
-            with tab_next_plan:
+            war_room_view = st.radio(
+                "单票作战室子模块",
+                ["次日计划", "做T / 减仓推演", "外脑深度推演"],
+                horizontal=True,
+                key=f"cn_war_room_lazy_view_{stock_code}",
+            )
+            if war_room_view == "次日计划":
                 st.caption("次日计划是验证清单，不是交易指令。")
                 btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
                 next_day_plan_output = st.container()
-            with tab_t_reduce:
+            if war_room_view == "做T / 减仓推演":
                 st.caption("围绕当前票的持有、做T、减仓条件做推演；换仓雷达仅作为可选横向观察。")
                 btn_war_room = st.button("🎯 生成做T / 减仓推演", width="stretch", key="btn_cn_war_room")
                 war_room_output = st.container()
-            with tab_deep:
+            if war_room_view == "外脑深度推演":
                 st.caption("外脑深度推演需要手动触发，不自动调用 DeepSeek。输出长文收纳在下方折叠区。")
                 btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
                 deepseek_output = st.container()
@@ -10253,7 +10258,24 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             )
 
         with st.expander("🔎 自动投喂反馈 / 最近入库", expanded=False):
-            feedback = load_auto_feed_feedback(limit=8)
+            st.caption("默认不自动读取 Supabase 最近投喂记录；点击按钮后读取并缓存。")
+            if st.button("读取最近入库反馈", key="btn_load_auto_feed_feedback", width="stretch"):
+                with st.spinner("正在读取最近入库反馈..."):
+                    st.session_state["legacy_auto_feed_feedback"] = load_auto_feed_feedback(limit=8)
+                    st.session_state["legacy_auto_feed_feedback_loaded_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+
+            feedback = st.session_state.get("legacy_auto_feed_feedback")
+            if not feedback:
+                st.info("尚未读取最近入库反馈。点击按钮后显示市场新闻、经理规则和自动心跳。")
+                feedback = {
+                    "market_news": [],
+                    "processed_sources": [],
+                    "manager_rules": [],
+                    "manager_scores": [],
+                    "auto_runs": [],
+                }
+            else:
+                st.caption(f"最近读取时间：{st.session_state.get('legacy_auto_feed_feedback_loaded_at', '未知')}")
 
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("市场新闻", len(feedback.get("market_news", [])))
@@ -10264,39 +10286,44 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
             st.caption("GitHub Actions 每 30 分钟跑一次自动投喂；这里显示最近写入 Supabase 的记录。")
 
-            feed_tab1, feed_tab2, feed_tab3, feed_tab4, feed_tab5 = st.tabs([
+            feed_view = st.radio(
+                "反馈分类",
+                [
                 "市场新闻",
                 "经理来源",
                 "经理规则",
                 "经理评分",
                 "自动心跳",
-            ])
+                ],
+                horizontal=True,
+                key="legacy_auto_feed_feedback_view",
+            )
 
-            with feed_tab1:
+            if feed_view == "市场新闻":
                 if feedback.get("market_news"):
                     st.dataframe(pd.DataFrame(feedback["market_news"]), width="stretch")
                 else:
                     st.info("暂时没有最近市场新闻入库。")
 
-            with feed_tab2:
+            if feed_view == "经理来源":
                 if feedback.get("processed_sources"):
                     st.dataframe(pd.DataFrame(feedback["processed_sources"]), width="stretch")
                 else:
                     st.info("暂时没有最近处理成功的经理来源。")
 
-            with feed_tab3:
+            if feed_view == "经理规则":
                 if feedback.get("manager_rules"):
                     st.dataframe(pd.DataFrame(feedback["manager_rules"]), width="stretch")
                 else:
                     st.info("暂时没有最近新增的经理规则。")
 
-            with feed_tab4:
+            if feed_view == "经理评分":
                 if feedback.get("manager_scores"):
                     st.dataframe(pd.DataFrame(feedback["manager_scores"]), width="stretch")
                 else:
                     st.info("暂时没有最近经理评分。")
 
-            with feed_tab5:
+            if feed_view == "自动心跳":
                 if feedback.get("auto_runs"):
                     st.dataframe(pd.DataFrame(feedback["auto_runs"]), width="stretch")
                 else:
@@ -10963,16 +10990,26 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.markdown("### 🧪 交易纪律实验室")
         st.caption("先把交易经验和投喂资料炼成纪律，再用历史回测验证纪律是否有效。")
 
-        sub_tab_refine, sub_tab_backtest = st.tabs(["规则炼丹 / 手动投喂", "回测验证 / 纪律实验"])
+        discipline_view = st.radio(
+            "交易纪律子模块",
+            ["规则炼丹 / 手动投喂", "回测验证 / 纪律实验"],
+            horizontal=True,
+            key="legacy_discipline_lazy_view",
+        )
 
-        with sub_tab_refine:
+        if discipline_view == "规则炼丹 / 手动投喂":
             st.caption("用于从历史行情、投喂资料、基金经理规则中提炼交易纪律。")
             st.markdown(f"### ⏳ 强化学习时光机：{target}")
             st.caption("自动从近两年抽取多个历史窗口，用后续走势反向校验，提炼这只票自己的交易规范。")
 
-            auto_tab, manual_tab = st.tabs(["自动多段复盘", "手动单段盲测"])
+            refine_view = st.radio(
+                "炼丹方式",
+                ["自动多段复盘", "手动单段盲测"],
+                horizontal=True,
+                key="legacy_discipline_refine_lazy_view",
+            )
 
-            with auto_tab:
+            if refine_view == "自动多段复盘":
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     replay_years = st.selectbox("复盘范围", [1, 2, 3], index=1, key="rl_replay_years")
@@ -11083,7 +11120,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                                 else:
                                     st.success("✅ 自动炼丹结果已同步到云端外脑。")
 
-            with manual_tab:
+            if refine_view == "手动单段盲测":
                 st.caption("保留原来的单段盲测，适合你想专门检查某一个历史阶段。")
                 col1, col2 = st.columns(2)
                 with col1: start_d = st.date_input("盲测起点", datetime.date(2023, 1, 1), key="rl_start")
@@ -11134,8 +11171,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                                         st.success(f"✅ 纪律已写入云端：{res}")
                                 except: pass
 
-
-        with sub_tab_backtest:
+        if discipline_view == "回测验证 / 纪律实验":
             st.caption("用于验证某套交易纪律在历史区间内的表现。")
             st.markdown(f"### 📊 单票回测实验室：{target}")
             st.caption("先选你现在的交易目的，系统会自动套一组纪律；参数想细调时再打开高级设置。")
@@ -11942,7 +11978,9 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         render_relevant_memory_context(cloud_memory_context)
 
         with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
-            base_tab1, base_tab2, base_tab3, base_tab4, base_tab5, base_tab6, base_tab7, base_tab8, base_tab9, base_tab10, base_tab11, base_tab12, base_tab13 = st.tabs([
+            base_view = st.radio(
+                "统一诊股底座子模块",
+                [
                 "产业链联动",
                 "估值回归",
                 "实时指标",
@@ -11956,20 +11994,23 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "禁止买入",
                 "可信度",
                 "新鲜度",
-            ])
-            with base_tab1:
+                ],
+                horizontal=True,
+                key=f"legacy_quant_base_lazy_view_{normalized_target}",
+            )
+            if base_view == "产业链联动":
                 render_supply_chain_module(supply_profile, portfolio_health)
-            with base_tab2:
+            if base_view == "估值回归":
                 render_valuation_module(valuation_snapshot)
-            with base_tab3:
+            if base_view == "实时指标":
                 render_technical_module(technical_snapshot)
-            with base_tab4:
+            if base_view == "情景推演":
                 render_scenario_module(scenario_snapshot)
-            with base_tab5:
+            if base_view == "近48小时舆情":
                 render_recent_sentiment_module(recent_news_rows)
-            with base_tab6:
+            if base_view == "持仓体检":
                 render_portfolio_health_module(portfolio_health)
-            with base_tab7:
+            if base_view == "资金面":
                 st.caption("AkShare 资金穿透为补充数据源，可能受远端接口影响。默认优先展示 Tushare 可验证事实；如需更细资金穿透，可手动刷新。")
                 if market_type == "A_SHARE":
                     if st.button("刷新 AkShare 资金穿透快照", key=f"btn_{money_flow_session_key}"):
@@ -12048,20 +12089,20 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     if st.session_state.get(deep_key):
                         st.markdown("##### 深度资金扫描结果")
                         render_money_flow_module(st.session_state[deep_key])
-            with base_tab8:
+            if base_view == "回测反哺":
                 if main_backtest_report:
                     render_backtest_report(main_backtest_report)
                 else:
                     st.warning(backtest_warning or "暂无主诊断回测反哺。")
-            with base_tab9:
+            if base_view == "同行对比":
                 render_peer_snapshot(peer_rows)
-            with base_tab10:
+            if base_view == "深度挖掘":
                 render_research_links(research_links)
-            with base_tab11:
+            if base_view == "禁止买入":
                 render_risk_decision(strict_decision)
-            with base_tab12:
+            if base_view == "可信度":
                 render_data_quality_module(data_quality_report)
-            with base_tab13:
+            if base_view == "新鲜度":
                 render_freshness_module(freshness_report)
 
         with st.expander("🏦 机构/游资信息接入口", expanded=False):
@@ -12893,17 +12934,24 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 # --- 记忆显示器（完美接回） ---
         st.markdown("---")
         st.markdown("#### 🗄️ 云端神经元记忆档案")
-        
-        with st.spinner("正在链接 Supabase 云端突触..."):
-            memories = get_all_cloud_memories()
-            
-            if memories:
-                for m in memories:
-                    render_feed_extract_card(
-                        m.get("content", ""),
-                        memory_type=m.get("memory_type", "memory"),
-                        raw_payload=m.get("content", ""),
-                        card_title=f"云端记忆 #{m.get('id', '')}",
-                    )
-            else:
-                st.info("📭 当前云端神经元为空，请在上方投喂你的第一条交易纪律。")
+        st.caption("默认不自动读取 Supabase 记忆档案；点击按钮后加载，避免进入旧版外脑时卡顿。")
+
+        if st.button("读取云端记忆档案", key="btn_load_cloud_memories", width="stretch"):
+            with st.spinner("正在链接 Supabase 云端突触..."):
+                st.session_state["legacy_cloud_memories"] = get_all_cloud_memories()
+                st.session_state["legacy_cloud_memories_loaded_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+
+        memories = st.session_state.get("legacy_cloud_memories")
+        if memories is None:
+            st.info("尚未读取云端记忆档案。点击按钮后显示最近的策略、复盘和投喂记忆。")
+        elif memories:
+            st.caption(f"最近读取时间：{st.session_state.get('legacy_cloud_memories_loaded_at', '未知')}")
+            for m in memories:
+                render_feed_extract_card(
+                    m.get("content", ""),
+                    memory_type=m.get("memory_type", "memory"),
+                    raw_payload=m.get("content", ""),
+                    card_title=f"云端记忆 #{m.get('id', '')}",
+                )
+        else:
+            st.info("📭 当前云端神经元为空，请在上方投喂你的第一条交易纪律。")

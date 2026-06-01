@@ -2876,13 +2876,15 @@ def render_next_ticket_radar(
             st.session_state["next_ticket_manual_candidates"] = _candidate_text(TECH_SAMPLE_POOL)
             st.rerun()
     with quick2:
-        watchlist_rows, watchlist_error = load_watchlist_candidates(callbacks)
         if st.button("填入持续调查池", key="next_ticket_use_watchlist", width="stretch"):
+            watchlist_rows, watchlist_error = load_watchlist_candidates(callbacks)
             if watchlist_rows:
                 st.session_state["next_ticket_manual_candidates"] = _candidate_text(watchlist_rows)
                 st.rerun()
             else:
                 st.warning(watchlist_error or "持续调查池为空。")
+        else:
+            st.caption("持续调查池不会自动读取，点击后再加载。")
     with quick3:
         include_focus = st.checkbox("加入今日关注池结构化候选", value=False, key="next_ticket_include_focus")
 
