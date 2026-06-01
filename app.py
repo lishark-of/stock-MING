@@ -14,6 +14,7 @@ import pandas as pd
 import numpy as np
 
 import command_center_adapter as cc_adapter
+import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
 import strategy_execution_service as strategy_service
@@ -3707,25 +3708,19 @@ def build_command_center_display_packet(live_packet, fallback_packet=None):
 
 
 def build_command_center_view_model(live_packet=None):
-    return cc_adapter.build_command_center_view_model(
+    return cc_state_adapter.build_view_model_from_state(
+        st.session_state,
         live_packet=live_packet,
-        strategy_execution_packet=_get_strategy_execution_display_packet(),
-        decision_packet=_get_command_center_decision_display_packet(),
-        refresh_level=cc_adapter.get_nested(live_packet, "refresh_level"),
-        generated_at=(
-            cc_adapter.get_nested(live_packet, "updated_at")
-            or cc_adapter.get_nested(live_packet, "generated_at")
-        ),
+        strategy_packet_key=strategy_service.PACKET_KEY,
+        strategy_last_success_key=strategy_service.LAST_SUCCESS_KEY,
+        decision_packet_key=decision_engine.PACKET_KEY,
+        decision_last_success_key=decision_engine.LAST_SUCCESS_KEY,
     )
 
 
 def _get_strategy_execution_display_packet():
-    state = {
-        strategy_service.PACKET_KEY: st.session_state.get(strategy_service.PACKET_KEY),
-        strategy_service.LAST_SUCCESS_KEY: st.session_state.get(strategy_service.LAST_SUCCESS_KEY),
-    }
-    return cc_adapter.pick_display_packet(
-        state,
+    return cc_state_adapter.get_display_packet(
+        st.session_state,
         strategy_service.PACKET_KEY,
         strategy_service.LAST_SUCCESS_KEY,
     )
@@ -3733,25 +3728,17 @@ def _get_strategy_execution_display_packet():
 
 def _attach_strategy_execution_packet(live_packet):
     strategy_packet = _get_strategy_execution_display_packet()
-    payload = cc_adapter.attach_child_packet(live_packet, "strategy_execution", strategy_packet)
-    if strategy_packet:
-        current_packet = st.session_state.get("command_center_live_packet")
-        if isinstance(current_packet, dict):
-            st.session_state["command_center_live_packet"] = cc_adapter.attach_child_packet(
-                current_packet,
-                "strategy_execution",
-                strategy_packet,
-            )
-    return payload
+    return cc_state_adapter.sync_child_packet(
+        st.session_state,
+        live_packet,
+        "strategy_execution",
+        strategy_packet,
+    )
 
 
 def _get_command_center_decision_display_packet():
-    state = {
-        decision_engine.PACKET_KEY: st.session_state.get(decision_engine.PACKET_KEY),
-        decision_engine.LAST_SUCCESS_KEY: st.session_state.get(decision_engine.LAST_SUCCESS_KEY),
-    }
-    return cc_adapter.pick_display_packet(
-        state,
+    return cc_state_adapter.get_display_packet(
+        st.session_state,
         decision_engine.PACKET_KEY,
         decision_engine.LAST_SUCCESS_KEY,
     )
@@ -3759,16 +3746,12 @@ def _get_command_center_decision_display_packet():
 
 def _attach_command_center_decision_packet(live_packet):
     decision_packet = _get_command_center_decision_display_packet()
-    payload = cc_adapter.attach_child_packet(live_packet, "decision", decision_packet)
-    if decision_packet:
-        current_packet = st.session_state.get("command_center_live_packet")
-        if isinstance(current_packet, dict):
-            st.session_state["command_center_live_packet"] = cc_adapter.attach_child_packet(
-                current_packet,
-                "decision",
-                decision_packet,
-            )
-    return payload
+    return cc_state_adapter.sync_child_packet(
+        st.session_state,
+        live_packet,
+        "decision",
+        decision_packet,
+    )
 
 
 def _generate_command_center_decision(live_packet, refresh_summary=None):
@@ -3779,16 +3762,14 @@ def _generate_command_center_decision(live_packet, refresh_summary=None):
         strategy_packet=_get_strategy_execution_display_packet(),
         refresh_summary=refresh_summary or st.session_state.get("command_center_refresh_summary") or {},
     )
-    live_packet = cc_adapter.attach_child_packet(live_packet, "decision", decision_packet)
-    current_packet = st.session_state.get("command_center_live_packet") or {}
-    if isinstance(current_packet, dict):
-        current_packet = cc_adapter.attach_child_packet(current_packet, "decision", decision_packet)
-        current_packet = cc_adapter.attach_child_packet(
-            current_packet,
-            "strategy_execution",
-            live_packet.get("strategy_execution"),
-        )
-        st.session_state["command_center_live_packet"] = current_packet
+    live_packet = cc_state_adapter.sync_child_packets(
+        st.session_state,
+        live_packet,
+        {
+            "decision": decision_packet,
+            "strategy_execution": live_packet.get("strategy_execution"),
+        },
+    )
     return decision_packet, live_packet
 
 
@@ -3833,14 +3814,12 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
             position_profile=position_profile,
             live_packet=live_packet,
         )
-        live_packet = cc_adapter.attach_child_packet(live_packet, "strategy_execution", packet)
-        current_packet = st.session_state.get("command_center_live_packet") or {}
-        if isinstance(current_packet, dict):
-            st.session_state["command_center_live_packet"] = cc_adapter.attach_child_packet(
-                current_packet,
-                "strategy_execution",
-                packet,
-            )
+        live_packet = cc_state_adapter.sync_child_packet(
+            st.session_state,
+            live_packet,
+            "strategy_execution",
+            packet,
+        )
         if packet.get("status") == "failed":
             st.warning(f"策略执行建议生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}")
         else:
@@ -4047,7 +4026,6 @@ packet:
 
     live_packet = live_packet or run_command_center_auto_light_snapshot(target=target)
     command_center_view_model = build_command_center_view_model(live_packet)
-    st.session_state["command_center_view_model"] = command_center_view_model
     live_packet = command_center_view_model["live_packet"]
     live_errors = live_packet.get("errors") or []
     if live_errors:
@@ -4085,7 +4063,6 @@ packet:
     live_packet = _attach_strategy_execution_packet(live_packet)
     live_packet = _attach_command_center_decision_packet(live_packet)
     command_center_view_model = build_command_center_view_model(live_packet)
-    st.session_state["command_center_view_model"] = command_center_view_model
     live_packet = command_center_view_model["live_packet"]
     display_packet = build_command_center_display_packet(live_packet, fallback_packet=packet)
     packet = display_packet
