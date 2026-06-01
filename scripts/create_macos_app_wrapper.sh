@@ -56,8 +56,29 @@ PYTHON_BIN="${PYTHON_BIN}"
 
 cd "${PROJECT_ROOT}" || exit 1
 
+if [ ! -d "\${PROJECT_ROOT}/.venv" ]; then
+  MESSAGE="stock-MING 启动失败：未找到虚拟环境目录：\${PROJECT_ROOT}/.venv
+请先在项目目录创建虚拟环境，并安装 requirements.txt。"
+  echo "\${MESSAGE}"
+  if command -v osascript >/dev/null 2>&1; then
+    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
+  fi
+  exit 1
+fi
+
+if [ ! -e "\${PYTHON_BIN}" ]; then
+  MESSAGE="stock-MING 启动失败：未找到 Python 解释器：\${PYTHON_BIN}
+请检查 .venv 是否完整，或重新创建虚拟环境。"
+  echo "\${MESSAGE}"
+  if command -v osascript >/dev/null 2>&1; then
+    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
+  fi
+  exit 1
+fi
+
 if [ ! -x "\${PYTHON_BIN}" ]; then
-  MESSAGE="Python virtual environment not found: \${PYTHON_BIN}"
+  MESSAGE="stock-MING 启动失败：Python 解释器不可执行：\${PYTHON_BIN}
+请修复权限，或重新创建虚拟环境。"
   echo "\${MESSAGE}"
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
@@ -67,8 +88,8 @@ fi
 
 "\${PYTHON_BIN}" -c "import webview" 2>/tmp/stock-ming-pywebview-error.log
 if [ \$? -ne 0 ]; then
-  MESSAGE="pywebview import failed. The package name is pywebview, but the import name is webview.
-Run:
+  MESSAGE="stock-MING 启动失败：pywebview 未安装或无法导入。
+请运行：
 \${PYTHON_BIN} -m pip install pywebview"
   echo "\${MESSAGE}"
   cat /tmp/stock-ming-pywebview-error.log
