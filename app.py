@@ -18,8 +18,11 @@ import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
 import strategy_execution_service as strategy_service
+from command_center_decision_summary import build_decision_summary_view_model
 from command_center_module_summary import build_module_summary_view_model
+from command_center_overview_summary import build_command_center_overview_view_model
 from command_center_refresh_summary import build_refresh_summary_view_model
+from command_center_strategy_summary import build_strategy_summary_view_model
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
 try:
@@ -3790,7 +3793,8 @@ def render_command_center_decision_card(live_packet, position_profile=None):
             st.warning(notice)
         else:
             st.success(notice)
-    render_command_center_decision_hero(packet)
+    decision_vm = build_decision_summary_view_model(packet)
+    render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):
         st.caption("当前展示为上次成功结果；最近一次生成失败。")
     if packet and packet.get("last_error"):
@@ -3829,7 +3833,8 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
         else:
             st.success("策略执行建议已生成；DeepSeek：未调用。")
 
-    render_strategy_execution_command_card(packet, live_packet=live_packet)
+    strategy_vm = build_strategy_summary_view_model(packet)
+    render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
     return live_packet
 
 
@@ -4017,6 +4022,13 @@ packet:
     command_center_view_model = build_command_center_view_model(live_packet)
     refresh_summary = st.session_state.get("command_center_refresh_summary") or {}
     refresh_summary_view = command_center_view_model.get("refresh_summary") or {}
+    overview_vm = build_command_center_overview_view_model(
+        live_packet=command_center_view_model.get("live_packet") or live_packet,
+        refresh_summary=refresh_summary,
+        decision_packet=_get_command_center_decision_display_packet(),
+        strategy_packet=_get_strategy_execution_display_packet(),
+        deepseek_summary=st.session_state.get(explanation_key),
+    )
     if refresh_summary:
         summary_payload = refresh_summary_view.get("summary") or {}
         error_items = refresh_summary_view.get("error_items") or []
@@ -4041,7 +4053,7 @@ packet:
                         st.write(f"- {item}")
 
     live_packet = command_center_view_model["live_packet"]
-    live_errors = refresh_summary_view.get("error_items") or []
+    live_errors = overview_vm.get("error_items") or []
     if live_errors:
         st.warning(f"基础数据有 {len(live_errors)} 个模块刷新失败，当前继续展示可用缓存和上次成功结果。")
         with st.expander("当前错误状态", expanded=False):
@@ -4054,7 +4066,8 @@ packet:
                 )
     st.caption(
         f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
-        "页面加载和控件切换不会自动调用 DeepSeek、Tushare、AkShare 或 yfinance。"
+        f"{overview_vm.get('deepseek_text') or 'DeepSeek：未调用'} ｜ "
+        "页面加载和控件切换不会自动调用 Tushare、AkShare 或 yfinance。"
     )
     with decision_hero_slot.container():
         live_packet = render_command_center_decision_card(

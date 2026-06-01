@@ -7,6 +7,9 @@ from textwrap import dedent
 import pandas as pd
 import streamlit as st
 
+from command_center_decision_summary import build_decision_summary_view_model
+from command_center_strategy_summary import build_strategy_summary_view_model
+
 try:
     import plotly.graph_objects as go
 except Exception:  # pragma: no cover - runtime fallback for missing optional dependency
@@ -3847,6 +3850,17 @@ def _strategy_pill_class(value):
     return "ok"
 
 
+def _tone_to_strategy_class(value):
+    mapping = {
+        "danger": "risk",
+        "warning": "wait",
+        "muted": "wait",
+        "success": "ok",
+        "info": "ok",
+    }
+    return mapping.get(str(value or ""), _strategy_pill_class(value))
+
+
 def _strategy_list(items, fallback, limit=5):
     values = [str(item or "").strip() for item in (items or []) if str(item or "").strip()]
     if not values:
@@ -3889,49 +3903,23 @@ def _strategy_path_items(packet):
     return normalized
 
 
-def render_strategy_execution_command_card(strategy_execution_packet: dict | None = None, live_packet: dict | None = None):
+def render_strategy_execution_command_card(
+    strategy_execution_packet: dict | None = None,
+    live_packet: dict | None = None,
+    strategy_view_model: dict | None = None,
+):
     _inject_command_center_css()
     payload = strategy_execution_packet or {}
-    live = live_packet or {}
-    status = str(payload.get("status") or ("waiting" if not payload else "ready"))
-    is_empty = not bool(payload)
-    action = _strategy_action_label(payload.get("action") or payload.get("overall_action"))
-    confidence = str(payload.get("confidence") or "低")
-    summary = str(
-        payload.get("summary")
-        or ("尚未生成策略执行建议。点击按钮后只读取缓存、量化摘要和纪律结果，不调用 DeepSeek，不跑回测。")
-    )
-    if is_empty:
-        action = "尚未生成"
-        confidence = "待生成"
-    data_status = payload.get("data_status") or {}
-    discipline = payload.get("discipline_check") or {}
-    risk_budget = payload.get("risk_budget") or {}
-    warnings = discipline.get("warnings") or payload.get("warnings") or []
-    errors = payload.get("errors") or live.get("errors") or []
-    last_success = payload.get("last_success") or {}
-    stale = bool(payload.get("stale"))
-    last_error = payload.get("last_error") or ""
-    position_mode = risk_budget.get("position_mode") or payload.get("position_mode") or "待确认"
-    position_advice = payload.get("position_advice") or f"{position_mode}：等待策略执行建议补齐。"
-    max_add_amount = risk_budget.get("max_add_amount")
-    cash_buffer = risk_budget.get("cash_buffer")
-    risk_level = risk_budget.get("risk_level") or "未知"
-    financing_advice = (
-        risk_budget.get("margin_mode")
-        or risk_budget.get("financing_advice")
-        or payload.get("margin_mode")
-        or payload.get("financing_advice")
-        or ""
-    )
+    del live_packet
+    vm = strategy_view_model or build_strategy_summary_view_model(payload)
+    action = vm.get("action_label") or "等待"
+    confidence = vm.get("confidence_label") or "低"
+    summary = vm.get("summary") or vm.get("empty_message") or "尚未生成策略执行建议。"
+    risk_level = vm.get("risk_label") or "未知"
     budget_tiles = [
-        ("仓位建议", position_advice),
-        ("当前建议仓位", position_mode),
-        ("最大风险预算", _fmt_strategy_value(max_add_amount)),
-        ("现金缓冲", _fmt_strategy_value(cash_buffer)),
+        (item.get("label") or "项目", item.get("value") or "暂无")
+        for item in (vm.get("risk_budget_items") or [])
     ]
-    if financing_advice:
-        budget_tiles.append(("融资建议", financing_advice))
     budget_html = "".join(
         "<div class='cc-strategy-tile'>"
         f"<div class='cc-strategy-label'>{escape(label)}</div>"
@@ -3939,10 +3927,11 @@ def render_strategy_execution_command_card(strategy_execution_packet: dict | Non
         "</div>"
         for label, value in budget_tiles[:5]
     )
+    conditions_payload = vm.get("conditions") or {}
     conditions = [
-        ("加仓条件", payload.get("add_condition") or "等待量化、纪律和市场至少两项同向后再考虑。"),
-        ("减仓条件", payload.get("reduce_condition") or "触发止损、减仓或风险预算失效时优先降低暴露。"),
-        ("失效条件", payload.get("invalidation_condition") or "市场环境转弱或纪律信号反向时，本轮建议失效。"),
+        ("加仓条件", conditions_payload.get("add") or "等待量化、纪律和市场至少两项同向后再考虑。"),
+        ("减仓条件", conditions_payload.get("reduce") or "触发止损、减仓或风险预算失效时优先降低暴露。"),
+        ("失效条件", conditions_payload.get("invalidation") or "市场环境转弱或纪律信号反向时，本轮建议失效。"),
     ]
     condition_html = "".join(
         "<div class='cc-strategy-condition'>"
@@ -3957,52 +3946,27 @@ def render_strategy_execution_command_card(strategy_execution_packet: dict | Non
         f"<div class='cc-strategy-text'>{escape(str(item.get('condition') or '等待验证。'))}</div>"
         f"<div class='cc-strategy-value' style='font-size:14px;margin-top:8px;'>{escape(str(item.get('action') or '只观察。'))}</div>"
         "</div>"
-        for item in _strategy_path_items(payload)
+        for item in (vm.get("path_items") or [])
     )
-    data_status_keys = [
-        ("quant", "量化"),
-        ("backtest", "纪律/回测"),
-        ("live_packet", "综合包"),
-    ]
     status_html = "".join(
         "<div class='cc-strategy-status'>"
-        f"<div class='cc-strategy-status-name'>{escape(label)}</div>"
-        f"<div class='cc-strategy-status-value'>{escape(str(data_status.get(key) or 'missing'))}</div>"
+        f"<div class='cc-strategy-status-name'>{escape(str(item.get('label') or item.get('key') or '模块'))}</div>"
+        f"<div class='cc-strategy-status-value'>{escape(str(item.get('state') or 'missing'))}</div>"
         "</div>"
-        for key, label in data_status_keys
+        for item in (vm.get("data_status_items") or [])
     )
     discipline_lines = [
-        f"是否违反交易纪律：{'待确认' if discipline.get('status') in [None, '', 'missing'] else ('需复核' if warnings else '未发现明确违反')}",
-        f"是否需要等待确认：{'是' if action in {'等待', '只观察', '尚未生成'} else '按条件执行'}",
-        f"纪律状态：{discipline.get('status') or 'missing'}",
-        f"最新信号：{discipline.get('latest_signal') or '暂无'}",
-        f"胜率：{discipline.get('win_rate') if discipline.get('win_rate') is not None else '暂无'}",
-        f"最大回撤：{discipline.get('max_drawdown') if discipline.get('max_drawdown') is not None else '暂无'}",
-        "是否禁止追高：是。",
-        "是否禁止自动重仓：是。",
+        f"{item.get('label') or '项目'}：{item.get('value') or '暂无'}"
+        for item in (vm.get("discipline_items") or [])
     ]
-    if confidence in {"低", "待生成"} or "missing" in set(str(v) for v in data_status.values()):
-        discipline_lines.append("数据覆盖不足 / 建议谨慎。")
-    warning_lines = [str(item) for item in warnings[:4]]
-    if errors:
-        warning_lines.extend(
-            f"{item.get('module') or '模块'}：{item.get('message') or item.get('error') or '未知错误'}"
-            for item in errors[:3]
-            if isinstance(item, dict)
-        )
-    if stale:
-        warning_lines.append("当前展示为上次成功结果。")
-    if last_error:
-        warning_lines.append(f"上次生成失败：{last_error}")
-    if last_success and not stale:
-        warning_lines.append("已有上次成功结果可回退。")
+    warning_lines = [str(item) for item in (vm.get("warning_items") or [])]
     pill_items = [
-        (f"状态：{status}", status),
+        (f"状态：{vm.get('status_label') or '待生成'}", vm.get("status_tone")),
         (f"风险：{risk_level}", risk_level),
-        ("DeepSeek：未调用", "等待"),
+        (vm.get("deepseek_text") or "DeepSeek：未调用", "等待"),
     ]
     pill_html = "".join(
-        f"<span class='cc-strategy-pill {_strategy_pill_class(flag)}'>{escape(text)}</span>"
+        f"<span class='cc-strategy-pill {_tone_to_strategy_class(flag)}'>{escape(text)}</span>"
         for text, flag in pill_items
     )
     html = f"""
@@ -4038,34 +4002,25 @@ def render_strategy_execution_command_card(strategy_execution_packet: dict | Non
       <div class="cc-strategy-section-title">数据状态</div>
       <div class="cc-strategy-status-row">{status_html}</div>
       <div class="cc-strategy-foot">
-        最后更新时间：{escape(str(payload.get("updated_at") or "暂无"))} ｜
-        来源：{escape(str(payload.get("source") or "strategy_execution_service / session_state cache"))} ｜
-        DeepSeek：未调用
+        最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
+        来源：{escape(str(vm.get("source_text") or "strategy_execution_service / session_state cache"))} ｜
+        {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
       </div>
     </section>
     """
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_command_center_decision_hero(packet: dict | None = None):
+def render_command_center_decision_hero(packet: dict | None = None, decision_view_model: dict | None = None):
     _inject_command_center_css()
     payload = packet or {}
-    status = str(payload.get("status") or "waiting")
-    action = str(payload.get("overall_action") or "等待")
-    risk_level = str(payload.get("risk_level") or "中")
-    market_bias = str(payload.get("market_bias") or "未刷新")
-    reason = str(payload.get("reason_summary") or "基础数据未刷新，先等待或点击刷新今日基础数据。")
-    status_label = _decision_status_label(status)
-    stale_note = "当前为待刷新/缓存判断，不是完整实时结论。" if status in {"waiting", "partial", "failed"} else "当前为综合推演结论，仍需按纪律验证执行。"
-    must_not_do = payload.get("must_not_do") or []
-    conditions = payload.get("next_validation_conditions") or []
-    coverage = payload.get("data_coverage") or {}
-    coverage_order = ["market", "quant", "discipline", "margin_etf", "next_ticket", "strategy_execution"]
+    vm = decision_view_model or build_decision_summary_view_model(payload)
+    status = str(vm.get("status") or "waiting")
     tiles = [
-        ("主账户动作", payload.get("position_mode") or "空仓等待"),
-        ("融资账户动作", payload.get("margin_mode") or "不使用融资"),
-        ("ETF 动作", payload.get("etf_priority") or "待刷新"),
-        ("下一票观察动作", payload.get("next_ticket_priority") or "待刷新"),
+        ("主账户动作", vm.get("position_text") or "空仓等待"),
+        ("融资账户动作", vm.get("margin_text") or "不使用融资"),
+        ("ETF 动作", vm.get("etf_text") or "待刷新"),
+        ("下一票观察动作", vm.get("next_ticket_text") or "待刷新"),
     ]
     tile_html = "".join(
         "<div class='cc-decision-tile'>"
@@ -4075,12 +4030,12 @@ def render_command_center_decision_hero(packet: dict | None = None):
         for label, value in tiles
     )
     coverage_html = ""
-    for key in coverage_order:
-        state = str(coverage.get(key) or "missing")
+    for item in vm.get("coverage_items") or []:
+        state = str(item.get("state") or "missing")
         state_class = state if state in {"cached", "ready"} else "missing"
         coverage_html += (
             "<div class='cc-coverage-item'>"
-            f"<div class='cc-coverage-name'>{escape(_coverage_label(key))}</div>"
+            f"<div class='cc-coverage-name'>{escape(str(item.get('label') or item.get('key') or '模块'))}</div>"
             f"<div class='cc-coverage-state'>{escape(state)}</div>"
             "<div class='cc-coverage-bar'>"
             f"<span class='cc-coverage-fill {escape(state_class)}'></span>"
@@ -4091,35 +4046,35 @@ def render_command_center_decision_hero(packet: dict | None = None):
       <div class="cc-decision-top">
         <div>
           <div class="cc-decision-kicker">Today Command</div>
-          <h2 class="cc-decision-action">{escape(action)}</h2>
-          <div class="cc-decision-reason">{escape(reason)}</div>
+          <h2 class="cc-decision-action">{escape(str(vm.get("action_label") or "等待"))}</h2>
+          <div class="cc-decision-reason">{escape(str(vm.get("reason_summary") or "基础数据未刷新，先等待或点击刷新今日基础数据。"))}</div>
           <div class="cc-decision-badges">
-            <span class="cc-decision-badge {escape(status)}">{escape(status_label)}</span>
-            <span class="cc-decision-badge">市场：{escape(market_bias)}</span>
-            <span class="cc-decision-badge">DeepSeek：未调用</span>
+            <span class="cc-decision-badge {escape(status)}">{escape(str(vm.get("status_label") or "待刷新判断"))}</span>
+            <span class="cc-decision-badge">市场：{escape(str(vm.get("market_text") or "未刷新"))}</span>
+            <span class="cc-decision-badge">{escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}</span>
           </div>
         </div>
         <aside class="cc-decision-risk">
           <div class="cc-decision-risk-label">风险等级</div>
-          <div class="cc-decision-risk-value">{escape(risk_level)}</div>
-          <div class="cc-muted-note">{escape(stale_note)}</div>
+          <div class="cc-decision-risk-value">{escape(str(vm.get("risk_label") or "中"))}</div>
+          <div class="cc-muted-note">{escape(str(vm.get("stale_note") or vm.get("empty_message") or ""))}</div>
         </aside>
       </div>
       <div class="cc-decision-grid">{tile_html}</div>
       <div class="cc-decision-lists">
         <div class="cc-decision-list-card">
           <div class="cc-decision-list-title">禁止动作</div>
-          {_decision_list(must_not_do, "暂无新增禁止动作，但仍需遵守交易纪律。")}
+          {_decision_list(vm.get("must_not_do_items"), "暂无新增禁止动作，但仍需遵守交易纪律。")}
         </div>
         <div class="cc-decision-list-card">
           <div class="cc-decision-list-title">明日验证条件</div>
-          {_decision_list(conditions, "等待基础数据刷新后再生成验证条件。")}
+          {_decision_list(vm.get("validation_items"), "等待基础数据刷新后再生成验证条件。")}
         </div>
       </div>
       <div class="cc-coverage-grid">{coverage_html}</div>
       <div class="cc-decision-foot">
-        状态：{escape(status)} ｜ 最后更新时间：{escape(str(payload.get("updated_at") or "暂无"))} ｜
-        来源：{escape(str(payload.get("source") or "command_center_decision_engine"))} ｜ DeepSeek：未调用
+        状态：{escape(status)} ｜ 最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
+        来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
       </div>
     </section>
     """
