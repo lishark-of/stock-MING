@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 from html import escape
 from textwrap import dedent
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from command_center_decision_summary import build_decision_summary_view_model
 from command_center_strategy_summary import build_strategy_summary_view_model
@@ -3925,6 +3927,87 @@ def _inject_command_center_css():
             font-size: 12px;
             line-height: 1.6;
         }
+        .cc-projection-paths {
+            margin: 8px 0 16px;
+        }
+        .cc-projection-foot {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.55;
+            margin: 5px 0 10px;
+        }
+        .cc-projection-action-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .cc-projection-action-card {
+            border-radius: 20px;
+            background: rgba(255,255,255,0.86);
+            border: 1px solid rgba(148,163,184,0.18);
+            box-shadow: 0 12px 34px rgba(15,23,42,0.045);
+            padding: 14px;
+            min-height: 136px;
+        }
+        .cc-projection-action-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            color: #0f172a;
+            font-size: 14px;
+            font-weight: 850;
+            margin-bottom: 10px;
+        }
+        .cc-projection-action-head span {
+            color: #0f766e;
+            font-size: 16px;
+            font-weight: 900;
+        }
+        .cc-projection-action-line {
+            display: grid;
+            grid-template-columns: 38px minmax(0, 1fr);
+            gap: 8px;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.45;
+            border-top: 1px solid rgba(148,163,184,0.13);
+            padding-top: 7px;
+            margin-top: 7px;
+        }
+        .cc-projection-action-line span {
+            color: #64748b;
+            font-weight: 800;
+        }
+        .cc-projection-action-line b {
+            color: #0f172a;
+            font-weight: 760;
+            overflow-wrap: anywhere;
+        }
+        .cc-projection-pill {
+            display: inline-flex;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 850;
+            border: 1px solid transparent;
+            margin: 0 0 8px;
+        }
+        .cc-projection-pill.green {
+            background: rgba(20,184,166,0.10);
+            color: #0f766e;
+            border-color: rgba(20,184,166,0.18);
+        }
+        .cc-projection-pill.blue {
+            background: rgba(37,99,235,0.10);
+            color: #1d4ed8;
+            border-color: rgba(37,99,235,0.16);
+        }
+        .cc-projection-pill.orange {
+            background: rgba(249,115,22,0.11);
+            color: #c2410c;
+            border-color: rgba(249,115,22,0.16);
+        }
         @keyframes cc-decision-fade-up {
             from { opacity: 0; transform: translateY(12px); }
             to { opacity: 1; transform: translateY(0); }
@@ -3981,6 +4064,7 @@ def _inject_command_center_css():
             .cc-strategy-foot-grid,
             .cc-home-head,
             .cc-home-grid,
+            .cc-projection-action-grid,
             .cc-home-bottom,
             .cc-strategy-status-row {
                 grid-template-columns: 1fr;
@@ -4622,6 +4706,222 @@ def render_fusion_summary_card(packet: dict | None = None):
         """,
         unsafe_allow_html=True,
     )
+
+
+def _projection_status_label(status):
+    return {
+        "ready": "已生成",
+        "cached": "使用缓存",
+        "waiting": "待刷新",
+        "failed": "失败",
+    }.get(str(status or ""), "待刷新")
+
+
+def _projection_path_cards(paths):
+    tones = ["green", "blue", "orange"]
+    for col, item, tone in zip(st.columns(3), (paths or [])[:3], tones):
+        name = str(item.get("name") or "路径")
+        probability = item.get("probability")
+        probability_text = "暂无" if probability in [None, ""] else f"{probability}%"
+        with col:
+            with st.container(border=True):
+                st.markdown(f"##### {name}")
+                st.markdown(f"<span class='cc-projection-pill {tone}'>{escape(probability_text)}</span>", unsafe_allow_html=True)
+                st.caption("触发条件")
+                st.write(str(item.get("trigger") or "等待验证。"))
+                st.caption("对应动作")
+                st.write(str(item.get("action") or "只观察。"))
+                st.caption("风险提示")
+                st.write(str(item.get("risk") or "不追高、不满仓。"))
+
+
+def _projection_static_frame(packet):
+    payload = packet or {}
+    rows = {}
+    for item in payload.get("historical") or []:
+        rows.setdefault(item.get("t"), {})["历史走势"] = item.get("value")
+    for path in payload.get("paths") or []:
+        name = path.get("name") or "路径"
+        for item in path.get("points") or []:
+            rows.setdefault(item.get("t"), {})[name] = item.get("value")
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame.from_dict(rows, orient="index").sort_index()
+
+
+def render_command_center_projection_chart(projection_packet: dict | None = None):
+    _inject_command_center_css()
+    payload = projection_packet or {}
+    paths = payload.get("paths") or []
+    status_label = _projection_status_label(payload.get("status"))
+    note = str(payload.get("note") or "路径推演 / 待验证")
+    updated_at = str(payload.get("updated_at") or "暂无")
+    source = str(payload.get("source") or "command_center_projection")
+    horizon = payload.get("horizon_days") or 10
+    packet_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+    chart_html = f"""
+    <!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js" onerror="window.__stockMingEchartsFailed=true"></script>
+      <style>
+        html, body {{ margin: 0; padding: 0; background: transparent; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif; }}
+        .projection-shell {{
+          box-sizing: border-box;
+          height: 372px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98));
+          border: 1px solid rgba(15,23,42,0.08);
+          border-radius: 24px;
+          padding: 16px 16px 10px;
+          overflow: hidden;
+        }}
+        .projection-head {{
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 6px;
+        }}
+        .projection-title {{ color: #0f172a; font-weight: 820; font-size: 18px; letter-spacing: 0; }}
+        .projection-subtitle {{ color: #64748b; font-size: 12px; line-height: 1.45; margin-top: 3px; }}
+        .projection-badge {{
+          border-radius: 999px;
+          background: rgba(37, 99, 235, 0.10);
+          border: 1px solid rgba(37, 99, 235, 0.14);
+          color: #1d4ed8;
+          padding: 7px 10px;
+          font-size: 12px;
+          font-weight: 760;
+          white-space: nowrap;
+        }}
+        #projection-chart {{ height: 285px; width: 100%; }}
+        .fallback-svg {{ width: 100%; height: 285px; display: block; }}
+        .fallback-label {{ font-size: 11px; fill: #64748b; font-weight: 650; }}
+      </style>
+    </head>
+    <body>
+      <section class="projection-shell">
+        <div class="projection-head">
+          <div>
+            <div class="projection-title">未来 5~10 个交易日趋势推演</div>
+            <div class="projection-subtitle">{escape(note)} ｜ 最后更新时间：{escape(updated_at)} ｜ DeepSeek：未调用</div>
+          </div>
+          <div class="projection-badge">{escape(status_label)} · {escape(str(horizon))}日</div>
+        </div>
+        <div id="projection-chart"></div>
+      </section>
+      <script>
+        const packet = {packet_json};
+        const root = document.getElementById('projection-chart');
+        const colors = ['#14b8a6', '#2563eb', '#f97316'];
+        const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        function allPoints() {{
+          const points = [];
+          (packet.historical || []).forEach(p => points.push([Number(p.t), Number(p.value)]));
+          (packet.paths || []).forEach(path => (path.points || []).forEach(p => points.push([Number(p.t), Number(p.value)])));
+          return points.filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+        }}
+        function renderFallback() {{
+          const points = allPoints();
+          if (!points.length) {{
+            root.innerHTML = '<div style="color:#64748b;font-size:13px;padding:36px 10px;">暂无路径数据，点击刷新今日基础数据生成。</div>';
+            return;
+          }}
+          const minX = Math.min(...points.map(p => p[0]));
+          const maxX = Math.max(...points.map(p => p[0]));
+          const minY = Math.min(...points.map(p => p[1]));
+          const maxY = Math.max(...points.map(p => p[1]));
+          const w = Math.max(root.clientWidth || 760, 320);
+          const h = 285;
+          const pad = 26;
+          const sx = x => pad + (x - minX) / Math.max(maxX - minX, 1) * (w - pad * 2);
+          const sy = y => h - pad - (y - minY) / Math.max(maxY - minY, 1) * (h - pad * 2);
+          const line = (items, color, dash='') => '<polyline fill="none" stroke="' + color + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" ' + dash + ' points="' + items.map(p => sx(Number(p.t)) + ',' + sy(Number(p.value))).join(' ') + '" />';
+          let svg = '<svg class="fallback-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">';
+          svg += '<line x1="' + sx(0) + '" y1="18" x2="' + sx(0) + '" y2="' + (h - 18) + '" stroke="#94a3b8" stroke-dasharray="4 4" />';
+          svg += '<text x="' + (sx(0) + 6) + '" y="28" class="fallback-label">T0</text>';
+          svg += line(packet.historical || [], '#94a3b8');
+          (packet.paths || []).slice(0, 3).forEach((path, idx) => {{
+            svg += line(path.points || [], colors[idx], 'stroke-dasharray="' + (idx === 1 ? '0' : '5 5') + '"');
+            const last = (path.points || [])[Math.max((path.points || []).length - 1, 0)] || {{}};
+            if (last.t !== undefined) svg += '<text x="' + (sx(Number(last.t)) - 54) + '" y="' + (sy(Number(last.value)) - 8) + '" class="fallback-label">' + String(path.name || '路径') + ' ' + String(path.probability || '') + '%</text>';
+          }});
+          svg += '</svg>';
+          root.innerHTML = svg;
+        }}
+        function makeSeries(step) {{
+          const historical = (packet.historical || []).map(p => [Number(p.t), Number(p.value)]);
+          const series = [{{
+            name: '历史走势',
+            type: 'line',
+            data: historical,
+            symbol: 'none',
+            smooth: 0.35,
+            lineStyle: {{ width: 3, color: '#94a3b8' }},
+            markLine: {{ symbol: 'none', lineStyle: {{ color: '#64748b', type: 'dashed' }}, data: [{{ xAxis: 0, name: 'T0' }}], label: {{ formatter: 'T0' }} }}
+          }}];
+          (packet.paths || []).slice(0, 3).forEach((path, idx) => {{
+            const full = (path.points || []).map(p => [Number(p.t), Number(p.value)]);
+            const data = reducedMotion ? full : full.slice(0, Math.max(1, step + 1));
+            series.push({{
+              name: String(path.name || '路径') + ' · ' + String(path.probability || 0) + '%',
+              type: 'line',
+              data,
+              symbol: 'circle',
+              symbolSize: 5,
+              smooth: 0.42,
+              lineStyle: {{ width: 3, color: colors[idx], type: idx === 1 ? 'solid' : 'dashed' }},
+              itemStyle: {{ color: colors[idx] }},
+              endLabel: {{ show: true, formatter: String(path.name || '路径') + ' ' + String(path.probability || 0) + '%', color: colors[idx], fontWeight: 700 }}
+            }});
+          }});
+          return series;
+        }}
+        function renderEcharts() {{
+          if (window.__stockMingEchartsFailed || !window.echarts) {{
+            renderFallback();
+            return;
+          }}
+          const chart = window.echarts.init(root, null, {{ renderer: 'canvas' }});
+          const option = {{
+            animation: !reducedMotion,
+            animationDuration: 520,
+            animationDurationUpdate: 360,
+            grid: {{ top: 32, right: 72, bottom: 34, left: 42 }},
+            tooltip: {{ trigger: 'axis', valueFormatter: v => Number(v).toFixed(2) }},
+            legend: {{ top: 2, left: 8, textStyle: {{ color: '#475569', fontSize: 11 }} }},
+            xAxis: {{ type: 'value', min: -10, max: packet.horizon_days || 10, splitLine: {{ lineStyle: {{ color: 'rgba(148,163,184,0.16)' }} }}, axisLabel: {{ formatter: v => v === 0 ? 'T0' : (v > 0 ? '+' + v : v) }} }},
+            yAxis: {{ type: 'value', scale: true, splitLine: {{ lineStyle: {{ color: 'rgba(148,163,184,0.16)' }} }} }},
+            series: makeSeries(reducedMotion ? 99 : 0)
+          }};
+          chart.setOption(option);
+          if (!reducedMotion) {{
+            let step = 0;
+            const maxStep = packet.horizon_days || 10;
+            const timer = window.setInterval(() => {{
+              step += 1;
+              chart.setOption({{ series: makeSeries(step) }});
+              if (step >= maxStep) window.clearInterval(timer);
+            }}, 140);
+          }}
+          window.addEventListener('resize', () => chart.resize());
+        }}
+        setTimeout(renderEcharts, 40);
+      </script>
+    </body>
+    </html>
+    """
+    if components:
+        components.html(chart_html, height=392, scrolling=False)
+    else:  # pragma: no cover - runtime fallback for unexpected Streamlit install
+        frame = _projection_static_frame(payload)
+        if frame.empty:
+            st.info("暂无路径数据，点击刷新今日基础数据生成。")
+        else:
+            st.line_chart(frame, height=320)
+    st.caption(f"路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。来源：{source}")
+    _projection_path_cards(paths)
 
 
 def render_path_projection_card(packet: dict | None = None):

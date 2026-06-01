@@ -15,6 +15,7 @@ import numpy as np
 
 import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
+import command_center_projection as projection_service
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
@@ -31,6 +32,7 @@ try:
         render_action_matrix,
         render_command_center_account_budget_card,
         render_command_center_decision_hero,
+        render_command_center_projection_chart,
         render_command_center_shell,
         render_command_center_shell_end,
         render_etf_score_table,
@@ -73,6 +75,9 @@ except Exception as module_error:
 
     def render_command_center_decision_hero(*args, **kwargs):
         _visual_component_unavailable("今日总决策主卡")
+
+    def render_command_center_projection_chart(*args, **kwargs):
+        _visual_component_unavailable("趋势推演主视觉")
 
     def render_home_action_snapshot(*args, **kwargs):
         _visual_component_unavailable("首页交易快照")
@@ -4006,8 +4011,9 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
 
     packet = st.session_state[packet_key]
     live_packet = run_command_center_auto_light_snapshot(target=target)
-    decision_hero_slot = st.empty()
     home_snapshot_slot = st.empty()
+    decision_hero_slot = st.empty()
+    projection_slot = st.empty()
     control_cols = st.columns([1.4, 1.2])
     with control_cols[0]:
         if st.button("刷新今日基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
@@ -4160,6 +4166,16 @@ packet:
             target=target,
             position_profile=position_profile,
         )
+    projection_packet = projection_service.build_projection_packet(
+        decision_packet=_get_command_center_decision_display_packet(),
+        strategy_packet=_get_strategy_execution_display_packet(),
+        live_packet=live_packet,
+        home_snapshot=home_snapshot,
+        horizon_days=10,
+    )
+    st.session_state["command_center_projection_packet"] = projection_packet
+    with projection_slot.container():
+        render_command_center_projection_chart(projection_packet)
     live_packet = render_strategy_execution_card(
         live_packet,
         target=target,
@@ -4181,7 +4197,6 @@ packet:
     packet = display_packet
     render_command_center_account_budget_card(packet)
     render_fusion_summary_card(packet)
-    render_path_projection_card(packet)
     render_discipline_validation_grid(packet)
     render_observation_pool_card(packet)
     render_signal_confluence_card(packet.get("signal_confluence"))
@@ -4217,11 +4232,11 @@ def render_command_center_placeholder(nav_name, message=None):
         f"""
         <section class="cc-card">
           <div class="cc-card-title">{nav_name}</div>
-          <div class="cc-card-caption">轻量占位入口；页面切换只更新 session_state，不触发 DeepSeek、Tushare 批量请求或旧版重型 tabs。</div>
+          <div class="cc-card-caption">高级工具入口 / 暂未接入综合中心；页面切换只更新 session_state，不触发 DeepSeek、Tushare 批量请求或旧版重型 tabs。</div>
           <div class="cc-mini-card">
             <div class="cc-mini-title">当前状态</div>
-            <div class="cc-mini-value">入口保留</div>
-            <div class="cc-mini-desc">{message or '模块后续接入；当前只提供导航反馈和占位内容。'}</div>
+            <div class="cc-mini-value">暂未接入</div>
+            <div class="cc-mini-desc">{message or '需要深度工具时进入高级工具箱；当前首页已提供总动作、持仓、候选、ETF 和趋势推演。'}</div>
           </div>
         </section>
         """,
@@ -4289,10 +4304,10 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
             )
         elif selected_nav == "交易纪律实验室":
             render_command_center_shell(active_nav=selected_nav)
-            render_command_center_placeholder(selected_nav, "旧版入口保留，点击旧版工作台进入。")
+            render_command_center_placeholder(selected_nav, "高级工具箱保留完整纪律实验室；默认首页只展示可执行摘要。")
         elif selected_nav == "推演":
             render_command_center_shell(active_nav=selected_nav)
-            render_command_center_placeholder(selected_nav, "量化推演入口保留，后续接入。")
+            render_command_center_placeholder(selected_nav, "量化推演长流程保留在高级工具箱；趋势主视觉已接入首页。")
         else:
             render_command_center_shell(active_nav=selected_nav)
             render_command_center_placeholder(selected_nav)
@@ -10050,7 +10065,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
     workspace_mode = st.radio(
         "主导航",
-        ["综合推演中心 2.0", "旧版工作台（保留旧 tabs）"],
+        ["综合推演中心 2.0", "高级工具箱（旧版保留）"],
         horizontal=True,
         key="workspace_mode_v2",
         label_visibility="collapsed",
@@ -10168,7 +10183,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.stop()
 
     legacy_tab = st.radio(
-        "旧版模块",
+        "高级工具模块",
         [
             "今日关注池",
             "天眼风控",
