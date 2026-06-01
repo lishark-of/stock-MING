@@ -1,16 +1,35 @@
+import ast
+import copy
+import json
 import sys
 import unittest
+from pathlib import Path
 
 import command_center_state_adapter as state_adapter
 
 
+FORBIDDEN_IMPORTS = {
+    "streamlit",
+    "pywebview",
+    "webview",
+    "data_fetcher",
+    "backtester",
+    "tushare_adapter",
+    "yfinance",
+    "akshare",
+    "tushare",
+    "openai",
+    "app",
+}
+
+
 class CommandCenterStateAdapterTests(unittest.TestCase):
-    def test_state_get_and_set_are_safe(self):
+    def test_state_get_is_safe(self):
         state = {}
 
         self.assertEqual(state_adapter.state_get(state, "missing", "fallback"), "fallback")
-        self.assertTrue(state_adapter.state_set(state, "value", 3))
-        self.assertEqual(state_adapter.state_get(state, "value"), 3)
+        self.assertEqual(state_adapter.state_get(None, "missing", "fallback"), "fallback")
+        self.assertEqual(state_adapter.state_get(object(), "missing", "fallback"), "fallback")
 
     def test_get_display_packet_prefers_current_then_last_success(self):
         state = {
@@ -28,90 +47,109 @@ class CommandCenterStateAdapterTests(unittest.TestCase):
         )
         self.assertEqual(state_adapter.get_display_packet({}, "packet", "last"), {})
 
-    def test_sync_child_packet_updates_live_packet_state_without_mutating_input(self):
-        state = {"command_center_live_packet": {"market": {"status": "已刷新"}}}
-        live_packet = {"market": {"status": "已刷新"}}
-        strategy_packet = {"status": "ready", "action": "等待"}
-
-        payload = state_adapter.sync_child_packet(
-            state,
-            live_packet,
-            "strategy_execution",
-            strategy_packet,
-        )
-
-        self.assertNotIn("strategy_execution", live_packet)
-        self.assertEqual(payload["strategy_execution"]["action"], "等待")
-        self.assertEqual(state["command_center_live_packet"]["strategy_execution"]["action"], "等待")
-
-    def test_sync_child_packet_skips_empty_child_state_update(self):
-        state = {"command_center_live_packet": {"market": {"status": "已刷新"}}}
-
-        payload = state_adapter.sync_child_packet(
-            state,
-            {"market": {"status": "已刷新"}},
-            "strategy_execution",
-            {},
-        )
-
-        self.assertNotIn("strategy_execution", payload)
-        self.assertNotIn("strategy_execution", state["command_center_live_packet"])
-
-    def test_sync_child_packets_updates_multiple_children(self):
-        state = {"command_center_live_packet": {"market": {"status": "已刷新"}}}
-
-        payload = state_adapter.sync_child_packets(
-            state,
-            {"market": {"status": "已刷新"}},
-            {
-                "strategy_execution": {"status": "ready", "action": "等待"},
-                "decision": {"status": "partial", "overall_action": "只观察"},
-            },
-        )
-
-        self.assertEqual(payload["strategy_execution"]["action"], "等待")
-        self.assertEqual(payload["decision"]["overall_action"], "只观察")
-        self.assertEqual(state["command_center_live_packet"]["decision"]["overall_action"], "只观察")
-
-    def test_build_view_model_from_state_stores_view_model(self):
+    def test_get_command_center_packets_from_state_does_not_mutate_state(self):
         state = {
-            "strategy_packet": {"status": "ready", "action": "等待"},
-            "decision_packet": {"status": "partial", "overall_action": "只观察"},
+            "command_center_live_packet": {"market": {"bias": "neutral"}},
+            "strategy_execution_packet": {"action": "wait"},
+            "command_center_decision_packet": {"overall_action": "observe"},
         }
-        live_packet = {
-            "refresh_level": "manual_basic",
-            "market": {"status": "已刷新", "is_fresh": True},
-        }
+        before = copy.deepcopy(state)
 
-        view_model = state_adapter.build_view_model_from_state(
+        packets = state_adapter.get_command_center_packets_from_state(
             state,
-            live_packet=live_packet,
-            strategy_packet_key="strategy_packet",
-            strategy_last_success_key="strategy_last_success",
-            decision_packet_key="decision_packet",
-            decision_last_success_key="decision_last_success",
+            strategy_packet_key="strategy_execution_packet",
+            strategy_last_success_key="strategy_execution_last_success",
+            decision_packet_key="command_center_decision_packet",
+            decision_last_success_key="command_center_decision_last_success",
         )
 
-        self.assertEqual(state["command_center_view_model"], view_model)
-        self.assertEqual(view_model["data_status"]["market"], "ready")
-        self.assertEqual(view_model["data_status"]["strategy_execution"], "ready")
-        self.assertEqual(view_model["data_status"]["decision"], "ready")
-        self.assertEqual(view_model["live_packet"]["strategy_execution"]["action"], "等待")
-        self.assertEqual(view_model["live_packet"]["decision"]["overall_action"], "只观察")
+        self.assertEqual(state, before)
+        self.assertEqual(packets["live_packet"]["market"]["bias"], "neutral")
+        self.assertEqual(packets["strategy_execution_packet"]["action"], "wait")
+        self.assertEqual(packets["decision_packet"]["overall_action"], "observe")
+        self.assertNotIn("strategy_execution", state["command_center_live_packet"])
+        self.assertNotIn("decision", state["command_center_live_packet"])
 
-    def test_build_view_model_from_state_can_skip_store(self):
-        state = {"strategy_last_success": {"status": "ready", "action": "等待"}}
+    def test_build_view_model_from_state_does_not_mutate_state(self):
+        state = {
+            "command_center_live_packet": {"market": {"bias": "neutral"}},
+            "strategy_execution_packet": {"action": "wait", "status": "ready"},
+            "command_center_decision_packet": {"overall_action": "observe", "status": "partial"},
+        }
+        before = copy.deepcopy(state)
 
-        view_model = state_adapter.build_view_model_from_state(
+        view_model = state_adapter.build_command_center_view_model_from_state(
             state,
-            live_packet={},
-            strategy_packet_key="strategy_packet",
-            strategy_last_success_key="strategy_last_success",
-            store=False,
+            strategy_packet_key="strategy_execution_packet",
+            strategy_last_success_key="strategy_execution_last_success",
+            decision_packet_key="command_center_decision_packet",
+            decision_last_success_key="command_center_decision_last_success",
         )
 
+        self.assertEqual(state, before)
         self.assertNotIn("command_center_view_model", state)
-        self.assertTrue(view_model["has_strategy_execution_packet"])
+        self.assertEqual(view_model["live_packet"]["strategy_execution"]["action"], "wait")
+        self.assertEqual(view_model["live_packet"]["decision"]["overall_action"], "observe")
+
+    def test_attach_child_packets_for_display_does_not_mutate_inputs(self):
+        live_packet = {"market": {"bias": "neutral"}}
+        strategy_packet = {"action": "wait"}
+        decision_packet = {"overall_action": "observe"}
+        live_before = copy.deepcopy(live_packet)
+        strategy_before = copy.deepcopy(strategy_packet)
+        decision_before = copy.deepcopy(decision_packet)
+
+        display_packet = state_adapter.attach_command_center_child_packets_for_display(
+            live_packet,
+            strategy_execution_packet=strategy_packet,
+            decision_packet=decision_packet,
+        )
+
+        self.assertIsNot(display_packet, live_packet)
+        self.assertEqual(live_packet, live_before)
+        self.assertEqual(strategy_packet, strategy_before)
+        self.assertEqual(decision_packet, decision_before)
+        self.assertEqual(display_packet["strategy_execution"]["action"], "wait")
+        self.assertEqual(display_packet["decision"]["overall_action"], "observe")
+
+    def test_build_view_model_from_state_is_json_friendly(self):
+        state = {
+            "strategy_execution_packet": {"action": "wait", "status": "ready"},
+            "command_center_decision_packet": {"overall_action": "observe", "status": "partial"},
+        }
+
+        view_model = state_adapter.build_command_center_view_model_from_state(
+            state,
+            live_packet={"market": {"bias": "neutral"}},
+            strategy_packet_key="strategy_execution_packet",
+            strategy_last_success_key="strategy_execution_last_success",
+            decision_packet_key="command_center_decision_packet",
+            decision_last_success_key="command_center_decision_last_success",
+        )
+
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_empty_none_and_non_mapping_inputs_do_not_raise(self):
+        for value in (None, {}, object(), [], "bad packet"):
+            packets = state_adapter.get_command_center_packets_from_state(value)
+            self.assertEqual(packets["live_packet"], {})
+            view_model = state_adapter.build_command_center_view_model_from_state(value, live_packet=value)
+            self.assertIn("live_packet", view_model)
+            display_packet = state_adapter.attach_command_center_child_packets_for_display(value)
+            self.assertEqual(display_packet, {})
+
+    def test_state_adapter_forbidden_imports_are_absent(self):
+        for filename in ("command_center_adapter.py", "command_center_state_adapter.py"):
+            tree = ast.parse(Path(filename).read_text())
+            imports = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imports.extend(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    imports.append(node.module or "")
+
+            for name in FORBIDDEN_IMPORTS:
+                self.assertNotIn(name, imports, f"Forbidden import in {filename}: {name}")
 
     def test_state_adapter_does_not_import_streamlit_or_external_callers(self):
         self.assertFalse(hasattr(state_adapter, "st"))

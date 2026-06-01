@@ -3708,7 +3708,7 @@ def build_command_center_display_packet(live_packet, fallback_packet=None):
 
 
 def build_command_center_view_model(live_packet=None):
-    return cc_state_adapter.build_view_model_from_state(
+    view_model = cc_state_adapter.build_command_center_view_model_from_state(
         st.session_state,
         live_packet=live_packet,
         strategy_packet_key=strategy_service.PACKET_KEY,
@@ -3716,6 +3716,8 @@ def build_command_center_view_model(live_packet=None):
         decision_packet_key=decision_engine.PACKET_KEY,
         decision_last_success_key=decision_engine.LAST_SUCCESS_KEY,
     )
+    st.session_state["command_center_view_model"] = view_model
+    return view_model
 
 
 def _get_strategy_execution_display_packet():
@@ -3728,11 +3730,9 @@ def _get_strategy_execution_display_packet():
 
 def _attach_strategy_execution_packet(live_packet):
     strategy_packet = _get_strategy_execution_display_packet()
-    return cc_state_adapter.sync_child_packet(
-        st.session_state,
+    return cc_state_adapter.attach_command_center_child_packets_for_display(
         live_packet,
-        "strategy_execution",
-        strategy_packet,
+        strategy_execution_packet=strategy_packet,
     )
 
 
@@ -3746,11 +3746,9 @@ def _get_command_center_decision_display_packet():
 
 def _attach_command_center_decision_packet(live_packet):
     decision_packet = _get_command_center_decision_display_packet()
-    return cc_state_adapter.sync_child_packet(
-        st.session_state,
+    return cc_state_adapter.attach_command_center_child_packets_for_display(
         live_packet,
-        "decision",
-        decision_packet,
+        decision_packet=decision_packet,
     )
 
 
@@ -3762,13 +3760,10 @@ def _generate_command_center_decision(live_packet, refresh_summary=None):
         strategy_packet=_get_strategy_execution_display_packet(),
         refresh_summary=refresh_summary or st.session_state.get("command_center_refresh_summary") or {},
     )
-    live_packet = cc_state_adapter.sync_child_packets(
-        st.session_state,
+    live_packet = cc_state_adapter.attach_command_center_child_packets_for_display(
         live_packet,
-        {
-            "decision": decision_packet,
-            "strategy_execution": live_packet.get("strategy_execution"),
-        },
+        strategy_execution_packet=live_packet.get("strategy_execution"),
+        decision_packet=decision_packet,
     )
     return decision_packet, live_packet
 
@@ -3814,11 +3809,9 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
             position_profile=position_profile,
             live_packet=live_packet,
         )
-        live_packet = cc_state_adapter.sync_child_packet(
-            st.session_state,
+        live_packet = cc_state_adapter.attach_command_center_child_packets_for_display(
             live_packet,
-            "strategy_execution",
-            packet,
+            strategy_execution_packet=packet,
         )
         if packet.get("status") == "failed":
             st.warning(f"策略执行建议生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}")
