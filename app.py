@@ -18,6 +18,7 @@ import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
 import strategy_execution_service as strategy_service
+from command_center_refresh_summary import build_refresh_summary_view_model
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
 try:
@@ -3715,6 +3716,15 @@ def build_command_center_view_model(live_packet=None):
         strategy_last_success_key=strategy_service.LAST_SUCCESS_KEY,
         decision_packet_key=decision_engine.PACKET_KEY,
         decision_last_success_key=decision_engine.LAST_SUCCESS_KEY,
+    )
+    view_model["refresh_summary"] = build_refresh_summary_view_model(
+        live_packet=live_packet,
+        refresh_result=st.session_state.get("command_center_refresh_summary") or {},
+        refresh_level=cc_adapter.get_nested(live_packet, "refresh_level"),
+        generated_at=(
+            cc_adapter.get_nested(live_packet, "updated_at")
+            or cc_adapter.get_nested(live_packet, "generated_at")
+        ),
     )
     st.session_state["command_center_view_model"] = view_model
     return view_model
