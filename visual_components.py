@@ -4324,6 +4324,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         etf_html = "<div class='cc-home-etf'><div class='cc-home-item-title'>暂无 ETF 推荐缓存</div><div class='cc-home-item-meta'>刷新今日基础数据后读取本地 ETF 配置快照；不自动全量发现。</div></div>"
 
     error_line = "无" if not errors else f"{len(errors)} 个失败/错误"
+    watch_not_chase_text = "；".join([str(item) for item in (margin_etf.get("watch_not_chase") or []) if str(item).strip()]) or "不追高 ETF；等待回踩、量能和风险线确认。"
     html = f"""
     <section class="cc-home-snapshot">
       <div class="cc-home-head">
@@ -4355,6 +4356,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-panel-title">当前持仓动作</div>
           <div class="cc-home-big-value">{escape(_home_text(holding.get("action_state"), "待刷新"))}</div>
           <div class="cc-home-row"><span>标的</span><strong>{escape(_home_text(holding.get("ticker"), "未锁定"))} {escape(_home_text(holding.get("name"), ""))}</strong></div>
+          <div class="cc-home-row"><span>周期</span><strong>{escape(_home_text(holding.get("investment_horizon"), "未设置"))}</strong></div>
           <div class="cc-home-row"><span>成本 / 数量</span><strong>{escape(_home_number(holding.get("cost")))} / {escape(_home_number(holding.get("shares")))}</strong></div>
           <div class="cc-home-row"><span>现价 / 浮盈亏</span><strong>{escape(_home_number(holding.get("current_price")))} / {escape(_home_text(holding.get("floating_pnl_text"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>加仓条件</span><strong>{escape(_home_text(holding.get("add_condition"), "等待验证。"))}</strong></div>
@@ -4368,9 +4370,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">ETF / 融资动作</div>
           <div class="cc-home-big-value">{escape(_home_text(margin_etf.get("today_main_direction"), "待刷新"))}</div>
+          <div class="cc-home-row"><span>当前融资比例</span><strong>{escape(_home_number(margin_etf.get("current_margin_ratio"), "%"))}</strong></div>
           <div class="cc-home-row"><span>建议融资比例</span><strong>{escape(_home_number(margin_etf.get("recommended_margin_ratio"), "%"))}</strong></div>
           <div class="cc-home-row"><span>建议现金比例</span><strong>{escape(_home_number(margin_etf.get("recommended_cash_ratio"), "%"))}</strong></div>
           {etf_html}
+          <div class="cc-muted-note">不追高 ETF：{escape(watch_not_chase_text)}</div>
         </div>
       </div>
       <div class="cc-home-bottom">

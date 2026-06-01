@@ -108,6 +108,132 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(path.parent.name, snapshot.CACHE_DIR_NAME)
         self.assertEqual(path.name, snapshot.SNAPSHOT_FILENAME)
 
+    def test_real_holding_scenario_keeps_actionable_snapshot_without_price(self):
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "risk_level": "中",
+                "market_bias": "震荡",
+                "position_mode": "持仓观察",
+                "margin_mode": "不使用融资",
+                "updated_at": "2026-06-01T09:30:00",
+                "data_coverage": {
+                    "market": "ready",
+                    "quant": "cached",
+                    "discipline": "missing",
+                    "margin_etf": "cached",
+                    "next_ticket": "ready",
+                    "strategy_execution": "ready",
+                },
+                "must_not_do": ["不追高", "不加融资"],
+            },
+            "strategy_execution_packet": {
+                "status": "ready",
+                "action": "只观察",
+                "add_condition": "突破 112 后再评估。",
+                "reduce_condition": "跌破 104 或纪律信号转弱时降风险。",
+                "invalidation_condition": "放量跌破 MA20，本轮持仓观察失效。",
+                "deepseek_called": False,
+            },
+            "radar_scan_results": {
+                "generated_at": "2026-06-01T09:40:00",
+                "rule_rows": [
+                    {"candidate": {"ticker": "300750.SZ", "name": "宁德时代"}, "score": {"total_score": 82, "battle_state": "等验证", "one_sentence_conclusion": "放量突破再纳入。"}},
+                    {"candidate": {"ticker": "512480.SH", "name": "半导体 ETF"}, "score": {"total_score": 76, "battle_state": "只观察"}},
+                    {"candidate": {"ticker": "600519.SH", "name": "贵州茅台"}, "score": {"total_score": 69, "battle_state": "暂不纳入"}},
+                    {"candidate": {"ticker": "000001.SZ", "name": "平安银行"}, "score": {"total_score": 50, "battle_state": "暂不纳入"}},
+                ],
+            },
+            "legacy_margin_etf_allocation_result": {
+                "current_margin_debt_ratio": 30,
+                "recommended_margin_ratio": 25,
+                "recommended_cash_ratio": 20,
+                "today_main_direction": "科技成长ETF",
+                "selected_etf_candidates": {
+                    "科技成长ETF": [
+                        {"etf_code": "512480.SH", "etf_name": "半导体 ETF", "total_score": 78},
+                        {"etf_code": "560780.SH", "etf_name": "半导体设备ETF广发", "total_score": 74},
+                    ],
+                    "防守ETF": [
+                        {"etf_code": "518880.SH", "etf_name": "黄金 ETF", "total_score": 66},
+                    ],
+                },
+                "watch_not_chase": ["半导体 ETF 不追高，等待回踩验证。"],
+            },
+        }
+        profile = {
+            "ticker": "002008.SZ",
+            "name": "大族激光",
+            "cost_price": 108,
+            "holding_units": 3000,
+            "current_price": None,
+            "investment_horizon": "短中期",
+            "normalized_position_state": "已持仓",
+            "profit_state": "行情失败，不计算实时浮盈亏。",
+        }
+
+        payload = snapshot.build_home_action_snapshot(
+            state,
+            target="002008.SZ",
+            position_profile=profile,
+            now="2026-06-01T09:45:00",
+        )
+
+        self.assertFalse(payload["is_empty"])
+        self.assertEqual(payload["holding_action"]["ticker"], "002008.SZ")
+        self.assertEqual(payload["holding_action"]["cost"], 108)
+        self.assertEqual(payload["holding_action"]["shares"], 3000)
+        self.assertEqual(payload["holding_action"]["investment_horizon"], "短中期")
+        self.assertIsNone(payload["holding_action"]["current_price"])
+        self.assertIn("不计算实时浮盈亏", payload["holding_action"]["floating_pnl_text"])
+        self.assertEqual(len(payload["next_ticket_candidates"]), 3)
+        self.assertEqual(payload["margin_etf_summary"]["current_margin_ratio"], 30)
+        self.assertEqual(payload["margin_etf_summary"]["recommended_margin_ratio"], 25)
+        self.assertEqual(len(payload["margin_etf_summary"]["recommended_etfs"]), 3)
+        self.assertIn("纪律", payload["risk_alerts"]["data_gaps"])
+        self.assertEqual(payload["data_freshness"]["label"], "今日已刷新")
+        self.assertFalse(payload["deepseek_called"])
+
+    def test_local_snapshot_wins_after_restart_when_session_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "降风险",
+                        "updated_at": "2026-06-01T10:00:00",
+                    }
+                },
+                target="002008.SZ",
+            )
+            snapshot.save_home_action_snapshot(saved, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+            session_empty = snapshot.build_home_action_snapshot({}, target="002008.SZ")
+            chosen = snapshot.choose_home_action_snapshot(session_empty, loaded)
+
+        self.assertEqual(chosen["today_action"]["overall_action"], "降风险")
+        self.assertFalse(chosen["deepseek_called"])
+
+    def test_margin_ratio_can_be_inferred_from_local_account_state(self):
+        summary = snapshot.build_margin_etf_summary(
+            {
+                "margin_total_asset": 1300000,
+                "margin_cash_balance": 100000,
+                "margin_stock_value": 900000,
+                "margin_etf_value": 300000,
+                "margin_debt": 300000,
+            }
+        )
+
+        self.assertEqual(summary["current_margin_ratio"], 30)
+
+    def test_data_gap_labels_are_user_facing(self):
+        payload = snapshot.build_home_action_snapshot({}, target="002008.SZ")
+
+        self.assertIn("今日总决策", payload["risk_alerts"]["data_gaps"])
+        self.assertNotIn("decision", payload["risk_alerts"]["data_gaps"])
+
 
 if __name__ == "__main__":
     unittest.main()

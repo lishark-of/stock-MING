@@ -39,6 +39,11 @@ MODULE_LABELS = {
     "strategy_execution": "策略执行",
 }
 
+DATA_GAP_LABELS = {
+    **MODULE_LABELS,
+    "decision": "今日总决策",
+}
+
 
 def _as_mapping(value: Any) -> dict:
     if isinstance(value, Mapping):
@@ -146,6 +151,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "holding_action": {
             "ticker": "",
             "name": "",
+            "investment_horizon": "",
             "cost": None,
             "shares": None,
             "current_price": None,
@@ -158,6 +164,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         },
         "next_ticket_candidates": [],
         "margin_etf_summary": {
+            "current_margin_ratio": None,
             "recommended_margin_ratio": None,
             "recommended_cash_ratio": None,
             "today_main_direction": "待刷新",
@@ -170,9 +177,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
             "data_gaps": [reason],
             "uses_cache": False,
         },
-        "data_coverage": {
-            key: "missing" for key in [*MODULE_LABELS.keys(), "decision"]
-        },
+        "data_coverage": {key: "missing" for key in DATA_GAP_LABELS},
         "data_freshness": {
             "state": "missing",
             "label": "待刷新",
@@ -324,6 +329,13 @@ def build_holding_action(target: str = "", position_profile: Any = None, strateg
     return {
         "ticker": ticker,
         "name": _to_text(profile.get("name") or profile.get("current_holding_name")),
+        "investment_horizon": _to_text(
+            profile.get("investment_horizon")
+            or profile.get("holding_period")
+            or profile.get("trade_horizon")
+            or state_map.get("investment_horizon")
+            or state_map.get("holding_period")
+        ),
         "cost": _to_number(profile.get("cost_price") or profile.get("cost")),
         "shares": _to_number(profile.get("holding_units") or profile.get("shares")),
         "current_price": _to_number(profile.get("current_price")),
@@ -412,6 +424,30 @@ def _flatten_etf_candidates(candidates: Any) -> list[dict]:
     return normalized[:MAX_CANDIDATES]
 
 
+def _current_margin_ratio_from_state(state: Mapping[str, Any], allocation: Mapping[str, Any]) -> int | float | None:
+    explicit = _to_number(
+        allocation.get("current_margin_debt_ratio")
+        or state.get("current_margin_debt_ratio")
+        or state.get("margin_current_margin_ratio")
+        or state.get("margin_ratio")
+    )
+    if explicit is not None:
+        return explicit
+    margin_debt = _to_number(state.get("margin_debt"))
+    total_asset = _to_number(state.get("margin_total_asset"))
+    cash = _to_number(state.get("margin_cash_balance")) or 0
+    stock_value = _to_number(state.get("margin_stock_value")) or 0
+    etf_value = _to_number(state.get("margin_etf_value")) or 0
+    if margin_debt is None:
+        return None
+    gross_assets = max(total_asset or 0, cash + stock_value + etf_value, margin_debt)
+    net_asset = gross_assets - margin_debt
+    if net_asset <= 0:
+        return None
+    ratio = margin_debt / net_asset * 100
+    return round(ratio, 2)
+
+
 def build_margin_etf_summary(state: Any = None, live_packet: Any = None) -> dict:
     state_map = _as_mapping(state)
     live_section = _as_mapping(_as_mapping(live_packet).get("margin_etf"))
@@ -423,6 +459,7 @@ def build_margin_etf_summary(state: Any = None, live_packet: Any = None) -> dict
     if not watch_not_chase_items:
         watch_not_chase_items = ["不追高 ETF；等待回踩、量能和风险线确认。"]
     return {
+        "current_margin_ratio": _current_margin_ratio_from_state(state_map, allocation),
         "recommended_margin_ratio": _to_number(live_section.get("recommended_margin_ratio") or allocation.get("recommended_margin_ratio")),
         "recommended_cash_ratio": _to_number(live_section.get("recommended_cash_ratio") or allocation.get("recommended_cash_ratio")),
         "today_main_direction": _to_text(live_section.get("today_main_direction") or allocation.get("today_main_direction") or allocation.get("action_state"), "待刷新"),
@@ -450,7 +487,7 @@ def build_risk_alerts(decision_packet: Any = None, strategy_packet: Any = None, 
     reduce_conditions = [_to_text(strategy.get("reduce_condition")) or _to_text(item) for item in _as_list(decision.get("next_validation_conditions"))]
     reduce_conditions = [item for item in reduce_conditions if item][:MAX_CANDIDATES]
     coverage_map = _as_mapping(coverage)
-    data_gaps = [MODULE_LABELS.get(key, key) for key, state in coverage_map.items() if state == "missing"]
+    data_gaps = [DATA_GAP_LABELS.get(key, key) for key, state in coverage_map.items() if state == "missing"]
     if _as_list(errors):
         data_gaps.append("存在刷新失败模块")
     return {
