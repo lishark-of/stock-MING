@@ -3629,6 +3629,24 @@ def _inject_command_center_css():
             box-shadow: 0 10px 28px rgba(15,23,42,0.04);
             min-height: 104px;
         }
+        .cc-strategy-tile.ok,
+        .cc-strategy-condition.ok,
+        .cc-strategy-path.ok {
+            border-color: rgba(20,184,166,0.22);
+            background: rgba(240,253,250,0.70);
+        }
+        .cc-strategy-tile.wait,
+        .cc-strategy-condition.wait,
+        .cc-strategy-path.wait {
+            border-color: rgba(245,158,11,0.22);
+            background: rgba(255,251,235,0.70);
+        }
+        .cc-strategy-tile.risk,
+        .cc-strategy-condition.risk,
+        .cc-strategy-path.risk {
+            border-color: rgba(239,68,68,0.20);
+            background: rgba(254,242,242,0.66);
+        }
         .cc-strategy-condition {
             background: rgba(248,250,252,0.86);
             min-height: 132px;
@@ -3656,6 +3674,27 @@ def _inject_command_center_css():
             line-height: 1.68;
             overflow-wrap: anywhere;
         }
+        .cc-strategy-check {
+            margin-top: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: #334155;
+            font-size: 12px;
+            font-weight: 800;
+            border-radius: 999px;
+            padding: 6px 9px;
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(148,163,184,0.16);
+        }
+        .cc-strategy-risk-note {
+            margin-top: 10px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.55;
+            border-top: 1px solid rgba(148,163,184,0.13);
+            padding-top: 9px;
+        }
         .cc-strategy-section-title {
             color: #0f172a;
             font-size: 13px;
@@ -3680,6 +3719,29 @@ def _inject_command_center_css():
             color: #475569;
             font-size: 13px;
             line-height: 1.75;
+        }
+        .cc-strategy-mini-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .cc-strategy-mini {
+            border-radius: 14px;
+            background: rgba(255,255,255,0.70);
+            border: 1px solid rgba(148,163,184,0.14);
+            padding: 10px;
+        }
+        .cc-strategy-mini-name {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+        .cc-strategy-mini-value {
+            color: #0f172a;
+            font-size: 13px;
+            line-height: 1.45;
+            font-weight: 780;
         }
         .cc-strategy-status-row {
             display: grid;
@@ -4025,6 +4087,23 @@ def _strategy_list(items, fallback, limit=5):
     return "<ul class='cc-strategy-list'>" + "".join(f"<li>{escape(item)}</li>" for item in values[:limit]) + "</ul>"
 
 
+def _strategy_item_grid(items, fallback, limit=8):
+    values = [item for item in (items or []) if isinstance(item, dict)]
+    if not values:
+        values = [{"label": "状态", "value": fallback}]
+    return (
+        "<div class='cc-strategy-mini-grid'>"
+        + "".join(
+            "<div class='cc-strategy-mini'>"
+            f"<div class='cc-strategy-mini-name'>{escape(str(item.get('label') or '项目'))}</div>"
+            f"<div class='cc-strategy-mini-value'>{escape(str(item.get('value') or item.get('text') or '暂无'))}</div>"
+            "</div>"
+            for item in values[:limit]
+        )
+        + "</div>"
+    )
+
+
 def _fmt_strategy_value(value):
     if value in [None, ""]:
         return "暂无"
@@ -4073,49 +4152,46 @@ def render_strategy_execution_command_card(
     confidence = vm.get("confidence_label") or "低"
     summary = vm.get("summary") or vm.get("empty_message") or "尚未生成策略执行建议。"
     risk_level = vm.get("risk_label") or "未知"
-    budget_tiles = [
-        (item.get("label") or "项目", item.get("value") or "暂无")
-        for item in (vm.get("risk_budget_items") or [])
-    ]
+    budget_tiles = [item for item in (vm.get("risk_budget_items") or []) if isinstance(item, dict)]
     budget_html = "".join(
-        "<div class='cc-strategy-tile'>"
-        f"<div class='cc-strategy-label'>{escape(label)}</div>"
-        f"<div class='cc-strategy-value'>{escape(str(value))}</div>"
+        f"<div class='cc-strategy-tile {_tone_to_strategy_class(item.get('tone'))}'>"
+        f"<div class='cc-strategy-label'>{escape(str(item.get('label') or '项目'))}</div>"
+        f"<div class='cc-strategy-value'>{escape(str(item.get('value') or '暂无'))}</div>"
         "</div>"
-        for label, value in budget_tiles[:5]
+        for item in budget_tiles[:5]
     )
-    conditions_payload = vm.get("conditions") or {}
-    conditions = [
-        ("加仓条件", conditions_payload.get("add") or "等待量化、纪律和市场至少两项同向后再考虑。"),
-        ("减仓条件", conditions_payload.get("reduce") or "触发止损、减仓或风险预算失效时优先降低暴露。"),
-        ("失效条件", conditions_payload.get("invalidation") or "市场环境转弱或纪律信号反向时，本轮建议失效。"),
-    ]
+    conditions = vm.get("condition_items") or []
+    if not conditions:
+        conditions_payload = vm.get("conditions") or {}
+        conditions = [
+            {"label": "加仓条件", "value": conditions_payload.get("add") or "等待量化、纪律和市场至少两项同向后再考虑。", "tone": "success", "check_label": "满足后才允许小额试探"},
+            {"label": "减仓条件", "value": conditions_payload.get("reduce") or "触发止损、减仓或风险预算失效时优先降低暴露。", "tone": "warning", "check_label": "触发后优先降低暴露"},
+            {"label": "失效条件", "value": conditions_payload.get("invalidation") or "市场环境转弱或纪律信号反向时，本轮建议失效。", "tone": "danger", "check_label": "触发后本轮建议作废"},
+        ]
     condition_html = "".join(
-        "<div class='cc-strategy-condition'>"
-        f"<div class='cc-strategy-label'>{escape(label)}</div>"
-        f"<div class='cc-strategy-text'>{escape(str(value))}</div>"
+        f"<div class='cc-strategy-condition {_tone_to_strategy_class(item.get('tone'))}'>"
+        f"<div class='cc-strategy-label'>{escape(str(item.get('label') or '条件'))}</div>"
+        f"<div class='cc-strategy-text'>{escape(str(item.get('value') or '等待验证。'))}</div>"
+        f"<div class='cc-strategy-check'>✓ {escape(str(item.get('check_label') or '按条件执行'))}</div>"
         "</div>"
-        for label, value in conditions
+        for item in conditions
     )
     path_html = "".join(
-        "<div class='cc-strategy-path'>"
+        f"<div class='cc-strategy-path {_tone_to_strategy_class(item.get('tone'))}'>"
         f"<div class='cc-strategy-label'>{escape(str(item.get('name') or '路径'))}</div>"
         f"<div class='cc-strategy-text'>{escape(str(item.get('condition') or '等待验证。'))}</div>"
         f"<div class='cc-strategy-value' style='font-size:14px;margin-top:8px;'>{escape(str(item.get('action') or '只观察。'))}</div>"
+        f"<div class='cc-strategy-risk-note'>风险提示：{escape(str(item.get('risk') or '不追高、不重仓，等待验证。'))}</div>"
         "</div>"
         for item in (vm.get("path_items") or [])
     )
     status_html = "".join(
         "<div class='cc-strategy-status'>"
         f"<div class='cc-strategy-status-name'>{escape(str(item.get('label') or item.get('key') or '模块'))}</div>"
-        f"<div class='cc-strategy-status-value'>{escape(str(item.get('state') or 'missing'))}</div>"
+        f"<div class='cc-strategy-status-value'>{escape(str(item.get('text') or item.get('state') or 'missing'))}</div>"
         "</div>"
         for item in (vm.get("data_status_items") or [])
     )
-    discipline_lines = [
-        f"{item.get('label') or '项目'}：{item.get('value') or '暂无'}"
-        for item in (vm.get("discipline_items") or [])
-    ]
     warning_lines = [str(item) for item in (vm.get("warning_items") or [])]
     pill_items = [
         (f"状态：{vm.get('status_label') or '待生成'}", vm.get("status_tone")),
@@ -4134,6 +4210,7 @@ def render_strategy_execution_command_card(
           <h2 class="cc-strategy-action">{escape(action)}</h2>
           <div class="cc-strategy-summary">{escape(summary)}</div>
           <div class="cc-muted-note">{escape(str(vm.get("action_guardrail") or ""))}</div>
+          <div class="cc-muted-note">{escape(str(vm.get("readiness_text") or ""))}</div>
           <div class="cc-strategy-pill-row">{pill_html}</div>
         </div>
         <aside class="cc-strategy-side">
@@ -4150,7 +4227,7 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-foot-grid">
         <div class="cc-strategy-foot-card">
           <div class="cc-strategy-section-title" style="margin-top:0;">纪律校验</div>
-          {_strategy_list(discipline_lines, "暂无纪律校验缓存。")}
+          {_strategy_item_grid(vm.get("discipline_items"), "暂无纪律校验缓存。")}
         </div>
         <div class="cc-strategy-foot-card">
           <div class="cc-strategy-section-title" style="margin-top:0;">风险红线 / 异常</div>

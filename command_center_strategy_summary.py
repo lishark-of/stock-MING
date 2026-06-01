@@ -11,10 +11,18 @@ DATA_STATUS_LABELS = {
     "live_packet": "综合包",
 }
 
+DATA_STATUS_STATE_LABELS = {
+    "ready": "已就绪",
+    "cached": "使用缓存",
+    "missing": "待刷新",
+    "failed": "失败",
+    "waiting": "待刷新",
+}
+
 DEFAULT_PATHS = (
-    {"name": "乐观路径", "condition": "数据补齐且市场、量化、纪律转为同向。", "action": "只允许小幅试探。"},
-    {"name": "中性路径", "condition": "信号继续分歧或缺少新增验证。", "action": "等待或只观察。"},
-    {"name": "防守路径", "condition": "纪律信号转弱、回撤扩大或数据失败。", "action": "降风险。"},
+    {"name": "乐观路径", "condition": "数据补齐且市场、量化、纪律转为同向。", "action": "只允许小幅试探。", "risk": "仍不追高、不一次性重仓。"},
+    {"name": "中性路径", "condition": "信号继续分歧或缺少新增验证。", "action": "等待或只观察。", "risk": "避免在无验证条件下频繁交易。"},
+    {"name": "谨慎路径", "condition": "纪律信号转弱、回撤扩大或数据失败。", "action": "降风险。", "risk": "优先保现金、降杠杆、减少暴露。"},
 )
 
 
@@ -77,6 +85,8 @@ def strategy_action_label(packet: Any) -> str:
     payload = _as_mapping(packet)
     action = _to_text(payload.get("action") or payload.get("overall_action"))
     mapping = {
+        "买入": "买入（需验证）",
+        "卖出": "卖出 / 降风险",
         "小幅试探": "可轻仓试探",
         "小幅进攻": "可轻仓试探",
         "持仓观察": "可持有",
@@ -87,7 +97,7 @@ def strategy_action_label(packet: Any) -> str:
 
 def strategy_action_tone(packet: Any) -> str:
     action = strategy_action_label(packet)
-    if any(key in action for key in ["降风险", "减仓", "退出", "止损", "风险"]):
+    if any(key in action for key in ["卖出", "降风险", "减仓", "退出", "止损", "风险"]):
         return "danger"
     if any(key in action for key in ["等待", "观察", "尚未生成"]):
         return "warning"
@@ -105,9 +115,9 @@ def strategy_confidence_tone(packet: Any) -> str:
 
 def strategy_action_guardrail_text(packet: Any) -> str:
     action = strategy_action_label(packet)
-    if any(key in action for key in ["小幅进攻", "试探", "可轻仓"]):
+    if any(key in action for key in ["买入", "小幅进攻", "试探", "可轻仓", "可加仓"]):
         return "只允许小额试探，必须等验证条件，不追高、不冲动加杠杆。"
-    if any(key in action for key in ["降风险", "减仓", "退出", "止损"]):
+    if any(key in action for key in ["卖出", "降风险", "减仓", "退出", "止损"]):
         return "优先减暴露、降杠杆、保现金，暂停新增风险。"
     if any(key in action for key in ["等待", "观察", "尚未生成"]):
         return "今天不是必须交易，等待数据和纪律条件补齐。"
@@ -135,11 +145,35 @@ def build_strategy_path_items(packet: Any) -> list[dict]:
                     "name": _to_text(path.get("name")) or names[index],
                     "condition": _to_text(path.get("condition") or path.get("trigger")) or "等待验证条件。",
                     "action": _to_text(path.get("action") or path.get("advice")) or "只观察。",
+                    "risk": _to_text(path.get("risk") or path.get("risk_note")) or _path_risk_text(path, index),
+                    "tone": _path_tone(path, index),
                 }
             )
         else:
-            items.append({"name": names[index], "condition": _to_text(item) or "等待验证。", "action": "按纪律执行。"})
+            items.append({"name": names[index], "condition": _to_text(item) or "等待验证。", "action": "按纪律执行。", "risk": _path_risk_text({}, index), "tone": _path_tone({}, index)})
     return items
+
+
+def _path_risk_text(path: Mapping[str, Any], index: int) -> str:
+    text = _to_text(path.get("name")) + " " + _to_text(path.get("action"))
+    if any(key in text for key in ["谨慎", "防守", "降风险", "减仓", "退出"]):
+        return "若触发该路径，先控制亏损和杠杆，不新增风险。"
+    if any(key in text for key in ["乐观", "进攻", "试探", "买入", "加仓"]):
+        return "只允许小额执行，禁止追高、满仓和临时加杠杆。"
+    if index == 0:
+        return "即使转强，也需要验证条件落地后再动。"
+    if index == 2:
+        return "一旦纪律转弱，优先减暴露和保现金。"
+    return "没有新验证前，避免把观察误解为买入。"
+
+
+def _path_tone(path: Mapping[str, Any], index: int) -> str:
+    text = _to_text(path.get("name")) + " " + _to_text(path.get("action"))
+    if any(key in text for key in ["谨慎", "防守", "降风险", "减仓", "退出"]):
+        return "danger"
+    if any(key in text for key in ["乐观", "进攻", "试探", "买入", "加仓"]):
+        return "success"
+    return "warning" if index == 1 else "muted"
 
 
 def build_strategy_condition_items(packet: Any) -> dict:
@@ -151,6 +185,15 @@ def build_strategy_condition_items(packet: Any) -> dict:
     }
 
 
+def build_strategy_condition_cards(packet: Any) -> list[dict]:
+    conditions = build_strategy_condition_items(packet)
+    return [
+        {"key": "add", "label": "加仓条件", "value": conditions["add"], "tone": "success", "check_label": "满足后才允许小额试探"},
+        {"key": "reduce", "label": "减仓条件", "value": conditions["reduce"], "tone": "warning", "check_label": "触发后优先降低暴露"},
+        {"key": "invalidation", "label": "失效条件", "value": conditions["invalidation"], "tone": "danger", "check_label": "触发后本轮建议作废"},
+    ]
+
+
 def build_strategy_discipline_items(packet: Any) -> list[dict]:
     payload = _as_mapping(packet)
     discipline = _as_mapping(payload.get("discipline_check"))
@@ -158,18 +201,27 @@ def build_strategy_discipline_items(packet: Any) -> list[dict]:
     action = strategy_action_label(payload)
     data_status = _as_mapping(payload.get("data_status"))
     lines = [
-        ("是否违反交易纪律", "待确认" if discipline.get("status") in [None, "", "missing"] else ("需复核" if warnings else "未发现明确违反")),
+        ("是否违反交易纪律", "待刷新" if discipline.get("status") in [None, "", "missing"] else ("需复核" if warnings else "未发现明确违反")),
         ("是否需要等待确认", "是" if action in {"等待", "只观察", "尚未生成"} else "按条件执行"),
-        ("纪律状态", _to_text(discipline.get("status")) or "missing"),
-        ("最新信号", _to_text(discipline.get("latest_signal")) or "暂无"),
-        ("胜率", _to_text(discipline.get("win_rate")) or "暂无"),
-        ("最大回撤", _to_text(discipline.get("max_drawdown")) or "暂无"),
+        ("纪律状态", _data_status_label(discipline.get("status"))),
+        ("最新信号", _to_text(discipline.get("latest_signal")) or "待刷新"),
+        ("胜率", _to_text(discipline.get("win_rate")) or "待刷新"),
+        ("最大回撤", _to_text(discipline.get("max_drawdown")) or "待刷新"),
         ("是否禁止追高", "是"),
         ("是否禁止自动重仓", "是"),
     ]
     if (_to_text(payload.get("confidence")) or "低") == "低" or "missing" in set(_to_text(value) for value in data_status.values()):
         lines.append(("数据覆盖", "不足 / 建议谨慎"))
-    return [{"label": label, "value": value} for label, value in lines]
+    return [{"label": label, "value": value, "tone": _discipline_tone(label, value)} for label, value in lines]
+
+
+def _discipline_tone(label: str, value: str) -> str:
+    text = f"{label} {value}"
+    if any(key in text for key in ["需复核", "不足", "风险", "回撤", "失败"]):
+        return "danger"
+    if any(key in text for key in ["待刷新", "待确认", "等待"]):
+        return "warning"
+    return "success"
 
 
 def build_strategy_risk_budget_items(packet: Any) -> list[dict]:
@@ -178,23 +230,45 @@ def build_strategy_risk_budget_items(packet: Any) -> list[dict]:
     position_mode = _to_text(budget.get("position_mode") or payload.get("position_mode")) or "待确认"
     position_advice = _to_text(payload.get("position_advice")) or f"{position_mode}：等待策略执行建议补齐。"
     items = [
-        {"label": "仓位建议", "value": position_advice},
-        {"label": "当前建议仓位", "value": position_mode},
-        {"label": "最大风险预算", "value": _money_text(budget.get("max_add_amount"))},
-        {"label": "现金缓冲", "value": _money_text(budget.get("cash_buffer"))},
+        {"label": "仓位建议", "value": position_advice, "tone": "warning" if "等待" in position_advice or "观察" in position_advice else "success"},
+        {"label": "当前建议仓位", "value": position_mode, "tone": "muted" if position_mode in {"未知", "待确认"} else "success"},
+        {"label": "可加仓金额", "value": _money_text(budget.get("max_add_amount")), "tone": "muted" if budget.get("max_add_amount") in [None, ""] else "success"},
+        {"label": "现金缓冲", "value": _money_text(budget.get("cash_buffer")), "tone": "warning" if budget.get("cash_buffer") in [None, ""] else "success"},
     ]
     financing = _to_text(budget.get("margin_mode") or budget.get("financing_advice") or payload.get("margin_mode") or payload.get("financing_advice"))
     if financing:
-        items.append({"label": "融资建议", "value": financing})
+        items.append({"label": "融资建议", "value": financing, "tone": "danger" if "禁止" in financing or "降低" in financing else "warning"})
     return items[:5]
 
 
 def build_strategy_data_status_items(packet: Any) -> list[dict]:
     data_status = _as_mapping(_as_mapping(packet).get("data_status"))
     return [
-        {"key": key, "label": label, "state": _to_text(data_status.get(key)) or "missing"}
+        {"key": key, "label": label, "state": _to_text(data_status.get(key)) or "missing", "text": _data_status_label(data_status.get(key))}
         for key, label in DATA_STATUS_LABELS.items()
     ]
+
+
+def _data_status_label(value: Any) -> str:
+    state = _to_text(value).lower() or "missing"
+    return DATA_STATUS_STATE_LABELS.get(state, _to_text(value) or "待刷新")
+
+
+def strategy_readiness_text(packet: Any) -> str:
+    payload = _as_mapping(packet)
+    status = normalize_strategy_status(payload)
+    if status == "waiting" or not payload:
+        return "待刷新：点击“生成策略执行建议”后，读取已有量化/纪律缓存生成。"
+    missing = [
+        item["label"]
+        for item in build_strategy_data_status_items(payload)
+        if item["state"] in {"missing", "failed", "waiting"}
+    ]
+    if missing:
+        return f"数据不足：{ '、'.join(missing) } 待刷新，当前只能作为谨慎路径。"
+    if payload.get("stale"):
+        return "使用缓存：上次成功结果仍可查看，但需要重新验证。"
+    return "可读结论：已基于当前缓存生成，执行前仍需核对价格与纪律线。"
 
 
 def _warning_items(packet: Mapping[str, Any]) -> list[str]:
@@ -236,9 +310,11 @@ def build_strategy_summary_view_model(packet: Any) -> dict:
         "confidence_tone": strategy_confidence_tone({"confidence": confidence}),
         "summary": summary,
         "action_guardrail": strategy_action_guardrail_text({"action": action}),
+        "readiness_text": strategy_readiness_text(payload),
         "user_boundary_text": strategy_user_boundary_text(payload),
         "position_advice": _to_text(payload.get("position_advice")) or "等待策略执行建议补齐。",
         "conditions": build_strategy_condition_items(payload),
+        "condition_items": build_strategy_condition_cards(payload),
         "path_items": build_strategy_path_items(payload),
         "discipline_items": build_strategy_discipline_items(payload),
         "risk_budget_items": build_strategy_risk_budget_items(payload),

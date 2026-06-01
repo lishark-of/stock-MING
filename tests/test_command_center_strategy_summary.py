@@ -44,6 +44,8 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(summary.strategy_action_tone({"action": "小幅进攻"}), "success")
         self.assertEqual(summary.strategy_action_tone({"action": "只观察"}), "warning")
         self.assertEqual(summary.strategy_action_tone({"action": "降风险"}), "danger")
+        self.assertEqual(summary.strategy_action_tone({"action": "买入"}), "success")
+        self.assertEqual(summary.strategy_action_tone({"action": "卖出"}), "danger")
         self.assertEqual(summary.strategy_confidence_tone({"confidence": "低"}), "muted")
         self.assertEqual(summary.strategy_confidence_tone({"confidence": "中"}), "warning")
         self.assertEqual(summary.strategy_confidence_tone({"confidence": "高"}), "success")
@@ -74,6 +76,19 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
 
         self.assertEqual(len(paths), 3)
         self.assertEqual(paths[0]["name"], "乐观路径")
+        self.assertIn("risk", paths[0])
+        self.assertIn("不", paths[0]["risk"])
+
+    def test_conditions_are_checklist_ready(self):
+        items = summary.build_strategy_condition_cards({
+            "add_condition": "突破关键位后小额试探。",
+            "reduce_condition": "跌破纪律线先减仓。",
+            "invalidation_condition": "趋势反向则失效。",
+        })
+
+        self.assertEqual([item["key"] for item in items], ["add", "reduce", "invalidation"])
+        self.assertIn("小额", items[0]["check_label"])
+        self.assertEqual(items[2]["tone"], "danger")
 
     def test_missing_discipline_and_risk_budget_are_safe(self):
         view_model = summary.build_strategy_summary_view_model({"status": "ready"})
@@ -95,6 +110,24 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(by_key["quant"]["state"], "ready")
         self.assertEqual(by_key["backtest"]["state"], "cached")
         self.assertEqual(by_key["live_packet"]["state"], "missing")
+        self.assertEqual(by_key["quant"]["text"], "已就绪")
+        self.assertEqual(by_key["backtest"]["text"], "使用缓存")
+        self.assertEqual(by_key["live_packet"]["text"], "待刷新")
+
+    def test_readiness_text_marks_missing_data_as_unfinished(self):
+        empty = summary.build_strategy_summary_view_model({})
+        partial = summary.build_strategy_summary_view_model({
+            "status": "ready",
+            "data_status": {
+                "quant": "ready",
+                "backtest": "missing",
+                "live_packet": "cached",
+            },
+        })
+
+        self.assertIn("待刷新", empty["readiness_text"])
+        self.assertIn("数据不足", partial["readiness_text"])
+        self.assertIn("纪律/回测", partial["readiness_text"])
 
     def test_deepseek_false_and_last_error_are_visible(self):
         view_model = summary.build_strategy_summary_view_model({
