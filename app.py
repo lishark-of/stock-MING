@@ -18,6 +18,7 @@ import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
 import strategy_execution_service as strategy_service
+from command_center_module_summary import build_module_summary_view_model
 from command_center_refresh_summary import build_refresh_summary_view_model
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
@@ -3855,7 +3856,8 @@ def render_command_center_live_cards(live_packet, target="", market_type="", pri
             with col:
                 with st.container(border=True):
                     st.markdown(f"##### {title}")
-                    st.caption(f"数据状态：{section.get('refresh_label') or cc_service.get_refresh_label(section)}")
+                    module_summary = build_module_summary_view_model(section, module_name=title)
+                    st.caption(f"数据状态：{module_summary.get('badge')}")
                     if st.button(f"单卡{button_label}", key=f"btn_cc_refresh_{key}", width="stretch"):
                         with st.spinner(f"正在{button_label}..."):
                             result = _cc_run_refresh_step(
@@ -3871,16 +3873,12 @@ def render_command_center_live_cards(live_packet, target="", market_type="", pri
                             st.success(f"{title}刷新完成；DeepSeek：未调用。")
                         else:
                             st.warning(f"{title}刷新失败，已保留上次成功结果：{result.get('error') or '未知错误'}")
-                    st.caption(
-                        f"状态：{section.get('status') or '未刷新'}｜"
-                        f"最后刷新：{section.get('updated_at') or '暂无'}｜"
-                        f"来源：{section.get('source') or '未加载'}｜"
-                        "DeepSeek：未调用"
-                    )
-                    if section.get("stale"):
-                        st.caption("当前展示为上次成功结果；最近一次刷新失败。")
-                    if section.get("last_error"):
-                        st.warning(f"上次刷新失败：{section.get('last_error')}")
+                        module_summary = build_module_summary_view_model(section, module_name=title)
+                    st.caption(module_summary.get("caption"))
+                    if module_summary.get("is_stale"):
+                        st.caption(module_summary.get("reason"))
+                    if module_summary.get("error_text"):
+                        st.warning(f"上次刷新失败：{module_summary.get('error_text')}")
                     if key == "quant":
                         st.metric("评分 / 方向", section.get("score") if section.get("score") is not None else section.get("direction", "暂无"))
                     elif key == "discipline":
@@ -3903,7 +3901,7 @@ def render_command_center_live_cards(live_packet, target="", market_type="", pri
                         ratio_col1.metric("建议融资比例", section.get("recommended_margin_ratio") if section.get("recommended_margin_ratio") is not None else "暂无")
                         ratio_col2.metric("建议现金比例", section.get("recommended_cash_ratio") if section.get("recommended_cash_ratio") is not None else "暂无")
                         st.write(f"今日 ETF 主方向：{section.get('today_main_direction') or '暂无'}")
-                    st.write(section.get("summary") or empty_hint)
+                    st.write(section.get("summary") or module_summary.get("empty_text") or empty_hint)
 
 
 def render_command_center_2_page(target, market_badge, price, market_type="", position_profile=None):
