@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import datetime as _dt
 from pathlib import Path
 
 import command_center_home_snapshot as snapshot
@@ -109,6 +110,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(path.name, snapshot.SNAPSHOT_FILENAME)
 
     def test_real_holding_scenario_keeps_actionable_snapshot_without_price(self):
+        today = _dt.date.today().isoformat()
         state = {
             "command_center_decision_packet": {
                 "status": "ready",
@@ -117,7 +119,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                 "market_bias": "震荡",
                 "position_mode": "持仓观察",
                 "margin_mode": "不使用融资",
-                "updated_at": "2026-06-01T09:30:00",
+                "updated_at": f"{today}T09:30:00",
                 "data_coverage": {
                     "market": "ready",
                     "quant": "cached",
@@ -137,7 +139,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                 "deepseek_called": False,
             },
             "radar_scan_results": {
-                "generated_at": "2026-06-01T09:40:00",
+                "generated_at": f"{today}T09:40:00",
                 "rule_rows": [
                     {"candidate": {"ticker": "300750.SZ", "name": "宁德时代"}, "score": {"total_score": 82, "battle_state": "等验证", "one_sentence_conclusion": "放量突破再纳入。"}},
                     {"candidate": {"ticker": "512480.SH", "name": "半导体 ETF"}, "score": {"total_score": 76, "battle_state": "只观察"}},
@@ -177,7 +179,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
             state,
             target="002008.SZ",
             position_profile=profile,
-            now="2026-06-01T09:45:00",
+            now=f"{today}T09:45:00",
         )
 
         self.assertFalse(payload["is_empty"])
