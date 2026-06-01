@@ -14,6 +14,7 @@ import pandas as pd
 import numpy as np
 
 import command_center_service as cc_service
+import command_center_decision_engine as decision_engine
 import strategy_execution_service as strategy_service
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
@@ -3718,6 +3719,111 @@ def _attach_strategy_execution_packet(live_packet):
     return payload
 
 
+def _get_command_center_decision_display_packet():
+    packet = st.session_state.get(decision_engine.PACKET_KEY)
+    last_success = st.session_state.get(decision_engine.LAST_SUCCESS_KEY)
+    if isinstance(packet, dict) and packet:
+        return packet
+    if isinstance(last_success, dict) and last_success:
+        return last_success
+    return {}
+
+
+def _attach_command_center_decision_packet(live_packet):
+    payload = live_packet or {}
+    decision_packet = _get_command_center_decision_display_packet()
+    if decision_packet:
+        payload["decision"] = clone_command_center_packet(decision_packet)
+        current_packet = st.session_state.get("command_center_live_packet")
+        if isinstance(current_packet, dict):
+            current_packet["decision"] = clone_command_center_packet(decision_packet)
+            st.session_state["command_center_live_packet"] = current_packet
+    return payload
+
+
+def _generate_command_center_decision(live_packet, refresh_summary=None):
+    live_packet = _attach_strategy_execution_packet(live_packet or {})
+    decision_packet = decision_engine.safe_generate_command_center_decision_packet(
+        st.session_state,
+        live_packet=live_packet,
+        strategy_packet=_get_strategy_execution_display_packet(),
+        refresh_summary=refresh_summary or st.session_state.get("command_center_refresh_summary") or {},
+    )
+    live_packet["decision"] = clone_command_center_packet(decision_packet)
+    current_packet = st.session_state.get("command_center_live_packet") or {}
+    if isinstance(current_packet, dict):
+        current_packet["decision"] = clone_command_center_packet(decision_packet)
+        if live_packet.get("strategy_execution"):
+            current_packet["strategy_execution"] = clone_command_center_packet(live_packet["strategy_execution"])
+        st.session_state["command_center_live_packet"] = current_packet
+    return decision_packet, live_packet
+
+
+def render_command_center_decision_card(live_packet, position_profile=None):
+    del position_profile
+    live_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(live_packet))
+    packet = _get_command_center_decision_display_packet()
+    with st.container(border=True):
+        st.markdown("##### 今日总决策")
+        st.caption("默认只读缓存；点击按钮后合并市场、量化、纪律、融资 ETF、下一票雷达和策略执行建议。")
+        if st.button("生成今日总决策", key="btn_command_center_decision_generate", width="stretch"):
+            packet, live_packet = _generate_command_center_decision(live_packet)
+            if packet.get("status") == "failed":
+                st.warning(f"今日总决策生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}")
+            else:
+                st.success("今日总决策已生成；DeepSeek：未调用。")
+
+        if not packet:
+            st.info("今日总决策尚未生成。当前为待刷新/缓存判断，不是完整实时结论。")
+            return live_packet
+
+        st.caption(
+            f"状态：{packet.get('status') or 'waiting'}｜"
+            f"最后生成：{packet.get('updated_at') or '暂无'}｜"
+            f"来源：{packet.get('source') or decision_engine.SOURCE}｜"
+            "DeepSeek：未调用"
+        )
+        if packet.get("stale"):
+            st.caption("当前展示为上次成功结果；最近一次生成失败。")
+        if packet.get("last_error"):
+            st.warning(f"上次生成失败：{packet.get('last_error')}")
+        if packet.get("status") in {"waiting", "partial"}:
+            st.info("当前为待刷新/缓存判断，不是完整实时结论。")
+
+        action_col, risk_col = st.columns(2)
+        action_col.metric("今日总动作", packet.get("overall_action") or "等待")
+        risk_col.metric("风险等级", packet.get("risk_level") or "中")
+        st.write(packet.get("reason_summary") or "暂无决策摘要。")
+        st.write(f"主账户动作：{packet.get('position_mode') or '空仓等待'}")
+        st.write(f"融资账户动作：{packet.get('margin_mode') or '不使用融资'}")
+        st.write(f"ETF 优先方向：{packet.get('etf_priority') or '待刷新'}")
+        st.write(f"下一票观察方向：{packet.get('next_ticket_priority') or '待刷新'}")
+
+        must_not_do = packet.get("must_not_do") or []
+        if must_not_do:
+            st.markdown("###### 禁止动作")
+            for item in must_not_do[:5]:
+                st.write(f"- {item}")
+
+        conditions = packet.get("next_validation_conditions") or []
+        if conditions:
+            st.markdown("###### 明日验证条件")
+            for item in conditions[:5]:
+                st.write(f"- {item}")
+
+        coverage = packet.get("data_coverage") or {}
+        st.caption(
+            "数据覆盖率："
+            f"市场 {coverage.get('market', 'missing')}｜"
+            f"量化 {coverage.get('quant', 'missing')}｜"
+            f"纪律 {coverage.get('discipline', 'missing')}｜"
+            f"融资ETF {coverage.get('margin_etf', 'missing')}｜"
+            f"下一票 {coverage.get('next_ticket', 'missing')}｜"
+            f"策略执行 {coverage.get('strategy_execution', 'missing')}"
+        )
+    return live_packet
+
+
 def render_strategy_execution_card(live_packet, target="", position_profile=None):
     live_packet = _attach_strategy_execution_packet(live_packet)
     packet = _get_strategy_execution_display_packet()
@@ -3937,6 +4043,11 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 target=target,
                 refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
             )
+            decision_packet, live_packet = _generate_command_center_decision(
+                live_packet,
+                refresh_summary=refresh_summary,
+            )
+            status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}；DeepSeek：未调用")
             errors = refresh_summary.get("errors") or []
             if errors:
                 status.update(label=f"今日基础数据刷新完成，{len(errors)} 个模块失败", state="complete", expanded=False)
@@ -3946,6 +4057,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
             current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
+            current_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(current_packet))
             current_packet["refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             prompt = f"""
 请基于以下综合推演中心 packet 输出一段克制解释。
@@ -4004,6 +4116,10 @@ packet:
         f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
         "页面加载和控件切换不会自动调用 DeepSeek、Tushare、AkShare 或 yfinance。"
     )
+    live_packet = render_command_center_decision_card(
+        live_packet,
+        position_profile=position_profile,
+    )
     render_command_center_live_cards(
         live_packet,
         target=target,
@@ -4018,6 +4134,7 @@ packet:
     )
     live_packet = build_command_center_live_packet(target=target)
     live_packet = _attach_strategy_execution_packet(live_packet)
+    live_packet = _attach_command_center_decision_packet(live_packet)
     display_packet = build_command_center_display_packet(live_packet, fallback_packet=packet)
     packet = display_packet
     render_command_center_account_budget_card(packet)
