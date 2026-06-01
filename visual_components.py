@@ -3334,6 +3334,213 @@ def _inject_command_center_css():
             line-height: 1.6;
             margin-top: 8px;
         }
+        .cc-decision-hero {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, rgba(255,255,255,0.94), rgba(248,250,252,0.86));
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            border-radius: 30px;
+            box-shadow: 0 28px 80px rgba(15, 23, 42, 0.09), inset 0 1px 0 rgba(255,255,255,0.76);
+            backdrop-filter: blur(18px);
+            padding: 24px;
+            margin: 14px 0 16px;
+            animation: cc-decision-fade-up 280ms ease-out both;
+        }
+        .cc-decision-top {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+            gap: 18px;
+            align-items: start;
+        }
+        .cc-decision-kicker {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .cc-decision-action {
+            color: #0f172a;
+            font-size: clamp(44px, 8vw, 86px);
+            line-height: 0.92;
+            font-weight: 900;
+            letter-spacing: 0;
+            margin: 0 0 10px;
+            animation: cc-decision-label 260ms ease-out both;
+            word-break: keep-all;
+        }
+        .cc-decision-reason {
+            color: #475569;
+            font-size: 15px;
+            line-height: 1.62;
+            max-width: 780px;
+        }
+        .cc-decision-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+        .cc-decision-badge {
+            border-radius: 999px;
+            padding: 8px 11px;
+            font-size: 12px;
+            font-weight: 800;
+            border: 1px solid rgba(148,163,184,0.18);
+            background: rgba(255,255,255,0.68);
+            color: #334155;
+        }
+        .cc-decision-badge.ready { background: rgba(20,184,166,0.11); color: #0f766e; border-color: rgba(20,184,166,0.20); }
+        .cc-decision-badge.partial { background: rgba(245,158,11,0.12); color: #b45309; border-color: rgba(245,158,11,0.18); }
+        .cc-decision-badge.waiting { background: rgba(148,163,184,0.13); color: #475569; border-color: rgba(148,163,184,0.18); }
+        .cc-decision-badge.failed { background: rgba(239,68,68,0.10); color: #b91c1c; border-color: rgba(239,68,68,0.18); }
+        .cc-decision-risk {
+            border-radius: 24px;
+            background: rgba(255,255,255,0.74);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            padding: 18px;
+            box-shadow: 0 14px 42px rgba(15,23,42,0.05);
+        }
+        .cc-decision-risk-label {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+        .cc-decision-risk-value {
+            color: #0f172a;
+            font-size: 38px;
+            line-height: 1;
+            font-weight: 900;
+            letter-spacing: 0;
+        }
+        .cc-decision-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 18px;
+        }
+        .cc-decision-tile {
+            min-height: 104px;
+            border-radius: 22px;
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(148,163,184,0.17);
+            padding: 14px;
+            box-shadow: 0 10px 28px rgba(15,23,42,0.045);
+            animation: cc-decision-fade-up 260ms ease both;
+        }
+        .cc-decision-tile:nth-child(1) { animation-delay: 40ms; }
+        .cc-decision-tile:nth-child(2) { animation-delay: 80ms; }
+        .cc-decision-tile:nth-child(3) { animation-delay: 120ms; }
+        .cc-decision-tile:nth-child(4) { animation-delay: 160ms; }
+        .cc-decision-tile-label {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+        .cc-decision-tile-value {
+            color: #0f172a;
+            font-size: 18px;
+            line-height: 1.35;
+            font-weight: 850;
+            letter-spacing: 0;
+            overflow-wrap: anywhere;
+        }
+        .cc-decision-lists {
+            display: grid;
+            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+            gap: 12px;
+            margin-top: 14px;
+        }
+        .cc-decision-list-card {
+            border-radius: 22px;
+            background: rgba(248,250,252,0.86);
+            border: 1px solid rgba(148,163,184,0.16);
+            padding: 15px;
+        }
+        .cc-decision-list-title {
+            color: #0f172a;
+            font-size: 13px;
+            font-weight: 850;
+            margin-bottom: 8px;
+        }
+        .cc-decision-list {
+            margin: 0;
+            padding-left: 18px;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.75;
+        }
+        .cc-coverage-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 15px;
+        }
+        .cc-coverage-item {
+            border-radius: 16px;
+            background: rgba(255,255,255,0.70);
+            border: 1px solid rgba(148,163,184,0.16);
+            padding: 10px;
+            min-height: 74px;
+        }
+        .cc-coverage-name {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+        .cc-coverage-state {
+            color: #0f172a;
+            font-size: 13px;
+            font-weight: 850;
+            margin-bottom: 7px;
+        }
+        .cc-coverage-bar {
+            height: 5px;
+            border-radius: 999px;
+            background: rgba(148,163,184,0.20);
+            overflow: hidden;
+        }
+        .cc-coverage-fill {
+            display: block;
+            height: 100%;
+            width: 24%;
+            border-radius: 999px;
+            background: #94a3b8;
+            animation: cc-coverage-load 320ms ease-out both;
+        }
+        .cc-coverage-fill.cached { width: 62%; background: #f59e0b; }
+        .cc-coverage-fill.ready { width: 100%; background: #14b8a6; }
+        .cc-decision-foot {
+            margin-top: 12px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        @keyframes cc-decision-fade-up {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cc-decision-label {
+            from { opacity: 0; transform: translateY(8px) scale(0.985); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes cc-coverage-load {
+            from { transform: scaleX(0.2); transform-origin: left; }
+            to { transform: scaleX(1); transform-origin: left; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .cc-decision-hero,
+            .cc-decision-action,
+            .cc-decision-tile,
+            .cc-coverage-fill {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
         @media (max-width: 980px) {
             .cc-grid,
             .cc-summary-grid,
@@ -3354,6 +3561,12 @@ def _inject_command_center_css():
             .cc-arrow {
                 transform: rotate(90deg);
                 text-align: center;
+            }
+            .cc-decision-top,
+            .cc-decision-grid,
+            .cc-decision-lists,
+            .cc-coverage-grid {
+                grid-template-columns: 1fr;
             }
         }
         </style>
@@ -3388,6 +3601,114 @@ def _fmt_cc_money(value):
 def _cc_money_line(value, basis):
     basis_text = str(basis or "按净资产")
     return f"{_fmt_cc_money(value)} · {basis_text}"
+
+
+def _decision_list(items, fallback):
+    values = [str(item or "").strip() for item in (items or []) if str(item or "").strip()]
+    if not values:
+        values = [fallback]
+    return "<ul class='cc-decision-list'>" + "".join(f"<li>{escape(item)}</li>" for item in values[:5]) + "</ul>"
+
+
+def _decision_status_label(status):
+    mapping = {
+        "waiting": "待刷新判断",
+        "partial": "部分刷新结论",
+        "ready": "综合推演结论",
+        "failed": "失败后缓存",
+    }
+    return mapping.get(str(status or ""), "待刷新判断")
+
+
+def _coverage_label(key):
+    mapping = {
+        "market": "市场",
+        "quant": "量化",
+        "discipline": "纪律",
+        "margin_etf": "融资ETF",
+        "next_ticket": "下一票",
+        "strategy_execution": "策略执行",
+    }
+    return mapping.get(str(key or ""), str(key or "模块"))
+
+
+def render_command_center_decision_hero(packet: dict | None = None):
+    _inject_command_center_css()
+    payload = packet or {}
+    status = str(payload.get("status") or "waiting")
+    action = str(payload.get("overall_action") or "等待")
+    risk_level = str(payload.get("risk_level") or "中")
+    market_bias = str(payload.get("market_bias") or "未刷新")
+    reason = str(payload.get("reason_summary") or "基础数据未刷新，先等待或点击刷新今日基础数据。")
+    status_label = _decision_status_label(status)
+    stale_note = "当前为待刷新/缓存判断，不是完整实时结论。" if status in {"waiting", "partial", "failed"} else "当前为综合推演结论，仍需按纪律验证执行。"
+    must_not_do = payload.get("must_not_do") or []
+    conditions = payload.get("next_validation_conditions") or []
+    coverage = payload.get("data_coverage") or {}
+    coverage_order = ["market", "quant", "discipline", "margin_etf", "next_ticket", "strategy_execution"]
+    tiles = [
+        ("主账户动作", payload.get("position_mode") or "空仓等待"),
+        ("融资账户动作", payload.get("margin_mode") or "不使用融资"),
+        ("ETF 动作", payload.get("etf_priority") or "待刷新"),
+        ("下一票观察动作", payload.get("next_ticket_priority") or "待刷新"),
+    ]
+    tile_html = "".join(
+        "<div class='cc-decision-tile'>"
+        f"<div class='cc-decision-tile-label'>{escape(label)}</div>"
+        f"<div class='cc-decision-tile-value'>{escape(str(value))}</div>"
+        "</div>"
+        for label, value in tiles
+    )
+    coverage_html = ""
+    for key in coverage_order:
+        state = str(coverage.get(key) or "missing")
+        state_class = state if state in {"cached", "ready"} else "missing"
+        coverage_html += (
+            "<div class='cc-coverage-item'>"
+            f"<div class='cc-coverage-name'>{escape(_coverage_label(key))}</div>"
+            f"<div class='cc-coverage-state'>{escape(state)}</div>"
+            "<div class='cc-coverage-bar'>"
+            f"<span class='cc-coverage-fill {escape(state_class)}'></span>"
+            "</div></div>"
+        )
+    html = f"""
+    <section class="cc-decision-hero">
+      <div class="cc-decision-top">
+        <div>
+          <div class="cc-decision-kicker">Today Command</div>
+          <h2 class="cc-decision-action">{escape(action)}</h2>
+          <div class="cc-decision-reason">{escape(reason)}</div>
+          <div class="cc-decision-badges">
+            <span class="cc-decision-badge {escape(status)}">{escape(status_label)}</span>
+            <span class="cc-decision-badge">市场：{escape(market_bias)}</span>
+            <span class="cc-decision-badge">DeepSeek：未调用</span>
+          </div>
+        </div>
+        <aside class="cc-decision-risk">
+          <div class="cc-decision-risk-label">风险等级</div>
+          <div class="cc-decision-risk-value">{escape(risk_level)}</div>
+          <div class="cc-muted-note">{escape(stale_note)}</div>
+        </aside>
+      </div>
+      <div class="cc-decision-grid">{tile_html}</div>
+      <div class="cc-decision-lists">
+        <div class="cc-decision-list-card">
+          <div class="cc-decision-list-title">禁止动作</div>
+          {_decision_list(must_not_do, "暂无新增禁止动作，但仍需遵守交易纪律。")}
+        </div>
+        <div class="cc-decision-list-card">
+          <div class="cc-decision-list-title">明日验证条件</div>
+          {_decision_list(conditions, "等待基础数据刷新后再生成验证条件。")}
+        </div>
+      </div>
+      <div class="cc-coverage-grid">{coverage_html}</div>
+      <div class="cc-decision-foot">
+        状态：{escape(status)} ｜ 最后更新时间：{escape(str(payload.get("updated_at") or "暂无"))} ｜
+        来源：{escape(str(payload.get("source") or "command_center_decision_engine"))} ｜ DeepSeek：未调用
+      </div>
+    </section>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_command_center_shell(active_nav: str = "综合推演中心 2.0"):

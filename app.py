@@ -22,6 +22,7 @@ try:
     from visual_components import (
         render_action_matrix,
         render_command_center_account_budget_card,
+        render_command_center_decision_hero,
         render_command_center_shell,
         render_command_center_shell_end,
         render_etf_score_table,
@@ -59,6 +60,9 @@ except Exception as module_error:
 
     def render_command_center_account_budget_card(*args, **kwargs):
         _visual_component_unavailable("账户金额与预算")
+
+    def render_command_center_decision_hero(*args, **kwargs):
+        _visual_component_unavailable("今日总决策主卡")
 
     def render_command_center_shell(*args, **kwargs):
         _visual_component_unavailable("综合推演中心框架")
@@ -3763,64 +3767,29 @@ def render_command_center_decision_card(live_packet, position_profile=None):
     del position_profile
     live_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(live_packet))
     packet = _get_command_center_decision_display_packet()
-    with st.container(border=True):
-        st.markdown("##### 今日总决策")
-        st.caption("默认只读缓存；点击按钮后合并市场、量化、纪律、融资 ETF、下一票雷达和策略执行建议。")
-        if st.button("生成今日总决策", key="btn_command_center_decision_generate", width="stretch"):
-            packet, live_packet = _generate_command_center_decision(live_packet)
-            if packet.get("status") == "failed":
-                st.warning(f"今日总决策生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}")
-            else:
-                st.success("今日总决策已生成；DeepSeek：未调用。")
-
-        if not packet:
-            st.info("今日总决策尚未生成。当前为待刷新/缓存判断，不是完整实时结论。")
-            return live_packet
-
-        st.caption(
-            f"状态：{packet.get('status') or 'waiting'}｜"
-            f"最后生成：{packet.get('updated_at') or '暂无'}｜"
-            f"来源：{packet.get('source') or decision_engine.SOURCE}｜"
-            "DeepSeek：未调用"
-        )
-        if packet.get("stale"):
-            st.caption("当前展示为上次成功结果；最近一次生成失败。")
-        if packet.get("last_error"):
-            st.warning(f"上次生成失败：{packet.get('last_error')}")
-        if packet.get("status") in {"waiting", "partial"}:
-            st.info("当前为待刷新/缓存判断，不是完整实时结论。")
-
-        action_col, risk_col = st.columns(2)
-        action_col.metric("今日总动作", packet.get("overall_action") or "等待")
-        risk_col.metric("风险等级", packet.get("risk_level") or "中")
-        st.write(packet.get("reason_summary") or "暂无决策摘要。")
-        st.write(f"主账户动作：{packet.get('position_mode') or '空仓等待'}")
-        st.write(f"融资账户动作：{packet.get('margin_mode') or '不使用融资'}")
-        st.write(f"ETF 优先方向：{packet.get('etf_priority') or '待刷新'}")
-        st.write(f"下一票观察方向：{packet.get('next_ticket_priority') or '待刷新'}")
-
-        must_not_do = packet.get("must_not_do") or []
-        if must_not_do:
-            st.markdown("###### 禁止动作")
-            for item in must_not_do[:5]:
-                st.write(f"- {item}")
-
-        conditions = packet.get("next_validation_conditions") or []
-        if conditions:
-            st.markdown("###### 明日验证条件")
-            for item in conditions[:5]:
-                st.write(f"- {item}")
-
-        coverage = packet.get("data_coverage") or {}
-        st.caption(
-            "数据覆盖率："
-            f"市场 {coverage.get('market', 'missing')}｜"
-            f"量化 {coverage.get('quant', 'missing')}｜"
-            f"纪律 {coverage.get('discipline', 'missing')}｜"
-            f"融资ETF {coverage.get('margin_etf', 'missing')}｜"
-            f"下一票 {coverage.get('next_ticket', 'missing')}｜"
-            f"策略执行 {coverage.get('strategy_execution', 'missing')}"
-        )
+    notice = st.session_state.pop("command_center_decision_notice", "")
+    if notice:
+        notice_kind = st.session_state.pop("command_center_decision_notice_kind", "success")
+        if notice_kind == "warning":
+            st.warning(notice)
+        else:
+            st.success(notice)
+    render_command_center_decision_hero(packet)
+    if packet and packet.get("stale"):
+        st.caption("当前展示为上次成功结果；最近一次生成失败。")
+    if packet and packet.get("last_error"):
+        st.warning(f"上次生成失败：{packet.get('last_error')}")
+    if st.button("生成今日总决策", key="btn_command_center_decision_generate", width="stretch"):
+        packet, live_packet = _generate_command_center_decision(live_packet)
+        if packet.get("status") == "failed":
+            st.session_state["command_center_decision_notice"] = (
+                f"今日总决策生成失败，已保留可用缓存：{packet.get('last_error') or '未知错误'}"
+            )
+            st.session_state["command_center_decision_notice_kind"] = "warning"
+        else:
+            st.session_state["command_center_decision_notice"] = "今日总决策已生成；DeepSeek：未调用。"
+            st.session_state["command_center_decision_notice_kind"] = "success"
+        st.rerun()
     return live_packet
 
 
@@ -4013,6 +3982,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
 
     packet = st.session_state[packet_key]
     live_packet = run_command_center_auto_light_snapshot(target=target)
+    decision_hero_slot = st.empty()
     control_cols = st.columns([1.4, 1.2])
     with control_cols[0]:
         if st.button("刷新今日基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
@@ -4116,10 +4086,11 @@ packet:
         f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
         "页面加载和控件切换不会自动调用 DeepSeek、Tushare、AkShare 或 yfinance。"
     )
-    live_packet = render_command_center_decision_card(
-        live_packet,
-        position_profile=position_profile,
-    )
+    with decision_hero_slot.container():
+        live_packet = render_command_center_decision_card(
+            live_packet,
+            position_profile=position_profile,
+        )
     render_command_center_live_cards(
         live_packet,
         target=target,
