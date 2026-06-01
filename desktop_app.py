@@ -9,6 +9,8 @@ import subprocess
 import sys
 import time
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
@@ -106,14 +108,26 @@ def find_available_port(host: str = "127.0.0.1") -> Optional[int]:
 
 
 def _wait_for_streamlit(port: int, timeout_seconds: int = STREAMLIT_START_TIMEOUT_SECONDS) -> bool:
+    url = f"http://127.0.0.1:{port}/"
     start = time.time()
     while time.time() - start < timeout_seconds:
         if _streamlit_proc and _streamlit_proc.poll() is not None:
             return False
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.5)
-            if sock.connect_ex(("127.0.0.1", port)) == 0:
-                return True
+        try:
+            request = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(request, timeout=1.0) as response:
+                if 200 <= response.status < 500:
+                    return True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.5)
+                if sock.connect_ex(("127.0.0.1", port)) == 0:
+                    return True
+        except Exception:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.5)
+                if sock.connect_ex(("127.0.0.1", port)) == 0:
+                    return True
         time.sleep(0.5)
     return False
 
@@ -549,7 +563,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         raise SystemExit(1) from exc
 
     selected_port = preflight["selected_port"]
-    app_url = f"http://localhost:{selected_port}"
+    app_url = f"http://127.0.0.1:{selected_port}"
     print(f"Starting Streamlit on {app_url}")
     print(f"Startup logs: {_startup_log_dir()}")
 

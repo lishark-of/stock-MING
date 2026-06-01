@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-PROJECT_ROOT="/Users/shark-li/Documents/GitHub/stock-MING"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 APP_NAME="stock-MING"
 APP_DIR="${PROJECT_ROOT}/dist/${APP_NAME}.app"
 CONTENTS_DIR="${APP_DIR}/Contents"
@@ -9,7 +10,31 @@ MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 EXECUTABLE_PATH="${MACOS_DIR}/${APP_NAME}"
 ICON_SOURCE="${PROJECT_ROOT}/assets/stock_ming_icon.svg"
-PYTHON_BIN="${PROJECT_ROOT}/.venv/bin/python"
+
+resolve_python() {
+  if [ -n "${STOCK_MING_PYTHON:-}" ]; then
+    "${STOCK_MING_PYTHON}" -c 'import sys; print(sys.executable)'
+    return
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys; print(sys.executable)'
+    return
+  fi
+  echo "stock-MING wrapper 生成失败：未找到 python3。请先安装 Python，或设置 STOCK_MING_PYTHON。" >&2
+  exit 1
+}
+
+PYTHON_BIN="$(resolve_python)"
+
+if [ ! -e "${PYTHON_BIN}" ]; then
+  echo "stock-MING wrapper 生成失败：Python 不存在：${PYTHON_BIN}" >&2
+  exit 1
+fi
+
+if [ ! -x "${PYTHON_BIN}" ]; then
+  echo "stock-MING wrapper 生成失败：Python 不可执行：${PYTHON_BIN}" >&2
+  exit 1
+fi
 
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
@@ -51,14 +76,24 @@ printf "APPL????" > "${CONTENTS_DIR}/PkgInfo"
 
 cat > "${EXECUTABLE_PATH}" <<APP
 #!/bin/bash
-PROJECT_ROOT="/Users/shark-li/Documents/GitHub/stock-MING"
+PROJECT_ROOT="${PROJECT_ROOT}"
 PYTHON_BIN="${PYTHON_BIN}"
 
 cd "${PROJECT_ROOT}" || exit 1
 
-if [ ! -d "\${PROJECT_ROOT}/.venv" ]; then
-  MESSAGE="stock-MING 启动失败：未找到虚拟环境目录：\${PROJECT_ROOT}/.venv
-请先在项目目录创建虚拟环境，并安装 requirements.txt。"
+if [ ! -f "\${PROJECT_ROOT}/desktop_app.py" ]; then
+  MESSAGE="stock-MING 启动失败：项目目录中缺少 desktop_app.py。
+项目目录：\${PROJECT_ROOT}"
+  echo "\${MESSAGE}"
+  if command -v osascript >/dev/null 2>&1; then
+    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
+  fi
+  exit 1
+fi
+
+if [ ! -f "\${PROJECT_ROOT}/app.py" ]; then
+  MESSAGE="stock-MING 启动失败：项目目录中缺少 app.py。
+项目目录：\${PROJECT_ROOT}"
   echo "\${MESSAGE}"
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
@@ -68,7 +103,7 @@ fi
 
 if [ ! -e "\${PYTHON_BIN}" ]; then
   MESSAGE="stock-MING 启动失败：未找到 Python 解释器：\${PYTHON_BIN}
-请检查 .venv 是否完整，或重新创建虚拟环境。"
+请重新生成 .app wrapper，或设置 STOCK_MING_PYTHON 后再生成。"
   echo "\${MESSAGE}"
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
@@ -78,7 +113,7 @@ fi
 
 if [ ! -x "\${PYTHON_BIN}" ]; then
   MESSAGE="stock-MING 启动失败：Python 解释器不可执行：\${PYTHON_BIN}
-请修复权限，或重新创建虚拟环境。"
+请修复权限，或重新生成 .app wrapper。"
   echo "\${MESSAGE}"
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
@@ -105,3 +140,5 @@ APP
 chmod +x "${EXECUTABLE_PATH}"
 
 echo "Created ${APP_DIR}"
+echo "Python: ${PYTHON_BIN}"
+echo "启动方式：open ${APP_DIR}"

@@ -2271,6 +2271,23 @@ st.set_page_config(page_title="MING 交易工作台", page_icon="🦈", layout="
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    header[data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    [data-testid="stMainMenu"],
+    [data-testid="stDeployButton"],
+    footer {
+        visibility: hidden !important;
+        display: none !important;
+        height: 0 !important;
+    }
+    .stAppDeployButton,
+    .stAppToolbar,
+    #MainMenu {
+        visibility: hidden !important;
+        display: none !important;
+    }
     .stApp { background-color: #F5F5F7; color: #1D1D1F; font-family: -apple-system, sans-serif; }
     .stButton>button { background-color: #1D1D1F; color: white; border-radius: 8px; border: none; width: 100%; font-weight: 500; transition: 0.2s; }
     .stButton>button:hover { background-color: #434343; color: white; }

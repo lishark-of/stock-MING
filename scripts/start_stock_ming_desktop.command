@@ -2,22 +2,27 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-PYTHON_BIN="${PROJECT_ROOT}/.venv/bin/python"
+
+if [ -n "${STOCK_MING_PYTHON:-}" ]; then
+  PYTHON_BIN="$STOCK_MING_PYTHON"
+elif [ -x "${PROJECT_ROOT}/.venv/bin/python" ]; then
+  PYTHON_BIN="${PROJECT_ROOT}/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(python3 -c 'import sys; print(sys.executable)')"
+else
+  echo "stock-MING 启动失败：未找到可用 Python。"
+  echo "请安装 Python 3，或设置 STOCK_MING_PYTHON=/path/to/python。"
+  exit 1
+fi
 
 cd "$PROJECT_ROOT" || {
   echo "Failed to enter project directory: $PROJECT_ROOT"
   exit 1
 }
 
-if [ ! -d "${PROJECT_ROOT}/.venv" ]; then
-  echo "stock-MING 启动失败：未找到虚拟环境目录：${PROJECT_ROOT}/.venv"
-  echo "请先在项目目录创建虚拟环境，并安装 requirements.txt。"
-  exit 1
-fi
-
 if [ ! -e "$PYTHON_BIN" ]; then
   echo "stock-MING 启动失败：未找到 Python 解释器：$PYTHON_BIN"
-  echo "请检查 .venv 是否完整，或重新创建虚拟环境。"
+  echo "请检查 STOCK_MING_PYTHON，或重新创建虚拟环境。"
   exit 1
 fi
 
