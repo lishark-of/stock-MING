@@ -4069,6 +4069,11 @@ packet:
         f"{overview_vm.get('deepseek_text') or 'DeepSeek：未调用'} ｜ "
         "页面加载和控件切换不会自动调用 Tushare、AkShare 或 yfinance。"
     )
+    st.info(
+        f"{overview_vm.get('usage_boundary_text')} "
+        f"数据覆盖：{overview_vm.get('coverage_summary_text') or '暂无'}。"
+    )
+    st.caption("安全路径：先刷新今日基础数据 → 再生成策略执行建议 → 再看今日总决策 → 可选 DeepSeek 综合解释。")
     with decision_hero_slot.container():
         live_packet = render_command_center_decision_card(
             live_packet,

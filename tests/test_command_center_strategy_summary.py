@@ -48,6 +48,27 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(summary.strategy_confidence_tone({"confidence": "中"}), "warning")
         self.assertEqual(summary.strategy_confidence_tone({"confidence": "高"}), "success")
 
+    def test_action_guardrails_reduce_beginner_misinterpretation(self):
+        attack = summary.build_strategy_summary_view_model({"action": "小幅进攻"})
+        wait = summary.build_strategy_summary_view_model({"action": "等待"})
+        observe = summary.build_strategy_summary_view_model({"action": "只观察"})
+        reduce = summary.build_strategy_summary_view_model({"action": "降风险"})
+
+        self.assertIn("只允许小额试探", attack["action_guardrail"])
+        self.assertIn("今天不是必须交易", wait["action_guardrail"])
+        self.assertIn("今天不是必须交易", observe["action_guardrail"])
+        self.assertIn("降杠杆", reduce["action_guardrail"])
+
+    def test_strategy_boundary_text_keeps_deepseek_and_backtest_manual(self):
+        view_model = summary.build_strategy_summary_view_model({})
+        boundary = view_model["user_boundary_text"]
+
+        self.assertIn("不自动调用 DeepSeek", boundary)
+        self.assertIn("不自动回测", boundary)
+        self.assertIn("不构成收益承诺", boundary)
+        for dangerous in ["必买", "稳赚"]:
+            self.assertNotIn(dangerous, " ".join([boundary, view_model["action_guardrail"]]))
+
     def test_missing_paths_use_default_three_paths(self):
         paths = summary.build_strategy_path_items({})
 

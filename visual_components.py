@@ -3976,6 +3976,7 @@ def render_strategy_execution_command_card(
           <div class="cc-strategy-kicker">Strategy Execution</div>
           <h2 class="cc-strategy-action">{escape(action)}</h2>
           <div class="cc-strategy-summary">{escape(summary)}</div>
+          <div class="cc-muted-note">{escape(str(vm.get("action_guardrail") or ""))}</div>
           <div class="cc-strategy-pill-row">{pill_html}</div>
         </div>
         <aside class="cc-strategy-side">
@@ -4005,6 +4006,7 @@ def render_strategy_execution_command_card(
         最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
         来源：{escape(str(vm.get("source_text") or "strategy_execution_service / session_state cache"))} ｜
         {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
+        <br>{escape(str(vm.get("user_boundary_text") or ""))}
       </div>
     </section>
     """
@@ -4048,6 +4050,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
           <div class="cc-decision-kicker">Today Command</div>
           <h2 class="cc-decision-action">{escape(str(vm.get("action_label") or "等待"))}</h2>
           <div class="cc-decision-reason">{escape(str(vm.get("reason_summary") or "基础数据未刷新，先等待或点击刷新今日基础数据。"))}</div>
+          <div class="cc-muted-note">{escape(str(vm.get("action_guardrail") or ""))}</div>
           <div class="cc-decision-badges">
             <span class="cc-decision-badge {escape(status)}">{escape(str(vm.get("status_label") or "待刷新判断"))}</span>
             <span class="cc-decision-badge">市场：{escape(str(vm.get("market_text") or "未刷新"))}</span>
@@ -4075,6 +4078,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
       <div class="cc-decision-foot">
         状态：{escape(status)} ｜ 最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
         来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
+        <br>{escape(str(vm.get("evidence_summary_text") or ""))}
       </div>
     </section>
     """

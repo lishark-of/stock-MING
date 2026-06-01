@@ -53,6 +53,10 @@ def _state_tone(state: str) -> str:
     return "muted"
 
 
+def build_center_usage_boundary_text() -> str:
+    return "当前结论只用于辅助复核，不是荐股、自动交易或收益承诺；DeepSeek 只在你点击解释按钮后读取当前 packet。"
+
+
 def build_center_coverage_items(live_packet: Any, strategy_packet: Any = None, decision_packet: Any = None) -> list[dict]:
     live = _as_mapping(live_packet)
     items = []
@@ -199,6 +203,17 @@ def _latest_updated_text(live_packet: Any, refresh_summary: Any) -> str:
     )
 
 
+def _coverage_summary_text(coverage_items: list[dict]) -> str:
+    ready = [item["label"] for item in coverage_items if item["state"] == "ready"]
+    cached = [item["label"] for item in coverage_items if item["state"] == "cached"]
+    missing = [item["label"] for item in coverage_items if item["state"] == "missing"]
+    return (
+        f"已刷新：{'、'.join(ready) if ready else '无'}｜"
+        f"使用缓存：{'、'.join(cached) if cached else '无'}｜"
+        f"待验证：{'、'.join(missing) if missing else '无'}"
+    )
+
+
 def build_command_center_overview_view_model(
     live_packet: Any = None,
     refresh_summary: Any = None,
@@ -229,9 +244,11 @@ def build_command_center_overview_view_model(
         "overall_status_label": status_label,
         "overall_status_tone": tone,
         "coverage_items": coverage_items,
+        "coverage_summary_text": _coverage_summary_text(coverage_items),
         "error_items": error_items,
         "stale_items": stale_items,
         "updated_text": _latest_updated_text(live_packet, refresh_summary),
         "deepseek_text": "DeepSeek：已调用" if deepseek_called else "DeepSeek：未调用",
+        "usage_boundary_text": build_center_usage_boundary_text(),
         "next_action_items": build_center_next_action_items(live_packet, strategy_packet, decision_packet, deepseek_summary),
     }

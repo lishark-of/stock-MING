@@ -103,6 +103,22 @@ def strategy_confidence_tone(packet: Any) -> str:
     return "muted"
 
 
+def strategy_action_guardrail_text(packet: Any) -> str:
+    action = strategy_action_label(packet)
+    if any(key in action for key in ["小幅进攻", "试探", "可轻仓"]):
+        return "只允许小额试探，必须等验证条件，不追高、不冲动加杠杆。"
+    if any(key in action for key in ["降风险", "减仓", "退出", "止损"]):
+        return "优先减暴露、降杠杆、保现金，暂停新增风险。"
+    if any(key in action for key in ["等待", "观察", "尚未生成"]):
+        return "今天不是必须交易，等待数据和纪律条件补齐。"
+    return "策略建议只给路径，执行前仍需复核纪律和资金预算。"
+
+
+def strategy_user_boundary_text(packet: Any) -> str:
+    del packet
+    return "策略执行卡只读取缓存、量化摘要和纪律结果；不自动调用 DeepSeek、不自动回测、不构成收益承诺。"
+
+
 def build_strategy_path_items(packet: Any) -> list[dict]:
     payload = _as_mapping(packet)
     paths = payload.get("next_5_10_day_paths") or payload.get("paths") or payload.get("scenario_paths") or []
@@ -219,6 +235,8 @@ def build_strategy_summary_view_model(packet: Any) -> dict:
         "confidence_label": confidence,
         "confidence_tone": strategy_confidence_tone({"confidence": confidence}),
         "summary": summary,
+        "action_guardrail": strategy_action_guardrail_text({"action": action}),
+        "user_boundary_text": strategy_user_boundary_text(payload),
         "position_advice": _to_text(payload.get("position_advice")) or "等待策略执行建议补齐。",
         "conditions": build_strategy_condition_items(payload),
         "path_items": build_strategy_path_items(payload),

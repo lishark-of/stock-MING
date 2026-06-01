@@ -55,6 +55,32 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(summary.decision_risk_tone({"risk_level": "中"}), "warning")
         self.assertEqual(summary.decision_risk_tone({"risk_level": "高"}), "danger")
 
+    def test_action_guardrails_reduce_beginner_misinterpretation(self):
+        attack = summary.build_decision_summary_view_model({"overall_action": "小幅进攻"})
+        wait = summary.build_decision_summary_view_model({"overall_action": "等待"})
+        observe = summary.build_decision_summary_view_model({"overall_action": "只观察"})
+        reduce = summary.build_decision_summary_view_model({"overall_action": "降风险"})
+
+        self.assertIn("只允许小额试探", attack["action_guardrail"])
+        self.assertIn("今天不是必须交易", wait["action_guardrail"])
+        self.assertIn("今天不是必须交易", observe["action_guardrail"])
+        self.assertIn("降杠杆", reduce["action_guardrail"])
+
+    def test_user_boundary_text_blocks_dangerous_interpretation(self):
+        view_model = summary.build_decision_summary_view_model({})
+        boundary = view_model["user_boundary_text"]
+        combined = " ".join([
+            view_model["empty_message"],
+            view_model["action_guardrail"],
+            boundary,
+        ])
+
+        self.assertIn("不是荐股", boundary)
+        self.assertIn("不保证收益", boundary)
+        self.assertIn("DeepSeek 只解释", boundary)
+        for dangerous in ["必买", "稳赚"]:
+            self.assertNotIn(dangerous, combined)
+
     def test_empty_lists_use_fallback_items(self):
         view_model = summary.build_decision_summary_view_model({
             "must_not_do": [],
@@ -82,6 +108,19 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(by_key["quant"]["tone"], "warning")
         self.assertEqual(by_key["discipline"]["state"], "missing")
         self.assertEqual(by_key["discipline"]["tone"], "muted")
+
+    def test_evidence_summary_text_is_visible_for_professional_review(self):
+        view_model = summary.build_decision_summary_view_model({
+            "data_coverage": {
+                "market": "ready",
+                "quant": "cached",
+                "discipline": "missing",
+            }
+        })
+
+        self.assertIn("已刷新：市场", view_model["evidence_summary_text"])
+        self.assertIn("使用缓存：量化", view_model["evidence_summary_text"])
+        self.assertIn("待验证：纪律", view_model["evidence_summary_text"])
 
     def test_deepseek_called_false_and_missing_source_defaults(self):
         self.assertEqual(summary.decision_deepseek_text({"deepseek_called": False}), "DeepSeek：未调用")

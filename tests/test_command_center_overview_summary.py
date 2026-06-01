@@ -30,6 +30,8 @@ class CommandCenterOverviewSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["overall_status_tone"], "muted")
         self.assertTrue(all(item["state"] == "missing" for item in view_model["coverage_items"]))
         self.assertEqual(view_model["deepseek_text"], "DeepSeek：未调用")
+        self.assertIn("不是荐股", view_model["usage_boundary_text"])
+        self.assertIn("DeepSeek 只在你点击解释按钮后", view_model["usage_boundary_text"])
         json.dumps(view_model, ensure_ascii=False)
 
     def test_partial_ready_outputs_partial_overview(self):
@@ -44,6 +46,8 @@ class CommandCenterOverviewSummaryTests(unittest.TestCase):
         by_key = {item["key"]: item for item in view_model["coverage_items"]}
         self.assertEqual(by_key["market"]["state"], "ready")
         self.assertEqual(by_key["quant"]["state"], "cached")
+        self.assertIn("已刷新：市场", view_model["coverage_summary_text"])
+        self.assertIn("使用缓存：量化", view_model["coverage_summary_text"])
 
     def test_all_ready_outputs_refreshed_overview(self):
         live_packet = {
@@ -104,6 +108,8 @@ class CommandCenterOverviewSummaryTests(unittest.TestCase):
         )
 
         self.assertIsInstance(view_model, dict)
+        for dangerous in ["必买", "稳赚"]:
+            self.assertNotIn(dangerous, view_model["usage_boundary_text"])
         json.dumps(view_model, ensure_ascii=False)
 
     def test_forbidden_imports_are_absent(self):

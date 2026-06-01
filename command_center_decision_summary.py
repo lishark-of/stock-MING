@@ -100,6 +100,35 @@ def decision_risk_tone(packet: Any) -> str:
     return "warning"
 
 
+def decision_action_guardrail_text(packet: Any) -> str:
+    action = decision_action_label(packet)
+    if any(key in action for key in ["小幅进攻", "进攻", "试探"]):
+        return "只允许小额试探，禁止追高、一次性重仓或冲动加杠杆。"
+    if any(key in action for key in ["降风险", "减仓", "降低", "禁止"]):
+        return "优先降低风险暴露、降杠杆并保留现金缓冲。"
+    if any(key in action for key in ["只观察", "等待", "观望"]):
+        return "今天不是必须交易，先等待验证条件出现。"
+    return "任何动作都必须先过纪律、预算和风险线校验。"
+
+
+def decision_user_boundary_text(packet: Any) -> str:
+    del packet
+    return "本卡不是荐股或自动交易指令，不保证收益；DeepSeek 只解释当前 packet，不替你决定仓位。"
+
+
+def decision_evidence_summary_text(packet: Any) -> str:
+    coverage_items = build_data_coverage_items(packet)
+    ready = [item["label"] for item in coverage_items if item["state"] == "ready"]
+    cached = [item["label"] for item in coverage_items if item["state"] == "cached"]
+    missing = [item["label"] for item in coverage_items if item["state"] == "missing"]
+    parts = [
+        f"已刷新：{'、'.join(ready) if ready else '无'}",
+        f"使用缓存：{'、'.join(cached) if cached else '无'}",
+        f"待验证：{'、'.join(missing) if missing else '无'}",
+    ]
+    return "｜".join(parts)
+
+
 def decision_deepseek_text(packet: Any) -> str:
     return "DeepSeek：已调用" if bool(_as_mapping(packet).get("deepseek_called")) else "DeepSeek：未调用"
 
@@ -163,6 +192,9 @@ def build_decision_summary_view_model(packet: Any) -> dict:
         "etf_text": _to_text(payload.get("etf_priority")) or "待刷新",
         "next_ticket_text": _to_text(payload.get("next_ticket_priority")) or "待刷新",
         "reason_summary": reason,
+        "action_guardrail": decision_action_guardrail_text(payload),
+        "user_boundary_text": decision_user_boundary_text(payload),
+        "evidence_summary_text": decision_evidence_summary_text(payload),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),
