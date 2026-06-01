@@ -79,10 +79,16 @@ def _build_streamlit_cmd(port: int) -> list[str]:
         "streamlit",
         "run",
         "app.py",
+        "--server.address",
+        "127.0.0.1",
         "--server.port",
         str(port),
         "--server.headless",
         "true",
+        "--browser.gatherUsageStats",
+        "false",
+        "--client.toolbarMode",
+        "minimal",
     ]
 
 
