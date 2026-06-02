@@ -13,6 +13,7 @@ SNAPSHOT_FILENAME = "command_center_latest.json"
 SNAPSHOT_SOURCE = "command_center_home_snapshot"
 MAX_CANDIDATES = 3
 MAX_ERRORS = 8
+MAX_CAPABILITY_ITEMS = 8
 
 SENSITIVE_KEY_PARTS = (
     "api_key",
@@ -43,6 +44,9 @@ DATA_GAP_LABELS = {
     **MODULE_LABELS,
     "decision": "今日总决策",
 }
+
+CAPABILITY_RESTRICTED_STATES = {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}
+CAPABILITY_PENDING_STATES = {"empty_recent", "stale_cache", "fallback_used", "requires_manual_refresh", "unknown"}
 
 
 def _as_mapping(value: Any) -> dict:
@@ -184,6 +188,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
             "last_updated": "暂无",
             "deepseek_called": False,
         },
+        "data_capability": build_data_capability_snapshot({}),
         "errors": [],
         "empty_message": reason,
         "deepseek_called": False,
@@ -212,6 +217,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         snapshot.get("errors"),
         deepseek_called=bool(snapshot.get("deepseek_called")),
     )
+    snapshot["data_capability"] = build_data_capability_snapshot(snapshot.get("data_capability") or {})
     return snapshot
 
 
@@ -313,6 +319,66 @@ def _extract_errors(*packets: Any) -> list[dict]:
             seen.add(key)
             deduped.append(item)
     return deduped[:MAX_ERRORS]
+
+
+def _normalize_capability_state(item: Mapping[str, Any]) -> str:
+    state = _to_text(item.get("capability_state") or item.get("state"))
+    if state:
+        return state
+    if item.get("permission_likely"):
+        return "permission_denied"
+    if item.get("ok"):
+        return "available"
+    return "unknown"
+
+
+def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
+    packet = _as_mapping(data_capability_packet)
+    raw_items = packet.get("items") or []
+    if not isinstance(raw_items, (list, tuple)):
+        raw_items = []
+    items = []
+    for raw in raw_items:
+        payload = _as_mapping(raw)
+        if not payload:
+            continue
+        state = _normalize_capability_state(payload)
+        label = _to_text(payload.get("label") or payload.get("api") or payload.get("section"), "数据能力")
+        items.append(
+            {
+                "key": _to_text(payload.get("section") or payload.get("api"), "data_capability"),
+                "label": label,
+                "api": _to_text(payload.get("api")),
+                "status": _to_text(payload.get("status") or payload.get("capability_label") or state, "待验证"),
+                "state": state,
+                "latest_date": _to_text(payload.get("latest_date")),
+                "updated_at": _to_text(payload.get("updated_at")),
+                "source": _to_text(payload.get("source") or packet.get("source"), "数据能力"),
+                "action_hint": _to_text(payload.get("action_hint")),
+                "error": _to_text(payload.get("error")),
+            }
+        )
+    items = items[:MAX_CAPABILITY_ITEMS]
+    available = [item["label"] for item in items if item["state"] == "available"]
+    restricted = [item["label"] for item in items if item["state"] in CAPABILITY_RESTRICTED_STATES]
+    pending = [item["label"] for item in items if item["state"] in CAPABILITY_PENDING_STATES]
+    summary = (
+        f"可用：{'、'.join(available) if available else '无'}｜"
+        f"受限：{'、'.join(restricted) if restricted else '无'}｜"
+        f"待验证：{'、'.join(pending) if pending else '无'}"
+        if items
+        else "尚未检测；页面打开不会自动请求 Tushare、AkShare 或 yfinance。"
+    )
+    return {
+        "source": _to_text(packet.get("source"), "数据能力"),
+        "checked_at": _to_text(packet.get("checked_at") or packet.get("updated_at")),
+        "summary": summary,
+        "available_count": len(available),
+        "restricted_count": len(restricted),
+        "pending_count": len(pending),
+        "items": items,
+        "deepseek_called": False,
+    }
 
 
 def build_holding_action(target: str = "", position_profile: Any = None, strategy_packet: Any = None, state: Any = None) -> dict:
@@ -510,6 +576,7 @@ def build_home_action_snapshot(
     decision_packet: Any = None,
     strategy_packet: Any = None,
     refresh_summary: Any = None,
+    data_capability_packet: Any = None,
     now: Any = None,
 ) -> dict:
     state_map = _as_mapping(state)
@@ -524,6 +591,10 @@ def build_home_action_snapshot(
         or state_map.get("strategy_execution_packet")
         or state_map.get("strategy_execution_last_success")
     )
+    if data_capability_packet is None:
+        data_capability_packet = state_map.get("a_share_professional_data_capability")
+        if not data_capability_packet:
+            data_capability_packet = _as_mapping(state_map.get("last_data_source_healthcheck")).get("tushare")
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")
@@ -551,6 +622,7 @@ def build_home_action_snapshot(
         "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
         "data_coverage": coverage,
         "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
+        "data_capability": build_data_capability_snapshot(data_capability_packet),
         "errors": errors,
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
@@ -563,6 +635,7 @@ def build_home_action_snapshot(
         empty["data_coverage"] = coverage
         empty["risk_alerts"] = build_risk_alerts(decision, strategy, coverage, errors)
         empty["data_freshness"] = build_data_freshness("", errors, deepseek_called=deepseek_called)
+        empty["data_capability"] = snapshot["data_capability"]
         empty["errors"] = errors
         return empty
     return sanitize_snapshot_payload(snapshot)
@@ -598,6 +671,7 @@ def update_home_action_snapshot(
     decision_packet: Any = None,
     strategy_packet: Any = None,
     refresh_summary: Any = None,
+    data_capability_packet: Any = None,
     path: str | Path | None = None,
     base_dir: str | Path | None = None,
 ) -> dict:
@@ -609,6 +683,7 @@ def update_home_action_snapshot(
         decision_packet=decision_packet,
         strategy_packet=strategy_packet,
         refresh_summary=refresh_summary,
+        data_capability_packet=data_capability_packet,
     )
     if isinstance(state, dict):
         state["command_center_home_snapshot"] = snapshot

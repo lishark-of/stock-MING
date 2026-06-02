@@ -197,6 +197,66 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["data_freshness"]["label"], "今日已刷新")
         self.assertFalse(payload["deepseek_called"])
 
+    def test_data_capability_is_persisted_in_home_snapshot(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T09:30:00",
+            },
+            "a_share_professional_data_capability": {
+                "source": "Tushare A股专业事实",
+                "checked_at": f"{today}T09:35:00",
+                "items": [
+                    {"section": "moneyflow", "label": "个股资金流", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                    {"section": "margin", "label": "融资融券", "api": "margin_detail", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"section": "dragon_tiger", "label": "龙虎榜", "api": "top_list", "capability_state": "empty_recent", "status": "近期无数据"},
+                ],
+                "deepseek_called": False,
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T09:40:00")
+        capability = payload["data_capability"]
+
+        self.assertEqual(capability["source"], "Tushare A股专业事实")
+        self.assertEqual(capability["available_count"], 1)
+        self.assertEqual(capability["restricted_count"], 1)
+        self.assertEqual(capability["pending_count"], 1)
+        self.assertIn("可用：个股资金流", capability["summary"])
+        self.assertIn("受限：融资融券", capability["summary"])
+        self.assertFalse(capability["deepseek_called"])
+
+    def test_loaded_home_snapshot_keeps_data_capability(self):
+        today = _dt.date.today().isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "等待",
+                        "updated_at": f"{today}T10:00:00",
+                    },
+                    "last_data_source_healthcheck": {
+                        "tushare": {
+                            "source": "Tushare",
+                            "checked_at": f"{today}T10:01:00",
+                            "items": [
+                                {"api": "limit_cpt_list", "capability_state": "disabled_this_session", "status": "本会话跳过"}
+                            ],
+                        }
+                    },
+                },
+                target="002008.SZ",
+                now=f"{today}T10:02:00",
+            )
+            snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+
+        self.assertIn("本会话跳过", json.dumps(loaded["data_capability"], ensure_ascii=False))
+        self.assertFalse(loaded["data_capability"]["deepseek_called"])
+
     def test_local_snapshot_wins_after_restart_when_session_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             saved = snapshot.build_home_action_snapshot(

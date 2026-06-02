@@ -3777,6 +3777,7 @@ def _build_home_action_snapshot_display(live_packet=None, target="", position_pr
         decision_packet=_get_command_center_decision_display_packet(),
         strategy_packet=_get_strategy_execution_display_packet(),
         refresh_summary=st.session_state.get("command_center_refresh_summary") or {},
+        data_capability_packet=_get_command_center_data_capability_packet(),
     )
     snapshot = home_snapshot_service.choose_home_action_snapshot(session_snapshot, local_snapshot)
     st.session_state["command_center_home_snapshot"] = snapshot
@@ -3792,6 +3793,7 @@ def _persist_home_action_snapshot(live_packet=None, target="", position_profile=
         decision_packet=decision_packet or _get_command_center_decision_display_packet(),
         strategy_packet=strategy_packet or _get_strategy_execution_display_packet(),
         refresh_summary=refresh_summary or st.session_state.get("command_center_refresh_summary") or {},
+        data_capability_packet=_get_command_center_data_capability_packet(),
     )
     home_snapshot_service.save_home_action_snapshot(snapshot)
     st.session_state["command_center_home_snapshot"] = snapshot
