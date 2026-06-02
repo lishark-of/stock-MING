@@ -70,6 +70,40 @@ SESSION_SKIP_KEYWORDS = (
     "skip",
 )
 
+EMPTY_RECENT_KEYWORDS = (
+    "无数据",
+    "未见",
+    "未取得",
+    "暂无",
+    "尚未",
+    "empty",
+    "no data",
+)
+
+FACT_SECTION_LABELS = {
+    "dragon_tiger": "龙虎榜",
+    "margin": "融资融券",
+    "moneyflow": "个股资金流",
+    "limit_emotion": "涨跌停/情绪",
+    "chip_radar": "筹码/胜率",
+}
+
+FACT_SECTION_APIS = {
+    "dragon_tiger": "top_list/top_inst",
+    "margin": "margin_detail",
+    "moneyflow": "moneyflow",
+    "limit_emotion": "stk_limit / limit_list_d / limit_cpt_list",
+    "chip_radar": "cyq_perf/cyq_chips",
+}
+
+LATEST_DATE_KEYS = (
+    "latest_date",
+    "date",
+    "trade_date",
+    "concept_date",
+    "updated_at",
+)
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -88,7 +122,21 @@ def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
 
 
 def is_permission_error(error: Any) -> bool:
-    return _contains_any(str(error or ""), PERMISSION_KEYWORDS)
+    text = str(error or "")
+    lower = text.lower()
+    strict_keywords = (
+        "无接口访问权限",
+        "当前权限不足",
+        "没有访问",
+        "抱歉",
+        "permission",
+        "denied",
+        "forbidden",
+        "unauthorized",
+    )
+    if "可能" in text and not any(keyword.lower() in lower for keyword in strict_keywords):
+        return False
+    return _contains_any(text, PERMISSION_KEYWORDS)
 
 
 def is_network_error(error: Any) -> bool:
@@ -101,6 +149,13 @@ def is_not_configured_error(error: Any) -> bool:
 
 def is_session_skip_error(error: Any) -> bool:
     return _contains_any(str(error or ""), SESSION_SKIP_KEYWORDS)
+
+
+def is_empty_recent_message(error: Any) -> bool:
+    text = str(error or "")
+    if is_permission_error(text) or is_network_error(text) or is_not_configured_error(text):
+        return False
+    return _contains_any(text, EMPTY_RECENT_KEYWORDS)
 
 
 def extract_frame_summary(data: Any) -> tuple[int, str]:
@@ -156,6 +211,8 @@ def classify_capability_state(
         return STATE_NETWORK_FAILED
     numeric_rows = rows if isinstance(rows, Number) else 0
     if ok and numeric_rows == 0:
+        return STATE_EMPTY_RECENT
+    if not ok and is_empty_recent_message(error_text):
         return STATE_EMPTY_RECENT
     if ok:
         return STATE_AVAILABLE
@@ -299,3 +356,76 @@ def build_tushare_capability_packet(items: Any, checked_at: Any = "", source: st
         ),
         "deepseek_called": False,
     }
+
+
+def _first_text(payload: Mapping[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value not in [None, ""]:
+            return str(value)
+    return ""
+
+
+def build_tushare_fact_capability_item(section_key: str, fact_packet: Any) -> dict:
+    payload = as_mapping(fact_packet)
+    api = str(payload.get("api") or FACT_SECTION_APIS.get(section_key, section_key))
+    label = FACT_SECTION_LABELS.get(section_key, section_key)
+    available = bool(
+        payload.get("available")
+        or payload.get("boundary_available")
+        or payload.get("records_available")
+        or payload.get("concept_available")
+    )
+    latest_date = _first_text(payload, LATEST_DATE_KEYS)
+    error_text = (
+        payload.get("error")
+        or payload.get("warning")
+        or payload.get("message")
+        or ("暂无可验证数据" if not available else "")
+    )
+    item = build_capability_item(
+        api,
+        ok=available,
+        rows=1 if available else 0,
+        latest_date=latest_date,
+        latency_ms=payload.get("latency_ms") or 0,
+        error=error_text,
+        source=str(payload.get("source") or SOURCE_TUSHARE),
+        cached=bool(payload.get("cached") or payload.get("from_cache")),
+        stale=bool(payload.get("stale")),
+        fallback_used=bool(payload.get("fallback_used")),
+        skipped=bool(payload.get("skipped") or payload.get("disabled_this_session")),
+        requires_manual_refresh=bool(payload.get("requires_manual_refresh")),
+    )
+    item.update(
+        {
+            "section": section_key,
+            "label": label,
+            "message": str(payload.get("message") or ""),
+            "warning": str(payload.get("warning") or ""),
+            "updated_at": str(payload.get("updated_at") or ""),
+        }
+    )
+    return item
+
+
+def build_a_share_professional_capability_packet(fact_packet: Any, checked_at: Any = "") -> dict:
+    payload = as_mapping(fact_packet)
+    items = [
+        build_tushare_fact_capability_item(section, payload.get(section) or {})
+        for section in FACT_SECTION_LABELS
+    ]
+    packet = build_tushare_capability_packet(
+        items,
+        checked_at=checked_at or payload.get("updated_at") or "",
+        source="Tushare A股专业事实",
+    )
+    packet.update(
+        {
+            "stock_code": str(payload.get("stock_code") or ""),
+            "data_source": str(payload.get("data_source") or "Tushare + yfinance technical"),
+            "sections": FACT_SECTION_LABELS.copy(),
+            "deepseek_called": False,
+        }
+    )
+    return packet

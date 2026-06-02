@@ -70,6 +70,52 @@ class MarketDataCapabilityTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
+    def test_professional_fact_packet_distinguishes_legacy_a_share_states(self):
+        packet = capability.build_a_share_professional_capability_packet(
+            {
+                "stock_code": "002008",
+                "dragon_tiger": {
+                    "available": False,
+                    "api": "top_list/top_inst",
+                    "message": "近30日未见龙虎榜上榜记录",
+                    "updated_at": "2026-06-02T21:30:00",
+                },
+                "margin": {
+                    "available": False,
+                    "api": "margin_detail",
+                    "error": "抱歉，您没有访问该接口的权限",
+                    "updated_at": "2026-06-02T21:30:00",
+                },
+                "moneyflow": {
+                    "available": True,
+                    "api": "moneyflow",
+                    "date": "20260602",
+                    "updated_at": "2026-06-02T21:30:00",
+                },
+                "limit_emotion": {
+                    "available": False,
+                    "api": "stk_limit / limit_list_d / limit_cpt_list",
+                    "warning": "limit_cpt_list 当前权限不足，已在本会话跳过重复请求。",
+                    "updated_at": "2026-06-02T21:30:00",
+                },
+                "chip_radar": {
+                    "available": False,
+                    "api": "cyq_perf/cyq_chips",
+                    "message": "暂未取得可验证筹码/胜率数据，可能为数据尚未更新、接口权限不足或标的暂不覆盖。",
+                    "updated_at": "2026-06-02T21:30:00",
+                },
+            }
+        )
+        by_section = {item["section"]: item for item in packet["items"]}
+
+        self.assertEqual(by_section["dragon_tiger"]["capability_state"], capability.STATE_EMPTY_RECENT)
+        self.assertEqual(by_section["margin"]["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertEqual(by_section["moneyflow"]["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(by_section["limit_emotion"]["capability_state"], capability.STATE_DISABLED_THIS_SESSION)
+        self.assertEqual(by_section["chip_radar"]["capability_state"], capability.STATE_EMPTY_RECENT)
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("market_data_capability.py").read_text(encoding="utf-8"))
         imports = []

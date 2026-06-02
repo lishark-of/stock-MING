@@ -8248,8 +8248,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             for section in [moneyflow_fact, dragon_fact, margin_fact, limit_fact, chip_fact]
             if isinstance(section, dict)
         ) or bool((verified_technical_facts or {}).get("available"))
-
-        return {
+        result_packet = {
             "available": available,
             "stock_code": stock_code_6,
             "moneyflow": moneyflow_fact,
@@ -8268,6 +8267,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             ),
             "missing_items": missing_items,
         }
+        result_packet["data_capability"] = data_capability.build_a_share_professional_capability_packet(
+            result_packet,
+            checked_at=result_packet["updated_at"],
+        )
+        return result_packet
 
     def format_a_share_professional_facts_for_prompt(a_share_professional_facts):
         facts = a_share_professional_facts or {}
@@ -9119,6 +9123,40 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 has_data=lambda data: bool(data and data.get("available")),
             )
         cn_status.update(label="完成：A股盘口与情绪数据检查", state="complete")
+
+        a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(
+            {
+                "stock_code": stock_code,
+                "dragon_tiger": dragon_data or {},
+                "margin": margin_data or {},
+                "moneyflow": moneyflow_data or {},
+                "limit_emotion": limit_emotion_data or {},
+                "chip_radar": chip_radar_data or {},
+                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            }
+        )
+        st.session_state["a_share_professional_data_capability"] = a_share_capability_packet
+        capability_items = a_share_capability_packet.get("items") or []
+        if capability_items:
+            status_line = " ｜ ".join(
+                f"{item.get('label') or item.get('api')}: {item.get('status') or '未知'}"
+                for item in capability_items
+            )
+            st.caption(f"A股专业数据能力状态：{status_line}")
+            with st.expander("A股专业数据能力明细", expanded=False):
+                capability_df = pd.DataFrame(capability_items)
+                capability_columns = [
+                    "label",
+                    "api",
+                    "status",
+                    "capability_state",
+                    "latest_date",
+                    "updated_at",
+                    "action_hint",
+                    "error",
+                ]
+                capability_columns = [column for column in capability_columns if column in capability_df.columns]
+                st.dataframe(capability_df[capability_columns], width="stretch", hide_index=True)
         
         # 第一排：龙虎榜 + 融资融券 + 个股资金流向
         col_a1, col_a2, col_a3 = st.columns(3)
