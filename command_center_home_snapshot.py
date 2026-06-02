@@ -207,7 +207,11 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot.setdefault("source", SNAPSHOT_SOURCE)
     snapshot.setdefault("deepseek_called", False)
     snapshot["is_empty"] = bool(snapshot.get("is_empty"))
-    snapshot.setdefault("data_freshness", build_data_freshness(snapshot.get("timestamp"), snapshot.get("errors")))
+    snapshot["data_freshness"] = build_data_freshness(
+        snapshot.get("timestamp"),
+        snapshot.get("errors"),
+        deepseek_called=bool(snapshot.get("deepseek_called")),
+    )
     return snapshot
 
 

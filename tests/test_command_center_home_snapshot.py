@@ -217,6 +217,34 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(chosen["today_action"]["overall_action"], "降风险")
         self.assertFalse(chosen["deepseek_called"])
 
+    def test_loaded_snapshot_recomputes_freshness_from_timestamp(self):
+        today = _dt.date.today()
+        yesterday = (today - _dt.timedelta(days=1)).isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "只观察",
+                        "updated_at": f"{yesterday}T10:00:00",
+                    }
+                },
+                target="002008.SZ",
+                now=f"{yesterday}T10:00:00",
+            )
+            saved["data_freshness"] = {
+                "state": "today",
+                "label": "今日已刷新",
+                "last_updated": f"{yesterday}T10:00:00",
+                "deepseek_called": False,
+            }
+            snapshot.save_home_action_snapshot(saved, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+
+        self.assertEqual(loaded["data_freshness"]["state"], "stale")
+        self.assertEqual(loaded["data_freshness"]["label"], "使用缓存")
+        self.assertEqual(loaded["data_freshness"]["last_updated"], f"{yesterday}T10:00:00")
+
     def test_margin_ratio_can_be_inferred_from_local_account_state(self):
         summary = snapshot.build_margin_etf_summary(
             {
