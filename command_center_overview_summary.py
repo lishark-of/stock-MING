@@ -214,12 +214,77 @@ def _coverage_summary_text(coverage_items: list[dict]) -> str:
     )
 
 
+def _capability_tone(state: str) -> str:
+    if state == "available":
+        return "success"
+    if state in {"permission_denied", "disabled_this_session", "failed", "network_failed", "not_configured"}:
+        return "danger"
+    if state in {"empty_recent", "stale_cache", "fallback_used", "requires_manual_refresh"}:
+        return "warning"
+    return "muted"
+
+
+def build_data_capability_items(data_capability_packet: Any = None) -> list[dict]:
+    packet = _as_mapping(data_capability_packet)
+    raw_items = packet.get("items") or []
+    if not isinstance(raw_items, (list, tuple)):
+        return []
+    items = []
+    for raw in raw_items:
+        payload = _as_mapping(raw)
+        if not payload:
+            continue
+        state = _to_text(payload.get("capability_state"))
+        status = _to_text(payload.get("status") or payload.get("capability_label"))
+        if not state:
+            if payload.get("permission_likely"):
+                state = "permission_denied"
+            elif payload.get("ok"):
+                state = "available"
+            else:
+                state = "unknown"
+        items.append(
+            {
+                "key": _to_text(payload.get("section") or payload.get("api")) or "data_capability",
+                "label": _to_text(payload.get("label") or payload.get("api")) or "数据能力",
+                "api": _to_text(payload.get("api")),
+                "status": status or state,
+                "state": state,
+                "tone": _capability_tone(state),
+                "latest_date": _to_text(payload.get("latest_date")),
+                "updated_at": _to_text(payload.get("updated_at")),
+                "source": _to_text(payload.get("source")) or _to_text(packet.get("source")) or "数据能力",
+                "action_hint": _to_text(payload.get("action_hint")),
+                "error": _to_text(payload.get("error")),
+            }
+        )
+    return items[:12]
+
+
+def _data_capability_summary_text(items: list[dict]) -> str:
+    if not items:
+        return "尚未检测；页面打开不会自动请求 Tushare、AkShare 或 yfinance。"
+    available = [item["label"] for item in items if item["state"] == "available"]
+    blocked = [item["label"] for item in items if item["state"] in {"permission_denied", "disabled_this_session", "not_configured"}]
+    pending = [
+        item["label"]
+        for item in items
+        if item["state"] in {"empty_recent", "stale_cache", "fallback_used", "requires_manual_refresh", "unknown"}
+    ]
+    return (
+        f"可用：{'、'.join(available) if available else '无'}｜"
+        f"受限：{'、'.join(blocked) if blocked else '无'}｜"
+        f"待验证：{'、'.join(pending) if pending else '无'}"
+    )
+
+
 def build_command_center_overview_view_model(
     live_packet: Any = None,
     refresh_summary: Any = None,
     decision_packet: Any = None,
     strategy_packet: Any = None,
     deepseek_summary: Any = None,
+    data_capability_packet: Any = None,
 ) -> dict:
     coverage_items = build_center_coverage_items(live_packet, strategy_packet, decision_packet)
     error_items = _dedupe_items(build_center_error_items(live_packet) + _refresh_error_items(refresh_summary))
@@ -240,6 +305,7 @@ def build_command_center_overview_view_model(
         bool(_as_mapping(packet).get("deepseek_called"))
         for packet in (live_packet, decision_packet, strategy_packet)
     )
+    data_capability_items = build_data_capability_items(data_capability_packet)
     return {
         "overall_status_label": status_label,
         "overall_status_tone": tone,
@@ -250,5 +316,7 @@ def build_command_center_overview_view_model(
         "updated_text": _latest_updated_text(live_packet, refresh_summary),
         "deepseek_text": "DeepSeek：已调用" if deepseek_called else "DeepSeek：未调用",
         "usage_boundary_text": build_center_usage_boundary_text(),
+        "data_capability_items": data_capability_items,
+        "data_capability_summary_text": _data_capability_summary_text(data_capability_items),
         "next_action_items": build_center_next_action_items(live_packet, strategy_packet, decision_packet, deepseek_summary),
     }

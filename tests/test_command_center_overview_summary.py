@@ -99,6 +99,34 @@ class CommandCenterOverviewSummaryTests(unittest.TestCase):
         self.assertEqual(by_key["daily_decision"]["status"], "ready")
         self.assertEqual(by_key["deepseek"]["status"], "optional")
 
+    def test_data_capability_status_is_visible(self):
+        view_model = summary.build_command_center_overview_view_model(
+            data_capability_packet={
+                "source": "Tushare A股专业事实",
+                "items": [
+                    {"section": "moneyflow", "label": "个股资金流", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                    {"section": "margin", "label": "融资融券", "api": "margin_detail", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"section": "limit_emotion", "label": "涨跌停/情绪", "api": "limit_cpt_list", "capability_state": "disabled_this_session", "status": "本会话跳过"},
+                    {"section": "dragon_tiger", "label": "龙虎榜", "api": "top_list", "capability_state": "empty_recent", "status": "近期无数据"},
+                ],
+            }
+        )
+        by_key = {item["key"]: item for item in view_model["data_capability_items"]}
+
+        self.assertEqual(by_key["moneyflow"]["tone"], "success")
+        self.assertEqual(by_key["margin"]["tone"], "danger")
+        self.assertEqual(by_key["limit_emotion"]["tone"], "danger")
+        self.assertEqual(by_key["dragon_tiger"]["tone"], "warning")
+        self.assertIn("可用：个股资金流", view_model["data_capability_summary_text"])
+        self.assertIn("受限：融资融券、涨跌停/情绪", view_model["data_capability_summary_text"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_missing_data_capability_does_not_imply_refresh(self):
+        view_model = summary.build_command_center_overview_view_model(data_capability_packet={})
+
+        self.assertEqual(view_model["data_capability_items"], [])
+        self.assertIn("不会自动请求", view_model["data_capability_summary_text"])
+
     def test_missing_fields_are_safe(self):
         view_model = summary.build_command_center_overview_view_model(
             live_packet=object(),

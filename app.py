@@ -3928,6 +3928,16 @@ def _build_analysis_methods_display_packet(live_packet=None, target="", market_t
     )
 
 
+def _get_command_center_data_capability_packet():
+    professional_packet = st.session_state.get("a_share_professional_data_capability") or {}
+    if professional_packet:
+        return professional_packet
+    health_result = st.session_state.get("last_data_source_healthcheck") or {}
+    if isinstance(health_result, dict):
+        return health_result.get("tushare") or {}
+    return {}
+
+
 def render_command_center_live_cards(live_packet, target="", market_type="", price=None, position_profile=None):
     st.markdown("#### 真实摘要接入")
     cards = [
@@ -4132,6 +4142,7 @@ packet:
         decision_packet=_get_command_center_decision_display_packet(),
         strategy_packet=_get_strategy_execution_display_packet(),
         deepseek_summary=st.session_state.get(explanation_key),
+        data_capability_packet=_get_command_center_data_capability_packet(),
     )
     if refresh_summary:
         summary_payload = refresh_summary_view.get("summary") or {}
@@ -4173,6 +4184,23 @@ packet:
         f"{overview_vm.get('deepseek_text') or 'DeepSeek：未调用'} ｜ "
         "页面加载和控件切换不会自动调用 Tushare、AkShare 或 yfinance。"
     )
+    capability_items = overview_vm.get("data_capability_items") or []
+    st.caption(f"数据能力状态：{overview_vm.get('data_capability_summary_text')}")
+    if capability_items:
+        with st.expander("数据能力明细", expanded=False):
+            capability_df = pd.DataFrame(capability_items)
+            capability_columns = [
+                "label",
+                "api",
+                "status",
+                "state",
+                "latest_date",
+                "updated_at",
+                "action_hint",
+                "error",
+            ]
+            capability_columns = [column for column in capability_columns if column in capability_df.columns]
+            st.dataframe(capability_df[capability_columns], width="stretch", hide_index=True)
     home_snapshot = _build_home_action_snapshot_display(
         live_packet=live_packet,
         target=target,
