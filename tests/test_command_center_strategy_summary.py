@@ -140,6 +140,43 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(view_model["last_error_text"], "timeout")
         self.assertIn("上次生成失败：timeout", view_model["warning_items"])
 
+    def test_a_share_market_guidance_mentions_money_flow_ma_and_announcements(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "只观察"},
+            analysis_method_packet={"market": "A股"},
+        )
+        guidance = view_model["market_method_guidance"]
+        joined = json.dumps(guidance, ensure_ascii=False)
+
+        self.assertEqual(guidance["market"], "A股")
+        self.assertIn("资金流", joined)
+        self.assertIn("MA20", joined)
+        self.assertIn("公告", joined)
+
+    def test_us_market_guidance_mentions_rs_earnings_and_macro_without_a_share_terms(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "只观察"},
+            analysis_method_packet={"market": "美股"},
+        )
+        joined = json.dumps(view_model["market_method_guidance"], ensure_ascii=False)
+
+        self.assertIn("RS", joined)
+        self.assertIn("财报", joined)
+        self.assertIn("宏观利率", joined)
+        self.assertNotIn("龙虎榜", joined)
+        self.assertNotIn("涨跌停", joined)
+
+    def test_etf_market_guidance_mentions_sector_pullback_and_liquidity(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "只观察"},
+            analysis_method_packet={"market": "ETF"},
+        )
+        joined = json.dumps(view_model["market_method_guidance"], ensure_ascii=False)
+
+        self.assertIn("赛道", joined)
+        self.assertIn("回踩", joined)
+        self.assertIn("流动性", joined)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_strategy_summary.py").read_text())
         imports = []

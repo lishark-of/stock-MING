@@ -249,6 +249,49 @@ def build_strategy_data_status_items(packet: Any) -> list[dict]:
     ]
 
 
+def build_market_method_guidance(analysis_method_packet: Any = None) -> dict:
+    analysis = _as_mapping(analysis_method_packet)
+    market = _to_text(analysis.get("market")) or "市场类型待确认"
+    if market == "A股":
+        focus = ["资金流", "MA20/MA60", "公告风险", "龙虎榜/融资融券"]
+        return {
+            "market": market,
+            "title": "A股验证重点",
+            "focus_items": focus,
+            "add_condition": "站稳 MA20、量能确认、资金流改善，且公告无新增负面。",
+            "reduce_condition": "跌破 MA20/MA60、资金流恶化，或出现监管 / 减持风险。",
+            "invalidation_condition": "题材退潮、龙虎榜 / 融资数据不支持，或放量下跌。",
+        }
+    if market == "美股":
+        focus = ["RS 相对强弱", "财报/指引", "行业轮动", "宏观利率"]
+        return {
+            "market": market,
+            "title": "美股验证重点",
+            "focus_items": focus,
+            "add_condition": "RS 走强、财报后确认、行业强于指数，并突破关键价位。",
+            "reduce_condition": "财报 / 指引转弱、跌破趋势线，或宏观利率持续压制。",
+            "invalidation_condition": "增长逻辑失效，指数和行业共振走弱。",
+        }
+    if market == "ETF":
+        focus = ["赛道强度", "回踩确认", "成交额/流动性", "持仓重叠"]
+        return {
+            "market": market,
+            "title": "ETF 验证重点",
+            "focus_items": focus,
+            "add_condition": "赛道强度确认、回踩不破、成交额充足，且同赛道不重复配置。",
+            "reduce_condition": "赛道过热、跌破均线、流动性变差，或溢价折价异常。",
+            "invalidation_condition": "主题轮动失败，跟踪指数趋势破位。",
+        }
+    return {
+        "market": market,
+        "title": "市场验证重点",
+        "focus_items": ["市场类型", "基础数据", "纪律结果"],
+        "add_condition": "先确认市场类型和基础数据，再讨论加仓。",
+        "reduce_condition": "数据缺口扩大或纪律转弱时先降风险。",
+        "invalidation_condition": "市场画像无法确认时，本轮策略只保留观察。",
+    }
+
+
 def _data_status_label(value: Any) -> str:
     state = _to_text(value).lower() or "missing"
     return DATA_STATUS_STATE_LABELS.get(state, _to_text(value) or "待刷新")
@@ -294,12 +337,13 @@ def _warning_items(packet: Mapping[str, Any]) -> list[str]:
     return warnings[:6] or ["暂无新增异常；仍需遵守不追高、不自动重仓。"]
 
 
-def build_strategy_summary_view_model(packet: Any) -> dict:
+def build_strategy_summary_view_model(packet: Any, analysis_method_packet: Any = None) -> dict:
     payload = _as_mapping(packet)
     is_empty = not bool(payload)
     action = "尚未生成" if is_empty else strategy_action_label(payload)
     confidence = "待生成" if is_empty else (_to_text(payload.get("confidence")) or "低")
     summary = _to_text(payload.get("summary")) or "尚未生成策略执行建议。点击按钮后只读取缓存、量化摘要和纪律结果，不调用 DeepSeek，不跑回测。"
+    market_guidance = build_market_method_guidance(analysis_method_packet)
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -320,6 +364,7 @@ def build_strategy_summary_view_model(packet: Any) -> dict:
         "risk_budget_items": build_strategy_risk_budget_items(payload),
         "data_status_items": build_strategy_data_status_items(payload),
         "warning_items": _warning_items(payload),
+        "market_method_guidance": market_guidance,
         "risk_label": _to_text(_as_mapping(payload.get("risk_budget")).get("risk_level")) or "未知",
         "deepseek_text": "DeepSeek：已调用" if bool(payload.get("deepseek_called")) else "DeepSeek：未调用",
         "updated_text": _to_text(payload.get("updated_at")) or "暂无",

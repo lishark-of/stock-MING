@@ -127,6 +127,32 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(summary.decision_updated_text({}), "暂无")
         self.assertEqual(summary.decision_source_text({}), "command_center_decision_engine")
 
+    def test_evidence_chain_includes_market_passed_pending_and_not_applicable_methods(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "只观察"},
+            analysis_method_packet={
+                "market": "A股",
+                "source": "rule-based market profile",
+                "methods": [
+                    {"name": "趋势跟踪", "status": "通过"},
+                    {"name": "资金流 / 机构行为", "status": "待验证"},
+                    {"name": "ETF 赛道配置", "status": "不适用"},
+                ],
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("A股", joined)
+        self.assertIn("趋势跟踪", joined)
+        self.assertIn("资金流", joined)
+        self.assertIn("ETF 赛道配置", joined)
+
+    def test_empty_evidence_chain_is_safe(self):
+        view_model = summary.build_decision_summary_view_model({}, analysis_method_packet=None)
+
+        self.assertEqual(view_model["evidence_chain_items"][0]["value"], "市场类型待确认")
+        json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_decision_summary.py").read_text())
         imports = []

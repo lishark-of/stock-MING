@@ -3845,7 +3845,7 @@ def _generate_command_center_decision(live_packet, refresh_summary=None):
     return decision_packet, live_packet
 
 
-def render_command_center_decision_card(live_packet, target="", position_profile=None):
+def render_command_center_decision_card(live_packet, target="", position_profile=None, analysis_method_packet=None):
     live_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(live_packet))
     packet = _get_command_center_decision_display_packet()
     notice = st.session_state.pop("command_center_decision_notice", "")
@@ -3855,7 +3855,7 @@ def render_command_center_decision_card(live_packet, target="", position_profile
             st.warning(notice)
         else:
             st.success(notice)
-    decision_vm = build_decision_summary_view_model(packet)
+    decision_vm = build_decision_summary_view_model(packet, analysis_method_packet=analysis_method_packet)
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):
         st.caption("当前展示为上次成功结果；最近一次生成失败。")
@@ -3881,7 +3881,7 @@ def render_command_center_decision_card(live_packet, target="", position_profile
     return live_packet
 
 
-def render_strategy_execution_card(live_packet, target="", position_profile=None):
+def render_strategy_execution_card(live_packet, target="", position_profile=None, analysis_method_packet=None):
     live_packet = _attach_strategy_execution_packet(live_packet)
     packet = _get_strategy_execution_display_packet()
     st.caption("路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释")
@@ -3907,7 +3907,7 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
             strategy_packet=packet,
         )
 
-    strategy_vm = build_strategy_summary_view_model(packet)
+    strategy_vm = build_strategy_summary_view_model(packet, analysis_method_packet=analysis_method_packet)
     render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
     return live_packet
 
@@ -4180,22 +4180,6 @@ packet:
     with home_snapshot_slot.container():
         render_home_action_snapshot(home_snapshot)
     st.caption("本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释。")
-    with decision_hero_slot.container():
-        live_packet = render_command_center_decision_card(
-            live_packet,
-            target=target,
-            position_profile=position_profile,
-        )
-    projection_packet = projection_service.build_projection_packet(
-        decision_packet=_get_command_center_decision_display_packet(),
-        strategy_packet=_get_strategy_execution_display_packet(),
-        live_packet=live_packet,
-        home_snapshot=home_snapshot,
-        horizon_days=10,
-    )
-    st.session_state["command_center_projection_packet"] = projection_packet
-    with projection_slot.container():
-        render_command_center_projection_chart(projection_packet)
     analysis_method_packet = _build_analysis_methods_display_packet(
         live_packet=live_packet,
         target=target,
@@ -4203,11 +4187,30 @@ packet:
         home_snapshot=home_snapshot,
     )
     st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
+    with decision_hero_slot.container():
+        live_packet = render_command_center_decision_card(
+            live_packet,
+            target=target,
+            position_profile=position_profile,
+            analysis_method_packet=analysis_method_packet,
+        )
+    projection_packet = projection_service.build_projection_packet(
+        decision_packet=_get_command_center_decision_display_packet(),
+        strategy_packet=_get_strategy_execution_display_packet(),
+        live_packet=live_packet,
+        home_snapshot=home_snapshot,
+        analysis_method_packet=analysis_method_packet,
+        horizon_days=10,
+    )
+    st.session_state["command_center_projection_packet"] = projection_packet
+    with projection_slot.container():
+        render_command_center_projection_chart(projection_packet)
     render_analysis_methods_card(analysis_method_packet)
     live_packet = render_strategy_execution_card(
         live_packet,
         target=target,
         position_profile=position_profile,
+        analysis_method_packet=analysis_method_packet,
     )
     render_command_center_live_cards(
         live_packet,

@@ -167,7 +167,29 @@ def build_data_coverage_items(packet: Any) -> list[dict]:
     return items
 
 
-def build_decision_summary_view_model(packet: Any) -> dict:
+def build_decision_evidence_chain_items(analysis_method_packet: Any = None) -> list[dict]:
+    analysis = _as_mapping(analysis_method_packet)
+    market = _to_text(analysis.get("market")) or "市场类型待确认"
+    items = [{"label": "市场类型", "value": market, "tone": "success" if market in {"A股", "美股", "ETF"} else "muted"}]
+    methods = [_as_mapping(item) for item in (analysis.get("methods") or []) if _as_mapping(item)]
+    passed = [item.get("name") for item in methods if item.get("status") == "通过"]
+    pending = [item.get("name") for item in methods if item.get("status") == "待验证"]
+    not_applicable = [item.get("name") for item in methods if item.get("status") == "不适用"]
+    if passed:
+        items.append({"label": "已通过", "value": "、".join(passed[:2]), "tone": "success"})
+    else:
+        items.append({"label": "已通过", "value": "暂无", "tone": "muted"})
+    if pending:
+        items.append({"label": "待验证", "value": "、".join(pending[:2]), "tone": "warning"})
+    if not_applicable:
+        items.append({"label": "不适用", "value": "、".join(not_applicable[:2]), "tone": "muted"})
+    if len(items) < 5:
+        source = _to_text(analysis.get("source")) or "rule-based market profile"
+        items.append({"label": "来源", "value": source, "tone": "muted"})
+    return items[:5]
+
+
+def build_decision_summary_view_model(packet: Any, analysis_method_packet: Any = None) -> dict:
     payload = _as_mapping(packet)
     status = normalize_decision_status(payload)
     action = decision_action_label(payload)
@@ -195,6 +217,7 @@ def build_decision_summary_view_model(packet: Any) -> dict:
         "action_guardrail": decision_action_guardrail_text(payload),
         "user_boundary_text": decision_user_boundary_text(payload),
         "evidence_summary_text": decision_evidence_summary_text(payload),
+        "evidence_chain_items": build_decision_evidence_chain_items(analysis_method_packet),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),

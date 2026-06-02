@@ -3400,6 +3400,24 @@ def _inject_command_center_css():
         .cc-decision-badge.partial { background: rgba(245,158,11,0.12); color: #b45309; border-color: rgba(245,158,11,0.18); }
         .cc-decision-badge.waiting { background: rgba(148,163,184,0.13); color: #475569; border-color: rgba(148,163,184,0.18); }
         .cc-decision-badge.failed { background: rgba(239,68,68,0.10); color: #b91c1c; border-color: rgba(239,68,68,0.18); }
+        .cc-decision-chain {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 11px;
+        }
+        .cc-decision-chain-pill {
+            border-radius: 999px;
+            background: rgba(255,255,255,0.76);
+            border: 1px solid rgba(148,163,184,0.18);
+            color: #334155;
+            padding: 7px 10px;
+            font-size: 12px;
+            font-weight: 760;
+        }
+        .cc-decision-chain-pill.success { background: rgba(20,184,166,0.10); color: #0f766e; border-color: rgba(20,184,166,0.18); }
+        .cc-decision-chain-pill.warning { background: rgba(245,158,11,0.11); color: #b45309; border-color: rgba(245,158,11,0.18); }
+        .cc-decision-chain-pill.muted { background: rgba(148,163,184,0.10); color: #475569; border-color: rgba(148,163,184,0.16); }
         .cc-decision-risk {
             border-radius: 24px;
             background: rgba(255,255,255,0.74);
@@ -3702,6 +3720,47 @@ def _inject_command_center_css():
             font-size: 13px;
             font-weight: 850;
             margin: 16px 0 8px;
+        }
+        .cc-strategy-guidance {
+            border-radius: 20px;
+            background: rgba(37,99,235,0.07);
+            border: 1px solid rgba(37,99,235,0.14);
+            padding: 13px;
+            margin-top: 12px;
+        }
+        .cc-strategy-guidance-title {
+            color: #1d4ed8;
+            font-size: 13px;
+            font-weight: 880;
+            margin-bottom: 8px;
+        }
+        .cc-strategy-guidance-row {
+            display: grid;
+            grid-template-columns: 48px minmax(0, 1fr);
+            gap: 8px;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.5;
+            margin-top: 6px;
+        }
+        .cc-strategy-guidance-row span {
+            color: #1d4ed8;
+            font-weight: 850;
+        }
+        .cc-strategy-focus {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-top: 8px;
+        }
+        .cc-strategy-focus span {
+            border-radius: 999px;
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(37,99,235,0.14);
+            color: #1e40af;
+            padding: 5px 8px;
+            font-size: 11px;
+            font-weight: 820;
         }
         .cc-strategy-foot-grid {
             display: grid;
@@ -4391,6 +4450,17 @@ def render_strategy_execution_command_card(
         for item in (vm.get("data_status_items") or [])
     )
     warning_lines = [str(item) for item in (vm.get("warning_items") or [])]
+    guidance = vm.get("market_method_guidance") or {}
+    focus_html = "".join(f"<span>{escape(str(item))}</span>" for item in (guidance.get("focus_items") or [])[:5])
+    guidance_html = f"""
+      <div class="cc-strategy-guidance">
+        <div class="cc-strategy-guidance-title">{escape(str(guidance.get("title") or "市场验证重点"))}</div>
+        <div class="cc-strategy-focus">{focus_html}</div>
+        <div class="cc-strategy-guidance-row"><span>加仓</span><b>{escape(str(guidance.get("add_condition") or "先确认市场类型和基础数据。"))}</b></div>
+        <div class="cc-strategy-guidance-row"><span>减仓</span><b>{escape(str(guidance.get("reduce_condition") or "数据缺口扩大或纪律转弱时先降风险。"))}</b></div>
+        <div class="cc-strategy-guidance-row"><span>失效</span><b>{escape(str(guidance.get("invalidation_condition") or "市场画像无法确认时只保留观察。"))}</b></div>
+      </div>
+    """
     pill_items = [
         (f"状态：{vm.get('status_label') or '待生成'}", vm.get("status_tone")),
         (f"风险：{risk_level}", risk_level),
@@ -4420,6 +4490,7 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-budget-grid">{budget_html}</div>
       <div class="cc-strategy-section-title">操作条件</div>
       <div class="cc-strategy-condition-grid">{condition_html}</div>
+      {guidance_html}
       <div class="cc-strategy-section-title">未来 5-10 日路径</div>
       <div class="cc-strategy-path-grid">{path_html}</div>
       <div class="cc-strategy-foot-grid">
@@ -4475,6 +4546,12 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             f"<span class='cc-coverage-fill {escape(state_class)}'></span>"
             "</div></div>"
         )
+    evidence_chain_html = "".join(
+        f"<span class='cc-decision-chain-pill {escape(str(item.get('tone') or 'muted'))}'>"
+        f"{escape(str(item.get('label') or '依据'))}：{escape(str(item.get('value') or '待验证'))}"
+        "</span>"
+        for item in (vm.get("evidence_chain_items") or [])[:5]
+    )
     html = f"""
     <section class="cc-decision-hero">
       <div class="cc-decision-top">
@@ -4488,6 +4565,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             <span class="cc-decision-badge">市场：{escape(str(vm.get("market_text") or "未刷新"))}</span>
             <span class="cc-decision-badge">{escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}</span>
           </div>
+          <div class="cc-decision-chain">{evidence_chain_html}</div>
         </div>
         <aside class="cc-decision-risk">
           <div class="cc-decision-risk-label">风险等级</div>
@@ -5097,7 +5175,10 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
             st.info("暂无路径数据，点击刷新今日基础数据生成。")
         else:
             st.line_chart(frame, height=320)
-    st.caption(f"路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。来源：{source}")
+    st.caption(
+        f"路径依据来自：{payload.get('path_basis') or '市场类型待确认 / 数据待验证'} ｜ "
+        f"路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。来源：{source}"
+    )
     _projection_path_cards(paths)
 
 

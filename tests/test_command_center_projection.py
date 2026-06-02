@@ -120,6 +120,47 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertEqual(packet["status"], "ready")
         self.assertGreater(packet["paths"][2]["probability"], packet["paths"][0]["probability"])
 
+    def test_a_share_analysis_guidance_enriches_path_risk_notes(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["market_type"], "A股")
+        self.assertIn("A股资金", packet["path_basis"])
+        self.assertIn("资金流改善", packet["paths"][0]["trigger"])
+        self.assertIn("涨跌停", joined)
+        self.assertIn("龙虎榜", joined)
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_us_analysis_guidance_avoids_a_share_terms(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "美股", "summary": "美股分析框架"},
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["market_type"], "美股")
+        self.assertIn("财报", joined)
+        self.assertIn("RS", joined)
+        self.assertIn("宏观利率", joined)
+        self.assertNotIn("龙虎榜", joined)
+        self.assertIn("无涨跌停", joined)
+
+    def test_etf_analysis_guidance_mentions_sector_and_liquidity(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "ETF", "summary": "ETF分析框架"},
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["market_type"], "ETF")
+        self.assertIn("赛道", joined)
+        self.assertIn("回踩", joined)
+        self.assertIn("流动性", joined)
+        self.assertIn("持仓重叠", joined)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_projection.py").read_text())
         imports = []
