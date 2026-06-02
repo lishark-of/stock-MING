@@ -348,6 +348,7 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
             {
                 "key": _to_text(payload.get("section") or payload.get("api"), "data_capability"),
                 "label": label,
+                "provider": _to_text(payload.get("provider") or payload.get("source") or packet.get("source"), "数据能力"),
                 "api": _to_text(payload.get("api")),
                 "status": _to_text(payload.get("status") or payload.get("capability_label") or state, "待验证"),
                 "state": state,
@@ -592,9 +593,13 @@ def build_home_action_snapshot(
         or state_map.get("strategy_execution_last_success")
     )
     if data_capability_packet is None:
-        data_capability_packet = state_map.get("a_share_professional_data_capability")
-        if not data_capability_packet:
-            data_capability_packet = _as_mapping(state_map.get("last_data_source_healthcheck")).get("tushare")
+        healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))
+        data_capability_packet = (
+            state_map.get("command_center_data_capability_packet")
+            or state_map.get("a_share_professional_data_capability")
+            or healthcheck.get("data_capability")
+            or healthcheck.get("tushare")
+        )
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")

@@ -257,6 +257,44 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("本会话跳过", json.dumps(loaded["data_capability"], ensure_ascii=False))
         self.assertFalse(loaded["data_capability"]["deepseek_called"])
 
+    def test_home_snapshot_prefers_unified_data_capability_from_healthcheck(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "last_data_source_healthcheck": {
+                "data_capability": {
+                    "source": "Unified data capability",
+                    "checked_at": f"{today}T10:01:00",
+                    "items": [
+                        {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用"},
+                        {"provider": "Supabase", "api": "brain_memory", "label": "brain_memory", "capability_state": "not_configured", "status": "未配置"},
+                        {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                    ],
+                    "deepseek_called": False,
+                },
+                "tushare": {
+                    "source": "Tushare",
+                    "items": [
+                        {"api": "daily", "label": "daily", "capability_state": "available", "status": "可用"},
+                    ],
+                },
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+        capability = payload["data_capability"]
+        dumped = json.dumps(capability, ensure_ascii=False)
+
+        self.assertEqual(capability["source"], "Unified data capability")
+        self.assertIn("Supabase", dumped)
+        self.assertIn("AkShare 重型刷新", dumped)
+        self.assertIn("需要手动刷新", dumped)
+        self.assertFalse(capability["deepseek_called"])
+
     def test_local_snapshot_wins_after_restart_when_session_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             saved = snapshot.build_home_action_snapshot(

@@ -6,6 +6,7 @@ from typing import Any
 
 
 SOURCE_TUSHARE = "Tushare"
+SOURCE_UNIFIED = "Unified data capability"
 MAX_ERROR_LENGTH = 180
 
 STATE_AVAILABLE = "available"
@@ -95,6 +96,23 @@ FACT_SECTION_APIS = {
     "limit_emotion": "stk_limit / limit_list_d / limit_cpt_list",
     "chip_radar": "cyq_perf/cyq_chips",
 }
+
+MANUAL_PROVIDER_ITEMS = (
+    {
+        "provider": "AkShare",
+        "api": "akshare_manual_refresh",
+        "label": "AkShare 重型刷新",
+        "error": "尚未手动检测；页面打开不自动调用 AkShare 重型刷新。",
+        "requires_manual_refresh": True,
+    },
+    {
+        "provider": "yfinance",
+        "api": "yfinance_market_data",
+        "label": "yfinance 行情/新闻",
+        "error": "尚未手动检测；页面打开不自动调用 yfinance。",
+        "requires_manual_refresh": True,
+    },
+)
 
 LATEST_DATE_KEYS = (
     "latest_date",
@@ -274,6 +292,7 @@ def build_capability_item(
     return {
         "api": str(api or ""),
         "source": source,
+        "provider": source,
         "ok": bool(ok) and state == STATE_AVAILABLE,
         "rows": row_count,
         "latest_date": str(latest_date or ""),
@@ -287,6 +306,40 @@ def build_capability_item(
         "should_skip_session": state == STATE_PERMISSION_DENIED,
         "can_retry": state in {STATE_NETWORK_FAILED, STATE_FAILED, STATE_DISABLED_THIS_SESSION},
     }
+
+
+def build_provider_capability_item(
+    provider: str,
+    api: str,
+    label: str = "",
+    ok: bool = False,
+    rows: int | float | None = 0,
+    latest_date: Any = "",
+    latency_ms: int | float | None = 0,
+    error: Any = "",
+    cached: bool = False,
+    stale: bool = False,
+    fallback_used: bool = False,
+    skipped: bool = False,
+    requires_manual_refresh: bool = False,
+) -> dict:
+    item = build_capability_item(
+        api,
+        ok=ok,
+        rows=rows,
+        latest_date=latest_date,
+        latency_ms=latency_ms,
+        error=error,
+        source=provider,
+        cached=cached,
+        stale=stale,
+        fallback_used=fallback_used,
+        skipped=skipped,
+        requires_manual_refresh=requires_manual_refresh,
+    )
+    item["provider"] = provider
+    item["label"] = label or api or provider
+    return item
 
 
 def summarize_tushare_result(api: str, result: Any = None, latency_ms: int | float | None = 0) -> dict:
@@ -356,6 +409,150 @@ def build_tushare_capability_packet(items: Any, checked_at: Any = "", source: st
         ),
         "deepseek_called": False,
     }
+
+
+def _normalize_existing_item(item: Any, provider: str = "", label_key: str = "label") -> dict:
+    payload = as_mapping(item)
+    if not payload:
+        return {}
+    provider_text = str(provider or payload.get("provider") or payload.get("source") or SOURCE_TUSHARE)
+    state = str(payload.get("capability_state") or payload.get("state") or "")
+    if state:
+        normalized = build_provider_capability_item(
+            provider_text,
+            str(payload.get("api") or payload.get("table") or payload.get("section") or ""),
+            label=str(payload.get(label_key) or payload.get("label") or payload.get("table") or payload.get("api") or ""),
+            ok=state == STATE_AVAILABLE,
+            rows=payload.get("rows") or 0,
+            latest_date=payload.get("latest_date") or payload.get("updated_at") or "",
+            latency_ms=payload.get("latency_ms") or 0,
+            error=payload.get("error") or "",
+            cached=state == STATE_STALE_CACHE,
+            fallback_used=state == STATE_FALLBACK_USED,
+            skipped=state == STATE_DISABLED_THIS_SESSION,
+            requires_manual_refresh=state == STATE_REQUIRES_MANUAL_REFRESH,
+        )
+        normalized["capability_state"] = state
+        normalized["status"] = str(payload.get("status") or state_label(state))
+        normalized["capability_label"] = str(payload.get("capability_label") or normalized["status"])
+        normalized["ok"] = state == STATE_AVAILABLE
+        normalized["permission_likely"] = state == STATE_PERMISSION_DENIED
+        normalized["should_skip_session"] = state == STATE_PERMISSION_DENIED
+        normalized["can_retry"] = state in {STATE_NETWORK_FAILED, STATE_FAILED, STATE_DISABLED_THIS_SESSION}
+        normalized["action_hint"] = str(payload.get("action_hint") or action_hint_for_state(state))
+    else:
+        normalized = build_provider_capability_item(
+            provider_text,
+            str(payload.get("api") or payload.get("table") or payload.get("section") or ""),
+            label=str(payload.get(label_key) or payload.get("label") or payload.get("table") or payload.get("api") or ""),
+            ok=bool(payload.get("ok")),
+            rows=payload.get("rows") or payload.get("count") or 0,
+            latest_date=payload.get("latest_date") or payload.get("updated_at") or "",
+            latency_ms=payload.get("latency_ms") or 0,
+            error=payload.get("error") or payload.get("message") or "",
+            cached=bool(payload.get("cached") or payload.get("from_cache")),
+            stale=bool(payload.get("stale")),
+            fallback_used=bool(payload.get("fallback_used")),
+            skipped=bool(payload.get("skipped") or payload.get("disabled_this_session")),
+            requires_manual_refresh=bool(payload.get("requires_manual_refresh")),
+        )
+    normalized.update(
+        {
+            "provider": provider_text,
+            "source": str(payload.get("source") or provider_text),
+            "section": str(payload.get("section") or normalized.get("api") or ""),
+            "updated_at": str(payload.get("updated_at") or ""),
+            "message": str(payload.get("message") or ""),
+            "warning": str(payload.get("warning") or ""),
+        }
+    )
+    return normalized
+
+
+def build_supabase_capability_packet(supabase_result: Any = None) -> dict:
+    payload = as_mapping(supabase_result)
+    raw_items = payload.get("items") or []
+    items = [_normalize_existing_item(item, provider="Supabase", label_key="table") for item in raw_items]
+    items = [item for item in items if item]
+    return build_tushare_capability_packet(
+        items,
+        checked_at=payload.get("checked_at") or "",
+        source="Supabase",
+    )
+
+
+def build_manual_provider_items(include_akshare: bool = True, include_yfinance: bool = True) -> list[dict]:
+    items = []
+    for spec in MANUAL_PROVIDER_ITEMS:
+        if spec["provider"] == "AkShare" and not include_akshare:
+            continue
+        if spec["provider"] == "yfinance" and not include_yfinance:
+            continue
+        items.append(
+            build_provider_capability_item(
+                spec["provider"],
+                spec["api"],
+                label=spec["label"],
+                error=spec["error"],
+                requires_manual_refresh=bool(spec.get("requires_manual_refresh")),
+            )
+        )
+    return items
+
+
+def build_unified_provider_capability_packet(
+    health_result: Any = None,
+    a_share_packet: Any = None,
+    include_manual_providers: bool = True,
+    checked_at: Any = "",
+) -> dict:
+    health = as_mapping(health_result)
+    a_share = as_mapping(a_share_packet)
+    items = []
+
+    if a_share.get("items"):
+        items.extend(_normalize_existing_item(item, provider=SOURCE_TUSHARE) for item in a_share.get("items") or [])
+    elif a_share:
+        a_share_professional = build_a_share_professional_capability_packet(a_share)
+        items.extend(_normalize_existing_item(item, provider=SOURCE_TUSHARE) for item in a_share_professional.get("items") or [])
+
+    tushare_packet = as_mapping(health.get("tushare"))
+    if tushare_packet.get("items"):
+        items.extend(_normalize_existing_item(item, provider=tushare_packet.get("source") or SOURCE_TUSHARE) for item in tushare_packet.get("items") or [])
+
+    supabase_packet = as_mapping(health.get("supabase"))
+    if supabase_packet.get("items"):
+        items.extend(_normalize_existing_item(item, provider="Supabase", label_key="table") for item in supabase_packet.get("items") or [])
+
+    if include_manual_providers and (health or a_share):
+        existing_providers = {str(item.get("provider") or item.get("source") or "") for item in items}
+        items.extend(
+            item
+            for item in build_manual_provider_items()
+            if item.get("provider") not in existing_providers
+        )
+
+    normalized = [item for item in items if item]
+    packet = build_tushare_capability_packet(
+        normalized,
+        checked_at=checked_at or health.get("checked_at") or a_share.get("checked_at") or a_share.get("updated_at") or "",
+        source=SOURCE_UNIFIED,
+    )
+    providers: dict[str, dict] = {}
+    for item in normalized:
+        provider = str(item.get("provider") or item.get("source") or "数据源")
+        provider_summary = providers.setdefault(provider, {"total": 0, "available": 0, "restricted": 0, "pending": 0})
+        provider_summary["total"] += 1
+        state = item.get("capability_state")
+        if state == STATE_AVAILABLE:
+            provider_summary["available"] += 1
+        elif state in {STATE_PERMISSION_DENIED, STATE_DISABLED_THIS_SESSION, STATE_NOT_CONFIGURED, STATE_NETWORK_FAILED, STATE_FAILED}:
+            provider_summary["restricted"] += 1
+        else:
+            provider_summary["pending"] += 1
+    packet["providers"] = providers
+    packet["deepseek_called"] = False
+    return packet
 
 
 def _first_text(payload: Mapping[str, Any], keys: tuple[str, ...]) -> str:

@@ -116,6 +116,63 @@ class MarketDataCapabilityTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
+    def test_supabase_capability_packet_normalizes_table_status(self):
+        packet = capability.build_supabase_capability_packet(
+            {
+                "checked_at": "2026-06-02T22:00:00",
+                "items": [
+                    {"table": "brain_memory", "ok": True, "rows": 1, "latency_ms": 12, "status": "正常"},
+                    {"table": "market_news", "ok": False, "rows": 0, "error": "Supabase 未配置或初始化失败"},
+                ],
+            }
+        )
+        by_api = {item["api"]: item for item in packet["items"]}
+
+        self.assertEqual(packet["source"], "Supabase")
+        self.assertEqual(by_api["brain_memory"]["provider"], "Supabase")
+        self.assertEqual(by_api["brain_memory"]["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(by_api["market_news"]["capability_state"], capability.STATE_NOT_CONFIGURED)
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_unified_provider_packet_combines_data_sources_and_manual_placeholders(self):
+        a_share_packet = capability.build_a_share_professional_capability_packet(
+            {
+                "stock_code": "002008",
+                "moneyflow": {"available": True, "api": "moneyflow", "date": "20260602"},
+                "margin": {"available": False, "error": "权限不足"},
+            },
+            checked_at="2026-06-02T22:05:00",
+        )
+        health_result = {
+            "checked_at": "2026-06-02T22:06:00",
+            "supabase": {
+                "source": "Supabase",
+                "items": [
+                    {"table": "brain_memory", "ok": True, "rows": 1},
+                ],
+            },
+        }
+
+        packet = capability.build_unified_provider_capability_packet(
+            health_result=health_result,
+            a_share_packet=a_share_packet,
+            include_manual_providers=True,
+        )
+        providers = {item["provider"] for item in packet["items"]}
+        labels = {item["label"] for item in packet["items"]}
+
+        self.assertEqual(packet["source"], capability.SOURCE_UNIFIED)
+        self.assertIn("Tushare", providers)
+        self.assertIn("Supabase", providers)
+        self.assertIn("AkShare", providers)
+        self.assertIn("yfinance", providers)
+        self.assertIn("AkShare 重型刷新", labels)
+        self.assertIn("yfinance 行情/新闻", labels)
+        self.assertGreaterEqual(packet["providers"]["Tushare"]["total"], 1)
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("market_data_capability.py").read_text(encoding="utf-8"))
         imports = []

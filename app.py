@@ -3931,13 +3931,20 @@ def _build_analysis_methods_display_packet(live_packet=None, target="", market_t
 
 
 def _get_command_center_data_capability_packet():
+    existing_packet = st.session_state.get("command_center_data_capability_packet") or {}
     professional_packet = st.session_state.get("a_share_professional_data_capability") or {}
-    if professional_packet:
-        return professional_packet
     health_result = st.session_state.get("last_data_source_healthcheck") or {}
-    if isinstance(health_result, dict):
-        return health_result.get("tushare") or {}
-    return {}
+    health_map = health_result if isinstance(health_result, dict) else {}
+    if health_map.get("data_capability") and not professional_packet:
+        return health_map.get("data_capability") or existing_packet or {}
+    unified_packet = data_capability.build_unified_provider_capability_packet(
+        health_result=health_map,
+        a_share_packet=professional_packet,
+        include_manual_providers=bool(health_map or professional_packet or existing_packet),
+    )
+    if unified_packet.get("items"):
+        return unified_packet
+    return existing_packet or {}
 
 
 def render_command_center_live_cards(live_packet, target="", market_type="", price=None, position_profile=None):
@@ -4547,6 +4554,8 @@ else:
                     )
                 except Exception as exc:
                     latency_ms = int((time.perf_counter() - start_time) * 1000)
+                    error_text = data_capability.compact_error(exc)
+                    status_state = data_capability.classify_capability_state(ok=False, rows=0, error=error_text)
                     supabase_items.append(
                         {
                             "table": table,
@@ -4554,8 +4563,8 @@ else:
                             "rows": 0,
                             "count": "",
                             "latency_ms": latency_ms,
-                            "error": compact_error(exc),
-                            "status": classify_status(False, 0, str(exc)),
+                            "error": error_text,
+                            "status": data_capability.state_label(status_state),
                         }
                     )
         supabase_ok_count = sum(1 for item in supabase_items if item.get("ok"))
@@ -4596,10 +4605,22 @@ else:
                 deepseek_result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
                 deepseek_result["status"] = "连通"
             except Exception as exc:
+                error_text = data_capability.compact_error(exc)
+                status_state = data_capability.classify_capability_state(ok=False, rows=0, error=error_text)
                 deepseek_result["ok"] = False
                 deepseek_result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
-                deepseek_result["error"] = compact_error(exc)
-                deepseek_result["status"] = classify_status(False, 0, str(exc))
+                deepseek_result["error"] = error_text
+                deepseek_result["status"] = data_capability.state_label(status_state)
+
+        data_capability_packet = data_capability.build_unified_provider_capability_packet(
+            health_result={
+                "checked_at": checked_at,
+                "tushare": tushare_result,
+                "supabase": supabase_result,
+            },
+            include_manual_providers=True,
+            checked_at=checked_at,
+        )
 
         return {
             "checked_at": checked_at,
@@ -4607,6 +4628,7 @@ else:
             "tushare": tushare_result,
             "supabase": supabase_result,
             "deepseek": deepseek_result,
+            "data_capability": data_capability_packet,
         }
 
     def load_cloud_knowledge():
