@@ -1,0 +1,301 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from numbers import Number
+from typing import Any
+
+
+SOURCE_TUSHARE = "Tushare"
+MAX_ERROR_LENGTH = 180
+
+STATE_AVAILABLE = "available"
+STATE_PERMISSION_DENIED = "permission_denied"
+STATE_EMPTY_RECENT = "empty_recent"
+STATE_STALE_CACHE = "stale_cache"
+STATE_FALLBACK_USED = "fallback_used"
+STATE_DISABLED_THIS_SESSION = "disabled_this_session"
+STATE_REQUIRES_MANUAL_REFRESH = "requires_manual_refresh"
+STATE_NETWORK_FAILED = "network_failed"
+STATE_NOT_CONFIGURED = "not_configured"
+STATE_FAILED = "failed"
+
+STATE_LABELS = {
+    STATE_AVAILABLE: "可用",
+    STATE_PERMISSION_DENIED: "权限不足",
+    STATE_EMPTY_RECENT: "近期无数据",
+    STATE_STALE_CACHE: "使用缓存",
+    STATE_FALLBACK_USED: "使用替代口径",
+    STATE_DISABLED_THIS_SESSION: "本会话跳过",
+    STATE_REQUIRES_MANUAL_REFRESH: "需要手动刷新",
+    STATE_NETWORK_FAILED: "网络失败",
+    STATE_NOT_CONFIGURED: "未配置",
+    STATE_FAILED: "调用失败",
+}
+
+PERMISSION_KEYWORDS = (
+    "权限",
+    "无接口访问权限",
+    "permission",
+    "积分",
+    "没有访问",
+    "抱歉",
+    "denied",
+    "forbidden",
+    "unauthorized",
+)
+
+NETWORK_KEYWORDS = (
+    "connection",
+    "network",
+    "timed out",
+    "timeout",
+    "nameresolution",
+    "name resolution",
+    "max retries",
+    "网络",
+)
+
+NOT_CONFIGURED_KEYWORDS = (
+    "缺少",
+    "未配置",
+    "token",
+    "api key",
+    "apikey",
+)
+
+SESSION_SKIP_KEYWORDS = (
+    "本会话跳过",
+    "跳过重复请求",
+    "disabled_this_session",
+    "skip",
+)
+
+
+def as_mapping(value: Any) -> dict:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def compact_error(error: Any, limit: int = MAX_ERROR_LENGTH) -> str:
+    text = str(error or "").strip()
+    if not text:
+        return ""
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+    lower = str(text or "").lower()
+    return any(keyword.lower() in lower for keyword in keywords)
+
+
+def is_permission_error(error: Any) -> bool:
+    return _contains_any(str(error or ""), PERMISSION_KEYWORDS)
+
+
+def is_network_error(error: Any) -> bool:
+    return _contains_any(str(error or ""), NETWORK_KEYWORDS)
+
+
+def is_not_configured_error(error: Any) -> bool:
+    return _contains_any(str(error or ""), NOT_CONFIGURED_KEYWORDS)
+
+
+def is_session_skip_error(error: Any) -> bool:
+    return _contains_any(str(error or ""), SESSION_SKIP_KEYWORDS)
+
+
+def extract_frame_summary(data: Any) -> tuple[int, str]:
+    if data is None:
+        return 0, ""
+    try:
+        rows = len(data)
+    except Exception:
+        rows = 0
+    latest_date = ""
+    try:
+        empty = bool(getattr(data, "empty", False))
+        columns = list(getattr(data, "columns", []) or [])
+        if not empty and columns:
+            for column in ("trade_date", "cal_date", "ann_date", "end_date", "float_date", "surv_date", "date"):
+                if column not in columns:
+                    continue
+                series = data[column]
+                values = series.dropna().tolist() if hasattr(series, "dropna") else list(series)
+                values = [str(value) for value in values if str(value).strip()]
+                if values:
+                    latest_date = sorted(values, reverse=True)[0]
+                    break
+    except Exception:
+        latest_date = ""
+    return rows, latest_date
+
+
+def classify_capability_state(
+    ok: bool = False,
+    rows: int | float | None = 0,
+    error: Any = "",
+    cached: bool = False,
+    stale: bool = False,
+    fallback_used: bool = False,
+    skipped: bool = False,
+    requires_manual_refresh: bool = False,
+) -> str:
+    error_text = compact_error(error)
+    if skipped or is_session_skip_error(error_text):
+        return STATE_DISABLED_THIS_SESSION
+    if requires_manual_refresh:
+        return STATE_REQUIRES_MANUAL_REFRESH
+    if fallback_used:
+        return STATE_FALLBACK_USED
+    if cached or stale:
+        return STATE_STALE_CACHE
+    if is_not_configured_error(error_text):
+        return STATE_NOT_CONFIGURED
+    if is_permission_error(error_text):
+        return STATE_PERMISSION_DENIED
+    if is_network_error(error_text):
+        return STATE_NETWORK_FAILED
+    numeric_rows = rows if isinstance(rows, Number) else 0
+    if ok and numeric_rows == 0:
+        return STATE_EMPTY_RECENT
+    if ok:
+        return STATE_AVAILABLE
+    return STATE_FAILED
+
+
+def state_label(state: str) -> str:
+    return STATE_LABELS.get(str(state or ""), STATE_LABELS[STATE_FAILED])
+
+
+def action_hint_for_state(state: str) -> str:
+    if state == STATE_AVAILABLE:
+        return "可作为已验证数据使用。"
+    if state == STATE_PERMISSION_DENIED:
+        return "检查 Tushare 积分/接口权限；保留缓存，不要重复自动请求。"
+    if state == STATE_EMPTY_RECENT:
+        return "这可能是非交易日、数据尚未发布或标的近期无记录。"
+    if state == STATE_STALE_CACHE:
+        return "当前使用上次成功结果；需要时手动刷新。"
+    if state == STATE_FALLBACK_USED:
+        return "已使用替代口径，不能等同于原始接口事实。"
+    if state == STATE_DISABLED_THIS_SESSION:
+        return "本会话已跳过重复请求；如权限已恢复，请手动重新检测。"
+    if state == STATE_REQUIRES_MANUAL_REFRESH:
+        return "点击对应刷新按钮后再请求；页面打开不自动调用。"
+    if state == STATE_NETWORK_FAILED:
+        return "检查网络后手动重试；保留缓存或显示待验证。"
+    if state == STATE_NOT_CONFIGURED:
+        return "检查本地 token / secrets 配置。"
+    return "保留安全空态或上次成功结果。"
+
+
+def build_capability_item(
+    api: str,
+    ok: bool = False,
+    rows: int | float | None = 0,
+    latest_date: Any = "",
+    latency_ms: int | float | None = 0,
+    error: Any = "",
+    source: str = SOURCE_TUSHARE,
+    cached: bool = False,
+    stale: bool = False,
+    fallback_used: bool = False,
+    skipped: bool = False,
+    requires_manual_refresh: bool = False,
+) -> dict:
+    error_text = compact_error(error)
+    state = classify_capability_state(
+        ok=bool(ok),
+        rows=rows,
+        error=error_text,
+        cached=bool(cached),
+        stale=bool(stale),
+        fallback_used=bool(fallback_used),
+        skipped=bool(skipped),
+        requires_manual_refresh=bool(requires_manual_refresh),
+    )
+    row_count = int(rows) if isinstance(rows, Number) else 0
+    return {
+        "api": str(api or ""),
+        "source": source,
+        "ok": bool(ok) and state == STATE_AVAILABLE,
+        "rows": row_count,
+        "latest_date": str(latest_date or ""),
+        "latency_ms": int(latency_ms or 0),
+        "error": error_text,
+        "permission_likely": state == STATE_PERMISSION_DENIED,
+        "status": state_label(state),
+        "capability_state": state,
+        "capability_label": state_label(state),
+        "action_hint": action_hint_for_state(state),
+        "should_skip_session": state == STATE_PERMISSION_DENIED,
+        "can_retry": state in {STATE_NETWORK_FAILED, STATE_FAILED, STATE_DISABLED_THIS_SESSION},
+    }
+
+
+def summarize_tushare_result(api: str, result: Any = None, latency_ms: int | float | None = 0) -> dict:
+    payload = as_mapping(result)
+    if not payload:
+        return build_capability_item(
+            api,
+            latency_ms=latency_ms,
+            error=f"返回类型异常：{type(result).__name__}",
+        )
+    data = payload.get("data")
+    rows, latest_date = extract_frame_summary(data)
+    ok = bool(payload.get("ok"))
+    error_text = payload.get("error") if not ok else ""
+    if payload.get("rows") is not None:
+        try:
+            rows = int(payload.get("rows"))
+        except Exception:
+            pass
+    latest_date = payload.get("latest_date") or latest_date
+    return build_capability_item(
+        api,
+        ok=ok,
+        rows=rows,
+        latest_date=latest_date,
+        latency_ms=latency_ms,
+        error=error_text,
+        source=str(payload.get("source") or SOURCE_TUSHARE),
+        cached=bool(payload.get("cached") or payload.get("from_cache")),
+        stale=bool(payload.get("stale")),
+        fallback_used=bool(payload.get("fallback_used")),
+        skipped=bool(payload.get("skipped") or payload.get("disabled_this_session")),
+        requires_manual_refresh=bool(payload.get("requires_manual_refresh")),
+    )
+
+
+def summarize_tushare_exception(api: str, exc: Any, latency_ms: int | float | None = 0) -> dict:
+    return build_capability_item(api, latency_ms=latency_ms, error=exc)
+
+
+def empty_tushare_item(api: str, error: Any = "") -> dict:
+    return build_capability_item(api, error=error)
+
+
+def build_tushare_capability_packet(items: Any, checked_at: Any = "", source: str = SOURCE_TUSHARE) -> dict:
+    normalized = [as_mapping(item) for item in (items or [])]
+    normalized = [item for item in normalized if item]
+    ok_count = sum(1 for item in normalized if item.get("capability_state") == STATE_AVAILABLE or item.get("ok"))
+    permission_denied_count = sum(1 for item in normalized if item.get("capability_state") == STATE_PERMISSION_DENIED or item.get("permission_likely"))
+    empty_count = sum(1 for item in normalized if item.get("capability_state") == STATE_EMPTY_RECENT)
+    cache_count = sum(1 for item in normalized if item.get("capability_state") == STATE_STALE_CACHE)
+    skipped_count = sum(1 for item in normalized if item.get("capability_state") == STATE_DISABLED_THIS_SESSION)
+    failed_count = len(normalized) - ok_count
+    return {
+        "source": source,
+        "checked_at": str(checked_at or ""),
+        "ok_count": ok_count,
+        "failed_count": failed_count,
+        "permission_denied_count": permission_denied_count,
+        "empty_count": empty_count,
+        "cache_count": cache_count,
+        "skipped_count": skipped_count,
+        "items": normalized,
+        "summary": (
+            f"{source}：{ok_count}/{len(normalized)} 可用，"
+            f"权限不足 {permission_denied_count}，无数据 {empty_count}，缓存 {cache_count}，本会话跳过 {skipped_count}。"
+        ),
+        "deepseek_called": False,
+    }

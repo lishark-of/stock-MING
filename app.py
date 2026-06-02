@@ -17,6 +17,7 @@ import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
 import command_center_analysis_methods as analysis_methods_service
+import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
@@ -4403,105 +4404,18 @@ else:
         def date_text(day):
             return day.strftime("%Y-%m-%d")
 
-        def compact_error(error, limit=180):
-            text = str(error or "").strip()
-            if not text:
-                return ""
-            return text if len(text) <= limit else text[:limit] + "..."
-
-        def permission_likely(error):
-            text = str(error or "").lower()
-            keywords = ["权限", "无接口访问权限", "permission", "积分", "没有访问", "抱歉", "token", "denied", "forbidden", "unauthorized"]
-            return any(keyword.lower() in text for keyword in keywords)
-
-        def classify_status(ok, rows, error):
-            text = str(error or "")
-            if permission_likely(text):
-                return "权限不足"
-            if any(keyword.lower() in text.lower() for keyword in ["connection", "network", "timed out", "timeout", "nameresolution", "max retries", "网络"]):
-                return "网络失败"
-            if ok and rows == 0:
-                return "无数据"
-            if not ok:
-                return "调用失败"
-            return "正常"
-
-        def frame_summary(data):
-            if data is None:
-                return 0, ""
-            try:
-                rows = len(data)
-            except Exception:
-                rows = 0
-            latest_date = ""
-            try:
-                if data is not None and not data.empty:
-                    for column in ["trade_date", "cal_date", "ann_date", "end_date", "float_date", "surv_date", "date"]:
-                        if column in data.columns:
-                            values = [str(value) for value in data[column].dropna().tolist() if str(value).strip()]
-                            if values:
-                                latest_date = sorted(values, reverse=True)[0]
-                                break
-            except Exception:
-                latest_date = ""
-            return rows, latest_date
-
         def empty_tushare_item(api, error):
-            error_text = compact_error(error)
-            return {
-                "api": api,
-                "ok": False,
-                "rows": 0,
-                "latest_date": "",
-                "latency_ms": 0,
-                "error": error_text,
-                "permission_likely": permission_likely(error_text),
-                "status": classify_status(False, 0, error_text),
-            }
+            return data_capability.empty_tushare_item(api, error)
 
         def summarize_tushare_call(api, call):
             start_time = time.perf_counter()
             try:
                 result = call()
                 latency_ms = int((time.perf_counter() - start_time) * 1000)
-                if not isinstance(result, dict):
-                    return {
-                        "api": api,
-                        "ok": False,
-                        "rows": 0,
-                        "latest_date": "",
-                        "latency_ms": latency_ms,
-                        "error": f"返回类型异常：{type(result).__name__}",
-                        "permission_likely": False,
-                        "status": "调用失败",
-                    }
-                data = result.get("data")
-                rows, latest_date = frame_summary(data)
-                ok = bool(result.get("ok"))
-                error_text = compact_error(result.get("error") if not ok else "")
-                return {
-                    "api": api,
-                    "ok": ok,
-                    "rows": rows,
-                    "latest_date": latest_date,
-                    "latency_ms": latency_ms,
-                    "error": error_text,
-                    "permission_likely": permission_likely(error_text),
-                    "status": classify_status(ok, rows, error_text),
-                }
+                return data_capability.summarize_tushare_result(api, result=result, latency_ms=latency_ms)
             except Exception as exc:
                 latency_ms = int((time.perf_counter() - start_time) * 1000)
-                error_text = compact_error(exc)
-                return {
-                    "api": api,
-                    "ok": False,
-                    "rows": 0,
-                    "latest_date": "",
-                    "latency_ms": latency_ms,
-                    "error": error_text,
-                    "permission_likely": permission_likely(error_text),
-                    "status": classify_status(False, 0, error_text),
-                }
+                return data_capability.summarize_tushare_exception(api, exc, latency_ms=latency_ms)
 
         tushare_api_names = [
             "trade_cal",
@@ -4562,16 +4476,10 @@ else:
                     continue
                 tushare_items.append(summarize_tushare_call(api, call))
 
-        tushare_ok_count = sum(1 for item in tushare_items if item.get("ok"))
-        tushare_permission_count = sum(1 for item in tushare_items if item.get("permission_likely"))
-        tushare_result = {
-            "source": "Tushare",
-            "checked_at": checked_at,
-            "ok_count": tushare_ok_count,
-            "failed_count": len(tushare_items) - tushare_ok_count,
-            "permission_denied_count": tushare_permission_count,
-            "items": tushare_items,
-        }
+        tushare_result = data_capability.build_tushare_capability_packet(
+            tushare_items,
+            checked_at=checked_at,
+        )
 
         supabase_tables = ["brain_memory", "market_news", "processed_sources"]
         supabase_items = []
@@ -12877,7 +12785,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             tushare_items = tushare_health.get("items") or []
             if tushare_items:
                 tushare_df = pd.DataFrame(tushare_items)
-                display_columns = ["api", "status", "ok", "rows", "latest_date", "latency_ms", "permission_likely", "error"]
+                display_columns = [
+                    "api",
+                    "status",
+                    "capability_state",
+                    "ok",
+                    "rows",
+                    "latest_date",
+                    "latency_ms",
+                    "permission_likely",
+                    "action_hint",
+                    "error",
+                ]
+                display_columns = [column for column in display_columns if column in tushare_df.columns]
                 st.dataframe(tushare_df[display_columns], width="stretch", hide_index=True)
             else:
                 st.warning("暂无 Tushare 体检结果。")
