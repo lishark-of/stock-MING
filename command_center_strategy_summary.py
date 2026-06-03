@@ -310,8 +310,128 @@ def _evidence_validation_action(label: str, evidence_state: str) -> str:
     return f"{label}可作为辅助证据，但仍需价格、纪律和仓位共振。"
 
 
-def build_strategy_evidence_validation_items(evidence_radar_packet: Any = None) -> list[dict]:
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _limited_text_join(value: Any, fallback: str = "暂无明细", limit: int = 2) -> str:
+    values = []
+    if isinstance(value, (list, tuple, set)):
+        values = [_to_text(item) for item in value]
+    else:
+        text = _to_text(value)
+        values = [text] if text else []
+    values = [item for item in values if item]
+    if not values:
+        return fallback
+    suffix = f" 等 {len(values)} 项" if len(values) > limit else ""
+    return "、".join(values[:limit]) + suffix
+
+
+def _a_share_capability_state_from_readiness(readiness: str, summary: str = "") -> str:
+    if any(key in readiness for key in ["阻断", "受限", "权限"]):
+        return "blocked"
+    if any(key in readiness for key in ["谨慎", "暂无数据", "缓存"]):
+        return "cached"
+    if any(key in readiness for key in ["待手动", "待检测", "待验证"]):
+        return "missing"
+    if any(key in readiness for key in ["可进入", "可用", "已可用"]):
+        return "support"
+    text = f"{readiness} {summary}"
+    if any(key in text for key in ["阻断", "受限", "权限"]):
+        return "blocked"
+    if any(key in text for key in ["谨慎", "暂无数据", "缓存"]):
+        return "cached"
+    if any(key in text for key in ["待手动", "待检测", "待验证"]):
+        return "missing"
+    if any(key in text for key in ["可进入", "可用", "已可用"]):
+        return "support"
+    return "missing"
+
+
+def _a_share_capability_action(label: str, state: str) -> str:
+    if state == "blocked":
+        return f"先处理 {label}；未恢复前策略只能降级为观察或小额试探。"
+    if state == "cached":
+        return f"复核 {label} 的日期和覆盖范围；不能把暂无数据当作无风险。"
+    if state == "missing":
+        return f"需要手动检测 {label}；页面打开不会自动请求 Tushare。"
+    return f"{label}可进入证据链，但仍需和价格、纪律、仓位共振。"
+
+
+def build_strategy_a_share_data_validation_items(a_share_data_console: Any = None) -> list[dict]:
+    console = _as_mapping(a_share_data_console)
+    if not console:
+        return []
+
+    readiness = _to_text(console.get("decision_readiness_label")) or _to_text(console.get("headline")) or "待检测"
+    summary = _to_text(console.get("summary"))
+    state = _a_share_capability_state_from_readiness(readiness, summary)
+    items = [
+        {
+            "key": "a_share_data_capability",
+            "label": "A股数据能力",
+            "priority": 0,
+            "evidence_state": state,
+            "evidence_label": "数据能力",
+            "tone": _evidence_validation_tone(state),
+            "check_text": f"{readiness}｜{summary}" if summary else readiness,
+            "action_hint": _a_share_capability_action("A股数据能力", state),
+        }
+    ]
+
+    groups = {
+        _to_text(group.get("key")): _as_mapping(group)
+        for group in (console.get("groups") or [])
+        if _as_mapping(group)
+    }
+    group_specs = [
+        ("permission_denied", "受限数据", "blocked", 1),
+        ("stale_or_empty", "暂无数据", "cached", 2),
+        ("manual_required", "待手动刷新", "missing", 3),
+        ("available", "可用数据", "support", 4),
+    ]
+    for key, label, group_state, priority in group_specs:
+        group = groups.get(key) or {}
+        count = _safe_int(group.get("count"))
+        if count <= 0:
+            continue
+        names = _limited_text_join(group.get("items"), fallback=_to_text(group.get("summary")) or label)
+        items.append(
+            {
+                "key": f"a_share_data_{key}",
+                "label": label,
+                "priority": priority,
+                "evidence_state": group_state,
+                "evidence_label": "数据能力",
+                "tone": _evidence_validation_tone(group_state),
+                "check_text": names,
+                "action_hint": _a_share_capability_action(names, group_state),
+            }
+        )
+        if len(items) >= 4:
+            break
+    return items
+
+
+def build_strategy_a_share_data_validation_summary(a_share_data_console: Any = None) -> str:
+    console = _as_mapping(a_share_data_console)
+    if not console:
+        return ""
+    readiness = _to_text(console.get("decision_readiness_label")) or _to_text(console.get("headline")) or "待检测"
+    summary = _to_text(console.get("summary"))
+    return f"{readiness}｜{summary}" if summary else readiness
+
+
+def build_strategy_evidence_validation_items(
+    evidence_radar_packet: Any = None,
+    a_share_data_console: Any = None,
+) -> list[dict]:
     evidence = _as_mapping(evidence_radar_packet)
+    items = build_strategy_a_share_data_validation_items(a_share_data_console)
     queue = evidence.get("decision_evidence_queue") or []
     if not isinstance(queue, list):
         queue = []
@@ -322,7 +442,6 @@ def build_strategy_evidence_validation_items(evidence_radar_packet: Any = None) 
             + list(evidence.get("cached_items") or [])
             + list(evidence.get("support_items") or [])
         )
-    items = []
     for raw in queue:
         item = _as_mapping(raw)
         if not item:
@@ -408,6 +527,7 @@ def build_strategy_summary_view_model(
     packet: Any,
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
+    a_share_data_console: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     is_empty = not bool(payload)
@@ -415,7 +535,11 @@ def build_strategy_summary_view_model(
     confidence = "待生成" if is_empty else (_to_text(payload.get("confidence")) or "低")
     summary = _to_text(payload.get("summary")) or "尚未生成策略执行建议。点击按钮后只读取缓存、量化摘要和纪律结果，不调用 DeepSeek，不跑回测。"
     market_guidance = build_market_method_guidance(analysis_method_packet)
-    evidence_validation_items = build_strategy_evidence_validation_items(evidence_radar_packet)
+    evidence_validation_items = build_strategy_evidence_validation_items(
+        evidence_radar_packet,
+        a_share_data_console=a_share_data_console,
+    )
+    a_share_data_validation_summary = build_strategy_a_share_data_validation_summary(a_share_data_console)
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -439,6 +563,7 @@ def build_strategy_summary_view_model(
         "market_method_guidance": market_guidance,
         "evidence_validation_items": evidence_validation_items,
         "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
+        "a_share_data_validation_summary": a_share_data_validation_summary,
         "risk_label": _to_text(_as_mapping(payload.get("risk_budget")).get("risk_level")) or "未知",
         "deepseek_text": "DeepSeek：已调用" if bool(payload.get("deepseek_called")) else "DeepSeek：未调用",
         "updated_text": _to_text(payload.get("updated_at")) or "暂无",

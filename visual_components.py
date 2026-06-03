@@ -4491,6 +4491,10 @@ def render_strategy_execution_command_card(
     warning_lines = [str(item) for item in (vm.get("warning_items") or [])]
     guidance = vm.get("market_method_guidance") or {}
     focus_html = "".join(f"<span>{escape(str(item))}</span>" for item in (guidance.get("focus_items") or [])[:5])
+    a_share_data_validation_summary = str(vm.get("a_share_data_validation_summary") or "").strip()
+    validation_title = str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0")
+    if a_share_data_validation_summary:
+        validation_title = f"{validation_title} ｜ A股数据：{a_share_data_validation_summary}"
     guidance_html = f"""
       <div class="cc-strategy-guidance">
         <div class="cc-strategy-guidance-title">{escape(str(guidance.get("title") or "市场验证重点"))}</div>
@@ -4539,7 +4543,7 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-section-title">操作条件</div>
       <div class="cc-strategy-condition-grid">{condition_html}</div>
       {guidance_html}
-      <div class="cc-strategy-section-title">证据验证重点 · {escape(str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
+      <div class="cc-strategy-section-title">证据验证重点 · {escape(validation_title)}</div>
       <div class="cc-strategy-condition-grid">{evidence_validation_html}</div>
       <div class="cc-strategy-section-title">未来 5-10 日路径</div>
       <div class="cc-strategy-path-grid">{path_html}</div>

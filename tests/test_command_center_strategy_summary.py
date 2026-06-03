@@ -219,6 +219,54 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("复核 融资融券 缓存", dumped)
         self.assertIn("先补齐 龙虎榜", dumped)
 
+    def test_a_share_data_capability_blocks_strategy_execution_when_restricted(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            a_share_data_console={
+                "decision_readiness_label": "阻断加仓",
+                "summary": "可用 1｜受限 1｜暂无数据 1｜待手动 0",
+                "groups": [
+                    {"key": "permission_denied", "tone": "failed", "count": 1, "items": ["个股资金流"]},
+                    {"key": "stale_or_empty", "tone": "stale", "count": 1, "items": ["龙虎榜"]},
+                    {"key": "available", "tone": "ready", "count": 1, "items": ["融资融券"]},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        items = view_model["evidence_validation_items"]
+        dumped = json.dumps(items, ensure_ascii=False)
+
+        self.assertEqual(items[0]["key"], "a_share_data_capability")
+        self.assertEqual(items[0]["tone"], "danger")
+        self.assertIn("阻断加仓", view_model["a_share_data_validation_summary"])
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("未恢复前策略只能降级", dumped)
+        self.assertIn("龙虎榜", dumped)
+        self.assertFalse("DeepSeek" in dumped)
+
+    def test_a_share_data_capability_all_available_enters_evidence_chain(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "只观察"},
+            analysis_method_packet={"market": "A股"},
+            a_share_data_console={
+                "decision_readiness_label": "可进入证据链",
+                "summary": "可用 4｜受限 0｜暂无数据 0｜待手动 0",
+                "groups": [
+                    {"key": "available", "tone": "ready", "count": 4, "items": ["个股资金流", "龙虎榜", "融资融券"]},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        items = view_model["evidence_validation_items"]
+        dumped = json.dumps(items, ensure_ascii=False)
+
+        self.assertEqual(items[0]["tone"], "success")
+        self.assertIn("可进入证据链", items[0]["check_text"])
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("可进入证据链", view_model["a_share_data_validation_summary"])
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_missing_evidence_validation_is_safe(self):
         view_model = summary.build_strategy_summary_view_model({"status": "ready"}, evidence_radar_packet={})
 
