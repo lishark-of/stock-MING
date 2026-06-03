@@ -807,6 +807,46 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
             {},
         )
 
+    def test_tool_recovery_result_notice_waits_for_packet(self):
+        notice = snapshot.build_tool_recovery_result_notice(
+            {
+                "command_center_last_tool_recovery_label": "下一票雷达",
+                "command_center_last_tool_recovery_writes_packet": "command_center_radar_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "下一票雷达",
+            },
+            selected_tab="下一票雷达",
+        )
+
+        self.assertEqual(notice["status"], "waiting")
+        self.assertIn("尚未检测到", notice["message"])
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_tool_recovery_result_notice_detects_recovered_packet(self):
+        notice = snapshot.build_tool_recovery_result_notice(
+            {
+                "command_center_last_tool_recovery_label": "下一票雷达",
+                "command_center_last_tool_recovery_writes_packet": "command_center_radar_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "下一票雷达",
+                "command_center_radar_packet": {
+                    "status": "ready",
+                    "source": "下一票雷达本地缓存",
+                    "generated_at": "2026-06-03T10:00:00",
+                    "top_candidates": [{"ticker": "002008.SZ", "name": "大族激光"}],
+                },
+            },
+            selected_tab="下一票雷达",
+        )
+
+        self.assertEqual(notice["status"], "recovered")
+        self.assertIn("已写入 command_center_radar_packet", notice["message"])
+        self.assertEqual(notice["source"], "下一票雷达本地缓存")
+        self.assertEqual(notice["updated_at"], "2026-06-03T10:00:00")
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
     def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(

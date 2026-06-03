@@ -656,6 +656,65 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
     }
 
 
+def _tool_packet_has_payload(packet: Mapping[str, Any], writes_packet: str = "") -> bool:
+    if not packet:
+        return False
+    status = _to_text(packet.get("status")).lower()
+    data_status = _to_text(packet.get("data_status") or packet.get("cache_state")).lower()
+    if status in {"ready", "completed", "ok", "success"} or data_status in {"ready", "cached"}:
+        return True
+    payload_keys = {
+        "command_center_radar_packet": ("top_candidates", "display_count", "total_count"),
+        "command_center_etf_packet": ("recommended_etfs", "today_main_direction"),
+        "command_center_discipline_packet": ("metric_items", "evidence_items", "backtest_status"),
+        "command_center_quant_packet": ("score", "evidence_items", "summary"),
+    }.get(writes_packet, ("summary", "items", "updated_at"))
+    for key in payload_keys:
+        value = packet.get(key)
+        if isinstance(value, (list, tuple)) and value:
+            return True
+        if isinstance(value, Mapping) and value:
+            return True
+        if _to_text(value):
+            return True
+    return False
+
+
+def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "") -> dict:
+    context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
+    if not context:
+        return {}
+    state_map = _as_mapping(state)
+    writes_packet = context["writes_packet"]
+    packet = _as_mapping(state_map.get(writes_packet))
+    recovered = _tool_packet_has_payload(packet, writes_packet)
+    updated_at = _to_text(packet.get("updated_at") or packet.get("generated_at") or packet.get("checked_at"))
+    source = _to_text(packet.get("source"), context["selected_tab"])
+    if recovered:
+        status = "recovered"
+        title = "恢复结果已回流"
+        message = f"{context['label']} 已写入 {writes_packet}；首页快照会读取该结构化结果。"
+        next_action = "返回综合推演中心 2.0 后查看 Home Action Snapshot。"
+    else:
+        status = "waiting"
+        title = "恢复结果待回流"
+        message = f"尚未检测到 {writes_packet} 的可读结果；请在“{context['selected_tab']}”中手动运行对应按钮。"
+        next_action = "运行完成后不要刷新外部重接口，先确认本模块是否显示缓存/已刷新状态。"
+    return {
+        "status": status,
+        "title": title,
+        "label": context["label"],
+        "selected_tab": context["selected_tab"],
+        "writes_packet": writes_packet,
+        "message": message,
+        "next_action": next_action,
+        "updated_at": updated_at,
+        "source": source,
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def resolve_data_capability_packet(state: Any = None) -> dict:
     state_map = _as_mapping(state)
     healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))

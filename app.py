@@ -10920,6 +10920,17 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     if recovery_notice:
         st.info(recovery_notice["message"])
         st.caption(f"{recovery_notice['action_hint']}｜{recovery_notice['safety_text']}")
+        recovery_result_notice = home_snapshot_service.build_tool_recovery_result_notice(st.session_state, selected_tab=legacy_tab)
+        if recovery_result_notice.get("status") == "recovered":
+            st.success(recovery_result_notice["message"])
+            st.caption(
+                f"来源：{recovery_result_notice.get('source') or '本地 packet'}"
+                f"｜更新时间：{recovery_result_notice.get('updated_at') or '暂无'}"
+                f"｜{recovery_result_notice['next_action']}"
+            )
+        elif recovery_result_notice:
+            st.warning(recovery_result_notice["message"])
+            st.caption(recovery_result_notice["next_action"])
         if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):
             for recovery_key in [
                 "command_center_last_tool_recovery_key",
