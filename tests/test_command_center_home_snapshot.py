@@ -582,6 +582,36 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["margin_packet"]["financing_balance_yi"], 12.3)
         self.assertFalse(payload["margin_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_limit_emotion_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "a_share_professional_facts": {
+                "limit_emotion": {
+                    "available": True,
+                    "boundary_available": True,
+                    "records_available": True,
+                    "latest_date": "20260603",
+                    "up_limit": 12.34,
+                    "down_limit": 10.10,
+                    "distance_to_up_pct": 2.1,
+                    "limit_records": [{"日期": "2026-06-03", "类型": "涨停", "连板统计": "2连"}],
+                    "updated_at": f"{today}T10:01:00",
+                },
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["limit_emotion_packet"]["data_status"], "ready")
+        self.assertEqual(payload["limit_emotion_packet"]["emotion_state"], "接近涨停/追高区")
+        self.assertEqual(payload["limit_emotion_packet"]["up_limit"], 12.34)
+        self.assertFalse(payload["limit_emotion_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_command_center_facts_packet(self):
         today = _dt.date.today().isoformat()
         state = {
