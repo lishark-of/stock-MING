@@ -76,7 +76,7 @@ EVIDENCE_ACTIONS = {
         "writes_packet": "command_center_moneyflow_packet",
     },
     "hard_risk": {
-        "button_label": "手动刷新公告/硬风险",
+        "button_label": "同步公告/硬风险缓存",
         "toolbox_entry": "高级工具箱 / 天眼风控 / A股公告风险",
         "writes_packet": "command_center_hard_risk_packet",
     },

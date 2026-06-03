@@ -4299,6 +4299,126 @@ def _run_manual_chip_radar_capability_check(target="", position_profile=None, li
     }
 
 
+def _build_hard_risk_cache_sync_capability_item(hard_risk_packet, checked_at=""):
+    packet = hard_risk_packet if isinstance(hard_risk_packet, dict) else {}
+    api = "anns_d / forecast / stk_holdertrade / pledge / free_announcement_radar"
+    status = str(packet.get("status") or "")
+    data_status = str(packet.get("data_status") or "")
+    risk_count = int(packet.get("risk_item_count") or len(packet.get("risk_items") or []) or 0)
+    latest_date = packet.get("updated_at") or checked_at
+    if status == "ready" and data_status == "ready":
+        item = data_capability.build_capability_item(
+            api,
+            ok=True,
+            rows=max(1, risk_count),
+            latest_date=latest_date,
+            source=packet.get("source") or "本地天眼风控缓存",
+        )
+        item["rows"] = risk_count
+        item["action_hint"] = "已同步本地公告/硬风险缓存；没有风险条目不等于无风险，仍需复核公告日期。"
+    elif packet:
+        item = data_capability.build_capability_item(
+            api,
+            rows=risk_count,
+            latest_date=latest_date,
+            error=packet.get("last_error") or packet.get("error") or packet.get("manual_required_text") or "硬风险缓存仍待验证。",
+            source=packet.get("source") or "本地天眼风控缓存",
+            cached=bool(data_status == "cached"),
+            requires_manual_refresh=bool(status in {"waiting", "partial"} and data_status != "cached"),
+        )
+        item["action_hint"] = packet.get("manual_required_text") or "硬风险仍待验证；请在天眼风控或旧工具箱中手动刷新。"
+    else:
+        item = data_capability.build_capability_item(
+            api,
+            error="未找到天眼风控或公告硬风险缓存；请在高级工具箱手动运行天眼风控。",
+            requires_manual_refresh=True,
+            source="本地天眼风控缓存",
+        )
+        item["action_hint"] = "未找到可同步的公告/硬风险缓存；请手动运行天眼风控后再回到综合中心。"
+    item.update(
+        {
+            "section": "hard_risk",
+            "label": "公告/硬风险",
+            "api": api,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+            "checked_at": checked_at,
+        }
+    )
+    return item
+
+
+def _run_manual_hard_risk_capability_check(target="", position_profile=None, live_packet=None):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    checked_at = _cc_now()
+    live = live_packet or st.session_state.get("command_center_live_packet") or {}
+    if not ticker:
+        hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet({}, live_packet=live, target=ticker)
+        item = data_capability.build_capability_item(
+            "anns_d / forecast / stk_holdertrade / pledge / free_announcement_radar",
+            error="未锁定 A股标的，无法同步公告/硬风险缓存。",
+            requires_manual_refresh=True,
+            source="本地天眼风控缓存",
+        )
+        item.update(
+            {
+                "section": "hard_risk",
+                "label": "公告/硬风险",
+                "manual_check": True,
+                "refresh_policy": "button_gated",
+                "deepseek_called": False,
+                "checked_at": checked_at,
+            }
+        )
+    elif not a_share_manual_checks_service.is_a_share_ts_code(ticker):
+        hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet({}, live_packet=live, target=ticker)
+        item = data_capability.build_capability_item(
+            "anns_d / forecast / stk_holdertrade / pledge / free_announcement_radar",
+            error="当前标的不是 A股代码，不同步 Tushare 公告/硬风险。",
+            requires_manual_refresh=True,
+            source="本地天眼风控缓存",
+        )
+        item.update(
+            {
+                "section": "hard_risk",
+                "label": "公告/硬风险",
+                "manual_check": True,
+                "refresh_policy": "button_gated",
+                "deepseek_called": False,
+                "checked_at": checked_at,
+            }
+        )
+    else:
+        hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet(
+            st.session_state,
+            live_packet=live,
+            target=ticker,
+        )
+        item = _build_hard_risk_cache_sync_capability_item(hard_risk_packet, checked_at=checked_at)
+    st.session_state["command_center_hard_risk_packet"] = hard_risk_packet
+    existing_packet = st.session_state.get("a_share_professional_data_capability") or {}
+    professional_packet = a_share_manual_checks_service.merge_a_share_capability_item(
+        existing_packet,
+        item,
+        checked_at=checked_at,
+    )
+    data_packet = _sync_a_share_capability_packet(professional_packet)
+    _persist_home_action_snapshot(
+        live_packet=live,
+        target=ticker,
+        position_profile=position_profile,
+    )
+    return {
+        "item": item,
+        "hard_risk_packet": hard_risk_packet,
+        "professional_packet": professional_packet,
+        "data_capability_packet": data_packet,
+        "deepseek_called": False,
+    }
+
+
 def _render_manual_capability_check_button(
     button_label,
     button_key,
@@ -4368,6 +4488,7 @@ def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", ma
         return
     runner_map = {
         "moneyflow": ("资金流", _run_manual_moneyflow_capability_check),
+        "hard_risk": ("公告/硬风险", _run_manual_hard_risk_capability_check),
         "margin": ("融资融券", _run_manual_margin_detail_capability_check),
         "limit_emotion": ("涨跌停/情绪", _run_manual_limit_cpt_capability_check),
         "dragon_tiger": ("龙虎榜", _run_manual_dragon_tiger_capability_check),
