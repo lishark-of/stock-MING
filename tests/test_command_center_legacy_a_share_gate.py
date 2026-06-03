@@ -54,6 +54,40 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
             self.assertEqual(by_section[section]["status"], "需要手动刷新")
             self.assertFalse(by_section[section]["ok"])
 
+    def test_status_strip_summarizes_manual_gate_without_debug_text(self):
+        packet = gate.build_manual_gate_a_share_professional_facts(
+            "002008",
+            updated_at="2026-06-03T10:00:00",
+        )
+        strip = gate.build_a_share_status_strip(packet, packet["data_capability"])
+        dumped = json.dumps(strip, ensure_ascii=False)
+
+        self.assertEqual(strip["status_label"], "待手动刷新")
+        self.assertIn("手动刷新", strip["summary"])
+        self.assertFalse(strip["deepseek_called"])
+        self.assertNotIn("commit", dumped.lower())
+        self.assertNotIn("feature present", dumped)
+
+    def test_status_strip_prioritizes_restricted_capability(self):
+        packet = {
+            "updated_at": "2026-06-03T10:00:00",
+            "margin": {"available": False, "updated_at": "2026-06-03T10:00:00"},
+            "data_capability": {
+                "source": "Tushare A股专业事实",
+                "items": [
+                    {"section": "moneyflow", "label": "个股资金流", "capability_state": capability.STATE_AVAILABLE, "status": "可用"},
+                    {"section": "margin", "label": "融资融券", "capability_state": capability.STATE_PERMISSION_DENIED, "status": "权限不足"},
+                ],
+            },
+        }
+
+        strip = gate.build_a_share_status_strip(packet)
+
+        self.assertEqual(strip["status_label"], "部分接口受限")
+        self.assertEqual(strip["tone"], "failed")
+        self.assertIn("可用 1", strip["summary"])
+        self.assertIn("受限/失败 1", strip["summary"])
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_gate.py").read_text(encoding="utf-8"))
         imports = []

@@ -9763,10 +9763,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             <h4 style="margin-bottom: 0;">🇨🇳 A股专业数据穿透系统</h4>
         </div>
         """, unsafe_allow_html=True)
-        st.caption("A股专业区已加载｜chip radar feature present｜commit b96737a")
-        st.caption("功能标记：chip radar enabled｜Tushare 15000 features active")
-        st.caption("chip radar module loaded")
-        st.caption("本页优先复用 A股专业事实缓存；无缓存时只显示待刷新状态，不在页面打开时自动请求 Tushare。")
+        initial_status_strip = legacy_a_share_gate_service.build_a_share_status_strip(professional_facts)
+        st.info(
+            f"{initial_status_strip.get('title')}｜{initial_status_strip.get('status_label')}｜"
+            f"{initial_status_strip.get('summary')}｜{initial_status_strip.get('manual_note')}"
+        )
         render_tushare_refresh_control(stock_code, "a_share_professional")
         render_a_share_data_capability_controls(
             target=target,
@@ -9800,28 +9801,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.info(legacy_a_share_gate_service.empty_notice())
         cn_status.update(label="完成：A股盘口与情绪状态整理", state="complete")
 
-        a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(
-            {
-                "stock_code": stock_code,
-                "dragon_tiger": dragon_data or {},
-                "margin": margin_data or {},
-                "moneyflow": moneyflow_data or {},
-                "limit_emotion": limit_emotion_data or {},
-                "chip_radar": chip_radar_data or {},
-                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            }
-        )
+        a_share_fact_payload = {
+            "stock_code": stock_code,
+            "dragon_tiger": dragon_data or {},
+            "margin": margin_data or {},
+            "moneyflow": moneyflow_data or {},
+            "limit_emotion": limit_emotion_data or {},
+            "chip_radar": chip_radar_data or {},
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+        a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(a_share_fact_payload)
         st.session_state["a_share_professional_data_capability"] = a_share_capability_packet
         st.session_state["command_center_facts_packet"] = facts_packet_service.build_a_share_facts_packet(
-            {
-                "stock_code": stock_code,
-                "dragon_tiger": dragon_data or {},
-                "margin": margin_data or {},
-                "moneyflow": moneyflow_data or {},
-                "limit_emotion": limit_emotion_data or {},
-                "chip_radar": chip_radar_data or {},
-                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            },
+            a_share_fact_payload,
             a_share_capability_packet,
             target=target,
         )
@@ -9852,11 +9844,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         capability_items = a_share_capability_packet.get("items") or []
         if capability_items:
-            status_line = " ｜ ".join(
-                f"{item.get('label') or item.get('api')}: {item.get('status') or '未知'}"
-                for item in capability_items
+            current_status_strip = legacy_a_share_gate_service.build_a_share_status_strip(
+                a_share_fact_payload,
+                a_share_capability_packet,
             )
-            st.caption(f"A股专业数据能力状态：{status_line}")
+            st.caption(
+                f"A股专业数据能力状态：{current_status_strip.get('status_label')}｜"
+                f"{current_status_strip.get('summary')}｜来源：{current_status_strip.get('source')}"
+            )
             with st.expander("A股专业数据能力明细", expanded=False):
                 capability_df = pd.DataFrame(capability_items)
                 capability_columns = [
