@@ -4851,6 +4851,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">为什么：{escape(_home_text(item.get("reason"), "需要手动恢复旧工具能力。"))}</div>
           <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 动作：{escape(_home_text(item.get("action_label"), "手动刷新"))}</div>
+          <div class="cc-home-item-meta">定位：{escape(_home_text(item.get("navigation_label"), "主导航切到高级工具箱（旧版保留）后选择对应模块"))}</div>
           <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ 触发：手动按钮 ｜ DeepSeek：未调用</div>
         </div>
         """

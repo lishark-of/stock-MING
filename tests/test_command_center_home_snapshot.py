@@ -760,6 +760,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("command_center_quant_packet", writes_packets)
         self.assertIn("高级工具箱", dumped)
         self.assertIn("页面打开不会自动全市场扫描", dumped)
+        self.assertTrue(all(item["workspace_target"] == "高级工具箱（旧版保留）" for item in actions))
+        self.assertTrue(all(item["workspace_state_key"] == "workspace_mode_v2" for item in actions))
+        self.assertTrue(all(item["legacy_tab_state_key"] == "legacy_workspace_selected_tab" for item in actions))
+        self.assertIn("下一票雷达", {item["legacy_tab"] for item in actions})
+        self.assertIn("主导航切到高级工具箱", dumped)
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in actions))
         self.assertTrue(all(item["deepseek_called"] is False for item in actions))
 
@@ -819,6 +824,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("融资 ETF", dumped)
         self.assertIn("交易纪律/回测", dumped)
         self.assertIn("量化推演", dumped)
+        self.assertIn("legacy_workspace_selected_tab", dumped)
+        self.assertIn("主导航切到高级工具箱", dumped)
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in loaded["tool_recovery_actions"]))
         self.assertTrue(all(item["deepseek_called"] is False for item in loaded["tool_recovery_actions"]))
 

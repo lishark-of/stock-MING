@@ -528,6 +528,7 @@ TOOL_RECOVERY_CONFIG = {
         "label": "下一票雷达",
         "action_label": "手动运行下一票雷达",
         "toolbox_entry": "高级工具箱 / 下一票雷达",
+        "legacy_tab": "下一票雷达",
         "writes_packet": "command_center_radar_packet",
         "reason": "候选池来自缓存或手动扫描；缺失时不能把空候选当作无机会。",
     },
@@ -536,6 +537,7 @@ TOOL_RECOVERY_CONFIG = {
         "label": "融资 ETF",
         "action_label": "手动刷新 ETF 配置/日线",
         "toolbox_entry": "高级工具箱 / 融资 ETF",
+        "legacy_tab": "融资 ETF",
         "writes_packet": "command_center_etf_packet",
         "reason": "ETF 配置和赛道强弱来自本地快照；缺失时不能放大融资或追高。",
     },
@@ -544,6 +546,7 @@ TOOL_RECOVERY_CONFIG = {
         "label": "交易纪律/回测",
         "action_label": "手动运行回测或读取纪律缓存",
         "toolbox_entry": "高级工具箱 / 交易纪律实验室",
+        "legacy_tab": "交易纪律实验室",
         "writes_packet": "command_center_discipline_packet",
         "reason": "回测必须按钮触发；缺少纪律缓存时只能观察或降风险。",
     },
@@ -552,6 +555,7 @@ TOOL_RECOVERY_CONFIG = {
         "label": "量化推演",
         "action_label": "手动生成量化推演",
         "toolbox_entry": "高级工具箱 / 量化推演",
+        "legacy_tab": "量化推演",
         "writes_packet": "command_center_quant_packet",
         "reason": "完整量化推演和回测必须手动触发；缺失时不能把评分写成事实。",
     },
@@ -588,6 +592,7 @@ def build_tool_recovery_actions_snapshot(snapshot: Any = None, limit: int = MAX_
         if not packet or not _tool_needs_recovery(packet):
             continue
         label = config["label"]
+        legacy_tab = config["legacy_tab"]
         actions.append(
             {
                 "key": config["key"],
@@ -598,6 +603,11 @@ def build_tool_recovery_actions_snapshot(snapshot: Any = None, limit: int = MAX_
                 "reason": _to_text(packet.get("manual_required_text") or packet.get("backtest_required_text") or config["reason"]),
                 "action_label": config["action_label"],
                 "toolbox_entry": config["toolbox_entry"],
+                "workspace_target": "高级工具箱（旧版保留）",
+                "workspace_state_key": "workspace_mode_v2",
+                "legacy_tab": legacy_tab,
+                "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}",
                 "writes_packet": config["writes_packet"],
                 "refresh_policy": "button_gated",
                 "deepseek_called": False,
