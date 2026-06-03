@@ -18,6 +18,11 @@ CHIP_API = "cyq_perf/cyq_chips"
 CHIP_LABEL = "筹码/胜率"
 CYQ_PERF_API = "cyq_perf"
 CYQ_CHIPS_API = "cyq_chips"
+DRAGON_SECTION = "dragon_tiger"
+DRAGON_API = "top_list/top_inst"
+DRAGON_LABEL = "龙虎榜"
+TOP_LIST_API = "top_list"
+TOP_INST_API = "top_inst"
 
 
 def as_mapping(value: Any) -> dict:
@@ -66,6 +71,29 @@ def build_margin_detail_check_request(ticker: Any, today: Any = None, lookback_d
         "section": MARGIN_SECTION,
         "label": MARGIN_LABEL,
         "api": MARGIN_API,
+        "ts_code": ts_code,
+        "start_date": _date_text(start),
+        "end_date": _date_text(end),
+        "refresh_policy": "button_gated",
+        "deepseek_called": False,
+    }
+
+
+def build_dragon_tiger_check_request(ticker: Any, today: Any = None, lookback_days: int = 30) -> dict:
+    ts_code = normalize_a_share_ts_code(ticker)
+    if isinstance(today, _dt.datetime):
+        end = today.date()
+    elif isinstance(today, _dt.date):
+        end = today
+    elif isinstance(today, str) and today.strip():
+        end = _dt.date.fromisoformat(today.strip()[:10])
+    else:
+        end = _dt.date.today()
+    start = end - _dt.timedelta(days=max(1, int(lookback_days or 30)))
+    return {
+        "section": DRAGON_SECTION,
+        "label": DRAGON_LABEL,
+        "api": DRAGON_API,
         "ts_code": ts_code,
         "start_date": _date_text(start),
         "end_date": _date_text(end),
@@ -201,6 +229,56 @@ def build_chip_radar_capability_item(
     return item
 
 
+def build_dragon_tiger_capability_item(
+    top_list_result: Any = None,
+    top_inst_result: Any = None,
+    latency_ms: int | float | None = 0,
+) -> dict:
+    top_list_item = data_capability.summarize_tushare_result(TOP_LIST_API, result=top_list_result, latency_ms=latency_ms)
+    top_inst_item = data_capability.summarize_tushare_result(TOP_INST_API, result=top_inst_result, latency_ms=latency_ms)
+    sub_items = [top_list_item, top_inst_item]
+    states = {_state_from_item(item) for item in sub_items}
+    top_list_state = _state_from_item(top_list_item)
+    top_inst_state = _state_from_item(top_inst_item)
+    row_count = sum(int(item.get("rows") or 0) for item in sub_items)
+    latest_date = _combine_latest_date(sub_items)
+    error_text = _combine_errors(sub_items)
+    if data_capability.STATE_PERMISSION_DENIED in states:
+        item = data_capability.build_capability_item(DRAGON_API, rows=row_count, latest_date=latest_date, latency_ms=latency_ms, error=error_text)
+    elif data_capability.STATE_DISABLED_THIS_SESSION in states:
+        item = data_capability.build_capability_item(DRAGON_API, rows=row_count, latest_date=latest_date, latency_ms=latency_ms, error=error_text, skipped=True)
+    elif top_list_state == data_capability.STATE_AVAILABLE and top_inst_state == data_capability.STATE_AVAILABLE:
+        item = data_capability.build_capability_item(DRAGON_API, ok=True, rows=row_count, latest_date=latest_date, latency_ms=latency_ms)
+    elif top_list_state == data_capability.STATE_AVAILABLE:
+        partial_error = "已取得龙虎榜上榜事实，但席位明细仍待验证。"
+        if error_text:
+            partial_error = f"{partial_error} {error_text}"
+        item = data_capability.build_capability_item(
+            DRAGON_API,
+            rows=row_count,
+            latest_date=latest_date,
+            latency_ms=latency_ms,
+            error=partial_error,
+            fallback_used=True,
+        )
+    elif states and states <= {data_capability.STATE_EMPTY_RECENT}:
+        item = data_capability.build_capability_item(DRAGON_API, ok=True, rows=0, latest_date=latest_date, latency_ms=latency_ms)
+    else:
+        item = data_capability.build_capability_item(DRAGON_API, rows=row_count, latest_date=latest_date, latency_ms=latency_ms, error=error_text)
+    item.update(
+        {
+            "section": DRAGON_SECTION,
+            "label": DRAGON_LABEL,
+            "api": DRAGON_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+            "sub_items": sub_items,
+        }
+    )
+    return item
+
+
 def build_limit_cpt_capability_item(result: Any = None, latency_ms: int | float | None = 0) -> dict:
     item = data_capability.summarize_tushare_result(LIMIT_CPT_API, result=result, latency_ms=latency_ms)
     item.update(
@@ -238,6 +316,22 @@ def build_chip_radar_exception_item(exc: Any, latency_ms: int | float | None = 0
             "section": CHIP_SECTION,
             "label": CHIP_LABEL,
             "api": CHIP_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+            "sub_items": [],
+        }
+    )
+    return item
+
+
+def build_dragon_tiger_exception_item(exc: Any, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_exception(DRAGON_API, exc, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": DRAGON_SECTION,
+            "label": DRAGON_LABEL,
+            "api": DRAGON_API,
             "manual_check": True,
             "refresh_policy": "button_gated",
             "deepseek_called": False,
