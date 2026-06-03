@@ -97,6 +97,26 @@ FACT_SECTION_APIS = {
     "chip_radar": "cyq_perf/cyq_chips",
 }
 
+HARD_RISK_SECTION_LABELS = {
+    "announcements": "公告风险",
+    "free_announcement_radar": "免费公告雷达",
+    "earnings_forecast": "业绩预告",
+    "holder_reduction": "股东减持",
+    "share_unlock": "限售解禁",
+    "pledge": "股权质押",
+    "institution_surveys": "机构调研",
+}
+
+HARD_RISK_SECTION_APIS = {
+    "announcements": "anns_d",
+    "free_announcement_radar": "stock_reports.announcement_summary",
+    "earnings_forecast": "forecast",
+    "holder_reduction": "stk_holdertrade",
+    "share_unlock": "share_float",
+    "pledge": "pledge_stat/pledge_detail",
+    "institution_surveys": "stk_surv",
+}
+
 MANUAL_PROVIDER_ITEMS = (
     {
         "provider": "AkShare",
@@ -118,6 +138,10 @@ LATEST_DATE_KEYS = (
     "latest_date",
     "date",
     "trade_date",
+    "ann_date",
+    "end_date",
+    "float_date",
+    "surv_date",
     "concept_date",
     "updated_at",
 )
@@ -563,6 +587,35 @@ def _first_text(payload: Mapping[str, Any], keys: tuple[str, ...]) -> str:
     return ""
 
 
+def _row_count(payload: Mapping[str, Any]) -> int:
+    for key in ("rows", "items", "records", "top5"):
+        value = payload.get(key)
+        if isinstance(value, Number) and not isinstance(value, bool):
+            return int(value)
+        try:
+            return len(value)
+        except Exception:
+            continue
+    return 0
+
+
+def _section_latest_date(payload: Mapping[str, Any]) -> str:
+    data_date_keys = tuple(key for key in LATEST_DATE_KEYS if key != "updated_at")
+    latest = _first_text(payload, data_date_keys)
+    if latest:
+        return latest
+    rows = payload.get("rows") or payload.get("items") or payload.get("records") or []
+    if not isinstance(rows, (list, tuple)):
+        return _first_text(payload, ("updated_at",))
+    values = []
+    for row in rows:
+        row_map = as_mapping(row)
+        text = _first_text(row_map, data_date_keys)
+        if text:
+            values.append(text)
+    return sorted(values, reverse=True)[0] if values else _first_text(payload, ("updated_at",))
+
+
 def build_tushare_fact_capability_item(section_key: str, fact_packet: Any) -> dict:
     payload = as_mapping(fact_packet)
     api = str(payload.get("api") or FACT_SECTION_APIS.get(section_key, section_key))
@@ -573,7 +626,7 @@ def build_tushare_fact_capability_item(section_key: str, fact_packet: Any) -> di
         or payload.get("records_available")
         or payload.get("concept_available")
     )
-    latest_date = _first_text(payload, LATEST_DATE_KEYS)
+    latest_date = _section_latest_date(payload)
     error_text = (
         payload.get("error")
         or payload.get("warning")
@@ -583,7 +636,7 @@ def build_tushare_fact_capability_item(section_key: str, fact_packet: Any) -> di
     item = build_capability_item(
         api,
         ok=available,
-        rows=1 if available else 0,
+        rows=_row_count(payload) or (1 if available else 0),
         latest_date=latest_date,
         latency_ms=payload.get("latency_ms") or 0,
         error=error_text,
@@ -606,12 +659,61 @@ def build_tushare_fact_capability_item(section_key: str, fact_packet: Any) -> di
     return item
 
 
+def build_tushare_hard_risk_capability_item(section_key: str, fact_packet: Any) -> dict:
+    payload = as_mapping(fact_packet)
+    api = str(payload.get("api") or HARD_RISK_SECTION_APIS.get(section_key, section_key))
+    label = HARD_RISK_SECTION_LABELS.get(section_key, section_key)
+    available = bool(payload.get("available") or _row_count(payload) or payload.get("risk_flags"))
+    error_text = (
+        payload.get("error")
+        or payload.get("warning")
+        or payload.get("message")
+        or ("暂无可验证数据" if not available else "")
+    )
+    item = build_capability_item(
+        api,
+        ok=available,
+        rows=_row_count(payload) or (len(payload.get("risk_flags") or []) if isinstance(payload.get("risk_flags"), list) else 0),
+        latest_date=_section_latest_date(payload),
+        latency_ms=payload.get("latency_ms") or 0,
+        error=error_text,
+        source=str(payload.get("source") or SOURCE_TUSHARE),
+        cached=bool(payload.get("cached") or payload.get("from_cache")),
+        stale=bool(payload.get("stale")),
+        fallback_used=bool(payload.get("fallback_used")),
+        skipped=bool(payload.get("skipped") or payload.get("disabled_this_session")),
+        requires_manual_refresh=bool(payload.get("requires_manual_refresh")),
+    )
+    item.update(
+        {
+            "section": f"hard_risk.{section_key}",
+            "label": label,
+            "message": str(payload.get("message") or ""),
+            "warning": str(payload.get("warning") or ""),
+            "updated_at": str(payload.get("updated_at") or ""),
+        }
+    )
+    return item
+
+
+def build_hard_risk_capability_items(fact_packet: Any) -> list[dict]:
+    payload = as_mapping(fact_packet)
+    hard_risk = as_mapping(payload.get("verified_hard_risks") or payload.get("hard_risk") or payload)
+    if not hard_risk:
+        return []
+    return [
+        build_tushare_hard_risk_capability_item(section, hard_risk.get(section) or {})
+        for section in HARD_RISK_SECTION_LABELS
+    ]
+
+
 def build_a_share_professional_capability_packet(fact_packet: Any, checked_at: Any = "") -> dict:
     payload = as_mapping(fact_packet)
     items = [
         build_tushare_fact_capability_item(section, payload.get(section) or {})
         for section in FACT_SECTION_LABELS
     ]
+    items.extend(build_hard_risk_capability_items(payload))
     packet = build_tushare_capability_packet(
         items,
         checked_at=checked_at or payload.get("updated_at") or "",

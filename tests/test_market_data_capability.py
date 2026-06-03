@@ -113,6 +113,48 @@ class MarketDataCapabilityTests(unittest.TestCase):
         self.assertEqual(by_section["moneyflow"]["capability_state"], capability.STATE_AVAILABLE)
         self.assertEqual(by_section["limit_emotion"]["capability_state"], capability.STATE_DISABLED_THIS_SESSION)
         self.assertEqual(by_section["chip_radar"]["capability_state"], capability.STATE_EMPTY_RECENT)
+        self.assertEqual(by_section["hard_risk.announcements"]["capability_state"], capability.STATE_EMPTY_RECENT)
+        self.assertEqual(by_section["hard_risk.pledge"]["capability_state"], capability.STATE_EMPTY_RECENT)
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_professional_fact_packet_includes_hard_risk_capability_states(self):
+        packet = capability.build_a_share_professional_capability_packet(
+            {
+                "stock_code": "002008",
+                "moneyflow": {"available": True, "api": "moneyflow", "date": "20260602"},
+                "verified_hard_risks": {
+                    "announcements": {
+                        "available": True,
+                        "source": "Tushare",
+                        "api": "anns_d",
+                        "rows": [{"ann_date": "20260602", "title": "关于股东减持计划的公告"}],
+                        "updated_at": "2026-06-02T21:30:00",
+                    },
+                    "holder_reduction": {
+                        "available": False,
+                        "source": "Tushare",
+                        "api": "stk_holdertrade",
+                        "message": "近180天未取得股东减持记录",
+                        "updated_at": "2026-06-02T21:30:00",
+                    },
+                    "pledge": {
+                        "available": False,
+                        "source": "Tushare",
+                        "api": "pledge_stat/pledge_detail",
+                        "error": "抱歉，您没有访问该接口的权限",
+                        "updated_at": "2026-06-02T21:30:00",
+                    },
+                },
+            }
+        )
+        by_section = {item["section"]: item for item in packet["items"]}
+
+        self.assertEqual(by_section["hard_risk.announcements"]["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(by_section["hard_risk.announcements"]["latest_date"], "20260602")
+        self.assertEqual(by_section["hard_risk.holder_reduction"]["capability_state"], capability.STATE_EMPTY_RECENT)
+        self.assertEqual(by_section["hard_risk.pledge"]["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertIn("检查 Tushare", by_section["hard_risk.pledge"]["action_hint"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
