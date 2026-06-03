@@ -4783,6 +4783,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     console_manual = data_capability_console.get("manual_count") or 0
     console_stale = data_capability_console.get("stale_count") or 0
     console_tone = _home_text(data_capability_console.get("tone"), "missing")
+    console_readiness = _home_text(data_capability_console.get("decision_readiness_label"), "待检测")
+    console_safe_mode = _home_text(data_capability_console.get("safe_mode_text"), "尚未检测数据能力；只能展示安全空态或上次成功结果。")
     console_queue_html = ""
     console_queues = [
         ("可用证据", data_capability_console.get("ready_items") or []),
@@ -4992,6 +4994,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               <span class="cc-home-chip {escape(console_tone)}">{escape(_home_text(data_capability_console.get("headline"), "尚未检测数据能力"))}</span>
             </div>
             <div class="cc-home-item-meta">可用 {escape(_home_number(console_ready))}｜阻断 {escape(_home_number(console_blocked))}｜手动 {escape(_home_number(console_manual))}｜缓存/待验证 {escape(_home_number(console_stale))}</div>
+            <div class="cc-home-item-meta">决策模式：{escape(console_readiness)}｜{escape(console_safe_mode)}</div>
             {console_queue_html}
           </div>
           <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>

@@ -97,6 +97,57 @@ def _headline(status: str, ready_count: int, blocked_count: int, pending_count: 
     return "尚未检测数据能力；页面打开不会自动请求外部接口。"
 
 
+def _decision_readiness(status: str) -> tuple[str, str, str]:
+    if status == "blocked":
+        return (
+            "blocked",
+            "阻断加仓",
+            "只允许观察、降风险或等待验证；不能用缺失/受限数据支持加仓、追高或加融资。",
+        )
+    if status == "partial":
+        return (
+            "caution",
+            "谨慎验证",
+            "允许继续看盘，但执行前必须补齐手动刷新、缓存日期和待验证接口。",
+        )
+    if status == "ready":
+        return (
+            "ready",
+            "可进入证据链",
+            "数据能力可作为辅助证据；执行前仍需价格、纪律和仓位三重确认。",
+        )
+    return (
+        "missing",
+        "待检测",
+        "尚未检测数据能力；只能展示安全空态或上次成功结果。",
+    )
+
+
+def _decision_blockers(blocked_items: list[dict], manual_items: list[dict], stale_items: list[dict]) -> list[str]:
+    items = []
+    for item in blocked_items:
+        items.append(f"{item.get('label') or '数据能力'}：{item.get('decision_impact') or '不可作为交易依据。'}")
+    for item in manual_items:
+        items.append(f"{item.get('label') or '手动刷新'}：需要手动刷新后才能进入当日判断。")
+    for item in stale_items:
+        if item.get("state") in {"empty_recent", "stale_cache", "fallback_used"}:
+            items.append(f"{item.get('label') or '缓存/待验证'}：{item.get('decision_impact') or '需要复核。'}")
+    return _dedupe_text(items, limit=MAX_QUEUE_ITEMS)
+
+
+def _dedupe_text(values: list[str], limit: int = MAX_QUEUE_ITEMS) -> list[str]:
+    result = []
+    seen = set()
+    for value in values:
+        text = _to_text(value)
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def build_data_capability_console_packet(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,
@@ -118,10 +169,16 @@ def build_data_capability_console_packet(
     stale_items = _dedupe_queue([item for item in issue_items if item["state"] in STALE_STATES])
     pending_count = len(manual_items) + len(stale_items)
     status = _status(len(ready_items), len(blocked_items), pending_count)
+    readiness, readiness_label, safe_mode_text = _decision_readiness(status)
+    decision_blockers = _decision_blockers(blocked_items, manual_items, stale_items)
     return {
         "status": status,
         "tone": _tone(status),
         "headline": _headline(status, len(ready_items), len(blocked_items), pending_count),
+        "decision_readiness": readiness,
+        "decision_readiness_label": readiness_label,
+        "safe_mode_text": safe_mode_text,
+        "decision_blockers": decision_blockers,
         "short_answer": _to_text(issue_packet.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"),
         "provider_cards": _as_list(dashboard.get("provider_cards")),
         "ready_items": ready_items,

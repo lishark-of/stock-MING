@@ -50,6 +50,12 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(packet["manual_count"], 1)
         self.assertEqual(packet["stale_count"], 1)
         self.assertIn("不能直接放大仓位", packet["headline"])
+        self.assertEqual(packet["decision_readiness"], "blocked")
+        self.assertEqual(packet["decision_readiness_label"], "阻断加仓")
+        self.assertIn("只允许观察、降风险", packet["safe_mode_text"])
+        self.assertTrue(any("融资融券" in item for item in packet["decision_blockers"]))
+        self.assertTrue(any("AkShare 重型刷新" in item for item in packet["decision_blockers"]))
+        self.assertTrue(any("龙虎榜" in item for item in packet["decision_blockers"]))
         self.assertIn("个股资金流", dumped)
         self.assertIn("融资融券", dumped)
         self.assertIn("AkShare 重型刷新", dumped)
@@ -77,6 +83,8 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         )
 
         self.assertEqual(packet["status"], "partial")
+        self.assertEqual(packet["decision_readiness"], "caution")
+        self.assertEqual(packet["decision_readiness_label"], "谨慎验证")
         self.assertEqual(packet["stale_items"][0]["label"], "龙虎榜")
         self.assertEqual(packet["short_answer"], "接口可用也可能搜不到。")
 

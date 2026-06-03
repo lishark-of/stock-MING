@@ -694,6 +694,38 @@ def build_risk_alerts(decision_packet: Any = None, strategy_packet: Any = None, 
     }
 
 
+def _dedupe_text_items(values: Any, limit: int = MAX_ERRORS) -> list[str]:
+    result = []
+    seen = set()
+    for value in _as_list(values):
+        text = _to_text(value)
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def attach_data_capability_risk_alerts(risk_alerts: Any = None, data_capability_console: Any = None) -> dict:
+    alerts = _as_mapping(risk_alerts)
+    console = _as_mapping(data_capability_console)
+    blockers = [_to_text(item) for item in _as_list(console.get("decision_blockers"))]
+    blockers = [item for item in blockers if item]
+    if not blockers:
+        return alerts
+    data_gaps = [_to_text(item) for item in _as_list(alerts.get("data_gaps"))]
+    reduce_conditions = [_to_text(item) for item in _as_list(alerts.get("reduce_conditions"))]
+    safe_mode = _to_text(console.get("safe_mode_text"))
+    data_gaps.extend(blockers[:4])
+    if safe_mode:
+        reduce_conditions.insert(0, safe_mode)
+    alerts["data_gaps"] = _dedupe_text_items(data_gaps, limit=8)
+    alerts["reduce_conditions"] = _dedupe_text_items(reduce_conditions, limit=MAX_CANDIDATES)
+    alerts["data_capability_mode"] = _to_text(console.get("decision_readiness_label"), "待检测")
+    return alerts
+
+
 def build_home_action_snapshot(
     state: Any = None,
     target: str = "",
@@ -789,6 +821,10 @@ def build_home_action_snapshot(
         refresh_summary=refresh,
         errors=errors,
     )
+    risk_alerts = attach_data_capability_risk_alerts(
+        build_risk_alerts(decision, strategy, coverage, errors),
+        data_capability_console,
+    )
     analysis_method_packet = (
         state_map.get("command_center_analysis_method_packet")
         or state_map.get("analysis_method_packet")
@@ -829,7 +865,7 @@ def build_home_action_snapshot(
         "limit_emotion_packet": limit_emotion_packet,
         "hard_risk_packet": hard_risk_packet,
         "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
-        "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
+        "risk_alerts": risk_alerts,
         "data_coverage": coverage,
         "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
         "data_capability": data_capability_snapshot,
