@@ -43,6 +43,16 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(request["refresh_policy"], "button_gated")
         self.assertFalse(request["deepseek_called"])
 
+    def test_limit_cpt_request_is_button_gated(self):
+        request = checks.build_limit_cpt_check_request(today="2026-06-03")
+
+        self.assertEqual(request["api"], "limit_cpt_list")
+        self.assertEqual(request["section"], "limit_emotion")
+        self.assertEqual(request["start_date"], "20260524")
+        self.assertEqual(request["end_date"], "20260603")
+        self.assertEqual(request["refresh_policy"], "button_gated")
+        self.assertFalse(request["deepseek_called"])
+
     def test_margin_detail_result_builds_capability_item(self):
         item = checks.build_margin_detail_capability_item(
             {"ok": False, "error": "抱歉，您没有访问该接口的权限", "api": "margin_detail"},
@@ -52,6 +62,18 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(item["section"], "margin")
         self.assertEqual(item["label"], "融资融券")
         self.assertEqual(item["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertFalse(item["deepseek_called"])
+
+    def test_limit_cpt_result_builds_capability_item(self):
+        item = checks.build_limit_cpt_capability_item(
+            {"ok": False, "error": "limit_cpt_list 当前权限不足，已在本会话跳过重复请求。", "api": "limit_cpt_list"},
+            latency_ms=9,
+        )
+
+        self.assertEqual(item["section"], "limit_emotion")
+        self.assertEqual(item["label"], "涨跌停/情绪")
+        self.assertEqual(item["capability_state"], capability.STATE_DISABLED_THIS_SESSION)
         self.assertEqual(item["refresh_policy"], "button_gated")
         self.assertFalse(item["deepseek_called"])
 
@@ -70,6 +92,24 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(by_section["moneyflow"]["capability_state"], "available")
         self.assertEqual(by_section["margin"]["capability_state"], capability.STATE_AVAILABLE)
         self.assertEqual(merged["ok_count"], 2)
+        self.assertFalse(merged["deepseek_called"])
+        json.dumps(merged, ensure_ascii=False)
+
+    def test_merge_replaces_existing_limit_emotion_item(self):
+        packet = {
+            "source": "Tushare A股专业事实",
+            "items": [
+                {"section": "limit_emotion", "label": "涨跌停/情绪", "api": "limit_cpt_list", "capability_state": "disabled_this_session", "status": "本会话跳过"},
+                {"section": "margin", "label": "融资融券", "api": "margin_detail", "capability_state": "permission_denied", "status": "权限不足"},
+            ],
+        }
+        new_item = checks.build_limit_cpt_capability_item({"ok": True, "rows": 5, "latest_date": "20260603"})
+        merged = checks.merge_a_share_capability_item(packet, new_item, checked_at="2026-06-03T10:00:00")
+        by_section = {item["section"]: item for item in merged["items"]}
+
+        self.assertEqual(by_section["limit_emotion"]["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(by_section["margin"]["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertEqual(merged["ok_count"], 1)
         self.assertFalse(merged["deepseek_called"])
         json.dumps(merged, ensure_ascii=False)
 

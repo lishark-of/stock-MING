@@ -10,6 +10,9 @@ import market_data_capability as data_capability
 MARGIN_SECTION = "margin"
 MARGIN_API = "margin_detail"
 MARGIN_LABEL = "融资融券"
+LIMIT_CPT_SECTION = "limit_emotion"
+LIMIT_CPT_API = "limit_cpt_list"
+LIMIT_CPT_LABEL = "涨跌停/情绪"
 
 
 def normalize_a_share_ts_code(value: Any) -> str:
@@ -62,6 +65,27 @@ def build_margin_detail_check_request(ticker: Any, today: Any = None, lookback_d
     }
 
 
+def build_limit_cpt_check_request(today: Any = None, lookback_days: int = 10) -> dict:
+    if isinstance(today, _dt.datetime):
+        end = today.date()
+    elif isinstance(today, _dt.date):
+        end = today
+    elif isinstance(today, str) and today.strip():
+        end = _dt.date.fromisoformat(today.strip()[:10])
+    else:
+        end = _dt.date.today()
+    start = end - _dt.timedelta(days=max(1, int(lookback_days or 10)))
+    return {
+        "section": LIMIT_CPT_SECTION,
+        "label": LIMIT_CPT_LABEL,
+        "api": LIMIT_CPT_API,
+        "start_date": _date_text(start),
+        "end_date": _date_text(end),
+        "refresh_policy": "button_gated",
+        "deepseek_called": False,
+    }
+
+
 def build_margin_detail_capability_item(result: Any = None, latency_ms: int | float | None = 0) -> dict:
     item = data_capability.summarize_tushare_result(MARGIN_API, result=result, latency_ms=latency_ms)
     item.update(
@@ -77,6 +101,21 @@ def build_margin_detail_capability_item(result: Any = None, latency_ms: int | fl
     return item
 
 
+def build_limit_cpt_capability_item(result: Any = None, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_result(LIMIT_CPT_API, result=result, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": LIMIT_CPT_SECTION,
+            "label": LIMIT_CPT_LABEL,
+            "api": LIMIT_CPT_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+        }
+    )
+    return item
+
+
 def build_margin_detail_exception_item(exc: Any, latency_ms: int | float | None = 0) -> dict:
     item = data_capability.summarize_tushare_exception(MARGIN_API, exc, latency_ms=latency_ms)
     item.update(
@@ -84,6 +123,21 @@ def build_margin_detail_exception_item(exc: Any, latency_ms: int | float | None 
             "section": MARGIN_SECTION,
             "label": MARGIN_LABEL,
             "api": MARGIN_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+        }
+    )
+    return item
+
+
+def build_limit_cpt_exception_item(exc: Any, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_exception(LIMIT_CPT_API, exc, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": LIMIT_CPT_SECTION,
+            "label": LIMIT_CPT_LABEL,
+            "api": LIMIT_CPT_API,
             "manual_check": True,
             "refresh_policy": "button_gated",
             "deepseek_called": False,

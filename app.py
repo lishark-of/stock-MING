@@ -4041,6 +4041,65 @@ def _run_manual_margin_detail_capability_check(target="", position_profile=None,
     }
 
 
+def _run_manual_limit_cpt_capability_check(target="", position_profile=None, live_packet=None):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    request = a_share_manual_checks_service.build_limit_cpt_check_request()
+    checked_at = _cc_now()
+    if ticker and not a_share_manual_checks_service.is_a_share_ts_code(ticker):
+        item = a_share_manual_checks_service.build_limit_cpt_exception_item("当前标的不是 A股代码，不检测 Tushare limit_cpt_list。")
+    elif _tushare_adapter is None or not hasattr(_tushare_adapter, "get_limit_cpt_list"):
+        item = a_share_manual_checks_service.build_limit_cpt_exception_item(
+            str(TUSHARE_ADAPTER_MODULE_ERROR) or "tushare_adapter 未接入 limit_cpt_list。"
+        )
+    else:
+        started = time.perf_counter()
+        try:
+            result = _tushare_adapter.get_limit_cpt_list(
+                start_date=request["start_date"],
+                end_date=request["end_date"],
+            )
+            item = a_share_manual_checks_service.build_limit_cpt_capability_item(
+                result,
+                latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+        except Exception as exc:
+            item = a_share_manual_checks_service.build_limit_cpt_exception_item(
+                exc,
+                latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+    item["checked_at"] = checked_at
+    if item.get("capability_state") == data_capability.STATE_AVAILABLE:
+        st.session_state["skip_limit_cpt_list"] = False
+    elif item.get("capability_state") in {data_capability.STATE_PERMISSION_DENIED, data_capability.STATE_DISABLED_THIS_SESSION}:
+        st.session_state["skip_limit_cpt_list"] = True
+    existing_packet = st.session_state.get("a_share_professional_data_capability") or {}
+    professional_packet = a_share_manual_checks_service.merge_a_share_capability_item(
+        existing_packet,
+        item,
+        checked_at=checked_at,
+    )
+    data_packet = _sync_a_share_capability_packet(professional_packet)
+    live = live_packet or st.session_state.get("command_center_live_packet") or {}
+    st.session_state["command_center_limit_emotion_packet"] = limit_emotion_packet_service.build_command_center_limit_emotion_packet(
+        {"command_center_facts_packet": {"items": [{**item, "key": "limit_emotion", "state": item.get("capability_state") or ""}]}},
+        live_packet=live,
+        target=ticker,
+    )
+    _persist_home_action_snapshot(
+        live_packet=live,
+        target=ticker,
+        position_profile=position_profile,
+    )
+    return {
+        "request": request,
+        "item": item,
+        "professional_packet": professional_packet,
+        "data_capability_packet": data_packet,
+        "deepseek_called": False,
+    }
+
+
 def _get_command_center_facts_packet(target="", name=""):
     return facts_packet_service.build_command_center_facts_packet(
         st.session_state,
@@ -4132,6 +4191,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         <style>
         .st-key-btn_cc_refresh_all_basic button,
         .st-key-btn_cc_margin_capability_check button,
+        .st-key-btn_cc_limit_cpt_capability_check button,
         .st-key-btn_cc_deepseek_explain button {
             border-radius: 14px !important;
             border: 1px solid rgba(20, 184, 166, 0.24) !important;
@@ -4157,7 +4217,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     home_snapshot_slot = st.empty()
     decision_hero_slot = st.empty()
     projection_slot = st.empty()
-    control_cols = st.columns([1.35, 1.15, 1.15])
+    control_cols = st.columns([1.3, 1.05, 1.05, 1.15])
     with control_cols[0]:
         if st.button("刷新今日基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
             status = st.status("正在刷新今日基础数据...", expanded=True)
@@ -4228,6 +4288,23 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 status.update(label=f"融资融券权限检测完成：{label}", state="complete", expanded=False)
                 st.warning(f"融资融券检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
     with control_cols[2]:
+        if st.button("检测涨跌停情绪权限", key="btn_cc_limit_cpt_capability_check", width="stretch"):
+            status = st.status("正在手动检测涨跌停/情绪权限...", expanded=True)
+            result = _run_manual_limit_cpt_capability_check(
+                target=target,
+                position_profile=position_profile,
+                live_packet=live_packet,
+            )
+            item = result.get("item") or {}
+            label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
+            message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
+            if item.get("capability_state") == data_capability.STATE_AVAILABLE:
+                status.update(label=f"涨跌停/情绪权限检测完成：{label}", state="complete", expanded=False)
+                st.success(f"涨跌停/情绪检测完成：{message}；DeepSeek：未调用。")
+            else:
+                status.update(label=f"涨跌停/情绪权限检测完成：{label}", state="complete", expanded=False)
+                st.warning(f"涨跌停/情绪检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
+    with control_cols[3]:
         if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
             current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
