@@ -491,6 +491,35 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("手动触发", payload["quant_packet"]["manual_required_text"])
         self.assertFalse(payload["quant_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_chip_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "a_share_professional_facts": {
+                "chip_radar": {
+                    "available": True,
+                    "trade_date": "20260603",
+                    "winner_rate": 72,
+                    "weight_avg": 23.4,
+                    "chip_band_width": 14,
+                    "chip_pressure_comment": "获利盘压力偏高。",
+                    "updated_at": f"{today}T10:01:00",
+                }
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["chip_packet"]["data_status"], "ready")
+        self.assertEqual(payload["chip_packet"]["winner_rate"], 72)
+        self.assertEqual(payload["chip_packet"]["pressure_state"], "获利盘压力偏高")
+        self.assertIn("手动刷新", payload["chip_packet"]["manual_required_text"])
+        self.assertFalse(payload["chip_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_command_center_facts_packet(self):
         today = _dt.date.today().isoformat()
         state = {
