@@ -23,6 +23,7 @@ import command_center_hard_risk_packet as hard_risk_packet_service
 import command_center_market_profile_summary as market_profile_summary_service
 import command_center_data_issue_explainer as data_issue_explainer_service
 import command_center_data_capability_console as data_capability_console_service
+import market_data_capability as data_capability_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -478,6 +479,27 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
     }
 
 
+def resolve_data_capability_packet(state: Any = None) -> dict:
+    state_map = _as_mapping(state)
+    healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))
+    professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
+    explicit = (
+        state_map.get("command_center_data_capability_packet")
+        or state_map.get("a_share_professional_data_capability")
+        or healthcheck.get("data_capability")
+        or _as_mapping(professional_facts.get("data_capability"))
+        or healthcheck.get("tushare")
+    )
+    if explicit:
+        return _as_mapping(explicit)
+    if professional_facts:
+        return data_capability_service.build_a_share_professional_capability_packet(
+            professional_facts,
+            checked_at=professional_facts.get("updated_at") or "",
+        )
+    return {}
+
+
 def build_holding_action(target: str = "", position_profile: Any = None, strategy_packet: Any = None, state: Any = None) -> dict:
     state_map = _as_mapping(state)
     profile = _as_mapping(position_profile) or _as_mapping(state_map.get("position_profile")) or _as_mapping(state_map.get("current_holding_context"))
@@ -698,13 +720,7 @@ def build_home_action_snapshot(
         or state_map.get("strategy_execution_last_success")
     )
     if data_capability_packet is None:
-        healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))
-        data_capability_packet = (
-            state_map.get("command_center_data_capability_packet")
-            or state_map.get("a_share_professional_data_capability")
-            or healthcheck.get("data_capability")
-            or healthcheck.get("tushare")
-        )
+        data_capability_packet = resolve_data_capability_packet(state_map)
     if facts_packet is None:
         facts_packet = facts_packet_service.build_command_center_facts_packet(
             state_map,

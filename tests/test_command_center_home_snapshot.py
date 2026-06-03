@@ -397,6 +397,54 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("受限：融资融券", capability["summary"])
         self.assertFalse(capability["deepseek_called"])
 
+    def test_home_snapshot_builds_capability_from_legacy_a_share_facts(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T09:30:00",
+            },
+            "a_share_professional_facts": {
+                "stock_code": "002008",
+                "updated_at": f"{today}T09:35:00",
+                "moneyflow": {
+                    "available": True,
+                    "api": "moneyflow",
+                    "date": "20260603",
+                    "updated_at": f"{today}T09:35:00",
+                },
+                "dragon_tiger": {
+                    "available": False,
+                    "api": "top_list/top_inst",
+                    "message": "近30日未见龙虎榜上榜记录",
+                    "updated_at": f"{today}T09:35:00",
+                },
+                "margin": {
+                    "available": False,
+                    "api": "margin_detail",
+                    "error": "抱歉，您没有访问该接口的权限",
+                    "updated_at": f"{today}T09:35:00",
+                },
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T09:40:00")
+        capability = payload["data_capability"]
+        console = payload["data_capability_console"]
+        dumped = json.dumps(payload, ensure_ascii=False)
+
+        self.assertEqual(capability["source"], "Tushare A股专业事实")
+        self.assertEqual(capability["available_count"], 1)
+        self.assertGreaterEqual(capability["restricted_count"], 1)
+        self.assertGreaterEqual(capability["pending_count"], 1)
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("龙虎榜", dumped)
+        self.assertIn("融资融券", dumped)
+        self.assertEqual(console["status"], "blocked")
+        self.assertFalse(capability["deepseek_called"])
+        self.assertFalse(console["deepseek_called"])
+
     def test_loaded_home_snapshot_keeps_data_capability(self):
         today = _dt.date.today().isoformat()
         with tempfile.TemporaryDirectory() as tmp:
