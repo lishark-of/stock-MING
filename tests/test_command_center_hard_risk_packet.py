@@ -78,6 +78,33 @@ class CommandCenterHardRiskPacketTests(unittest.TestCase):
         self.assertEqual(packet["risk_state"], "硬风险待排查")
         self.assertIn("不能把缺口写成无风险", "；".join(packet["risk_notes"]))
 
+    def test_normalizes_tianyan_risk_fact_packet(self):
+        state = {
+            "tianyan_risk_fact_packet": {
+                "verified_hard_risks": {
+                    "available": True,
+                    "updated_at": "2026-06-03T10:00:00",
+                    "holder_reduction": {
+                        "available": True,
+                        "source": "Tushare",
+                        "api": "stk_holdertrade",
+                        "rows": [
+                            {"ann_date": "20260602", "holder_name": "控股股东", "summary": "股东减持记录"}
+                        ],
+                        "risk_flags": ["存在股东减持记录"],
+                    },
+                }
+            }
+        }
+
+        packet = hard_risk.build_command_center_hard_risk_packet(state, target="002008.SZ")
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["source_key"], "tianyan_risk_fact_packet.verified_hard_risks")
+        self.assertEqual(packet["risk_state"], "风险线索存在")
+        self.assertIn("减持", json.dumps(packet["risk_items"], ensure_ascii=False))
+        self.assertFalse(packet["deepseek_called"])
+
     def test_existing_packet_is_preserved_without_mutation(self):
         state = {
             "command_center_hard_risk_packet": {

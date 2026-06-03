@@ -3801,6 +3801,24 @@ def _persist_home_action_snapshot(live_packet=None, target="", position_profile=
     return snapshot
 
 
+def _sync_tianyan_hard_risk_to_command_center(tianyan_packet, target="", position_profile=None, live_packet=None):
+    if not isinstance(tianyan_packet, dict):
+        return {}
+    st.session_state["tianyan_risk_fact_packet"] = tianyan_packet
+    hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet(
+        st.session_state,
+        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        target=target,
+    )
+    st.session_state["command_center_hard_risk_packet"] = hard_risk_packet
+    _persist_home_action_snapshot(
+        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        target=target,
+        position_profile=position_profile,
+    )
+    return hard_risk_packet
+
+
 def _get_strategy_execution_display_packet():
     return cc_state_adapter.get_display_packet(
         st.session_state,
@@ -10985,6 +11003,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             "news_digest": (tianyan_risk_fact_packet.get("sentiment_and_unverified_clues") or {}).get("news_digest") or {},
                             "note": "processed_sources / brain_memory / manager_rules / news_digest 只能作为待验证线索",
                         }
+                    )
+                    _sync_tianyan_hard_risk_to_command_center(
+                        tianyan_risk_fact_packet,
+                        target=target,
+                        position_profile=position_profile_preview,
                     )
 
                     display_lines = build_tianyan_display_lines(tianyan_risk_fact_packet)

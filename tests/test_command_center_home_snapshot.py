@@ -588,6 +588,38 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("减持计划待验证", payload["hard_risk_packet"]["risk_items"][0]["message"])
         self.assertFalse(payload["hard_risk_packet"]["deepseek_called"])
 
+    def test_home_snapshot_reads_legacy_tianyan_hard_risk_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "tianyan_risk_fact_packet": {
+                "verified_hard_risks": {
+                    "available": True,
+                    "updated_at": f"{today}T10:01:00",
+                    "announcements": {
+                        "available": True,
+                        "source": "Tushare",
+                        "api": "anns_d",
+                        "rows": [
+                            {"ann_date": "20260603", "title": "关于风险提示的公告"}
+                        ],
+                        "risk_flags": ["公告标题线索涉及：风险提示"],
+                    },
+                }
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["hard_risk_packet"]["source_key"], "tianyan_risk_fact_packet.verified_hard_risks")
+        self.assertEqual(payload["hard_risk_packet"]["data_status"], "ready")
+        self.assertIn("风险提示", json.dumps(payload["hard_risk_packet"], ensure_ascii=False))
+        self.assertFalse(payload["hard_risk_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_margin_packet(self):
         today = _dt.date.today().isoformat()
         state = {
