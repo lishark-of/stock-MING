@@ -29,6 +29,37 @@ RESTRICTED_STATES = {
     data_capability_service.STATE_NOT_CONFIGURED,
     data_capability_service.STATE_FAILED,
 }
+READY_PACKET_STATES = {"ready", "ok", "completed", "success", "available", "可用", "今日已刷新", "已刷新"}
+CACHED_PACKET_STATES = {"cached", "partial", "stale", "using_cache", "使用缓存", "部分可用", "近期无数据"}
+WAITING_PACKET_STATES = {
+    "waiting",
+    "missing",
+    "requires_manual_refresh",
+    "manual_required",
+    "pending",
+    "待刷新",
+    "待验证",
+    "需要手动刷新",
+}
+FAILED_PACKET_STATES = {
+    "failed",
+    "error",
+    "failure",
+    "permission_denied",
+    "disabled_this_session",
+    "network_failed",
+    "not_configured",
+    "权限不足",
+    "本会话跳过",
+    "失败",
+}
+PACKET_SECTION_ORDER = [
+    ("dragon_tiger", "龙虎榜", "command_center_dragon_tiger_packet"),
+    ("margin", "融资融券", "command_center_margin_packet"),
+    ("moneyflow", "个股资金流", "command_center_moneyflow_packet"),
+    ("limit_emotion", "涨跌停/情绪", "command_center_limit_emotion_packet"),
+    ("chip_radar", "筹码/胜率", "command_center_chip_packet"),
+]
 
 
 def as_mapping(value: Any) -> dict:
@@ -41,6 +72,14 @@ def to_text(value: Any, default: str = "") -> str:
     if isinstance(value, str):
         return value.strip() or default
     return str(value).strip() or default
+
+
+def _first_text(*values: Any, default: str = "") -> str:
+    for value in values:
+        text = to_text(value)
+        if text:
+            return text
+    return default
 
 
 def refresh_caption() -> str:
@@ -107,6 +146,128 @@ def build_a_share_status_strip(professional_facts: Any = None, capability_packet
         "source": to_text(capability.get("source") or facts.get("data_source"), "Tushare A股专业事实"),
         "items": items,
         "manual_note": "专业事实只读缓存或手动检测结果；DeepSeek 未调用。",
+        "deepseek_called": False,
+    }
+
+
+def _packet_state(packet: Mapping[str, Any]) -> str:
+    raw_values = [
+        packet.get("status"),
+        packet.get("data_status"),
+        packet.get("state"),
+        packet.get("capability_state"),
+    ]
+    for value in raw_values:
+        text = to_text(value).lower()
+        if text in READY_PACKET_STATES:
+            return "ready"
+        if text in FAILED_PACKET_STATES:
+            return "failed"
+        if text in CACHED_PACKET_STATES:
+            return "cached"
+        if text in WAITING_PACKET_STATES:
+            return "waiting"
+    if packet.get("available") is True or packet.get("ok") is True:
+        return "ready"
+    if packet.get("manual_gate") or packet.get("requires_manual_refresh"):
+        return "waiting"
+    return "waiting" if not packet else "cached"
+
+
+def _packet_state_label(state: str) -> str:
+    return {
+        "ready": "已回流",
+        "cached": "使用缓存/待复核",
+        "failed": "受限/失败",
+        "waiting": "待手动刷新",
+    }.get(state, "待验证")
+
+
+def _packet_tone(state: str) -> str:
+    return {
+        "ready": "ready",
+        "cached": "stale",
+        "failed": "failed",
+        "waiting": "missing",
+    }.get(state, "missing")
+
+
+def _packet_risk_text(packet: Mapping[str, Any]) -> str:
+    notes = packet.get("risk_notes")
+    if isinstance(notes, (list, tuple)):
+        return _first_text(*notes)
+    return _first_text(notes, packet.get("warning"), packet.get("error"), packet.get("manual_required_text"))
+
+
+def _packet_summary_item(key: str, label: str, source_key: str, packet_value: Any = None) -> dict:
+    packet = as_mapping(packet_value)
+    state = _packet_state(packet)
+    default_api = SECTION_SPECS.get(key, ("", "", ""))[1]
+    return {
+        "key": key,
+        "label": label,
+        "packet": source_key,
+        "state": state,
+        "status": _packet_state_label(state),
+        "tone": _packet_tone(state),
+        "data_status": _first_text(packet.get("data_status"), default="missing" if state == "waiting" else state),
+        "source": _first_text(packet.get("source"), default="Tushare A股专业事实缓存"),
+        "api": _first_text(packet.get("api"), default=default_api),
+        "updated_at": _first_text(packet.get("updated_at"), packet.get("trade_date"), packet.get("date")),
+        "summary": _first_text(packet.get("summary"), packet.get("message"), default=SECTION_SPECS.get(key, ("", "", ""))[2]),
+        "risk_note": _packet_risk_text(packet),
+        "deepseek_called": bool(packet.get("deepseek_called", False)),
+    }
+
+
+def build_legacy_a_share_packet_summary(
+    *,
+    dragon_tiger_packet: Any = None,
+    margin_packet: Any = None,
+    moneyflow_packet: Any = None,
+    limit_emotion_packet: Any = None,
+    chip_packet: Any = None,
+) -> dict:
+    packets = {
+        "dragon_tiger": dragon_tiger_packet,
+        "margin": margin_packet,
+        "moneyflow": moneyflow_packet,
+        "limit_emotion": limit_emotion_packet,
+        "chip_radar": chip_packet,
+    }
+    items = [
+        _packet_summary_item(key, label, source_key, packets.get(key))
+        for key, label, source_key in PACKET_SECTION_ORDER
+    ]
+    counts = {
+        "ready": sum(1 for item in items if item["state"] == "ready"),
+        "cached": sum(1 for item in items if item["state"] == "cached"),
+        "waiting": sum(1 for item in items if item["state"] == "waiting"),
+        "failed": sum(1 for item in items if item["state"] == "failed"),
+    }
+    if counts["failed"]:
+        status_label = "部分接口受限"
+        tone = "failed"
+    elif counts["ready"] == len(items):
+        status_label = "已全部回流"
+        tone = "ready"
+    elif counts["ready"] or counts["cached"]:
+        status_label = "部分回流"
+        tone = "stale" if counts["cached"] else "ready"
+    else:
+        status_label = "待手动刷新"
+        tone = "missing"
+    return {
+        "title": "A股专业事实回流",
+        "status_label": status_label,
+        "tone": tone,
+        "summary": (
+            f"已回流 {counts['ready']}｜使用缓存/待复核 {counts['cached']}｜"
+            f"待手动刷新 {counts['waiting']}｜受限/失败 {counts['failed']}"
+        ),
+        "counts": counts,
+        "items": items,
+        "manual_note": "以下结果区优先读取 command_center_*_packet 规范状态；页面打开不会自动请求 Tushare，缺失项请手动检测/刷新。",
         "deepseek_called": False,
     }
 

@@ -1,4 +1,5 @@
 import ast
+import copy
 import json
 import unittest
 from pathlib import Path
@@ -87,6 +88,68 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertEqual(strip["tone"], "failed")
         self.assertIn("可用 1", strip["summary"])
         self.assertIn("受限/失败 1", strip["summary"])
+
+    def test_packet_summary_counts_ready_cached_waiting_and_failed(self):
+        summary = gate.build_legacy_a_share_packet_summary(
+            dragon_tiger_packet={
+                "status": "ready",
+                "data_status": "ready",
+                "source": "Tushare 龙虎榜缓存",
+                "api": "top_list/top_inst",
+                "updated_at": "2026-06-03T10:00:00",
+                "summary": "龙虎榜状态：席位净买入。",
+            },
+            margin_packet={
+                "status": "failed",
+                "data_status": "missing",
+                "source": "Tushare margin_detail 缓存",
+                "error": "权限不足",
+            },
+            moneyflow_packet={
+                "status": "partial",
+                "data_status": "cached",
+                "summary": "近5日未取得可验证资金流。",
+            },
+            limit_emotion_packet={"status": "waiting"},
+            chip_packet={},
+        )
+
+        self.assertEqual(summary["status_label"], "部分接口受限")
+        self.assertEqual(summary["counts"], {"ready": 1, "cached": 1, "waiting": 2, "failed": 1})
+        self.assertIn("已回流 1", summary["summary"])
+        self.assertIn("页面打开不会自动请求 Tushare", summary["manual_note"])
+        self.assertFalse(summary["deepseek_called"])
+        by_key = {item["key"]: item for item in summary["items"]}
+        self.assertEqual(by_key["dragon_tiger"]["status"], "已回流")
+        self.assertEqual(by_key["margin"]["status"], "受限/失败")
+        self.assertEqual(by_key["moneyflow"]["status"], "使用缓存/待复核")
+        self.assertEqual(by_key["chip_radar"]["status"], "待手动刷新")
+
+    def test_packet_summary_is_json_friendly_and_does_not_mutate_input(self):
+        packet = {
+            "status": "ready",
+            "data_status": "ready",
+            "risk_notes": ["资金净流入只作验证线索"],
+            "updated_at": "2026-06-03T10:00:00",
+        }
+        before = copy.deepcopy(packet)
+
+        summary = gate.build_legacy_a_share_packet_summary(moneyflow_packet=packet)
+
+        self.assertEqual(packet, before)
+        json.dumps(summary, ensure_ascii=False)
+        moneyflow_item = [item for item in summary["items"] if item["key"] == "moneyflow"][0]
+        self.assertEqual(moneyflow_item["risk_note"], "资金净流入只作验证线索")
+        self.assertFalse(any(item["deepseek_called"] for item in summary["items"]))
+
+    def test_packet_summary_handles_empty_packets(self):
+        summary = gate.build_legacy_a_share_packet_summary()
+
+        self.assertEqual(summary["status_label"], "待手动刷新")
+        self.assertEqual(len(summary["items"]), 5)
+        self.assertEqual(summary["counts"]["waiting"], 5)
+        self.assertTrue(all(item["status"] == "待手动刷新" for item in summary["items"]))
+        json.dumps(summary, ensure_ascii=False)
 
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_gate.py").read_text(encoding="utf-8"))

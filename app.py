@@ -9866,6 +9866,32 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 ]
                 capability_columns = [column for column in capability_columns if column in capability_df.columns]
                 st.dataframe(capability_df[capability_columns], width="stretch", hide_index=True)
+
+        legacy_packet_summary = legacy_a_share_gate_service.build_legacy_a_share_packet_summary(
+            dragon_tiger_packet=st.session_state.get("command_center_dragon_tiger_packet"),
+            margin_packet=st.session_state.get("command_center_margin_packet"),
+            moneyflow_packet=st.session_state.get("command_center_moneyflow_packet"),
+            limit_emotion_packet=st.session_state.get("command_center_limit_emotion_packet"),
+            chip_packet=st.session_state.get("command_center_chip_packet"),
+        )
+        st.caption(
+            f"{legacy_packet_summary.get('title')}：{legacy_packet_summary.get('status_label')}｜"
+            f"{legacy_packet_summary.get('summary')}｜{legacy_packet_summary.get('manual_note')}"
+        )
+        with st.expander("A股专业事实 packet 状态", expanded=False):
+            packet_df = pd.DataFrame(legacy_packet_summary.get("items") or [])
+            packet_columns = [
+                "label",
+                "status",
+                "data_status",
+                "source",
+                "api",
+                "updated_at",
+                "summary",
+                "risk_note",
+            ]
+            packet_columns = [column for column in packet_columns if column in packet_df.columns]
+            st.dataframe(packet_df[packet_columns], width="stretch", hide_index=True)
         
         # 第一排：龙虎榜 + 融资融券 + 个股资金流向
         col_a1, col_a2, col_a3 = st.columns(3)
