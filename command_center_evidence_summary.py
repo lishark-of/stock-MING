@@ -371,3 +371,31 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         "manual_note": "证据雷达只读取本地 packet；页面打开不会自动请求 Tushare、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
     }
+
+
+def build_home_evidence_backfill_actions(
+    evidence_radar_packet: Any = None,
+    runnable_keys: Any = None,
+    limit: int = 2,
+) -> list[dict]:
+    packet = as_mapping(evidence_radar_packet)
+    if isinstance(runnable_keys, (set, frozenset)):
+        raw_keys = list(runnable_keys)
+    else:
+        raw_keys = as_list(runnable_keys)
+    allowed = {to_text(key) for key in raw_keys}
+    if not allowed:
+        allowed = set(EVIDENCE_ACTIONS)
+    result = []
+    for raw in as_list(packet.get("next_evidence_actions")):
+        item = as_mapping(raw)
+        key = to_text(item.get("key"))
+        manual_action = as_mapping(item.get("manual_action"))
+        if not key or key not in allowed:
+            continue
+        if manual_action.get("refresh_policy") != "button_gated":
+            continue
+        result.append({**item, "manual_action": manual_action, "deepseek_called": False})
+        if len(result) >= max(1, int(limit or 2)):
+            break
+    return result

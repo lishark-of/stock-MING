@@ -4361,6 +4361,50 @@ def render_a_share_data_capability_controls(target="", position_profile=None, li
                 )
 
 
+def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", market_type="", position_profile=None, live_packet=None):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    if not (is_a_share_market(market_type) or a_share_manual_checks_service.is_a_share_ts_code(ticker)):
+        return
+    runner_map = {
+        "moneyflow": ("资金流", _run_manual_moneyflow_capability_check),
+        "margin": ("融资融券", _run_manual_margin_detail_capability_check),
+        "limit_emotion": ("涨跌停/情绪", _run_manual_limit_cpt_capability_check),
+        "dragon_tiger": ("龙虎榜", _run_manual_dragon_tiger_capability_check),
+        "chip_radar": ("筹码/胜率", _run_manual_chip_radar_capability_check),
+    }
+    actions = evidence_summary_service.build_home_evidence_backfill_actions(
+        evidence_radar_vm,
+        runnable_keys=runner_map.keys(),
+        limit=2,
+    )
+    if not actions:
+        return
+    with st.container(border=True):
+        st.markdown("#### 补齐关键 A股证据")
+        st.caption("只在点击按钮后检测对应 Tushare 数据；用于修复证据缺口，不调用 DeepSeek，不自动刷新全市场。")
+        cols = st.columns(len(actions))
+        for col, action in zip(cols, actions):
+            key = str(action.get("key") or "")
+            result_label, runner = runner_map[key]
+            manual_action = action.get("manual_action") or {}
+            button_label = manual_action.get("button_label") or f"手动刷新{action.get('label') or result_label}"
+            action_hint = action.get("action_hint") or manual_action.get("reason") or "手动补齐证据后再进入决策。"
+            with col:
+                st.caption(f"{action.get('evidence_label') or '待验证证据'}｜{action.get('label') or result_label}")
+                st.caption(action_hint)
+                _render_manual_capability_check_button(
+                    button_label,
+                    f"btn_cc_home_evidence_backfill_{key}",
+                    f"正在补齐{result_label}证据...",
+                    result_label,
+                    runner,
+                    target=target,
+                    position_profile=position_profile,
+                    live_packet=live_packet,
+                )
+
+
 def _get_command_center_facts_packet(target="", name=""):
     return facts_packet_service.build_command_center_facts_packet(
         st.session_state,
@@ -4456,6 +4500,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         .st-key-btn_cc_margin_capability_check button,
         .st-key-btn_cc_limit_cpt_capability_check button,
         .st-key-btn_cc_chip_capability_check button,
+        [class*="st-key-btn_cc_home_evidence_backfill_"] button,
         .st-key-btn_cc_deepseek_explain button {
             border-radius: 14px !important;
             border: 1px solid rgba(20, 184, 166, 0.24) !important;
@@ -4652,6 +4697,13 @@ packet:
         render_home_action_snapshot(home_snapshot)
     evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
     st.session_state["command_center_evidence_radar_packet"] = evidence_radar_vm
+    render_home_evidence_backfill_controls(
+        evidence_radar_vm,
+        target=target,
+        market_type=market_type,
+        position_profile=position_profile,
+        live_packet=live_packet,
+    )
     st.caption("本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释。")
     analysis_method_packet = _build_analysis_methods_display_packet(
         live_packet=live_packet,

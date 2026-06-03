@@ -100,6 +100,27 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
             self.assertFalse(item["manual_action"]["deepseek_called"])
             self.assertFalse(item["deepseek_called"])
 
+    def test_home_backfill_actions_filter_to_runnable_button_gated_items(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "hard_risk_packet": {"status": "failed", "data_status": "missing", "summary": "公告权限不足"},
+                "margin_packet": {"status": "partial", "data_status": "cached", "summary": "融资缓存"},
+                "dragon_tiger_packet": {"status": "waiting", "data_status": "missing", "summary": "待查龙虎榜"},
+                "chip_packet": {"status": "waiting", "data_status": "missing", "summary": "待查筹码"},
+            }
+        )
+        actions = evidence_summary.build_home_evidence_backfill_actions(
+            vm,
+            runnable_keys={"margin", "dragon_tiger", "chip_radar"},
+            limit=2,
+        )
+
+        self.assertEqual([item["key"] for item in actions], ["margin", "chip_radar"])
+        self.assertNotIn("hard_risk", {item["key"] for item in actions})
+        for item in actions:
+            self.assertEqual(item["manual_action"]["refresh_policy"], "button_gated")
+            self.assertFalse(item["deepseek_called"])
+
     def test_limit_and_chip_specific_headlines_are_visible(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {
