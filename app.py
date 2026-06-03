@@ -4286,6 +4286,60 @@ def _run_manual_chip_radar_capability_check(target="", position_profile=None, li
     }
 
 
+def _render_manual_capability_check_button(
+    button_label,
+    button_key,
+    status_label,
+    result_label,
+    runner,
+    target="",
+    position_profile=None,
+    live_packet=None,
+):
+    if not st.button(button_label, key=button_key, width="stretch"):
+        return None
+    status = st.status(status_label, expanded=True)
+    result = runner(
+        target=target,
+        position_profile=position_profile,
+        live_packet=live_packet,
+    )
+    item = result.get("item") or {}
+    state_label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
+    message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
+    status.update(label=f"{result_label}检测完成：{state_label}", state="complete", expanded=False)
+    if item.get("capability_state") == data_capability.STATE_AVAILABLE:
+        st.success(f"{result_label}检测完成：{message}；DeepSeek：未调用。")
+    else:
+        st.warning(f"{result_label}检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
+    return result
+
+
+def render_a_share_data_capability_controls(target="", position_profile=None, live_packet=None):
+    with st.expander("A股数据能力检测", expanded=False):
+        st.caption("只在点击按钮后请求对应 Tushare 接口；用于确认权限、近期数据、缓存和缺口，不自动调用 DeepSeek。")
+        check_cols = st.columns(5)
+        checks = [
+            ("检测资金流", "btn_cc_moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check),
+            ("检测龙虎榜", "btn_cc_dragon_tiger_capability_check", "正在手动检测龙虎榜...", "龙虎榜", _run_manual_dragon_tiger_capability_check),
+            ("检测融资融券", "btn_cc_margin_capability_check", "正在手动检测融资融券权限...", "融资融券", _run_manual_margin_detail_capability_check),
+            ("检测涨跌停", "btn_cc_limit_cpt_capability_check", "正在手动检测涨跌停/情绪权限...", "涨跌停/情绪", _run_manual_limit_cpt_capability_check),
+            ("检测筹码胜率", "btn_cc_chip_capability_check", "正在手动检测筹码/胜率...", "筹码/胜率", _run_manual_chip_radar_capability_check),
+        ]
+        for col, (button_label, button_key, status_label, result_label, runner) in zip(check_cols, checks):
+            with col:
+                _render_manual_capability_check_button(
+                    button_label,
+                    button_key,
+                    status_label,
+                    result_label,
+                    runner,
+                    target=target,
+                    position_profile=position_profile,
+                    live_packet=live_packet,
+                )
+
+
 def _get_command_center_facts_packet(target="", name=""):
     return facts_packet_service.build_command_center_facts_packet(
         st.session_state,
@@ -4406,7 +4460,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     home_snapshot_slot = st.empty()
     decision_hero_slot = st.empty()
     projection_slot = st.empty()
-    control_cols = st.columns([1.2, 0.9, 0.9, 0.9, 0.9, 0.9, 1.1])
+    control_cols = st.columns([1.4, 1.1])
     with control_cols[0]:
         if st.button("刷新今日基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
             status = st.status("正在刷新今日基础数据...", expanded=True)
@@ -4460,91 +4514,6 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             else:
                 status.update(label="今日基础数据刷新完成", state="complete", expanded=False)
     with control_cols[1]:
-        if st.button("检测资金流", key="btn_cc_moneyflow_capability_check", width="stretch"):
-            status = st.status("正在手动检测个股资金流...", expanded=True)
-            result = _run_manual_moneyflow_capability_check(
-                target=target,
-                position_profile=position_profile,
-                live_packet=live_packet,
-            )
-            item = result.get("item") or {}
-            label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
-            message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
-            if item.get("capability_state") == data_capability.STATE_AVAILABLE:
-                status.update(label=f"资金流检测完成：{label}", state="complete", expanded=False)
-                st.success(f"资金流检测完成：{message}；DeepSeek：未调用。")
-            else:
-                status.update(label=f"资金流检测完成：{label}", state="complete", expanded=False)
-                st.warning(f"资金流检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[2]:
-        if st.button("检测龙虎榜", key="btn_cc_dragon_tiger_capability_check", width="stretch"):
-            status = st.status("正在手动检测龙虎榜...", expanded=True)
-            result = _run_manual_dragon_tiger_capability_check(
-                target=target,
-                position_profile=position_profile,
-                live_packet=live_packet,
-            )
-            item = result.get("item") or {}
-            label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
-            message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
-            if item.get("capability_state") == data_capability.STATE_AVAILABLE:
-                status.update(label=f"龙虎榜检测完成：{label}", state="complete", expanded=False)
-                st.success(f"龙虎榜检测完成：{message}；DeepSeek：未调用。")
-            else:
-                status.update(label=f"龙虎榜检测完成：{label}", state="complete", expanded=False)
-                st.warning(f"龙虎榜检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[3]:
-        if st.button("检测融资融券权限", key="btn_cc_margin_capability_check", width="stretch"):
-            status = st.status("正在手动检测融资融券权限...", expanded=True)
-            result = _run_manual_margin_detail_capability_check(
-                target=target,
-                position_profile=position_profile,
-                live_packet=live_packet,
-            )
-            item = result.get("item") or {}
-            label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
-            message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
-            if item.get("capability_state") == data_capability.STATE_AVAILABLE:
-                status.update(label=f"融资融券权限检测完成：{label}", state="complete", expanded=False)
-                st.success(f"融资融券检测完成：{message}；DeepSeek：未调用。")
-            else:
-                status.update(label=f"融资融券权限检测完成：{label}", state="complete", expanded=False)
-                st.warning(f"融资融券检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[4]:
-        if st.button("检测涨跌停情绪权限", key="btn_cc_limit_cpt_capability_check", width="stretch"):
-            status = st.status("正在手动检测涨跌停/情绪权限...", expanded=True)
-            result = _run_manual_limit_cpt_capability_check(
-                target=target,
-                position_profile=position_profile,
-                live_packet=live_packet,
-            )
-            item = result.get("item") or {}
-            label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
-            message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
-            if item.get("capability_state") == data_capability.STATE_AVAILABLE:
-                status.update(label=f"涨跌停/情绪权限检测完成：{label}", state="complete", expanded=False)
-                st.success(f"涨跌停/情绪检测完成：{message}；DeepSeek：未调用。")
-            else:
-                status.update(label=f"涨跌停/情绪权限检测完成：{label}", state="complete", expanded=False)
-                st.warning(f"涨跌停/情绪检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[5]:
-        if st.button("检测筹码胜率", key="btn_cc_chip_capability_check", width="stretch"):
-            status = st.status("正在手动检测筹码/胜率...", expanded=True)
-            result = _run_manual_chip_radar_capability_check(
-                target=target,
-                position_profile=position_profile,
-                live_packet=live_packet,
-            )
-            item = result.get("item") or {}
-            label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
-            message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
-            if item.get("capability_state") == data_capability.STATE_AVAILABLE:
-                status.update(label=f"筹码/胜率检测完成：{label}", state="complete", expanded=False)
-                st.success(f"筹码/胜率检测完成：{message}；DeepSeek：未调用。")
-            else:
-                status.update(label=f"筹码/胜率检测完成：{label}", state="complete", expanded=False)
-                st.warning(f"筹码/胜率检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[6]:
         if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
             current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
@@ -4577,6 +4546,12 @@ packet:
             st.session_state[explanation_at_key] = datetime.datetime.now().isoformat(timespec="seconds")
             st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             status.update(label="DeepSeek 解释已写入 session_state", state="complete")
+
+    render_a_share_data_capability_controls(
+        target=target,
+        position_profile=position_profile,
+        live_packet=live_packet,
+    )
 
     live_packet = live_packet or run_command_center_auto_light_snapshot(target=target)
     command_center_view_model = build_command_center_view_model(live_packet)
