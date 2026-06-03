@@ -10004,6 +10004,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             position_profile=globals().get("position_profile") or {},
             position_status=position_status,
         )
+        legacy_prompt_fact_payloads = legacy_a_share_gate_service.build_legacy_a_share_prompt_fact_payloads(
+            dragon_tiger_packet=st.session_state.get("command_center_dragon_tiger_packet"),
+            margin_packet=st.session_state.get("command_center_margin_packet"),
+            moneyflow_packet=st.session_state.get("command_center_moneyflow_packet"),
+            limit_emotion_packet=st.session_state.get("command_center_limit_emotion_packet"),
+            chip_packet=st.session_state.get("command_center_chip_packet"),
+        )
 
         st.markdown("#### 🐳 专项资金扫描")
         st.caption("独立检查资金结构、龙虎榜、融资融券和短线资金验证，不自动生成持仓动作。")
@@ -10141,11 +10148,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 price,
                 position_profile,
                 trade_instruction,
-                dragon_data,
-                margin_data,
-                moneyflow_data,
-                limit_emotion_data,
-                chip_radar_data=chip_radar_data,
+                legacy_prompt_fact_payloads.get("dragon_tiger"),
+                legacy_prompt_fact_payloads.get("margin"),
+                legacy_prompt_fact_payloads.get("moneyflow"),
+                legacy_prompt_fact_payloads.get("limit_emotion"),
+                chip_radar_data=legacy_prompt_fact_payloads.get("chip_radar"),
                 tushare_verified_source=tushare_verified_source,
                 market_style_fact_packet=market_style_fact_packet,
                 verified_technical_facts=verified_technical_facts,
@@ -10258,11 +10265,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 price,
                 position_profile,
                 trade_instruction,
-                dragon_data,
-                margin_data,
-                moneyflow_data,
-                limit_emotion_data,
-                chip_radar_data=chip_radar_data,
+                legacy_prompt_fact_payloads.get("dragon_tiger"),
+                legacy_prompt_fact_payloads.get("margin"),
+                legacy_prompt_fact_payloads.get("moneyflow"),
+                legacy_prompt_fact_payloads.get("limit_emotion"),
+                chip_radar_data=legacy_prompt_fact_payloads.get("chip_radar"),
                 tushare_verified_source=tushare_verified_source,
                 market_style_fact_packet=market_style_fact_packet,
                 verified_technical_facts=verified_technical_facts,

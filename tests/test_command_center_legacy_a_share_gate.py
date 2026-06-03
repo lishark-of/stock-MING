@@ -350,6 +350,104 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertIsNone(inputs["shares"])
         json.dumps(inputs, ensure_ascii=False)
 
+    def test_prompt_fact_payloads_convert_ready_packets_to_legacy_shape(self):
+        payloads = gate.build_legacy_a_share_prompt_fact_payloads(
+            dragon_tiger_packet={
+                "status": "ready",
+                "trade_date": "2026-06-03",
+                "reason": "日涨幅偏离值达7%",
+                "net_buy_amount_yi": 0.8,
+                "inst_summary": "机构净买入",
+            },
+            margin_packet={
+                "status": "ready",
+                "trade_date": "2026-06-03",
+                "financing_balance_yi": 10.1,
+                "financing_buy_yi": 0.5,
+            },
+            moneyflow_packet={
+                "status": "ready",
+                "trade_date": "2026-06-03",
+                "main_net_yi": 0.6,
+                "large_net_yi": -0.1,
+                "medium_net_yi": 0.2,
+                "small_net_yi": -0.3,
+                "five_day_main_net_yi": 1.2,
+                "flow_state": "主力净流入",
+                "summary": "资金流状态：主力净流入。",
+            },
+            limit_emotion_packet={
+                "status": "ready",
+                "trade_date": "2026-06-03",
+                "up_limit": 13.5,
+                "down_limit": 11.05,
+                "distance_to_up_pct": 2.1,
+                "limit_records": [{"date": "2026-06-02", "type": "涨停"}],
+                "concept_top5": [{"name": "半导体"}],
+            },
+            chip_packet={
+                "status": "ready",
+                "trade_date": "2026-06-03",
+                "winner_rate": 63.2,
+                "weight_avg": 12.1,
+                "cost_5pct": 9.8,
+                "cost_50pct": 11.7,
+                "cost_95pct": 15.2,
+                "chip_pressure_comment": "筹码相对收敛",
+            },
+        )
+
+        self.assertTrue(payloads["dragon_tiger"]["available"])
+        self.assertEqual(payloads["dragon_tiger"]["latest_date"], "2026-06-03")
+        self.assertTrue(payloads["margin"]["available"])
+        self.assertEqual(payloads["moneyflow"]["main_net_yi"], 0.6)
+        self.assertEqual(payloads["moneyflow"]["direction"], "主力净流入")
+        self.assertTrue(payloads["limit_emotion"]["boundary_available"])
+        self.assertTrue(payloads["limit_emotion"]["records_available"])
+        self.assertEqual(payloads["limit_emotion"]["limit_records"][0]["type"], "涨停")
+        self.assertTrue(payloads["chip_radar"]["available"])
+        self.assertEqual(payloads["chip_radar"]["weight_avg"], 12.1)
+        self.assertEqual(payloads["source"], "command_center_*_packet")
+        self.assertFalse(payloads["deepseek_called"])
+        json.dumps(payloads, ensure_ascii=False)
+
+    def test_prompt_fact_payloads_do_not_mark_missing_packets_available_or_mutate(self):
+        moneyflow_packet = {"status": "waiting", "summary": "个股资金流待刷新"}
+        chip_packet = {"status": "failed", "error": "权限不足"}
+        before = copy.deepcopy({"moneyflow": moneyflow_packet, "chip": chip_packet})
+
+        payloads = gate.build_legacy_a_share_prompt_fact_payloads(
+            moneyflow_packet=moneyflow_packet,
+            chip_packet=chip_packet,
+        )
+
+        self.assertEqual({"moneyflow": moneyflow_packet, "chip": chip_packet}, before)
+        self.assertFalse(payloads["moneyflow"]["available"])
+        self.assertEqual(payloads["moneyflow"]["note"] if "note" in payloads["moneyflow"] else payloads["moneyflow"]["message"], "个股资金流待刷新")
+        self.assertFalse(payloads["chip_radar"]["available"])
+        self.assertEqual(payloads["chip_radar"]["chip_pressure_comment"], "暂无可验证数据")
+        json.dumps(payloads, ensure_ascii=False)
+
+    def test_prompt_fact_payloads_do_not_promote_cached_limit_boundaries(self):
+        payloads = gate.build_legacy_a_share_prompt_fact_payloads(
+            limit_emotion_packet={
+                "status": "partial",
+                "data_status": "cached",
+                "boundary_available": True,
+                "records_available": True,
+                "up_limit": 13.5,
+                "limit_records": [{"date": "2026-06-02", "type": "涨停"}],
+                "summary": "使用缓存，待复核。",
+            }
+        )
+
+        self.assertFalse(payloads["limit_emotion"]["available"])
+        self.assertFalse(payloads["limit_emotion"]["boundary_available"])
+        self.assertFalse(payloads["limit_emotion"]["records_available"])
+        self.assertEqual(payloads["limit_emotion"]["up_limit"], "")
+        self.assertEqual(payloads["limit_emotion"]["limit_records"], [])
+        self.assertEqual(payloads["limit_emotion"]["message"], "使用缓存，待复核。")
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_gate.py").read_text(encoding="utf-8"))
         imports = []

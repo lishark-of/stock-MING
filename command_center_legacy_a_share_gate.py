@@ -543,6 +543,119 @@ def build_legacy_a_share_war_room_inputs(
     }
 
 
+def _packet_ready(packet: Mapping[str, Any]) -> bool:
+    return _packet_state(packet) == "ready"
+
+
+def _packet_updated_at(packet: Mapping[str, Any]) -> str:
+    return _first_text(packet.get("updated_at"), packet.get("trade_date"), packet.get("date"))
+
+
+def _packet_message(packet: Mapping[str, Any]) -> str:
+    return _first_text(packet.get("summary"), packet.get("message"), packet.get("manual_required_text"), default="暂无可验证数据")
+
+
+def build_legacy_a_share_prompt_fact_payloads(
+    *,
+    dragon_tiger_packet: Any = None,
+    margin_packet: Any = None,
+    moneyflow_packet: Any = None,
+    limit_emotion_packet: Any = None,
+    chip_packet: Any = None,
+) -> dict:
+    dragon = as_mapping(dragon_tiger_packet)
+    margin = as_mapping(margin_packet)
+    moneyflow = as_mapping(moneyflow_packet)
+    limit = as_mapping(limit_emotion_packet)
+    chip = as_mapping(chip_packet)
+    dragon_ready = _packet_ready(dragon)
+    margin_ready = _packet_ready(margin)
+    moneyflow_ready = _packet_ready(moneyflow)
+    limit_ready = _packet_ready(limit)
+    chip_ready = _packet_ready(chip)
+    limit_records = _normalize_table_rows(limit.get("limit_records"), limit=5)
+    concept_rows = _normalize_table_rows(limit.get("concept_top5"), limit=5)
+    boundary_available = bool(limit_ready and (limit.get("boundary_available") or limit.get("up_limit") or limit.get("down_limit")))
+    records_available = bool(limit_ready and (limit.get("records_available") or limit_records))
+    return {
+        "dragon_tiger": {
+            "available": dragon_ready,
+            "latest_date": _first_text(dragon.get("trade_date")),
+            "reason": dragon.get("reason") if dragon_ready else "",
+            "net_buy_amount_yi": dragon.get("net_buy_amount_yi") if dragon_ready else "",
+            "inst_summary": dragon.get("inst_summary") if dragon_ready else "",
+            "message": "" if dragon_ready else _packet_message(dragon),
+            "source": _first_text(dragon.get("source"), default="Tushare 龙虎榜缓存"),
+            "api": _first_text(dragon.get("api"), default="top_list/top_inst"),
+            "updated_at": _packet_updated_at(dragon),
+        },
+        "margin": {
+            "available": margin_ready,
+            "date": _first_text(margin.get("trade_date")),
+            "financing_balance_yi": margin.get("financing_balance_yi") if margin_ready else "",
+            "financing_buy_yi": margin.get("financing_buy_yi") if margin_ready else "",
+            "margin_balance_yi": margin.get("margin_balance_yi") if margin_ready else "",
+            "short_sell_volume": margin.get("short_sell_volume") if margin_ready else "",
+            "message": "" if margin_ready else _packet_message(margin),
+            "source": _first_text(margin.get("source"), default="Tushare margin_detail 缓存"),
+            "api": _first_text(margin.get("api"), default="margin_detail"),
+            "updated_at": _packet_updated_at(margin),
+        },
+        "moneyflow": {
+            "available": moneyflow_ready,
+            "date": _first_text(moneyflow.get("trade_date")),
+            "main_net_yi": moneyflow.get("main_net_yi") if moneyflow_ready else "",
+            "large_net_yi": moneyflow.get("large_net_yi") if moneyflow_ready else "",
+            "medium_net_yi": moneyflow.get("medium_net_yi") if moneyflow_ready else "",
+            "small_net_yi": moneyflow.get("small_net_yi") if moneyflow_ready else "",
+            "five_day_main_net_yi": moneyflow.get("five_day_main_net_yi") if moneyflow_ready else "",
+            "direction": _first_text(moneyflow.get("direction"), moneyflow.get("flow_state")) if moneyflow_ready else "",
+            "structure": _first_text(moneyflow.get("summary"), moneyflow.get("flow_state")) if moneyflow_ready else "",
+            "message": "" if moneyflow_ready else _packet_message(moneyflow),
+            "source": _first_text(moneyflow.get("source"), default="Tushare moneyflow 缓存"),
+            "api": _first_text(moneyflow.get("api"), default="moneyflow"),
+            "updated_at": _packet_updated_at(moneyflow),
+        },
+        "limit_emotion": {
+            "available": limit_ready,
+            "boundary_available": boundary_available,
+            "records_available": records_available,
+            "latest_date": _first_text(limit.get("trade_date")),
+            "concept_date": _first_text(limit.get("trade_date")),
+            "up_limit": limit.get("up_limit") if boundary_available else "",
+            "down_limit": limit.get("down_limit") if boundary_available else "",
+            "distance_to_up_pct": limit.get("distance_to_up_pct") if boundary_available else "",
+            "distance_to_down_pct": limit.get("distance_to_down_pct") if boundary_available else "",
+            "limit_records": limit_records if records_available else [],
+            "concept_top5": concept_rows if limit_ready else [],
+            "message": "" if limit_ready else _packet_message(limit),
+            "source": _first_text(limit.get("source"), default="Tushare 涨跌停/情绪缓存"),
+            "api": _first_text(limit.get("api"), default="stk_limit / limit_list_d / limit_cpt_list"),
+            "updated_at": _packet_updated_at(limit),
+        },
+        "chip_radar": {
+            "available": chip_ready,
+            "trade_date": _first_text(chip.get("trade_date")),
+            "winner_rate": chip.get("winner_rate") if chip_ready else "",
+            "weight_avg": chip.get("weight_avg") if chip_ready else "",
+            "cost_5pct": chip.get("cost_5pct") if chip_ready else "",
+            "cost_50pct": chip.get("cost_50pct") if chip_ready else "",
+            "cost_95pct": chip.get("cost_95pct") if chip_ready else "",
+            "current_vs_weight_avg_pct": chip.get("current_vs_weight_avg_pct") if chip_ready else "",
+            "chip_band_width": chip.get("chip_band_width") if chip_ready else "",
+            "chip_pressure_comment": _first_text(chip.get("chip_pressure_comment"), chip.get("pressure_state")) if chip_ready else "暂无可验证数据",
+            "chip_structure_comment": chip.get("chip_structure_comment") if chip_ready else "暂无可验证数据",
+            "chips_top_areas": _normalize_table_rows(chip.get("chips_top_areas"), limit=5) if chip_ready else [],
+            "message": "" if chip_ready else _packet_message(chip),
+            "source": _first_text(chip.get("source"), default="Tushare cyq_perf/cyq_chips 缓存"),
+            "api": _first_text(chip.get("api"), default="cyq_perf/cyq_chips"),
+            "updated_at": _packet_updated_at(chip),
+        },
+        "source": "command_center_*_packet",
+        "deepseek_called": False,
+    }
+
+
 def build_legacy_a_share_packet_summary(
     *,
     dragon_tiger_packet: Any = None,
