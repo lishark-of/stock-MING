@@ -56,6 +56,11 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertTrue(any("融资融券" in item for item in packet["decision_blockers"]))
         self.assertTrue(any("AkShare 重型刷新" in item for item in packet["decision_blockers"]))
         self.assertTrue(any("龙虎榜" in item for item in packet["decision_blockers"]))
+        self.assertEqual(packet["recovery_actions"][0]["label"], "融资融券")
+        self.assertEqual(packet["recovery_actions"][0]["action_label"], "手动刷新融资融券")
+        self.assertEqual(packet["recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(packet["recovery_actions"][0]["refresh_policy"], "button_gated")
+        self.assertIn("融资融券", packet["recovery_summary"])
         self.assertIn("个股资金流", dumped)
         self.assertIn("融资融券", dumped)
         self.assertIn("AkShare 重型刷新", dumped)
@@ -87,6 +92,31 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(packet["decision_readiness_label"], "谨慎验证")
         self.assertEqual(packet["stale_items"][0]["label"], "龙虎榜")
         self.assertEqual(packet["short_answer"], "接口可用也可能搜不到。")
+        self.assertEqual(packet["recovery_actions"][0]["label"], "龙虎榜")
+        self.assertEqual(packet["recovery_actions"][0]["writes_packet"], "command_center_dragon_tiger_packet")
+
+    def test_console_recovery_action_handles_supabase_configuration(self):
+        packet = console.build_data_capability_console_packet(
+            data_capability_packet={
+                "source": "Unified data capability",
+                "items": [
+                    {
+                        "provider": "Supabase",
+                        "api": "brain_memory",
+                        "label": "云端记忆",
+                        "capability_state": "not_configured",
+                        "status": "未配置",
+                    }
+                ],
+            }
+        )
+        action = packet["recovery_actions"][0]
+
+        self.assertEqual(packet["status"], "blocked")
+        self.assertEqual(action["provider"], "Supabase")
+        self.assertEqual(action["refresh_policy"], "manual_config")
+        self.assertIn("检查 Supabase 本地配置", action["action_label"])
+        self.assertFalse(action["deepseek_called"])
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_data_capability_console.py").read_text(encoding="utf-8"))

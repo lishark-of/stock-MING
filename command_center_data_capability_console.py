@@ -15,6 +15,25 @@ BLOCKED_STATES = {"permission_denied", "disabled_this_session", "not_configured"
 MANUAL_STATES = {"requires_manual_refresh"}
 STALE_STATES = {"empty_recent", "stale_cache", "fallback_used", "unknown", "missing"}
 
+API_RECOVERY_MAP = {
+    "moneyflow": ("手动刷新个股资金流", "command_center_moneyflow_packet", "高级工具箱 / A股专业实盘 / 个股资金流"),
+    "margin_detail": ("手动刷新融资融券", "command_center_margin_packet", "高级工具箱 / 融资 ETF / 融资融券"),
+    "top_list": ("手动刷新龙虎榜", "command_center_dragon_tiger_packet", "高级工具箱 / 下一票雷达 / 龙虎榜"),
+    "top_inst": ("手动刷新龙虎榜", "command_center_dragon_tiger_packet", "高级工具箱 / 下一票雷达 / 龙虎榜"),
+    "limit_cpt_list": ("手动刷新涨跌停/情绪", "command_center_limit_emotion_packet", "高级工具箱 / 数据源体检 / 涨跌停情绪"),
+    "cyq_perf": ("手动刷新筹码/胜率", "command_center_chip_packet", "高级工具箱 / 量化推演 / 筹码胜率"),
+    "cyq_chips": ("手动刷新筹码/胜率", "command_center_chip_packet", "高级工具箱 / 量化推演 / 筹码胜率"),
+    "anns_d": ("检测公告/硬风险", "command_center_hard_risk_packet", "高级工具箱 / 天眼风控 / A股公告风险"),
+    "forecast": ("检测公告/硬风险", "command_center_hard_risk_packet", "高级工具箱 / 天眼风控 / A股公告风险"),
+    "stk_holdertrade": ("检测公告/硬风险", "command_center_hard_risk_packet", "高级工具箱 / 天眼风控 / A股公告风险"),
+    "share_float": ("检测公告/硬风险", "command_center_hard_risk_packet", "高级工具箱 / 天眼风控 / A股公告风险"),
+    "pledge_stat": ("检测公告/硬风险", "command_center_hard_risk_packet", "高级工具箱 / 天眼风控 / A股公告风险"),
+    "pledge_detail": ("检测公告/硬风险", "command_center_hard_risk_packet", "高级工具箱 / 天眼风控 / A股公告风险"),
+    "akshare_manual_refresh": ("点击对应模块手动刷新 AkShare", "command_center_data_capability_packet", "高级工具箱 / 数据源体检"),
+    "yfinance_market_data": ("点击对应模块手动刷新 yfinance", "command_center_data_capability_packet", "高级工具箱 / 数据源体检"),
+    "brain_memory": ("检查 Supabase 本地配置", "command_center_data_capability_packet", "高级工具箱 / 云端外脑"),
+}
+
 
 def _as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -148,6 +167,101 @@ def _dedupe_text(values: list[str], limit: int = MAX_QUEUE_ITEMS) -> list[str]:
     return result
 
 
+def _api_recovery_config(item: Mapping[str, Any]) -> tuple[str, str, str]:
+    api_text = _to_text(item.get("api"))
+    for api_key, config in API_RECOVERY_MAP.items():
+        if api_key and api_key in api_text:
+            return config
+    provider = _to_text(item.get("provider"), "数据源")
+    label = _to_text(item.get("label"), "数据能力")
+    if provider.lower() == "supabase":
+        return ("检查 Supabase 本地配置", "command_center_data_capability_packet", "高级工具箱 / 云端外脑")
+    if provider.lower() == "akshare":
+        return (f"手动刷新{label}", "command_center_data_capability_packet", "高级工具箱 / 数据源体检")
+    if provider.lower() == "yfinance":
+        return (f"手动刷新{label}", "command_center_data_capability_packet", "高级工具箱 / 数据源体检")
+    return (f"手动检查{label}", "command_center_data_capability_packet", "高级工具箱 / 数据源体检")
+
+
+def _recovery_reason(item: Mapping[str, Any]) -> str:
+    label = _to_text(item.get("label"), "数据能力")
+    state = _to_text(item.get("state"))
+    if state == "permission_denied":
+        return f"{label}权限或积分不足；接口接入成功不等于当前账户有权限。"
+    if state == "disabled_this_session":
+        return f"{label}本会话已跳过重复请求；确认权限恢复后再手动检测。"
+    if state == "not_configured":
+        return f"{label}本地配置缺失；先检查 token、secrets 或连接设置。"
+    if state == "network_failed":
+        return f"{label}网络失败；保留缓存并等待网络恢复后手动重试。"
+    if state == "requires_manual_refresh":
+        return f"{label}需要按钮触发；页面打开不会自动刷新该接口。"
+    if state == "empty_recent":
+        return f"{label}近期无数据；可能是非交易日、标的不覆盖或数据尚未发布。"
+    if state == "stale_cache":
+        return f"{label}正在使用缓存；执行前需要复核日期和来源。"
+    if state == "fallback_used":
+        return f"{label}使用替代口径；不能等同于原始接口事实。"
+    return _to_text(item.get("meaning") or item.get("next_action"), f"{label}仍待验证。")
+
+
+def _recovery_priority(item: Mapping[str, Any]) -> int:
+    state = _to_text(item.get("state"))
+    if state in BLOCKED_STATES:
+        return 1
+    if state in MANUAL_STATES:
+        return 2
+    return 3
+
+
+def build_data_capability_recovery_actions(
+    blocked_items: Any = None,
+    manual_items: Any = None,
+    stale_items: Any = None,
+    limit: int = MAX_QUEUE_ITEMS,
+) -> list[dict]:
+    candidates = []
+    for raw in _as_list(blocked_items) + _as_list(manual_items) + _as_list(stale_items):
+        item = _queue_item(_as_mapping(raw))
+        if not item.get("label"):
+            continue
+        action_label, writes_packet, toolbox_entry = _api_recovery_config(item)
+        candidates.append(
+            {
+                "provider": item["provider"],
+                "label": item["label"],
+                "api": item["api"],
+                "state": item["state"],
+                "status_label": item["status_label"],
+                "tone": item["tone"],
+                "priority": _recovery_priority(item),
+                "reason": _recovery_reason(item),
+                "action_label": action_label,
+                "action_hint": item["next_action"],
+                "toolbox_entry": toolbox_entry,
+                "writes_packet": writes_packet,
+                "refresh_policy": "button_gated" if item["state"] != "not_configured" else "manual_config",
+                "deepseek_called": False,
+            }
+        )
+    sorted_items = sorted(candidates, key=lambda item: (item["priority"], item["provider"], item["label"], item["api"]))
+    return _dedupe_recovery_actions(sorted_items, limit=limit)
+
+
+def _dedupe_recovery_actions(items: list[dict], limit: int = MAX_QUEUE_ITEMS) -> list[dict]:
+    result = []
+    seen = set()
+    for item in items:
+        key = (item.get("provider"), item.get("api"), item.get("label"), item.get("state"), item.get("writes_packet"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+        if len(result) >= max(1, int(limit or MAX_QUEUE_ITEMS)):
+            break
+    return result
+
+
 def build_data_capability_console_packet(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,
@@ -171,6 +285,7 @@ def build_data_capability_console_packet(
     status = _status(len(ready_items), len(blocked_items), pending_count)
     readiness, readiness_label, safe_mode_text = _decision_readiness(status)
     decision_blockers = _decision_blockers(blocked_items, manual_items, stale_items)
+    recovery_actions = build_data_capability_recovery_actions(blocked_items, manual_items, stale_items)
     return {
         "status": status,
         "tone": _tone(status),
@@ -185,6 +300,12 @@ def build_data_capability_console_packet(
         "blocked_items": blocked_items,
         "manual_items": manual_items,
         "stale_items": stale_items,
+        "recovery_actions": recovery_actions,
+        "recovery_summary": (
+            f"优先处理 {recovery_actions[0]['label']}：{recovery_actions[0]['action_label']}。"
+            if recovery_actions
+            else "暂无需要手动恢复的数据源动作。"
+        ),
         "next_actions": _as_list(issue_packet.get("next_actions"))[:MAX_QUEUE_ITEMS],
         "available_count": len(ready_items),
         "blocked_count": len(blocked_items),

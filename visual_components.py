@@ -4823,6 +4823,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             console_queue_html += f"<div class='cc-home-item-meta'>{escape(queue_label)}：{escape(queue_text)}</div>"
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
+    recovery_action_html = ""
+    for item in (data_capability_console.get("recovery_actions") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        recovery_action_html += f"""
+        <div class="cc-home-item-meta">
+          恢复：{escape(_home_text(item.get("label"), "数据能力"))}
+          ｜{escape(_home_text(item.get("action_label"), "手动检查"))}
+          ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))}
+          ｜入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"))}
+        </div>
+        """
+    if not recovery_action_html:
+        recovery_action_html = "<div class='cc-home-item-meta'>恢复动作：暂无需要手动恢复的数据源动作。</div>"
     issue_items = [item for item in (data_issue_explainer.get("items") or []) if isinstance(item, dict)]
     root_cause_items = [item for item in (data_issue_explainer.get("root_cause_items") or []) if isinstance(item, dict)]
     root_cause_html = ""
@@ -5086,6 +5100,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <div class="cc-home-item-meta">可用 {escape(_home_number(console_ready))}｜阻断 {escape(_home_number(console_blocked))}｜手动 {escape(_home_number(console_manual))}｜缓存/待验证 {escape(_home_number(console_stale))}</div>
             <div class="cc-home-item-meta">决策模式：{escape(console_readiness)}｜{escape(console_safe_mode)}</div>
             {console_queue_html}
+            {recovery_action_html}
           </div>
           <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
           {root_cause_html}
