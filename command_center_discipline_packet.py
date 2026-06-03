@@ -113,6 +113,115 @@ def _normalize_drawdown(value: Any) -> int | float | None:
     return abs(number)
 
 
+def _format_number(value: Any, suffix: str = "") -> str:
+    number = to_number(value)
+    if number is None:
+        return "待验证"
+    if isinstance(number, float) and not number.is_integer():
+        return f"{number:.2f}{suffix}"
+    return f"{int(number)}{suffix}"
+
+
+def _metric_tone(label: str, value: int | float | None) -> str:
+    if value is None:
+        return "missing"
+    if label == "最大回撤":
+        if value >= 20:
+            return "failed"
+        if value >= 15:
+            return "stale"
+        return "ready"
+    if label == "胜率":
+        if value >= 60:
+            return "ready"
+        if value >= 50:
+            return "stale"
+        return "failed"
+    return "ready"
+
+
+def _date_range_from(report: Mapping[str, Any]) -> dict:
+    date_range = as_mapping(report.get("date_range"))
+    return {
+        "start": _first_text(date_range.get("start"), report.get("start_date")),
+        "end": _first_text(date_range.get("end"), report.get("end_date"), report.get("updated_at")),
+    }
+
+
+def _build_metric_items(
+    win_rate: int | float | None,
+    max_drawdown: int | float | None,
+    sharpe: int | float | None,
+    trade_count: int | float | None,
+) -> list[dict]:
+    rows = [
+        ("胜率", win_rate, "%"),
+        ("最大回撤", max_drawdown, "%"),
+        ("夏普", sharpe, ""),
+        ("交易次数", trade_count, "次"),
+    ]
+    return [
+        {
+            "label": label,
+            "value": _format_number(value, suffix),
+            "tone": _metric_tone(label, value),
+        }
+        for label, value, suffix in rows
+    ]
+
+
+def _backtest_status_text(status: str, data_status: str) -> str:
+    if status == "ready":
+        return "已读取回测缓存"
+    if data_status == "cached":
+        return "使用上次回测缓存"
+    return "待手动运行回测"
+
+
+def _build_evidence_items(
+    report: Mapping[str, Any],
+    multi_result: Mapping[str, Any],
+    latest_signal_text: str,
+    action_state: str,
+    summary: str,
+) -> list[dict]:
+    if not report:
+        return [
+            {
+                "label": "回测缓存",
+                "value": "待刷新",
+                "detail": "综合中心不会自动跑回测；需要在高级工具箱手动运行。",
+                "tone": "missing",
+            }
+        ]
+    date_range = _date_range_from(report)
+    items = [
+        {
+            "label": "动作边界",
+            "value": action_state or "只观察",
+            "detail": latest_signal_text or summary or "最新信号待验证。",
+            "tone": "failed" if action_state == "降风险" else "ready",
+        },
+        {
+            "label": "回测区间",
+            "value": " - ".join(item for item in [date_range.get("start"), date_range.get("end")] if item) or "待验证",
+            "detail": "只引用旧版手动回测缓存，不自动拉行情。",
+            "tone": "ready" if date_range.get("end") else "stale",
+        },
+    ]
+    multi_summary = _first_text(multi_result.get("summary"))
+    if multi_summary:
+        items.append(
+            {
+                "label": "多模式验证",
+                "value": "已缓存",
+                "detail": multi_summary,
+                "tone": "ready",
+            }
+        )
+    return items[:MAX_RULES]
+
+
 def _derive_action_state(
     report: Mapping[str, Any],
     check: Mapping[str, Any],
@@ -187,10 +296,26 @@ def build_command_center_discipline_packet(
     existing = as_mapping(state_map.get("command_center_discipline_packet"))
     existing_target = _first_text(existing.get("target"), existing.get("ticker"))
     if existing.get("status") in {"ready", "partial"} and not (target and existing_target and _ticker_base(existing_target) != _ticker_base(target)):
+        win_rate = to_number(existing.get("win_rate"))
+        max_drawdown = _normalize_drawdown(existing.get("max_drawdown"))
+        sharpe = to_number(existing.get("sharpe"))
+        trade_count = to_number(existing.get("trade_count"))
+        data_status = _first_text(existing.get("data_status"), default=_derive_data_status(existing.get("status"), existing, live_section))
         return {
             **existing,
             "key_rules": _rules_from_value(existing.get("key_rules")) or ["仅按已缓存纪律 packet 展示。"],
             "warnings": _dedupe_text(existing.get("warnings")) or ["DeepSeek 未调用；回测解释仍需手动按钮触发。"],
+            "backtest_status": _first_text(existing.get("backtest_status"), default=_backtest_status_text(existing.get("status"), data_status)),
+            "cache_state": data_status,
+            "metric_items": as_list(existing.get("metric_items")) or _build_metric_items(win_rate, max_drawdown, sharpe, trade_count),
+            "evidence_items": as_list(existing.get("evidence_items")) or [
+                {
+                    "label": "纪律缓存",
+                    "value": _first_text(existing.get("action_state"), default="已读取"),
+                    "detail": _first_text(existing.get("summary"), default="仅按已缓存纪律 packet 展示。"),
+                    "tone": "ready",
+                }
+            ],
             "deepseek_called": False,
         }
     report = as_mapping(state_map.get("last_backtest_report"))
@@ -211,6 +336,8 @@ def build_command_center_discipline_packet(
     max_drawdown = _normalize_drawdown(
         _first_number(metrics.get("max_drawdown_pct"), metrics.get("max_drawdown"), check.get("max_drawdown"))
     )
+    sharpe = _first_number(metrics.get("sharpe"), check.get("sharpe"))
+    trade_count = _first_number(metrics.get("trade_count"), check.get("trade_count"))
     latest_signal_text = _first_text(
         latest_signal.get("action"),
         trader_brief.get("action"),
@@ -235,6 +362,7 @@ def build_command_center_discipline_packet(
             else "暂无回测缓存；点击纪律校验只读取缓存，不自动跑两年回测。"
         ),
     )
+    data_status = _derive_data_status(status, report, live_section)
     return {
         "status": status,
         "source": _first_text(report.get("source"), check.get("source"), live_section.get("source"), default="交易纪律实验室回测缓存"),
@@ -242,17 +370,22 @@ def build_command_center_discipline_packet(
         "target": _first_text(target, report.get("ticker"), check.get("target")),
         "ticker": to_text(report.get("ticker")),
         "summary": summary,
+        "backtest_status": _backtest_status_text(status, data_status),
+        "cache_state": data_status,
+        "date_range": _date_range_from(report),
         "action_state": action_state,
         "score": win_rate if win_rate is not None else live_section.get("score"),
         "win_rate": win_rate,
         "max_drawdown": max_drawdown,
-        "sharpe": _first_number(metrics.get("sharpe"), check.get("sharpe")),
-        "trade_count": _first_number(metrics.get("trade_count"), check.get("trade_count")),
+        "sharpe": sharpe,
+        "trade_count": trade_count,
         "latest_signal": latest_signal_text,
         "signal_reason": _first_text(latest_signal.get("reason"), trader_brief.get("plain_summary")),
+        "metric_items": _build_metric_items(win_rate, max_drawdown, sharpe, trade_count),
+        "evidence_items": _build_evidence_items(report, multi_result, latest_signal_text, action_state, summary),
         "key_rules": _build_key_rules(report, multi_result, win_rate, max_drawdown),
         "warnings": _build_warnings(report, check, max_drawdown),
-        "data_status": _derive_data_status(status, report, live_section),
+        "data_status": data_status,
         "backtest_required_text": "回测必须在高级工具箱手动触发；综合中心不会自动跑回测。",
         "deepseek_called": False,
     }

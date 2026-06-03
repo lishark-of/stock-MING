@@ -4643,6 +4643,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_capability = payload.get("data_capability") or {}
     data_gap_report = payload.get("data_gap_report") or {}
     facts_packet = payload.get("facts_packet") or {}
+    discipline_packet = payload.get("discipline_packet") or {}
     candidates = payload.get("next_ticket_candidates") or []
     etfs = margin_etf.get("recommended_etfs") or []
     errors = payload.get("errors") or []
@@ -4715,6 +4716,39 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     fact_items = [item for item in (facts_packet.get("items") or []) if isinstance(item, dict)]
     fact_gap_summary = _home_text(facts_packet.get("gap_summary"), "")
     fact_next_checks = [str(item).strip() for item in (facts_packet.get("next_manual_checks") or []) if str(item).strip()]
+    discipline_status = _home_text(discipline_packet.get("backtest_status"), "待手动运行回测")
+    discipline_tone = "ready" if discipline_packet.get("data_status") == "ready" else "missing"
+    if discipline_packet.get("action_state") == "降风险":
+        discipline_tone = "failed"
+    elif discipline_packet.get("data_status") == "cached":
+        discipline_tone = "stale"
+    discipline_metrics = " ｜ ".join(
+        f"{_home_text(item.get('label'), '指标')}:{_home_text(item.get('value'), '待验证')}"
+        for item in (discipline_packet.get("metric_items") or [])[:4]
+        if isinstance(item, dict)
+    ) or "暂无回测指标"
+    discipline_evidence = "；".join(
+        f"{_home_text(item.get('label'), '证据')}:{_home_text(item.get('value'), '待验证')}"
+        for item in (discipline_packet.get("evidence_items") or [])[:3]
+        if isinstance(item, dict)
+    ) or "暂无纪律证据"
+    discipline_warnings = "；".join(
+        str(item).strip()
+        for item in (discipline_packet.get("warnings") or [])[:3]
+        if str(item).strip()
+    ) or _home_text(discipline_packet.get("backtest_required_text"), "回测必须手动触发。")
+    discipline_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            纪律/回测证据
+            <span class="cc-home-chip {escape(discipline_tone)}">{escape(discipline_status)}</span>
+          </div>
+          <div class="cc-home-item-meta">动作边界：{escape(_home_text(discipline_packet.get("action_state"), "待刷新"))} ｜ 最新信号：{escape(_home_text(discipline_packet.get("latest_signal"), "待验证"))}</div>
+          <div class="cc-home-item-meta">指标：{escape(discipline_metrics)}</div>
+          <div class="cc-home-item-meta">证据：{escape(discipline_evidence)}</div>
+          <div class="cc-home-item-meta">边界：{escape(discipline_warnings)}</div>
+        </div>
+        """
     evidence_vm = build_a_share_evidence_radar_view_model(payload)
     evidence_items = [item for item in (evidence_vm.get("items") or []) if isinstance(item, dict)]
     evidence_html = ""
@@ -4810,6 +4844,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">已验证事实</div>
+          {discipline_html}
           <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))}</div>
           {evidence_html}
           <div class="cc-muted-note">{escape(_home_text(facts_packet.get("summary"), "暂无可验证事实包。"))}</div>

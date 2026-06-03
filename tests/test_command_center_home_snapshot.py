@@ -205,6 +205,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["discipline_packet"]["status"], "ready")
         self.assertEqual(payload["discipline_packet"]["win_rate"], 64)
         self.assertEqual(payload["discipline_packet"]["max_drawdown"], 11)
+        self.assertEqual(payload["discipline_packet"]["backtest_status"], "已读取回测缓存")
+        self.assertTrue(payload["discipline_packet"]["metric_items"])
+        self.assertTrue(payload["discipline_packet"]["evidence_items"])
         self.assertIn("不会自动跑回测", payload["discipline_packet"]["backtest_required_text"])
         self.assertFalse(payload["discipline_packet"]["deepseek_called"])
 

@@ -37,6 +37,10 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertEqual(packet["status"], "waiting")
         self.assertEqual(packet["data_status"], "missing")
         self.assertEqual(packet["action_state"], "待刷新")
+        self.assertEqual(packet["backtest_status"], "待手动运行回测")
+        self.assertEqual(packet["cache_state"], "missing")
+        self.assertEqual(packet["metric_items"][0]["value"], "待验证")
+        self.assertEqual(packet["evidence_items"][0]["value"], "待刷新")
         self.assertIn("不会自动跑回测", packet["backtest_required_text"])
         self.assertFalse(packet["deepseek_called"])
 
@@ -54,6 +58,11 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertEqual(packet["win_rate"], 62)
         self.assertEqual(packet["max_drawdown"], 12)
         self.assertEqual(packet["trade_count"], 12)
+        self.assertEqual(packet["backtest_status"], "已读取回测缓存")
+        self.assertEqual(packet["cache_state"], "ready")
+        self.assertEqual(packet["date_range"]["end"], "2026-06-03")
+        self.assertTrue(any(item["label"] == "胜率" and item["value"] == "62%" for item in packet["metric_items"]))
+        self.assertTrue(any(item["label"] == "回测区间" for item in packet["evidence_items"]))
         self.assertIn(packet["action_state"], {"允许小幅试探", "只观察"})
         self.assertTrue(packet["key_rules"])
         self.assertIn("高 beta 过热不追", packet["warnings"])
@@ -102,6 +111,8 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertEqual(state, original)
         self.assertEqual(packet["key_rules"], ["规则 A"])
         self.assertEqual(packet["warnings"], ["风险 B"])
+        self.assertTrue(packet["metric_items"])
+        self.assertTrue(packet["evidence_items"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_existing_packet_target_mismatch_is_not_reused(self):
