@@ -498,6 +498,51 @@ def build_legacy_a_share_secondary_fact_sections(
     }
 
 
+def build_legacy_a_share_war_room_inputs(
+    *,
+    chip_packet: Any = None,
+    limit_emotion_packet: Any = None,
+    moneyflow_packet: Any = None,
+    technical_facts: Any = None,
+    technical_snapshot: Any = None,
+    position_profile: Any = None,
+    position_status: str = "",
+) -> dict:
+    chip = as_mapping(chip_packet)
+    limit = as_mapping(limit_emotion_packet)
+    moneyflow = as_mapping(moneyflow_packet)
+    technical = as_mapping(technical_facts)
+    snapshot = as_mapping(technical_snapshot)
+    profile = as_mapping(position_profile)
+    ma20 = _to_number(technical.get("ma20") or technical.get("ma20_value"))
+    if ma20 is None:
+        ma20 = _to_number(snapshot.get("ma20"))
+    normalized_position_state = _first_text(profile.get("normalized_position_state"), position_status)
+    return {
+        "chip_center": _to_number(chip.get("weight_avg")),
+        "ma20": ma20,
+        "ma60": _to_number(technical.get("ma60") or snapshot.get("ma60")),
+        "limit_up": _to_number(limit.get("up_limit")),
+        "limit_down": _to_number(limit.get("down_limit")),
+        "today_main_net_yi": _to_number(moneyflow.get("main_net_yi")),
+        "five_day_main_net_yi": _to_number(moneyflow.get("five_day_main_net_yi")),
+        "position_profile": profile,
+        "position_state": normalized_position_state,
+        "is_holding": normalized_position_state == "已持仓",
+        "cost_price": profile.get("cost_price") if profile.get("cost_price") else None,
+        "shares": profile.get("holding_units") if profile.get("allow_pnl") else None,
+        "source": "command_center_*_packet",
+        "source_fields": {
+            "chip_center": "command_center_chip_packet.weight_avg",
+            "limit_up": "command_center_limit_emotion_packet.up_limit",
+            "limit_down": "command_center_limit_emotion_packet.down_limit",
+            "today_main_net_yi": "command_center_moneyflow_packet.main_net_yi",
+            "five_day_main_net_yi": "command_center_moneyflow_packet.five_day_main_net_yi",
+        },
+        "deepseek_called": False,
+    }
+
+
 def build_legacy_a_share_packet_summary(
     *,
     dragon_tiger_packet: Any = None,

@@ -9995,25 +9995,33 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         whale_fact_packet = None
         next_day_plan_fact_packet = None
         single_stock_war_room_fact_packet = None
+        legacy_war_room_inputs = legacy_a_share_gate_service.build_legacy_a_share_war_room_inputs(
+            chip_packet=st.session_state.get("command_center_chip_packet"),
+            limit_emotion_packet=st.session_state.get("command_center_limit_emotion_packet"),
+            moneyflow_packet=st.session_state.get("command_center_moneyflow_packet"),
+            technical_facts=verified_technical_facts,
+            technical_snapshot=globals().get("technical_snapshot") or {},
+            position_profile=globals().get("position_profile") or {},
+            position_status=position_status,
+        )
 
         st.markdown("#### 🐳 专项资金扫描")
         st.caption("独立检查资金结构、龙虎榜、融资融券和短线资金验证，不自动生成持仓动作。")
         btn_whale = st.button("🐳 巨鲸资金嗅探", type="primary", width="stretch", key="btn_cn_whale")
         whale_output = st.container()
 
-        visual_chip_center = _num((chip_radar_data or {}).get("weight_avg"))
-        visual_ma20 = _num((verified_technical_facts or {}).get("ma20") or (verified_technical_facts or {}).get("ma20_value"))
-        if visual_ma20 is None:
-            visual_ma20 = _num((globals().get("technical_snapshot") or {}).get("ma20"))
-        visual_ma60 = _num((verified_technical_facts or {}).get("ma60"))
-        visual_limit_up = _num((limit_emotion_data or {}).get("up_limit"))
-        visual_limit_down = _num((limit_emotion_data or {}).get("down_limit"))
-        visual_today_flow = _num((moneyflow_data or {}).get("main_net_yi"))
-        visual_five_day_flow = _num((moneyflow_data or {}).get("five_day_main_net_yi"))
-        visual_profile = globals().get("position_profile") or {}
-        visual_is_holding = visual_profile.get("normalized_position_state") == "已持仓"
-        visual_cost = visual_profile.get("cost_price") if visual_profile.get("cost_price") else None
-        visual_shares = visual_profile.get("holding_units") if visual_profile.get("allow_pnl") else None
+        visual_chip_center = legacy_war_room_inputs.get("chip_center")
+        visual_ma20 = legacy_war_room_inputs.get("ma20")
+        visual_ma60 = legacy_war_room_inputs.get("ma60")
+        visual_limit_up = legacy_war_room_inputs.get("limit_up")
+        visual_limit_down = legacy_war_room_inputs.get("limit_down")
+        visual_today_flow = legacy_war_room_inputs.get("today_main_net_yi")
+        visual_five_day_flow = legacy_war_room_inputs.get("five_day_main_net_yi")
+        visual_profile = legacy_war_room_inputs.get("position_profile") or {}
+        visual_is_holding = bool(legacy_war_room_inputs.get("is_holding"))
+        visual_cost = legacy_war_room_inputs.get("cost_price")
+        visual_shares = legacy_war_room_inputs.get("shares")
+        st.caption(f"作战室输入：{legacy_war_room_inputs.get('source')}｜DeepSeek 未调用")
 
         st.markdown("#### 🎮 单票持仓作战室")
         with st.container():

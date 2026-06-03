@@ -300,6 +300,56 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         limit_section = [section for section in sections["sections"] if section["key"] == "limit_emotion"][0]
         self.assertEqual(limit_section["risk_note"], "炸板记录只是事件证据")
 
+    def test_war_room_inputs_prefer_command_center_packets(self):
+        inputs = gate.build_legacy_a_share_war_room_inputs(
+            chip_packet={"weight_avg": 12.3},
+            limit_emotion_packet={"up_limit": 13.5, "down_limit": 11.05},
+            moneyflow_packet={"main_net_yi": 0.6, "five_day_main_net_yi": -1.2},
+            technical_facts={"ma20": 12.0, "ma60": 10.5},
+            position_profile={
+                "normalized_position_state": "已持仓",
+                "cost_price": 9.9,
+                "holding_units": 1000,
+                "allow_pnl": True,
+            },
+        )
+
+        self.assertEqual(inputs["chip_center"], 12.3)
+        self.assertEqual(inputs["limit_up"], 13.5)
+        self.assertEqual(inputs["limit_down"], 11.05)
+        self.assertEqual(inputs["today_main_net_yi"], 0.6)
+        self.assertEqual(inputs["five_day_main_net_yi"], -1.2)
+        self.assertEqual(inputs["ma20"], 12.0)
+        self.assertEqual(inputs["ma60"], 10.5)
+        self.assertTrue(inputs["is_holding"])
+        self.assertEqual(inputs["cost_price"], 9.9)
+        self.assertEqual(inputs["shares"], 1000)
+        self.assertEqual(inputs["source_fields"]["chip_center"], "command_center_chip_packet.weight_avg")
+        self.assertFalse(inputs["deepseek_called"])
+        json.dumps(inputs, ensure_ascii=False)
+
+    def test_war_room_inputs_fallback_to_technical_snapshot_and_do_not_mutate(self):
+        chip_packet = {"weight_avg": "12.3"}
+        technical_snapshot = {"ma20": "11.1", "ma60": "9.8"}
+        profile = {"normalized_position_state": "未买入，纯观察", "cost_price": 8.8, "allow_pnl": False}
+        before = copy.deepcopy({"chip": chip_packet, "snapshot": technical_snapshot, "profile": profile})
+
+        inputs = gate.build_legacy_a_share_war_room_inputs(
+            chip_packet=chip_packet,
+            technical_facts={},
+            technical_snapshot=technical_snapshot,
+            position_profile=profile,
+            position_status="已持仓",
+        )
+
+        self.assertEqual({"chip": chip_packet, "snapshot": technical_snapshot, "profile": profile}, before)
+        self.assertEqual(inputs["chip_center"], 12.3)
+        self.assertEqual(inputs["ma20"], 11.1)
+        self.assertEqual(inputs["ma60"], 9.8)
+        self.assertFalse(inputs["is_holding"])
+        self.assertIsNone(inputs["shares"])
+        json.dumps(inputs, ensure_ascii=False)
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_gate.py").read_text(encoding="utf-8"))
         imports = []
