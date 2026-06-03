@@ -21,6 +21,7 @@ import command_center_facts_packet as facts_packet_service
 import command_center_radar_packet as radar_packet_service
 import command_center_etf_packet as etf_packet_service
 import command_center_discipline_packet as discipline_packet_service
+import command_center_market_packet as market_packet_service
 import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -3281,6 +3282,7 @@ def _cc_refresh_market_environment(target="", market_type="", price=None, positi
     del target, market_type, price, position_profile
     packet = build_market_style_fact_packet()
     st.session_state["legacy_market_style_fact_packet"] = clone_command_center_packet(packet)
+    st.session_state["command_center_market_packet"] = market_packet_service.build_command_center_market_packet(st.session_state)
     _cc_mark_module("market", "已刷新", "Tushare 市场风格事实包")
     return {"module": "市场环境", "status": "ok", "updated_at": packet.get("updated_at", "")}
 
@@ -3486,9 +3488,9 @@ def _cc_run_refresh_step(module_key, target="", market_type="", price=None, posi
 
 
 def _build_market_live_section():
-    packet = st.session_state.get("legacy_market_style_fact_packet") or {}
+    packet = market_packet_service.build_command_center_market_packet(st.session_state)
     meta = _cc_get_module_meta("market")
-    if not packet:
+    if packet.get("data_status") == "missing":
         return {
             "status": "未刷新",
             "summary": meta.get("error") or "未刷新，请点击按钮生成。",
@@ -3497,21 +3499,16 @@ def _build_market_live_section():
             "is_fresh": False,
             "last_error": meta.get("error", ""),
         }
-    limit_up = packet.get("limit_up_count", 0)
-    limit_down = packet.get("limit_down_count", 0)
-    break_count = packet.get("break_limit_count", 0)
-    summary = (
-        f"{packet.get('market_state') or '市场状态待判断'}；"
-        f"{packet.get('risk_switch') or '风险开关待判断'}。"
-        f"涨停 {limit_up}，跌停 {limit_down}，炸板 {break_count}。"
-    )
-    sources = packet.get("verified_sources") or []
     return {
-        "status": "已刷新",
-        "summary": summary,
+        "status": "已刷新" if packet.get("status") == "ready" else "使用缓存",
+        "summary": packet.get("summary") or "市场环境待验证。",
         "updated_at": packet.get("updated_at", ""),
-        "source": " / ".join(sources[:4]) if sources else "Tushare 市场风格事实包",
-        "is_fresh": True,
+        "source": packet.get("source") or "Tushare 市场风格事实包",
+        "market_state": packet.get("market_state"),
+        "risk_switch": packet.get("risk_switch"),
+        "action_state": packet.get("action_state"),
+        "risk_notes": packet.get("risk_notes") or [],
+        "is_fresh": packet.get("data_status") == "ready",
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
     }
 

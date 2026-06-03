@@ -438,6 +438,32 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(any("权限不足" in item for item in report["next_manual_checks"]))
         self.assertFalse(report["deepseek_called"])
 
+    def test_home_snapshot_persists_market_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "legacy_market_style_fact_packet": {
+                "market_state": "修复",
+                "risk_switch": "适合轻仓试错",
+                "limit_up_count": 38,
+                "limit_down_count": 2,
+                "break_limit_count": 6,
+                "verified_sources": ["Tushare limit_list_d"],
+                "updated_at": f"{today}T10:01:00",
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["market_packet"]["market_state"], "修复")
+        self.assertEqual(payload["market_packet"]["action_state"], "轻仓验证")
+        self.assertEqual(payload["market_packet"]["limit_up_count"], 38)
+        self.assertFalse(payload["market_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_command_center_facts_packet(self):
         today = _dt.date.today().isoformat()
         state = {

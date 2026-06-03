@@ -12,6 +12,7 @@ import command_center_radar_packet as radar_packet_service
 import command_center_etf_packet as etf_packet_service
 import command_center_discipline_packet as discipline_packet_service
 import command_center_data_gap_report as data_gap_report_service
+import command_center_market_packet as market_packet_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -200,6 +201,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_capability": build_data_capability_snapshot({}),
         "facts_packet": facts_packet_service.build_command_center_facts_packet({}),
         "data_gap_report": data_gap_report_service.build_command_center_data_gap_report(),
+        "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
         "deepseek_called": False,
@@ -236,6 +238,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         snapshot.get("data_capability") or {},
         snapshot.get("facts_packet") or {},
         errors=snapshot.get("errors") or [],
+    )
+    snapshot["market_packet"] = market_packet_service.build_command_center_market_packet(
+        {"command_center_market_packet": snapshot.get("market_packet") or {}}
     )
     snapshot["radar_packet"] = radar_packet_service.build_command_center_radar_packet(
         {"command_center_radar_packet": snapshot.get("radar_packet") or {}}
@@ -651,6 +656,7 @@ def build_home_action_snapshot(
         live_packet=live,
         target=target,
     )
+    market_packet = market_packet_service.build_command_center_market_packet(state_map, live)
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")
@@ -699,6 +705,7 @@ def build_home_action_snapshot(
         "data_capability": data_capability_snapshot,
         "facts_packet": facts_packet_snapshot,
         "data_gap_report": data_gap_report,
+        "market_packet": market_packet,
         "errors": errors,
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
@@ -714,6 +721,7 @@ def build_home_action_snapshot(
         empty["data_capability"] = snapshot["data_capability"]
         empty["facts_packet"] = snapshot["facts_packet"]
         empty["data_gap_report"] = snapshot["data_gap_report"]
+        empty["market_packet"] = snapshot["market_packet"]
         empty["radar_packet"] = snapshot["radar_packet"]
         empty["etf_packet"] = snapshot["etf_packet"]
         empty["discipline_packet"] = snapshot["discipline_packet"]
@@ -729,6 +737,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
     return bool(
         _as_mapping(payload.get("decision_packet"))
         or _as_mapping(payload.get("strategy_packet"))
+        or _as_mapping(payload.get("market_packet")).get("data_status") == "ready"
         or _as_list(payload.get("next_ticket_candidates"))
         or _as_list(_as_mapping(payload.get("radar_packet")).get("top_candidates"))
         or _as_list(_as_mapping(payload.get("etf_packet")).get("recommended_etfs"))
