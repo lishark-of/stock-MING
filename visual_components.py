@@ -4853,6 +4853,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     matrix_items = [item for item in (a_share_matrix.get("items") or []) if isinstance(item, dict)]
     matrix_html = ""
     for item in matrix_items[:6]:
+        manual_action = item.get("manual_action") or {}
         matched_text = "；".join(
             f"{_home_text(row.get('label'), row.get('api') or '数据')}:{_home_text(row.get('status_label'), row.get('state') or '待验证')}"
             for row in (item.get("matched_items") or [])[:2]
@@ -4867,6 +4868,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">接口：{escape(_home_text(item.get("api_hint"), "待接入"))} ｜ {escape(_home_text(item.get("decision_role"), "只作辅助验证。"))}</div>
           <div class="cc-home-item-meta">已匹配：{escape(matched_text)}</div>
           <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(manual_action.get("button_label"), item.get("next_action") or "手动检测"))} ｜ 回流：{escape(_home_text(manual_action.get("writes_packet"), "command_center_facts_packet"))}</div>
         </div>
         """
     if not matrix_html:

@@ -25,6 +25,45 @@ STATE_LABELS = {
     "missing": "待刷新",
 }
 
+MANUAL_ACTIONS = {
+    "moneyflow": {
+        "action_key": "manual_check_moneyflow",
+        "button_label": "重新检测个股资金流",
+        "toolbox_entry": "高级工具箱入口 / 数据源体检",
+        "writes_packet": "command_center_moneyflow_packet / a_share_professional_data_capability",
+    },
+    "dragon_tiger": {
+        "action_key": "manual_check_dragon_tiger",
+        "button_label": "重新检测龙虎榜",
+        "toolbox_entry": "高级工具箱入口 / 下一票雷达",
+        "writes_packet": "command_center_dragon_tiger_packet / command_center_facts_packet",
+    },
+    "margin": {
+        "action_key": "manual_check_margin_detail",
+        "button_label": "重新检测融资融券权限",
+        "toolbox_entry": "高级工具箱入口 / 融资 ETF",
+        "writes_packet": "command_center_margin_packet / a_share_professional_data_capability",
+    },
+    "limit_emotion": {
+        "action_key": "manual_check_limit_emotion",
+        "button_label": "重新检测涨跌停/情绪",
+        "toolbox_entry": "高级工具箱入口 / 数据源体检",
+        "writes_packet": "command_center_limit_emotion_packet / command_center_facts_packet",
+    },
+    "chip_radar": {
+        "action_key": "manual_check_chip_radar",
+        "button_label": "重新检测筹码/胜率",
+        "toolbox_entry": "高级工具箱入口 / 量化推演",
+        "writes_packet": "command_center_chip_packet / command_center_facts_packet",
+    },
+    "hard_risk": {
+        "action_key": "manual_check_hard_risk",
+        "button_label": "运行天眼风控检测",
+        "toolbox_entry": "高级工具箱入口 / 天眼风控",
+        "writes_packet": "command_center_hard_risk_packet / command_center_facts_packet",
+    },
+}
+
 CORE_CAPABILITIES = (
     {
         "key": "moneyflow",
@@ -233,6 +272,20 @@ def _next_action(state: str, label: str) -> str:
     return f"保留 {label} 安全空态或上次成功结果。"
 
 
+def _manual_action(capability: Mapping[str, Any], state: str, status_label: str) -> dict:
+    config = MANUAL_ACTIONS.get(str(capability.get("key")), {})
+    return {
+        "action_key": to_text(config.get("action_key"), f"manual_check_{capability.get('key') or 'a_share'}"),
+        "button_label": to_text(config.get("button_label"), f"手动检测{capability.get('label') or 'A股数据'}"),
+        "toolbox_entry": to_text(config.get("toolbox_entry"), "高级工具箱入口 / 数据源体检"),
+        "writes_packet": to_text(config.get("writes_packet"), "command_center_facts_packet"),
+        "refresh_policy": "button_gated",
+        "status_label": status_label,
+        "reason": _next_action(state, to_text(capability.get("label"), "A股数据")),
+        "deepseek_called": False,
+    }
+
+
 def build_a_share_capability_matrix(
     data_capability_packet: Any = None,
     facts_packet: Any = None,
@@ -242,6 +295,7 @@ def build_a_share_capability_matrix(
     for capability in CORE_CAPABILITIES:
         matches = [row for row in rows if _matches(capability, row)]
         state, status_label = _aggregate_state(matches)
+        manual_action = _manual_action(capability, state, status_label)
         items.append(
             {
                 "key": capability["key"],
@@ -253,6 +307,7 @@ def build_a_share_capability_matrix(
                 "decision_role": capability["decision_role"],
                 "decision_impact": _decision_impact(state, capability["label"]),
                 "next_action": _next_action(state, capability["label"]),
+                "manual_action": manual_action,
                 "matched_items": matches[:5],
             }
         )
@@ -268,12 +323,18 @@ def build_a_share_capability_matrix(
         summary = f"A股数据能力：可用 {len(available)}｜受限/失败 {len(blocked)}｜手动 {len(manual)}｜缓存/待验证 {len(stale)}"
         status = "blocked" if blocked else ("partial" if manual or stale else "ready")
         tone = "failed" if blocked else ("stale" if manual or stale else "ready")
+    manual_action_queue = [
+        item["manual_action"]
+        for item in items
+        if item["state"] not in AVAILABLE_STATES
+    ]
     return {
         "status": status,
         "tone": tone,
         "title": "A股数据能力矩阵",
         "summary": summary,
         "items": items,
+        "manual_action_queue": manual_action_queue,
         "available_count": len(available),
         "blocked_count": len(blocked),
         "manual_count": len(manual),

@@ -58,6 +58,10 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
         self.assertEqual(by_key["limit_emotion"]["state"], "disabled_this_session")
         self.assertEqual(by_key["chip_radar"]["state"], "stale_cache")
         self.assertEqual(by_key["hard_risk"]["state"], "permission_denied")
+        self.assertEqual(by_key["margin"]["manual_action"]["refresh_policy"], "button_gated")
+        self.assertIn("融资融券", by_key["margin"]["manual_action"]["button_label"])
+        self.assertIn("command_center_margin_packet", by_key["margin"]["manual_action"]["writes_packet"])
+        self.assertFalse(by_key["margin"]["manual_action"]["deepseek_called"])
         self.assertIn("龙虎榜", dumped)
         self.assertIn("融资融券", dumped)
         self.assertIn("涨跌停", dumped)
@@ -70,6 +74,18 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
 
         self.assertIn("不能把缺失数据当成利好", margin["decision_impact"])
         self.assertIn("接口权限", margin["next_action"])
+
+    def test_manual_action_queue_excludes_available_items(self):
+        packet = matrix.build_a_share_capability_matrix(sample_capability_packet())
+        queued_keys = {item["action_key"] for item in packet["manual_action_queue"]}
+
+        self.assertNotIn("manual_check_moneyflow", queued_keys)
+        self.assertIn("manual_check_margin_detail", queued_keys)
+        self.assertIn("manual_check_limit_emotion", queued_keys)
+        self.assertIn("manual_check_hard_risk", queued_keys)
+        for item in packet["manual_action_queue"]:
+            self.assertEqual(item["refresh_policy"], "button_gated")
+            self.assertFalse(item["deepseek_called"])
 
     def test_cache_and_empty_are_visible_but_not_decisive(self):
         packet = matrix.build_a_share_capability_matrix(sample_capability_packet())
