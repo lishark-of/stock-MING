@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from numbers import Number
+from typing import Any
+
+
+MAX_RISK_NOTES = 6
+
+
+def as_mapping(value: Any) -> dict:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def to_text(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip() or default
+    if isinstance(value, (bool, Number)):
+        return str(value)
+    return str(value).strip() or default
+
+
+def to_number(value: Any) -> int | float | None:
+    if value in [None, ""]:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, Number):
+        return value
+    if isinstance(value, str):
+        text = value.strip().replace(",", "").replace("%", "")
+        if not text or text in {"--", "暂无", "N/A", "None", "nan"}:
+            return None
+        try:
+            number = float(text)
+            return int(number) if number.is_integer() else number
+        except Exception:
+            return None
+    return None
+
+
+def _first_text(*values: Any, default: str = "") -> str:
+    for value in values:
+        text = to_text(value)
+        if text:
+            return text
+    return default
+
+
+def _dedupe_text(values: Any, limit: int = MAX_RISK_NOTES) -> list[str]:
+    raw_values = values if isinstance(values, (list, tuple)) else [values]
+    items = []
+    seen = set()
+    for item in raw_values:
+        if isinstance(item, Mapping):
+            text = _first_text(item.get("message"), item.get("summary"), item.get("reason"), item.get("label"))
+        else:
+            text = to_text(item)
+        if text and text not in seen:
+            seen.add(text)
+            items.append(text)
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _ticker_base(value: Any) -> str:
+    text = to_text(value).upper()
+    return text.split(".")[0] if text else ""
+
+
+def _source_from_state(state_map: Mapping[str, Any], live_packet: Mapping[str, Any]) -> dict:
+    existing = as_mapping(state_map.get("command_center_margin_packet"))
+    if existing:
+        return {"payload": existing, "source_key": "command_center_margin_packet"}
+
+    facts = as_mapping(state_map.get("a_share_professional_facts"))
+    margin = as_mapping(facts.get("margin"))
+    if margin:
+        return {"payload": margin, "source_key": "a_share_professional_facts.margin"}
+
+    facts_packet = as_mapping(state_map.get("command_center_facts_packet"))
+    for item in facts_packet.get("items") or []:
+        item_map = as_mapping(item)
+        if item_map.get("key") == "margin":
+            return {"payload": item_map, "source_key": "command_center_facts_packet.items.margin"}
+
+    live_margin = as_mapping(as_mapping(live_packet.get("facts")).get("margin") or live_packet.get("margin"))
+    if live_margin:
+        return {"payload": live_margin, "source_key": "command_center_live_packet.margin"}
+
+    return {"payload": {}, "source_key": ""}
+
+
+def _status_from(payload: Mapping[str, Any]) -> str:
+    raw_status = to_text(payload.get("status")).lower()
+    if raw_status in {"ready", "ok", "completed", "success"}:
+        return "ready"
+    if raw_status in {"failed", "error", "failure"}:
+        return "failed"
+    if payload.get("available") is True:
+        return "ready"
+    state = to_text(payload.get("state") or payload.get("capability_state")).lower()
+    if state == "available":
+        return "ready"
+    if state in {"permission_denied", "disabled_this_session", "failed", "network_failed", "not_configured"}:
+        return "failed"
+    if payload:
+        return "partial"
+    return "waiting"
+
+
+def _data_status(status: str, payload: Mapping[str, Any]) -> str:
+    if status == "ready":
+        return "ready"
+    if status in {"partial", "failed"} and payload:
+        return "cached" if payload.get("available") else "missing"
+    return "missing"
+
+
+def _leverage_state(
+    financing_balance_yi: int | float | None,
+    financing_buy_yi: int | float | None,
+    margin_balance_yi: int | float | None,
+    status: str,
+) -> str:
+    if status in {"waiting", "failed"} or all(value is None for value in [financing_balance_yi, financing_buy_yi, margin_balance_yi]):
+        return "待验证"
+    if financing_buy_yi is not None and financing_buy_yi > 0:
+        return "融资买入增加"
+    if financing_buy_yi is not None and financing_buy_yi < 0:
+        return "融资买入减少"
+    if margin_balance_yi is not None or financing_balance_yi is not None:
+        return "杠杆余额可参考"
+    return "中性待验证"
+
+
+def _build_risk_notes(payload: Mapping[str, Any], status: str, leverage_state: str) -> list[str]:
+    notes = []
+    for key in ("message", "warning", "error", "risk", "note"):
+        text = to_text(payload.get(key))
+        if text and text != "暂无可验证数据":
+            notes.append(text)
+    if status != "ready":
+        notes.append("融资融券不可用或权限不足时，不能假设杠杆资金改善。")
+    if leverage_state == "融资买入增加":
+        notes.append("融资买入增加只代表杠杆资金行为，不等于主力资金或机构资金。")
+    if leverage_state == "融资买入减少":
+        notes.append("融资买入减少需要结合价格纪律和风险预算复核。")
+    notes.append("页面打开不会自动请求 Tushare margin_detail；需要手动刷新后再验证。")
+    return _dedupe_text(notes)
+
+
+def build_command_center_margin_packet(
+    state: Any = None,
+    live_packet: Any = None,
+    target: str = "",
+) -> dict:
+    state_map = as_mapping(state)
+    live = as_mapping(live_packet)
+    source = _source_from_state(state_map, live)
+    payload = as_mapping(source.get("payload"))
+    existing_target = _first_text(payload.get("target"), payload.get("ticker"), payload.get("ts_code"))
+    if payload and target and existing_target and _ticker_base(existing_target) != _ticker_base(target):
+        payload = {}
+
+    status = _status_from(payload)
+    financing_balance_yi = to_number(payload.get("financing_balance_yi"))
+    financing_buy_yi = to_number(payload.get("financing_buy_yi"))
+    margin_balance_yi = to_number(payload.get("margin_balance_yi"))
+    short_sell_volume = to_number(payload.get("short_sell_volume"))
+    leverage_state = _leverage_state(financing_balance_yi, financing_buy_yi, margin_balance_yi, status)
+    summary = _first_text(
+        payload.get("summary"),
+        payload.get("evidence"),
+        payload.get("message"),
+        default=(
+            "融资融券待刷新；页面打开不会自动请求 Tushare margin_detail。"
+            if status == "waiting"
+            else f"融资融券状态：{leverage_state}。"
+        ),
+    )
+    return {
+        "status": status,
+        "data_status": _data_status(status, payload),
+        "source": _first_text(payload.get("source"), default="Tushare margin_detail 缓存"),
+        "source_key": to_text(source.get("source_key")),
+        "api": _first_text(payload.get("api"), default="margin_detail"),
+        "updated_at": _first_text(payload.get("updated_at"), payload.get("date"), payload.get("trade_date")),
+        "trade_date": _first_text(payload.get("date"), payload.get("trade_date"), payload.get("latest_date")),
+        "target": _first_text(target, existing_target),
+        "ticker": _first_text(payload.get("ticker"), payload.get("ts_code"), target),
+        "financing_balance_yi": financing_balance_yi,
+        "financing_buy_yi": financing_buy_yi,
+        "margin_balance_yi": margin_balance_yi,
+        "short_sell_volume": short_sell_volume,
+        "leverage_state": leverage_state,
+        "summary": summary,
+        "risk_notes": _build_risk_notes(payload, status, leverage_state),
+        "manual_required_text": "融资融券来自 Tushare margin_detail 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
+        "deepseek_called": False,
+    }

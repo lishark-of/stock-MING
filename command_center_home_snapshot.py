@@ -17,6 +17,7 @@ import command_center_quant_packet as quant_packet_service
 import command_center_chip_packet as chip_packet_service
 import command_center_moneyflow_packet as moneyflow_packet_service
 import command_center_dragon_tiger_packet as dragon_tiger_packet_service
+import command_center_margin_packet as margin_packet_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -185,6 +186,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "chip_packet": chip_packet_service.build_command_center_chip_packet({}),
         "moneyflow_packet": moneyflow_packet_service.build_command_center_moneyflow_packet({}),
         "dragon_tiger_packet": dragon_tiger_packet_service.build_command_center_dragon_tiger_packet({}),
+        "margin_packet": margin_packet_service.build_command_center_margin_packet({}),
         "margin_etf_summary": {
             "current_margin_ratio": None,
             "recommended_margin_ratio": None,
@@ -270,6 +272,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["dragon_tiger_packet"] = dragon_tiger_packet_service.build_command_center_dragon_tiger_packet(
         {"command_center_dragon_tiger_packet": snapshot.get("dragon_tiger_packet") or {}}
+    )
+    snapshot["margin_packet"] = margin_packet_service.build_command_center_margin_packet(
+        {"command_center_margin_packet": snapshot.get("margin_packet") or {}}
     )
     return snapshot
 
@@ -681,6 +686,7 @@ def build_home_action_snapshot(
     chip_packet = chip_packet_service.build_command_center_chip_packet(state_map, live, target=target)
     moneyflow_packet = moneyflow_packet_service.build_command_center_moneyflow_packet(state_map, live, target=target)
     dragon_tiger_packet = dragon_tiger_packet_service.build_command_center_dragon_tiger_packet(state_map, live, target=target)
+    margin_packet = margin_packet_service.build_command_center_margin_packet(state_map, live, target=target)
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")
@@ -726,6 +732,7 @@ def build_home_action_snapshot(
         "chip_packet": chip_packet,
         "moneyflow_packet": moneyflow_packet,
         "dragon_tiger_packet": dragon_tiger_packet,
+        "margin_packet": margin_packet,
         "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
         "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
         "data_coverage": coverage,
@@ -757,6 +764,7 @@ def build_home_action_snapshot(
         empty["chip_packet"] = snapshot["chip_packet"]
         empty["moneyflow_packet"] = snapshot["moneyflow_packet"]
         empty["dragon_tiger_packet"] = snapshot["dragon_tiger_packet"]
+        empty["margin_packet"] = snapshot["margin_packet"]
         empty["errors"] = errors
         return empty
     return sanitize_snapshot_payload(snapshot)
@@ -774,6 +782,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
         or _as_mapping(payload.get("chip_packet")).get("data_status") == "ready"
         or _as_mapping(payload.get("moneyflow_packet")).get("data_status") == "ready"
         or _as_mapping(payload.get("dragon_tiger_packet")).get("data_status") == "ready"
+        or _as_mapping(payload.get("margin_packet")).get("data_status") == "ready"
         or _as_list(payload.get("next_ticket_candidates"))
         or _as_list(_as_mapping(payload.get("radar_packet")).get("top_candidates"))
         or _as_list(_as_mapping(payload.get("etf_packet")).get("recommended_etfs"))

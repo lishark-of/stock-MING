@@ -26,6 +26,7 @@ import command_center_quant_packet as quant_packet_service
 import command_center_chip_packet as chip_packet_service
 import command_center_moneyflow_packet as moneyflow_packet_service
 import command_center_dragon_tiger_packet as dragon_tiger_packet_service
+import command_center_margin_packet as margin_packet_service
 import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -9219,6 +9220,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.session_state,
             target=target,
         )
+        st.session_state["command_center_margin_packet"] = margin_packet_service.build_command_center_margin_packet(
+            st.session_state,
+            target=target,
+        )
         capability_items = a_share_capability_packet.get("items") or []
         if capability_items:
             status_line = " ｜ ".join(
@@ -12007,6 +12012,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     target=normalized_target,
                 )
                 st.session_state["command_center_dragon_tiger_packet"] = dragon_tiger_packet_service.build_command_center_dragon_tiger_packet(
+                    st.session_state,
+                    target=normalized_target,
+                )
+                st.session_state["command_center_margin_packet"] = margin_packet_service.build_command_center_margin_packet(
                     st.session_state,
                     target=normalized_target,
                 )

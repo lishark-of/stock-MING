@@ -555,6 +555,33 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(payload["moneyflow_packet"]["deepseek_called"])
         self.assertFalse(payload["dragon_tiger_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_margin_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "a_share_professional_facts": {
+                "margin": {
+                    "available": True,
+                    "date": "20260603",
+                    "financing_balance_yi": 12.3,
+                    "financing_buy_yi": 1.2,
+                    "margin_balance_yi": 13.5,
+                    "updated_at": f"{today}T10:01:00",
+                },
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["margin_packet"]["data_status"], "ready")
+        self.assertEqual(payload["margin_packet"]["leverage_state"], "融资买入增加")
+        self.assertEqual(payload["margin_packet"]["financing_balance_yi"], 12.3)
+        self.assertFalse(payload["margin_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_command_center_facts_packet(self):
         today = _dt.date.today().isoformat()
         state = {
