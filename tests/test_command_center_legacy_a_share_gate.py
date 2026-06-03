@@ -24,6 +24,11 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertIn("不自动请求 Tushare", packet["missing_items"][0])
         json.dumps(packet, ensure_ascii=False)
 
+    def test_manual_gate_user_text_is_button_gated(self):
+        self.assertIn("点击对应检测/刷新按钮后才会请求", gate.refresh_caption())
+        self.assertIn("数据能力检测按钮", gate.empty_notice())
+        self.assertNotIn("重新请求当前可用最新数据", gate.refresh_caption())
+
     def test_existing_updated_fact_counts_as_cache_even_if_unavailable(self):
         self.assertTrue(
             gate.has_a_share_professional_cache(

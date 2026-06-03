@@ -18,6 +18,9 @@ SECTION_SPECS = {
     "chip_radar": ("筹码/胜率", "cyq_perf/cyq_chips", "筹码/胜率待手动刷新；页面打开不会自动请求 Tushare cyq_perf/cyq_chips。"),
 }
 
+REFRESH_CAPTION = "刷新会清除本页相关 Tushare 缓存；专业接口仍需点击对应检测/刷新按钮后才会请求，避免页面打开自动打重接口。"
+EMPTY_NOTICE = "未检测到 A股专业事实缓存；为避免页面打开自动打重接口，当前只展示待刷新状态。请使用下方数据能力检测按钮。"
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -29,6 +32,14 @@ def to_text(value: Any, default: str = "") -> str:
     if isinstance(value, str):
         return value.strip() or default
     return str(value).strip() or default
+
+
+def refresh_caption() -> str:
+    return REFRESH_CAPTION
+
+
+def empty_notice() -> str:
+    return EMPTY_NOTICE
 
 
 def has_a_share_professional_cache(professional_facts: Any = None) -> bool:

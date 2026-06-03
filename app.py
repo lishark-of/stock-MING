@@ -4438,7 +4438,7 @@ def _render_manual_capability_check_button(
     return result
 
 
-def render_a_share_data_capability_controls(target="", position_profile=None, live_packet=None):
+def render_a_share_data_capability_controls(target="", position_profile=None, live_packet=None, key_prefix="cc"):
     capability_matrix = a_share_capability_matrix_service.build_a_share_capability_matrix(
         data_capability_packet=_get_command_center_data_capability_packet(),
         facts_packet=_get_command_center_facts_packet(target=target),
@@ -4451,17 +4451,17 @@ def render_a_share_data_capability_controls(target="", position_profile=None, li
         )
         check_cols = st.columns(5)
         checks = [
-            ("检测资金流", "btn_cc_moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check),
-            ("检测龙虎榜", "btn_cc_dragon_tiger_capability_check", "正在手动检测龙虎榜...", "龙虎榜", _run_manual_dragon_tiger_capability_check),
-            ("检测融资融券", "btn_cc_margin_capability_check", "正在手动检测融资融券权限...", "融资融券", _run_manual_margin_detail_capability_check),
-            ("检测涨跌停", "btn_cc_limit_cpt_capability_check", "正在手动检测涨跌停/情绪权限...", "涨跌停/情绪", _run_manual_limit_cpt_capability_check),
-            ("检测筹码胜率", "btn_cc_chip_capability_check", "正在手动检测筹码/胜率...", "筹码/胜率", _run_manual_chip_radar_capability_check),
+            ("检测资金流", "moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check),
+            ("检测龙虎榜", "dragon_tiger_capability_check", "正在手动检测龙虎榜...", "龙虎榜", _run_manual_dragon_tiger_capability_check),
+            ("检测融资融券", "margin_capability_check", "正在手动检测融资融券权限...", "融资融券", _run_manual_margin_detail_capability_check),
+            ("检测涨跌停", "limit_cpt_capability_check", "正在手动检测涨跌停/情绪权限...", "涨跌停/情绪", _run_manual_limit_cpt_capability_check),
+            ("检测筹码胜率", "chip_capability_check", "正在手动检测筹码/胜率...", "筹码/胜率", _run_manual_chip_radar_capability_check),
         ]
         for col, (button_label, button_key, status_label, result_label, runner) in zip(check_cols, checks):
             with col:
                 _render_manual_capability_check_button(
                     button_label,
-                    button_key,
+                    f"btn_{key_prefix}_{button_key}",
                     status_label,
                     result_label,
                     runner,
@@ -7521,7 +7521,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "pulled_at": datetime.datetime.now().isoformat(timespec="seconds"),
             }
             st.rerun()
-        st.caption("刷新会清除本页相关 Tushare 缓存；专业接口仍需点击对应检测/刷新按钮后才会请求，避免页面打开自动打重接口。")
+        st.caption(legacy_a_share_gate_service.refresh_caption())
 
     @st.cache_data(ttl=600, show_spinner=False)
     def build_market_style_fact_packet():
@@ -9768,6 +9768,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.caption("chip radar module loaded")
         st.caption("本页优先复用 A股专业事实缓存；无缓存时只显示待刷新状态，不在页面打开时自动请求 Tushare。")
         render_tushare_refresh_control(stock_code, "a_share_professional")
+        render_a_share_data_capability_controls(
+            target=target,
+            position_profile=st.session_state.get("position_profile") or st.session_state.get("current_holding_context") or {},
+            live_packet=st.session_state.get("command_center_live_packet") or {},
+            key_prefix="legacy_a_share",
+        )
 
         cn_status = st.status("正在检查 A股龙虎榜、融资融券、资金流向与筹码事实...", expanded=False)
         cn_progress = st.progress(0)
@@ -9791,7 +9797,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             chip_radar_data = manual_gate_facts.get("chip_radar") or {}
             cn_progress.progress(100)
             cn_status.write("待手动刷新：未自动请求 Tushare 专业接口")
-            st.info("未检测到 A股专业事实缓存；为避免页面打开自动打重接口，当前只展示待刷新状态。请使用综合中心数据能力检测或对应手动刷新按钮。")
+            st.info(legacy_a_share_gate_service.empty_notice())
         cn_status.update(label="完成：A股盘口与情绪状态整理", state="complete")
 
         a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(
