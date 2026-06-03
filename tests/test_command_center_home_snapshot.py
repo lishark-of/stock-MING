@@ -184,6 +184,54 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_market_profile_evidence(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T10:00:00",
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:03:00")
+        market_profile = payload["market_profile_evidence"]
+        dumped = json.dumps(market_profile, ensure_ascii=False)
+
+        self.assertEqual(market_profile["market_type"], "A股")
+        self.assertEqual(market_profile["market_label"], "A股个股")
+        self.assertIn("Tushare", dumped)
+        self.assertIn("资金流", dumped)
+        self.assertFalse(market_profile["deepseek_called"])
+
+    def test_loaded_home_snapshot_keeps_market_profile_evidence(self):
+        today = _dt.date.today().isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "等待",
+                        "updated_at": f"{today}T10:00:00",
+                    },
+                },
+                target="AAPL",
+                now=f"{today}T10:02:00",
+            )
+            snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+
+        self.assertEqual(loaded["market_profile_evidence"]["market_type"], "美股")
+        self.assertIn("财报", json.dumps(loaded["market_profile_evidence"], ensure_ascii=False))
+        self.assertFalse(loaded["market_profile_evidence"]["deepseek_called"])
+
+    def test_empty_snapshot_market_profile_does_not_create_action_data(self):
+        payload = snapshot.build_home_action_snapshot(target="AAPL")
+
+        self.assertTrue(payload["is_empty"])
+        self.assertEqual(payload["market_profile_evidence"]["market_type"], "美股")
+        self.assertFalse(snapshot.has_action_snapshot_data(payload))
+
     def test_home_snapshot_persists_discipline_packet(self):
         today = _dt.date.today().isoformat()
         state = {

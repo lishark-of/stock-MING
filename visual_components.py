@@ -3909,6 +3909,33 @@ def _inject_command_center_css():
             line-height: 1;
             font-weight: 900;
         }
+        .cc-home-profile-strip {
+            display: grid;
+            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+            gap: 12px;
+            margin-top: 14px;
+            padding: 13px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.68);
+            border: 1px solid rgba(20,184,166,0.14);
+        }
+        .cc-home-profile-title {
+            color: #0f172a;
+            font-size: 14px;
+            font-weight: 880;
+            margin-bottom: 6px;
+        }
+        .cc-home-profile-meta {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.55;
+        }
+        .cc-home-profile-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-top: 8px;
+        }
         .cc-home-grid {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr) minmax(0, 1fr);
@@ -4237,6 +4264,7 @@ def _inject_command_center_css():
             .cc-strategy-path-grid,
             .cc-strategy-foot-grid,
             .cc-home-head,
+            .cc-home-profile-strip,
             .cc-home-grid,
             .cc-projection-action-grid,
             .cc-analysis-head,
@@ -4644,6 +4672,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_gap_report = payload.get("data_gap_report") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
+    market_profile = payload.get("market_profile_evidence") or {}
     candidates = payload.get("next_ticket_candidates") or []
     etfs = margin_etf.get("recommended_etfs") or []
     errors = payload.get("errors") or []
@@ -4655,6 +4684,40 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     coverage_cached = len([state for state in coverage.values() if state == "cached"])
     coverage_missing = len([state for state in coverage.values() if state == "missing"])
     safety_line = payload.get("safety_line") or "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。"
+    market_profile_status = _home_text(market_profile.get("status"), "waiting")
+    market_profile_tone = "ready" if market_profile_status == "ready" else "missing"
+    market_profile_methods = [item for item in (market_profile.get("method_items") or []) if isinstance(item, dict)]
+    market_profile_method_html = ""
+    for item in market_profile_methods[:4]:
+        market_profile_method_html += (
+            f"<span class='cc-home-chip {escape(_home_text(item.get('tone'), 'missing'))}'>"
+            f"{escape(_home_text(item.get('name'), '分析方法'))}：{escape(_home_text(item.get('status'), '待验证'))}"
+            "</span>"
+        )
+    if not market_profile_method_html:
+        market_profile_method_html = "<span class='cc-home-chip missing'>分析方法：待验证</span>"
+    market_profile_sources = "、".join(str(item).strip() for item in (market_profile.get("data_sources") or [])[:4] if str(item).strip()) or "本地缓存"
+    market_profile_focus = "、".join(str(item).strip() for item in (market_profile.get("focus_items") or [])[:6] if str(item).strip()) or "市场类型待确认"
+    market_profile_risks = "、".join(str(item).strip() for item in (market_profile.get("risk_notes") or [])[:4] if str(item).strip()) or "数据缺口"
+    market_profile_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            市场口径
+            <span class="cc-home-chip {escape(market_profile_tone)}">{escape(_home_text(market_profile.get("market_label"), "市场类型待确认"))}</span>
+          </div>
+          <div class="cc-home-profile-meta">
+            标的：{escape(_home_text(market_profile.get("ticker"), "未锁定"))} {escape(_home_text(market_profile.get("name"), ""))}<br>
+            数据源优先：{escape(market_profile_sources)}
+          </div>
+        </div>
+        <div>
+          <div class="cc-home-profile-meta">关注口径：{escape(market_profile_focus)}</div>
+          <div class="cc-home-profile-meta">风险边界：{escape(market_profile_risks)} ｜ {escape(_home_text(market_profile.get("data_gap_text"), "待验证"))}</div>
+          <div class="cc-home-profile-pills">{market_profile_method_html}</div>
+        </div>
+      </div>
+    """
 
     if candidates:
         candidate_html = ""
@@ -4832,6 +4895,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-muted-note">失败/错误：{escape(error_line)}</div>
         </aside>
       </div>
+      {market_profile_html}
       <div class="cc-home-grid">
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">当前持仓动作</div>

@@ -20,6 +20,7 @@ import command_center_dragon_tiger_packet as dragon_tiger_packet_service
 import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
+import command_center_market_profile_summary as market_profile_summary_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -191,6 +192,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "margin_packet": margin_packet_service.build_command_center_margin_packet({}),
         "limit_emotion_packet": limit_emotion_packet_service.build_command_center_limit_emotion_packet({}),
         "hard_risk_packet": hard_risk_packet_service.build_command_center_hard_risk_packet({}),
+        "market_profile_evidence": market_profile_summary_service.build_market_profile_evidence_strip(),
         "margin_etf_summary": {
             "current_margin_ratio": None,
             "recommended_margin_ratio": None,
@@ -286,6 +288,17 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
+    existing_market_profile = _as_mapping(snapshot.get("market_profile_evidence"))
+    normalized_market_profile = market_profile_summary_service.build_market_profile_evidence_strip(
+        market_type=existing_market_profile.get("market_type"),
+        ticker=existing_market_profile.get("ticker"),
+        name=existing_market_profile.get("name"),
+        home_snapshot=snapshot,
+    )
+    if existing_market_profile:
+        normalized_market_profile.update(existing_market_profile)
+        normalized_market_profile["deepseek_called"] = False
+    snapshot["market_profile_evidence"] = normalized_market_profile
     return snapshot
 
 
@@ -732,6 +745,22 @@ def build_home_action_snapshot(
         live_packet=live,
         errors=errors,
     )
+    analysis_method_packet = (
+        state_map.get("command_center_analysis_method_packet")
+        or state_map.get("analysis_method_packet")
+        or {}
+    )
+    position_map = _as_mapping(position_profile)
+    market_profile_evidence = market_profile_summary_service.build_market_profile_evidence_strip(
+        market_type=state_map.get("market_type") or position_map.get("market_type"),
+        ticker=target or position_map.get("ticker"),
+        name=position_map.get("name") or state_map.get("current_stock_name"),
+        live_packet=live,
+        decision_packet=decision,
+        strategy_packet=strategy,
+        home_snapshot=state_map.get("command_center_home_snapshot") or {},
+        analysis_method_packet=analysis_method_packet,
+    )
     snapshot = {
         "status": "ready",
         "is_empty": False,
@@ -763,6 +792,7 @@ def build_home_action_snapshot(
         "facts_packet": facts_packet_snapshot,
         "data_gap_report": data_gap_report,
         "market_packet": market_packet,
+        "market_profile_evidence": market_profile_evidence,
         "errors": errors,
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
@@ -779,6 +809,7 @@ def build_home_action_snapshot(
         empty["facts_packet"] = snapshot["facts_packet"]
         empty["data_gap_report"] = snapshot["data_gap_report"]
         empty["market_packet"] = snapshot["market_packet"]
+        empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
         empty["radar_packet"] = snapshot["radar_packet"]
         empty["etf_packet"] = snapshot["etf_packet"]
         empty["discipline_packet"] = snapshot["discipline_packet"]
