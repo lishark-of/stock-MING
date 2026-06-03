@@ -617,6 +617,24 @@ def build_tool_recovery_actions_snapshot(snapshot: Any = None, limit: int = MAX_
     return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
+def build_tool_recovery_navigation_state(action: Any = None) -> dict:
+    item = _as_mapping(action)
+    workspace_state_key = _to_text(item.get("workspace_state_key"), "workspace_mode_v2")
+    legacy_tab_state_key = _to_text(item.get("legacy_tab_state_key"), "legacy_workspace_selected_tab")
+    workspace_target = _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）")
+    legacy_tab = _to_text(item.get("legacy_tab"))
+    if not legacy_tab:
+        return {}
+    return {
+        workspace_state_key: workspace_target,
+        legacy_tab_state_key: legacy_tab,
+        "command_center_last_tool_recovery_key": _to_text(item.get("key")),
+        "command_center_last_tool_recovery_label": _to_text(item.get("label"), legacy_tab),
+        "command_center_last_tool_recovery_writes_packet": _to_text(item.get("writes_packet")),
+        "command_center_last_tool_recovery_policy": "navigation_only",
+    }
+
+
 def resolve_data_capability_packet(state: Any = None) -> dict:
     state_map = _as_mapping(state)
     healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))

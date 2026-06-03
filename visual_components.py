@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 
 from command_center_data_capability_dashboard import build_data_capability_dashboard_view_model
 from command_center_evidence_summary import build_a_share_evidence_radar_view_model
+from command_center_home_snapshot import build_tool_recovery_navigation_state
 from command_center_decision_summary import build_decision_summary_view_model
 from command_center_strategy_summary import build_strategy_summary_view_model
 
@@ -4678,6 +4679,12 @@ def _home_freshness_class(state):
     return "missing"
 
 
+def _apply_tool_recovery_navigation(action):
+    for key, value in build_tool_recovery_navigation_state(action).items():
+        if key and value is not None:
+            st.session_state[key] = value
+
+
 def render_home_action_snapshot(snapshot: dict | None = None):
     _inject_command_center_css()
     payload = snapshot or {}
@@ -5139,6 +5146,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     </section>
     """
     st.markdown(html, unsafe_allow_html=True)
+    valid_tool_recovery_actions = [item for item in tool_recovery_actions[:4] if isinstance(item, dict)]
+    if valid_tool_recovery_actions:
+        st.caption("旧工具恢复入口只负责切换到高级工具箱；不会自动运行扫描、回测、DeepSeek 或重型数据接口。")
+        nav_cols = st.columns(min(4, len(valid_tool_recovery_actions)))
+        for index, item in enumerate(valid_tool_recovery_actions):
+            with nav_cols[index % len(nav_cols)]:
+                st.button(
+                    f"打开{_home_text(item.get('label'), '高级工具')}",
+                    key=f"btn_open_tool_recovery_{_home_text(item.get('key'), index)}",
+                    help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
 
 
 def render_command_center_shell(active_nav: str = "综合推演中心 2.0"):

@@ -768,6 +768,17 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in actions))
         self.assertTrue(all(item["deepseek_called"] is False for item in actions))
 
+        radar_action = next(item for item in actions if item["label"] == "下一票雷达")
+        navigation_state = snapshot.build_tool_recovery_navigation_state(radar_action)
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "下一票雷达")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_policy"], "navigation_only")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_radar_packet")
+
+    def test_tool_recovery_navigation_state_is_safe_for_empty_action(self):
+        self.assertEqual(snapshot.build_tool_recovery_navigation_state({}), {})
+        self.assertEqual(snapshot.build_tool_recovery_navigation_state(object()), {})
+
     def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(
