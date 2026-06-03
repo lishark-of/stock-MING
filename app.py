@@ -4722,11 +4722,24 @@ def render_command_center_toolbox_entry():
             f"{row.get('label') or row.get('api') or '数据能力'}：{row.get('status_label') or row.get('state') or '待验证'}"
             for row in (status.get("matched_items") or [])[:3]
         )
+        issue_explainer = status.get("issue_explainer") or {}
+        root_causes = "；".join(
+            f"{row.get('label') or '原因'}：{row.get('detail') or row.get('next_action') or '待验证'}"
+            for row in (issue_explainer.get("root_cause_items") or [])[:2]
+            if isinstance(row, dict)
+        )
+        issue_next_actions = "；".join(
+            str(action)
+            for action in (issue_explainer.get("next_actions") or [])[:2]
+            if str(action).strip()
+        )
         item_html += f"""
         <div class="cc-mini-card">
           <div class="cc-mini-title">{html_escape(str(item.get("label") or "高级工具"))}</div>
           <div class="cc-mini-value">{html_escape(str(status.get("status_label") or "待检测"))}</div>
           <div class="cc-mini-desc">{html_escape(str(status.get("summary") or "尚未读取到匹配的数据能力检测结果。"))}</div>
+          <div class="cc-mini-desc">根因：{html_escape(root_causes or str(issue_explainer.get("short_answer") or "尚未检测；不会自动请求外部接口。"))}</div>
+          <div class="cc-mini-desc">建议：{html_escape(issue_next_actions or str(status.get("next_action") or item.get("gate") or "按钮手动触发"))}</div>
           <div class="cc-mini-desc">{html_escape(str(item.get("purpose") or "旧版工具保留。"))}</div>
           <div class="cc-mini-desc">依赖数据：{html_escape(dependencies or "本地缓存 / 手动刷新结果")}</div>
           <div class="cc-mini-desc">已匹配状态：{html_escape(matched_items or "暂无本地检测结果")}</div>

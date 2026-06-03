@@ -128,9 +128,12 @@ class CommandCenterToolboxSummaryTests(unittest.TestCase):
         self.assertEqual(by_key["next_ticket_radar"]["status_label"], "本会话跳过")
         self.assertEqual(by_key["margin_etf"]["status_label"], "权限不足")
         self.assertGreaterEqual(by_key["data_healthcheck"]["manual_count"], 1)
+        self.assertTrue(any(item["key"] == "endpoint_permission" for item in by_key["margin_etf"]["issue_explainer"]["root_cause_items"]))
+        self.assertTrue(any(item["key"] == "session_skip" for item in by_key["next_ticket_radar"]["issue_explainer"]["root_cause_items"]))
         self.assertIn("个股资金流", dumped)
         self.assertIn("使用缓存", dumped)
         self.assertIn("需要手动刷新", dumped)
+        self.assertIn("Tushare token 可用不等于", dumped)
         self.assertFalse(packet["deepseek_called"])
 
     def test_tool_capability_status_is_missing_when_no_local_check_matches(self):
@@ -142,6 +145,7 @@ class CommandCenterToolboxSummaryTests(unittest.TestCase):
 
         self.assertEqual(status["status"], "missing")
         self.assertEqual(status["status_label"], "待检测")
+        self.assertEqual(status["issue_explainer"]["root_cause_items"][0]["key"], "not_checked")
         self.assertIn("不会自动请求外部接口", status["summary"])
 
     def test_legacy_capability_map_includes_status_view_model(self):

@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+import command_center_data_issue_explainer as data_issue_explainer_service
+
 
 AVAILABLE_STATES = {"available", "ready", "ok", "success"}
 BLOCKED_STATES = {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}
@@ -342,6 +344,12 @@ def build_tool_data_capability_status(item: dict[str, Any], data_capability_pack
         summary = "尚未读取到匹配的数据能力检测结果；进入工具箱也不会自动请求外部接口。"
     else:
         summary = f"匹配 {len(matches)} 项｜可用 {len(available)}｜受限/失败 {len(blocked)}｜手动 {len(manual)}｜缓存/待验证 {len(stale)}"
+    issue_explainer = data_issue_explainer_service.build_data_issue_explainer_packet(
+        data_capability_packet={
+            "source": f"{item.get('label') or '高级工具'}数据能力匹配",
+            "items": matches,
+        }
+    )
     return {
         "key": str(item.get("key") or "advanced_tool"),
         "label": str(item.get("label") or "高级工具"),
@@ -354,6 +362,7 @@ def build_tool_data_capability_status(item: dict[str, Any], data_capability_pack
         "blocked_count": len(blocked),
         "manual_count": len(manual),
         "stale_count": len(stale),
+        "issue_explainer": issue_explainer,
         "next_action": str(item.get("gate") or "按钮手动触发"),
         "deepseek_called": False,
     }
