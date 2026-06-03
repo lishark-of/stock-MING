@@ -4671,6 +4671,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_capability = payload.get("data_capability") or {}
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
+    data_capability_console = payload.get("data_capability_console") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
     market_profile = payload.get("market_profile_evidence") or {}
@@ -4777,6 +4778,30 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     governance_checks = [str(item).strip() for item in (data_gap_report.get("next_manual_checks") or []) if str(item).strip()]
     capability_items = data_capability.get("items") or []
     capability_dashboard = build_data_capability_dashboard_view_model(data_capability, data_gap_report)
+    console_ready = data_capability_console.get("available_count") or 0
+    console_blocked = data_capability_console.get("blocked_count") or 0
+    console_manual = data_capability_console.get("manual_count") or 0
+    console_stale = data_capability_console.get("stale_count") or 0
+    console_tone = _home_text(data_capability_console.get("tone"), "missing")
+    console_queue_html = ""
+    console_queues = [
+        ("可用证据", data_capability_console.get("ready_items") or []),
+        ("阻断项", data_capability_console.get("blocked_items") or []),
+        ("手动刷新", data_capability_console.get("manual_items") or []),
+        ("缓存/待验证", data_capability_console.get("stale_items") or []),
+    ]
+    for queue_label, queue_items in console_queues:
+        if not queue_items:
+            continue
+        queue_text = "；".join(
+            f"{_home_text(item.get('provider'), '数据源')}:{_home_text(item.get('label'), '数据')}"
+            for item in queue_items[:3]
+            if isinstance(item, dict)
+        )
+        if queue_text:
+            console_queue_html += f"<div class='cc-home-item-meta'>{escape(queue_label)}：{escape(queue_text)}</div>"
+    if not console_queue_html:
+        console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
     issue_items = [item for item in (data_issue_explainer.get("items") or []) if isinstance(item, dict)]
     issue_html = ""
     for item in issue_items[:3]:
@@ -4961,6 +4986,14 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          <div class="cc-home-candidate">
+            <div class="cc-home-item-title">
+              数据能力控制台
+              <span class="cc-home-chip {escape(console_tone)}">{escape(_home_text(data_capability_console.get("headline"), "尚未检测数据能力"))}</span>
+            </div>
+            <div class="cc-home-item-meta">可用 {escape(_home_number(console_ready))}｜阻断 {escape(_home_number(console_blocked))}｜手动 {escape(_home_number(console_manual))}｜缓存/待验证 {escape(_home_number(console_stale))}</div>
+            {console_queue_html}
+          </div>
           <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
           {issue_html}
           <div class="cc-muted-note">数据能力诊断：{escape(_home_text(capability_dashboard.get("summary"), "尚未检测数据能力。"))}</div>

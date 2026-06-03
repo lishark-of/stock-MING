@@ -525,6 +525,41 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("本会话跳过重复请求", dumped)
         self.assertFalse(explainer["deepseek_called"])
 
+    def test_home_snapshot_builds_data_capability_console(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "last_data_source_healthcheck": {
+                "data_capability": {
+                    "source": "Unified data capability",
+                    "checked_at": f"{today}T10:01:00",
+                    "items": [
+                        {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用"},
+                        {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足"},
+                        {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                    ],
+                    "deepseek_called": False,
+                }
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+        console = payload["data_capability_console"]
+        dumped = json.dumps(console, ensure_ascii=False)
+
+        self.assertEqual(console["status"], "blocked")
+        self.assertEqual(console["available_count"], 1)
+        self.assertEqual(console["blocked_count"], 1)
+        self.assertEqual(console["manual_count"], 1)
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("融资融券", dumped)
+        self.assertIn("AkShare 重型刷新", dumped)
+        self.assertFalse(console["deepseek_called"])
+
     def test_home_snapshot_persists_market_packet(self):
         today = _dt.date.today().isoformat()
         state = {
