@@ -117,6 +117,14 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["recovery_actions"][0]["legacy_tab"], "今日关注池")
         self.assertIn("主导航切到高级工具箱", view_model["recovery_actions"][0]["navigation_label"])
         self.assertFalse(view_model["recovery_actions"][0]["deepseek_called"])
+        console = view_model["status_console"]
+        self.assertEqual(console["title"], "A股数据能力控制台")
+        self.assertEqual(console["decision_readiness_label"], "阻断加仓")
+        self.assertIn("受限 1", console["summary"])
+        by_group = {item["key"]: item for item in console["groups"]}
+        self.assertEqual(by_group["permission_denied"]["items"], ["个股资金流"])
+        self.assertEqual(by_group["available"]["count"], 3)
+        self.assertFalse(console["deepseek_called"])
         json.dumps(view_model, ensure_ascii=False)
 
     def test_user_data_diagnostic_explains_stale_or_empty_data(self):
@@ -133,6 +141,8 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertIn("等待交易日数据发布", view_model["next_action"])
         self.assertGreaterEqual(view_model["counts"]["stale_or_empty"], 2)
         self.assertIn("技术缺失项", view_model["summary"])
+        self.assertEqual(view_model["status_console"]["decision_readiness_label"], "谨慎验证")
+        self.assertIn("暂无数据 2", view_model["status_console"]["summary"])
 
     def test_user_data_diagnostic_marks_all_available(self):
         view_model = debug_summary.build_user_data_diagnostic_view_model(
@@ -148,6 +158,8 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["counts"]["available"], 4)
         self.assertEqual(view_model["recovery_actions"], [])
         self.assertIn("暂无需要恢复", view_model["recovery_summary"])
+        self.assertEqual(view_model["status_console"]["decision_readiness_label"], "可进入证据链")
+        self.assertIn("可用 4", view_model["status_console"]["summary"])
         self.assertIn("DeepSeek 解释", view_model["next_action"])
 
     def test_forbidden_imports(self):

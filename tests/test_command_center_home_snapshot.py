@@ -619,6 +619,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(diagnostic["recovery_actions"][0]["refresh_policy"], "button_gated")
         self.assertEqual(diagnostic["recovery_actions"][0]["legacy_tab"], "今日关注池")
         self.assertIn("高级工具箱", diagnostic["recovery_actions"][0]["navigation_label"])
+        self.assertEqual(diagnostic["status_console"]["title"], "A股数据能力控制台")
+        self.assertIn("受限 1", diagnostic["status_console"]["summary"])
+        self.assertIn("暂无数据 1", diagnostic["status_console"]["summary"])
+        self.assertEqual(diagnostic["status_console"]["decision_readiness_label"], "阻断加仓")
         self.assertFalse(payload["deepseek_called"])
 
     def test_loaded_home_snapshot_keeps_data_capability(self):

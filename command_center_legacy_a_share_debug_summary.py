@@ -46,6 +46,12 @@ A_SHARE_RECOVERY_CONFIG = {
         "api_hint": "Tushare stk_limit / limit_list_d / limit_cpt_list",
     },
 }
+STATUS_GROUP_CONFIG = {
+    "available": {"label": "可用", "tone": "ready", "empty": "暂无可用数据"},
+    "permission_denied": {"label": "受限", "tone": "failed", "empty": "暂无权限阻断"},
+    "stale_or_empty": {"label": "暂无数据", "tone": "stale", "empty": "暂无空数据项"},
+    "manual_required": {"label": "待手动刷新", "tone": "missing", "empty": "暂无待手动项"},
+}
 
 
 def as_mapping(value: Any) -> dict:
@@ -301,6 +307,54 @@ def _build_recovery_metadata(name: str, status: str, label: str) -> dict:
     }
 
 
+def build_status_console(items: Any = None) -> dict:
+    rows = [as_mapping(item) for item in as_list(items) if as_mapping(item)]
+    groups = []
+    for key, config in STATUS_GROUP_CONFIG.items():
+        matched = [item for item in rows if item.get("status") == key]
+        labels = [debug_text(item.get("label"), "A股数据", limit=40) for item in matched]
+        groups.append(
+            {
+                "key": key,
+                "label": config["label"],
+                "tone": config["tone"],
+                "count": len(matched),
+                "items": labels,
+                "summary": "、".join(labels) if labels else config["empty"],
+            }
+        )
+    counts = {group["key"]: group["count"] for group in groups}
+    if counts.get("permission_denied"):
+        readiness = "阻断加仓"
+        headline = "A股关键数据有权限阻断"
+    elif counts.get("stale_or_empty"):
+        readiness = "谨慎验证"
+        headline = "A股关键数据部分暂无当日结果"
+    elif counts.get("manual_required"):
+        readiness = "待手动刷新"
+        headline = "A股关键数据待手动检测"
+    elif counts.get("available"):
+        readiness = "可进入证据链"
+        headline = "A股关键数据已可用"
+    else:
+        readiness = "待检测"
+        headline = "A股关键数据尚未检测"
+    return {
+        "title": "A股数据能力控制台",
+        "headline": headline,
+        "decision_readiness_label": readiness,
+        "summary": (
+            f"可用 {counts.get('available', 0)}｜"
+            f"受限 {counts.get('permission_denied', 0)}｜"
+            f"暂无数据 {counts.get('stale_or_empty', 0)}｜"
+            f"待手动 {counts.get('manual_required', 0)}"
+        ),
+        "groups": groups,
+        "safe_mode_text": "只读取本地诊断结果；点击按钮前不会请求 Tushare、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+    }
+
+
 def build_user_data_diagnostic_view_model(
     verified_technical_facts: Any = None,
     moneyflow_data: Any = None,
@@ -401,6 +455,7 @@ def build_user_data_diagnostic_view_model(
         for item in items
         if item["status"] != "available"
     ]
+    status_console = build_status_console(items)
 
     return {
         "title": "A股数据能力诊断",
@@ -410,6 +465,7 @@ def build_user_data_diagnostic_view_model(
         "next_action": next_action,
         "safe_mode_text": "页面打开不会自动请求 Tushare、AkShare、DeepSeek 或回测；所有重型动作仍需手动按钮触发。",
         "items": items,
+        "status_console": status_console,
         "recovery_actions": recovery_actions,
         "recovery_summary": (
             f"优先处理 {recovery_actions[0]['label']}：{recovery_actions[0]['action_label']}。"

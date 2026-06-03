@@ -4749,6 +4749,46 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
       </div>
     """
+    a_share_status_console = a_share_user_diagnostic.get("status_console") or {}
+    a_share_status_group_html = ""
+    for group in (a_share_status_console.get("groups") or [])[:4]:
+        if not isinstance(group, dict):
+            continue
+        a_share_status_group_html += f"""
+          <div class="cc-home-item-meta">
+            <span class="cc-home-chip {escape(_home_text(group.get("tone"), "missing"))}">
+              {escape(_home_text(group.get("label"), "待检测"))} {escape(_home_number(group.get("count")))}
+            </span>
+            {escape(_home_text(group.get("summary"), "暂无明细"))}
+          </div>
+        """
+    if not a_share_status_group_html:
+        a_share_status_group_html = "<div class='cc-home-item-meta'>A股数据能力尚未检测；页面打开不会自动请求 Tushare。</div>"
+    a_share_status_console_tone = "missing"
+    if a_share_user_diagnostic.get("tone") == "success":
+        a_share_status_console_tone = "ready"
+    elif a_share_user_diagnostic.get("tone") == "warning":
+        a_share_status_console_tone = "failed"
+    elif a_share_user_diagnostic.get("tone") == "info":
+        a_share_status_console_tone = "stale"
+    a_share_status_console_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(a_share_status_console.get("title"), "A股数据能力控制台"))}
+            <span class="cc-home-chip {escape(a_share_status_console_tone)}">{escape(_home_text(a_share_status_console.get("headline"), "待检测"))}</span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(a_share_status_console.get("summary"), "可用 0｜受限 0｜暂无数据 0｜待手动 0"))}<br>
+            决策模式：{escape(_home_text(a_share_status_console.get("decision_readiness_label"), "待检测"))}
+          </div>
+        </div>
+        <div>
+          {a_share_status_group_html}
+          <div class="cc-home-profile-meta">{escape(_home_text(a_share_status_console.get("safe_mode_text"), "只读取本地诊断结果；不会自动请求外部接口。"))}</div>
+        </div>
+      </div>
+    """
 
     if candidates:
         candidate_html = ""
@@ -5101,6 +5141,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </aside>
       </div>
       {market_profile_html}
+      {a_share_status_console_html}
       <div class="cc-home-grid">
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">当前持仓动作</div>
