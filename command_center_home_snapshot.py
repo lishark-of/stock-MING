@@ -24,6 +24,7 @@ import command_center_market_profile_summary as market_profile_summary_service
 import command_center_data_issue_explainer as data_issue_explainer_service
 import command_center_data_capability_console as data_capability_console_service
 import command_center_a_share_capability_matrix as a_share_capability_matrix_service
+import command_center_legacy_a_share_debug_summary as legacy_a_share_debug_summary_service
 import market_data_capability as data_capability_service
 
 
@@ -224,6 +225,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_gap_report": data_gap_report_service.build_command_center_data_gap_report(),
         "data_issue_explainer": data_issue_explainer_service.build_data_issue_explainer_packet(),
         "data_capability_console": data_capability_console_service.build_data_capability_console_packet(),
+        "a_share_user_data_diagnostic": legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(),
         "data_recovery_actions": [],
         "tool_recovery_actions": [],
         "market_packet": market_packet_service.build_command_center_market_packet({}),
@@ -278,6 +280,10 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         snapshot.get("data_gap_report") or {},
         data_issue_explainer=snapshot.get("data_issue_explainer") or {},
         errors=snapshot.get("errors") or [],
+    )
+    snapshot["a_share_user_data_diagnostic"] = (
+        _as_mapping(snapshot.get("a_share_user_data_diagnostic"))
+        or legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model()
     )
     snapshot["data_recovery_actions"] = build_data_recovery_actions_snapshot(snapshot.get("data_capability_console") or {})
     snapshot["market_packet"] = market_packet_service.build_command_center_market_packet(
@@ -1130,6 +1136,34 @@ def build_home_action_snapshot(
         refresh_summary=refresh,
         errors=errors,
     )
+    a_share_professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
+    a_share_user_data_diagnostic = legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(
+        verified_technical_facts=(
+            _as_mapping(a_share_professional_facts.get("verified_technical_facts"))
+            or _as_mapping(state_map.get("verified_technical_facts"))
+            or _as_mapping(live.get("verified_technical_facts"))
+        ),
+        moneyflow_data=(
+            _as_mapping(a_share_professional_facts.get("moneyflow"))
+            or _as_mapping(state_map.get("moneyflow_data"))
+            or _as_mapping(state_map.get("a_share_moneyflow_data"))
+        ),
+        dragon_data=(
+            _as_mapping(a_share_professional_facts.get("dragon_tiger"))
+            or _as_mapping(state_map.get("dragon_data"))
+            or _as_mapping(state_map.get("a_share_dragon_tiger_data"))
+        ),
+        margin_data=(
+            _as_mapping(a_share_professional_facts.get("margin"))
+            or _as_mapping(state_map.get("margin_data"))
+            or _as_mapping(state_map.get("a_share_margin_data"))
+        ),
+        limit_emotion_data=(
+            _as_mapping(a_share_professional_facts.get("limit_emotion"))
+            or _as_mapping(state_map.get("limit_emotion_data"))
+            or _as_mapping(state_map.get("a_share_limit_emotion_data"))
+        ),
+    )
     data_recovery_actions = build_data_recovery_actions_snapshot(data_capability_console)
     risk_alerts = attach_hard_risk_risk_alerts(
         attach_data_capability_risk_alerts(
@@ -1187,6 +1221,7 @@ def build_home_action_snapshot(
         "data_gap_report": data_gap_report,
         "data_issue_explainer": data_issue_explainer,
         "data_capability_console": data_capability_console,
+        "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "tool_recovery_actions": [],
         "market_packet": market_packet,
@@ -1215,6 +1250,7 @@ def build_home_action_snapshot(
         empty["data_gap_report"] = snapshot["data_gap_report"]
         empty["data_issue_explainer"] = snapshot["data_issue_explainer"]
         empty["data_capability_console"] = snapshot["data_capability_console"]
+        empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
         empty["market_packet"] = snapshot["market_packet"]

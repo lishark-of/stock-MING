@@ -4700,6 +4700,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_recovery_actions = payload.get("data_recovery_actions") or data_capability_console.get("recovery_actions") or []
     tool_recovery_actions = payload.get("tool_recovery_actions") or []
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
+    a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
     market_profile = payload.get("market_profile_evidence") or {}
@@ -4943,6 +4944,38 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not matrix_html:
         matrix_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>A股数据能力尚未检测</div><div class='cc-home-item-meta'>页面打开不会自动请求 Tushare；点击刷新或数据源体检后再进入矩阵。</div></div>"
+    a_share_diagnostic_items_html = ""
+    for item in (a_share_user_diagnostic.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        a_share_diagnostic_items_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), "A股数据"))}：
+          {escape(_home_text(item.get("status_label"), "待验证"))}
+          ｜{escape(_home_text(item.get("reason"), "页面打开不会自动请求重接口。"))}
+        </div>
+        """
+    if not a_share_diagnostic_items_html:
+        a_share_diagnostic_items_html = "<div class='cc-home-item-meta'>尚未读取到 A股诊断明细；页面打开不会自动请求 Tushare。</div>"
+    a_share_diagnostic_tone = _home_text(a_share_user_diagnostic.get("tone"), "missing")
+    if a_share_diagnostic_tone == "warning":
+        a_share_diagnostic_tone = "failed"
+    elif a_share_diagnostic_tone == "success":
+        a_share_diagnostic_tone = "ready"
+    elif a_share_diagnostic_tone == "info":
+        a_share_diagnostic_tone = "stale"
+    a_share_diagnostic_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(a_share_user_diagnostic.get("title"), "A股数据能力诊断"))}
+            <span class="cc-home-chip {escape(a_share_diagnostic_tone)}">{escape(_home_text(a_share_user_diagnostic.get("headline"), "待手动刷新"))}</span>
+          </div>
+          <div class="cc-home-item-meta">原因：{escape(_home_text(a_share_user_diagnostic.get("summary"), "尚未检测 A股专业数据能力。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(a_share_user_diagnostic.get("next_action"), "点击 A股数据能力检测或对应刷新按钮。"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(a_share_user_diagnostic.get("safe_mode_text"), "页面打开不会自动请求外部重接口。"))}</div>
+          {a_share_diagnostic_items_html}
+        </div>
+        """
     fact_items = [item for item in (facts_packet.get("items") or []) if isinstance(item, dict)]
     fact_gap_summary = _home_text(facts_packet.get("gap_summary"), "")
     fact_next_checks = [str(item).strip() for item in (facts_packet.get("next_manual_checks") or []) if str(item).strip()]
@@ -5132,6 +5165,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             {recovery_action_html}
           </div>
           <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
+          {a_share_diagnostic_html}
           {root_cause_html}
           {issue_html}
           <div class="cc-muted-note">数据能力诊断：{escape(_home_text(capability_dashboard.get("summary"), "尚未检测数据能力。"))}</div>

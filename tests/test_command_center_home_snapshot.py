@@ -575,6 +575,45 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(capability["deepseek_called"])
         self.assertFalse(console["deepseek_called"])
 
+    def test_home_snapshot_builds_user_visible_a_share_diagnostic(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T09:30:00",
+            },
+            "a_share_professional_facts": {
+                "verified_technical_facts": {"available": False, "missing": ["verified_technical_facts"]},
+                "moneyflow": {
+                    "available": False,
+                    "api": "moneyflow",
+                    "error": "无接口访问权限",
+                    "updated_at": f"{today}T09:35:00",
+                },
+                "dragon_tiger": {
+                    "available": False,
+                    "api": "top_list/top_inst",
+                    "warning": "近30日暂未取得可验证数据",
+                    "updated_at": f"{today}T09:35:00",
+                },
+                "margin": {"available": True, "api": "margin_detail", "date": "20260603"},
+                "limit_emotion": {"available": True, "api": "stk_limit"},
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T09:40:00")
+        diagnostic = payload["a_share_user_data_diagnostic"]
+        dumped = json.dumps(diagnostic, ensure_ascii=False)
+
+        self.assertEqual(diagnostic["tone"], "warning")
+        self.assertIn("权限不足", diagnostic["headline"])
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("龙虎榜", dumped)
+        self.assertIn("暂未取得", dumped)
+        self.assertIn("页面打开不会自动请求", diagnostic["safe_mode_text"])
+        self.assertFalse(payload["deepseek_called"])
+
     def test_loaded_home_snapshot_keeps_data_capability(self):
         today = _dt.date.today().isoformat()
         with tempfile.TemporaryDirectory() as tmp:
