@@ -4691,6 +4691,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
     data_recovery_actions = payload.get("data_recovery_actions") or data_capability_console.get("recovery_actions") or []
+    tool_recovery_actions = payload.get("tool_recovery_actions") or []
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
@@ -4838,6 +4839,23 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not recovery_action_html:
         recovery_action_html = "<div class='cc-home-item-meta'>恢复动作：暂无需要手动恢复的数据源动作。</div>"
+    tool_recovery_html = ""
+    for item in tool_recovery_actions[:4]:
+        if not isinstance(item, dict):
+            continue
+        tool_recovery_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "旧工具能力"))}
+            <span class="cc-home-chip {escape('failed' if item.get('priority') == 1 else 'stale')}">{escape(_home_text(item.get("data_status"), item.get("status") or "待恢复"))}</span>
+          </div>
+          <div class="cc-home-item-meta">为什么：{escape(_home_text(item.get("reason"), "需要手动恢复旧工具能力。"))}</div>
+          <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 动作：{escape(_home_text(item.get("action_label"), "手动刷新"))}</div>
+          <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ 触发：手动按钮 ｜ DeepSeek：未调用</div>
+        </div>
+        """
+    if not tool_recovery_html:
+        tool_recovery_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>旧工具恢复队列为空</div><div class='cc-home-item-meta'>下一票雷达、融资 ETF、纪律/回测、量化推演已有可读 packet 或暂不需要恢复。</div></div>"
     issue_items = [item for item in (data_issue_explainer.get("items") or []) if isinstance(item, dict)]
     root_cause_items = [item for item in (data_issue_explainer.get("root_cause_items") or []) if isinstance(item, dict)]
     root_cause_html = ""
@@ -5074,6 +5092,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))} ｜ {escape(_home_text(evidence_vm.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
           <div class="cc-home-item-title">下一步证据补齐队列</div>
           {evidence_action_html}
+          <div class="cc-home-item-title">旧工具能力恢复队列</div>
+          {tool_recovery_html}
           {evidence_html}
           <div class="cc-muted-note">{escape(_home_text(facts_packet.get("summary"), "暂无可验证事实包。"))}</div>
           {fact_gap_html}

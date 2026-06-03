@@ -730,6 +730,98 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(loaded["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertFalse(loaded["data_recovery_actions"][0]["deepseek_called"])
 
+    def test_home_snapshot_builds_tool_recovery_actions_for_missing_old_tools(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                }
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+
+        actions = payload["tool_recovery_actions"]
+        labels = {item["label"] for item in actions}
+        writes_packets = {item["writes_packet"] for item in actions}
+        dumped = json.dumps(actions, ensure_ascii=False)
+
+        self.assertEqual(len(actions), 4)
+        self.assertIn("下一票雷达", labels)
+        self.assertIn("融资 ETF", labels)
+        self.assertIn("交易纪律/回测", labels)
+        self.assertIn("量化推演", labels)
+        self.assertIn("command_center_radar_packet", writes_packets)
+        self.assertIn("command_center_etf_packet", writes_packets)
+        self.assertIn("command_center_discipline_packet", writes_packets)
+        self.assertIn("command_center_quant_packet", writes_packets)
+        self.assertIn("高级工具箱", dumped)
+        self.assertIn("页面打开不会自动全市场扫描", dumped)
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in actions))
+        self.assertTrue(all(item["deepseek_called"] is False for item in actions))
+
+    def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [{"ticker": "002008.SZ", "name": "大族激光", "action_state": "可准备"}],
+                },
+                "command_center_etf_packet": {
+                    "status": "ready",
+                    "recommended_etfs": [{"code": "560780.SH", "name": "半导体 ETF", "score": 72}],
+                },
+                "command_center_discipline_packet": {
+                    "status": "ready",
+                    "summary": "已读取回测缓存。",
+                    "win_rate": 62,
+                },
+                "command_center_quant_packet": {
+                    "status": "ready",
+                    "score": 68,
+                    "summary": "量化推演已缓存。",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+
+        self.assertEqual(payload["tool_recovery_actions"], [])
+
+    def test_loaded_home_snapshot_keeps_tool_recovery_actions(self):
+        today = _dt.date.today().isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "等待",
+                        "updated_at": f"{today}T10:00:00",
+                    }
+                },
+                target="002008.SZ",
+                now=f"{today}T10:02:00",
+            )
+            snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+
+        dumped = json.dumps(loaded["tool_recovery_actions"], ensure_ascii=False)
+        self.assertIn("下一票雷达", dumped)
+        self.assertIn("融资 ETF", dumped)
+        self.assertIn("交易纪律/回测", dumped)
+        self.assertIn("量化推演", dumped)
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in loaded["tool_recovery_actions"]))
+        self.assertTrue(all(item["deepseek_called"] is False for item in loaded["tool_recovery_actions"]))
+
     def test_home_snapshot_persists_market_packet(self):
         today = _dt.date.today().isoformat()
         state = {

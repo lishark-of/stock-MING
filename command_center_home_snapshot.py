@@ -225,6 +225,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_issue_explainer": data_issue_explainer_service.build_data_issue_explainer_packet(),
         "data_capability_console": data_capability_console_service.build_data_capability_console_packet(),
         "data_recovery_actions": [],
+        "tool_recovery_actions": [],
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
@@ -312,6 +313,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
+    snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["risk_alerts"] = attach_hard_risk_risk_alerts(
         snapshot.get("risk_alerts") or {},
         snapshot.get("hard_risk_packet") or {},
@@ -518,6 +520,91 @@ def build_data_recovery_actions_snapshot(data_capability_console: Any = None, li
         if len(actions) >= max(1, int(limit or MAX_CAPABILITY_ITEMS)):
             break
     return actions
+
+
+TOOL_RECOVERY_CONFIG = {
+    "radar_packet": {
+        "key": "next_ticket_radar",
+        "label": "下一票雷达",
+        "action_label": "手动运行下一票雷达",
+        "toolbox_entry": "高级工具箱 / 下一票雷达",
+        "writes_packet": "command_center_radar_packet",
+        "reason": "候选池来自缓存或手动扫描；缺失时不能把空候选当作无机会。",
+    },
+    "etf_packet": {
+        "key": "margin_etf",
+        "label": "融资 ETF",
+        "action_label": "手动刷新 ETF 配置/日线",
+        "toolbox_entry": "高级工具箱 / 融资 ETF",
+        "writes_packet": "command_center_etf_packet",
+        "reason": "ETF 配置和赛道强弱来自本地快照；缺失时不能放大融资或追高。",
+    },
+    "discipline_packet": {
+        "key": "discipline_backtest",
+        "label": "交易纪律/回测",
+        "action_label": "手动运行回测或读取纪律缓存",
+        "toolbox_entry": "高级工具箱 / 交易纪律实验室",
+        "writes_packet": "command_center_discipline_packet",
+        "reason": "回测必须按钮触发；缺少纪律缓存时只能观察或降风险。",
+    },
+    "quant_packet": {
+        "key": "quant_projection",
+        "label": "量化推演",
+        "action_label": "手动生成量化推演",
+        "toolbox_entry": "高级工具箱 / 量化推演",
+        "writes_packet": "command_center_quant_packet",
+        "reason": "完整量化推演和回测必须手动触发；缺失时不能把评分写成事实。",
+    },
+}
+
+
+def _tool_recovery_priority(packet: Mapping[str, Any]) -> int:
+    status = _to_text(packet.get("status"), "waiting")
+    data_status = _to_text(packet.get("data_status") or packet.get("cache_state"), "missing")
+    if status == "failed":
+        return 1
+    if data_status == "missing" or status in {"waiting", "missing"}:
+        return 2
+    if data_status in {"cached", "stale"} or status == "partial":
+        return 3
+    return 4
+
+
+def _tool_needs_recovery(packet: Mapping[str, Any]) -> bool:
+    status = _to_text(packet.get("status"), "waiting")
+    data_status = _to_text(packet.get("data_status") or packet.get("cache_state"), "missing")
+    if status == "failed":
+        return True
+    if data_status in {"missing", "cached", "stale"}:
+        return True
+    return status in {"waiting", "missing", "partial"}
+
+
+def build_tool_recovery_actions_snapshot(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> list[dict]:
+    payload = _as_mapping(snapshot)
+    actions = []
+    for packet_key, config in TOOL_RECOVERY_CONFIG.items():
+        packet = _as_mapping(payload.get(packet_key))
+        if not packet or not _tool_needs_recovery(packet):
+            continue
+        label = config["label"]
+        actions.append(
+            {
+                "key": config["key"],
+                "label": label,
+                "status": _to_text(packet.get("status"), "waiting"),
+                "data_status": _to_text(packet.get("data_status") or packet.get("cache_state"), "missing"),
+                "priority": _tool_recovery_priority(packet),
+                "reason": _to_text(packet.get("manual_required_text") or packet.get("backtest_required_text") or config["reason"]),
+                "action_label": config["action_label"],
+                "toolbox_entry": config["toolbox_entry"],
+                "writes_packet": config["writes_packet"],
+                "refresh_policy": "button_gated",
+                "deepseek_called": False,
+            }
+        )
+    actions = sorted(actions, key=lambda item: (item["priority"], item["label"]))
+    return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
 def resolve_data_capability_packet(state: Any = None) -> dict:
@@ -980,6 +1067,7 @@ def build_home_action_snapshot(
         "data_issue_explainer": data_issue_explainer,
         "data_capability_console": data_capability_console,
         "data_recovery_actions": data_recovery_actions,
+        "tool_recovery_actions": [],
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
         "errors": errors,
@@ -1007,6 +1095,7 @@ def build_home_action_snapshot(
         empty["data_issue_explainer"] = snapshot["data_issue_explainer"]
         empty["data_capability_console"] = snapshot["data_capability_console"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
+        empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
         empty["market_packet"] = snapshot["market_packet"]
         empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
         empty["radar_packet"] = snapshot["radar_packet"]
@@ -1021,6 +1110,7 @@ def build_home_action_snapshot(
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["errors"] = errors
         return empty
+    snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     return sanitize_snapshot_payload(snapshot)
 
 
