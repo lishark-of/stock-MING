@@ -9,6 +9,7 @@ from typing import Any
 
 import command_center_facts_packet as facts_packet_service
 import command_center_radar_packet as radar_packet_service
+import command_center_etf_packet as etf_packet_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -171,6 +172,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         },
         "next_ticket_candidates": [],
         "radar_packet": radar_packet_service.build_command_center_radar_packet({}),
+        "etf_packet": etf_packet_service.build_command_center_etf_packet({}),
         "margin_etf_summary": {
             "current_margin_ratio": None,
             "recommended_margin_ratio": None,
@@ -228,6 +230,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["radar_packet"] = radar_packet_service.build_command_center_radar_packet(
         {"command_center_radar_packet": snapshot.get("radar_packet") or {}}
+    )
+    snapshot["etf_packet"] = etf_packet_service.build_command_center_etf_packet(
+        {"command_center_etf_packet": snapshot.get("etf_packet") or {}}
     )
     return snapshot
 
@@ -533,22 +538,26 @@ def _current_margin_ratio_from_state(state: Mapping[str, Any], allocation: Mappi
     return round(ratio, 2)
 
 
-def build_margin_etf_summary(state: Any = None, live_packet: Any = None) -> dict:
+def build_margin_etf_summary(state: Any = None, live_packet: Any = None, etf_packet: Any = None) -> dict:
     state_map = _as_mapping(state)
     live_section = _as_mapping(_as_mapping(live_packet).get("margin_etf"))
+    etf = _as_mapping(etf_packet) or etf_packet_service.build_command_center_etf_packet(state_map, live_packet)
     allocation = _as_mapping(state_map.get("legacy_margin_etf_allocation_result"))
-    candidates = _flatten_etf_candidates(allocation.get("selected_etf_candidates") or allocation.get("recommended_etfs"))
-    watch_not_chase = allocation.get("watch_not_chase") or allocation.get("watch_not_chase_etfs") or []
+    candidates = _as_list(etf.get("recommended_etfs")) or _flatten_etf_candidates(allocation.get("selected_etf_candidates") or allocation.get("recommended_etfs"))
+    watch_not_chase = etf.get("watch_not_chase") or allocation.get("watch_not_chase") or allocation.get("watch_not_chase_etfs") or []
     watch_not_chase_items = [_to_text(item) for item in _as_list(watch_not_chase)]
     watch_not_chase_items = [item for item in watch_not_chase_items if item]
     if not watch_not_chase_items:
         watch_not_chase_items = ["不追高 ETF；等待回踩、量能和风险线确认。"]
+    current_margin_ratio = _to_number(etf.get("current_margin_ratio"))
+    if current_margin_ratio is None:
+        current_margin_ratio = _current_margin_ratio_from_state(state_map, allocation)
     return {
-        "current_margin_ratio": _current_margin_ratio_from_state(state_map, allocation),
-        "recommended_margin_ratio": _to_number(live_section.get("recommended_margin_ratio") or allocation.get("recommended_margin_ratio")),
-        "recommended_cash_ratio": _to_number(live_section.get("recommended_cash_ratio") or allocation.get("recommended_cash_ratio")),
-        "today_main_direction": _to_text(live_section.get("today_main_direction") or allocation.get("today_main_direction") or allocation.get("action_state"), "待刷新"),
-        "recommended_etfs": candidates,
+        "current_margin_ratio": current_margin_ratio,
+        "recommended_margin_ratio": _to_number(etf.get("recommended_margin_ratio") or live_section.get("recommended_margin_ratio") or allocation.get("recommended_margin_ratio")),
+        "recommended_cash_ratio": _to_number(etf.get("recommended_cash_ratio") or live_section.get("recommended_cash_ratio") or allocation.get("recommended_cash_ratio")),
+        "today_main_direction": _to_text(etf.get("today_main_direction") or live_section.get("today_main_direction") or allocation.get("today_main_direction") or allocation.get("action_state"), "待刷新"),
+        "recommended_etfs": candidates[:MAX_CANDIDATES],
         "watch_not_chase": watch_not_chase_items[:MAX_CANDIDATES],
     }
 
@@ -624,6 +633,7 @@ def build_home_action_snapshot(
         )
     if radar_packet is None:
         radar_packet = radar_packet_service.build_command_center_radar_packet(state_map, live)
+    etf_packet = etf_packet_service.build_command_center_etf_packet(state_map, live)
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")
@@ -651,7 +661,8 @@ def build_home_action_snapshot(
             {"command_center_radar_packet": radar_packet},
             live_packet=live,
         ),
-        "margin_etf_summary": build_margin_etf_summary(state_map, live),
+        "etf_packet": etf_packet,
+        "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
         "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
         "data_coverage": coverage,
         "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
@@ -675,6 +686,7 @@ def build_home_action_snapshot(
         empty["data_capability"] = snapshot["data_capability"]
         empty["facts_packet"] = snapshot["facts_packet"]
         empty["radar_packet"] = snapshot["radar_packet"]
+        empty["etf_packet"] = snapshot["etf_packet"]
         empty["errors"] = errors
         return empty
     return sanitize_snapshot_payload(snapshot)
@@ -689,6 +701,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
         or _as_mapping(payload.get("strategy_packet"))
         or _as_list(payload.get("next_ticket_candidates"))
         or _as_list(_as_mapping(payload.get("radar_packet")).get("top_candidates"))
+        or _as_list(_as_mapping(payload.get("etf_packet")).get("recommended_etfs"))
         or _as_list(_as_mapping(payload.get("margin_etf_summary")).get("recommended_etfs"))
         or _as_list(_as_mapping(payload.get("facts_packet")).get("items"))
     )

@@ -147,6 +147,38 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["next_ticket_candidates"][0]["trigger_condition"], "放量站稳 MA20")
         self.assertFalse(payload["radar_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_etf_packet_and_uses_it_for_summary(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "command_center_etf_packet": {
+                "status": "ready",
+                "updated_at": f"{today}T10:02:00",
+                "current_margin_ratio": 28,
+                "recommended_margin_ratio": 20,
+                "recommended_cash_ratio": 22,
+                "today_main_direction": "半导体 / 防守",
+                "recommended_etfs": [
+                    {"code": "560780.SH", "name": "半导体设备ETF广发", "bucket": "科技成长ETF", "score": 74},
+                    {"code": "518880.SH", "name": "黄金 ETF", "bucket": "防守ETF", "score": 66},
+                ],
+                "watch_not_chase": ["不追高 ETF"],
+                "deepseek_called": False,
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:03:00")
+
+        self.assertEqual(payload["etf_packet"]["recommended_etfs"][0]["code"], "560780.SH")
+        self.assertEqual(payload["margin_etf_summary"]["recommended_margin_ratio"], 20)
+        self.assertEqual(payload["margin_etf_summary"]["recommended_etfs"][0]["name"], "半导体设备ETF广发")
+        self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
+        self.assertFalse(payload["etf_packet"]["deepseek_called"])
+
     def test_deepseek_defaults_to_not_called(self):
         payload = snapshot.build_home_action_snapshot({
             "command_center_decision_packet": {"overall_action": "等待"}

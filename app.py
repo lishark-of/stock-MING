@@ -19,6 +19,7 @@ import command_center_projection as projection_service
 import command_center_analysis_methods as analysis_methods_service
 import command_center_facts_packet as facts_packet_service
 import command_center_radar_packet as radar_packet_service
+import command_center_etf_packet as etf_packet_service
 import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -3387,6 +3388,15 @@ def _cc_refresh_margin_etf_config(target="", market_type="", price=None, positio
     allocation["summary"] = "已刷新融资 ETF 本地配置快照；深度行情、全量发现和同赛道比较仍需在旧版/深度入口手动触发。"
     st.session_state["legacy_margin_etf_allocation_result"] = clone_command_center_packet(allocation)
     st.session_state.pop("margin_etf_intraday_snapshot", None)
+    st.session_state["command_center_etf_packet"] = etf_packet_service.build_command_center_etf_packet(
+        st.session_state,
+        live_packet={
+            "margin_etf": {
+                "updated_at": token,
+                "source": "融资 ETF 本地配置快照",
+            }
+        },
+    )
     _cc_mark_module("margin_etf", "已刷新", "融资 ETF 本地配置快照")
     return {
         "module": "融资 ETF",
