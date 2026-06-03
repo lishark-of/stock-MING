@@ -13,6 +13,7 @@ import command_center_etf_packet as etf_packet_service
 import command_center_discipline_packet as discipline_packet_service
 import command_center_data_gap_report as data_gap_report_service
 import command_center_market_packet as market_packet_service
+import command_center_quant_packet as quant_packet_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -177,6 +178,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "radar_packet": radar_packet_service.build_command_center_radar_packet({}),
         "etf_packet": etf_packet_service.build_command_center_etf_packet({}),
         "discipline_packet": discipline_packet_service.build_command_center_discipline_packet({}),
+        "quant_packet": quant_packet_service.build_command_center_quant_packet({}),
         "margin_etf_summary": {
             "current_margin_ratio": None,
             "recommended_margin_ratio": None,
@@ -250,6 +252,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["discipline_packet"] = discipline_packet_service.build_command_center_discipline_packet(
         {"command_center_discipline_packet": snapshot.get("discipline_packet") or {}}
+    )
+    snapshot["quant_packet"] = quant_packet_service.build_command_center_quant_packet(
+        {"command_center_quant_packet": snapshot.get("quant_packet") or {}}
     )
     return snapshot
 
@@ -657,6 +662,7 @@ def build_home_action_snapshot(
         target=target,
     )
     market_packet = market_packet_service.build_command_center_market_packet(state_map, live)
+    quant_packet = quant_packet_service.build_command_center_quant_packet(state_map, live, target=target)
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")
@@ -698,6 +704,7 @@ def build_home_action_snapshot(
         ),
         "etf_packet": etf_packet,
         "discipline_packet": discipline_packet,
+        "quant_packet": quant_packet,
         "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
         "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
         "data_coverage": coverage,
@@ -725,6 +732,7 @@ def build_home_action_snapshot(
         empty["radar_packet"] = snapshot["radar_packet"]
         empty["etf_packet"] = snapshot["etf_packet"]
         empty["discipline_packet"] = snapshot["discipline_packet"]
+        empty["quant_packet"] = snapshot["quant_packet"]
         empty["errors"] = errors
         return empty
     return sanitize_snapshot_payload(snapshot)
@@ -738,6 +746,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
         _as_mapping(payload.get("decision_packet"))
         or _as_mapping(payload.get("strategy_packet"))
         or _as_mapping(payload.get("market_packet")).get("data_status") == "ready"
+        or _as_mapping(payload.get("quant_packet")).get("data_status") == "ready"
         or _as_list(payload.get("next_ticket_candidates"))
         or _as_list(_as_mapping(payload.get("radar_packet")).get("top_candidates"))
         or _as_list(_as_mapping(payload.get("etf_packet")).get("recommended_etfs"))

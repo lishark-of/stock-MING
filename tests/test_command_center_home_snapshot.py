@@ -464,6 +464,33 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["market_packet"]["limit_up_count"], 38)
         self.assertFalse(payload["market_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_quant_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "legacy_quant_result": {
+                "status": "completed",
+                "generated_at": f"{today}T10:01:00",
+                "target": "002008.SZ",
+                "market_type": "A股",
+                "score": 68,
+                "direction": "偏积极但需验证",
+                "summary": "轻量量化摘要已生成。",
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["quant_packet"]["data_status"], "ready")
+        self.assertEqual(payload["quant_packet"]["score"], 68)
+        self.assertEqual(payload["quant_packet"]["action_state"], "轻仓验证")
+        self.assertIn("手动触发", payload["quant_packet"]["manual_required_text"])
+        self.assertFalse(payload["quant_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_command_center_facts_packet(self):
         today = _dt.date.today().isoformat()
         state = {

@@ -22,6 +22,7 @@ import command_center_radar_packet as radar_packet_service
 import command_center_etf_packet as etf_packet_service
 import command_center_discipline_packet as discipline_packet_service
 import command_center_market_packet as market_packet_service
+import command_center_quant_packet as quant_packet_service
 import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -3326,6 +3327,10 @@ def _cc_generate_quant_summary(target="", market_type="", price=None, position_p
         "deepseek_called": False,
     }
     st.session_state["legacy_quant_result"] = clone_command_center_packet(quant_result)
+    st.session_state["command_center_quant_packet"] = quant_packet_service.build_command_center_quant_packet(
+        st.session_state,
+        target=target,
+    )
     _cc_mark_module("quant", "已刷新", "综合推演中心轻量量化摘要")
     return {"module": "量化推演", "status": "ok", "updated_at": quant_result["generated_at"]}
 
@@ -3514,9 +3519,9 @@ def _build_market_live_section():
 
 
 def _build_quant_live_section():
-    packet = st.session_state.get("legacy_quant_result") or {}
+    packet = quant_packet_service.build_command_center_quant_packet(st.session_state)
     meta = _cc_get_module_meta("quant")
-    if not packet:
+    if packet.get("data_status") == "missing":
         return {
             "status": "未刷新",
             "score": None,
@@ -3526,21 +3531,18 @@ def _build_quant_live_section():
             "is_fresh": False,
             "last_error": meta.get("error", ""),
         }
-    status = "已刷新" if packet.get("status") == "completed" else "使用缓存"
-    target_text = _cc_first_text(packet.get("target"), default="当前标的")
-    market_text = _cc_first_text(packet.get("market_type"), default="当前市场")
-    summary = _cc_first_text(
-        packet.get("summary"),
-        f"{target_text} / {market_text} 已生成量化推演记录；旧版当前只保存状态、标的和市场，详细推演长文暂未结构化接入。",
-    )
     return {
-        "status": status,
+        "status": "已刷新" if packet.get("data_status") == "ready" else "使用缓存",
         "score": _cc_round(packet.get("score"), 0),
-        "direction": _cc_first_text(packet.get("direction"), packet.get("label"), default="已生成"),
-        "summary": summary,
-        "updated_at": packet.get("generated_at", ""),
+        "direction": _cc_first_text(packet.get("direction"), default="待验证"),
+        "summary": packet.get("summary") or "量化摘要待验证。",
+        "updated_at": packet.get("updated_at", ""),
         "source": packet.get("source") or "量化推演",
-        "is_fresh": packet.get("status") == "completed",
+        "action_state": packet.get("action_state") or "待验证",
+        "confidence": packet.get("confidence") or "低",
+        "evidence_items": packet.get("evidence_items") or [],
+        "risk_notes": packet.get("risk_notes") or [],
+        "is_fresh": packet.get("data_status") == "ready",
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
     }
 
