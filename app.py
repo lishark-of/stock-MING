@@ -29,6 +29,7 @@ import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
 import command_center_legacy_packet_sync as legacy_packet_sync_service
+import command_center_legacy_a_share_gate as legacy_a_share_gate_service
 import command_center_evidence_summary as evidence_summary_service
 import market_data_capability as data_capability
 import command_center_toolbox_summary as toolbox_summary_service
@@ -7520,7 +7521,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "pulled_at": datetime.datetime.now().isoformat(timespec="seconds"),
             }
             st.rerun()
-        st.caption("刷新会清除本页相关 Tushare 缓存，并重新请求当前可用最新数据；若 Tushare 尚未发布当天数据，仍会显示最新可得交易日。")
+        st.caption("刷新会清除本页相关 Tushare 缓存；专业接口仍需点击对应检测/刷新按钮后才会请求，避免页面打开自动打重接口。")
 
     @st.cache_data(ttl=600, show_spinner=False)
     def build_market_style_fact_packet():
@@ -9755,13 +9756,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         # 提取 A 股代码（去后缀）
         stock_code = _cn_stock_code_6(target)
         professional_facts = professional_facts or {}
-        reuse_professional_facts = bool(
-            professional_facts.get("available")
-            or any(
-                isinstance(professional_facts.get(key), dict) and professional_facts.get(key)
-                for key in ["dragon_tiger", "margin", "moneyflow", "limit_emotion", "chip_radar"]
-            )
-        )
+        reuse_professional_facts = legacy_a_share_gate_service.has_a_share_professional_cache(professional_facts)
         
         st.markdown("""
         <div class="hf-ios-section hf-ios-fade-up hf-ios-stagger-1">
@@ -9771,7 +9766,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         st.caption("A股专业区已加载｜chip radar feature present｜commit b96737a")
         st.caption("功能标记：chip radar enabled｜Tushare 15000 features active")
         st.caption("chip radar module loaded")
-        st.caption("本页 A股专业事实在当前短时间内复用缓存，可刷新页面或等待缓存过期后重新拉取。")
+        st.caption("本页优先复用 A股专业事实缓存；无缓存时只显示待刷新状态，不在页面打开时自动请求 Tushare。")
         render_tushare_refresh_control(stock_code, "a_share_professional")
 
         cn_status = st.status("正在检查 A股龙虎榜、融资融券、资金流向与筹码事实...", expanded=False)
@@ -9785,47 +9780,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             cn_progress.progress(100)
             cn_status.write("完成：复用主诊断A股专业事实包")
         else:
-            dragon_data = _run_progress_stage(
-                "检查龙虎榜",
-                lambda: cached_cn_dragon_tiger_board(stock_code),
-                cn_status,
-                cn_progress,
-                25,
-                has_data=lambda data: bool(data and data.get("available")),
+            manual_gate_facts = legacy_a_share_gate_service.build_manual_gate_a_share_professional_facts(
+                stock_code,
+                updated_at=datetime.datetime.now().isoformat(timespec="seconds"),
             )
-            margin_data = _run_progress_stage(
-                "检查融资融券",
-                lambda: cached_cn_margin_data(stock_code),
-                cn_status,
-                cn_progress,
-                50,
-                has_data=lambda data: bool(data and data.get("available")),
-            )
-            moneyflow_data = _run_progress_stage(
-                "检查个股资金流向",
-                lambda: cached_cn_moneyflow_data(stock_code),
-                cn_status,
-                cn_progress,
-                75,
-                has_data=lambda data: bool(data and data.get("available")),
-            )
-            limit_emotion_data = _run_progress_stage(
-                "检查涨跌停情绪",
-                lambda: cached_cn_limit_emotion_data(stock_code, current_price=price),
-                cn_status,
-                cn_progress,
-                90,
-                has_data=lambda data: bool(data and data.get("available")),
-            )
-            chip_radar_data = _run_progress_stage(
-                "检查筹码/胜率",
-                lambda: get_cn_chip_radar_data(stock_code, current_price=price),
-                cn_status,
-                cn_progress,
-                100,
-                has_data=lambda data: bool(data and data.get("available")),
-            )
-        cn_status.update(label="完成：A股盘口与情绪数据检查", state="complete")
+            dragon_data = manual_gate_facts.get("dragon_tiger") or {}
+            margin_data = manual_gate_facts.get("margin") or {}
+            moneyflow_data = manual_gate_facts.get("moneyflow") or {}
+            limit_emotion_data = manual_gate_facts.get("limit_emotion") or {}
+            chip_radar_data = manual_gate_facts.get("chip_radar") or {}
+            cn_progress.progress(100)
+            cn_status.write("待手动刷新：未自动请求 Tushare 专业接口")
+            st.info("未检测到 A股专业事实缓存；为避免页面打开自动打重接口，当前只展示待刷新状态。请使用综合中心数据能力检测或对应手动刷新按钮。")
+        cn_status.update(label="完成：A股盘口与情绪状态整理", state="complete")
 
         a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(
             {
