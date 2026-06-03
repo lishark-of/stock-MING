@@ -4,7 +4,9 @@ from collections.abc import Mapping
 from typing import Any
 
 import command_center_discipline_packet as discipline_packet_service
+import command_center_etf_packet as etf_packet_service
 import command_center_quant_packet as quant_packet_service
+import command_center_radar_packet as radar_packet_service
 
 
 def as_mapping(value: Any) -> dict:
@@ -34,3 +36,13 @@ def sync_legacy_discipline_packet(state: Any = None, live_packet: Any = None, ta
         live_packet=live_packet,
         target=target,
     )
+
+
+def sync_legacy_etf_packet(state: Any = None, live_packet: Any = None) -> dict:
+    payload = _state_without(state, "command_center_etf_packet")
+    return etf_packet_service.build_command_center_etf_packet(payload, live_packet=live_packet)
+
+
+def sync_legacy_radar_packet(state: Any = None, live_packet: Any = None) -> dict:
+    payload = _state_without(state, "command_center_radar_packet")
+    return radar_packet_service.build_command_center_radar_packet(payload, live_packet=live_packet)

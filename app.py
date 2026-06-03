@@ -19,8 +19,6 @@ import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
 import command_center_analysis_methods as analysis_methods_service
 import command_center_facts_packet as facts_packet_service
-import command_center_radar_packet as radar_packet_service
-import command_center_etf_packet as etf_packet_service
 import command_center_discipline_packet as discipline_packet_service
 import command_center_market_packet as market_packet_service
 import command_center_quant_packet as quant_packet_service
@@ -3418,7 +3416,7 @@ def _cc_refresh_margin_etf_config(target="", market_type="", price=None, positio
     allocation["summary"] = "已刷新融资 ETF 本地配置快照；深度行情、全量发现和同赛道比较仍需在旧版/深度入口手动触发。"
     st.session_state["legacy_margin_etf_allocation_result"] = clone_command_center_packet(allocation)
     st.session_state.pop("margin_etf_intraday_snapshot", None)
-    st.session_state["command_center_etf_packet"] = etf_packet_service.build_command_center_etf_packet(
+    st.session_state["command_center_etf_packet"] = legacy_packet_sync_service.sync_legacy_etf_packet(
         st.session_state,
         live_packet={
             "margin_etf": {
@@ -3459,7 +3457,7 @@ def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_pr
     st.session_state["radar_scan_summary"] = clone_command_center_packet(summary)
     st.session_state["radar_scan_status"] = scan_state["status"]
     st.session_state["radar_scan_finished_at"] = token
-    st.session_state["command_center_radar_packet"] = radar_packet_service.build_command_center_radar_packet(
+    st.session_state["command_center_radar_packet"] = legacy_packet_sync_service.sync_legacy_radar_packet(
         st.session_state,
         live_packet={"next_ticket": {"updated_at": token, "source": "下一票雷达本地缓存快照"}},
     )
@@ -13438,6 +13436,15 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         allocation_result["generated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
         st.session_state["legacy_margin_etf_allocation_result"] = clone_command_center_packet(allocation_result)
+        st.session_state["command_center_etf_packet"] = legacy_packet_sync_service.sync_legacy_etf_packet(
+            st.session_state,
+            live_packet={
+                "margin_etf": {
+                    "updated_at": allocation_result.get("generated_at", ""),
+                    "source": "融资 ETF 本地配置快照",
+                }
+            },
+        )
 
         account_risk_profile = {
             "account": margin_account,
@@ -13703,6 +13710,16 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             position_profile=position_profile_preview,
             callbacks=radar_callbacks,
         )
+        if st.session_state.get("radar_scan_results"):
+            st.session_state["command_center_radar_packet"] = legacy_packet_sync_service.sync_legacy_radar_packet(
+                st.session_state,
+                live_packet={
+                    "next_ticket": {
+                        "updated_at": st.session_state.get("radar_scan_finished_at", ""),
+                        "source": "下一票雷达本地缓存快照",
+                    }
+                },
+            )
     # 模块 D：云端外脑
     if legacy_tab == "云端外脑":
         st.markdown("### ☁️ 云端 RAG 向量记忆中心")

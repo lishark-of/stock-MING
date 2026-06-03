@@ -66,6 +66,94 @@ class CommandCenterLegacyPacketSyncTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
+    def test_etf_sync_prefers_latest_allocation_over_existing_packet(self):
+        packet = sync.sync_legacy_etf_packet(
+            {
+                "command_center_etf_packet": {
+                    "status": "ready",
+                    "recommended_etfs": [{"code": "OLD", "name": "旧 ETF"}],
+                    "source": "旧 packet",
+                },
+                "legacy_margin_etf_allocation_result": {
+                    "status": "completed",
+                    "generated_at": "2026-06-03T10:00:00",
+                    "recommended_margin_ratio": 12,
+                    "recommended_cash_ratio": 35,
+                    "today_main_direction": "半导体回踩确认",
+                    "recommended_etfs": [
+                        {
+                            "code": "560780.SH",
+                            "name": "半导体 ETF",
+                            "bucket": "科技成长ETF",
+                            "score": 78,
+                            "action_state": "可小幅配置",
+                            "trigger_condition": "回踩不破 MA20 且成交额放大。",
+                        }
+                    ],
+                    "summary": "最新融资 ETF 配置结果。",
+                },
+                "legacy_margin_etf_daily_packet": {
+                    "updated_at": "2026-06-03T10:00:00",
+                    "source": "融资 ETF 本地配置快照",
+                    "daily_dataset": {"status": "manual_basic_local_config"},
+                },
+            },
+            live_packet={"margin_etf": {"updated_at": "2026-06-03T10:00:00"}},
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["recommended_etfs"][0]["code"], "560780.SH")
+        self.assertEqual(packet["recommended_etfs"][0]["name"], "半导体 ETF")
+        self.assertEqual(packet["today_main_direction"], "半导体回踩确认")
+        self.assertEqual(packet["data_status"], "ready")
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_radar_sync_prefers_latest_scan_over_existing_packet(self):
+        packet = sync.sync_legacy_radar_packet(
+            {
+                "command_center_radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [{"ticker": "OLD", "name": "旧候选"}],
+                    "source": "旧 packet",
+                },
+                "radar_scan_results": {
+                    "generated_at": "2026-06-03T10:00:00",
+                    "status": "completed",
+                    "summary": {
+                        "source_mode": "下一票雷达本地缓存",
+                        "deepseek_called": False,
+                    },
+                    "rule_rows": [
+                        {
+                            "candidate": {"ticker": "002008.SZ", "name": "大族激光"},
+                            "score": {
+                                "total_score": 81,
+                                "battle_state": "可准备",
+                                "trigger_conditions": ["放量站稳 MA20"],
+                                "invalid_conditions": ["跌破 MA20"],
+                            },
+                        }
+                    ],
+                },
+                "radar_scan_summary": {
+                    "source_mode": "下一票雷达本地缓存",
+                    "deepseek_called": False,
+                },
+                "radar_scan_status": "completed",
+                "radar_scan_finished_at": "2026-06-03T10:00:00",
+            },
+            live_packet={"next_ticket": {"updated_at": "2026-06-03T10:00:00"}},
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["top_candidates"][0]["ticker"], "002008.SZ")
+        self.assertEqual(packet["top_candidates"][0]["name"], "大族激光")
+        self.assertEqual(packet["top_candidates"][0]["status_label"], "可准备")
+        self.assertEqual(packet["data_status"], "ready")
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
     def test_sync_helpers_do_not_mutate_input_state(self):
         state = {
             "command_center_quant_packet": {"status": "ready", "score": 10},
