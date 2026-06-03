@@ -635,6 +635,27 @@ def build_tool_recovery_navigation_state(action: Any = None) -> dict:
     }
 
 
+def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = "") -> dict:
+    state_map = _as_mapping(state)
+    if _to_text(state_map.get("command_center_last_tool_recovery_policy")) != "navigation_only":
+        return {}
+    label = _to_text(state_map.get("command_center_last_tool_recovery_label"), "旧工具能力")
+    writes_packet = _to_text(state_map.get("command_center_last_tool_recovery_writes_packet"), "command_center_packet")
+    tab = _to_text(selected_tab, _to_text(state_map.get("legacy_workspace_selected_tab"), "高级工具"))
+    return {
+        "status": "ready",
+        "title": "来自首页恢复队列",
+        "label": label,
+        "selected_tab": tab,
+        "writes_packet": writes_packet,
+        "message": f"你是从首页恢复队列进入“{tab}”；请在本模块手动点击对应按钮恢复 {writes_packet}。",
+        "action_hint": "这里只是导航提示，不会自动运行扫描、回测、DeepSeek 或重型数据接口。",
+        "safety_text": "恢复成功后的结构化结果会回流到 Home Action Snapshot。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def resolve_data_capability_packet(state: Any = None) -> dict:
     state_map = _as_mapping(state)
     healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))

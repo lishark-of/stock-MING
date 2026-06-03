@@ -779,6 +779,34 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot.build_tool_recovery_navigation_state({}), {})
         self.assertEqual(snapshot.build_tool_recovery_navigation_state(object()), {})
 
+    def test_tool_recovery_context_notice_describes_navigation_only(self):
+        state = {
+            "command_center_last_tool_recovery_label": "下一票雷达",
+            "command_center_last_tool_recovery_writes_packet": "command_center_radar_packet",
+            "command_center_last_tool_recovery_policy": "navigation_only",
+            "legacy_workspace_selected_tab": "下一票雷达",
+        }
+
+        notice = snapshot.build_tool_recovery_context_notice(state, selected_tab="下一票雷达")
+
+        self.assertEqual(notice["title"], "来自首页恢复队列")
+        self.assertEqual(notice["label"], "下一票雷达")
+        self.assertEqual(notice["selected_tab"], "下一票雷达")
+        self.assertEqual(notice["writes_packet"], "command_center_radar_packet")
+        self.assertIn("手动点击", notice["message"])
+        self.assertIn("不会自动运行", notice["action_hint"])
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_tool_recovery_context_notice_ignores_non_navigation_policy(self):
+        self.assertEqual(snapshot.build_tool_recovery_context_notice({}), {})
+        self.assertEqual(
+            snapshot.build_tool_recovery_context_notice(
+                {"command_center_last_tool_recovery_policy": "auto_run", "legacy_workspace_selected_tab": "下一票雷达"}
+            ),
+            {},
+        )
+
     def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(

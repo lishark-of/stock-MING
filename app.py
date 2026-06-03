@@ -10916,6 +10916,20 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         key="legacy_workspace_selected_tab",
     )
 
+    recovery_notice = home_snapshot_service.build_tool_recovery_context_notice(st.session_state, selected_tab=legacy_tab)
+    if recovery_notice:
+        st.info(recovery_notice["message"])
+        st.caption(f"{recovery_notice['action_hint']}｜{recovery_notice['safety_text']}")
+        if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):
+            for recovery_key in [
+                "command_center_last_tool_recovery_key",
+                "command_center_last_tool_recovery_label",
+                "command_center_last_tool_recovery_writes_packet",
+                "command_center_last_tool_recovery_policy",
+            ]:
+                st.session_state.pop(recovery_key, None)
+            st.rerun()
+
     if legacy_tab == "今日关注池":
         st.markdown("""
         <div class="hf-ios-section hf-ios-fade-up">
