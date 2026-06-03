@@ -520,6 +520,41 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("手动刷新", payload["chip_packet"]["manual_required_text"])
         self.assertFalse(payload["chip_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_moneyflow_and_dragon_packets(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "a_share_professional_facts": {
+                "moneyflow": {
+                    "available": True,
+                    "date": "20260603",
+                    "main_net_yi": 1.23,
+                    "five_day_main_net_yi": 3.45,
+                    "updated_at": f"{today}T10:01:00",
+                },
+                "dragon_tiger": {
+                    "available": True,
+                    "latest_date": "20260603",
+                    "net_buy_amount_yi": 1.3,
+                    "inst_summary": "席位3条，净买入1.3亿",
+                    "updated_at": f"{today}T10:01:00",
+                },
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["moneyflow_packet"]["data_status"], "ready")
+        self.assertEqual(payload["moneyflow_packet"]["flow_state"], "主力净流入")
+        self.assertEqual(payload["dragon_tiger_packet"]["data_status"], "ready")
+        self.assertEqual(payload["dragon_tiger_packet"]["activity_state"], "席位净买入")
+        self.assertFalse(payload["moneyflow_packet"]["deepseek_called"])
+        self.assertFalse(payload["dragon_tiger_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_command_center_facts_packet(self):
         today = _dt.date.today().isoformat()
         state = {
