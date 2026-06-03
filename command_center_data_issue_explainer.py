@@ -285,6 +285,82 @@ def _short_answer(items: list[dict]) -> str:
     return "当前数据能力有可用结果；执行前仍需核对日期、来源和适用市场。"
 
 
+def _root_cause_items(items: list[dict]) -> list[dict]:
+    states = {item["state"] for item in items}
+    result = []
+    if not items:
+        return [
+            {
+                "key": "not_checked",
+                "label": "尚未检测",
+                "tone": "missing",
+                "detail": "还没有本地数据能力检测结果；页面打开不会自动请求外部接口。",
+                "next_action": "先点击对应刷新或检测按钮，再查看接口状态。",
+            }
+        ]
+    if "permission_denied" in states:
+        result.append(
+            {
+                "key": "endpoint_permission",
+                "label": "接口权限/积分",
+                "tone": "failed",
+                "detail": "Tushare token 可用不等于每个专业接口都有权限；融资融券、筹码、涨跌停情绪等可能需要额外权限或积分。",
+                "next_action": "检查具体接口权限，不要把权限不足写成行情不存在。",
+            }
+        )
+    if "disabled_this_session" in states:
+        result.append(
+            {
+                "key": "session_skip",
+                "label": "本会话跳过",
+                "tone": "failed",
+                "detail": "某接口已经被判定受限或失败，本会话会跳过重复请求，避免页面反复卡顿。",
+                "next_action": "确认权限恢复后，手动点击对应检测按钮重试。",
+            }
+        )
+    if "empty_recent" in states:
+        result.append(
+            {
+                "key": "empty_recent",
+                "label": "近期无记录",
+                "tone": "missing",
+                "detail": "接口可用也可能搜不到：常见原因是非交易日、数据尚未发布、标的未上榜或该接口暂不覆盖。",
+                "next_action": "核对交易日、发布时间和标的覆盖范围，不能把无记录写成利好。",
+            }
+        )
+    if "stale_cache" in states or "fallback_used" in states:
+        result.append(
+            {
+                "key": "cache_or_fallback",
+                "label": "缓存/替代口径",
+                "tone": "stale",
+                "detail": "缓存能防白屏，但不是实时事实；替代口径也不能等同于原始接口数据。",
+                "next_action": "执行前复核日期、来源和口径，必要时手动刷新。",
+            }
+        )
+    if "requires_manual_refresh" in states:
+        result.append(
+            {
+                "key": "manual_required",
+                "label": "必须手动触发",
+                "tone": "missing",
+                "detail": "重型接口、批量扫描和外部刷新不会在页面打开时自动执行。",
+                "next_action": "只在需要时点击对应按钮，并等待结果回流到综合中心。",
+            }
+        )
+    if not result:
+        result.append(
+            {
+                "key": "verify_scope",
+                "label": "口径复核",
+                "tone": "ready",
+                "detail": "当前已有可用数据，但仍要确认日期、市场类型、标的范围和接口口径。",
+                "next_action": "把可用接口当作辅助证据，不要单独作为交易动作依据。",
+            }
+        )
+    return result[:MAX_ACTIONS]
+
+
 def build_data_issue_explainer_packet(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,
@@ -310,6 +386,7 @@ def build_data_issue_explainer_packet(
         "restricted_count": len(restricted),
         "pending_count": len(pending),
         "items": items,
+        "root_cause_items": _root_cause_items(items),
         "next_actions": actions,
         "source": "local data capability packet / gap report",
         "deepseek_called": False,

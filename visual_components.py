@@ -4812,6 +4812,21 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
     issue_items = [item for item in (data_issue_explainer.get("items") or []) if isinstance(item, dict)]
+    root_cause_items = [item for item in (data_issue_explainer.get("root_cause_items") or []) if isinstance(item, dict)]
+    root_cause_html = ""
+    for item in root_cause_items[:4]:
+        root_cause_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "原因待确认"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("key"), "data_issue"))}</span>
+          </div>
+          <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("detail"), "待验证。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "保留安全空态或手动刷新。"))}</div>
+        </div>
+        """
+    if not root_cause_html:
+        root_cause_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>原因待确认</div><div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div></div>"
     issue_html = ""
     for item in issue_items[:3]:
         issue_html += f"""
@@ -5036,6 +5051,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             {console_queue_html}
           </div>
           <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
+          {root_cause_html}
           {issue_html}
           <div class="cc-muted-note">数据能力诊断：{escape(_home_text(capability_dashboard.get("summary"), "尚未检测数据能力。"))}</div>
           {provider_html}

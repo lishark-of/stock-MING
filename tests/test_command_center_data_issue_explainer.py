@@ -59,6 +59,8 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertIn("额外权限/积分", packet["short_answer"])
         self.assertIn("接口权限/积分问题", dumped)
         self.assertIn("本会话跳过重复请求", dumped)
+        self.assertTrue(any(item["key"] == "endpoint_permission" for item in packet["root_cause_items"]))
+        self.assertTrue(any(item["key"] == "session_skip" for item in packet["root_cause_items"]))
         self.assertFalse(packet["deepseek_called"])
 
     def test_empty_recent_is_explained_as_no_recent_record_not_positive_signal(self):
@@ -80,6 +82,7 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
 
         self.assertEqual(packet["pending_count"], 1)
         self.assertIn("接口可用也可能搜不到", packet["short_answer"])
+        self.assertEqual(packet["root_cause_items"][0]["key"], "empty_recent")
         self.assertIn("标的未上榜", item["meaning"])
         self.assertIn("无记录不能写成利好", item["decision_impact"])
 
@@ -97,8 +100,16 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
 
         self.assertEqual(packet["pending_count"], 2)
         self.assertIn("缓存或替代口径", packet["short_answer"])
+        self.assertTrue(any(item["key"] == "cache_or_fallback" for item in packet["root_cause_items"]))
         self.assertIn("不是实时数据", dumped)
         self.assertIn("不能等同于原始接口事实", dumped)
+
+    def test_not_checked_root_cause_explains_no_auto_ping(self):
+        packet = explainer.build_data_issue_explainer_packet()
+
+        self.assertEqual(packet["root_cause_items"][0]["key"], "not_checked")
+        self.assertIn("不会自动请求外部接口", packet["root_cause_items"][0]["detail"])
+        self.assertFalse(packet["deepseek_called"])
 
     def test_refresh_errors_are_visible_as_failed_items(self):
         packet = explainer.build_data_issue_explainer_packet(
