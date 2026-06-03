@@ -315,12 +315,112 @@ def _merge_path_guidance(paths: list[dict], analysis_method_packet: Any) -> tupl
     return guided_paths, guidance["market"], guidance["basis"]
 
 
+def _evidence_labels(items: Any, limit: int = 3) -> list[str]:
+    labels = []
+    for item in _as_list(items):
+        payload = _as_mapping(item)
+        label = _to_text(payload.get("label") or payload.get("key"))
+        if label and label not in labels:
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return labels
+
+
+def _evidence_label_text(items: Any, fallback: str = "暂无") -> str:
+    labels = _evidence_labels(items)
+    return "、".join(labels) if labels else fallback
+
+
+def _append_evidence_text(base: Any, addition: str) -> str:
+    text = _to_text(base)
+    note = _to_text(addition)
+    if not note:
+        return text
+    if not text:
+        return note
+    return f"{text.rstrip('。；; ')}；{note}"
+
+
+def _a_share_evidence_guidance(evidence_radar_packet: Any) -> dict:
+    evidence = _as_mapping(evidence_radar_packet)
+    if not evidence:
+        return {}
+    support = evidence.get("support_items")
+    blockers = evidence.get("blocker_items")
+    cached = evidence.get("cached_items")
+    missing = evidence.get("missing_items")
+    return {
+        "summary": _to_text(evidence.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"),
+        "support_text": _evidence_label_text(support),
+        "blocker_text": _evidence_label_text(blockers),
+        "cached_text": _evidence_label_text(cached),
+        "missing_text": _evidence_label_text(missing),
+        "has_support": bool(_as_list(support)),
+        "has_blockers": bool(_as_list(blockers)),
+        "has_cached": bool(_as_list(cached)),
+        "has_missing": bool(_as_list(missing)),
+    }
+
+
+def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: Any, market_type: str) -> tuple[list[dict], str]:
+    if market_type != "A股":
+        return paths, ""
+    evidence = _a_share_evidence_guidance(evidence_radar_packet)
+    if not evidence:
+        return paths, ""
+
+    support_text = evidence["support_text"]
+    blocker_text = evidence["blocker_text"]
+    cached_text = evidence["cached_text"]
+    missing_text = evidence["missing_text"]
+    verification_text = []
+    if evidence["has_cached"]:
+        verification_text.append(f"缓存证据：{cached_text}")
+    if evidence["has_missing"]:
+        verification_text.append(f"缺失证据：{missing_text}")
+    verification_summary = "；".join(verification_text) or "关键证据已刷新"
+
+    guided_paths = []
+    for index, path in enumerate(paths):
+        item = dict(path)
+        if index == 0:
+            if evidence["has_support"]:
+                note = f"支持证据增强乐观路径：{support_text}。"
+            else:
+                note = f"乐观路径待验证：先补齐{verification_summary}。"
+            risk = (
+                f"仍存在阻断证据：{blocker_text}，未排除前不能把乐观路径当作加仓依据。"
+                if evidence["has_blockers"]
+                else f"{verification_summary}；执行前仍需复核。"
+            )
+            item["evidence_label"] = "支持证据增强" if evidence["has_support"] else "待验证"
+        elif index == 1:
+            note = f"中性路径重点复核：{verification_summary}。"
+            risk = "缓存或缺失证据未补齐前，维持观察，不扩大仓位。"
+            item["evidence_label"] = "缓存/缺失待复核" if verification_text else "证据中性"
+        else:
+            if evidence["has_blockers"]:
+                note = f"阻断证据触发谨慎路径：{blocker_text}。"
+            else:
+                note = f"若{verification_summary}迟迟无法确认，按谨慎边界管理。"
+            risk = "阻断证据或数据缺口未排除前，优先保现金、降杠杆、收缩试探仓位。"
+            item["evidence_label"] = "阻断证据优先" if evidence["has_blockers"] else "数据缺口防守"
+        item["trigger"] = _append_evidence_text(item.get("trigger"), note)
+        item["risk"] = _append_evidence_text(item.get("risk"), risk)
+        item["risk_note"] = item["risk"]
+        item["evidence_note"] = note
+        guided_paths.append(item)
+    return guided_paths, f"A股证据雷达：{evidence['summary']}"
+
+
 def build_projection_packet(
     decision_packet: Any = None,
     strategy_packet: Any = None,
     live_packet: Any = None,
     home_snapshot: Any = None,
     analysis_method_packet: Any = None,
+    evidence_radar_packet: Any = None,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     base_date: Any = None,
     now: Any = None,
@@ -353,6 +453,7 @@ def build_projection_packet(
             }
         )
     paths, market_type, path_basis = _merge_path_guidance(paths, analysis_method_packet)
+    paths, evidence_basis = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
     fallback = status == "waiting" or not _has_payload(decision, strategy, live, snapshot)
     note = "示例路径 / 待刷新" if fallback else "基于现有结构化 packet 的条件化路径推演"
     return {
@@ -362,7 +463,8 @@ def build_projection_packet(
         "historical": _historical_points(base, market_bias),
         "paths": paths,
         "market_type": market_type,
-        "path_basis": path_basis,
+        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis] if item]),
+        "path_evidence_summary": evidence_basis,
         "market_method_summary": _to_text(_as_mapping(analysis_method_packet).get("summary"), "分析方法待验证"),
         "source": SOURCE_FALLBACK if fallback else SOURCE_READY,
         "updated_at": updated_at,
@@ -388,6 +490,7 @@ def build_projection_packet_from_state(
         live_packet=live_packet or state_map.get("command_center_live_packet"),
         home_snapshot=home_snapshot or state_map.get("command_center_home_snapshot"),
         analysis_method_packet=state_map.get("command_center_analysis_method_packet"),
+        evidence_radar_packet=state_map.get("command_center_evidence_radar_packet"),
         horizon_days=horizon_days,
         now=now,
     )

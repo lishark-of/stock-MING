@@ -4651,6 +4651,7 @@ packet:
     with home_snapshot_slot.container():
         render_home_action_snapshot(home_snapshot)
     evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
+    st.session_state["command_center_evidence_radar_packet"] = evidence_radar_vm
     st.caption("本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释。")
     analysis_method_packet = _build_analysis_methods_display_packet(
         live_packet=live_packet,
@@ -4672,6 +4673,7 @@ packet:
         live_packet=live_packet,
         home_snapshot=home_snapshot,
         analysis_method_packet=analysis_method_packet,
+        evidence_radar_packet=evidence_radar_vm,
         horizon_days=10,
     )
     st.session_state["command_center_projection_packet"] = projection_packet

@@ -161,6 +161,61 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("流动性", joined)
         self.assertIn("持仓重叠", joined)
 
+    def test_a_share_evidence_radar_enriches_projection_paths(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 1｜阻断 1｜缓存 1｜缺失 1",
+                "support_items": [{"label": "个股资金流"}],
+                "blocker_items": [{"label": "硬风险/公告"}],
+                "cached_items": [{"label": "融资融券"}],
+                "missing_items": [{"label": "龙虎榜"}],
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertIn("A股证据雷达", packet["path_basis"])
+        self.assertIn("支持证据增强乐观路径", packet["paths"][0]["trigger"])
+        self.assertIn("个股资金流", packet["paths"][0]["trigger"])
+        self.assertIn("硬风险/公告", packet["paths"][2]["trigger"])
+        self.assertIn("融资融券", packet["paths"][1]["trigger"])
+        self.assertIn("龙虎榜", joined)
+        self.assertIn("阻断证据", joined)
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_a_share_evidence_radar_does_not_pollute_us_projection(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "美股", "summary": "美股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 0",
+                "blocker_items": [{"label": "龙虎榜"}],
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["market_type"], "美股")
+        self.assertEqual(packet["path_evidence_summary"], "")
+        self.assertNotIn("A股证据雷达", joined)
+        self.assertNotIn("龙虎榜", joined)
+
+    def test_build_from_state_can_read_evidence_radar_packet(self):
+        packet = projection.build_projection_packet_from_state(
+            {
+                "command_center_decision_packet": {"overall_action": "等待", "updated_at": "2026-06-01T10:00:00"},
+                "command_center_analysis_method_packet": {"market": "A股"},
+                "command_center_evidence_radar_packet": {
+                    "decision_summary": "支持 1｜阻断 0｜缓存 0｜缺失 0",
+                    "support_items": [{"label": "个股资金流"}],
+                },
+            }
+        )
+
+        self.assertIn("个股资金流", packet["paths"][0]["trigger"])
+        self.assertIn("A股证据雷达", packet["path_basis"])
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_projection.py").read_text())
         imports = []
