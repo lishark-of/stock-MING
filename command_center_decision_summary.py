@@ -167,7 +167,7 @@ def build_data_coverage_items(packet: Any) -> list[dict]:
     return items
 
 
-def build_decision_evidence_chain_items(analysis_method_packet: Any = None) -> list[dict]:
+def build_decision_evidence_chain_items(analysis_method_packet: Any = None, evidence_radar_packet: Any = None) -> list[dict]:
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
     items = [{"label": "市场类型", "value": market, "tone": "success" if market in {"A股", "美股", "ETF"} else "muted"}]
@@ -183,13 +183,29 @@ def build_decision_evidence_chain_items(analysis_method_packet: Any = None) -> l
         items.append({"label": "待验证", "value": "、".join(pending[:2]), "tone": "warning"})
     if not_applicable:
         items.append({"label": "不适用", "value": "、".join(not_applicable[:2]), "tone": "muted"})
+    evidence = _as_mapping(evidence_radar_packet)
+    if evidence:
+        blockers = len(evidence.get("blocker_items") or [])
+        support = len(evidence.get("support_items") or [])
+        cached = len(evidence.get("cached_items") or [])
+        missing = len(evidence.get("missing_items") or [])
+        if blockers:
+            items.append({"label": "阻断证据", "value": f"{blockers} 项", "tone": "danger"})
+        if support:
+            items.append({"label": "支持证据", "value": f"{support} 项", "tone": "success"})
+        if cached or missing:
+            items.append({"label": "待复核证据", "value": f"缓存 {cached}｜缺失 {missing}", "tone": "warning"})
     if len(items) < 5:
         source = _to_text(analysis.get("source")) or "rule-based market profile"
         items.append({"label": "来源", "value": source, "tone": "muted"})
     return items[:5]
 
 
-def build_decision_summary_view_model(packet: Any, analysis_method_packet: Any = None) -> dict:
+def build_decision_summary_view_model(
+    packet: Any,
+    analysis_method_packet: Any = None,
+    evidence_radar_packet: Any = None,
+) -> dict:
     payload = _as_mapping(packet)
     status = normalize_decision_status(payload)
     action = decision_action_label(payload)
@@ -217,7 +233,11 @@ def build_decision_summary_view_model(packet: Any, analysis_method_packet: Any =
         "action_guardrail": decision_action_guardrail_text(payload),
         "user_boundary_text": decision_user_boundary_text(payload),
         "evidence_summary_text": decision_evidence_summary_text(payload),
-        "evidence_chain_items": build_decision_evidence_chain_items(analysis_method_packet),
+        "evidence_chain_items": build_decision_evidence_chain_items(
+            analysis_method_packet,
+            evidence_radar_packet=evidence_radar_packet,
+        ),
+        "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),

@@ -30,6 +30,7 @@ import command_center_dragon_tiger_packet as dragon_tiger_packet_service
 import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
+import command_center_evidence_summary as evidence_summary_service
 import market_data_capability as data_capability
 import command_center_toolbox_summary as toolbox_summary_service
 import command_center_a_share_capability_matrix as a_share_capability_matrix_service
@@ -3881,7 +3882,14 @@ def render_command_center_decision_card(live_packet, target="", position_profile
             st.warning(notice)
         else:
             st.success(notice)
-    decision_vm = build_decision_summary_view_model(packet, analysis_method_packet=analysis_method_packet)
+    evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(
+        st.session_state.get("command_center_home_snapshot") or {}
+    )
+    decision_vm = build_decision_summary_view_model(
+        packet,
+        analysis_method_packet=analysis_method_packet,
+        evidence_radar_packet=evidence_radar_vm,
+    )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):
         st.caption("当前展示为上次成功结果；最近一次生成失败。")

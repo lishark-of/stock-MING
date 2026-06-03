@@ -4626,6 +4626,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         状态：{escape(status)} ｜ 最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
         来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
         <br>{escape(str(vm.get("evidence_summary_text") or ""))}
+        <br>A股证据雷达：{escape(str(vm.get("a_share_evidence_summary_text") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
       </div>
     </section>
     """

@@ -147,6 +147,49 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("资金流", joined)
         self.assertIn("ETF 赛道配置", joined)
 
+    def test_evidence_chain_includes_a_share_evidence_radar_counts(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "等待"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            evidence_radar_packet={
+                "decision_summary": "支持 1｜阻断 1｜缓存 1｜缺失 3",
+                "support_items": [{"label": "个股资金流"}],
+                "blocker_items": [{"label": "硬风险/公告"}],
+                "cached_items": [{"label": "融资融券"}],
+                "missing_items": [{"label": "龙虎榜"}, {"label": "筹码/胜率"}, {"label": "涨跌停/情绪"}],
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("阻断证据", joined)
+        self.assertIn("支持证据", joined)
+        self.assertEqual(view_model["a_share_evidence_summary_text"], "支持 1｜阻断 1｜缓存 1｜缺失 3")
+
+    def test_evidence_chain_keeps_blockers_when_method_list_is_full(self):
+        view_model = summary.build_decision_summary_view_model(
+            {},
+            analysis_method_packet={
+                "market": "A股",
+                "methods": [
+                    {"name": "趋势跟踪", "status": "通过"},
+                    {"name": "量价结构", "status": "通过"},
+                    {"name": "资金流", "status": "待验证"},
+                    {"name": "ETF 赛道配置", "status": "不适用"},
+                ],
+            },
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 5",
+                "blocker_items": [{"label": "硬风险/公告"}],
+                "support_items": [],
+                "cached_items": [],
+                "missing_items": [{}, {}, {}, {}, {}],
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("阻断证据", joined)
+        self.assertNotIn("来源", joined)
+
     def test_empty_evidence_chain_is_safe(self):
         view_model = summary.build_decision_summary_view_model({}, analysis_method_packet=None)
 
