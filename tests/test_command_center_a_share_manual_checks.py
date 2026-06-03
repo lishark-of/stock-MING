@@ -54,6 +54,17 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(request["refresh_policy"], "button_gated")
         self.assertFalse(request["deepseek_called"])
 
+    def test_moneyflow_request_is_button_gated(self):
+        request = checks.build_moneyflow_check_request("002008", today="2026-06-03")
+
+        self.assertEqual(request["api"], "moneyflow")
+        self.assertEqual(request["section"], "moneyflow")
+        self.assertEqual(request["ts_code"], "002008.SZ")
+        self.assertEqual(request["start_date"], "20260524")
+        self.assertEqual(request["end_date"], "20260603")
+        self.assertEqual(request["refresh_policy"], "button_gated")
+        self.assertFalse(request["deepseek_called"])
+
     def test_limit_cpt_request_is_button_gated(self):
         request = checks.build_limit_cpt_check_request(today="2026-06-03")
 
@@ -85,6 +96,30 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(item["label"], "融资融券")
         self.assertEqual(item["capability_state"], capability.STATE_PERMISSION_DENIED)
         self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertFalse(item["deepseek_called"])
+
+    def test_moneyflow_result_builds_capability_item(self):
+        item = checks.build_moneyflow_capability_item(
+            {"ok": True, "rows": 3, "latest_date": "20260603", "api": "moneyflow"},
+            latency_ms=11,
+        )
+
+        self.assertEqual(item["section"], "moneyflow")
+        self.assertEqual(item["label"], "个股资金流")
+        self.assertEqual(item["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(item["rows"], 3)
+        self.assertEqual(item["latest_date"], "20260603")
+        self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertFalse(item["deepseek_called"])
+
+    def test_moneyflow_permission_denied_is_visible(self):
+        item = checks.build_moneyflow_capability_item(
+            {"ok": False, "error": "抱歉，您没有访问该接口的权限", "api": "moneyflow"},
+            latency_ms=11,
+        )
+
+        self.assertEqual(item["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertTrue(item["permission_likely"])
         self.assertFalse(item["deepseek_called"])
 
     def test_limit_cpt_result_builds_capability_item(self):
@@ -190,6 +225,24 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(by_section["moneyflow"]["capability_state"], "available")
         self.assertEqual(by_section["margin"]["capability_state"], capability.STATE_AVAILABLE)
         self.assertEqual(merged["ok_count"], 2)
+        self.assertFalse(merged["deepseek_called"])
+        json.dumps(merged, ensure_ascii=False)
+
+    def test_merge_replaces_existing_moneyflow_item(self):
+        packet = {
+            "source": "Tushare A股专业事实",
+            "items": [
+                {"section": "moneyflow", "label": "个股资金流", "api": "moneyflow", "capability_state": "empty_recent", "status": "近期无数据"},
+                {"section": "margin", "label": "融资融券", "api": "margin_detail", "capability_state": "permission_denied", "status": "权限不足"},
+            ],
+        }
+        new_item = checks.build_moneyflow_capability_item({"ok": True, "rows": 3, "latest_date": "20260603"})
+        merged = checks.merge_a_share_capability_item(packet, new_item, checked_at="2026-06-03T10:00:00")
+        by_section = {item["section"]: item for item in merged["items"]}
+
+        self.assertEqual(by_section["moneyflow"]["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(by_section["margin"]["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertEqual(merged["ok_count"], 1)
         self.assertFalse(merged["deepseek_called"])
         json.dumps(merged, ensure_ascii=False)
 

@@ -23,6 +23,9 @@ DRAGON_API = "top_list/top_inst"
 DRAGON_LABEL = "龙虎榜"
 TOP_LIST_API = "top_list"
 TOP_INST_API = "top_inst"
+MONEYFLOW_SECTION = "moneyflow"
+MONEYFLOW_API = "moneyflow"
+MONEYFLOW_LABEL = "个股资金流"
 
 
 def as_mapping(value: Any) -> dict:
@@ -102,6 +105,29 @@ def build_dragon_tiger_check_request(ticker: Any, today: Any = None, lookback_da
     }
 
 
+def build_moneyflow_check_request(ticker: Any, today: Any = None, lookback_days: int = 10) -> dict:
+    ts_code = normalize_a_share_ts_code(ticker)
+    if isinstance(today, _dt.datetime):
+        end = today.date()
+    elif isinstance(today, _dt.date):
+        end = today
+    elif isinstance(today, str) and today.strip():
+        end = _dt.date.fromisoformat(today.strip()[:10])
+    else:
+        end = _dt.date.today()
+    start = end - _dt.timedelta(days=max(1, int(lookback_days or 10)))
+    return {
+        "section": MONEYFLOW_SECTION,
+        "label": MONEYFLOW_LABEL,
+        "api": MONEYFLOW_API,
+        "ts_code": ts_code,
+        "start_date": _date_text(start),
+        "end_date": _date_text(end),
+        "refresh_policy": "button_gated",
+        "deepseek_called": False,
+    }
+
+
 def build_limit_cpt_check_request(today: Any = None, lookback_days: int = 10) -> dict:
     if isinstance(today, _dt.datetime):
         end = today.date()
@@ -153,6 +179,21 @@ def build_margin_detail_capability_item(result: Any = None, latency_ms: int | fl
             "section": MARGIN_SECTION,
             "label": MARGIN_LABEL,
             "api": MARGIN_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+        }
+    )
+    return item
+
+
+def build_moneyflow_capability_item(result: Any = None, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_result(MONEYFLOW_API, result=result, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": MONEYFLOW_SECTION,
+            "label": MONEYFLOW_LABEL,
+            "api": MONEYFLOW_API,
             "manual_check": True,
             "refresh_policy": "button_gated",
             "deepseek_called": False,
@@ -301,6 +342,21 @@ def build_margin_detail_exception_item(exc: Any, latency_ms: int | float | None 
             "section": MARGIN_SECTION,
             "label": MARGIN_LABEL,
             "api": MARGIN_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+        }
+    )
+    return item
+
+
+def build_moneyflow_exception_item(exc: Any, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_exception(MONEYFLOW_API, exc, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": MONEYFLOW_SECTION,
+            "label": MONEYFLOW_LABEL,
+            "api": MONEYFLOW_API,
             "manual_check": True,
             "refresh_policy": "button_gated",
             "deepseek_called": False,

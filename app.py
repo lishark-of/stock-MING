@@ -4105,6 +4105,64 @@ def _run_manual_dragon_tiger_capability_check(target="", position_profile=None, 
     }
 
 
+def _run_manual_moneyflow_capability_check(target="", position_profile=None, live_packet=None):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    request = a_share_manual_checks_service.build_moneyflow_check_request(ticker)
+    checked_at = _cc_now()
+    if not request.get("ts_code"):
+        item = a_share_manual_checks_service.build_moneyflow_exception_item("未锁定 A股标的，无法检测 moneyflow。")
+    elif not a_share_manual_checks_service.is_a_share_ts_code(request.get("ts_code")):
+        item = a_share_manual_checks_service.build_moneyflow_exception_item("当前标的不是 A股代码，不检测 Tushare moneyflow。")
+    elif _tushare_adapter is None or not hasattr(_tushare_adapter, "get_moneyflow"):
+        item = a_share_manual_checks_service.build_moneyflow_exception_item(
+            str(TUSHARE_ADAPTER_MODULE_ERROR) or "tushare_adapter 未接入 moneyflow。"
+        )
+    else:
+        started = time.perf_counter()
+        try:
+            result = _tushare_adapter.get_moneyflow(
+                ts_code=request["ts_code"],
+                start_date=request["start_date"],
+                end_date=request["end_date"],
+            )
+            item = a_share_manual_checks_service.build_moneyflow_capability_item(
+                result,
+                latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+        except Exception as exc:
+            item = a_share_manual_checks_service.build_moneyflow_exception_item(
+                exc,
+                latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+    item["checked_at"] = checked_at
+    existing_packet = st.session_state.get("a_share_professional_data_capability") or {}
+    professional_packet = a_share_manual_checks_service.merge_a_share_capability_item(
+        existing_packet,
+        item,
+        checked_at=checked_at,
+    )
+    data_packet = _sync_a_share_capability_packet(professional_packet)
+    live = live_packet or st.session_state.get("command_center_live_packet") or {}
+    st.session_state["command_center_moneyflow_packet"] = moneyflow_packet_service.build_command_center_moneyflow_packet(
+        {"command_center_facts_packet": {"items": [{**item, "key": "moneyflow", "state": item.get("capability_state") or ""}]}},
+        live_packet=live,
+        target=ticker,
+    )
+    _persist_home_action_snapshot(
+        live_packet=live,
+        target=ticker,
+        position_profile=position_profile,
+    )
+    return {
+        "request": request,
+        "item": item,
+        "professional_packet": professional_packet,
+        "data_capability_packet": data_packet,
+        "deepseek_called": False,
+    }
+
+
 def _run_manual_limit_cpt_capability_check(target="", position_profile=None, live_packet=None):
     profile = position_profile if isinstance(position_profile, dict) else {}
     ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
@@ -4318,6 +4376,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         """
         <style>
         .st-key-btn_cc_refresh_all_basic button,
+        .st-key-btn_cc_moneyflow_capability_check button,
         .st-key-btn_cc_dragon_tiger_capability_check button,
         .st-key-btn_cc_margin_capability_check button,
         .st-key-btn_cc_limit_cpt_capability_check button,
@@ -4347,7 +4406,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     home_snapshot_slot = st.empty()
     decision_hero_slot = st.empty()
     projection_slot = st.empty()
-    control_cols = st.columns([1.2, 0.95, 0.95, 0.95, 0.95, 1.1])
+    control_cols = st.columns([1.2, 0.9, 0.9, 0.9, 0.9, 0.9, 1.1])
     with control_cols[0]:
         if st.button("刷新今日基础数据", key="btn_cc_refresh_all_basic", type="primary", width="stretch"):
             status = st.status("正在刷新今日基础数据...", expanded=True)
@@ -4401,6 +4460,23 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             else:
                 status.update(label="今日基础数据刷新完成", state="complete", expanded=False)
     with control_cols[1]:
+        if st.button("检测资金流", key="btn_cc_moneyflow_capability_check", width="stretch"):
+            status = st.status("正在手动检测个股资金流...", expanded=True)
+            result = _run_manual_moneyflow_capability_check(
+                target=target,
+                position_profile=position_profile,
+                live_packet=live_packet,
+            )
+            item = result.get("item") or {}
+            label = item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证"
+            message = item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。"
+            if item.get("capability_state") == data_capability.STATE_AVAILABLE:
+                status.update(label=f"资金流检测完成：{label}", state="complete", expanded=False)
+                st.success(f"资金流检测完成：{message}；DeepSeek：未调用。")
+            else:
+                status.update(label=f"资金流检测完成：{label}", state="complete", expanded=False)
+                st.warning(f"资金流检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
+    with control_cols[2]:
         if st.button("检测龙虎榜", key="btn_cc_dragon_tiger_capability_check", width="stretch"):
             status = st.status("正在手动检测龙虎榜...", expanded=True)
             result = _run_manual_dragon_tiger_capability_check(
@@ -4417,7 +4493,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             else:
                 status.update(label=f"龙虎榜检测完成：{label}", state="complete", expanded=False)
                 st.warning(f"龙虎榜检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[2]:
+    with control_cols[3]:
         if st.button("检测融资融券权限", key="btn_cc_margin_capability_check", width="stretch"):
             status = st.status("正在手动检测融资融券权限...", expanded=True)
             result = _run_manual_margin_detail_capability_check(
@@ -4434,7 +4510,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             else:
                 status.update(label=f"融资融券权限检测完成：{label}", state="complete", expanded=False)
                 st.warning(f"融资融券检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[3]:
+    with control_cols[4]:
         if st.button("检测涨跌停情绪权限", key="btn_cc_limit_cpt_capability_check", width="stretch"):
             status = st.status("正在手动检测涨跌停/情绪权限...", expanded=True)
             result = _run_manual_limit_cpt_capability_check(
@@ -4451,7 +4527,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             else:
                 status.update(label=f"涨跌停/情绪权限检测完成：{label}", state="complete", expanded=False)
                 st.warning(f"涨跌停/情绪检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[4]:
+    with control_cols[5]:
         if st.button("检测筹码胜率", key="btn_cc_chip_capability_check", width="stretch"):
             status = st.status("正在手动检测筹码/胜率...", expanded=True)
             result = _run_manual_chip_radar_capability_check(
@@ -4468,7 +4544,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             else:
                 status.update(label=f"筹码/胜率检测完成：{label}", state="complete", expanded=False)
                 st.warning(f"筹码/胜率检测结果：{message}；已回流到 A股数据能力矩阵。DeepSeek：未调用。")
-    with control_cols[5]:
+    with control_cols[6]:
         if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
             current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
