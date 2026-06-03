@@ -4468,16 +4468,17 @@ def render_a_share_data_capability_controls(target="", position_profile=None, li
             f"{capability_matrix.get('summary') or summary_text}。只在点击按钮后请求对应 Tushare 接口；"
             "用于确认权限、近期数据、缓存和缺口，不自动调用 DeepSeek。"
         )
-        check_cols = st.columns(5)
+        check_cols = st.columns(3)
         checks = [
             ("检测资金流", "moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check),
             ("检测龙虎榜", "dragon_tiger_capability_check", "正在手动检测龙虎榜...", "龙虎榜", _run_manual_dragon_tiger_capability_check),
             ("检测融资融券", "margin_capability_check", "正在手动检测融资融券权限...", "融资融券", _run_manual_margin_detail_capability_check),
             ("检测涨跌停", "limit_cpt_capability_check", "正在手动检测涨跌停/情绪权限...", "涨跌停/情绪", _run_manual_limit_cpt_capability_check),
             ("检测筹码胜率", "chip_capability_check", "正在手动检测筹码/胜率...", "筹码/胜率", _run_manual_chip_radar_capability_check),
+            ("检测公告硬风险", "hard_risk_capability_check", "正在手动检测公告/硬风险...", "公告/硬风险", _run_manual_hard_risk_capability_check),
         ]
-        for col, (button_label, button_key, status_label, result_label, runner) in zip(check_cols, checks):
-            with col:
+        for index, (button_label, button_key, status_label, result_label, runner) in enumerate(checks):
+            with check_cols[index % len(check_cols)]:
                 _render_manual_capability_check_button(
                     button_label,
                     f"btn_{key_prefix}_{button_key}",
@@ -4509,8 +4510,10 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
         "dragon_tiger": ("龙虎榜", _run_manual_dragon_tiger_capability_check),
         "margin": ("融资融券", _run_manual_margin_detail_capability_check),
         "limit_emotion": ("涨跌停/情绪", _run_manual_limit_cpt_capability_check),
+        "chip_radar": ("筹码/胜率", _run_manual_chip_radar_capability_check),
+        "hard_risk": ("公告/硬风险", _run_manual_hard_risk_capability_check),
     }
-    runnable_actions = [action for action in actions if str(action.get("key") or "") in runner_map][:4]
+    runnable_actions = [action for action in actions if str(action.get("key") or "") in runner_map][:6]
     if not runnable_actions:
         return
     with st.container(border=True):
@@ -4518,12 +4521,12 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
         st.caption(
             "这些按钮只检测当前标的对应的单项 Tushare 能力；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。"
         )
-        cols = st.columns(len(runnable_actions))
-        for col, action in zip(cols, runnable_actions):
+        cols = st.columns(min(3, len(runnable_actions)))
+        for index, action in enumerate(runnable_actions):
             key = str(action.get("key") or "")
             result_label, runner = runner_map[key]
             button_label = action.get("action_label") or f"检测{action.get('label') or result_label}"
-            with col:
+            with cols[index % len(cols)]:
                 st.caption(f"{action.get('label') or result_label}｜{action.get('status_label') or '待验证'}")
                 st.caption(action.get("reason") or "页面打开不会自动请求 Tushare。")
                 result = _render_manual_capability_check_button(
