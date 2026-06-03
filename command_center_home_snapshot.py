@@ -21,6 +21,7 @@ import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
 import command_center_market_profile_summary as market_profile_summary_service
+import command_center_data_issue_explainer as data_issue_explainer_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -217,6 +218,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_capability": build_data_capability_snapshot({}),
         "facts_packet": facts_packet_service.build_command_center_facts_packet({}),
         "data_gap_report": data_gap_report_service.build_command_center_data_gap_report(),
+        "data_issue_explainer": data_issue_explainer_service.build_data_issue_explainer_packet(),
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
@@ -253,6 +255,11 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["data_gap_report"] = data_gap_report_service.build_command_center_data_gap_report(
         snapshot.get("data_capability") or {},
         snapshot.get("facts_packet") or {},
+        errors=snapshot.get("errors") or [],
+    )
+    snapshot["data_issue_explainer"] = data_issue_explainer_service.build_data_issue_explainer_packet(
+        snapshot.get("data_capability") or {},
+        snapshot.get("data_gap_report") or {},
         errors=snapshot.get("errors") or [],
     )
     snapshot["market_packet"] = market_packet_service.build_command_center_market_packet(
@@ -745,6 +752,12 @@ def build_home_action_snapshot(
         live_packet=live,
         errors=errors,
     )
+    data_issue_explainer = data_issue_explainer_service.build_data_issue_explainer_packet(
+        data_capability_snapshot,
+        data_gap_report,
+        refresh_summary=refresh,
+        errors=errors,
+    )
     analysis_method_packet = (
         state_map.get("command_center_analysis_method_packet")
         or state_map.get("analysis_method_packet")
@@ -791,6 +804,7 @@ def build_home_action_snapshot(
         "data_capability": data_capability_snapshot,
         "facts_packet": facts_packet_snapshot,
         "data_gap_report": data_gap_report,
+        "data_issue_explainer": data_issue_explainer,
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
         "errors": errors,
@@ -808,6 +822,7 @@ def build_home_action_snapshot(
         empty["data_capability"] = snapshot["data_capability"]
         empty["facts_packet"] = snapshot["facts_packet"]
         empty["data_gap_report"] = snapshot["data_gap_report"]
+        empty["data_issue_explainer"] = snapshot["data_issue_explainer"]
         empty["market_packet"] = snapshot["market_packet"]
         empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
         empty["radar_packet"] = snapshot["radar_packet"]

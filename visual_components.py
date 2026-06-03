@@ -4670,6 +4670,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     freshness = payload.get("data_freshness") or {}
     data_capability = payload.get("data_capability") or {}
     data_gap_report = payload.get("data_gap_report") or {}
+    data_issue_explainer = payload.get("data_issue_explainer") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
     market_profile = payload.get("market_profile_evidence") or {}
@@ -4776,6 +4777,22 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     governance_checks = [str(item).strip() for item in (data_gap_report.get("next_manual_checks") or []) if str(item).strip()]
     capability_items = data_capability.get("items") or []
     capability_dashboard = build_data_capability_dashboard_view_model(data_capability, data_gap_report)
+    issue_items = [item for item in (data_issue_explainer.get("items") or []) if isinstance(item, dict)]
+    issue_html = ""
+    for item in issue_items[:3]:
+        issue_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "数据能力"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), item.get("state") or "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">为什么：{escape(_home_text(item.get("meaning"), "待验证。"))}</div>
+          <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "保留安全空态或手动刷新。"))}</div>
+        </div>
+        """
+    if not issue_html:
+        issue_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>暂无数据问题解释</div><div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div></div>"
     capability_text = "；".join(
         f"{_home_text(item.get('label'), item.get('api') or '数据')}: {_home_text(item.get('status'), item.get('state') or '待验证')}"
         for item in capability_items[:5]
@@ -4944,6 +4961,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
+          {issue_html}
           <div class="cc-muted-note">数据能力诊断：{escape(_home_text(capability_dashboard.get("summary"), "尚未检测数据能力。"))}</div>
           {provider_html}
           {_home_list(governance_checks, "暂无下一步检查建议。", limit=4)}

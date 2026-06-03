@@ -494,6 +494,37 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(any("权限不足" in item for item in report["next_manual_checks"]))
         self.assertFalse(report["deepseek_called"])
 
+    def test_home_snapshot_builds_data_issue_explainer(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "last_data_source_healthcheck": {
+                "data_capability": {
+                    "source": "Unified data capability",
+                    "checked_at": f"{today}T10:01:00",
+                    "items": [
+                        {"provider": "Tushare", "api": "top_list", "label": "龙虎榜", "capability_state": "empty_recent", "status": "近期无数据"},
+                        {"provider": "Tushare", "api": "limit_cpt_list", "label": "涨跌停/情绪", "capability_state": "disabled_this_session", "status": "本会话跳过"},
+                    ],
+                    "deepseek_called": False,
+                }
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+        explainer = payload["data_issue_explainer"]
+        dumped = json.dumps(explainer, ensure_ascii=False)
+
+        self.assertEqual(explainer["status"], "ready")
+        self.assertIn("Tushare 配置成功只代表 token 可用", explainer["short_answer"])
+        self.assertIn("近期无记录", dumped)
+        self.assertIn("本会话跳过重复请求", dumped)
+        self.assertFalse(explainer["deepseek_called"])
+
     def test_home_snapshot_persists_market_packet(self):
         today = _dt.date.today().isoformat()
         state = {
