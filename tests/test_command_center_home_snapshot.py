@@ -272,6 +272,77 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(payload["deepseek_called"])
         self.assertFalse(payload["data_freshness"]["deepseek_called"])
 
+    def test_hard_risk_packet_feeds_home_risk_alerts(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "只观察",
+                    "updated_at": f"{today}T10:00:00",
+                    "must_not_do": ["不追高"],
+                },
+                "command_center_hard_risk_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "ticker": "002008.SZ",
+                    "risk_state": "风险线索存在",
+                    "updated_at": f"{today}T10:08:00",
+                    "risk_items": [
+                        {
+                            "type": "股东减持",
+                            "message": "控股股东减持计划待复核",
+                            "date": today.replace("-", ""),
+                            "source": "Tushare stk_holdertrade",
+                        }
+                    ],
+                    "deepseek_called": False,
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:10:00",
+        )
+        alerts = payload["risk_alerts"]
+        dumped = json.dumps(alerts, ensure_ascii=False)
+
+        self.assertIn("公告/硬风险线索未复核前不加仓", dumped)
+        self.assertIn("控股股东减持计划待复核", dumped)
+        self.assertIn("公告/硬风险存在待复核线索", alerts["data_gaps"])
+        self.assertEqual(alerts["hard_risk_status"], "风险线索存在")
+        self.assertFalse(payload["hard_risk_packet"]["deepseek_called"])
+        self.assertFalse(payload["deepseek_called"])
+
+    def test_loaded_snapshot_keeps_hard_risk_alerts(self):
+        today = _dt.date.today().isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "等待",
+                        "updated_at": f"{today}T10:00:00",
+                    },
+                    "command_center_hard_risk_packet": {
+                        "status": "ready",
+                        "data_status": "ready",
+                        "ticker": "002008.SZ",
+                        "risk_state": "风险线索存在",
+                        "updated_at": f"{today}T10:08:00",
+                        "risk_items": [{"type": "股权质押", "message": "质押比例较高", "source": "Tushare pledge_stat"}],
+                        "deepseek_called": False,
+                    },
+                },
+                target="002008.SZ",
+                now=f"{today}T10:12:00",
+            )
+            snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+
+        dumped = json.dumps(loaded["risk_alerts"], ensure_ascii=False)
+        self.assertIn("质押比例较高", dumped)
+        self.assertEqual(loaded["risk_alerts"]["hard_risk_status"], "风险线索存在")
+        self.assertFalse(loaded["hard_risk_packet"]["deepseek_called"])
+
     def test_snapshot_path_is_under_cache_dir(self):
         path = snapshot.get_home_snapshot_path("/tmp/stock-ming-test")
 

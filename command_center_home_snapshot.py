@@ -310,6 +310,10 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
+    snapshot["risk_alerts"] = attach_hard_risk_risk_alerts(
+        snapshot.get("risk_alerts") or {},
+        snapshot.get("hard_risk_packet") or {},
+    )
     existing_market_profile = _as_mapping(snapshot.get("market_profile_evidence"))
     normalized_market_profile = market_profile_summary_service.build_market_profile_evidence_strip(
         market_type=existing_market_profile.get("market_type"),
@@ -732,6 +736,62 @@ def attach_data_capability_risk_alerts(risk_alerts: Any = None, data_capability_
     return alerts
 
 
+def _hard_risk_item_text(item: Any) -> str:
+    payload = _as_mapping(item)
+    if not payload:
+        return _to_text(item)
+    risk_type = _to_text(payload.get("type") or payload.get("risk_type"), "硬风险")
+    message = _to_text(payload.get("message") or payload.get("summary") or payload.get("title") or payload.get("risk"))
+    date_text = _to_text(payload.get("date") or payload.get("ann_date") or payload.get("updated_at"))
+    source = _to_text(payload.get("source"))
+    parts = [risk_type]
+    if message:
+        parts.append(message)
+    if date_text:
+        parts.append(date_text)
+    if source:
+        parts.append(source)
+    return "｜".join(parts)
+
+
+def attach_hard_risk_risk_alerts(risk_alerts: Any = None, hard_risk_packet: Any = None) -> dict:
+    alerts = _as_mapping(risk_alerts)
+    hard = _as_mapping(hard_risk_packet)
+    if not hard:
+        return alerts
+    status = _to_text(hard.get("status"))
+    data_status = _to_text(hard.get("data_status"))
+    risk_items = [_hard_risk_item_text(item) for item in _as_list(hard.get("risk_items"))]
+    risk_items = [item for item in risk_items if item]
+    risk_notes = [_to_text(item) for item in _as_list(hard.get("risk_notes"))]
+    risk_notes = [item for item in risk_notes if item]
+    must_not_do = [_to_text(item) for item in _as_list(alerts.get("must_not_do"))]
+    reduce_conditions = [_to_text(item) for item in _as_list(alerts.get("reduce_conditions"))]
+    data_gaps = [_to_text(item) for item in _as_list(alerts.get("data_gaps"))]
+    if risk_items:
+        must_not_do.insert(0, "公告/硬风险线索未复核前不加仓、不加融资。")
+        reduce_conditions.extend(risk_items[:MAX_CANDIDATES])
+        data_gaps.append("公告/硬风险存在待复核线索")
+    elif status in {"failed", "partial"} or data_status in {"missing", "cached"}:
+        must_not_do.append("公告/硬风险未验证前不新增风险暴露。")
+        data_gaps.append(
+            _to_text(
+                hard.get("manual_required_text")
+                or hard.get("summary")
+                or "公告/硬风险仍待手动检测，不能当作无风险。",
+            )
+        )
+    elif status == "ready":
+        reduce_conditions.append("公告/硬风险无记录不等于无风险；公告正文和监管事实仍需复核。")
+    alerts["must_not_do"] = _dedupe_text_items(must_not_do, limit=5)
+    alerts["reduce_conditions"] = _dedupe_text_items(reduce_conditions, limit=MAX_CANDIDATES)
+    alerts["data_gaps"] = _dedupe_text_items(data_gaps, limit=MAX_ERRORS)
+    alerts["hard_risk_alerts"] = _dedupe_text_items(risk_items or risk_notes, limit=MAX_CANDIDATES)
+    alerts["hard_risk_status"] = _to_text(hard.get("risk_state") or hard.get("summary") or status, "待验证")
+    alerts["hard_risk_updated_at"] = _to_text(hard.get("updated_at") or hard.get("trade_date"), "暂无")
+    return alerts
+
+
 def build_home_action_snapshot(
     state: Any = None,
     target: str = "",
@@ -831,9 +891,12 @@ def build_home_action_snapshot(
         refresh_summary=refresh,
         errors=errors,
     )
-    risk_alerts = attach_data_capability_risk_alerts(
-        build_risk_alerts(decision, strategy, coverage, errors),
-        data_capability_console,
+    risk_alerts = attach_hard_risk_risk_alerts(
+        attach_data_capability_risk_alerts(
+            build_risk_alerts(decision, strategy, coverage, errors),
+            data_capability_console,
+        ),
+        hard_risk_packet,
     )
     analysis_method_packet = (
         state_map.get("command_center_analysis_method_packet")
@@ -896,7 +959,13 @@ def build_home_action_snapshot(
         empty["timestamp"] = timestamp
         empty["holding_action"] = snapshot["holding_action"]
         empty["data_coverage"] = coverage
-        empty["risk_alerts"] = build_risk_alerts(decision, strategy, coverage, errors)
+        empty["risk_alerts"] = attach_hard_risk_risk_alerts(
+            attach_data_capability_risk_alerts(
+                build_risk_alerts(decision, strategy, coverage, errors),
+                data_capability_console,
+            ),
+            hard_risk_packet,
+        )
         empty["data_freshness"] = build_data_freshness("", errors, deepseek_called=deepseek_called)
         empty["data_capability"] = snapshot["data_capability"]
         empty["a_share_capability_matrix"] = snapshot["a_share_capability_matrix"]
