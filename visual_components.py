@@ -3426,6 +3426,7 @@ def _inject_command_center_css():
         }
         .cc-decision-chain-pill.success { background: rgba(20,184,166,0.10); color: #0f766e; border-color: rgba(20,184,166,0.18); }
         .cc-decision-chain-pill.warning { background: rgba(245,158,11,0.11); color: #b45309; border-color: rgba(245,158,11,0.18); }
+        .cc-decision-chain-pill.danger { background: rgba(239,68,68,0.10); color: #b91c1c; border-color: rgba(239,68,68,0.18); }
         .cc-decision-chain-pill.muted { background: rgba(148,163,184,0.10); color: #475569; border-color: rgba(148,163,184,0.16); }
         .cc-decision-risk {
             border-radius: 24px;
@@ -4601,6 +4602,15 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         "</span>"
         for item in (vm.get("evidence_chain_items") or [])[:5]
     )
+    a_share_data_basis_items = vm.get("a_share_data_basis_items") or []
+    a_share_data_basis_html = "".join(
+        f"<span class='cc-decision-chain-pill {escape(str(item.get('tone') or 'muted'))}'>"
+        f"{escape(str(item.get('label') or 'A股数据'))}：{escape(str(item.get('value') or '待验证'))}"
+        "</span>"
+        for item in a_share_data_basis_items[:4]
+    )
+    if a_share_data_basis_html:
+        a_share_data_basis_html = f"<div class='cc-decision-chain'>{a_share_data_basis_html}</div>"
     html = f"""
     <section class="cc-decision-hero">
       <div class="cc-decision-top">
@@ -4615,6 +4625,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             <span class="cc-decision-badge">{escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}</span>
           </div>
           <div class="cc-decision-chain">{evidence_chain_html}</div>
+          {a_share_data_basis_html}
         </div>
         <aside class="cc-decision-risk">
           <div class="cc-decision-risk-label">风险等级</div>
@@ -4639,6 +4650,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
         <br>{escape(str(vm.get("evidence_summary_text") or ""))}
         <br>A股证据雷达：{escape(str(vm.get("a_share_evidence_summary_text") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
+        <br>A股数据能力：{escape(str(vm.get("a_share_data_basis_summary_text") or "待检测"))}
       </div>
     </section>
     """

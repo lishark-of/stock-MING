@@ -3888,10 +3888,22 @@ def render_command_center_decision_card(live_packet, target="", position_profile
     evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(
         st.session_state.get("command_center_home_snapshot") or {}
     )
+    home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
+    a_share_diagnostic = (
+        home_snapshot.get("a_share_user_data_diagnostic")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or {}
+    a_share_data_console = (
+        a_share_diagnostic.get("status_console")
+        if isinstance(a_share_diagnostic, dict)
+        else {}
+    ) or {}
     decision_vm = build_decision_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_vm,
+        a_share_data_console=a_share_data_console,
     )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):

@@ -167,7 +167,109 @@ def build_data_coverage_items(packet: Any) -> list[dict]:
     return items
 
 
-def build_decision_evidence_chain_items(analysis_method_packet: Any = None, evidence_radar_packet: Any = None) -> list[dict]:
+def _limited_join(items: Any, fallback: str = "无", limit: int = 2) -> str:
+    values = [_to_text(item) for item in (items or [])]
+    values = [item for item in values if item]
+    if not values:
+        return fallback
+    visible = values[:limit]
+    suffix = f" 等 {len(values)} 项" if len(values) > limit else ""
+    return "、".join(visible) + suffix
+
+
+def _a_share_data_basis_tone(readiness: str, summary: str = "") -> str:
+    if any(key in readiness for key in ["可进入", "可用", "已可用"]):
+        return "success"
+    if any(key in readiness for key in ["阻断", "受限", "权限"]):
+        return "danger"
+    if any(key in readiness for key in ["谨慎", "暂无数据", "缓存"]):
+        return "warning"
+    if any(key in readiness for key in ["待手动", "待检测", "待验证"]):
+        return "muted"
+    text = f"{readiness} {summary}"
+    if any(key in text for key in ["阻断", "受限", "权限"]):
+        return "danger"
+    if any(key in text for key in ["谨慎", "暂无数据", "缓存"]):
+        return "warning"
+    if any(key in text for key in ["待手动", "待检测", "待验证"]):
+        return "muted"
+    if any(key in text for key in ["可进入", "可用", "已可用"]):
+        return "success"
+    return "muted"
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def build_a_share_data_basis_items(a_share_data_console: Any = None) -> list[dict]:
+    console = _as_mapping(a_share_data_console)
+    if not console:
+        return []
+
+    readiness = _to_text(console.get("decision_readiness_label")) or _to_text(console.get("headline")) or "待检测"
+    summary = _to_text(console.get("summary"))
+    items = [
+        {
+            "label": "A股数据能力",
+            "value": readiness,
+            "tone": _a_share_data_basis_tone(readiness, summary),
+            "summary": summary,
+        }
+    ]
+
+    groups = {
+        _to_text(group.get("key")): _as_mapping(group)
+        for group in (console.get("groups") or [])
+        if _as_mapping(group)
+    }
+    group_specs = [
+        ("permission_denied", "受限", "danger"),
+        ("stale_or_empty", "暂无数据", "warning"),
+        ("manual_required", "待手动", "muted"),
+        ("available", "可用", "success"),
+    ]
+    for key, label, fallback_tone in group_specs:
+        group = groups.get(key) or {}
+        count = _safe_int(group.get("count"))
+        if count <= 0:
+            continue
+        tone = _to_text(group.get("tone")) or fallback_tone
+        if tone == "failed":
+            tone = "danger"
+        elif tone == "stale":
+            tone = "warning"
+        elif tone == "ready":
+            tone = "success"
+        items.append(
+            {
+                "label": label,
+                "value": _limited_join(group.get("items"), fallback=_to_text(group.get("summary")) or label),
+                "tone": tone,
+                "count": count,
+            }
+        )
+
+    return items[:5]
+
+
+def build_a_share_data_basis_summary_text(a_share_data_console: Any = None) -> str:
+    console = _as_mapping(a_share_data_console)
+    if not console:
+        return ""
+    readiness = _to_text(console.get("decision_readiness_label")) or _to_text(console.get("headline")) or "待检测"
+    summary = _to_text(console.get("summary"))
+    return f"{readiness}｜{summary}" if summary else readiness
+
+
+def build_decision_evidence_chain_items(
+    analysis_method_packet: Any = None,
+    evidence_radar_packet: Any = None,
+    a_share_data_console: Any = None,
+) -> list[dict]:
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
     items = [{"label": "市场类型", "value": market, "tone": "success" if market in {"A股", "美股", "ETF"} else "muted"}]
@@ -182,7 +284,12 @@ def build_decision_evidence_chain_items(analysis_method_packet: Any = None, evid
     if pending:
         items.append({"label": "待验证", "value": "、".join(pending[:2]), "tone": "warning"})
     if not_applicable:
-        items.append({"label": "不适用", "value": "、".join(not_applicable[:2]), "tone": "muted"})
+        not_applicable_item = {"label": "不适用", "value": "、".join(not_applicable[:2]), "tone": "muted"}
+    else:
+        not_applicable_item = None
+    a_share_basis = build_a_share_data_basis_items(a_share_data_console)
+    if a_share_basis:
+        items.append(a_share_basis[0])
     evidence = _as_mapping(evidence_radar_packet)
     if evidence:
         blockers = len(evidence.get("blocker_items") or [])
@@ -195,6 +302,8 @@ def build_decision_evidence_chain_items(analysis_method_packet: Any = None, evid
             items.append({"label": "支持证据", "value": f"{support} 项", "tone": "success"})
         if cached or missing:
             items.append({"label": "待复核证据", "value": f"缓存 {cached}｜缺失 {missing}", "tone": "warning"})
+    if not_applicable_item:
+        items.append(not_applicable_item)
     if len(items) < 5:
         source = _to_text(analysis.get("source")) or "rule-based market profile"
         items.append({"label": "来源", "value": source, "tone": "muted"})
@@ -205,6 +314,7 @@ def build_decision_summary_view_model(
     packet: Any,
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
+    a_share_data_console: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     status = normalize_decision_status(payload)
@@ -236,8 +346,11 @@ def build_decision_summary_view_model(
         "evidence_chain_items": build_decision_evidence_chain_items(
             analysis_method_packet,
             evidence_radar_packet=evidence_radar_packet,
+            a_share_data_console=a_share_data_console,
         ),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
+        "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
+        "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),

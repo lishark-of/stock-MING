@@ -165,6 +165,52 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("支持证据", joined)
         self.assertEqual(view_model["a_share_evidence_summary_text"], "支持 1｜阻断 1｜缓存 1｜缺失 3")
 
+    def test_evidence_chain_includes_a_share_data_capability_blockers(self):
+        console = {
+            "decision_readiness_label": "阻断加仓",
+            "summary": "可用 1｜受限 1｜暂无数据 1｜待手动 0",
+            "groups": [
+                {"key": "available", "tone": "ready", "count": 1, "items": ["融资融券"]},
+                {"key": "permission_denied", "tone": "failed", "count": 1, "items": ["个股资金流"]},
+                {"key": "stale_or_empty", "tone": "stale", "count": 1, "items": ["龙虎榜"]},
+            ],
+            "deepseek_called": False,
+        }
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "只观察"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            a_share_data_console=console,
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+        basis = json.dumps(view_model["a_share_data_basis_items"], ensure_ascii=False)
+
+        self.assertIn("A股数据能力", joined)
+        self.assertIn("阻断加仓", joined)
+        self.assertIn("个股资金流", basis)
+        self.assertIn("龙虎榜", basis)
+        self.assertEqual(view_model["a_share_data_basis_items"][0]["tone"], "danger")
+        self.assertIn("受限 1", view_model["a_share_data_basis_summary_text"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_a_share_data_basis_marks_all_available_as_decision_ready(self):
+        view_model = summary.build_decision_summary_view_model(
+            {},
+            analysis_method_packet={"market": "A股", "methods": []},
+            a_share_data_console={
+                "decision_readiness_label": "可进入证据链",
+                "summary": "可用 4｜受限 0｜暂无数据 0｜待手动 0",
+                "groups": [
+                    {"key": "available", "tone": "ready", "count": 4, "items": ["个股资金流", "龙虎榜", "融资融券"]},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        basis = view_model["a_share_data_basis_items"]
+
+        self.assertEqual(basis[0]["tone"], "success")
+        self.assertEqual(basis[0]["value"], "可进入证据链")
+        self.assertIn("个股资金流", json.dumps(basis, ensure_ascii=False))
+
     def test_evidence_chain_keeps_blockers_when_method_list_is_full(self):
         view_model = summary.build_decision_summary_view_model(
             {},
