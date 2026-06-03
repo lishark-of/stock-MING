@@ -4,6 +4,7 @@ from openai import OpenAI
 from supabase import create_client, Client
 import datetime
 import hashlib
+from html import escape as html_escape
 import json
 import os
 import re
@@ -4319,22 +4320,29 @@ def render_command_center_toolbox_entry():
     packet = toolbox_summary_service.build_advanced_toolbox_entry()
     item_html = ""
     for item in packet.get("items") or []:
+        capability = item.get("capability_summary") or {}
+        dependencies = "、".join(capability.get("depends_on") or item.get("data_dependencies") or [])
+        missing_reasons = "；".join(capability.get("why_missing") or item.get("common_missing_reasons") or [])
         item_html += f"""
         <div class="cc-mini-card">
-          <div class="cc-mini-title">{item.get("label", "高级工具")}</div>
-          <div class="cc-mini-desc">{item.get("purpose", "旧版工具保留。")}</div>
-          <div class="cc-mini-desc">回流 packet：{item.get("packet", "待接入")}</div>
-          <div class="cc-mini-desc">触发方式：{item.get("gate", "按钮手动触发")}</div>
+          <div class="cc-mini-title">{html_escape(str(item.get("label") or "高级工具"))}</div>
+          <div class="cc-mini-desc">{html_escape(str(item.get("purpose") or "旧版工具保留。"))}</div>
+          <div class="cc-mini-desc">依赖数据：{html_escape(dependencies or "本地缓存 / 手动刷新结果")}</div>
+          <div class="cc-mini-desc">为什么可能没数据：{html_escape(missing_reasons or "待检测、权限不足、非交易日或缓存过期。")}</div>
+          <div class="cc-mini-desc">安全空态：{html_escape(str(capability.get("safe_empty_state") or "显示待验证，不自动触发重型请求。"))}</div>
+          <div class="cc-mini-desc">回流 packet：{html_escape(str(item.get("packet") or "待接入"))}</div>
+          <div class="cc-mini-desc">触发方式：{html_escape(str(item.get("gate") or "按钮手动触发"))}</div>
         </div>
         """
     st.markdown(
         f"""
         <section class="cc-card">
-          <div class="cc-card-title">{packet.get("title", "高级工具箱")}</div>
-          <div class="cc-card-caption">{packet.get("summary", "旧版工作台保留为高级工具。")}</div>
+          <div class="cc-card-title">{html_escape(str(packet.get("title") or "高级工具箱"))}</div>
+          <div class="cc-card-caption">{html_escape(str(packet.get("summary") or "旧版工作台保留为高级工具。"))}</div>
+          <div class="cc-card-caption">{html_escape(str(packet.get("data_gap_note") or "数据能力待检测。"))}</div>
           <div class="cc-mini-grid">{item_html}</div>
-          <div class="cc-card-caption">{packet.get("manual_note", "高级工具只在按钮触发时运行。")}</div>
-          <div class="cc-card-caption">{packet.get("next_step", "")}</div>
+          <div class="cc-card-caption">{html_escape(str(packet.get("manual_note") or "高级工具只在按钮触发时运行。"))}</div>
+          <div class="cc-card-caption">{html_escape(str(packet.get("next_step") or ""))}</div>
         </section>
         """,
         unsafe_allow_html=True,
