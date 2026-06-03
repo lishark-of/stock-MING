@@ -23,6 +23,7 @@ import command_center_hard_risk_packet as hard_risk_packet_service
 import command_center_market_profile_summary as market_profile_summary_service
 import command_center_data_issue_explainer as data_issue_explainer_service
 import command_center_data_capability_console as data_capability_console_service
+import command_center_a_share_capability_matrix as a_share_capability_matrix_service
 import market_data_capability as data_capability_service
 
 
@@ -218,6 +219,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
             "deepseek_called": False,
         },
         "data_capability": build_data_capability_snapshot({}),
+        "a_share_capability_matrix": a_share_capability_matrix_service.build_a_share_capability_matrix(),
         "facts_packet": facts_packet_service.build_command_center_facts_packet({}),
         "data_gap_report": data_gap_report_service.build_command_center_data_gap_report(),
         "data_issue_explainer": data_issue_explainer_service.build_data_issue_explainer_packet(),
@@ -252,6 +254,10 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         deepseek_called=bool(snapshot.get("deepseek_called")),
     )
     snapshot["data_capability"] = build_data_capability_snapshot(snapshot.get("data_capability") or {})
+    snapshot["a_share_capability_matrix"] = a_share_capability_matrix_service.build_a_share_capability_matrix(
+        snapshot.get("data_capability") or {},
+        snapshot.get("facts_packet") or {},
+    )
     snapshot["facts_packet"] = facts_packet_service.build_command_center_facts_packet(
         {"command_center_facts_packet": snapshot.get("facts_packet") or {}}
     )
@@ -801,6 +807,10 @@ def build_home_action_snapshot(
         {"command_center_facts_packet": facts_packet},
         target=target,
     )
+    a_share_capability_matrix = a_share_capability_matrix_service.build_a_share_capability_matrix(
+        data_capability_snapshot,
+        facts_packet_snapshot,
+    )
     data_gap_report = data_gap_report_service.build_command_center_data_gap_report(
         data_capability_snapshot,
         facts_packet_snapshot,
@@ -869,6 +879,7 @@ def build_home_action_snapshot(
         "data_coverage": coverage,
         "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
         "data_capability": data_capability_snapshot,
+        "a_share_capability_matrix": a_share_capability_matrix,
         "facts_packet": facts_packet_snapshot,
         "data_gap_report": data_gap_report,
         "data_issue_explainer": data_issue_explainer,
@@ -888,6 +899,7 @@ def build_home_action_snapshot(
         empty["risk_alerts"] = build_risk_alerts(decision, strategy, coverage, errors)
         empty["data_freshness"] = build_data_freshness("", errors, deepseek_called=deepseek_called)
         empty["data_capability"] = snapshot["data_capability"]
+        empty["a_share_capability_matrix"] = snapshot["a_share_capability_matrix"]
         empty["facts_packet"] = snapshot["facts_packet"]
         empty["data_gap_report"] = snapshot["data_gap_report"]
         empty["data_issue_explainer"] = snapshot["data_issue_explainer"]

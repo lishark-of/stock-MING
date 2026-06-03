@@ -4678,6 +4678,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
+    a_share_matrix = payload.get("a_share_capability_matrix") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
     market_profile = payload.get("market_profile_evidence") or {}
@@ -4849,6 +4850,27 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not provider_html:
         provider_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>数据源尚未检测</div><div class='cc-home-item-meta'>页面打开不会自动 ping Tushare、AkShare、yfinance 或 Supabase。</div></div>"
+    matrix_items = [item for item in (a_share_matrix.get("items") or []) if isinstance(item, dict)]
+    matrix_html = ""
+    for item in matrix_items[:6]:
+        matched_text = "；".join(
+            f"{_home_text(row.get('label'), row.get('api') or '数据')}:{_home_text(row.get('status_label'), row.get('state') or '待验证')}"
+            for row in (item.get("matched_items") or [])[:2]
+            if isinstance(row, dict)
+        ) or "暂无本地检测结果"
+        matrix_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "A股能力"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">接口：{escape(_home_text(item.get("api_hint"), "待接入"))} ｜ {escape(_home_text(item.get("decision_role"), "只作辅助验证。"))}</div>
+          <div class="cc-home-item-meta">已匹配：{escape(matched_text)}</div>
+          <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
+        </div>
+        """
+    if not matrix_html:
+        matrix_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>A股数据能力尚未检测</div><div class='cc-home-item-meta'>页面打开不会自动请求 Tushare；点击刷新或数据源体检后再进入矩阵。</div></div>"
     fact_items = [item for item in (facts_packet.get("items") or []) if isinstance(item, dict)]
     fact_gap_summary = _home_text(facts_packet.get("gap_summary"), "")
     fact_next_checks = [str(item).strip() for item in (facts_packet.get("next_manual_checks") or []) if str(item).strip()]
@@ -4994,6 +5016,14 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          <div class="cc-home-candidate">
+            <div class="cc-home-item-title">
+              {escape(_home_text(a_share_matrix.get("title"), "A股数据能力矩阵"))}
+              <span class="cc-home-chip {escape(_home_text(a_share_matrix.get("tone"), "missing"))}">{escape(_home_text(a_share_matrix.get("summary"), "尚未检测 A股专业数据能力。"))}</span>
+            </div>
+            <div class="cc-home-item-meta">{escape(_home_text(a_share_matrix.get("manual_note"), "只读取本地 packet，不自动请求外部接口。"))}</div>
+          </div>
+          {matrix_html}
           <div class="cc-home-candidate">
             <div class="cc-home-item-title">
               数据能力控制台

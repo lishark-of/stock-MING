@@ -388,6 +388,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T09:40:00")
         capability = payload["data_capability"]
+        matrix = payload["a_share_capability_matrix"]
+        matrix_by_key = {item["key"]: item for item in matrix["items"]}
 
         self.assertEqual(capability["source"], "Tushare A股专业事实")
         self.assertEqual(capability["available_count"], 1)
@@ -395,6 +397,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(capability["pending_count"], 1)
         self.assertIn("可用：个股资金流", capability["summary"])
         self.assertIn("受限：融资融券", capability["summary"])
+        self.assertEqual(matrix_by_key["moneyflow"]["state"], "available")
+        self.assertEqual(matrix_by_key["margin"]["state"], "permission_denied")
+        self.assertEqual(matrix_by_key["dragon_tiger"]["state"], "empty_recent")
+        self.assertFalse(matrix["deepseek_called"])
         self.assertFalse(capability["deepseek_called"])
 
     def test_home_snapshot_builds_capability_from_legacy_a_share_facts(self):
