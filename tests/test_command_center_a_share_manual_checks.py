@@ -53,6 +53,17 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(request["refresh_policy"], "button_gated")
         self.assertFalse(request["deepseek_called"])
 
+    def test_chip_radar_request_is_button_gated(self):
+        request = checks.build_chip_radar_check_request("002008", today="2026-06-03")
+
+        self.assertEqual(request["api"], "cyq_perf/cyq_chips")
+        self.assertEqual(request["section"], "chip_radar")
+        self.assertEqual(request["ts_code"], "002008.SZ")
+        self.assertEqual(request["start_date"], "20260504")
+        self.assertEqual(request["end_date"], "20260603")
+        self.assertEqual(request["refresh_policy"], "button_gated")
+        self.assertFalse(request["deepseek_called"])
+
     def test_margin_detail_result_builds_capability_item(self):
         item = checks.build_margin_detail_capability_item(
             {"ok": False, "error": "抱歉，您没有访问该接口的权限", "api": "margin_detail"},
@@ -75,6 +86,44 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(item["label"], "涨跌停/情绪")
         self.assertEqual(item["capability_state"], capability.STATE_DISABLED_THIS_SESSION)
         self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertFalse(item["deepseek_called"])
+
+    def test_chip_radar_result_requires_both_sub_interfaces(self):
+        item = checks.build_chip_radar_capability_item(
+            {"ok": True, "rows": 2, "latest_date": "20260603", "api": "cyq_perf"},
+            {"ok": True, "rows": 3, "latest_date": "20260602", "api": "cyq_chips"},
+            latency_ms=15,
+        )
+
+        self.assertEqual(item["section"], "chip_radar")
+        self.assertEqual(item["label"], "筹码/胜率")
+        self.assertEqual(item["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(item["rows"], 5)
+        self.assertEqual(item["latest_date"], "20260603")
+        self.assertEqual(len(item["sub_items"]), 2)
+        self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertFalse(item["deepseek_called"])
+
+    def test_chip_radar_partial_result_is_fallback_used(self):
+        item = checks.build_chip_radar_capability_item(
+            {"ok": True, "rows": 2, "latest_date": "20260603", "api": "cyq_perf"},
+            {"ok": True, "rows": 0, "latest_date": "", "api": "cyq_chips"},
+            latency_ms=15,
+        )
+
+        self.assertEqual(item["capability_state"], capability.STATE_FALLBACK_USED)
+        self.assertIn("部分", item["error"])
+        self.assertFalse(item["deepseek_called"])
+
+    def test_chip_radar_permission_denied_is_visible(self):
+        item = checks.build_chip_radar_capability_item(
+            {"ok": False, "error": "抱歉，您没有访问该接口的权限", "api": "cyq_perf"},
+            {"ok": False, "error": "抱歉，您没有访问该接口的权限", "api": "cyq_chips"},
+            latency_ms=15,
+        )
+
+        self.assertEqual(item["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertTrue(item["permission_likely"])
         self.assertFalse(item["deepseek_called"])
 
     def test_merge_replaces_existing_margin_item(self):
@@ -109,6 +158,27 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
 
         self.assertEqual(by_section["limit_emotion"]["capability_state"], capability.STATE_AVAILABLE)
         self.assertEqual(by_section["margin"]["capability_state"], capability.STATE_PERMISSION_DENIED)
+        self.assertEqual(merged["ok_count"], 1)
+        self.assertFalse(merged["deepseek_called"])
+        json.dumps(merged, ensure_ascii=False)
+
+    def test_merge_replaces_existing_chip_radar_item(self):
+        packet = {
+            "source": "Tushare A股专业事实",
+            "items": [
+                {"section": "chip_radar", "label": "筹码/胜率", "api": "cyq_perf/cyq_chips", "capability_state": "empty_recent", "status": "近期无数据"},
+                {"section": "limit_emotion", "label": "涨跌停/情绪", "api": "limit_cpt_list", "capability_state": "disabled_this_session", "status": "本会话跳过"},
+            ],
+        }
+        new_item = checks.build_chip_radar_capability_item(
+            {"ok": True, "rows": 2, "latest_date": "20260603"},
+            {"ok": True, "rows": 3, "latest_date": "20260603"},
+        )
+        merged = checks.merge_a_share_capability_item(packet, new_item, checked_at="2026-06-03T10:00:00")
+        by_section = {item["section"]: item for item in merged["items"]}
+
+        self.assertEqual(by_section["chip_radar"]["capability_state"], capability.STATE_AVAILABLE)
+        self.assertEqual(by_section["limit_emotion"]["capability_state"], capability.STATE_DISABLED_THIS_SESSION)
         self.assertEqual(merged["ok_count"], 1)
         self.assertFalse(merged["deepseek_called"])
         json.dumps(merged, ensure_ascii=False)
