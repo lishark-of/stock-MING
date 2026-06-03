@@ -112,6 +112,72 @@ class CommandCenterLegacyASharePromptPacketsTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
+    def test_verified_whale_fact_packet_uses_verified_market_facts(self):
+        recent_price_volume = [{"date": "2026-06-03", "close": 12.3, "volume": 100000}]
+        moneyflow = {
+            "available": True,
+            "date": "2026-06-03",
+            "main_net_yi": 0.5,
+            "five_day_main_net_yi": 1.2,
+            "updated_at": "2026-06-03T18:00:00",
+        }
+        before = copy.deepcopy({"recent_price_volume": recent_price_volume, "moneyflow": moneyflow})
+
+        packet = packets.build_verified_whale_fact_packet(
+            stock_code="002008",
+            stock_name="大族激光",
+            current_price=12.3,
+            recent_5d_close_volume=recent_price_volume,
+            moneyflow_data=moneyflow,
+            dragon_data={
+                "available": True,
+                "latest_date": "2026-06-03",
+                "reason": "日涨幅偏离",
+                "net_buy_amount_yi": 0.8,
+                "updated_at": "2026-06-03T17:00:00",
+            },
+            margin_data={"available": True, "date": "2026-06-03", "financing_balance_yi": 10.1},
+            limit_emotion_data={
+                "available": True,
+                "records_available": True,
+                "latest_date": "2026-06-03",
+                "up_limit": 13.5,
+                "limit_records": [{"date": "2026-06-02", "type": "涨停"}],
+            },
+            verified_technical_facts={"available": True, "ma60_state": "站上"},
+        )
+
+        self.assertEqual({"recent_price_volume": recent_price_volume, "moneyflow": moneyflow}, before)
+        self.assertEqual(packet["stock_code"], "002008")
+        self.assertTrue(packet["price_volume"]["available"])
+        self.assertEqual(packet["price_volume"]["source"], "yfinance/get_historical_data")
+        self.assertTrue(packet["moneyflow"]["available"])
+        self.assertEqual(packet["moneyflow"]["main_net_inflow_yi"], 0.5)
+        self.assertEqual(packet["dragon_tiger"]["reason"], "日涨幅偏离")
+        self.assertTrue(packet["limit_emotion"]["records_available"])
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_verified_whale_fact_packet_marks_missing_data(self):
+        packet = packets.build_verified_whale_fact_packet(
+            stock_code="002008",
+            stock_name="大族激光",
+            current_price=None,
+            recent_5d_close_volume=None,
+            moneyflow_data=None,
+            dragon_data=None,
+            margin_data=None,
+            limit_emotion_data=None,
+            updated_at="2026-06-03T09:30:00",
+        )
+
+        self.assertFalse(packet["price_volume"]["available"])
+        self.assertEqual(packet["price_volume"]["note"], "暂无可验证数据")
+        self.assertFalse(packet["moneyflow"]["available"])
+        self.assertEqual(packet["moneyflow"]["note"], "暂无可验证数据")
+        self.assertEqual(packet["updated_at"], "2026-06-03T09:30:00")
+        self.assertFalse(packet["deepseek_called"])
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_prompt_packets.py").read_text(encoding="utf-8"))
         imports = []

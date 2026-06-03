@@ -10033,7 +10033,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             )
             
             recent_5d_close_volume = []
-            volume_data = "近期无数据"
             if not hist_5d.empty:
                 recent_data = hist_5d[['Close', 'Volume']].tail(5)
                 for idx, row in recent_data.iterrows():
@@ -10048,160 +10047,32 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             "volume": _cn_float(row.get("Volume")),
                         }
                     )
-                volume_data = recent_data.to_string()
-
-            def build_verified_whale_fact_packet(verified_technical_facts=None):
-                verified_technical_facts = verified_technical_facts or build_verified_technical_fact_packet({})
-                moneyflow_available = bool(moneyflow_data and moneyflow_data.get("available"))
-                dragon_available = bool(dragon_data and dragon_data.get("available"))
-                margin_available = bool(margin_data and margin_data.get("available"))
-                limit_available = bool(limit_emotion_data and limit_emotion_data.get("available"))
-                limit_records_available = bool(limit_emotion_data and limit_emotion_data.get("records_available"))
-                updated_sources = [
-                    (moneyflow_data or {}).get("updated_at"),
-                    (dragon_data or {}).get("updated_at"),
-                    (margin_data or {}).get("updated_at"),
-                    (limit_emotion_data or {}).get("updated_at"),
-                ]
-                updated_sources = [item for item in updated_sources if item]
-                return {
-                    "stock_code": stock_code,
-                    "stock_name": target,
-                    "price": price,
-                    "price_volume": {
-                        "available": bool(recent_5d_close_volume),
-                        "source": "yfinance/get_historical_data",
-                        "recent_5d_close_volume": recent_5d_close_volume,
-                        "note": "" if recent_5d_close_volume else "暂无可验证数据",
-                    },
-                    "verified_technical_facts": verified_technical_facts,
-                    "moneyflow": {
-                        "available": moneyflow_available,
-                        "source": "Tushare moneyflow",
-                        "latest_date": (moneyflow_data or {}).get("date") if moneyflow_available else "",
-                        "main_net_inflow_yi": (moneyflow_data or {}).get("main_net_yi") if moneyflow_available else "",
-                        "large_net_inflow_yi": (moneyflow_data or {}).get("large_net_yi") if moneyflow_available else "",
-                        "medium_net_inflow_yi": (moneyflow_data or {}).get("medium_net_yi") if moneyflow_available else "",
-                        "small_net_inflow_yi": (moneyflow_data or {}).get("small_net_yi") if moneyflow_available else "",
-                        "five_day_main_net_inflow_yi": (moneyflow_data or {}).get("five_day_main_net_yi") if moneyflow_available else "",
-                        "direction": (moneyflow_data or {}).get("direction") if moneyflow_available else "",
-                        "structure_comment": (moneyflow_data or {}).get("structure") if moneyflow_available else "",
-                        "updated_at": (moneyflow_data or {}).get("updated_at", ""),
-                        "note": "" if moneyflow_available else "暂无可验证数据",
-                    },
-                    "dragon_tiger": {
-                        "available": dragon_available,
-                        "source": "Tushare top_list/top_inst",
-                        "trade_date": (dragon_data or {}).get("latest_date") if dragon_available else "",
-                        "reason": (dragon_data or {}).get("reason") if dragon_available else "",
-                        "buy_amount_yi": (dragon_data or {}).get("buy_amount_yi") if dragon_available else "",
-                        "sell_amount_yi": (dragon_data or {}).get("sell_amount_yi") if dragon_available else "",
-                        "net_buy_amount_yi": (dragon_data or {}).get("net_buy_amount_yi") if dragon_available else "",
-                        "institution_summary": (dragon_data or {}).get("inst_summary") if dragon_available else "",
-                        "raw_rows": (dragon_data or {}).get("raw_rows", []) if dragon_available else [],
-                        "institution_rows": (dragon_data or {}).get("inst_rows", []) if dragon_available else [],
-                        "updated_at": (dragon_data or {}).get("updated_at", ""),
-                        "note": "" if dragon_available else "暂无可验证数据",
-                    },
-                    "margin": {
-                        "available": margin_available,
-                        "source": "Tushare margin_detail",
-                        "trade_date": (margin_data or {}).get("date") if margin_available else "",
-                        "financing_balance_yi": (margin_data or {}).get("financing_balance_yi") if margin_available else "",
-                        "financing_buy_yi": (margin_data or {}).get("financing_buy_yi") if margin_available else "",
-                        "short_sell_volume": (margin_data or {}).get("short_sell_volume") if margin_available else "",
-                        "margin_balance_yi": (margin_data or {}).get("margin_balance_yi") if margin_available else "",
-                        "updated_at": (margin_data or {}).get("updated_at", ""),
-                        "note": "" if margin_available else "暂无可验证数据",
-                    },
-                    "limit_emotion": {
-                        "available": limit_available,
-                        "records_available": limit_records_available,
-                        "source": "Tushare stk_limit/limit_list_d",
-                        "latest_date": (limit_emotion_data or {}).get("latest_date", "") if limit_available else "",
-                        "limit_up_price": (limit_emotion_data or {}).get("up_limit") if limit_available else "",
-                        "limit_down_price": (limit_emotion_data or {}).get("down_limit") if limit_available else "",
-                        "distance_to_up_pct": (limit_emotion_data or {}).get("distance_to_up_pct") if limit_available else "",
-                        "distance_to_down_pct": (limit_emotion_data or {}).get("distance_to_down_pct") if limit_available else "",
-                        "recent_limit_records": (limit_emotion_data or {}).get("limit_records", []) if limit_records_available else [],
-                        "updated_at": (limit_emotion_data or {}).get("updated_at", ""),
-                        "note": "" if limit_available else "暂无可验证数据",
-                    },
-                    "updated_at": max(updated_sources) if updated_sources else datetime.datetime.now().isoformat(timespec="seconds"),
-                }
 
             whale_fact_packet = _run_progress_stage(
                 "整理巨鲸资金事实包",
-                lambda: build_verified_whale_fact_packet(verified_technical_facts),
+                lambda: legacy_a_share_prompt_packet_service.build_verified_whale_fact_packet(
+                    stock_code=stock_code,
+                    stock_name=target,
+                    current_price=price,
+                    recent_5d_close_volume=recent_5d_close_volume,
+                    moneyflow_data=moneyflow_data,
+                    dragon_data=dragon_data,
+                    margin_data=margin_data,
+                    limit_emotion_data=limit_emotion_data,
+                    verified_technical_facts=verified_technical_facts,
+                ),
                 whale_status,
                 whale_progress,
                 50,
                 has_data=lambda data: bool(data),
             )
             verified_technical_prompt = format_verified_technical_facts_for_prompt(verified_technical_facts)
-            
-            whale_prompt = f"""
-你是陆家嘴资金流向分析师。标的：{target}。当前价：¥{price}。
-
-请基于下方【巨鲸资金事实包】输出，必须严格分为四段，段落标题必须逐字使用：
-【已验证资金事实】
-【谨慎推断】
-【投喂资料观点 / 历史假设】
-【观察清单】
-
-{verified_technical_prompt}
-
-【巨鲸资金事实包】
-{json.dumps(whale_fact_packet, ensure_ascii=False, indent=2, default=str)}
-
-【输出要求】
-一、【已验证资金事实】必须分项输出：
-1. 量价事实：只能引用 price_volume 中的 yfinance/get_historical_data 近5日收盘价与成交量。
-2. Tushare moneyflow 个股资金流：只能引用 moneyflow.available=true 时的主力/大单/中单/小单净流入、近5日主力净流入、数据日期、接口名、更新时间；否则写“暂无可验证数据”。
-3. Tushare top_list/top_inst 龙虎榜与机构席位：只能引用 dragon_tiger.available=true 时的上榜日期、上榜原因、买入/卖出/净买入、机构席位摘要和席位明细；没有明确席位名称和分类依据时只能写“营业部席位”或“席位异动”，不得写“游资席位”；否则写“暂无可验证数据”。
-4. Tushare margin_detail 融资融券：只能引用 margin.available=true 时的融资余额、融资买入额、融资融券余额或融券余量、数据日期、接口名、更新时间；否则写“暂无可验证数据”。
-5. Tushare stk_limit/limit_list_d 涨跌停与情绪：只能引用 limit_emotion.available=true 时的涨停价、跌停价、距离涨跌停；只有 records_available=true 时才能引用涨停、炸板、连板记录；否则写“暂无可验证数据”。
-6. 已验证技术事实：必须单独归入【已验证技术事实】或【观察清单】，不得归入资金事实；若 verified_technical_facts.available=true，已有 MA60、RSI、量能、20日/60日涨跌或60日回撤不得再说缺少。
-
-二、【谨慎推断】只能基于已验证资金事实判断：
-1. 资金是否偏流入/流出。
-2. 是否存在短线回流。
-3. 是否存在主力流出但小单承接。
-4. 是否存在龙虎榜与资金流共振。
-5. 是否存在涨停/炸板后的情绪分歧。
-6. 是否需要“未满足验证条件前仅观察”。
-字段不足时必须写“暂无可验证数据，不能推断”。
-
-三、【投喂资料观点 / 历史假设】固定说明：
-本模块未直接引用云记忆；云记忆、manager_rules、用户上传资料和历史研报观点不得作为资金事实。后续如有相关上下文，只能归入待验证线索。
-
-四、【观察清单】必须输出：
-1. 次日需要验证的资金信号。
-2. 放弃观察的条件：必须基于已验证字段，只能写 moneyflow 连续主力净流出、龙虎榜无新增可验证净买入、价格跌破关键成交密集区或前低、融资融券与价格走弱共振、涨停/炸板记录显示情绪退潮；不得凭空设定百分比阈值，不得把“资金转强、突破前高、机构继续净买入”等正向修复信号写成放弃观察条件。
-3. 不追高条件，统一使用“未满足验证条件前仅观察”。
-4. 需要补充的数据：优先列次日 moneyflow、最新 top_list/top_inst、最新 limit_list_d、最新 margin_detail、公司公告/交易所公告/可信新闻、行业或市场情绪事实；不要把北向资金作为核心补充数据。
-5. 涉及涨停价/跌停价时，必须说明涨停价/跌停价仅是当日或最近交易日交易边界，不能当作长期支撑/压力，不得写“跌破跌停价”。
-
-【硬性防幻觉规则】
-1. 没有 Tushare moneyflow 真实返回时，不得说主力净流入/流出。
-2. 没有 top_list/top_inst 真实返回时，不得说机构席位、游资席位、基金经理进场；即使有 top_list/top_inst，也只有在事实包存在明确席位名称和分类依据时才能写“机构席位”，不得擅自判断“游资席位”。
-3. 没有 limit_list_d 真实返回时，不得说涨停、炸板、连板。
-4. 不允许写“跌破跌停价”。跌停价只能作为当日或最近交易日极端风险边界参考，不能写成普通支撑位，也不能当作长期支撑/压力。
-5. margin_detail 只能代表融资融券/杠杆资金，不得等同于主力资金或机构资金。
-6. 不得自造硬阈值，例如“融资余额下降超过10%”；没有系统预设规则或真实数据支持时，只能写“明显下降 / 连续下降，并需结合价格和成交量验证”。
-7. yfinance 近5日量价只能作为量价事实，不得单独推断“主力控盘”。
-8. 北向资金日度披露口径已调整，不得作为巨鲸资金模块的核心补充数据或核心验证项。
-9. 没有公告/新闻验证时，不得说订单、授权、收购、客户已经确定。
-10. 不得出现“跟庄、庄家、主力必然、确定拉升、必涨、满仓、梭哈”等措辞。
-11. 不得使用“出货、接盘、控盘、砸盘、抢筹”等确定性动机词；只能写“主力净流出、小单净流入/小单承接、资金结构分化”等字段可支持的描述。
-12. 使用“未满足验证条件前仅观察”，不要使用绝对化命令。
-13. 所有结论必须标注是“已验证事实”还是“谨慎推断”。
-14. 技术事实不是资金事实；不能用 MA60、RSI、涨跌幅、回撤或量能直接推断主力控盘、出货、抢筹或资金意图。
-15. 技术指标只能辅助解释量价状态和次日观察条件；RSI 高位不等于必跌，RSI 低位不等于必涨，站上 MA60 不等于买入信号，量能放大/缩小不得单独推断主力行为。
-16. 技术事实必须和 moneyflow、龙虎榜、涨跌停、融资融券分层，不得混为同一类证据。
-
-请给出基于已验证资金事实的观察与风控建议。
-"""
+            whale_prompt = legacy_a_share_prompt_service.build_a_share_whale_prompt(
+                target=target,
+                current_price=price,
+                fact_packet=whale_fact_packet,
+                verified_technical_prompt=verified_technical_prompt,
+            )
 
             def run_whale_deepseek():
                 with whale_output:

@@ -278,3 +278,103 @@ def build_single_stock_war_room_fact_packet(
         "updated_at": base_fact_packet.get("updated_at", ""),
         "deepseek_called": False,
     }
+
+
+def build_verified_whale_fact_packet(
+    stock_code: str = "",
+    stock_name: str = "",
+    current_price: Any = None,
+    recent_5d_close_volume: Any = None,
+    moneyflow_data: Any = None,
+    dragon_data: Any = None,
+    margin_data: Any = None,
+    limit_emotion_data: Any = None,
+    verified_technical_facts: Any = None,
+    updated_at: str = "",
+) -> dict:
+    recent_5d_close_volume = as_list(recent_5d_close_volume)
+    moneyflow_data = as_mapping(moneyflow_data)
+    dragon_data = as_mapping(dragon_data)
+    margin_data = as_mapping(margin_data)
+    limit_emotion_data = as_mapping(limit_emotion_data)
+    verified_technical_facts = as_mapping(verified_technical_facts) or build_empty_verified_technical_fact_packet()
+
+    moneyflow_available = bool(moneyflow_data.get("available"))
+    dragon_available = bool(dragon_data.get("available"))
+    margin_available = bool(margin_data.get("available"))
+    limit_available = bool(limit_emotion_data.get("available"))
+    limit_records_available = bool(limit_emotion_data.get("records_available"))
+    updated_sources = [
+        moneyflow_data.get("updated_at"),
+        dragon_data.get("updated_at"),
+        margin_data.get("updated_at"),
+        limit_emotion_data.get("updated_at"),
+    ]
+    updated_sources = [item for item in updated_sources if item]
+
+    return {
+        "stock_code": stock_code,
+        "stock_name": stock_name,
+        "price": current_price,
+        "price_volume": {
+            "available": bool(recent_5d_close_volume),
+            "source": "yfinance/get_historical_data",
+            "recent_5d_close_volume": recent_5d_close_volume,
+            "note": "" if recent_5d_close_volume else "暂无可验证数据",
+        },
+        "verified_technical_facts": verified_technical_facts,
+        "moneyflow": {
+            "available": moneyflow_available,
+            "source": "Tushare moneyflow",
+            "latest_date": moneyflow_data.get("date") if moneyflow_available else "",
+            "main_net_inflow_yi": moneyflow_data.get("main_net_yi") if moneyflow_available else "",
+            "large_net_inflow_yi": moneyflow_data.get("large_net_yi") if moneyflow_available else "",
+            "medium_net_inflow_yi": moneyflow_data.get("medium_net_yi") if moneyflow_available else "",
+            "small_net_inflow_yi": moneyflow_data.get("small_net_yi") if moneyflow_available else "",
+            "five_day_main_net_inflow_yi": moneyflow_data.get("five_day_main_net_yi") if moneyflow_available else "",
+            "direction": moneyflow_data.get("direction") if moneyflow_available else "",
+            "structure_comment": moneyflow_data.get("structure") if moneyflow_available else "",
+            "updated_at": moneyflow_data.get("updated_at", ""),
+            "note": "" if moneyflow_available else "暂无可验证数据",
+        },
+        "dragon_tiger": {
+            "available": dragon_available,
+            "source": "Tushare top_list/top_inst",
+            "trade_date": dragon_data.get("latest_date") if dragon_available else "",
+            "reason": dragon_data.get("reason") if dragon_available else "",
+            "buy_amount_yi": dragon_data.get("buy_amount_yi") if dragon_available else "",
+            "sell_amount_yi": dragon_data.get("sell_amount_yi") if dragon_available else "",
+            "net_buy_amount_yi": dragon_data.get("net_buy_amount_yi") if dragon_available else "",
+            "institution_summary": dragon_data.get("inst_summary") if dragon_available else "",
+            "raw_rows": as_list(dragon_data.get("raw_rows")) if dragon_available else [],
+            "institution_rows": as_list(dragon_data.get("inst_rows")) if dragon_available else [],
+            "updated_at": dragon_data.get("updated_at", ""),
+            "note": "" if dragon_available else "暂无可验证数据",
+        },
+        "margin": {
+            "available": margin_available,
+            "source": "Tushare margin_detail",
+            "trade_date": margin_data.get("date") if margin_available else "",
+            "financing_balance_yi": margin_data.get("financing_balance_yi") if margin_available else "",
+            "financing_buy_yi": margin_data.get("financing_buy_yi") if margin_available else "",
+            "short_sell_volume": margin_data.get("short_sell_volume") if margin_available else "",
+            "margin_balance_yi": margin_data.get("margin_balance_yi") if margin_available else "",
+            "updated_at": margin_data.get("updated_at", ""),
+            "note": "" if margin_available else "暂无可验证数据",
+        },
+        "limit_emotion": {
+            "available": limit_available,
+            "records_available": limit_records_available,
+            "source": "Tushare stk_limit/limit_list_d",
+            "latest_date": limit_emotion_data.get("latest_date", "") if limit_available else "",
+            "limit_up_price": limit_emotion_data.get("up_limit") if limit_available else "",
+            "limit_down_price": limit_emotion_data.get("down_limit") if limit_available else "",
+            "distance_to_up_pct": limit_emotion_data.get("distance_to_up_pct") if limit_available else "",
+            "distance_to_down_pct": limit_emotion_data.get("distance_to_down_pct") if limit_available else "",
+            "recent_limit_records": as_list(limit_emotion_data.get("limit_records")) if limit_records_available else [],
+            "updated_at": limit_emotion_data.get("updated_at", ""),
+            "note": "" if limit_available else "暂无可验证数据",
+        },
+        "updated_at": max(updated_sources) if updated_sources else _timestamp(updated_at),
+        "deepseek_called": False,
+    }

@@ -72,6 +72,26 @@ class CommandCenterLegacyASharePromptsTests(unittest.TestCase):
         self.assertIn("暂无可验证数据", prompt)
         self.assertIn("【单票作战室】", prompt)
 
+    def test_whale_prompt_embeds_fact_packet_and_anti_hallucination_rules(self):
+        prompt = prompts.build_a_share_whale_prompt(
+            target="大族激光",
+            current_price=12.3,
+            fact_packet={
+                "moneyflow": {"available": True, "main_net_inflow_yi": 0.5},
+                "dragon_tiger": {"available": False},
+                "deepseek_called": False,
+            },
+            verified_technical_prompt="【已验证技术事实】MA60 可用",
+        )
+
+        self.assertIn("【巨鲸资金事实包】", prompt)
+        self.assertIn('"deepseek_called": false', prompt)
+        self.assertIn("没有 Tushare moneyflow 真实返回时，不得说主力净流入/流出", prompt)
+        self.assertIn("不得说机构席位、游资席位、基金经理进场", prompt)
+        self.assertIn("北向资金日度披露口径已调整", prompt)
+        self.assertIn("技术事实不是资金事实", prompt)
+        self.assertIn("未满足验证条件前仅观察", prompt)
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_prompts.py").read_text(encoding="utf-8"))
         imports = []
