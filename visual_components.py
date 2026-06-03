@@ -4690,6 +4690,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
+    data_recovery_actions = payload.get("data_recovery_actions") or data_capability_console.get("recovery_actions") or []
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
@@ -4824,7 +4825,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
     recovery_action_html = ""
-    for item in (data_capability_console.get("recovery_actions") or [])[:3]:
+    for item in data_recovery_actions[:3]:
         if not isinstance(item, dict):
             continue
         recovery_action_html += f"""

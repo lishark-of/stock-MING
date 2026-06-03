@@ -224,6 +224,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_gap_report": data_gap_report_service.build_command_center_data_gap_report(),
         "data_issue_explainer": data_issue_explainer_service.build_data_issue_explainer_packet(),
         "data_capability_console": data_capability_console_service.build_data_capability_console_packet(),
+        "data_recovery_actions": [],
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
@@ -277,6 +278,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         data_issue_explainer=snapshot.get("data_issue_explainer") or {},
         errors=snapshot.get("errors") or [],
     )
+    snapshot["data_recovery_actions"] = build_data_recovery_actions_snapshot(snapshot.get("data_capability_console") or {})
     snapshot["market_packet"] = market_packet_service.build_command_center_market_packet(
         {"command_center_market_packet": snapshot.get("market_packet") or {}}
     )
@@ -487,6 +489,35 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
         "items": items,
         "deepseek_called": False,
     }
+
+
+def build_data_recovery_actions_snapshot(data_capability_console: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> list[dict]:
+    console = _as_mapping(data_capability_console)
+    actions = []
+    for raw in _as_list(console.get("recovery_actions")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        label = _to_text(item.get("label"), "数据能力")
+        actions.append(
+            {
+                "provider": _to_text(item.get("provider"), "数据源"),
+                "label": label,
+                "api": _to_text(item.get("api")),
+                "state": _to_text(item.get("state"), "unknown"),
+                "status_label": _to_text(item.get("status_label"), "待验证"),
+                "priority": int(_to_number(item.get("priority")) or 3),
+                "reason": _to_text(item.get("reason") or item.get("action_hint"), f"{label}仍待验证。"),
+                "action_label": _to_text(item.get("action_label"), f"手动检查{label}"),
+                "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+                "writes_packet": _to_text(item.get("writes_packet"), "command_center_data_capability_packet"),
+                "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+                "deepseek_called": False,
+            }
+        )
+        if len(actions) >= max(1, int(limit or MAX_CAPABILITY_ITEMS)):
+            break
+    return actions
 
 
 def resolve_data_capability_packet(state: Any = None) -> dict:
@@ -891,6 +922,7 @@ def build_home_action_snapshot(
         refresh_summary=refresh,
         errors=errors,
     )
+    data_recovery_actions = build_data_recovery_actions_snapshot(data_capability_console)
     risk_alerts = attach_hard_risk_risk_alerts(
         attach_data_capability_risk_alerts(
             build_risk_alerts(decision, strategy, coverage, errors),
@@ -947,6 +979,7 @@ def build_home_action_snapshot(
         "data_gap_report": data_gap_report,
         "data_issue_explainer": data_issue_explainer,
         "data_capability_console": data_capability_console,
+        "data_recovery_actions": data_recovery_actions,
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
         "errors": errors,
@@ -973,6 +1006,7 @@ def build_home_action_snapshot(
         empty["data_gap_report"] = snapshot["data_gap_report"]
         empty["data_issue_explainer"] = snapshot["data_issue_explainer"]
         empty["data_capability_console"] = snapshot["data_capability_console"]
+        empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["market_packet"] = snapshot["market_packet"]
         empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
         empty["radar_packet"] = snapshot["radar_packet"]

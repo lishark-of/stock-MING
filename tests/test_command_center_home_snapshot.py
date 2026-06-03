@@ -684,6 +684,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(console["recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(console["recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertIn("融资融券", console["recovery_summary"])
+        self.assertEqual(payload["data_recovery_actions"][0]["label"], "融资融券")
+        self.assertEqual(payload["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(payload["data_recovery_actions"][0]["refresh_policy"], "button_gated")
         self.assertIn("只允许观察、降风险", payload["risk_alerts"]["reduce_conditions"][0])
         self.assertTrue(any("融资融券" in item for item in payload["risk_alerts"]["data_gaps"]))
         self.assertTrue(any("AkShare 重型刷新" in item for item in payload["risk_alerts"]["data_gaps"]))
@@ -691,6 +694,41 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("融资融券", dumped)
         self.assertIn("AkShare 重型刷新", dumped)
         self.assertFalse(console["deepseek_called"])
+        self.assertFalse(payload["data_recovery_actions"][0]["deepseek_called"])
+
+    def test_loaded_home_snapshot_keeps_data_recovery_actions(self):
+        today = _dt.date.today().isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "等待",
+                        "updated_at": f"{today}T10:00:00",
+                    },
+                    "last_data_source_healthcheck": {
+                        "data_capability": {
+                            "source": "Unified data capability",
+                            "checked_at": f"{today}T10:01:00",
+                            "items": [
+                                {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足"},
+                                {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                            ],
+                            "deepseek_called": False,
+                        }
+                    },
+                },
+                target="002008.SZ",
+                now=f"{today}T10:02:00",
+            )
+            snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+
+        dumped = json.dumps(loaded["data_recovery_actions"], ensure_ascii=False)
+        self.assertIn("融资融券", dumped)
+        self.assertIn("AkShare 重型刷新", dumped)
+        self.assertEqual(loaded["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertFalse(loaded["data_recovery_actions"][0]["deepseek_called"])
 
     def test_home_snapshot_persists_market_packet(self):
         today = _dt.date.today().isoformat()
