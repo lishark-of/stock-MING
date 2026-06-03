@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import datetime as _dt
+from collections.abc import Mapping
+from typing import Any
+
+import market_data_capability as data_capability
+
+
+MARGIN_SECTION = "margin"
+MARGIN_API = "margin_detail"
+MARGIN_LABEL = "融资融券"
+
+
+def normalize_a_share_ts_code(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    if text.endswith((".SH", ".SZ", ".BJ")):
+        return text
+    if text.endswith(".SS"):
+        return text[:-3] + ".SH"
+    base = text.split(".")[0]
+    if base.isdigit() and len(base) == 6:
+        if base.startswith("6"):
+            return f"{base}.SH"
+        if base.startswith(("0", "3")):
+            return f"{base}.SZ"
+        if base.startswith(("4", "8")):
+            return f"{base}.BJ"
+    return text
+
+
+def is_a_share_ts_code(value: Any) -> bool:
+    return normalize_a_share_ts_code(value).endswith((".SH", ".SZ", ".BJ"))
+
+
+def _date_text(value: _dt.date) -> str:
+    return value.strftime("%Y%m%d")
+
+
+def build_margin_detail_check_request(ticker: Any, today: Any = None, lookback_days: int = 30) -> dict:
+    ts_code = normalize_a_share_ts_code(ticker)
+    if isinstance(today, _dt.datetime):
+        end = today.date()
+    elif isinstance(today, _dt.date):
+        end = today
+    elif isinstance(today, str) and today.strip():
+        end = _dt.date.fromisoformat(today.strip()[:10])
+    else:
+        end = _dt.date.today()
+    start = end - _dt.timedelta(days=max(1, int(lookback_days or 30)))
+    return {
+        "section": MARGIN_SECTION,
+        "label": MARGIN_LABEL,
+        "api": MARGIN_API,
+        "ts_code": ts_code,
+        "start_date": _date_text(start),
+        "end_date": _date_text(end),
+        "refresh_policy": "button_gated",
+        "deepseek_called": False,
+    }
+
+
+def build_margin_detail_capability_item(result: Any = None, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_result(MARGIN_API, result=result, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": MARGIN_SECTION,
+            "label": MARGIN_LABEL,
+            "api": MARGIN_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+        }
+    )
+    return item
+
+
+def build_margin_detail_exception_item(exc: Any, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_exception(MARGIN_API, exc, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": MARGIN_SECTION,
+            "label": MARGIN_LABEL,
+            "api": MARGIN_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+        }
+    )
+    return item
+
+
+def merge_a_share_capability_item(packet: Any = None, item: Any = None, checked_at: Any = "") -> dict:
+    existing = dict(packet) if isinstance(packet, Mapping) else {}
+    new_item = dict(item) if isinstance(item, Mapping) else {}
+    merged_items = []
+    replaced = False
+    section = str(new_item.get("section") or "")
+    api = str(new_item.get("api") or "")
+    for raw in existing.get("items") or []:
+        payload = dict(raw) if isinstance(raw, Mapping) else {}
+        if not payload:
+            continue
+        same_section = section and str(payload.get("section") or "") == section
+        same_api = api and str(payload.get("api") or "") == api
+        if same_section or same_api:
+            if new_item:
+                merged_items.append(new_item)
+                replaced = True
+            continue
+        merged_items.append(payload)
+    if new_item and not replaced:
+        merged_items.append(new_item)
+    return data_capability.build_tushare_capability_packet(
+        merged_items,
+        checked_at=checked_at or existing.get("checked_at") or "",
+        source=str(existing.get("source") or "Tushare A股专业事实"),
+    )
