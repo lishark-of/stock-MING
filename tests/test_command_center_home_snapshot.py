@@ -95,6 +95,58 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(items[0]["ticker"], "A")
         self.assertEqual(items[0]["action_state"], "可准备")
 
+    def test_next_ticket_candidates_prefer_radar_packet(self):
+        state = {
+            "command_center_radar_packet": {
+                "status": "ready",
+                "top_candidates": [
+                    {"ticker": "X", "name": "Xray", "action_state": "可准备"},
+                    {"ticker": "Y", "name": "Yankee", "action_state": "等验证"},
+                ],
+            },
+            "radar_scan_results": {
+                "rule_rows": [
+                    {"candidate": {"ticker": "OLD", "name": "Old"}, "score": {"total_score": 1, "battle_state": "暂不纳入"}},
+                ],
+            },
+        }
+
+        items = snapshot.extract_next_ticket_candidates(state)
+
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["ticker"], "X")
+
+    def test_home_snapshot_persists_radar_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "radar_scan_status": "completed",
+            "radar_scan_results": {
+                "generated_at": f"{today}T10:01:00",
+                "rule_rows": [
+                    {
+                        "candidate": {"ticker": "300750.SZ", "name": "宁德时代"},
+                        "score": {
+                            "total_score": 82,
+                            "battle_state": "等验证",
+                            "trigger_conditions": ["放量站稳 MA20"],
+                            "invalid_conditions": ["跌破 MA20"],
+                        },
+                    },
+                ],
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["radar_packet"]["top_candidates"][0]["ticker"], "300750.SZ")
+        self.assertEqual(payload["next_ticket_candidates"][0]["trigger_condition"], "放量站稳 MA20")
+        self.assertFalse(payload["radar_packet"]["deepseek_called"])
+
     def test_deepseek_defaults_to_not_called(self):
         payload = snapshot.build_home_action_snapshot({
             "command_center_decision_packet": {"overall_action": "等待"}

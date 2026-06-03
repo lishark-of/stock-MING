@@ -18,6 +18,7 @@ import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
 import command_center_analysis_methods as analysis_methods_service
 import command_center_facts_packet as facts_packet_service
+import command_center_radar_packet as radar_packet_service
 import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -3418,6 +3419,10 @@ def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_pr
     st.session_state["radar_scan_summary"] = clone_command_center_packet(summary)
     st.session_state["radar_scan_status"] = scan_state["status"]
     st.session_state["radar_scan_finished_at"] = token
+    st.session_state["command_center_radar_packet"] = radar_packet_service.build_command_center_radar_packet(
+        st.session_state,
+        live_packet={"next_ticket": {"updated_at": token, "source": "下一票雷达本地缓存快照"}},
+    )
     _cc_mark_module("next_ticket", "已刷新", "下一票雷达本地缓存快照")
     return {
         "module": "下一票雷达",

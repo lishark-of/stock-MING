@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import command_center_facts_packet as facts_packet_service
+import command_center_radar_packet as radar_packet_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -169,6 +170,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
             "invalidation_condition": "市场环境转弱或纪律信号反向时，本轮建议失效。",
         },
         "next_ticket_candidates": [],
+        "radar_packet": radar_packet_service.build_command_center_radar_packet({}),
         "margin_etf_summary": {
             "current_margin_ratio": None,
             "recommended_margin_ratio": None,
@@ -223,6 +225,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["data_capability"] = build_data_capability_snapshot(snapshot.get("data_capability") or {})
     snapshot["facts_packet"] = facts_packet_service.build_command_center_facts_packet(
         {"command_center_facts_packet": snapshot.get("facts_packet") or {}}
+    )
+    snapshot["radar_packet"] = radar_packet_service.build_command_center_radar_packet(
+        {"command_center_radar_packet": snapshot.get("radar_packet") or {}}
     )
     return snapshot
 
@@ -456,6 +461,9 @@ def _candidate_from_row(row: Any, scan_state: Any = None, live_section: Any = No
 
 def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, limit: int = MAX_CANDIDATES) -> list[dict]:
     state_map = _as_mapping(state)
+    radar_packet = _as_mapping(state_map.get("command_center_radar_packet"))
+    if radar_packet.get("top_candidates"):
+        return _as_list(radar_packet.get("top_candidates"))[:limit]
     live = _as_mapping(live_packet)
     live_section = _as_mapping(live.get("next_ticket"))
     scan_state = _as_mapping(state_map.get("radar_scan_results"))
@@ -585,6 +593,7 @@ def build_home_action_snapshot(
     refresh_summary: Any = None,
     data_capability_packet: Any = None,
     facts_packet: Any = None,
+    radar_packet: Any = None,
     now: Any = None,
 ) -> dict:
     state_map = _as_mapping(state)
@@ -613,6 +622,8 @@ def build_home_action_snapshot(
             target=target,
             name=_to_text(_as_mapping(position_profile).get("name") or state_map.get("current_stock_name")),
         )
+    if radar_packet is None:
+        radar_packet = radar_packet_service.build_command_center_radar_packet(state_map, live)
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")
@@ -635,7 +646,11 @@ def build_home_action_snapshot(
         "strategy_packet": strategy,
         "today_action": build_today_action(decision),
         "holding_action": build_holding_action(target=target, position_profile=position_profile, strategy_packet=strategy, state=state_map),
-        "next_ticket_candidates": extract_next_ticket_candidates(state_map, live),
+        "next_ticket_candidates": extract_next_ticket_candidates({"command_center_radar_packet": radar_packet}, live),
+        "radar_packet": radar_packet_service.build_command_center_radar_packet(
+            {"command_center_radar_packet": radar_packet},
+            live_packet=live,
+        ),
         "margin_etf_summary": build_margin_etf_summary(state_map, live),
         "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
         "data_coverage": coverage,
@@ -659,6 +674,7 @@ def build_home_action_snapshot(
         empty["data_freshness"] = build_data_freshness("", errors, deepseek_called=deepseek_called)
         empty["data_capability"] = snapshot["data_capability"]
         empty["facts_packet"] = snapshot["facts_packet"]
+        empty["radar_packet"] = snapshot["radar_packet"]
         empty["errors"] = errors
         return empty
     return sanitize_snapshot_payload(snapshot)
@@ -672,6 +688,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
         _as_mapping(payload.get("decision_packet"))
         or _as_mapping(payload.get("strategy_packet"))
         or _as_list(payload.get("next_ticket_candidates"))
+        or _as_list(_as_mapping(payload.get("radar_packet")).get("top_candidates"))
         or _as_list(_as_mapping(payload.get("margin_etf_summary")).get("recommended_etfs"))
         or _as_list(_as_mapping(payload.get("facts_packet")).get("items"))
     )
@@ -697,6 +714,7 @@ def update_home_action_snapshot(
     refresh_summary: Any = None,
     data_capability_packet: Any = None,
     facts_packet: Any = None,
+    radar_packet: Any = None,
     path: str | Path | None = None,
     base_dir: str | Path | None = None,
 ) -> dict:
@@ -710,6 +728,7 @@ def update_home_action_snapshot(
         refresh_summary=refresh_summary,
         data_capability_packet=data_capability_packet,
         facts_packet=facts_packet,
+        radar_packet=radar_packet,
     )
     if isinstance(state, dict):
         state["command_center_home_snapshot"] = snapshot
