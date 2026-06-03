@@ -220,6 +220,160 @@ def _packet_summary_item(key: str, label: str, source_key: str, packet_value: An
     }
 
 
+def _to_number(value: Any) -> float | None:
+    if value in [None, ""]:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip().replace(",", "").replace("%", "")
+        if not text or text in {"--", "暂无", "N/A", "None", "nan"}:
+            return None
+        try:
+            return float(text)
+        except Exception:
+            return None
+    return None
+
+
+def _format_yi(value: Any) -> str:
+    number = _to_number(value)
+    return "暂无" if number is None else f"{number:.2f}亿"
+
+
+def _format_flow_yi(value: Any) -> str:
+    number = _to_number(value)
+    return "暂无" if number is None else f"{number:+.2f}亿"
+
+
+def _format_pct(value: Any) -> str:
+    number = _to_number(value)
+    return "暂无" if number is None else f"{number:+.2f}%"
+
+
+def _format_price(value: Any) -> str:
+    number = _to_number(value)
+    return "暂无" if number is None else f"¥{number:.2f}"
+
+
+def _format_plain(value: Any) -> str:
+    text = to_text(value)
+    return text if text else "暂无"
+
+
+def _format_source_caption(packet: Mapping[str, Any]) -> str:
+    source = _first_text(packet.get("source"), default="Tushare A股专业事实缓存")
+    api = _first_text(packet.get("api"))
+    updated_at = _first_text(packet.get("updated_at"), default="未知")
+    trade_date = _first_text(packet.get("trade_date"))
+    pieces = [f"数据源：{source}" + (f" {api}" if api else ""), f"本地拉取时间：{updated_at}"]
+    if trade_date:
+        pieces.append(f"数据日期：{trade_date}")
+    return "｜".join(pieces)
+
+
+def _primary_fact_card(key: str, title: str, packet_value: Any, metrics: list[dict], captions: list[str]) -> dict:
+    packet = as_mapping(packet_value)
+    state = _packet_state(packet)
+    summary = _first_text(packet.get("summary"), packet.get("message"), default=SECTION_SPECS.get(key, ("", "", ""))[2])
+    return {
+        "key": key,
+        "title": title,
+        "state": state,
+        "status": _packet_state_label(state),
+        "tone": _packet_tone(state),
+        "message": summary,
+        "metrics": metrics if state == "ready" else [],
+        "captions": [item for item in captions if item and item != "暂无"] if state == "ready" else [],
+        "source_caption": _format_source_caption(packet),
+        "risk_note": _packet_risk_text(packet),
+        "deepseek_called": bool(packet.get("deepseek_called", False)),
+    }
+
+
+def build_legacy_a_share_primary_fact_cards(
+    *,
+    dragon_tiger_packet: Any = None,
+    margin_packet: Any = None,
+    moneyflow_packet: Any = None,
+) -> dict:
+    dragon = as_mapping(dragon_tiger_packet)
+    margin = as_mapping(margin_packet)
+    moneyflow = as_mapping(moneyflow_packet)
+    cards = [
+        _primary_fact_card(
+            "dragon_tiger",
+            "🐯 龙虎榜追踪",
+            dragon,
+            [
+                {"label": "上榜日期", "value": _format_plain(dragon.get("trade_date"))},
+                {
+                    "label": "收盘价 / 涨跌幅",
+                    "value": f"{_format_price(dragon.get('close'))} / {_format_pct(dragon.get('pct_change'))}",
+                },
+                {
+                    "label": "买入 / 卖出 / 净买入",
+                    "value": (
+                        f"{_format_yi(dragon.get('buy_amount_yi'))} / "
+                        f"{_format_yi(dragon.get('sell_amount_yi'))} / "
+                        f"{_format_flow_yi(dragon.get('net_buy_amount_yi'))}"
+                    ),
+                },
+            ],
+            [
+                f"上榜原因：{dragon.get('reason')}" if to_text(dragon.get("reason")) else "",
+                f"机构席位摘要：{dragon.get('inst_summary')}" if to_text(dragon.get("inst_summary")) else "",
+                f"席位状态：{dragon.get('activity_state')}" if to_text(dragon.get("activity_state")) else "",
+            ],
+        ),
+        _primary_fact_card(
+            "margin",
+            "💰 融资融券监测",
+            margin,
+            [
+                {"label": "融资余额", "value": _format_yi(margin.get("financing_balance_yi"))},
+                {"label": "融资买入额", "value": _format_yi(margin.get("financing_buy_yi"))},
+                {
+                    "label": "融资融券余额 / 融券余量",
+                    "value": (
+                        _format_yi(margin.get("margin_balance_yi"))
+                        if _to_number(margin.get("margin_balance_yi")) is not None
+                        else _format_plain(margin.get("short_sell_volume"))
+                    ),
+                },
+            ],
+            [f"杠杆状态：{margin.get('leverage_state')}" if to_text(margin.get("leverage_state")) else ""],
+        ),
+        _primary_fact_card(
+            "moneyflow",
+            "💧 个股资金流向",
+            moneyflow,
+            [
+                {"label": "主力净流入", "value": _format_flow_yi(moneyflow.get("main_net_yi"))},
+                {"label": "大单净流入", "value": _format_flow_yi(moneyflow.get("large_net_yi"))},
+                {
+                    "label": "中单 / 小单净流入",
+                    "value": f"{_format_flow_yi(moneyflow.get('medium_net_yi'))} / {_format_flow_yi(moneyflow.get('small_net_yi'))}",
+                },
+                {"label": "近5日主力净流入合计", "value": _format_flow_yi(moneyflow.get("five_day_main_net_yi"))},
+            ],
+            [
+                f"最近资金方向：{moneyflow.get('direction') or moneyflow.get('flow_state')}"
+                if to_text(moneyflow.get("direction") or moneyflow.get("flow_state"))
+                else "",
+                f"资金结构评价：{moneyflow.get('summary')}" if to_text(moneyflow.get("summary")) else "",
+            ],
+        ),
+    ]
+    return {
+        "title": "A股专业主事实",
+        "cards": cards,
+        "deepseek_called": False,
+    }
+
+
 def build_legacy_a_share_packet_summary(
     *,
     dragon_tiger_packet: Any = None,

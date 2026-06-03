@@ -151,6 +151,83 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertTrue(all(item["status"] == "待手动刷新" for item in summary["items"]))
         json.dumps(summary, ensure_ascii=False)
 
+    def test_primary_fact_cards_render_ready_packet_fields(self):
+        cards = gate.build_legacy_a_share_primary_fact_cards(
+            dragon_tiger_packet={
+                "status": "ready",
+                "data_status": "ready",
+                "trade_date": "2026-06-03",
+                "close": 12.34,
+                "pct_change": 3.21,
+                "buy_amount_yi": 1.2,
+                "sell_amount_yi": 0.4,
+                "net_buy_amount_yi": 0.8,
+                "reason": "日涨幅偏离值达7%",
+                "activity_state": "席位净买入",
+                "source": "Tushare 龙虎榜缓存",
+                "api": "top_list/top_inst",
+                "updated_at": "2026-06-03T20:00:00",
+            },
+            margin_packet={
+                "status": "ready",
+                "financing_balance_yi": 10.1,
+                "financing_buy_yi": 0.5,
+                "margin_balance_yi": 11.2,
+                "leverage_state": "杠杆余额可参考",
+            },
+            moneyflow_packet={
+                "status": "ready",
+                "main_net_yi": 0.3,
+                "large_net_yi": -0.1,
+                "medium_net_yi": 0.2,
+                "small_net_yi": -0.4,
+                "five_day_main_net_yi": 1.1,
+                "flow_state": "主力净流入",
+            },
+        )
+
+        self.assertEqual(cards["title"], "A股专业主事实")
+        self.assertFalse(cards["deepseek_called"])
+        self.assertEqual(len(cards["cards"]), 3)
+        dragon_card = cards["cards"][0]
+        self.assertEqual(dragon_card["status"], "已回流")
+        self.assertIn("¥12.34", dragon_card["metrics"][1]["value"])
+        self.assertIn("+3.21%", dragon_card["metrics"][1]["value"])
+        self.assertIn("+0.80亿", dragon_card["metrics"][2]["value"])
+        self.assertIn("上榜原因", " ".join(dragon_card["captions"]))
+        self.assertIn("Tushare 龙虎榜缓存", dragon_card["source_caption"])
+        json.dumps(cards, ensure_ascii=False)
+
+    def test_primary_fact_cards_hide_metrics_when_waiting_or_failed(self):
+        cards = gate.build_legacy_a_share_primary_fact_cards(
+            dragon_tiger_packet={"status": "waiting", "summary": "龙虎榜待刷新"},
+            margin_packet={"status": "failed", "error": "权限不足"},
+            moneyflow_packet={},
+        )
+        by_key = {card["key"]: card for card in cards["cards"]}
+
+        self.assertEqual(by_key["dragon_tiger"]["status"], "待手动刷新")
+        self.assertEqual(by_key["margin"]["status"], "受限/失败")
+        self.assertEqual(by_key["moneyflow"]["status"], "待手动刷新")
+        self.assertEqual(by_key["dragon_tiger"]["metrics"], [])
+        self.assertEqual(by_key["margin"]["metrics"], [])
+        self.assertIn("权限不足", by_key["margin"]["risk_note"])
+        json.dumps(cards, ensure_ascii=False)
+
+    def test_primary_fact_cards_do_not_mutate_input(self):
+        packet = {
+            "status": "ready",
+            "main_net_yi": 1.0,
+            "risk_notes": ["资金净流入只作验证线索"],
+        }
+        before = copy.deepcopy(packet)
+
+        cards = gate.build_legacy_a_share_primary_fact_cards(moneyflow_packet=packet)
+
+        self.assertEqual(packet, before)
+        moneyflow_card = [card for card in cards["cards"] if card["key"] == "moneyflow"][0]
+        self.assertEqual(moneyflow_card["risk_note"], "资金净流入只作验证线索")
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_gate.py").read_text(encoding="utf-8"))
         imports = []

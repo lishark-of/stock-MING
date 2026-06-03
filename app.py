@@ -9892,53 +9892,40 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             ]
             packet_columns = [column for column in packet_columns if column in packet_df.columns]
             st.dataframe(packet_df[packet_columns], width="stretch", hide_index=True)
+
+        legacy_primary_fact_cards = legacy_a_share_gate_service.build_legacy_a_share_primary_fact_cards(
+            dragon_tiger_packet=st.session_state.get("command_center_dragon_tiger_packet"),
+            margin_packet=st.session_state.get("command_center_margin_packet"),
+            moneyflow_packet=st.session_state.get("command_center_moneyflow_packet"),
+        )
+
+        def _render_legacy_primary_fact_card(card):
+            st.markdown(f"**{card.get('title')}**")
+            st.caption(f"{card.get('status')}｜{card.get('message')}")
+            metrics = card.get("metrics") or []
+            if metrics:
+                for metric in metrics:
+                    st.metric(metric.get("label") or "指标", metric.get("value") or "暂无", "")
+                for caption in card.get("captions") or []:
+                    st.caption(caption)
+            else:
+                st.info(card.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
+            if card.get("risk_note"):
+                st.caption(f"风险口径：{card.get('risk_note')}")
+            st.caption(card.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
         
         # 第一排：龙虎榜 + 融资融券 + 个股资金流向
         col_a1, col_a2, col_a3 = st.columns(3)
+        primary_cards = legacy_primary_fact_cards.get("cards") or []
         
         with col_a1:
-            st.markdown("**🐯 龙虎榜追踪**")
-            if dragon_data and dragon_data.get("available"):
-                st.metric("上榜日期", _cn_fmt_date(dragon_data.get("latest_date")), "")
-                st.caption(f"数据日期：{_cn_fmt_date(dragon_data.get('latest_date'))}")
-                if dragon_data.get("reason"):
-                    st.caption(f"上榜原因：{dragon_data.get('reason')}")
-                st.metric("收盘价 / 涨跌幅", f"{dragon_data.get('close') or '暂无'} / {dragon_data.get('pct_change') or '暂无'}%", "")
-                st.metric("买入 / 卖出 / 净买入", f"{_cn_fmt_yi(dragon_data.get('buy_amount_yi'))} / {_cn_fmt_yi(dragon_data.get('sell_amount_yi'))} / {_cn_fmt_yi(dragon_data.get('net_buy_amount_yi'))}", "")
-                if dragon_data.get("inst_summary"):
-                    st.caption(f"机构席位摘要：{dragon_data.get('inst_summary')}")
-            else:
-                st.info((dragon_data or {}).get("message") or "近30日未见龙虎榜上榜记录")
-            st.caption(f"数据源：{(dragon_data or {}).get('source', 'Tushare')} {(dragon_data or {}).get('api', 'top_list')}｜本地拉取时间：{(dragon_data or {}).get('updated_at', '未知')}")
+            _render_legacy_primary_fact_card(primary_cards[0] if len(primary_cards) > 0 else {})
         
         with col_a2:
-            st.markdown("**💰 融资融券监测**")
-            if margin_data and margin_data.get("available"):
-                st.metric("融资余额", _cn_fmt_yi(margin_data.get("financing_balance_yi")), "")
-                st.metric("融资买入额", _cn_fmt_yi(margin_data.get("financing_buy_yi")), "")
-                margin_balance = margin_data.get("margin_balance_yi")
-                if margin_balance is not None:
-                    st.metric("融资融券余额", _cn_fmt_yi(margin_balance), "")
-                else:
-                    st.metric("融券余量", margin_data.get("short_sell_volume") or "暂无", "")
-                st.caption(f"数据日期：{_cn_fmt_date(margin_data.get('date'))}")
-            else:
-                st.info((margin_data or {}).get("message") or "融资融券数据暂不可用或权限不足")
-            st.caption(f"数据源：{(margin_data or {}).get('source', 'Tushare')} {(margin_data or {}).get('api', 'margin_detail')}｜本地拉取时间：{(margin_data or {}).get('updated_at', '未知')}")
+            _render_legacy_primary_fact_card(primary_cards[1] if len(primary_cards) > 1 else {})
         
         with col_a3:
-            st.markdown("**💧 个股资金流向**")
-            if moneyflow_data and moneyflow_data.get("available"):
-                st.metric("主力净流入", _cn_fmt_flow_yi(moneyflow_data.get("main_net_yi")), "")
-                st.metric("大单净流入", _cn_fmt_flow_yi(moneyflow_data.get("large_net_yi")), "")
-                st.metric("中单 / 小单净流入", f"{_cn_fmt_flow_yi(moneyflow_data.get('medium_net_yi'))} / {_cn_fmt_flow_yi(moneyflow_data.get('small_net_yi'))}", "")
-                st.metric("近5日主力净流入合计", _cn_fmt_flow_yi(moneyflow_data.get("five_day_main_net_yi")), "")
-                st.caption(f"最新数据日期：{_cn_fmt_date(moneyflow_data.get('date'))}")
-                st.caption(f"最近资金方向：{moneyflow_data.get('direction') or '资金方向分歧'}")
-                st.caption(f"资金结构评价：{moneyflow_data.get('structure') or '资金结构暂无法验证'}")
-            else:
-                st.info((moneyflow_data or {}).get("message") or "近5日未取得可验证个股资金流向，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。")
-            st.caption(f"数据源：{(moneyflow_data or {}).get('source', 'Tushare')} {(moneyflow_data or {}).get('api', 'moneyflow')}｜本地拉取时间：{(moneyflow_data or {}).get('updated_at', '未知')}")
+            _render_legacy_primary_fact_card(primary_cards[2] if len(primary_cards) > 2 else {})
 
         st.markdown("**📈 A股情绪与涨跌停边界**")
 
