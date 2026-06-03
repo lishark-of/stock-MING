@@ -12,6 +12,40 @@ FUND_SOURCE_LABELS = {
     "margin": "融资融券",
     "limit_emotion": "涨跌停 / 情绪",
 }
+A_SHARE_RECOVERY_CONFIG = {
+    "moneyflow": {
+        "action_label": "检测资金流",
+        "toolbox_entry": "综合推演中心 / A股数据能力检测",
+        "advanced_entry": "高级工具箱 / 今日关注池 / A股专业数据穿透系统",
+        "legacy_tab": "今日关注池",
+        "writes_packet": "command_center_moneyflow_packet",
+        "api_hint": "Tushare moneyflow",
+    },
+    "dragon_tiger": {
+        "action_label": "检测龙虎榜",
+        "toolbox_entry": "综合推演中心 / A股数据能力检测",
+        "advanced_entry": "高级工具箱 / 今日关注池 / A股专业数据穿透系统",
+        "legacy_tab": "今日关注池",
+        "writes_packet": "command_center_dragon_tiger_packet",
+        "api_hint": "Tushare top_list / top_inst",
+    },
+    "margin": {
+        "action_label": "检测融资融券",
+        "toolbox_entry": "综合推演中心 / A股数据能力检测",
+        "advanced_entry": "高级工具箱 / 今日关注池 / A股专业数据穿透系统",
+        "legacy_tab": "今日关注池",
+        "writes_packet": "command_center_margin_packet",
+        "api_hint": "Tushare margin_detail",
+    },
+    "limit_emotion": {
+        "action_label": "检测涨跌停",
+        "toolbox_entry": "综合推演中心 / A股数据能力检测",
+        "advanced_entry": "高级工具箱 / 今日关注池 / A股专业数据穿透系统",
+        "legacy_tab": "今日关注池",
+        "writes_packet": "command_center_limit_emotion_packet",
+        "api_hint": "Tushare stk_limit / limit_list_d / limit_cpt_list",
+    },
+}
 
 
 def as_mapping(value: Any) -> dict:
@@ -241,6 +275,32 @@ def _classify_fund_row(row: dict) -> tuple[str, str, str]:
     return "manual_required", "待手动刷新", "页面打开不会自动请求重接口，需要点击检测或刷新。"
 
 
+def _recovery_reason(status: str, label: str) -> str:
+    if status == "available":
+        return f"{label}已可用；无需恢复，只需复核日期和来源。"
+    if status == "permission_denied":
+        return f"{label}可能需要更高 Tushare 权限或积分；如已升级权限，再手动检测。"
+    if status == "stale_or_empty":
+        return f"{label}可能尚未发布、非交易日或标的不覆盖；等待发布后手动检测。"
+    return f"{label}待手动检测；页面打开不会自动请求 Tushare 重接口。"
+
+
+def _build_recovery_metadata(name: str, status: str, label: str) -> dict:
+    config = A_SHARE_RECOVERY_CONFIG.get(name, {})
+    action_label = config.get("action_label") or f"检测{label}"
+    return {
+        "action_label": "无需恢复" if status == "available" else action_label,
+        "reason": _recovery_reason(status, label),
+        "toolbox_entry": config.get("toolbox_entry") or "综合推演中心 / A股数据能力检测",
+        "advanced_entry": config.get("advanced_entry") or "高级工具箱 / 今日关注池",
+        "legacy_tab": config.get("legacy_tab") or "今日关注池",
+        "writes_packet": config.get("writes_packet") or "command_center_facts_packet",
+        "api_hint": config.get("api_hint") or "Tushare A股专业接口",
+        "refresh_policy": "not_needed" if status == "available" else "button_gated",
+        "deepseek_called": False,
+    }
+
+
 def build_user_data_diagnostic_view_model(
     verified_technical_facts: Any = None,
     moneyflow_data: Any = None,
@@ -274,15 +334,25 @@ def build_user_data_diagnostic_view_model(
     for row in debug_view_model.get("fund_rows") or []:
         status, status_label, reason = _classify_fund_row(row)
         counts[status] = counts.get(status, 0) + 1
+        label = FUND_SOURCE_LABELS.get(row.get("name"), row.get("name") or "A股数据")
+        recovery = _build_recovery_metadata(str(row.get("name") or ""), status, label)
         items.append({
             "key": row.get("name") or "",
-            "label": FUND_SOURCE_LABELS.get(row.get("name"), row.get("name") or "A股数据"),
+            "label": label,
             "status": status,
             "status_label": status_label,
             "reason": reason,
             "source": row.get("source") or "暂无可验证数据",
             "api": row.get("api") or "暂无可验证数据",
             "note": row.get("note") or "暂无可验证数据",
+            "recovery": recovery,
+            "action_label": recovery["action_label"],
+            "toolbox_entry": recovery["toolbox_entry"],
+            "advanced_entry": recovery["advanced_entry"],
+            "legacy_tab": recovery["legacy_tab"],
+            "writes_packet": recovery["writes_packet"],
+            "refresh_policy": recovery["refresh_policy"],
+            "deepseek_called": False,
         })
 
     if counts["permission_denied"]:
@@ -308,6 +378,29 @@ def build_user_data_diagnostic_view_model(
         value = missing_summary.get(key)
         if value and value != "无":
             reason_parts.append(f"{key}：{value}")
+    recovery_actions = [
+        {
+            "key": item["key"],
+            "label": item["label"],
+            "status": item["status"],
+            "status_label": item["status_label"],
+            "reason": item["recovery"]["reason"],
+            "action_label": item["action_label"],
+            "toolbox_entry": item["toolbox_entry"],
+            "advanced_entry": item["advanced_entry"],
+            "legacy_tab": item["legacy_tab"],
+            "workspace_target": "高级工具箱（旧版保留）",
+            "workspace_state_key": "workspace_mode_v2",
+            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+            "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{item['legacy_tab']}",
+            "writes_packet": item["writes_packet"],
+            "api_hint": item["recovery"]["api_hint"],
+            "refresh_policy": item["refresh_policy"],
+            "deepseek_called": False,
+        }
+        for item in items
+        if item["status"] != "available"
+    ]
 
     return {
         "title": "A股数据能力诊断",
@@ -317,6 +410,12 @@ def build_user_data_diagnostic_view_model(
         "next_action": next_action,
         "safe_mode_text": "页面打开不会自动请求 Tushare、AkShare、DeepSeek 或回测；所有重型动作仍需手动按钮触发。",
         "items": items,
+        "recovery_actions": recovery_actions,
+        "recovery_summary": (
+            f"优先处理 {recovery_actions[0]['label']}：{recovery_actions[0]['action_label']}。"
+            if recovery_actions
+            else "A股专业数据均已可用，暂无需要恢复的接口。"
+        ),
         "counts": counts,
         "debug_view_model": debug_view_model,
     }

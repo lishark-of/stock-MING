@@ -4701,6 +4701,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     tool_recovery_actions = payload.get("tool_recovery_actions") or []
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
+    a_share_recovery_actions = a_share_user_diagnostic.get("recovery_actions") or []
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
     market_profile = payload.get("market_profile_evidence") or {}
@@ -4948,11 +4949,18 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     for item in (a_share_user_diagnostic.get("items") or [])[:4]:
         if not isinstance(item, dict):
             continue
+        recovery = item.get("recovery") or {}
         a_share_diagnostic_items_html += f"""
         <div class="cc-home-item-meta">
           {escape(_home_text(item.get("label"), "A股数据"))}：
           {escape(_home_text(item.get("status_label"), "待验证"))}
           ｜{escape(_home_text(item.get("reason"), "页面打开不会自动请求重接口。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          恢复路径：{escape(_home_text(recovery.get("toolbox_entry") or item.get("toolbox_entry"), "综合推演中心 / A股数据能力检测"))}
+          ｜动作：{escape(_home_text(recovery.get("action_label") or item.get("action_label"), "手动检测"))}
+          ｜回流：{escape(_home_text(recovery.get("writes_packet") or item.get("writes_packet"), "command_center_facts_packet"))}
+          ｜触发：{escape("无需恢复" if _home_text(recovery.get("refresh_policy") or item.get("refresh_policy")) == "not_needed" else "手动按钮")}
         </div>
         """
     if not a_share_diagnostic_items_html:
@@ -5189,6 +5197,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 st.button(
                     f"打开{_home_text(item.get('label'), '高级工具')}",
                     key=f"btn_open_tool_recovery_{_home_text(item.get('key'), index)}",
+                    help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
+    valid_a_share_recovery_actions = [item for item in a_share_recovery_actions[:4] if isinstance(item, dict)]
+    if valid_a_share_recovery_actions:
+        st.caption("A股数据恢复入口只负责定位到手动检测区域；不会自动请求 Tushare、DeepSeek 或回测。")
+        nav_cols = st.columns(min(4, len(valid_a_share_recovery_actions)))
+        for index, item in enumerate(valid_a_share_recovery_actions):
+            with nav_cols[index % len(nav_cols)]:
+                st.button(
+                    f"打开{_home_text(item.get('label'), 'A股数据')}恢复入口",
+                    key=f"btn_open_a_share_recovery_{_home_text(item.get('key'), index)}",
                     help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
                     on_click=_apply_tool_recovery_navigation,
                     args=(item,),

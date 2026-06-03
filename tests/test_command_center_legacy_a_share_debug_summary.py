@@ -108,6 +108,15 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         item = next(item for item in view_model["items"] if item["key"] == "moneyflow")
         self.assertEqual(item["status"], "permission_denied")
         self.assertEqual(item["status_label"], "权限不足")
+        self.assertEqual(item["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertIn("A股数据能力检测", item["toolbox_entry"])
+        self.assertFalse(item["deepseek_called"])
+        self.assertEqual(view_model["recovery_actions"][0]["label"], "个股资金流")
+        self.assertEqual(view_model["recovery_actions"][0]["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(view_model["recovery_actions"][0]["legacy_tab"], "今日关注池")
+        self.assertIn("主导航切到高级工具箱", view_model["recovery_actions"][0]["navigation_label"])
+        self.assertFalse(view_model["recovery_actions"][0]["deepseek_called"])
         json.dumps(view_model, ensure_ascii=False)
 
     def test_user_data_diagnostic_explains_stale_or_empty_data(self):
@@ -137,6 +146,8 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["tone"], "success")
         self.assertIn("可用", view_model["headline"])
         self.assertEqual(view_model["counts"]["available"], 4)
+        self.assertEqual(view_model["recovery_actions"], [])
+        self.assertIn("暂无需要恢复", view_model["recovery_summary"])
         self.assertIn("DeepSeek 解释", view_model["next_action"])
 
     def test_forbidden_imports(self):

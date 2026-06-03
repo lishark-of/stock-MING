@@ -611,7 +611,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("个股资金流", dumped)
         self.assertIn("龙虎榜", dumped)
         self.assertIn("暂未取得", dumped)
+        self.assertIn("手动按钮", dumped)
+        self.assertIn("command_center_moneyflow_packet", dumped)
+        self.assertIn("command_center_dragon_tiger_packet", dumped)
         self.assertIn("页面打开不会自动请求", diagnostic["safe_mode_text"])
+        self.assertEqual(diagnostic["recovery_actions"][0]["label"], "个股资金流")
+        self.assertEqual(diagnostic["recovery_actions"][0]["refresh_policy"], "button_gated")
+        self.assertEqual(diagnostic["recovery_actions"][0]["legacy_tab"], "今日关注池")
+        self.assertIn("高级工具箱", diagnostic["recovery_actions"][0]["navigation_label"])
         self.assertFalse(payload["deepseek_called"])
 
     def test_loaded_home_snapshot_keeps_data_capability(self):
