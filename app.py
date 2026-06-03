@@ -4474,6 +4474,54 @@ def render_a_share_data_capability_controls(target="", position_profile=None, li
                 )
 
 
+def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target="", market_type="", position_profile=None, live_packet=None):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    if not (is_a_share_market(market_type) or a_share_manual_checks_service.is_a_share_ts_code(ticker)):
+        return
+    diagnostic = home_snapshot.get("a_share_user_data_diagnostic") if isinstance(home_snapshot, dict) else {}
+    diagnostic = diagnostic if isinstance(diagnostic, dict) else {}
+    actions = [
+        action
+        for action in (diagnostic.get("recovery_actions") or [])
+        if isinstance(action, dict) and action.get("refresh_policy") == "button_gated"
+    ]
+    if not actions:
+        return
+    runner_map = {
+        "moneyflow": ("资金流", _run_manual_moneyflow_capability_check),
+        "dragon_tiger": ("龙虎榜", _run_manual_dragon_tiger_capability_check),
+        "margin": ("融资融券", _run_manual_margin_detail_capability_check),
+        "limit_emotion": ("涨跌停/情绪", _run_manual_limit_cpt_capability_check),
+    }
+    runnable_actions = [action for action in actions if str(action.get("key") or "") in runner_map][:4]
+    if not runnable_actions:
+        return
+    with st.container(border=True):
+        st.markdown("#### A股数据缺口恢复")
+        st.caption(
+            "这些按钮只检测当前标的对应的单项 Tushare 能力；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。"
+        )
+        cols = st.columns(len(runnable_actions))
+        for col, action in zip(cols, runnable_actions):
+            key = str(action.get("key") or "")
+            result_label, runner = runner_map[key]
+            button_label = action.get("action_label") or f"检测{action.get('label') or result_label}"
+            with col:
+                st.caption(f"{action.get('label') or result_label}｜{action.get('status_label') or '待验证'}")
+                st.caption(action.get("reason") or "页面打开不会自动请求 Tushare。")
+                _render_manual_capability_check_button(
+                    button_label,
+                    f"btn_cc_home_a_share_diagnostic_recovery_{key}",
+                    f"正在检测{result_label}...",
+                    result_label,
+                    runner,
+                    target=ticker,
+                    position_profile=position_profile,
+                    live_packet=live_packet,
+                )
+
+
 def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", market_type="", position_profile=None, live_packet=None):
     profile = position_profile if isinstance(position_profile, dict) else {}
     ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
@@ -4815,6 +4863,13 @@ packet:
     )
     with home_snapshot_slot.container():
         render_home_action_snapshot(home_snapshot)
+    render_home_a_share_diagnostic_recovery_controls(
+        home_snapshot,
+        target=target,
+        market_type=market_type,
+        position_profile=position_profile,
+        live_packet=live_packet,
+    )
     evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
     st.session_state["command_center_evidence_radar_packet"] = evidence_radar_vm
     with home_evidence_recovery_slot.container():
