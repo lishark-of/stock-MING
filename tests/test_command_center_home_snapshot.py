@@ -408,6 +408,36 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("需要手动刷新", dumped)
         self.assertFalse(capability["deepseek_called"])
 
+    def test_home_snapshot_builds_data_gap_report(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "last_data_source_healthcheck": {
+                "data_capability": {
+                    "source": "Unified data capability",
+                    "checked_at": f"{today}T10:01:00",
+                    "items": [
+                        {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用"},
+                        {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足"},
+                    ],
+                    "deepseek_called": False,
+                }
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+        report = payload["data_gap_report"]
+
+        self.assertEqual(report["available_count"], 1)
+        self.assertGreaterEqual(report["restricted_count"], 1)
+        self.assertIn("可信度", report["summary"])
+        self.assertTrue(any("权限不足" in item for item in report["next_manual_checks"]))
+        self.assertFalse(report["deepseek_called"])
+
     def test_home_snapshot_persists_command_center_facts_packet(self):
         today = _dt.date.today().isoformat()
         state = {

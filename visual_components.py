@@ -4638,6 +4638,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     risk_alerts = payload.get("risk_alerts") or {}
     freshness = payload.get("data_freshness") or {}
     data_capability = payload.get("data_capability") or {}
+    data_gap_report = payload.get("data_gap_report") or {}
     facts_packet = payload.get("facts_packet") or {}
     candidates = payload.get("next_ticket_candidates") or []
     etfs = margin_etf.get("recommended_etfs") or []
@@ -4681,6 +4682,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     error_line = "无" if not errors else f"{len(errors)} 个失败/错误"
     watch_not_chase_text = "；".join([str(item) for item in (margin_etf.get("watch_not_chase") or []) if str(item).strip()]) or "不追高 ETF；等待回踩、量能和风险线确认。"
     capability_summary = _home_text(data_capability.get("summary"), "尚未检测；页面打开不会自动请求 Tushare、AkShare 或 yfinance。")
+    governance_summary = _home_text(data_gap_report.get("summary"), capability_summary)
+    governance_checks = [str(item).strip() for item in (data_gap_report.get("next_manual_checks") or []) if str(item).strip()]
     capability_items = data_capability.get("items") or []
     capability_text = "；".join(
         f"{_home_text(item.get('label'), item.get('api') or '数据')}: {_home_text(item.get('status'), item.get('state') or '待验证')}"
@@ -4779,7 +4782,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-big-value">{escape(str(freshness_label))}</div>
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
-          <div class="cc-home-row"><span>数据能力</span><strong>{escape(capability_summary)}</strong></div>
+          <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          {_home_list(governance_checks, "暂无下一步检查建议。", limit=4)}
           <div class="cc-muted-note">{escape(capability_text)}</div>
           <div class="cc-home-row"><span>DeepSeek</span><strong>{'已调用' if payload.get('deepseek_called') else '未调用'}</strong></div>
           <div class="cc-muted-note">{escape(str(safety_line))}</div>

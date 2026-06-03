@@ -11,6 +11,7 @@ import command_center_facts_packet as facts_packet_service
 import command_center_radar_packet as radar_packet_service
 import command_center_etf_packet as etf_packet_service
 import command_center_discipline_packet as discipline_packet_service
+import command_center_data_gap_report as data_gap_report_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -198,6 +199,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         },
         "data_capability": build_data_capability_snapshot({}),
         "facts_packet": facts_packet_service.build_command_center_facts_packet({}),
+        "data_gap_report": data_gap_report_service.build_command_center_data_gap_report(),
         "errors": [],
         "empty_message": reason,
         "deepseek_called": False,
@@ -229,6 +231,11 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["data_capability"] = build_data_capability_snapshot(snapshot.get("data_capability") or {})
     snapshot["facts_packet"] = facts_packet_service.build_command_center_facts_packet(
         {"command_center_facts_packet": snapshot.get("facts_packet") or {}}
+    )
+    snapshot["data_gap_report"] = data_gap_report_service.build_command_center_data_gap_report(
+        snapshot.get("data_capability") or {},
+        snapshot.get("facts_packet") or {},
+        errors=snapshot.get("errors") or [],
     )
     snapshot["radar_packet"] = radar_packet_service.build_command_center_radar_packet(
         {"command_center_radar_packet": snapshot.get("radar_packet") or {}}
@@ -657,6 +664,18 @@ def build_home_action_snapshot(
     errors = _extract_errors(live, refresh, decision, strategy)
     coverage = _packet_data_coverage(live, decision, strategy)
     deepseek_called = any(bool(_as_mapping(packet).get("deepseek_called")) for packet in (live, decision, strategy))
+    data_capability_snapshot = build_data_capability_snapshot(data_capability_packet)
+    facts_packet_snapshot = facts_packet_service.build_command_center_facts_packet(
+        {"command_center_facts_packet": facts_packet},
+        target=target,
+    )
+    data_gap_report = data_gap_report_service.build_command_center_data_gap_report(
+        data_capability_snapshot,
+        facts_packet_snapshot,
+        refresh_summary=refresh,
+        live_packet=live,
+        errors=errors,
+    )
     snapshot = {
         "status": "ready",
         "is_empty": False,
@@ -677,11 +696,9 @@ def build_home_action_snapshot(
         "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
         "data_coverage": coverage,
         "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
-        "data_capability": build_data_capability_snapshot(data_capability_packet),
-        "facts_packet": facts_packet_service.build_command_center_facts_packet(
-            {"command_center_facts_packet": facts_packet},
-            target=target,
-        ),
+        "data_capability": data_capability_snapshot,
+        "facts_packet": facts_packet_snapshot,
+        "data_gap_report": data_gap_report,
         "errors": errors,
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
@@ -696,6 +713,7 @@ def build_home_action_snapshot(
         empty["data_freshness"] = build_data_freshness("", errors, deepseek_called=deepseek_called)
         empty["data_capability"] = snapshot["data_capability"]
         empty["facts_packet"] = snapshot["facts_packet"]
+        empty["data_gap_report"] = snapshot["data_gap_report"]
         empty["radar_packet"] = snapshot["radar_packet"]
         empty["etf_packet"] = snapshot["etf_packet"]
         empty["discipline_packet"] = snapshot["discipline_packet"]
