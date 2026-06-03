@@ -121,7 +121,7 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
             self.assertEqual(item["manual_action"]["refresh_policy"], "button_gated")
             self.assertFalse(item["deepseek_called"])
 
-    def test_home_backfill_actions_can_include_hard_risk_sync(self):
+    def test_home_backfill_actions_can_include_hard_risk_manual_check(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {
                 "hard_risk_packet": {"status": "failed", "data_status": "missing", "summary": "公告权限不足"},
@@ -135,7 +135,7 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         )
 
         self.assertEqual(actions[0]["key"], "hard_risk")
-        self.assertIn("同步公告/硬风险缓存", actions[0]["manual_action"]["button_label"])
+        self.assertIn("检测公告/硬风险", actions[0]["manual_action"]["button_label"])
         self.assertEqual(actions[0]["manual_action"]["writes_packet"], "command_center_hard_risk_packet")
         self.assertEqual(actions[0]["manual_action"]["refresh_policy"], "button_gated")
         self.assertFalse(actions[0]["deepseek_called"])

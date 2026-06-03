@@ -26,6 +26,17 @@ TOP_INST_API = "top_inst"
 MONEYFLOW_SECTION = "moneyflow"
 MONEYFLOW_API = "moneyflow"
 MONEYFLOW_LABEL = "个股资金流"
+HARD_RISK_SECTION = "hard_risk"
+HARD_RISK_API = "anns_d/forecast/stk_holdertrade/share_float/pledge_stat/pledge_detail"
+HARD_RISK_LABEL = "公告/硬风险"
+HARD_RISK_APIS = (
+    "anns_d",
+    "forecast",
+    "stk_holdertrade",
+    "share_float",
+    "pledge_stat",
+    "pledge_detail",
+)
 
 
 def as_mapping(value: Any) -> dict:
@@ -166,6 +177,33 @@ def build_chip_radar_check_request(ticker: Any, today: Any = None, lookback_days
         "api": CHIP_API,
         "ts_code": ts_code,
         "start_date": _date_text(start),
+        "end_date": _date_text(end),
+        "refresh_policy": "button_gated",
+        "deepseek_called": False,
+    }
+
+
+def build_hard_risk_check_request(ticker: Any, today: Any = None) -> dict:
+    ts_code = normalize_a_share_ts_code(ticker)
+    if isinstance(today, _dt.datetime):
+        end = today.date()
+    elif isinstance(today, _dt.date):
+        end = today
+    elif isinstance(today, str) and today.strip():
+        end = _dt.date.fromisoformat(today.strip()[:10])
+    else:
+        end = _dt.date.today()
+    return {
+        "section": HARD_RISK_SECTION,
+        "label": HARD_RISK_LABEL,
+        "api": HARD_RISK_API,
+        "apis": list(HARD_RISK_APIS),
+        "ts_code": ts_code,
+        "ann_start_date": _date_text(end - _dt.timedelta(days=90)),
+        "forecast_start_date": _date_text(end - _dt.timedelta(days=180)),
+        "holder_start_date": _date_text(end - _dt.timedelta(days=180)),
+        "unlock_start_date": _date_text(end),
+        "unlock_end_date": _date_text(end + _dt.timedelta(days=90)),
         "end_date": _date_text(end),
         "refresh_policy": "button_gated",
         "deepseek_called": False,
@@ -335,6 +373,242 @@ def build_limit_cpt_capability_item(result: Any = None, latency_ms: int | float 
     return item
 
 
+def _result_rows(result: Any = None, limit: int = 5, sort_key: str = "") -> list[dict]:
+    payload = as_mapping(result)
+    data = payload.get("data")
+    if data is None:
+        return []
+    if hasattr(data, "empty") and data.empty:
+        return []
+    try:
+        rows = data.to_dict("records") if hasattr(data, "to_dict") else list(data)
+    except Exception:
+        return []
+    cleaned = []
+    for raw in rows:
+        row = as_mapping(raw)
+        if not row:
+            continue
+        item = {}
+        for key, value in row.items():
+            if value is None:
+                item[key] = ""
+            elif isinstance(value, float) and value != value:
+                item[key] = ""
+            else:
+                item[key] = value
+        cleaned.append(item)
+    if sort_key:
+        cleaned = sorted(cleaned, key=lambda item: str(item.get(sort_key) or ""), reverse=True)
+    return cleaned[: max(1, int(limit or 5))]
+
+
+def _hard_risk_section(api: str, result: Any = None, rows: list[dict] | None = None, checked_at: Any = "") -> dict:
+    payload = as_mapping(result)
+    error = str(payload.get("error") or "")
+    section_rows = rows if rows is not None else _result_rows(payload)
+    return {
+        "available": bool(section_rows),
+        "source": "Tushare",
+        "api": api,
+        "rows": section_rows or [],
+        "summary": f"取得 {len(section_rows or [])} 条记录。" if section_rows else "",
+        "risk_flags": [],
+        "message": "" if section_rows else (error or "暂无可验证数据"),
+        "error": error,
+        "updated_at": payload.get("updated_at") or checked_at,
+    }
+
+
+def _risk_keywords(text: Any) -> list[str]:
+    haystack = str(text or "")
+    keywords = ["处罚", "问询", "监管", "诉讼", "仲裁", "立案", "调查", "退市", "风险提示", "担保", "冻结", "减持", "质押", "解禁", "亏损", "修正"]
+    return [keyword for keyword in keywords if keyword in haystack]
+
+
+def build_hard_risk_fact_packet_from_results(
+    ts_code: Any = "",
+    stock_name: Any = "",
+    results: Any = None,
+    checked_at: Any = "",
+) -> dict:
+    payload = as_mapping(results)
+    updated_at = str(checked_at or _dt.datetime.now().isoformat(timespec="seconds"))
+
+    ann_rows = []
+    ann_flags = []
+    for item in _result_rows(payload.get("anns_d"), limit=6, sort_key="ann_date"):
+        title = str(item.get("title") or "")
+        matched = _risk_keywords(title)
+        if matched:
+            ann_flags.append(f"公告标题线索涉及：{','.join(matched[:3])}")
+        ann_rows.append(
+            {
+                "ann_date": item.get("ann_date") or "",
+                "title": title,
+                "url": item.get("url") or "",
+                "rec_time": item.get("rec_time") or "",
+                "source": "Tushare anns_d",
+            }
+        )
+    announcements = _hard_risk_section("anns_d", payload.get("anns_d"), ann_rows, updated_at)
+    announcements["risk_flags"] = ann_flags
+    announcements["summary"] = (
+        f"近90天取得公告标题 {len(ann_rows)} 条；标题只作公告线索。"
+        if ann_rows
+        else announcements["summary"]
+    )
+
+    forecast_rows = []
+    for item in _result_rows(payload.get("forecast"), limit=5, sort_key="ann_date"):
+        forecast_rows.append(
+            {
+                "ann_date": item.get("ann_date") or "",
+                "type": item.get("type") or "",
+                "p_change_min": item.get("p_change_min") or "",
+                "p_change_max": item.get("p_change_max") or "",
+                "net_profit_min": item.get("net_profit_min") or "",
+                "net_profit_max": item.get("net_profit_max") or "",
+                "summary": item.get("type") or item.get("summary") or "业绩预告待解读",
+            }
+        )
+    forecast = _hard_risk_section("forecast", payload.get("forecast"), forecast_rows, updated_at)
+
+    holder_rows = []
+    holder_flags = []
+    for item in _result_rows(payload.get("stk_holdertrade"), limit=5, sort_key="ann_date"):
+        trade_type = str(item.get("trade_type") or item.get("in_de") or "")
+        holder_name = str(item.get("holder_name") or item.get("name") or "")
+        holder_rows.append(
+            {
+                "ann_date": item.get("ann_date") or "",
+                "holder_name": holder_name,
+                "trade_type": trade_type,
+                "change_vol": item.get("change_vol") or "",
+                "change_ratio": item.get("change_ratio") or "",
+                "summary": f"{holder_name} {trade_type}".strip() or "股东交易记录",
+            }
+        )
+        if "减" in trade_type:
+            holder_flags.append("存在股东减持记录")
+    holder_reduction = _hard_risk_section("stk_holdertrade", payload.get("stk_holdertrade"), holder_rows, updated_at)
+    holder_reduction["risk_flags"] = holder_flags
+
+    unlock_rows = []
+    for item in _result_rows(payload.get("share_float"), limit=5, sort_key="float_date"):
+        unlock_rows.append(
+            {
+                "ann_date": item.get("ann_date") or "",
+                "float_date": item.get("float_date") or "",
+                "float_share": item.get("float_share") or "",
+                "holder_name": item.get("holder_name") or "",
+                "summary": item.get("holder_name") or "限售解禁记录",
+            }
+        )
+    share_unlock = _hard_risk_section("share_float", payload.get("share_float"), unlock_rows, updated_at)
+
+    pledge_rows = []
+    pledge_flags = []
+    for item in _result_rows(payload.get("pledge_stat"), limit=3):
+        ratio = item.get("pledge_ratio") or item.get("p_total_ratio") or item.get("h_total_ratio") or ""
+        pledge_rows.append(
+            {
+                "end_date": item.get("end_date") or "",
+                "pledge_ratio": ratio,
+                "pledge_count": item.get("pledge_count") or "",
+                "summary": f"质押比例：{ratio}" if ratio not in ["", None] else "股权质押统计",
+            }
+        )
+        try:
+            if float(ratio) >= 15:
+                pledge_flags.append(f"最近一期质押比例较高：{float(ratio):.2f}%")
+        except Exception:
+            pass
+    for item in _result_rows(payload.get("pledge_detail"), limit=5):
+        pledge_rows.append(
+            {
+                "ann_date": item.get("ann_date") or "",
+                "holder_name": item.get("holder_name") or "",
+                "pledge_amount": item.get("pledge_amount") or "",
+                "summary": item.get("holder_name") or "股权质押明细",
+            }
+        )
+    pledge = _hard_risk_section("pledge_stat/pledge_detail", payload.get("pledge_detail") or payload.get("pledge_stat"), pledge_rows, updated_at)
+    pledge["risk_flags"] = pledge_flags
+
+    sections = [announcements, forecast, holder_reduction, share_unlock, pledge]
+    missing_items = []
+    for section in sections:
+        if not section.get("available"):
+            missing_items.append(f"{section.get('api')}: {section.get('error') or section.get('message') or '暂无可验证数据'}")
+    hard_risks = {
+        "announcements": announcements,
+        "earnings_forecast": forecast,
+        "holder_reduction": holder_reduction,
+        "share_unlock": share_unlock,
+        "pledge": pledge,
+        "available": any(section.get("available") for section in sections),
+        "risk_flags": ann_flags + holder_flags + pledge_flags,
+        "missing_items": missing_items,
+        "updated_at": updated_at,
+        "policy": {
+            "ann_titles_are_clues_not_conclusions": True,
+            "hard_risk_manual_check_is_button_gated": True,
+        },
+    }
+    return {
+        "stock": {"ts_code": normalize_a_share_ts_code(ts_code), "name": str(stock_name or "")},
+        "verified_hard_risks": hard_risks,
+        "missing_items": missing_items,
+        "updated_at": updated_at,
+        "deepseek_called": False,
+    }
+
+
+def build_hard_risk_capability_item(results: Any = None, latency_ms: int | float | None = 0) -> dict:
+    payload = as_mapping(results)
+    sub_items = [
+        data_capability.summarize_tushare_result(api, result=payload.get(api), latency_ms=latency_ms)
+        for api in HARD_RISK_APIS
+    ]
+    states = {_state_from_item(item) for item in sub_items}
+    available_count = sum(1 for item in sub_items if _state_from_item(item) == data_capability.STATE_AVAILABLE)
+    row_count = sum(int(item.get("rows") or 0) for item in sub_items)
+    latest_date = _combine_latest_date(sub_items)
+    error_text = _combine_errors(sub_items)
+    if available_count == len(sub_items):
+        item = data_capability.build_capability_item(HARD_RISK_API, ok=True, rows=row_count, latest_date=latest_date, latency_ms=latency_ms)
+    elif available_count:
+        item = data_capability.build_capability_item(
+            HARD_RISK_API,
+            rows=row_count,
+            latest_date=latest_date,
+            latency_ms=latency_ms,
+            error=f"仅取得部分公告/硬风险接口结果。 {error_text}".strip(),
+            fallback_used=True,
+        )
+    elif data_capability.STATE_PERMISSION_DENIED in states:
+        item = data_capability.build_capability_item(HARD_RISK_API, rows=row_count, latest_date=latest_date, latency_ms=latency_ms, error=error_text)
+    elif data_capability.STATE_DISABLED_THIS_SESSION in states:
+        item = data_capability.build_capability_item(HARD_RISK_API, rows=row_count, latest_date=latest_date, latency_ms=latency_ms, error=error_text, skipped=True)
+    elif states and states <= {data_capability.STATE_EMPTY_RECENT}:
+        item = data_capability.build_capability_item(HARD_RISK_API, ok=True, rows=0, latest_date=latest_date, latency_ms=latency_ms)
+    else:
+        item = data_capability.build_capability_item(HARD_RISK_API, rows=row_count, latest_date=latest_date, latency_ms=latency_ms, error=error_text)
+    item.update(
+        {
+            "section": HARD_RISK_SECTION,
+            "label": HARD_RISK_LABEL,
+            "api": HARD_RISK_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+            "sub_items": sub_items,
+        }
+    )
+    return item
+
+
 def build_margin_detail_exception_item(exc: Any, latency_ms: int | float | None = 0) -> dict:
     item = data_capability.summarize_tushare_exception(MARGIN_API, exc, latency_ms=latency_ms)
     item.update(
@@ -407,6 +681,22 @@ def build_limit_cpt_exception_item(exc: Any, latency_ms: int | float | None = 0)
             "manual_check": True,
             "refresh_policy": "button_gated",
             "deepseek_called": False,
+        }
+    )
+    return item
+
+
+def build_hard_risk_exception_item(exc: Any, latency_ms: int | float | None = 0) -> dict:
+    item = data_capability.summarize_tushare_exception(HARD_RISK_API, exc, latency_ms=latency_ms)
+    item.update(
+        {
+            "section": HARD_RISK_SECTION,
+            "label": HARD_RISK_LABEL,
+            "api": HARD_RISK_API,
+            "manual_check": True,
+            "refresh_policy": "button_gated",
+            "deepseek_called": False,
+            "sub_items": [],
         }
     )
     return item

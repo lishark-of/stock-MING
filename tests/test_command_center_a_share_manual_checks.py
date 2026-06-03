@@ -1,4 +1,5 @@
 import ast
+import datetime as dt
 import json
 import unittest
 from pathlib import Path
@@ -83,6 +84,22 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertEqual(request["ts_code"], "002008.SZ")
         self.assertEqual(request["start_date"], "20260504")
         self.assertEqual(request["end_date"], "20260603")
+        self.assertEqual(request["refresh_policy"], "button_gated")
+        self.assertFalse(request["deepseek_called"])
+
+    def test_hard_risk_request_is_button_gated(self):
+        today = dt.date(2026, 6, 3)
+        request = checks.build_hard_risk_check_request("002008", today=today)
+
+        self.assertEqual(request["api"], "anns_d/forecast/stk_holdertrade/share_float/pledge_stat/pledge_detail")
+        self.assertEqual(request["section"], "hard_risk")
+        self.assertEqual(request["ts_code"], "002008.SZ")
+        self.assertEqual(request["ann_start_date"], (today - dt.timedelta(days=90)).strftime("%Y%m%d"))
+        self.assertEqual(request["forecast_start_date"], (today - dt.timedelta(days=180)).strftime("%Y%m%d"))
+        self.assertEqual(request["holder_start_date"], (today - dt.timedelta(days=180)).strftime("%Y%m%d"))
+        self.assertEqual(request["unlock_start_date"], today.strftime("%Y%m%d"))
+        self.assertEqual(request["unlock_end_date"], (today + dt.timedelta(days=90)).strftime("%Y%m%d"))
+        self.assertEqual(request["end_date"], today.strftime("%Y%m%d"))
         self.assertEqual(request["refresh_policy"], "button_gated")
         self.assertFalse(request["deepseek_called"])
 
@@ -208,6 +225,96 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
 
         self.assertEqual(item["capability_state"], capability.STATE_PERMISSION_DENIED)
         self.assertTrue(item["permission_likely"])
+        self.assertFalse(item["deepseek_called"])
+
+    def test_hard_risk_fact_packet_from_results_builds_sections(self):
+        packet = checks.build_hard_risk_fact_packet_from_results(
+            ts_code="002008",
+            stock_name="大族激光",
+            checked_at="2026-06-03T10:00:00",
+            results={
+                "anns_d": {
+                    "ok": True,
+                    "data": [
+                        {
+                            "ann_date": "20260601",
+                            "title": "关于股东减持计划的公告",
+                            "url": "https://example.test/ann",
+                            "rec_time": "20260601120000",
+                        }
+                    ],
+                },
+                "forecast": {
+                    "ok": True,
+                    "data": [{"ann_date": "20260420", "type": "预减", "p_change_min": -40, "p_change_max": -20}],
+                },
+                "stk_holdertrade": {
+                    "ok": True,
+                    "data": [
+                        {
+                            "ann_date": "20260520",
+                            "holder_name": "重要股东",
+                            "trade_type": "减持",
+                            "change_ratio": 1.2,
+                        }
+                    ],
+                },
+                "share_float": {
+                    "ok": True,
+                    "data": [{"float_date": "20260701", "float_share": 1000, "holder_name": "限售股东"}],
+                },
+                "pledge_stat": {
+                    "ok": True,
+                    "data": [{"end_date": "20260531", "pledge_ratio": 20.5}],
+                },
+                "pledge_detail": {
+                    "ok": True,
+                    "data": [{"ann_date": "20260515", "holder_name": "控股股东", "pledge_amount": 300}],
+                },
+            },
+        )
+
+        hard = packet["verified_hard_risks"]
+        self.assertEqual(packet["stock"]["ts_code"], "002008.SZ")
+        self.assertTrue(hard["available"])
+        self.assertTrue(hard["announcements"]["available"])
+        self.assertTrue(hard["holder_reduction"]["available"])
+        self.assertTrue(hard["pledge"]["available"])
+        self.assertIn("公告标题线索涉及", "；".join(hard["risk_flags"]))
+        self.assertIn("股东减持", "；".join(hard["risk_flags"]))
+        self.assertIn("质押比例", "；".join(hard["risk_flags"]))
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(hard["policy"]["hard_risk_manual_check_is_button_gated"])
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_hard_risk_capability_item_is_button_gated_and_partial(self):
+        item = checks.build_hard_risk_capability_item(
+            {
+                "anns_d": {"ok": True, "rows": 2, "latest_date": "20260601", "api": "anns_d"},
+                "forecast": {"ok": True, "rows": 0, "latest_date": "", "api": "forecast"},
+                "stk_holdertrade": {"ok": False, "error": "抱歉，您没有访问该接口的权限", "api": "stk_holdertrade"},
+                "share_float": {"ok": True, "rows": 1, "latest_date": "20260701", "api": "share_float"},
+                "pledge_stat": {"ok": True, "rows": 1, "latest_date": "20260531", "api": "pledge_stat"},
+                "pledge_detail": {"ok": True, "rows": 0, "latest_date": "", "api": "pledge_detail"},
+            },
+            latency_ms=18,
+        )
+
+        self.assertEqual(item["section"], "hard_risk")
+        self.assertEqual(item["label"], "公告/硬风险")
+        self.assertEqual(item["capability_state"], capability.STATE_FALLBACK_USED)
+        self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertEqual(len(item["sub_items"]), 6)
+        self.assertIn("部分公告/硬风险", item["error"])
+        self.assertFalse(item["deepseek_called"])
+
+    def test_hard_risk_exception_item_is_safe(self):
+        item = checks.build_hard_risk_exception_item("未锁定 A股标的", latency_ms=3)
+
+        self.assertEqual(item["section"], "hard_risk")
+        self.assertEqual(item["api"], "anns_d/forecast/stk_holdertrade/share_float/pledge_stat/pledge_detail")
+        self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertTrue(item["can_retry"])
         self.assertFalse(item["deepseek_called"])
 
     def test_merge_replaces_existing_margin_item(self):

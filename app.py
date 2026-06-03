@@ -4299,104 +4299,93 @@ def _run_manual_chip_radar_capability_check(target="", position_profile=None, li
     }
 
 
-def _build_hard_risk_cache_sync_capability_item(hard_risk_packet, checked_at=""):
-    packet = hard_risk_packet if isinstance(hard_risk_packet, dict) else {}
-    api = "anns_d / forecast / stk_holdertrade / pledge / free_announcement_radar"
-    status = str(packet.get("status") or "")
-    data_status = str(packet.get("data_status") or "")
-    risk_count = int(packet.get("risk_item_count") or len(packet.get("risk_items") or []) or 0)
-    latest_date = packet.get("updated_at") or checked_at
-    if status == "ready" and data_status == "ready":
-        item = data_capability.build_capability_item(
-            api,
-            ok=True,
-            rows=max(1, risk_count),
-            latest_date=latest_date,
-            source=packet.get("source") or "本地天眼风控缓存",
-        )
-        item["rows"] = risk_count
-        item["action_hint"] = "已同步本地公告/硬风险缓存；没有风险条目不等于无风险，仍需复核公告日期。"
-    elif packet:
-        item = data_capability.build_capability_item(
-            api,
-            rows=risk_count,
-            latest_date=latest_date,
-            error=packet.get("last_error") or packet.get("error") or packet.get("manual_required_text") or "硬风险缓存仍待验证。",
-            source=packet.get("source") or "本地天眼风控缓存",
-            cached=bool(data_status == "cached"),
-            requires_manual_refresh=bool(status in {"waiting", "partial"} and data_status != "cached"),
-        )
-        item["action_hint"] = packet.get("manual_required_text") or "硬风险仍待验证；请在天眼风控或旧工具箱中手动刷新。"
-    else:
-        item = data_capability.build_capability_item(
-            api,
-            error="未找到天眼风控或公告硬风险缓存；请在高级工具箱手动运行天眼风控。",
-            requires_manual_refresh=True,
-            source="本地天眼风控缓存",
-        )
-        item["action_hint"] = "未找到可同步的公告/硬风险缓存；请手动运行天眼风控后再回到综合中心。"
-    item.update(
-        {
-            "section": "hard_risk",
-            "label": "公告/硬风险",
-            "api": api,
-            "manual_check": True,
-            "refresh_policy": "button_gated",
-            "deepseek_called": False,
-            "checked_at": checked_at,
-        }
-    )
-    return item
+def _call_tushare_hard_risk_api(api_name, method_name, **kwargs):
+    if _tushare_adapter is None:
+        return {"ok": False, "api": api_name, "error": str(TUSHARE_ADAPTER_MODULE_ERROR) or "tushare_adapter 不可用"}
+    if not hasattr(_tushare_adapter, method_name):
+        return {"ok": False, "api": api_name, "error": f"tushare_adapter 未接入 {api_name} 接口"}
+    try:
+        result = getattr(_tushare_adapter, method_name)(**kwargs)
+        if isinstance(result, dict):
+            result.setdefault("api", api_name)
+            return result
+        return {"ok": False, "api": api_name, "error": "Tushare 返回结果格式不可识别"}
+    except Exception as exc:
+        return {"ok": False, "api": api_name, "error": str(exc)}
 
 
 def _run_manual_hard_risk_capability_check(target="", position_profile=None, live_packet=None):
     profile = position_profile if isinstance(position_profile, dict) else {}
     ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    request = a_share_manual_checks_service.build_hard_risk_check_request(ticker)
     checked_at = _cc_now()
     live = live_packet or st.session_state.get("command_center_live_packet") or {}
-    if not ticker:
+    if not request.get("ts_code"):
         hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet({}, live_packet=live, target=ticker)
-        item = data_capability.build_capability_item(
-            "anns_d / forecast / stk_holdertrade / pledge / free_announcement_radar",
-            error="未锁定 A股标的，无法同步公告/硬风险缓存。",
-            requires_manual_refresh=True,
-            source="本地天眼风控缓存",
-        )
-        item.update(
-            {
-                "section": "hard_risk",
-                "label": "公告/硬风险",
-                "manual_check": True,
-                "refresh_policy": "button_gated",
-                "deepseek_called": False,
-                "checked_at": checked_at,
-            }
-        )
-    elif not a_share_manual_checks_service.is_a_share_ts_code(ticker):
+        item = a_share_manual_checks_service.build_hard_risk_exception_item("未锁定 A股标的，无法检测公告/硬风险。")
+    elif not a_share_manual_checks_service.is_a_share_ts_code(request.get("ts_code")):
         hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet({}, live_packet=live, target=ticker)
-        item = data_capability.build_capability_item(
-            "anns_d / forecast / stk_holdertrade / pledge / free_announcement_radar",
-            error="当前标的不是 A股代码，不同步 Tushare 公告/硬风险。",
-            requires_manual_refresh=True,
-            source="本地天眼风控缓存",
-        )
-        item.update(
-            {
-                "section": "hard_risk",
-                "label": "公告/硬风险",
-                "manual_check": True,
-                "refresh_policy": "button_gated",
-                "deepseek_called": False,
-                "checked_at": checked_at,
-            }
-        )
+        item = a_share_manual_checks_service.build_hard_risk_exception_item("当前标的不是 A股代码，不检测 Tushare 公告/硬风险。")
     else:
+        started = time.perf_counter()
+        results = {
+            "anns_d": _call_tushare_hard_risk_api(
+                "anns_d",
+                "get_anns_d",
+                ts_code=request["ts_code"],
+                start_date=request["ann_start_date"],
+                end_date=request["end_date"],
+            ),
+            "forecast": _call_tushare_hard_risk_api(
+                "forecast",
+                "get_forecast",
+                ts_code=request["ts_code"],
+                start_date=request["forecast_start_date"],
+                end_date=request["end_date"],
+            ),
+            "stk_holdertrade": _call_tushare_hard_risk_api(
+                "stk_holdertrade",
+                "get_stk_holdertrade",
+                ts_code=request["ts_code"],
+                start_date=request["holder_start_date"],
+                end_date=request["end_date"],
+            ),
+            "share_float": _call_tushare_hard_risk_api(
+                "share_float",
+                "get_share_float",
+                ts_code=request["ts_code"],
+                start_date=request["unlock_start_date"],
+                end_date=request["unlock_end_date"],
+            ),
+            "pledge_stat": _call_tushare_hard_risk_api(
+                "pledge_stat",
+                "get_pledge_stat",
+                ts_code=request["ts_code"],
+            ),
+            "pledge_detail": _call_tushare_hard_risk_api(
+                "pledge_detail",
+                "get_pledge_detail",
+                ts_code=request["ts_code"],
+            ),
+        }
+        latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        tianyan_packet = a_share_manual_checks_service.build_hard_risk_fact_packet_from_results(
+            ts_code=request["ts_code"],
+            stock_name=profile.get("name") or st.session_state.get("current_stock_name") or "",
+            results=results,
+            checked_at=checked_at,
+        )
+        st.session_state["tianyan_risk_fact_packet"] = tianyan_packet
         hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet(
-            st.session_state,
+            {"tianyan_risk_fact_packet": tianyan_packet},
             live_packet=live,
             target=ticker,
         )
-        item = _build_hard_risk_cache_sync_capability_item(hard_risk_packet, checked_at=checked_at)
+        item = a_share_manual_checks_service.build_hard_risk_capability_item(
+            results,
+            latency_ms=latency_ms,
+        )
+    item["checked_at"] = checked_at
     st.session_state["command_center_hard_risk_packet"] = hard_risk_packet
     existing_packet = st.session_state.get("a_share_professional_data_capability") or {}
     professional_packet = a_share_manual_checks_service.merge_a_share_capability_item(
@@ -4411,6 +4400,7 @@ def _run_manual_hard_risk_capability_check(target="", position_profile=None, liv
         position_profile=position_profile,
     )
     return {
+        "request": request,
         "item": item,
         "hard_risk_packet": hard_risk_packet,
         "professional_packet": professional_packet,
