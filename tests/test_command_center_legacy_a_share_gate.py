@@ -228,6 +228,78 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         moneyflow_card = [card for card in cards["cards"] if card["key"] == "moneyflow"][0]
         self.assertEqual(moneyflow_card["risk_note"], "资金净流入只作验证线索")
 
+    def test_secondary_fact_sections_render_limit_and_chip_packets(self):
+        sections = gate.build_legacy_a_share_secondary_fact_sections(
+            limit_emotion_packet={
+                "status": "ready",
+                "trade_date": "2026-06-03",
+                "up_limit": 13.5,
+                "down_limit": 11.05,
+                "distance_to_up_pct": 2.1,
+                "distance_to_down_pct": -7.8,
+                "emotion_state": "情绪线索可参考",
+                "limit_records": [{"date": "2026-06-02", "type": "涨停"}],
+                "concept_top5": [{"name": "半导体", "limit_up_count": 8}],
+                "source": "Tushare 涨跌停/情绪缓存",
+            },
+            chip_packet={
+                "status": "ready",
+                "trade_date": "2026-06-03",
+                "winner_rate": 63.2,
+                "weight_avg": 12.1,
+                "current_vs_weight_avg_pct": 4.5,
+                "cost_5pct": 9.8,
+                "cost_50pct": 11.7,
+                "cost_95pct": 15.2,
+                "chip_pressure_comment": "筹码相对收敛",
+                "chip_structure_comment": "筹码结构待复核",
+                "chips_top_areas": [{"price": 12.0, "percent": 18.5}],
+            },
+        )
+
+        self.assertEqual(sections["title"], "A股情绪与筹码事实")
+        self.assertFalse(sections["deepseek_called"])
+        self.assertEqual(len(sections["sections"]), 2)
+        limit_section = sections["sections"][0]
+        chip_section = sections["sections"][1]
+        self.assertEqual(limit_section["status"], "已回流")
+        self.assertIn("¥13.50", limit_section["metrics"][0]["value"])
+        self.assertEqual(limit_section["tables"][0]["rows"][0]["type"], "涨停")
+        self.assertEqual(limit_section["tables"][1]["rows"][0]["name"], "半导体")
+        self.assertEqual(chip_section["status"], "已回流")
+        self.assertIn("63.20%", chip_section["metrics"][1]["value"])
+        self.assertIn("筹码成本", chip_section["captions"][0])
+        self.assertIn("筹码密集区", " ".join(chip_section["captions"]))
+        json.dumps(sections, ensure_ascii=False)
+
+    def test_secondary_fact_sections_hide_metrics_when_waiting_or_failed(self):
+        sections = gate.build_legacy_a_share_secondary_fact_sections(
+            limit_emotion_packet={"status": "waiting", "summary": "涨跌停待刷新"},
+            chip_packet={"status": "failed", "error": "权限不足"},
+        )
+        by_key = {section["key"]: section for section in sections["sections"]}
+
+        self.assertEqual(by_key["limit_emotion"]["status"], "待手动刷新")
+        self.assertEqual(by_key["chip_radar"]["status"], "受限/失败")
+        self.assertEqual(by_key["limit_emotion"]["metrics"], [])
+        self.assertEqual(by_key["chip_radar"]["metrics"], [])
+        self.assertIn("权限不足", by_key["chip_radar"]["risk_note"])
+        json.dumps(sections, ensure_ascii=False)
+
+    def test_secondary_fact_sections_do_not_mutate_input(self):
+        packet = {
+            "status": "ready",
+            "limit_records": [{"date": "2026-06-03", "type": "炸板"}],
+            "risk_notes": ["炸板记录只是事件证据"],
+        }
+        before = copy.deepcopy(packet)
+
+        sections = gate.build_legacy_a_share_secondary_fact_sections(limit_emotion_packet=packet)
+
+        self.assertEqual(packet, before)
+        limit_section = [section for section in sections["sections"] if section["key"] == "limit_emotion"][0]
+        self.assertEqual(limit_section["risk_note"], "炸板记录只是事件证据")
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_gate.py").read_text(encoding="utf-8"))
         imports = []

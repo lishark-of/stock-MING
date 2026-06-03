@@ -253,6 +253,11 @@ def _format_pct(value: Any) -> str:
     return "暂无" if number is None else f"{number:+.2f}%"
 
 
+def _format_plain_pct(value: Any) -> str:
+    number = _to_number(value)
+    return "暂无" if number is None else f"{number:.2f}%"
+
+
 def _format_price(value: Any) -> str:
     number = _to_number(value)
     return "暂无" if number is None else f"¥{number:.2f}"
@@ -274,6 +279,19 @@ def _format_source_caption(packet: Mapping[str, Any]) -> str:
     return "｜".join(pieces)
 
 
+def _normalize_table_rows(value: Any, limit: int = 8) -> list[dict]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    rows = []
+    for item in value:
+        row = as_mapping(item)
+        if row:
+            rows.append(row)
+        if len(rows) >= limit:
+            break
+    return rows
+
+
 def _primary_fact_card(key: str, title: str, packet_value: Any, metrics: list[dict], captions: list[str]) -> dict:
     packet = as_mapping(packet_value)
     state = _packet_state(packet)
@@ -287,6 +305,33 @@ def _primary_fact_card(key: str, title: str, packet_value: Any, metrics: list[di
         "message": summary,
         "metrics": metrics if state == "ready" else [],
         "captions": [item for item in captions if item and item != "暂无"] if state == "ready" else [],
+        "source_caption": _format_source_caption(packet),
+        "risk_note": _packet_risk_text(packet),
+        "deepseek_called": bool(packet.get("deepseek_called", False)),
+    }
+
+
+def _secondary_fact_section(
+    key: str,
+    title: str,
+    packet_value: Any,
+    metrics: list[dict],
+    captions: list[str],
+    tables: list[dict] | None = None,
+) -> dict:
+    packet = as_mapping(packet_value)
+    state = _packet_state(packet)
+    summary = _first_text(packet.get("summary"), packet.get("message"), default=SECTION_SPECS.get(key, ("", "", ""))[2])
+    return {
+        "key": key,
+        "title": title,
+        "state": state,
+        "status": _packet_state_label(state),
+        "tone": _packet_tone(state),
+        "message": summary,
+        "metrics": metrics if state == "ready" else [],
+        "captions": [item for item in captions if item and item != "暂无"] if state == "ready" else [],
+        "tables": tables if state == "ready" else [],
         "source_caption": _format_source_caption(packet),
         "risk_note": _packet_risk_text(packet),
         "deepseek_called": bool(packet.get("deepseek_called", False)),
@@ -370,6 +415,85 @@ def build_legacy_a_share_primary_fact_cards(
     return {
         "title": "A股专业主事实",
         "cards": cards,
+        "deepseek_called": False,
+    }
+
+
+def build_legacy_a_share_secondary_fact_sections(
+    *,
+    limit_emotion_packet: Any = None,
+    chip_packet: Any = None,
+) -> dict:
+    limit = as_mapping(limit_emotion_packet)
+    chip = as_mapping(chip_packet)
+    limit_records = _normalize_table_rows(limit.get("limit_records"), limit=5)
+    concept_rows = _normalize_table_rows(limit.get("concept_top5"), limit=5)
+    chip_areas = _normalize_table_rows(chip.get("chips_top_areas"), limit=5)
+    sections = [
+        _secondary_fact_section(
+            "limit_emotion",
+            "📈 A股情绪与涨跌停边界",
+            limit,
+            [
+                {"label": "涨停价", "value": _format_price(limit.get("up_limit"))},
+                {"label": "跌停价", "value": _format_price(limit.get("down_limit"))},
+                {"label": "距涨停", "value": _format_pct(limit.get("distance_to_up_pct"))},
+                {"label": "距跌停", "value": _format_pct(limit.get("distance_to_down_pct"))},
+                {"label": "数据日期", "value": _format_plain(limit.get("trade_date"))},
+            ],
+            [
+                f"情绪状态：{limit.get('emotion_state')}" if to_text(limit.get("emotion_state")) else "",
+                "涨跌停/炸板记录只是事件证据，不单独构成买入理由。",
+            ],
+            [
+                {
+                    "title": "近5日涨跌停 / 炸板 / 连板记录",
+                    "rows": limit_records,
+                    "empty_message": "近5日未见该股涨跌停/炸板记录。",
+                },
+                {
+                    "title": "当日涨停概念强度 Top 5",
+                    "rows": concept_rows,
+                    "empty_message": "暂未取得当日涨停概念强度数据。",
+                },
+            ],
+        ),
+        _secondary_fact_section(
+            "chip_radar",
+            "🧬 筹码/胜率雷达",
+            chip,
+            [
+                {"label": "数据日期", "value": _format_plain(chip.get("trade_date"))},
+                {"label": "获利盘比例 / 胜率", "value": _format_plain_pct(chip.get("winner_rate"))},
+                {"label": "加权平均筹码成本", "value": _format_price(chip.get("weight_avg"))},
+                {"label": "当前价相对筹码中枢", "value": _format_pct(chip.get("current_vs_weight_avg_pct"))},
+            ],
+            [
+                (
+                    "筹码成本 5% / 50% / 95% 分位："
+                    f"{_format_price(chip.get('cost_5pct'))} / "
+                    f"{_format_price(chip.get('cost_50pct'))} / "
+                    f"{_format_price(chip.get('cost_95pct'))}"
+                ),
+                f"筹码压力评价：{chip.get('chip_pressure_comment') or chip.get('pressure_state')}"
+                if to_text(chip.get("chip_pressure_comment") or chip.get("pressure_state"))
+                else "",
+                f"筹码结构评价：{chip.get('chip_structure_comment')}" if to_text(chip.get("chip_structure_comment")) else "",
+                (
+                    "筹码密集区："
+                    + "；".join(
+                        f"{_format_price(item.get('price'))} / {_format_plain_pct(item.get('percent'))}"
+                        for item in chip_areas
+                    )
+                    if chip_areas
+                    else ""
+                ),
+            ],
+        ),
+    ]
+    return {
+        "title": "A股情绪与筹码事实",
+        "sections": sections,
         "deepseek_called": False,
     }
 

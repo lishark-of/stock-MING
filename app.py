@@ -9927,55 +9927,43 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         with col_a3:
             _render_legacy_primary_fact_card(primary_cards[2] if len(primary_cards) > 2 else {})
 
-        st.markdown("**📈 A股情绪与涨跌停边界**")
-
-        def _cn_fmt_limit_price(value):
-            number = _cn_float(value)
-            return "暂无" if number is None else f"¥{number:.2f}"
-
-        def _cn_fmt_limit_pct(value):
-            number = _cn_float(value)
-            return "暂无" if number is None else f"{number:+.2f}%"
-
-        if limit_emotion_data and limit_emotion_data.get("available"):
-            e1, e2, e3, e4, e5 = st.columns(5)
-            e1.metric("涨停价", _cn_fmt_limit_price(limit_emotion_data.get("up_limit")))
-            e2.metric("跌停价", _cn_fmt_limit_price(limit_emotion_data.get("down_limit")))
-            e3.metric("距涨停", _cn_fmt_limit_pct(limit_emotion_data.get("distance_to_up_pct")))
-            e4.metric("距跌停", _cn_fmt_limit_pct(limit_emotion_data.get("distance_to_down_pct")))
-            e5.metric("数据日期", _cn_fmt_date(limit_emotion_data.get("latest_date") or limit_emotion_data.get("concept_date")))
-
-            record_rows = limit_emotion_data.get("limit_records") or []
-            concept_rows = limit_emotion_data.get("concept_top5") or []
-            record_col, concept_col = st.columns(2)
-            with record_col:
-                st.markdown("##### 近5日涨跌停 / 炸板 / 连板记录")
-                if record_rows:
-                    try:
-                        st.dataframe(pd.DataFrame(record_rows), use_container_width=True)
-                    except Exception as e:
-                        st.caption(f"表格渲染暂不可用：{e}")
-                else:
-                    st.info("近5日未见该股涨跌停/炸板记录。")
-            with concept_col:
-                st.markdown("##### 当日涨停概念强度 Top 5")
-                if concept_rows:
-                    try:
-                        st.dataframe(pd.DataFrame(concept_rows), use_container_width=True)
-                    except Exception as e:
-                        st.caption(f"表格渲染暂不可用：{e}")
-                else:
-                    st.info("暂未取得当日涨停概念强度数据。")
-        else:
-            st.info((limit_emotion_data or {}).get("message") or "近5日未取得可验证涨跌停/情绪数据，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。")
-        st.caption(
-            "数据源："
-            f"{(limit_emotion_data or {}).get('source', 'Tushare')} "
-            f"{(limit_emotion_data or {}).get('api', 'stk_limit / limit_list_d / limit_cpt_list')}"
-            f"｜本地拉取时间：{(limit_emotion_data or {}).get('updated_at', '未知')}"
+        legacy_secondary_sections = legacy_a_share_gate_service.build_legacy_a_share_secondary_fact_sections(
+            limit_emotion_packet=st.session_state.get("command_center_limit_emotion_packet"),
+            chip_packet=st.session_state.get("command_center_chip_packet"),
         )
-        if (limit_emotion_data or {}).get("warning"):
-            st.caption(f"提示：{(limit_emotion_data or {}).get('warning')}")
+
+        def _render_legacy_secondary_fact_section(section):
+            st.markdown(f"**{section.get('title')}**")
+            st.caption(f"{section.get('status')}｜{section.get('message')}")
+            metrics = section.get("metrics") or []
+            if metrics:
+                metric_columns = st.columns(len(metrics))
+                for idx, metric in enumerate(metrics):
+                    metric_columns[idx].metric(metric.get("label") or "指标", metric.get("value") or "暂无")
+                for caption in section.get("captions") or []:
+                    st.caption(caption)
+                tables = section.get("tables") or []
+                if tables:
+                    table_columns = st.columns(len(tables))
+                    for idx, table in enumerate(tables):
+                        with table_columns[idx]:
+                            st.markdown(f"##### {table.get('title')}")
+                            rows = table.get("rows") or []
+                            if rows:
+                                try:
+                                    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+                                except Exception as e:
+                                    st.caption(f"表格渲染暂不可用：{e}")
+                            else:
+                                st.info(table.get("empty_message") or "暂无可验证明细。")
+            else:
+                st.info(section.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
+            if section.get("risk_note"):
+                st.caption(f"风险口径：{section.get('risk_note')}")
+            st.caption(section.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
+
+        secondary_sections = legacy_secondary_sections.get("sections") or []
+        _render_legacy_secondary_fact_section(secondary_sections[0] if len(secondary_sections) > 0 else {})
         if st.session_state.get("skip_limit_cpt_list"):
             st.info("limit_cpt_list 此前因权限不足被跳过；如已升级权限，请点击重新检测。")
             if st.button("🔄 重新检测 limit_cpt_list 权限", key="btn_reset_limit_cpt_list"):
@@ -9987,47 +9975,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     pass
                 st.success("已重置 limit_cpt_list 跳过标记。请刷新页面或重新运行当前分析。")
 
-        st.markdown("**🧬 筹码/胜率雷达**")
-
-        def _cn_fmt_price(value):
-            number = _cn_float(value)
-            return "暂无" if number is None else f"¥{number:.2f}"
-
-        def _cn_fmt_pct_plain(value):
-            number = _cn_float(value)
-            return "暂无" if number is None else f"{number:.2f}%"
-
-        if chip_radar_data and chip_radar_data.get("available"):
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("数据日期", _cn_fmt_date(chip_radar_data.get("trade_date")))
-            c2.metric("获利盘比例 / 胜率", _cn_fmt_pct_plain(chip_radar_data.get("winner_rate")))
-            c3.metric("加权平均筹码成本", _cn_fmt_price(chip_radar_data.get("weight_avg")))
-            c4.metric("当前价相对筹码中枢", _cn_fmt_limit_pct(chip_radar_data.get("current_vs_weight_avg_pct")))
-            st.caption(
-                "筹码成本 5% / 50% / 95% 分位："
-                f"{_cn_fmt_price(chip_radar_data.get('cost_5pct'))} / "
-                f"{_cn_fmt_price(chip_radar_data.get('cost_50pct'))} / "
-                f"{_cn_fmt_price(chip_radar_data.get('cost_95pct'))}"
-            )
-            st.caption(f"筹码压力评价：{chip_radar_data.get('chip_pressure_comment') or '暂无可验证数据'}")
-            st.caption(f"筹码结构评价：{chip_radar_data.get('chip_structure_comment') or '暂无可验证数据'}")
-            top_areas = chip_radar_data.get("chips_top_areas") or []
-            if top_areas:
-                st.caption(
-                    "筹码密集区："
-                    + "；".join(
-                        f"{_cn_fmt_price(item.get('price'))} / {_cn_fmt_pct_plain(item.get('percent'))}"
-                        for item in top_areas[:5]
-                    )
-                )
-        else:
-            st.info((chip_radar_data or {}).get("message") or "暂未取得可验证筹码/胜率数据，可能为数据尚未更新、接口权限不足或标的暂不覆盖。")
-        st.caption(
-            "数据源："
-            f"{(chip_radar_data or {}).get('source', 'Tushare')} "
-            f"{(chip_radar_data or {}).get('api', 'cyq_perf/cyq_chips')}"
-            f"｜本地拉取时间：{(chip_radar_data or {}).get('updated_at', '未知')}"
-        )
+        _render_legacy_secondary_fact_section(secondary_sections[1] if len(secondary_sections) > 1 else {})
 
         with st.expander("数据口径说明", expanded=False):
             st.caption("龙虎榜与机构席位为盘后披露数据，不代表盘中实时席位行为。")
