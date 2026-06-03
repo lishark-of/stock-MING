@@ -179,6 +179,35 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_discipline_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "last_backtest_report": {
+                "ticker": "002008.SZ",
+                "summary": "规则历史表现可参考。",
+                "metrics": {
+                    "round_trip_win_rate": 64,
+                    "max_drawdown_pct": -11,
+                    "trade_count": 10,
+                },
+                "latest_signal": {"action": "继续观察", "reason": "趋势待确认"},
+                "date_range": {"end": today},
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:05:00")
+
+        self.assertEqual(payload["discipline_packet"]["status"], "ready")
+        self.assertEqual(payload["discipline_packet"]["win_rate"], 64)
+        self.assertEqual(payload["discipline_packet"]["max_drawdown"], 11)
+        self.assertIn("不会自动跑回测", payload["discipline_packet"]["backtest_required_text"])
+        self.assertFalse(payload["discipline_packet"]["deepseek_called"])
+
     def test_deepseek_defaults_to_not_called(self):
         payload = snapshot.build_home_action_snapshot({
             "command_center_decision_packet": {"overall_action": "等待"}

@@ -20,6 +20,7 @@ import command_center_analysis_methods as analysis_methods_service
 import command_center_facts_packet as facts_packet_service
 import command_center_radar_packet as radar_packet_service
 import command_center_etf_packet as etf_packet_service
+import command_center_discipline_packet as discipline_packet_service
 import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -3355,6 +3356,16 @@ def _cc_run_discipline_check(target="", market_type="", price=None, position_pro
         payload["summary"] = "请先选择标的或在旧版交易纪律实验室运行回测；综合中心不会自动跑两年全量回测。"
         _cc_mark_module("discipline", "待补充", "交易纪律实验室回测缓存", payload["summary"])
     st.session_state["command_center_discipline_check"] = clone_command_center_packet(payload)
+    st.session_state["command_center_discipline_packet"] = discipline_packet_service.build_command_center_discipline_packet(
+        st.session_state,
+        live_packet={
+            "discipline": {
+                "updated_at": payload.get("checked_at", ""),
+                "source": "交易纪律实验室回测缓存",
+            }
+        },
+        target=target,
+    )
     return {"module": "交易纪律", "status": payload["status"], "updated_at": payload["checked_at"], "message": payload["summary"]}
 
 
@@ -3538,65 +3549,32 @@ def _build_quant_live_section():
 
 
 def _build_discipline_live_section(target=""):
-    report = st.session_state.get("last_backtest_report") or {}
-    multi_result = st.session_state.get("last_multi_backtest") or {}
+    packet = discipline_packet_service.build_command_center_discipline_packet(st.session_state, target=target)
+    if packet.get("data_status") == "ready":
+        return {
+            "status": "已刷新",
+            "score": packet.get("score"),
+            "summary": packet.get("summary"),
+            "updated_at": packet.get("updated_at", ""),
+            "source": packet.get("source") or "交易纪律实验室",
+            "action_state": packet.get("action_state") or "只观察",
+            "key_rules": (packet.get("key_rules") or [])[:3],
+            "win_rate": packet.get("win_rate"),
+            "max_drawdown": packet.get("max_drawdown"),
+            "is_fresh": True,
+            "last_error": "",
+        }
     check = st.session_state.get("command_center_discipline_check") or {}
     meta = _cc_get_module_meta("discipline")
-    if report and target and _cc_ticker_base(report.get("ticker")) != _cc_ticker_base(target):
-        report = {}
-        multi_result = {}
-    if not report:
-        return {
-            "status": "未刷新" if not check else "待补充",
-            "score": None,
-            "summary": check.get("summary") or meta.get("error") or "未刷新，请点击按钮生成。交易纪律实验室当前没有可结构化接入的回测结果。",
-            "updated_at": check.get("checked_at", ""),
-            "source": "交易纪律实验室",
-            "action_state": "待刷新",
-            "key_rules": ["请先选择标的或运行回测。"],
-            "is_fresh": False,
-            "last_error": meta.get("error", ""),
-        }
-    metrics = report.get("metrics") or report
-    win_rate = _cc_round(metrics.get("win_rate") or metrics.get("win_rate_pct"), 2)
-    max_dd = _cc_round(metrics.get("max_drawdown_pct") or metrics.get("max_drawdown"), 2)
-    score = None
-    if win_rate is not None:
-        score = max(0, min(100, win_rate if win_rate <= 100 else win_rate * 100))
-    action_state = "只调仓"
-    if max_dd is not None and max_dd > 20:
-        action_state = "降风险"
-    elif win_rate is not None and win_rate >= 60:
-        action_state = "允许进攻"
-    key_rules = _cc_list(
-        report.get("key_rules")
-        or report.get("discipline_rules")
-        or (multi_result.get("summary") if isinstance(multi_result, dict) else ""),
-        limit=3,
-    )
-    if not key_rules:
-        key_rules = [
-            f"胜率：{win_rate if win_rate is not None else '暂无'}",
-            f"最大回撤：{max_dd if max_dd is not None else '暂无'}",
-            "仅按已缓存回测摘要判断，不自动抓取新行情。",
-        ]
-    summary = _cc_first_text(
-        report.get("summary"),
-        f"已读取 {report.get('ticker') or target or '当前标的'} 的旧版回测缓存，动作边界为：{action_state}。",
-    )
-    updated_at = _cc_first_text(
-        (report.get("date_range") or {}).get("end") if isinstance(report.get("date_range"), dict) else "",
-        st.session_state.get("last_backtest_key"),
-    )
     return {
-        "status": "已刷新",
-        "score": score,
-        "summary": summary,
-        "updated_at": updated_at,
+        "status": "未刷新" if not check else "待补充",
+        "score": None,
+        "summary": packet.get("summary") or check.get("summary") or meta.get("error") or "未刷新，请点击按钮生成。交易纪律实验室当前没有可结构化接入的回测结果。",
+        "updated_at": packet.get("updated_at") or check.get("checked_at", ""),
         "source": "交易纪律实验室",
-        "action_state": action_state,
-        "key_rules": key_rules[:3],
-        "is_fresh": True,
+        "action_state": packet.get("action_state") or "待刷新",
+        "key_rules": (packet.get("key_rules") or ["请先选择标的或运行回测。"])[:3],
+        "is_fresh": False,
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
     }
 
