@@ -17,6 +17,7 @@ import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
 import command_center_analysis_methods as analysis_methods_service
+import command_center_facts_packet as facts_packet_service
 import market_data_capability as data_capability
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -3778,6 +3779,7 @@ def _build_home_action_snapshot_display(live_packet=None, target="", position_pr
         strategy_packet=_get_strategy_execution_display_packet(),
         refresh_summary=st.session_state.get("command_center_refresh_summary") or {},
         data_capability_packet=_get_command_center_data_capability_packet(),
+        facts_packet=_get_command_center_facts_packet(target=target),
     )
     snapshot = home_snapshot_service.choose_home_action_snapshot(session_snapshot, local_snapshot)
     st.session_state["command_center_home_snapshot"] = snapshot
@@ -3794,6 +3796,7 @@ def _persist_home_action_snapshot(live_packet=None, target="", position_profile=
         strategy_packet=strategy_packet or _get_strategy_execution_display_packet(),
         refresh_summary=refresh_summary or st.session_state.get("command_center_refresh_summary") or {},
         data_capability_packet=_get_command_center_data_capability_packet(),
+        facts_packet=_get_command_center_facts_packet(target=target),
     )
     home_snapshot_service.save_home_action_snapshot(snapshot)
     st.session_state["command_center_home_snapshot"] = snapshot
@@ -3945,6 +3948,14 @@ def _get_command_center_data_capability_packet():
     if unified_packet.get("items"):
         return unified_packet
     return existing_packet or {}
+
+
+def _get_command_center_facts_packet(target="", name=""):
+    return facts_packet_service.build_command_center_facts_packet(
+        st.session_state,
+        target=target,
+        name=name,
+    )
 
 
 def render_command_center_live_cards(live_packet, target="", market_type="", price=None, position_profile=None):
@@ -9188,6 +9199,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             }
         )
         st.session_state["a_share_professional_data_capability"] = a_share_capability_packet
+        st.session_state["command_center_facts_packet"] = facts_packet_service.build_a_share_facts_packet(
+            {
+                "stock_code": stock_code,
+                "dragon_tiger": dragon_data or {},
+                "margin": margin_data or {},
+                "moneyflow": moneyflow_data or {},
+                "limit_emotion": limit_emotion_data or {},
+                "chip_radar": chip_radar_data or {},
+                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            },
+            a_share_capability_packet,
+            target=target,
+        )
         capability_items = a_share_capability_packet.get("items") or []
         if capability_items:
             status_line = " ｜ ".join(
@@ -11959,6 +11983,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     main_progress,
                     78,
                     has_data=lambda data: bool(data and data.get("available")),
+                )
+                st.session_state["a_share_professional_facts"] = a_share_professional_facts
+                st.session_state["command_center_facts_packet"] = facts_packet_service.build_a_share_facts_packet(
+                    a_share_professional_facts,
+                    (a_share_professional_facts or {}).get("data_capability") or st.session_state.get("a_share_professional_data_capability") or {},
+                    target=normalized_target,
+                    name=target,
                 )
             peer_rows = build_peer_snapshot(normalized_target, supply_profile)
             research_links = deep_research_queries(normalized_target, supply_profile.get("name", ""))

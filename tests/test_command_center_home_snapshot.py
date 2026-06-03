@@ -295,6 +295,48 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("需要手动刷新", dumped)
         self.assertFalse(capability["deepseek_called"])
 
+    def test_home_snapshot_persists_command_center_facts_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "command_center_facts_packet": {
+                "status": "partial",
+                "market": "A股",
+                "ticker": "002008.SZ",
+                "summary": "A股事实：可用 1，受限 1，待验证 3。",
+                "items": [
+                    {
+                        "key": "moneyflow",
+                        "label": "个股资金流",
+                        "status": "通过",
+                        "state": "available",
+                        "evidence": "20260602 主力净额 1.23。",
+                        "source": "Tushare",
+                    },
+                    {
+                        "key": "margin",
+                        "label": "融资融券",
+                        "status": "权限不足",
+                        "state": "permission_denied",
+                        "risk": "权限不足",
+                        "source": "Tushare",
+                    },
+                ],
+                "deepseek_called": False,
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:05:00")
+        dumped = json.dumps(payload["facts_packet"], ensure_ascii=False)
+
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("权限不足", dumped)
+        self.assertFalse(payload["facts_packet"]["deepseek_called"])
+
     def test_local_snapshot_wins_after_restart_when_session_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             saved = snapshot.build_home_action_snapshot(

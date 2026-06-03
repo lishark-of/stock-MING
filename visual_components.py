@@ -3969,7 +3969,7 @@ def _inject_command_center_css():
         }
         .cc-home-bottom {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
             gap: 12px;
             margin-top: 12px;
         }
@@ -4638,6 +4638,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     risk_alerts = payload.get("risk_alerts") or {}
     freshness = payload.get("data_freshness") or {}
     data_capability = payload.get("data_capability") or {}
+    facts_packet = payload.get("facts_packet") or {}
     candidates = payload.get("next_ticket_candidates") or []
     etfs = margin_etf.get("recommended_etfs") or []
     errors = payload.get("errors") or []
@@ -4686,6 +4687,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         for item in capability_items[:5]
         if isinstance(item, dict)
     ) or "暂无能力明细"
+    fact_items = [item for item in (facts_packet.get("items") or []) if isinstance(item, dict)]
+    if fact_items:
+        facts_html = ""
+        for item in fact_items[:5]:
+            facts_html += f"""
+            <div class="cc-home-candidate">
+              <div class="cc-home-item-title">{escape(_home_text(item.get("label"), "事实"))} · {escape(_home_text(item.get("status"), "待验证"))}</div>
+              <div class="cc-home-item-meta">证据：{escape(_home_text(item.get("evidence"), "待验证。"))}</div>
+              <div class="cc-home-item-meta">风险：{escape(_home_text(item.get("risk"), "暂无新增风险。"))}</div>
+              <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地缓存"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无时间"))}</div>
+            </div>
+            """
+    else:
+        facts_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>暂无已验证事实包</div><div class='cc-home-item-meta'>旧工作台能力会逐步迁移为 packet；页面打开不会自动拉取重数据。</div></div>"
     html = f"""
     <section class="cc-home-snapshot">
       <div class="cc-home-head">
@@ -4744,6 +4759,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {_home_list(risk_alerts.get("must_not_do"), "不追高、不满仓、不在未刷新数据下加融资。")}
           <div class="cc-muted-note">必须降风险条件：{escape("；".join(risk_alerts.get("reduce_conditions") or ["暂无新增条件"]))}</div>
           <div class="cc-muted-note">数据缺口：{escape("、".join(risk_alerts.get("data_gaps") or ["暂无"]))}</div>
+        </div>
+        <div class="cc-home-panel">
+          <div class="cc-home-panel-title">已验证事实</div>
+          <div class="cc-muted-note">{escape(_home_text(facts_packet.get("summary"), "暂无可验证事实包。"))}</div>
+          {facts_html}
         </div>
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">数据新鲜度</div>

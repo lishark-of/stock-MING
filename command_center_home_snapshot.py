@@ -7,6 +7,8 @@ from numbers import Number
 from pathlib import Path
 from typing import Any
 
+import command_center_facts_packet as facts_packet_service
+
 
 CACHE_DIR_NAME = ".stock_ming_cache"
 SNAPSHOT_FILENAME = "command_center_latest.json"
@@ -189,6 +191,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
             "deepseek_called": False,
         },
         "data_capability": build_data_capability_snapshot({}),
+        "facts_packet": facts_packet_service.build_command_center_facts_packet({}),
         "errors": [],
         "empty_message": reason,
         "deepseek_called": False,
@@ -218,6 +221,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         deepseek_called=bool(snapshot.get("deepseek_called")),
     )
     snapshot["data_capability"] = build_data_capability_snapshot(snapshot.get("data_capability") or {})
+    snapshot["facts_packet"] = facts_packet_service.build_command_center_facts_packet(
+        {"command_center_facts_packet": snapshot.get("facts_packet") or {}}
+    )
     return snapshot
 
 
@@ -578,6 +584,7 @@ def build_home_action_snapshot(
     strategy_packet: Any = None,
     refresh_summary: Any = None,
     data_capability_packet: Any = None,
+    facts_packet: Any = None,
     now: Any = None,
 ) -> dict:
     state_map = _as_mapping(state)
@@ -599,6 +606,12 @@ def build_home_action_snapshot(
             or state_map.get("a_share_professional_data_capability")
             or healthcheck.get("data_capability")
             or healthcheck.get("tushare")
+        )
+    if facts_packet is None:
+        facts_packet = facts_packet_service.build_command_center_facts_packet(
+            state_map,
+            target=target,
+            name=_to_text(_as_mapping(position_profile).get("name") or state_map.get("current_stock_name")),
         )
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
@@ -628,6 +641,10 @@ def build_home_action_snapshot(
         "data_coverage": coverage,
         "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
         "data_capability": build_data_capability_snapshot(data_capability_packet),
+        "facts_packet": facts_packet_service.build_command_center_facts_packet(
+            {"command_center_facts_packet": facts_packet},
+            target=target,
+        ),
         "errors": errors,
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
@@ -641,6 +658,7 @@ def build_home_action_snapshot(
         empty["risk_alerts"] = build_risk_alerts(decision, strategy, coverage, errors)
         empty["data_freshness"] = build_data_freshness("", errors, deepseek_called=deepseek_called)
         empty["data_capability"] = snapshot["data_capability"]
+        empty["facts_packet"] = snapshot["facts_packet"]
         empty["errors"] = errors
         return empty
     return sanitize_snapshot_payload(snapshot)
@@ -655,6 +673,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
         or _as_mapping(payload.get("strategy_packet"))
         or _as_list(payload.get("next_ticket_candidates"))
         or _as_list(_as_mapping(payload.get("margin_etf_summary")).get("recommended_etfs"))
+        or _as_list(_as_mapping(payload.get("facts_packet")).get("items"))
     )
 
 
@@ -677,6 +696,7 @@ def update_home_action_snapshot(
     strategy_packet: Any = None,
     refresh_summary: Any = None,
     data_capability_packet: Any = None,
+    facts_packet: Any = None,
     path: str | Path | None = None,
     base_dir: str | Path | None = None,
 ) -> dict:
@@ -689,6 +709,7 @@ def update_home_action_snapshot(
         strategy_packet=strategy_packet,
         refresh_summary=refresh_summary,
         data_capability_packet=data_capability_packet,
+        facts_packet=facts_packet,
     )
     if isinstance(state, dict):
         state["command_center_home_snapshot"] = snapshot
