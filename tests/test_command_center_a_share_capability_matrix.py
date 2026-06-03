@@ -59,6 +59,10 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
         self.assertEqual(by_key["limit_emotion"]["state"], "disabled_this_session")
         self.assertEqual(by_key["chip_radar"]["state"], "stale_cache")
         self.assertEqual(by_key["hard_risk"]["state"], "permission_denied")
+        self.assertEqual(by_key["moneyflow"]["migration_priority"], 1)
+        self.assertIn("策略执行", by_key["moneyflow"]["decision_chain_stage"])
+        self.assertIn("ETF / 融资动作", by_key["margin"]["home_module"])
+        self.assertIn("禁止动作", by_key["hard_risk"]["migration_target"])
         self.assertEqual(by_key["margin"]["manual_action"]["refresh_policy"], "button_gated")
         self.assertIn("融资融券", by_key["margin"]["manual_action"]["button_label"])
         self.assertIn("command_center_margin_packet", by_key["margin"]["manual_action"]["writes_packet"])
@@ -92,6 +96,20 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
         self.assertIn("manual_check_hard_risk", queued_keys)
         for item in packet["manual_action_queue"]:
             self.assertEqual(item["refresh_policy"], "button_gated")
+            self.assertFalse(item["deepseek_called"])
+
+    def test_migration_queue_prioritizes_decision_blockers(self):
+        packet = matrix.build_a_share_capability_matrix(sample_capability_packet())
+        queue = packet["migration_queue"]
+        labels = [item["label"] for item in queue[:3]]
+
+        self.assertEqual(queue[0]["priority"], 1)
+        self.assertIn("公告/硬风险", labels)
+        self.assertIn("今日总决策", queue[0]["home_module"])
+        for item in queue:
+            self.assertTrue(item["migration_target"])
+            self.assertTrue(item["decision_chain_stage"])
+            self.assertEqual(item["manual_action"]["refresh_policy"], "button_gated")
             self.assertFalse(item["deepseek_called"])
 
     def test_cache_and_empty_are_visible_but_not_decisive(self):

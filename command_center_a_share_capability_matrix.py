@@ -71,6 +71,10 @@ CORE_CAPABILITIES = (
         "api_hint": "moneyflow",
         "terms": ("moneyflow", "资金流"),
         "decision_role": "验证资金是否支持当前动作，不替代价格纪律。",
+        "migration_priority": 1,
+        "decision_chain_stage": "市场分析方法 → 策略执行验证",
+        "home_module": "今日总决策 / 策略执行实验室",
+        "migration_target": "command_center_moneyflow_packet 回流到资金流证据和策略条件。",
     },
     {
         "key": "dragon_tiger",
@@ -78,6 +82,10 @@ CORE_CAPABILITIES = (
         "api_hint": "top_list / top_inst",
         "terms": ("dragon_tiger", "top_list", "top_inst", "龙虎榜"),
         "decision_role": "识别席位行为和情绪线索，不单独构成买入理由。",
+        "migration_priority": 3,
+        "decision_chain_stage": "市场分析方法 → 下一票候选验证",
+        "home_module": "下一票 Top3 / A股证据雷达",
+        "migration_target": "command_center_dragon_tiger_packet 回流到候选证据和情绪验证。",
     },
     {
         "key": "margin",
@@ -85,6 +93,10 @@ CORE_CAPABILITIES = (
         "api_hint": "margin_detail",
         "terms": ("margin", "margin_detail", "融资融券"),
         "decision_role": "观察杠杆变化；权限不足时不能假设融资改善。",
+        "migration_priority": 2,
+        "decision_chain_stage": "数据能力状态 → 风险预算",
+        "home_module": "ETF / 融资动作",
+        "migration_target": "command_center_margin_packet 回流到融资比例和杠杆风险。",
     },
     {
         "key": "limit_emotion",
@@ -92,6 +104,10 @@ CORE_CAPABILITIES = (
         "api_hint": "stk_limit / limit_list_d / limit_cpt_list",
         "terms": ("limit_emotion", "stk_limit", "limit_list_d", "limit_cpt_list", "涨跌停", "情绪"),
         "decision_role": "识别过热、追高和情绪边界。",
+        "migration_priority": 2,
+        "decision_chain_stage": "市场分析方法 → 趋势路径风险",
+        "home_module": "5-10 日趋势推演 / 风险警报",
+        "migration_target": "command_center_limit_emotion_packet 回流到路径风险和不追高提示。",
     },
     {
         "key": "chip_radar",
@@ -99,6 +115,10 @@ CORE_CAPABILITIES = (
         "api_hint": "cyq_perf / cyq_chips",
         "terms": ("chip_radar", "cyq_perf", "cyq_chips", "筹码", "胜率"),
         "decision_role": "验证压力位、筹码结构和胜率口径；缺失时保持待验证。",
+        "migration_priority": 3,
+        "decision_chain_stage": "趋势推演 → 策略执行验证",
+        "home_module": "策略执行实验室 / 趋势推演",
+        "migration_target": "command_center_chip_packet 回流到路径触发条件和纪律证据。",
     },
     {
         "key": "hard_risk",
@@ -120,6 +140,10 @@ CORE_CAPABILITIES = (
             "解禁",
         ),
         "decision_role": "排查公告、减持、质押、解禁等硬风险；无记录不能写成无风险。",
+        "migration_priority": 1,
+        "decision_chain_stage": "数据能力状态 → 今日总决策阻断",
+        "home_module": "风险警报 / 今日总决策",
+        "migration_target": "command_center_hard_risk_packet 回流到禁止动作和降风险条件。",
     },
 )
 
@@ -305,6 +329,10 @@ def build_a_share_capability_matrix(
                 "status_label": status_label,
                 "tone": tone_for_state(state),
                 "decision_role": capability["decision_role"],
+                "migration_priority": capability["migration_priority"],
+                "decision_chain_stage": capability["decision_chain_stage"],
+                "home_module": capability["home_module"],
+                "migration_target": capability["migration_target"],
                 "decision_impact": _decision_impact(state, capability["label"]),
                 "next_action": _next_action(state, capability["label"]),
                 "manual_action": manual_action,
@@ -328,6 +356,22 @@ def build_a_share_capability_matrix(
         for item in items
         if item["state"] not in AVAILABLE_STATES
     ]
+    migration_queue = [
+        {
+            "key": item["key"],
+            "label": item["label"],
+            "priority": item["migration_priority"],
+            "state": item["state"],
+            "status_label": item["status_label"],
+            "decision_chain_stage": item["decision_chain_stage"],
+            "home_module": item["home_module"],
+            "migration_target": item["migration_target"],
+            "manual_action": item["manual_action"],
+            "deepseek_called": False,
+        }
+        for item in sorted(items, key=lambda row: (row["migration_priority"], row["label"]))
+        if item["state"] not in AVAILABLE_STATES
+    ]
     return {
         "status": status,
         "tone": tone,
@@ -335,6 +379,7 @@ def build_a_share_capability_matrix(
         "summary": summary,
         "items": items,
         "manual_action_queue": manual_action_queue,
+        "migration_queue": migration_queue,
         "available_count": len(available),
         "blocked_count": len(blocked),
         "manual_count": len(manual),

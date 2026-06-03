@@ -4881,8 +4881,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
           </div>
           <div class="cc-home-item-meta">接口：{escape(_home_text(item.get("api_hint"), "待接入"))} ｜ {escape(_home_text(item.get("decision_role"), "只作辅助验证。"))}</div>
+          <div class="cc-home-item-meta">闭环：P{escape(_home_number(item.get("migration_priority")))} ｜ {escape(_home_text(item.get("decision_chain_stage"), "数据能力状态 → 待接入"))} ｜ 模块：{escape(_home_text(item.get("home_module"), "综合推演中心"))}</div>
           <div class="cc-home-item-meta">已匹配：{escape(matched_text)}</div>
           <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">迁移目标：{escape(_home_text(item.get("migration_target"), "逐步回流到综合推演中心 packet。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(manual_action.get("button_label"), item.get("next_action") or "手动检测"))} ｜ 回流：{escape(_home_text(manual_action.get("writes_packet"), "command_center_facts_packet"))}</div>
         </div>
         """
