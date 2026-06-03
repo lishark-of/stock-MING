@@ -176,8 +176,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:03:00")
 
         self.assertEqual(payload["etf_packet"]["recommended_etfs"][0]["code"], "560780.SH")
+        self.assertTrue(payload["etf_packet"]["recommended_etfs"][0]["evidence_items"])
+        self.assertIn("不会自动全量发现", payload["etf_packet"]["recommended_etfs"][0]["manual_required_text"])
         self.assertEqual(payload["margin_etf_summary"]["recommended_margin_ratio"], 20)
         self.assertEqual(payload["margin_etf_summary"]["recommended_etfs"][0]["name"], "半导体设备ETF广发")
+        self.assertTrue(payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_items"])
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])
 

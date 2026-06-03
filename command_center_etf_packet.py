@@ -7,6 +7,7 @@ from typing import Any
 
 MAX_RECOMMENDED_ETFS = 3
 MAX_RISK_NOTES = 6
+MAX_EVIDENCE_ITEMS = 5
 
 
 def as_mapping(value: Any) -> dict:
@@ -85,6 +86,98 @@ def _dedupe_text(values: Any, fallback: str = "", limit: int = MAX_RISK_NOTES) -
     return items
 
 
+def _action_tone(action_state: str) -> str:
+    if any(word in action_state for word in ("可", "配置", "小幅", "准备")):
+        return "ready"
+    if any(word in action_state for word in ("不追", "观察", "等待", "只观察")):
+        return "stale"
+    if any(word in action_state for word in ("降", "暂停", "规避", "过热")):
+        return "failed"
+    return "missing"
+
+
+def _status_label(action_state: str) -> str:
+    if any(word in action_state for word in ("可", "配置", "小幅", "准备")):
+        return "可配置"
+    if any(word in action_state for word in ("降", "暂停", "规避", "过热")):
+        return "降风险"
+    return action_state or "只观察不追"
+
+
+def _etf_risk_text(payload: Mapping[str, Any], bucket: str) -> str:
+    explicit = _first_text(
+        payload.get("risk_note"),
+        payload.get("risk"),
+        payload.get("warning"),
+        payload.get("no_chase_reason"),
+    )
+    if explicit:
+        return explicit
+    if any(word in bucket for word in ("科技", "半导体", "芯片", "成长")):
+        return "赛道波动大，不追高；等待回踩、成交额和趋势确认。"
+    if any(word in bucket for word in ("防守", "黄金", "货币", "债")):
+        return "防守仓位也需看流动性、溢价折价和资金拥挤度。"
+    return "ETF 需复核流动性、跟踪指数、同类重叠和追高风险。"
+
+
+def _liquidity_text(payload: Mapping[str, Any]) -> str:
+    value = _first_number(
+        payload.get("turnover_yi"),
+        payload.get("amount_yi"),
+        payload.get("成交额(亿)"),
+        payload.get("liquidity_score"),
+    )
+    if value is None:
+        return _first_text(payload.get("liquidity"), payload.get("liquidity_text"), default="待验证")
+    return f"{value:g}亿" if value > 0 else "待验证"
+
+
+def _build_evidence_items(payload: Mapping[str, Any], score: int | float | None, bucket: str, action_state: str, trigger: str) -> list[dict]:
+    liquidity = _liquidity_text(payload)
+    items = [
+        {
+            "label": "赛道",
+            "value": bucket or "ETF",
+            "detail": "按本地配置/缓存归类；不等于自动买入。",
+            "tone": "ready" if bucket else "missing",
+        },
+        {
+            "label": "综合分",
+            "value": "待验证" if score is None else str(score),
+            "detail": "只作候选排序线索，不能替代成交额和风险线复核。",
+            "tone": "ready" if score is not None and score >= 70 else "stale" if score is not None else "missing",
+        },
+        {
+            "label": "动作",
+            "value": _status_label(action_state),
+            "detail": trigger or "等待回踩、量能和风险线确认。",
+            "tone": _action_tone(action_state),
+        },
+        {
+            "label": "流动性",
+            "value": liquidity,
+            "detail": "缺少成交额/流动性时，只能视为待验证。",
+            "tone": "missing" if liquidity == "待验证" else "ready",
+        },
+        {
+            "label": "追高风险",
+            "value": "必须复核",
+            "detail": _etf_risk_text(payload, bucket),
+            "tone": "failed",
+        },
+    ]
+    return items[:MAX_EVIDENCE_ITEMS]
+
+
+def _data_gaps(payload: Mapping[str, Any], evidence_items: list[dict]) -> list[str]:
+    gaps = _dedupe_text(payload.get("data_gaps") or payload.get("missing_items"), limit=MAX_RISK_NOTES)
+    if not _first_text(payload.get("tracking_index"), payload.get("index_name"), payload.get("index")):
+        gaps.append("跟踪指数待验证")
+    if any(item.get("label") == "流动性" and item.get("value") == "待验证" for item in evidence_items):
+        gaps.append("流动性/成交额待验证")
+    return _dedupe_text(gaps, limit=MAX_RISK_NOTES)
+
+
 def _candidate_rows(candidates: Any) -> list[dict]:
     rows = []
     if isinstance(candidates, Mapping):
@@ -101,21 +194,33 @@ def _candidate_rows(candidates: Any) -> list[dict]:
 
 def normalize_etf_candidate(row: Any = None, rank: int = 0, default_source: str = "融资 ETF 本地配置") -> dict:
     payload = as_mapping(row)
+    bucket = _first_text(payload.get("bucket"), payload.get("theme"), payload.get("category"), default="ETF")
+    score = _first_number(payload.get("total_score"), payload.get("score"), payload.get("composite_score"))
+    action_state = _first_text(payload.get("action_state"), payload.get("advice"), payload.get("signal"), default="只观察不追")
+    trigger_condition = _first_text(
+        payload.get("trigger_condition"),
+        payload.get("condition"),
+        payload.get("reason"),
+        default="等待回踩、量能和风险线确认。",
+    )
+    evidence_items = _build_evidence_items(payload, score, bucket, action_state, trigger_condition)
     return {
         "rank": rank,
         "code": _first_text(payload.get("etf_code"), payload.get("code"), payload.get("ts_code"), payload.get("symbol")),
         "name": _first_text(payload.get("etf_name"), payload.get("name"), payload.get("fund_name")),
-        "bucket": _first_text(payload.get("bucket"), payload.get("theme"), payload.get("category"), default="ETF"),
-        "score": _first_number(payload.get("total_score"), payload.get("score"), payload.get("composite_score")),
+        "bucket": bucket,
+        "score": score,
         "weight": _first_number(payload.get("weight"), payload.get("target_weight"), payload.get("allocation_ratio")),
-        "action_state": _first_text(payload.get("action_state"), payload.get("advice"), payload.get("signal"), default="只观察不追"),
-        "trigger_condition": _first_text(
-            payload.get("trigger_condition"),
-            payload.get("condition"),
-            payload.get("reason"),
-            default="等待回踩、量能和风险线确认。",
-        ),
+        "action_state": action_state,
+        "status_label": _status_label(action_state),
+        "tone": _action_tone(action_state),
+        "trigger_condition": trigger_condition,
+        "risk_note": _etf_risk_text(payload, bucket),
+        "evidence_items": evidence_items,
+        "data_gaps": _data_gaps(payload, evidence_items),
+        "liquidity_text": _liquidity_text(payload),
         "source": _first_text(payload.get("source"), default=default_source),
+        "manual_required_text": "ETF 候选来自本地配置或手动刷新结果；页面打开不会自动全量发现或拉取重行情。",
     }
 
 
@@ -249,6 +354,11 @@ def build_command_center_etf_packet(
             ],
             "watch_not_chase": _dedupe_text(existing.get("watch_not_chase"), fallback="不追高 ETF；等待回踩、量能和风险线确认。", limit=MAX_RECOMMENDED_ETFS),
             "risk_notes": _dedupe_text(existing.get("risk_notes"), fallback="DeepSeek 未调用；ETF 深度调研仍需手动按钮触发。"),
+            "cache_state": _first_text(existing.get("cache_state"), existing.get("data_status"), default="ready"),
+            "manual_required_text": _first_text(
+                existing.get("manual_required_text"),
+                default="融资 ETF 只读取本地配置或手动刷新结果；页面打开不会自动全量发现。",
+            ),
             "deepseek_called": False,
         }
     allocation = as_mapping(state_map.get("legacy_margin_etf_allocation_result"))
@@ -274,6 +384,7 @@ def build_command_center_etf_packet(
     source = _first_text(live_section.get("source"), daily.get("source"), allocation.get("data_source"), default="融资 ETF 本地配置快照")
     return {
         "status": status,
+        "cache_state": _derive_data_status(status, daily, etfs),
         "source": source,
         "updated_at": updated_at,
         "current_margin_ratio": current_ratio,
@@ -285,6 +396,7 @@ def build_command_center_etf_packet(
         "risk_state": _derive_risk_state(allocation, current_ratio, recommended_ratio, etfs),
         "risk_notes": _build_risk_notes(allocation, daily, etfs),
         "data_status": _derive_data_status(status, daily, etfs),
+        "manual_required_text": "融资 ETF 只读取本地配置或手动刷新结果；页面打开不会自动全量发现。",
         "summary": _first_text(
             allocation.get("summary"),
             live_section.get("summary"),

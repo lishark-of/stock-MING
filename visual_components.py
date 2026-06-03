@@ -4684,10 +4684,23 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if etfs:
         etf_html = ""
         for item in etfs[:3]:
+            etf_evidence = "；".join(
+                f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('value'), '待验证')}"
+                for evidence in (item.get("evidence_items") or [])[:3]
+                if isinstance(evidence, dict)
+            ) or f"赛道:{_home_text(item.get('bucket'), 'ETF')}；分数:{_home_number(item.get('score'))}"
+            etf_gaps = "；".join(str(gap).strip() for gap in (item.get("data_gaps") or [])[:3] if str(gap).strip()) or "暂无显式数据缺口"
             etf_html += f"""
             <div class="cc-home-etf">
-              <div class="cc-home-item-title">{escape(_home_text(item.get("code"), "ETF"))} {escape(_home_text(item.get("name"), ""))}</div>
+              <div class="cc-home-item-title">
+                {escape(_home_text(item.get("code"), "ETF"))} {escape(_home_text(item.get("name"), ""))}
+                <span class="cc-home-chip {escape(_home_text(item.get("tone"), "stale"))}">{escape(_home_text(item.get("status_label"), item.get("action_state") or "只观察不追"))}</span>
+              </div>
               <div class="cc-home-item-meta">{escape(_home_text(item.get("bucket"), "ETF"))} ｜ 分数：{escape(_home_number(item.get("score")))} ｜ {escape(_home_text(item.get("action_state"), "只观察不追"))}</div>
+              <div class="cc-home-item-meta">证据：{escape(etf_evidence)}</div>
+              <div class="cc-home-item-meta">触发：{escape(_home_text(item.get("trigger_condition"), "等待回踩、量能和风险线确认。"))}</div>
+              <div class="cc-home-item-meta">风险：{escape(_home_text(item.get("risk_note"), "ETF 需复核流动性、跟踪指数、同类重叠和追高风险。"))}</div>
+              <div class="cc-home-item-meta">数据缺口：{escape(etf_gaps)}</div>
             </div>
             """
     else:

@@ -47,7 +47,13 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertEqual(len(packet["recommended_etfs"]), 3)
         self.assertEqual(packet["recommended_etfs"][0]["code"], "512480.SH")
         self.assertEqual(packet["recommended_etfs"][0]["bucket"], "科技成长ETF")
+        self.assertEqual(packet["recommended_etfs"][0]["status_label"], "只观察不追")
+        self.assertTrue(packet["recommended_etfs"][0]["evidence_items"])
+        self.assertIn("流动性", "；".join(packet["recommended_etfs"][0]["data_gaps"]))
+        self.assertIn("不会自动全量发现", packet["recommended_etfs"][0]["manual_required_text"])
         self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["cache_state"], "ready")
+        self.assertIn("不会自动全量发现", packet["manual_required_text"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_risk_state_is_conservative_when_current_ratio_exceeds_recommendation(self):
@@ -84,6 +90,8 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
 
         self.assertEqual(existing, original)
         self.assertEqual(packet["recommended_etfs"][0]["code"], "159801.SZ")
+        self.assertTrue(packet["recommended_etfs"][0]["evidence_items"])
+        self.assertIn("不会自动全量发现", packet["manual_required_text"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
