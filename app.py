@@ -4484,16 +4484,20 @@ def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", ma
         "dragon_tiger": ("龙虎榜", _run_manual_dragon_tiger_capability_check),
         "chip_radar": ("筹码/胜率", _run_manual_chip_radar_capability_check),
     }
-    actions = evidence_summary_service.build_home_evidence_backfill_actions(
+    recovery_summary = evidence_summary_service.build_home_evidence_recovery_summary(
         evidence_radar_vm,
         runnable_keys=runner_map.keys(),
         limit=2,
     )
+    actions = recovery_summary.get("actions") or []
     if not actions:
         return
     with st.container(border=True):
-        st.markdown("#### 补齐关键 A股证据")
-        st.caption("只在点击按钮后检测对应 Tushare 数据；用于修复证据缺口，不调用 DeepSeek，不自动刷新全市场。")
+        st.markdown(f"#### {recovery_summary.get('title') or '补齐关键 A股证据'}")
+        st.caption(
+            recovery_summary.get("summary")
+            or "只在点击按钮后检测对应 Tushare 数据；用于修复证据缺口，不调用 DeepSeek，不自动刷新全市场。"
+        )
         cols = st.columns(len(actions))
         for col, action in zip(cols, actions):
             key = str(action.get("key") or "")
@@ -4724,6 +4728,8 @@ packet:
             st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             status.update(label="DeepSeek 解释已写入 session_state", state="complete")
 
+    home_evidence_recovery_slot = st.empty()
+
     render_a_share_data_capability_controls(
         target=target,
         position_profile=position_profile,
@@ -4808,13 +4814,14 @@ packet:
         render_home_action_snapshot(home_snapshot)
     evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
     st.session_state["command_center_evidence_radar_packet"] = evidence_radar_vm
-    render_home_evidence_backfill_controls(
-        evidence_radar_vm,
-        target=target,
-        market_type=market_type,
-        position_profile=position_profile,
-        live_packet=live_packet,
-    )
+    with home_evidence_recovery_slot.container():
+        render_home_evidence_backfill_controls(
+            evidence_radar_vm,
+            target=target,
+            market_type=market_type,
+            position_profile=position_profile,
+            live_packet=live_packet,
+        )
     st.caption("本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释。")
     analysis_method_packet = _build_analysis_methods_display_packet(
         live_packet=live_packet,

@@ -140,6 +140,45 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(actions[0]["manual_action"]["refresh_policy"], "button_gated")
         self.assertFalse(actions[0]["deepseek_called"])
 
+    def test_home_evidence_recovery_summary_names_priority_action_and_packets(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "hard_risk_packet": {"status": "failed", "data_status": "missing", "summary": "公告权限不足"},
+                "margin_packet": {"status": "partial", "data_status": "cached", "summary": "融资缓存"},
+            }
+        )
+        summary = evidence_summary.build_home_evidence_recovery_summary(
+            vm,
+            runnable_keys={"hard_risk", "margin"},
+            limit=2,
+        )
+        dumped = json.dumps(summary, ensure_ascii=False)
+
+        self.assertEqual(summary["status"], "needs_recovery")
+        self.assertIn("补齐关键 A股证据", summary["title"])
+        self.assertEqual(summary["primary_label"], "公告/硬风险")
+        self.assertIn("检测公告/硬风险", dumped)
+        self.assertIn("command_center_hard_risk_packet", dumped)
+        self.assertIn("DeepSeek", summary["summary"])
+        self.assertFalse(summary["deepseek_called"])
+
+    def test_home_evidence_recovery_summary_is_ready_when_no_actions(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "hard_risk_packet": {"status": "ready", "data_status": "ready", "risk_state": "暂无硬风险"},
+                "moneyflow_packet": {"status": "ready", "data_status": "ready", "summary": "资金可用"},
+                "margin_packet": {"status": "ready", "data_status": "ready", "summary": "融资可用"},
+                "dragon_tiger_packet": {"status": "ready", "data_status": "ready", "summary": "龙虎榜可用"},
+                "limit_emotion_packet": {"status": "ready", "data_status": "ready", "summary": "情绪可用"},
+                "chip_packet": {"status": "ready", "data_status": "ready", "summary": "筹码可用"},
+            }
+        )
+        summary = evidence_summary.build_home_evidence_recovery_summary(vm)
+
+        self.assertEqual(summary["status"], "ready")
+        self.assertEqual(summary["actions"], [])
+        self.assertFalse(summary["deepseek_called"])
+
     def test_limit_and_chip_specific_headlines_are_visible(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {

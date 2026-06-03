@@ -19,7 +19,7 @@ EVIDENCE_DEFS = (
     (
         "hard_risk_packet",
         "hard_risk",
-        "硬风险/公告",
+        "公告/硬风险",
         "risk_state",
         ("risk_item_count",),
         "项",
@@ -399,3 +399,44 @@ def build_home_evidence_backfill_actions(
         if len(result) >= max(1, int(limit or 2)):
             break
     return result
+
+
+def build_home_evidence_recovery_summary(
+    evidence_radar_packet: Any = None,
+    runnable_keys: Any = None,
+    limit: int = 2,
+) -> dict:
+    actions = build_home_evidence_backfill_actions(
+        evidence_radar_packet,
+        runnable_keys=runnable_keys,
+        limit=limit,
+    )
+    if not actions:
+        return {
+            "status": "ready",
+            "title": "数据恢复建议",
+            "summary": "关键 A股证据暂不需要手动补齐；继续以价格纪律、仓位规则和已验证 packet 为准。",
+            "actions": [],
+            "deepseek_called": False,
+        }
+    labels = [to_text(item.get("label")) for item in actions]
+    labels = [label for label in labels if label]
+    packet_names = [
+        to_text(as_mapping(item.get("manual_action")).get("writes_packet"))
+        for item in actions
+    ]
+    packet_names = [name for name in packet_names if name]
+    first_action = as_mapping(actions[0].get("manual_action"))
+    first_label = labels[0] if labels else "关键证据"
+    return {
+        "status": "needs_recovery",
+        "title": "数据恢复建议｜补齐关键 A股证据",
+        "summary": (
+            f"优先补齐：{'、'.join(labels)}。先点「{to_text(first_action.get('button_label'), '手动刷新')}」；"
+            f"结果会回流到 {'、'.join(packet_names)}，页面不会自动调用 DeepSeek 或全市场扫描。"
+        ),
+        "primary_label": first_label,
+        "primary_button_label": to_text(first_action.get("button_label"), "手动刷新"),
+        "actions": actions,
+        "deepseek_called": False,
+    }
