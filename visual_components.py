@@ -4934,9 +4934,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
             {escape(_home_text(item.get("label"), "证据"))}
-            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">P{escape(_home_number(item.get("priority")))} · {escape(_home_text(item.get("evidence_label"), item.get("status_label") or "待验证"))}</span>
           </div>
           <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("headline"), "待验证"))} ｜ 关键值：{escape(_home_text(item.get("metric"), "暂无"))}</div>
+          <div class="cc-home-item-meta">用途：{escape(_home_text(item.get("decision_role"), "辅助验证，不单独决策。"))}</div>
+          <div class="cc-home-item-meta">信号：{escape(_home_text(item.get("decision_signal"), "待验证。"))}</div>
           <div class="cc-home-item-meta">风险：{escape(_home_text(item.get("risk_text"), "待验证，不能单独作为交易依据。"))}</div>
           <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地缓存"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无时间"))}</div>
         </div>
@@ -5023,7 +5025,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">已验证事实</div>
           {discipline_html}
-          <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))}</div>
+          <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))} ｜ {escape(_home_text(evidence_vm.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
           {evidence_html}
           <div class="cc-muted-note">{escape(_home_text(facts_packet.get("summary"), "暂无可验证事实包。"))}</div>
           {fact_gap_html}

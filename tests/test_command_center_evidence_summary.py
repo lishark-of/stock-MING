@@ -13,6 +13,8 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(len(vm["items"]), 6)
         self.assertEqual(vm["ready_count"], 0)
         self.assertEqual(vm["missing_count"], 6)
+        self.assertEqual(vm["decision_summary"], "支持 0｜阻断 0｜缓存 0｜缺失 6")
+        self.assertEqual(vm["decision_evidence_queue"][0]["priority"], 1)
         self.assertIn("待验证 6 项", vm["summary"])
         self.assertFalse(vm["deepseek_called"])
         json.dumps(vm, ensure_ascii=False)
@@ -48,11 +50,33 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(vm["ready_count"], 1)
         self.assertEqual(vm["cached_count"], 1)
         self.assertEqual(vm["failed_count"], 1)
+        self.assertEqual(vm["decision_summary"], "支持 1｜阻断 1｜缓存 1｜缺失 3")
         self.assertEqual(by_key["moneyflow"]["headline"], "主力净流入")
         self.assertEqual(by_key["moneyflow"]["metric"], "+1.25亿")
+        self.assertEqual(by_key["moneyflow"]["evidence_state"], "supporting")
+        self.assertIn("资金", by_key["moneyflow"]["decision_role"])
         self.assertEqual(by_key["dragon_tiger"]["tone"], "failed")
+        self.assertEqual(by_key["dragon_tiger"]["evidence_state"], "blocked")
+        self.assertIn("不能支撑加仓", by_key["dragon_tiger"]["decision_signal"])
         self.assertEqual(by_key["margin"]["status_label"], "使用缓存")
+        self.assertEqual(by_key["margin"]["evidence_label"], "缓存证据")
         self.assertFalse(any(item["deepseek_called"] for item in vm["items"]))
+
+    def test_decision_evidence_queue_orders_priority_and_blockers_first(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "moneyflow_packet": {"status": "ready", "data_status": "ready", "summary": "资金流可用"},
+                "hard_risk_packet": {"status": "failed", "data_status": "missing", "summary": "公告权限不足"},
+                "margin_packet": {"status": "partial", "data_status": "cached", "summary": "融资缓存"},
+            }
+        )
+        queue = vm["decision_evidence_queue"]
+
+        self.assertEqual(queue[0]["key"], "hard_risk")
+        self.assertEqual(queue[0]["priority"], 1)
+        self.assertEqual(queue[0]["evidence_state"], "blocked")
+        self.assertEqual(queue[1]["key"], "moneyflow")
+        self.assertIn("硬风险", vm["blocker_items"][0]["label"])
 
     def test_limit_and_chip_specific_headlines_are_visible(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
