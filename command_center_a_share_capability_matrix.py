@@ -342,3 +342,16 @@ def build_a_share_capability_matrix(
         "manual_note": "本矩阵只读取本地 packet；不会自动调用 Tushare、AkShare、yfinance、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
     }
+
+
+def build_a_share_capability_summary_text(matrix_packet: Any = None) -> str:
+    packet = as_mapping(matrix_packet)
+    items = as_list(packet.get("items"))
+    if not packet or not items or packet.get("status") == "missing":
+        return "尚未检测 A股数据能力"
+    available_count = int(packet.get("available_count") or 0)
+    blocked_count = int(packet.get("blocked_count") or 0)
+    manual_count = int(packet.get("manual_count") or 0)
+    stale_count = int(packet.get("stale_count") or 0)
+    pending_count = manual_count + stale_count
+    return f"可用 {available_count}｜受限 {blocked_count}｜待验证 {pending_count}"

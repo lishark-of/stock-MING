@@ -44,6 +44,7 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
         self.assertEqual(packet["status"], "missing")
         self.assertEqual(len(packet["items"]), 6)
         self.assertIn("不会自动请求 Tushare", packet["summary"])
+        self.assertEqual(matrix.build_a_share_capability_summary_text(packet), "尚未检测 A股数据能力")
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -67,6 +68,12 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
         self.assertIn("涨跌停", dumped)
         self.assertIn("筹码", dumped)
         self.assertFalse(packet["deepseek_called"])
+
+    def test_summary_text_counts_available_blocked_and_pending_items(self):
+        packet = matrix.build_a_share_capability_matrix(sample_capability_packet())
+        summary = matrix.build_a_share_capability_summary_text(packet)
+
+        self.assertEqual(summary, "可用 1｜受限 3｜待验证 2")
 
     def test_permission_does_not_become_positive_evidence(self):
         packet = matrix.build_a_share_capability_matrix(sample_capability_packet())

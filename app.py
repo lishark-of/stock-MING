@@ -32,6 +32,7 @@ import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
 import market_data_capability as data_capability
 import command_center_toolbox_summary as toolbox_summary_service
+import command_center_a_share_capability_matrix as a_share_capability_matrix_service
 import command_center_a_share_manual_checks as a_share_manual_checks_service
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
@@ -4316,8 +4317,16 @@ def _render_manual_capability_check_button(
 
 
 def render_a_share_data_capability_controls(target="", position_profile=None, live_packet=None):
-    with st.expander("A股数据能力检测", expanded=False):
-        st.caption("只在点击按钮后请求对应 Tushare 接口；用于确认权限、近期数据、缓存和缺口，不自动调用 DeepSeek。")
+    capability_matrix = a_share_capability_matrix_service.build_a_share_capability_matrix(
+        data_capability_packet=_get_command_center_data_capability_packet(),
+        facts_packet=_get_command_center_facts_packet(target=target),
+    )
+    summary_text = a_share_capability_matrix_service.build_a_share_capability_summary_text(capability_matrix)
+    with st.expander(f"A股数据能力检测｜{summary_text}", expanded=False):
+        st.caption(
+            f"{capability_matrix.get('summary') or summary_text}。只在点击按钮后请求对应 Tushare 接口；"
+            "用于确认权限、近期数据、缓存和缺口，不自动调用 DeepSeek。"
+        )
         check_cols = st.columns(5)
         checks = [
             ("检测资金流", "btn_cc_moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check),
