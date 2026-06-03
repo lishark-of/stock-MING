@@ -30,6 +30,7 @@ import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
 import market_data_capability as data_capability
+import command_center_toolbox_summary as toolbox_summary_service
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
@@ -4309,18 +4310,36 @@ packet:
 
 
 COMMAND_CENTER_NAV_ITEMS = [
-    "首页",
-    "今日关注池",
-    "个股诊断",
-    "天眼风控",
-    "推演",
-    "交易纪律实验室",
     "综合推演中心 2.0",
-    "策略库",
-    "复盘与记录",
-    "数据中心",
-    "系统设置",
+    "高级工具箱入口",
 ]
+
+
+def render_command_center_toolbox_entry():
+    packet = toolbox_summary_service.build_advanced_toolbox_entry()
+    item_html = ""
+    for item in packet.get("items") or []:
+        item_html += f"""
+        <div class="cc-mini-card">
+          <div class="cc-mini-title">{item.get("label", "高级工具")}</div>
+          <div class="cc-mini-desc">{item.get("purpose", "旧版工具保留。")}</div>
+          <div class="cc-mini-desc">回流 packet：{item.get("packet", "待接入")}</div>
+          <div class="cc-mini-desc">触发方式：{item.get("gate", "按钮手动触发")}</div>
+        </div>
+        """
+    st.markdown(
+        f"""
+        <section class="cc-card">
+          <div class="cc-card-title">{packet.get("title", "高级工具箱")}</div>
+          <div class="cc-card-caption">{packet.get("summary", "旧版工作台保留为高级工具。")}</div>
+          <div class="cc-mini-grid">{item_html}</div>
+          <div class="cc-card-caption">{packet.get("manual_note", "高级工具只在按钮触发时运行。")}</div>
+          <div class="cc-card-caption">{packet.get("next_step", "")}</div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.info("需要进入旧版完整页面时，请使用页面顶部的“高级工具箱（旧版保留）”切换；这里不会自动运行旧版模块。")
 
 
 def render_command_center_placeholder(nav_name, message=None):
@@ -4398,12 +4417,9 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
                 market_type=market_type,
                 position_profile=position_profile,
             )
-        elif selected_nav == "交易纪律实验室":
+        elif selected_nav == "高级工具箱入口":
             render_command_center_shell(active_nav=selected_nav)
-            render_command_center_placeholder(selected_nav, "高级工具箱保留完整纪律实验室；默认首页只展示可执行摘要。")
-        elif selected_nav == "推演":
-            render_command_center_shell(active_nav=selected_nav)
-            render_command_center_placeholder(selected_nav, "量化推演长流程保留在高级工具箱；趋势主视觉已接入首页。")
+            render_command_center_toolbox_entry()
         else:
             render_command_center_shell(active_nav=selected_nav)
             render_command_center_placeholder(selected_nav)

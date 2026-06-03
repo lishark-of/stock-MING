@@ -3222,6 +3222,12 @@ def _inject_command_center_css():
             gap: 9px;
             align-items: center;
         }
+        .cc-mini-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
         .cc-mini-card {
             background: #f8fafc;
             border: 1px solid rgba(148, 163, 184, 0.18);
