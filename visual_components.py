@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from command_center_evidence_summary import build_a_share_evidence_radar_view_model
 from command_center_decision_summary import build_decision_summary_view_model
 from command_center_strategy_summary import build_strategy_summary_view_model
 
@@ -3887,6 +3888,7 @@ def _inject_command_center_css():
         .cc-home-chip.stale,
         .cc-home-chip.partial_failed { background: rgba(245,158,11,0.12); color: #b45309; border-color: rgba(245,158,11,0.18); }
         .cc-home-chip.missing { background: rgba(148,163,184,0.13); color: #475569; border-color: rgba(148,163,184,0.18); }
+        .cc-home-chip.failed { background: rgba(239,68,68,0.10); color: #b91c1c; border-color: rgba(239,68,68,0.18); }
         .cc-home-side {
             border-radius: 24px;
             background: rgba(255,255,255,0.75);
@@ -4693,6 +4695,21 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     fact_items = [item for item in (facts_packet.get("items") or []) if isinstance(item, dict)]
     fact_gap_summary = _home_text(facts_packet.get("gap_summary"), "")
     fact_next_checks = [str(item).strip() for item in (facts_packet.get("next_manual_checks") or []) if str(item).strip()]
+    evidence_vm = build_a_share_evidence_radar_view_model(payload)
+    evidence_items = [item for item in (evidence_vm.get("items") or []) if isinstance(item, dict)]
+    evidence_html = ""
+    for item in evidence_items:
+        evidence_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "证据"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("headline"), "待验证"))} ｜ 关键值：{escape(_home_text(item.get("metric"), "暂无"))}</div>
+          <div class="cc-home-item-meta">风险：{escape(_home_text(item.get("risk_text"), "待验证，不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地缓存"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无时间"))}</div>
+        </div>
+        """
     fact_gap_html = ""
     if fact_gap_summary or fact_next_checks:
         fact_gap_html = f"""
@@ -4773,6 +4790,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">已验证事实</div>
+          <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))}</div>
+          {evidence_html}
           <div class="cc-muted-note">{escape(_home_text(facts_packet.get("summary"), "暂无可验证事实包。"))}</div>
           {fact_gap_html}
           {facts_html}
