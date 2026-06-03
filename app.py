@@ -30,6 +30,7 @@ import command_center_dragon_tiger_packet as dragon_tiger_packet_service
 import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
+import command_center_legacy_packet_sync as legacy_packet_sync_service
 import command_center_evidence_summary as evidence_summary_service
 import market_data_capability as data_capability
 import command_center_toolbox_summary as toolbox_summary_service
@@ -12100,6 +12101,16 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         st.session_state["last_backtest_report"] = None
                         st.session_state["last_multi_backtest"] = None
                         st.session_state["last_backtest_key"] = bt_key
+                        st.session_state["command_center_discipline_packet"] = legacy_packet_sync_service.sync_legacy_discipline_packet(
+                            st.session_state,
+                            live_packet={
+                                "discipline": {
+                                    "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                                    "source": "交易纪律实验室回测缓存",
+                                }
+                            },
+                            target=target,
+                        )
                         st.warning("没有抓到可用行情。")
                         st.caption(f"识别结果：{target}｜{market_type}｜行情源：{bt_provider}｜区间：{bt_start} 至 {bt_end}")
                         diag = cached_fetch_ohlcv_diagnostics(
@@ -12150,6 +12161,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         st.session_state["last_backtest_report"] = report
                         st.session_state["last_multi_backtest"] = multi_result
                         st.session_state["last_backtest_key"] = bt_key
+                        st.session_state["command_center_discipline_packet"] = legacy_packet_sync_service.sync_legacy_discipline_packet(
+                            st.session_state,
+                            target=target,
+                        )
                         st.success(f"回测完成：{multi_result.get('summary') or report.get('summary', '')}")
 
             report = st.session_state.get("last_backtest_report")
@@ -13101,6 +13116,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "target": target,
             "market_type": market_type,
         }
+        st.session_state["command_center_quant_packet"] = legacy_packet_sync_service.sync_legacy_quant_packet(
+            st.session_state,
+            target=target,
+        )
 
     if legacy_tab == "融资 ETF":
         st.markdown("### 🧮 融资版 ETF 投资法")
