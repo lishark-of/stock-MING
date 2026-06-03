@@ -37,8 +37,13 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["status"], "ready")
         self.assertEqual(packet["display_count"], 3)
         self.assertEqual(packet["top_candidates"][0]["ticker"], "300750.SZ")
+        self.assertEqual(packet["top_candidates"][0]["status_label"], "等验证")
+        self.assertEqual(packet["top_candidates"][0]["tone"], "stale")
         self.assertEqual(packet["top_candidates"][0]["trigger_condition"], "放量站稳 MA20；行业强于指数")
         self.assertEqual(packet["top_candidates"][0]["invalidation_condition"], "跌破 MA20；资金流转弱")
+        self.assertTrue(packet["top_candidates"][0]["evidence_items"])
+        self.assertIn("不会自动全市场扫描", packet["top_candidates"][0]["manual_required_text"])
+        self.assertIn("不会自动全市场扫描", packet["manual_required_text"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -48,6 +53,7 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["status"], "waiting")
         self.assertEqual(packet["top_candidates"], [])
         self.assertIn("不会自动全市场扫描", packet["summary"])
+        self.assertEqual(packet["cache_state"], "missing")
         self.assertFalse(packet["deepseek_called"])
 
     def test_existing_packet_is_preserved_without_mutation(self):

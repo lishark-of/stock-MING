@@ -6,6 +6,7 @@ from typing import Any
 
 
 MAX_TOP_CANDIDATES = 3
+MAX_EVIDENCE_ITEMS = 5
 
 
 def as_mapping(value: Any) -> dict:
@@ -71,6 +72,73 @@ def _conditions_text(values: Any, fallback: str) -> str:
     return "；".join(items[:3]) if items else fallback
 
 
+def _action_tone(action_state: str) -> str:
+    if action_state in {"可准备", "准备", "ready"}:
+        return "ready"
+    if action_state in {"等验证", "待验证"}:
+        return "stale"
+    if action_state in {"暂不纳入", "排除", "不纳入"}:
+        return "failed"
+    return "missing"
+
+
+def _candidate_status_label(action_state: str) -> str:
+    if action_state in {"可准备", "准备", "ready"}:
+        return "可准备"
+    if action_state in {"等验证", "待验证"}:
+        return "等验证"
+    if action_state in {"暂不纳入", "排除", "不纳入"}:
+        return "暂不纳入"
+    return action_state or "只观察"
+
+
+def _evidence_items(
+    *,
+    score: int | float | None,
+    action_state: str,
+    reason: str,
+    trigger_text: str,
+    invalidation_text: str,
+    data_gaps: list[str],
+) -> list[dict]:
+    items = [
+        {
+            "label": "综合分",
+            "value": "待验证" if score is None else str(score),
+            "detail": "分数只作排序线索，不等于买入建议。",
+            "tone": "ready" if score is not None and score >= 75 else "stale" if score is not None else "missing",
+        },
+        {
+            "label": "候选状态",
+            "value": _candidate_status_label(action_state),
+            "detail": reason or "规则雷达缓存候选。",
+            "tone": _action_tone(action_state),
+        },
+        {
+            "label": "触发条件",
+            "value": "待验证",
+            "detail": trigger_text,
+            "tone": "stale",
+        },
+        {
+            "label": "失效条件",
+            "value": "必须遵守",
+            "detail": invalidation_text,
+            "tone": "failed",
+        },
+    ]
+    if data_gaps:
+        items.append(
+            {
+                "label": "数据缺口",
+                "value": f"{len(data_gaps)}项",
+                "detail": "；".join(data_gaps[:3]),
+                "tone": "missing",
+            }
+        )
+    return items[:MAX_EVIDENCE_ITEMS]
+
+
 def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_section: Any = None, rank: int = 0) -> dict:
     row_map = as_mapping(row)
     scan = as_mapping(scan_packet)
@@ -112,20 +180,34 @@ def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_sec
         as_mapping(score.get("score_notes")).get("data_gaps"),
         row_map.get("data_gaps"),
     )
+    score_value = to_number(score.get("total_score") or score.get("score") or row_map.get("score"))
+    reason = _first_text(score.get("battle_state_reason"), row_map.get("reason"), score.get("one_sentence_conclusion"), default="规则雷达缓存候选。")
+    gap_items = [to_text(item) for item in data_gaps if to_text(item)][:5]
     return {
         "rank": rank,
         "ticker": ticker,
         "name": name,
         "action_state": action_state,
-        "score": to_number(score.get("total_score") or score.get("score") or row_map.get("score")),
+        "status_label": _candidate_status_label(action_state),
+        "tone": _action_tone(action_state),
+        "score": score_value,
         "trigger_conditions": trigger_conditions[:5],
         "trigger_condition": trigger_text,
         "invalidation_conditions": invalidation_conditions[:5],
         "invalidation_condition": invalidation_text,
-        "reason": _first_text(score.get("battle_state_reason"), row_map.get("reason"), score.get("one_sentence_conclusion"), default="规则雷达缓存候选。"),
-        "data_gaps": [to_text(item) for item in data_gaps if to_text(item)][:5],
+        "reason": reason,
+        "evidence_items": _evidence_items(
+            score=score_value,
+            action_state=action_state,
+            reason=reason,
+            trigger_text=trigger_text,
+            invalidation_text=invalidation_text,
+            data_gaps=gap_items,
+        ),
+        "data_gaps": gap_items,
         "source": _first_text(row_map.get("source"), row_map.get("scan_source"), context.get("scan_source"), scan.get("source"), live.get("source"), default="下一票雷达缓存"),
         "updated_at": _first_text(row_map.get("updated_at"), row_map.get("generated_at"), scan.get("generated_at"), live.get("updated_at"), default="暂无"),
+        "manual_required_text": "下一票候选来自本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
         "deepseek_called": False,
     }
 
@@ -152,7 +234,15 @@ def build_command_center_radar_packet(
     live_section = as_mapping(live.get("next_ticket"))
     existing = as_mapping(state_map.get("command_center_radar_packet"))
     if existing.get("top_candidates"):
-        return {**existing, "deepseek_called": bool(existing.get("deepseek_called", False))}
+        return {
+            **existing,
+            "cache_state": _first_text(existing.get("cache_state"), existing.get("data_status"), default="ready"),
+            "manual_required_text": _first_text(
+                existing.get("manual_required_text"),
+                default="下一票雷达必须手动扫描或读取缓存；页面打开不会自动全市场扫描。",
+            ),
+            "deepseek_called": bool(existing.get("deepseek_called", False)),
+        }
     scan_packet = as_mapping(state_map.get("radar_scan_results"))
     summary = as_mapping(state_map.get("radar_scan_summary") or scan_packet.get("summary"))
     rows = _first_list(
@@ -183,6 +273,7 @@ def build_command_center_radar_packet(
     total_count = len(rows)
     return {
         "status": status,
+        "cache_state": "ready" if top_candidates else "missing",
         "source": _first_text(summary.get("source_mode"), scan_packet.get("source_mode"), live_section.get("source"), default="下一票雷达缓存"),
         "generated_at": generated_at,
         "total_count": total_count,
@@ -199,5 +290,6 @@ def build_command_center_radar_packet(
         ),
         "errors": [to_text(item) for item in errors if to_text(item)][:8],
         "data_status": "ready" if top_candidates else "missing",
+        "manual_required_text": "下一票雷达只读取本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
         "deepseek_called": bool(summary.get("deepseek_called", False)),
     }
