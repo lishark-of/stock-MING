@@ -462,16 +462,69 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         matrix = payload["a_share_capability_matrix"]
         matrix_by_key = {item["key"]: item for item in matrix["items"]}
 
-        self.assertEqual(capability["source"], "Tushare A股专业事实")
+        self.assertEqual(capability["source"], "Unified data capability")
         self.assertEqual(capability["available_count"], 1)
         self.assertEqual(capability["restricted_count"], 1)
-        self.assertEqual(capability["pending_count"], 1)
+        self.assertGreaterEqual(capability["pending_count"], 1)
         self.assertIn("可用：个股资金流", capability["summary"])
         self.assertIn("受限：融资融券", capability["summary"])
+        self.assertIn("待验证：龙虎榜", capability["summary"])
         self.assertEqual(matrix_by_key["moneyflow"]["state"], "available")
         self.assertEqual(matrix_by_key["margin"]["state"], "permission_denied")
         self.assertEqual(matrix_by_key["dragon_tiger"]["state"], "empty_recent")
         self.assertFalse(matrix["deepseek_called"])
+        self.assertFalse(capability["deepseek_called"])
+
+    def test_home_snapshot_prefers_current_a_share_capability_over_stale_command_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T09:30:00",
+            },
+            "command_center_data_capability_packet": {
+                "source": "Unified data capability",
+                "checked_at": f"{today}T09:00:00",
+                "items": [
+                    {
+                        "provider": "Tushare",
+                        "section": "margin",
+                        "label": "融资融券",
+                        "api": "margin_detail",
+                        "capability_state": "available",
+                        "status": "可用",
+                    }
+                ],
+                "deepseek_called": False,
+            },
+            "a_share_professional_data_capability": {
+                "source": "Tushare A股专业事实",
+                "checked_at": f"{today}T09:35:00",
+                "items": [
+                    {
+                        "provider": "Tushare",
+                        "section": "margin",
+                        "label": "融资融券",
+                        "api": "margin_detail",
+                        "capability_state": "permission_denied",
+                        "status": "权限不足",
+                        "error": "当前权限不足",
+                    }
+                ],
+                "deepseek_called": False,
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T09:40:00")
+        capability = payload["data_capability"]
+        matrix_by_key = {item["key"]: item for item in payload["a_share_capability_matrix"]["items"]}
+        dumped = json.dumps(payload["data_issue_explainer"], ensure_ascii=False)
+
+        self.assertEqual(capability["source"], "Unified data capability")
+        self.assertEqual(capability["restricted_count"], 1)
+        self.assertEqual(matrix_by_key["margin"]["state"], "permission_denied")
+        self.assertIn("权限不足", dumped)
         self.assertFalse(capability["deepseek_called"])
 
     def test_home_snapshot_builds_capability_from_legacy_a_share_facts(self):

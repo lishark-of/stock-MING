@@ -718,16 +718,29 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
 def resolve_data_capability_packet(state: Any = None) -> dict:
     state_map = _as_mapping(state)
     healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))
+    command_packet = _as_mapping(state_map.get("command_center_data_capability_packet"))
+    a_share_packet = _as_mapping(state_map.get("a_share_professional_data_capability"))
     professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
-    explicit = (
-        state_map.get("command_center_data_capability_packet")
-        or state_map.get("a_share_professional_data_capability")
-        or healthcheck.get("data_capability")
-        or _as_mapping(professional_facts.get("data_capability"))
-        or healthcheck.get("tushare")
-    )
-    if explicit:
-        return _as_mapping(explicit)
+    facts_capability = _as_mapping(professional_facts.get("data_capability"))
+    health_data_capability = _as_mapping(healthcheck.get("data_capability"))
+    if health_data_capability and not a_share_packet:
+        return health_data_capability
+    if a_share_packet or healthcheck:
+        unified = data_capability_service.build_unified_provider_capability_packet(
+            health_result=healthcheck,
+            a_share_packet=a_share_packet or facts_capability,
+            include_manual_providers=bool(healthcheck or a_share_packet or facts_capability or command_packet),
+        )
+        if unified.get("items"):
+            return unified
+    for explicit in (
+        command_packet,
+        health_data_capability,
+        facts_capability,
+        _as_mapping(healthcheck.get("tushare")),
+    ):
+        if explicit:
+            return explicit
     if professional_facts:
         return data_capability_service.build_a_share_professional_capability_packet(
             professional_facts,

@@ -9852,6 +9852,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             a_share_capability_packet,
             target=target,
         )
+        _sync_a_share_capability_packet(a_share_capability_packet)
         st.session_state["command_center_chip_packet"] = chip_packet_service.build_command_center_chip_packet(
             st.session_state,
             target=target,
