@@ -332,6 +332,26 @@ def _evidence_label_text(items: Any, fallback: str = "暂无") -> str:
     return "、".join(labels) if labels else fallback
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _limited_join(values: Any, fallback: str = "暂无", limit: int = 2) -> str:
+    if isinstance(values, (list, tuple, set)):
+        labels = [_to_text(item) for item in values]
+    else:
+        text = _to_text(values)
+        labels = [text] if text else []
+    labels = [item for item in labels if item]
+    if not labels:
+        return fallback
+    suffix = f" 等 {len(labels)} 项" if len(labels) > limit else ""
+    return "、".join(labels[:limit]) + suffix
+
+
 def _append_evidence_text(base: Any, addition: str) -> str:
     text = _to_text(base)
     note = _to_text(addition)
@@ -414,6 +434,116 @@ def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: A
     return guided_paths, f"A股证据雷达：{evidence['summary']}"
 
 
+def _status_console_from_snapshot(home_snapshot: Any) -> dict:
+    snapshot = _as_mapping(home_snapshot)
+    diagnostic = _as_mapping(snapshot.get("a_share_user_data_diagnostic"))
+    return _as_mapping(diagnostic.get("status_console"))
+
+
+def _a_share_data_capability_guidance(a_share_data_console: Any) -> dict:
+    console = _as_mapping(a_share_data_console)
+    if not console:
+        return {}
+
+    readiness = _to_text(console.get("decision_readiness_label")) or _to_text(console.get("headline")) or "待检测"
+    summary = _to_text(console.get("summary"))
+    groups = {
+        _to_text(group.get("key")): _as_mapping(group)
+        for group in _as_list(console.get("groups"))
+        if _as_mapping(group)
+    }
+
+    def group_text(key: str, fallback: str) -> str:
+        group = groups.get(key) or {}
+        if _safe_int(group.get("count")) <= 0:
+            return ""
+        return _limited_join(group.get("items"), fallback=_to_text(group.get("summary")) or fallback)
+
+    restricted_text = group_text("permission_denied", "受限数据")
+    stale_text = group_text("stale_or_empty", "暂无数据")
+    manual_text = group_text("manual_required", "待手动刷新")
+    available_text = group_text("available", "可用数据")
+    return {
+        "readiness": readiness,
+        "summary": summary,
+        "restricted_text": restricted_text,
+        "stale_text": stale_text,
+        "manual_text": manual_text,
+        "available_text": available_text,
+        "has_restricted": bool(restricted_text),
+        "has_stale": bool(stale_text),
+        "has_manual": bool(manual_text),
+        "has_available": bool(available_text),
+    }
+
+
+def _merge_a_share_data_capability_guidance(
+    paths: list[dict],
+    a_share_data_console: Any,
+    market_type: str,
+) -> tuple[list[dict], str]:
+    if market_type != "A股":
+        return paths, ""
+    capability = _a_share_data_capability_guidance(a_share_data_console)
+    if not capability:
+        return paths, ""
+
+    readiness = capability["readiness"]
+    summary = capability["summary"]
+    restricted_text = capability["restricted_text"]
+    stale_text = capability["stale_text"]
+    manual_text = capability["manual_text"]
+    available_text = capability["available_text"]
+    verification_parts = []
+    if restricted_text:
+        verification_parts.append(f"受限：{restricted_text}")
+    if stale_text:
+        verification_parts.append(f"暂无数据：{stale_text}")
+    if manual_text:
+        verification_parts.append(f"待手动：{manual_text}")
+    if available_text:
+        verification_parts.append(f"可用：{available_text}")
+    verification_summary = "；".join(verification_parts) or summary or readiness
+
+    guided_paths = []
+    for index, path in enumerate(paths):
+        item = dict(path)
+        if index == 0:
+            if restricted_text:
+                note = f"A股数据能力阻断乐观路径：受限数据 {restricted_text}。"
+                risk = "受限数据未恢复前，不能把乐观路径当作加仓依据。"
+            elif stale_text or manual_text:
+                note = f"乐观路径需先补齐 A股数据能力：{verification_summary}。"
+                risk = "数据未刷新或待手动时，只能把乐观路径视为待验证假设。"
+            else:
+                note = f"A股数据能力可进入证据链：{available_text or readiness}。"
+                risk = "即使数据可用，仍需价格、纪律和仓位预算共振。"
+            item["data_capability_label"] = readiness
+        elif index == 1:
+            note = f"中性路径复核 A股数据能力：{verification_summary}。"
+            risk = "数据能力未完全恢复前，维持观察，不扩大仓位。"
+            item["data_capability_label"] = "数据能力待复核"
+        else:
+            if restricted_text:
+                note = f"受限数据触发谨慎路径：{restricted_text}。"
+            elif stale_text or manual_text:
+                note = f"数据缺口触发谨慎边界：{verification_summary}。"
+            else:
+                note = f"若可用数据转弱，谨慎路径优先：{available_text or readiness}。"
+            risk = "A股数据能力受限、暂无或待手动时，优先保现金、降杠杆、收缩试探仓位。"
+            item["data_capability_label"] = "数据能力防守线"
+        item["trigger"] = _append_evidence_text(item.get("trigger"), note)
+        item["risk"] = _append_evidence_text(item.get("risk"), risk)
+        item["risk_note"] = item["risk"]
+        item["data_capability_note"] = note
+        guided_paths.append(item)
+
+    basis = f"A股数据能力：{readiness}"
+    if summary:
+        basis = f"{basis}｜{summary}"
+    return guided_paths, basis
+
+
 def build_projection_packet(
     decision_packet: Any = None,
     strategy_packet: Any = None,
@@ -421,6 +551,7 @@ def build_projection_packet(
     home_snapshot: Any = None,
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
+    a_share_data_console: Any = None,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     base_date: Any = None,
     now: Any = None,
@@ -454,6 +585,8 @@ def build_projection_packet(
         )
     paths, market_type, path_basis = _merge_path_guidance(paths, analysis_method_packet)
     paths, evidence_basis = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
+    data_console = _as_mapping(a_share_data_console) or _status_console_from_snapshot(snapshot)
+    paths, data_capability_basis = _merge_a_share_data_capability_guidance(paths, data_console, market_type)
     fallback = status == "waiting" or not _has_payload(decision, strategy, live, snapshot)
     note = "示例路径 / 待刷新" if fallback else "基于现有结构化 packet 的条件化路径推演"
     return {
@@ -463,8 +596,9 @@ def build_projection_packet(
         "historical": _historical_points(base, market_bias),
         "paths": paths,
         "market_type": market_type,
-        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis] if item]),
+        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis] if item]),
         "path_evidence_summary": evidence_basis,
+        "path_data_capability_summary": data_capability_basis,
         "market_method_summary": _to_text(_as_mapping(analysis_method_packet).get("summary"), "分析方法待验证"),
         "source": SOURCE_FALLBACK if fallback else SOURCE_READY,
         "updated_at": updated_at,
@@ -484,13 +618,15 @@ def build_projection_packet_from_state(
     now: Any = None,
 ) -> dict:
     state_map = _as_mapping(state)
+    snapshot = _as_mapping(home_snapshot or state_map.get("command_center_home_snapshot"))
     return build_projection_packet(
         decision_packet=state_map.get("command_center_decision_packet") or state_map.get("command_center_decision_last_success"),
         strategy_packet=state_map.get("strategy_execution_packet") or state_map.get("strategy_execution_last_success"),
         live_packet=live_packet or state_map.get("command_center_live_packet"),
-        home_snapshot=home_snapshot or state_map.get("command_center_home_snapshot"),
+        home_snapshot=snapshot,
         analysis_method_packet=state_map.get("command_center_analysis_method_packet"),
         evidence_radar_packet=state_map.get("command_center_evidence_radar_packet"),
+        a_share_data_console=state_map.get("command_center_a_share_data_console") or _status_console_from_snapshot(snapshot),
         horizon_days=horizon_days,
         now=now,
     )

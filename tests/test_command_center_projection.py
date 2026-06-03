@@ -185,6 +185,51 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("阻断证据", joined)
         self.assertFalse(packet["deepseek_called"])
 
+    def test_a_share_data_capability_enriches_projection_paths(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            a_share_data_console={
+                "decision_readiness_label": "阻断加仓",
+                "summary": "可用 1｜受限 1｜暂无数据 1｜待手动 0",
+                "groups": [
+                    {"key": "permission_denied", "tone": "failed", "count": 1, "items": ["个股资金流"]},
+                    {"key": "stale_or_empty", "tone": "stale", "count": 1, "items": ["龙虎榜"]},
+                    {"key": "available", "tone": "ready", "count": 1, "items": ["融资融券"]},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertIn("A股数据能力", packet["path_basis"])
+        self.assertIn("阻断加仓", packet["path_data_capability_summary"])
+        self.assertIn("个股资金流", packet["paths"][0]["trigger"])
+        self.assertIn("受限数据未恢复", packet["paths"][0]["risk_note"])
+        self.assertIn("龙虎榜", packet["paths"][1]["trigger"])
+        self.assertIn("数据能力防守线", joined)
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_a_share_data_capability_all_available_supports_projection_basis(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            a_share_data_console={
+                "decision_readiness_label": "可进入证据链",
+                "summary": "可用 4｜受限 0｜暂无数据 0｜待手动 0",
+                "groups": [
+                    {"key": "available", "tone": "ready", "count": 4, "items": ["个股资金流", "龙虎榜", "融资融券"]},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertIn("可进入证据链", packet["path_data_capability_summary"])
+        self.assertIn("A股数据能力可进入证据链", packet["paths"][0]["trigger"])
+        self.assertIn("个股资金流", joined)
+
     def test_a_share_evidence_radar_does_not_pollute_us_projection(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
@@ -201,6 +246,23 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertNotIn("A股证据雷达", joined)
         self.assertNotIn("龙虎榜", joined)
 
+    def test_a_share_data_capability_does_not_pollute_us_projection(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "美股", "summary": "美股分析框架"},
+            a_share_data_console={
+                "decision_readiness_label": "阻断加仓",
+                "summary": "可用 0｜受限 1｜暂无数据 0｜待手动 0",
+                "groups": [{"key": "permission_denied", "tone": "failed", "count": 1, "items": ["龙虎榜"]}],
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["market_type"], "美股")
+        self.assertEqual(packet["path_data_capability_summary"], "")
+        self.assertNotIn("A股数据能力", joined)
+        self.assertNotIn("龙虎榜", joined)
+
     def test_build_from_state_can_read_evidence_radar_packet(self):
         packet = projection.build_projection_packet_from_state(
             {
@@ -215,6 +277,31 @@ class CommandCenterProjectionTests(unittest.TestCase):
 
         self.assertIn("个股资金流", packet["paths"][0]["trigger"])
         self.assertIn("A股证据雷达", packet["path_basis"])
+
+    def test_build_from_state_reads_home_snapshot_a_share_data_console(self):
+        packet = projection.build_projection_packet_from_state(
+            {
+                "command_center_decision_packet": {"overall_action": "等待", "updated_at": "2026-06-01T10:00:00"},
+                "command_center_analysis_method_packet": {"market": "A股"},
+                "command_center_home_snapshot": {
+                    "a_share_user_data_diagnostic": {
+                        "status_console": {
+                            "decision_readiness_label": "谨慎验证",
+                            "summary": "可用 1｜受限 0｜暂无数据 1｜待手动 0",
+                            "groups": [
+                                {"key": "stale_or_empty", "tone": "stale", "count": 1, "items": ["龙虎榜"]},
+                                {"key": "available", "tone": "ready", "count": 1, "items": ["个股资金流"]},
+                            ],
+                            "deepseek_called": False,
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertIn("A股数据能力", packet["path_basis"])
+        self.assertIn("谨慎验证", packet["path_data_capability_summary"])
+        self.assertIn("龙虎榜", packet["paths"][1]["trigger"])
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_projection.py").read_text())
