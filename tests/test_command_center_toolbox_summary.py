@@ -22,6 +22,49 @@ FORBIDDEN_IMPORTS = {
 }
 
 
+def sample_data_capability_packet():
+    return {
+        "source": "Unified data capability",
+        "items": [
+            {
+                "provider": "Tushare",
+                "api": "moneyflow",
+                "label": "个股资金流",
+                "capability_state": "available",
+                "status": "可用",
+            },
+            {
+                "provider": "Tushare",
+                "api": "margin_detail",
+                "label": "融资融券",
+                "capability_state": "permission_denied",
+                "status": "权限不足",
+            },
+            {
+                "provider": "Tushare",
+                "api": "top_list",
+                "label": "龙虎榜",
+                "capability_state": "stale_cache",
+                "status": "使用缓存",
+            },
+            {
+                "provider": "Tushare",
+                "api": "limit_cpt_list",
+                "label": "涨跌停/情绪",
+                "capability_state": "disabled_this_session",
+                "status": "本会话跳过",
+            },
+            {
+                "provider": "AkShare",
+                "api": "akshare_manual_refresh",
+                "label": "AkShare 重型刷新",
+                "capability_state": "requires_manual_refresh",
+                "status": "需要手动刷新",
+            },
+        ],
+    }
+
+
 class CommandCenterToolboxSummaryTests(unittest.TestCase):
     def test_advanced_toolbox_entry_is_manual_and_json_friendly(self):
         packet = toolbox.build_advanced_toolbox_entry()
@@ -76,6 +119,39 @@ class CommandCenterToolboxSummaryTests(unittest.TestCase):
         self.assertEqual(capability_map[0]["key"], "next_ticket_radar")
         self.assertIn("按钮", capability_map[0]["manual_gate"])
         self.assertFalse(capability_map[0]["deepseek_called"])
+
+    def test_toolbox_entry_reads_existing_capability_packet_without_external_calls(self):
+        packet = toolbox.build_advanced_toolbox_entry(data_capability_packet=sample_data_capability_packet())
+        by_key = {item["key"]: item["capability_status"] for item in packet["items"]}
+        dumped = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(by_key["next_ticket_radar"]["status_label"], "本会话跳过")
+        self.assertEqual(by_key["margin_etf"]["status_label"], "权限不足")
+        self.assertGreaterEqual(by_key["data_healthcheck"]["manual_count"], 1)
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("使用缓存", dumped)
+        self.assertIn("需要手动刷新", dumped)
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_tool_capability_status_is_missing_when_no_local_check_matches(self):
+        packet = toolbox.build_advanced_toolbox_entry(
+            keys=["cloud_brain"],
+            data_capability_packet=sample_data_capability_packet(),
+        )
+        status = packet["items"][0]["capability_status"]
+
+        self.assertEqual(status["status"], "missing")
+        self.assertEqual(status["status_label"], "待检测")
+        self.assertIn("不会自动请求外部接口", status["summary"])
+
+    def test_legacy_capability_map_includes_status_view_model(self):
+        capability_map = toolbox.build_legacy_tool_capability_map(
+            keys=["margin_etf"],
+            data_capability_packet=sample_data_capability_packet(),
+        )
+
+        self.assertEqual(capability_map[0]["capability_status"]["status_label"], "权限不足")
+        self.assertFalse(capability_map[0]["capability_status"]["deepseek_called"])
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_toolbox_summary.py").read_text(encoding="utf-8"))

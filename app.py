@@ -4317,17 +4317,27 @@ COMMAND_CENTER_NAV_ITEMS = [
 
 
 def render_command_center_toolbox_entry():
-    packet = toolbox_summary_service.build_advanced_toolbox_entry()
+    packet = toolbox_summary_service.build_advanced_toolbox_entry(
+        data_capability_packet=_get_command_center_data_capability_packet(),
+    )
     item_html = ""
     for item in packet.get("items") or []:
         capability = item.get("capability_summary") or {}
+        status = item.get("capability_status") or {}
         dependencies = "、".join(capability.get("depends_on") or item.get("data_dependencies") or [])
         missing_reasons = "；".join(capability.get("why_missing") or item.get("common_missing_reasons") or [])
+        matched_items = "；".join(
+            f"{row.get('label') or row.get('api') or '数据能力'}：{row.get('status_label') or row.get('state') or '待验证'}"
+            for row in (status.get("matched_items") or [])[:3]
+        )
         item_html += f"""
         <div class="cc-mini-card">
           <div class="cc-mini-title">{html_escape(str(item.get("label") or "高级工具"))}</div>
+          <div class="cc-mini-value">{html_escape(str(status.get("status_label") or "待检测"))}</div>
+          <div class="cc-mini-desc">{html_escape(str(status.get("summary") or "尚未读取到匹配的数据能力检测结果。"))}</div>
           <div class="cc-mini-desc">{html_escape(str(item.get("purpose") or "旧版工具保留。"))}</div>
           <div class="cc-mini-desc">依赖数据：{html_escape(dependencies or "本地缓存 / 手动刷新结果")}</div>
+          <div class="cc-mini-desc">已匹配状态：{html_escape(matched_items or "暂无本地检测结果")}</div>
           <div class="cc-mini-desc">为什么可能没数据：{html_escape(missing_reasons or "待检测、权限不足、非交易日或缓存过期。")}</div>
           <div class="cc-mini-desc">安全空态：{html_escape(str(capability.get("safe_empty_state") or "显示待验证，不自动触发重型请求。"))}</div>
           <div class="cc-mini-desc">回流 packet：{html_escape(str(item.get("packet") or "待接入"))}</div>
