@@ -47,6 +47,11 @@ class CommandCenterFactsPacketTests(unittest.TestCase):
         self.assertEqual(by_key["margin"]["state"], "permission_denied")
         self.assertIn("权限", by_key["margin"]["status"])
         self.assertEqual(by_key["dragon_tiger"]["state"], "empty_recent")
+        self.assertIn("个股资金流", packet["available_items"])
+        self.assertEqual(packet["restricted_items"][0]["label"], "融资融券")
+        self.assertIn("龙虎榜", packet["pending_items"][0]["label"])
+        self.assertIn("受限/失败：融资融券", packet["gap_summary"])
+        self.assertTrue(any("权限不足" in item for item in packet["next_manual_checks"]))
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -66,6 +71,27 @@ class CommandCenterFactsPacketTests(unittest.TestCase):
         self.assertEqual(packet["status"], "partial")
         self.assertIn("涨跌停", dumped)
         self.assertIn("本会话跳过", dumped)
+        self.assertTrue(any("本会话已跳过" in item for item in packet["next_manual_checks"]))
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_existing_packet_is_enriched_with_gap_summary(self):
+        packet = facts.build_command_center_facts_packet(
+            {
+                "command_center_facts_packet": {
+                    "status": "partial",
+                    "items": [
+                        {"key": "moneyflow", "label": "个股资金流", "state": "available", "status": "通过"},
+                        {"key": "chip_radar", "label": "筹码/胜率", "state": "unknown", "status": "待验证", "api": "cyq_perf"},
+                    ],
+                    "deepseek_called": True,
+                }
+            },
+            target="002008.SZ",
+        )
+
+        self.assertIn("个股资金流", packet["available_items"])
+        self.assertEqual(packet["pending_items"][0]["label"], "筹码/胜率")
+        self.assertIn("待验证", packet["gap_summary"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_empty_and_non_mapping_inputs_are_safe(self):

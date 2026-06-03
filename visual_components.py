@@ -4688,6 +4688,14 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         if isinstance(item, dict)
     ) or "暂无能力明细"
     fact_items = [item for item in (facts_packet.get("items") or []) if isinstance(item, dict)]
+    fact_gap_summary = _home_text(facts_packet.get("gap_summary"), "")
+    fact_next_checks = [str(item).strip() for item in (facts_packet.get("next_manual_checks") or []) if str(item).strip()]
+    fact_gap_html = ""
+    if fact_gap_summary or fact_next_checks:
+        fact_gap_html = f"""
+        <div class="cc-muted-note">数据缺口说明：{escape(fact_gap_summary or "暂无缺口说明。")}</div>
+        {_home_list(fact_next_checks, "暂无下一步检查建议。", limit=4)}
+        """
     if fact_items:
         facts_html = ""
         for item in fact_items[:5]:
@@ -4763,6 +4771,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">已验证事实</div>
           <div class="cc-muted-note">{escape(_home_text(facts_packet.get("summary"), "暂无可验证事实包。"))}</div>
+          {fact_gap_html}
           {facts_html}
         </div>
         <div class="cc-home-panel">

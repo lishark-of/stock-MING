@@ -35,6 +35,9 @@ ACTION_HINTS = {
     "chip_radar": "筹码/胜率只作压力位和结构验证，缺失时保持待验证。",
 }
 
+RESTRICTED_STATES = {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}
+PENDING_STATES = {"empty_recent", "stale_cache", "fallback_used", "requires_manual_refresh", "unknown"}
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -100,6 +103,83 @@ def _section_state(section: Mapping[str, Any], capability_item: Mapping[str, Any
 
 def _status_for_state(state: str) -> str:
     return STATE_TEXT.get(state, STATE_TEXT["unknown"])
+
+
+def _gap_action_for_item(item: Mapping[str, Any]) -> str:
+    label = to_text(item.get("label"), "数据")
+    api = to_text(item.get("api"))
+    state = to_text(item.get("state"), "unknown")
+    suffix = f"（{api}）" if api else ""
+    if state == "permission_denied":
+        return f"{label}{suffix}权限不足：不要把缺失数据当成利好，需升级权限或改用替代口径。"
+    if state == "disabled_this_session":
+        return f"{label}{suffix}本会话已跳过重复请求：如已升级权限或需要重试，请手动重新检测。"
+    if state == "empty_recent":
+        return f"{label}{suffix}近期无记录：说明没有可验证事件，不等同于资金或机构支持。"
+    if state == "requires_manual_refresh":
+        return f"{label}{suffix}需要手动刷新：页面打开不会自动触发重接口。"
+    if state == "stale_cache":
+        return f"{label}{suffix}正在使用缓存：需要确认交易日和更新时间。"
+    if state == "network_failed":
+        return f"{label}{suffix}网络失败：保留上次结果，不自动重试。"
+    if state == "failed":
+        return f"{label}{suffix}读取失败：先查看错误原因，再决定是否手动刷新。"
+    if state == "not_configured":
+        return f"{label}{suffix}未配置：需要补齐本地配置后再验证。"
+    return f"{label}{suffix}待验证：当前不能作为交易依据。"
+
+
+def _fact_summary(items: list[dict]) -> dict:
+    available = [item for item in items if item.get("state") == "available"]
+    restricted = [item for item in items if item.get("state") in RESTRICTED_STATES]
+    pending = [item for item in items if item.get("state") in PENDING_STATES]
+    next_checks = [_gap_action_for_item(item) for item in restricted + pending]
+    available_labels = [item["label"] for item in available]
+    restricted_labels = [item["label"] for item in restricted]
+    pending_labels = [item["label"] for item in pending]
+    gap_summary = (
+        f"可用证据：{'、'.join(available_labels) if available_labels else '无'}；"
+        f"受限/失败：{'、'.join(restricted_labels) if restricted_labels else '无'}；"
+        f"待验证/缓存：{'、'.join(pending_labels) if pending_labels else '无'}。"
+    )
+    return {
+        "available_items": available_labels,
+        "restricted_items": [
+            {
+                "key": item.get("key"),
+                "label": item.get("label"),
+                "status": item.get("status"),
+                "state": item.get("state"),
+                "api": item.get("api"),
+                "reason": item.get("risk") or item.get("evidence"),
+                "action_hint": _gap_action_for_item(item),
+            }
+            for item in restricted
+        ],
+        "pending_items": [
+            {
+                "key": item.get("key"),
+                "label": item.get("label"),
+                "status": item.get("status"),
+                "state": item.get("state"),
+                "api": item.get("api"),
+                "reason": item.get("risk") or item.get("evidence"),
+                "action_hint": _gap_action_for_item(item),
+            }
+            for item in pending
+        ],
+        "gap_summary": gap_summary,
+        "next_manual_checks": next_checks[:6],
+    }
+
+
+def _with_fact_summary(packet: Mapping[str, Any]) -> dict:
+    payload = dict(packet)
+    items = [as_mapping(item) for item in as_list(payload.get("items"))]
+    items = [item for item in items if item]
+    payload["items"] = items
+    payload.update(_fact_summary(items))
+    return payload
 
 
 def _evidence_for_section(section_key: str, section: Mapping[str, Any]) -> str:
@@ -187,7 +267,7 @@ def build_a_share_facts_packet(
         status = "partial"
     else:
         status = "waiting"
-    return {
+    return _with_fact_summary({
         "status": status,
         "market": "A股",
         "ticker": to_text(target or facts.get("stock_code")),
@@ -200,7 +280,7 @@ def build_a_share_facts_packet(
         "source": to_text(facts.get("data_source"), "Tushare + local cache"),
         "updated_at": to_text(facts.get("updated_at") or as_mapping(capability).get("checked_at")),
         "deepseek_called": False,
-    }
+    })
 
 
 def build_command_center_facts_packet(
@@ -211,10 +291,10 @@ def build_command_center_facts_packet(
     state_map = as_mapping(state)
     existing = as_mapping(state_map.get("command_center_facts_packet") or state_map.get("command_center_a_share_facts_packet"))
     if existing.get("items"):
-        return {
+        return _with_fact_summary({
             **existing,
             "deepseek_called": False,
-        }
+        })
     facts = state_map.get("a_share_professional_facts") or {}
     capability = state_map.get("a_share_professional_data_capability") or {}
     if facts or capability:
