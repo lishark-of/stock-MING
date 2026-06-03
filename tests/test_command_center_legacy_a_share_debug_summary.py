@@ -46,9 +46,11 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
             limit_emotion_data=limit_emotion,
         )
 
-        self.assertEqual(len(rows), 4)
+        self.assertEqual(len(rows), 6)
         self.assertIn("moneyflow", missing)
         self.assertIn("dragon_tiger", missing)
+        self.assertIn("chip_radar", missing)
+        self.assertIn("hard_risk", missing)
         self.assertTrue(any("moneyflow" in item and "权限" in item for item in permission_issues))
         self.assertTrue(any("dragon_tiger" in item and "数据尚未更新" in item for item in stale_issues))
         margin_row = next(row for row in rows if row["name"] == "margin")
@@ -124,6 +126,7 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         by_group = {item["key"]: item for item in console["groups"]}
         self.assertEqual(by_group["permission_denied"]["items"], ["个股资金流"])
         self.assertEqual(by_group["available"]["count"], 3)
+        self.assertEqual(by_group["stale_or_empty"]["items"], ["筹码 / 胜率", "公告 / 硬风险"])
         self.assertFalse(console["deepseek_called"])
         json.dumps(view_model, ensure_ascii=False)
 
@@ -139,10 +142,10 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["tone"], "info")
         self.assertIn("暂未取得", view_model["headline"])
         self.assertIn("等待交易日数据发布", view_model["next_action"])
-        self.assertGreaterEqual(view_model["counts"]["stale_or_empty"], 2)
+        self.assertGreaterEqual(view_model["counts"]["stale_or_empty"], 4)
         self.assertIn("技术缺失项", view_model["summary"])
         self.assertEqual(view_model["status_console"]["decision_readiness_label"], "谨慎验证")
-        self.assertIn("暂无数据 2", view_model["status_console"]["summary"])
+        self.assertIn("暂无数据 4", view_model["status_console"]["summary"])
 
     def test_user_data_diagnostic_marks_all_available(self):
         view_model = debug_summary.build_user_data_diagnostic_view_model(
@@ -151,16 +154,43 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
             dragon_data={"available": True},
             margin_data={"available": True},
             limit_emotion_data={"available": True},
+            chip_radar_data={"available": True},
+            hard_risk_data={"available": True},
         )
 
         self.assertEqual(view_model["tone"], "success")
         self.assertIn("可用", view_model["headline"])
-        self.assertEqual(view_model["counts"]["available"], 4)
+        self.assertEqual(view_model["counts"]["available"], 6)
         self.assertEqual(view_model["recovery_actions"], [])
         self.assertIn("暂无需要恢复", view_model["recovery_summary"])
         self.assertEqual(view_model["status_console"]["decision_readiness_label"], "可进入证据链")
-        self.assertIn("可用 4", view_model["status_console"]["summary"])
+        self.assertIn("可用 6", view_model["status_console"]["summary"])
         self.assertIn("DeepSeek 解释", view_model["next_action"])
+
+    def test_user_data_diagnostic_includes_chip_and_hard_risk_recovery(self):
+        view_model = debug_summary.build_user_data_diagnostic_view_model(
+            verified_technical_facts={"available": True},
+            moneyflow_data={"available": True},
+            dragon_data={"available": True},
+            margin_data={"available": True},
+            limit_emotion_data={"available": True},
+            chip_radar_data={"available": False, "message": "暂未取得可验证筹码/胜率数据"},
+            hard_risk_data={"status": "failed", "error": "公告接口权限不足"},
+        )
+
+        dumped = json.dumps(view_model, ensure_ascii=False)
+        self.assertIn("筹码 / 胜率", dumped)
+        self.assertIn("公告 / 硬风险", dumped)
+        chip_item = next(item for item in view_model["items"] if item["key"] == "chip_radar")
+        hard_item = next(item for item in view_model["items"] if item["key"] == "hard_risk")
+        self.assertEqual(chip_item["status"], "stale_or_empty")
+        self.assertEqual(chip_item["writes_packet"], "command_center_chip_packet")
+        self.assertEqual(chip_item["refresh_policy"], "button_gated")
+        self.assertEqual(hard_item["status"], "permission_denied")
+        self.assertEqual(hard_item["legacy_tab"], "天眼风控")
+        self.assertEqual(hard_item["writes_packet"], "command_center_hard_risk_packet")
+        self.assertFalse(chip_item["deepseek_called"])
+        self.assertFalse(hard_item["deepseek_called"])
 
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_debug_summary.py").read_text(encoding="utf-8"))

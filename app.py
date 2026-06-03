@@ -9806,6 +9806,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             dragon_data=dragon_data,
             margin_data=margin_data,
             limit_emotion_data=limit_emotion_data,
+            chip_radar_data=chip_radar_data or st.session_state.get("command_center_chip_packet"),
+            hard_risk_data=st.session_state.get("command_center_hard_risk_packet"),
         )
         diagnostic_message = (
             f"{legacy_user_diagnostic.get('title')}：{legacy_user_diagnostic.get('headline')}｜"

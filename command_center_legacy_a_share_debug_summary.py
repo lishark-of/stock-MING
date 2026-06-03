@@ -5,12 +5,14 @@ from typing import Any
 
 
 PERMISSION_KEYWORDS = ("权限", "permission", "积分", "无接口访问权限")
-STALE_KEYWORDS = ("无数据", "暂未取得", "数据尚未更新")
+STALE_KEYWORDS = ("无数据", "暂无可验证", "暂未取得", "数据尚未更新", "待刷新", "待验证", "缺失")
 FUND_SOURCE_LABELS = {
     "moneyflow": "个股资金流",
     "dragon_tiger": "龙虎榜",
     "margin": "融资融券",
     "limit_emotion": "涨跌停 / 情绪",
+    "chip_radar": "筹码 / 胜率",
+    "hard_risk": "公告 / 硬风险",
 }
 A_SHARE_RECOVERY_CONFIG = {
     "moneyflow": {
@@ -45,6 +47,22 @@ A_SHARE_RECOVERY_CONFIG = {
         "writes_packet": "command_center_limit_emotion_packet",
         "api_hint": "Tushare stk_limit / limit_list_d / limit_cpt_list",
     },
+    "chip_radar": {
+        "action_label": "检测筹码/胜率",
+        "toolbox_entry": "综合推演中心 / A股数据能力检测",
+        "advanced_entry": "高级工具箱 / 今日关注池 / A股专业数据穿透系统",
+        "legacy_tab": "今日关注池",
+        "writes_packet": "command_center_chip_packet",
+        "api_hint": "Tushare cyq_perf / cyq_chips",
+    },
+    "hard_risk": {
+        "action_label": "检测公告/硬风险",
+        "toolbox_entry": "综合推演中心 / A股数据能力检测",
+        "advanced_entry": "高级工具箱 / 天眼风控",
+        "legacy_tab": "天眼风控",
+        "writes_packet": "command_center_hard_risk_packet",
+        "api_hint": "Tushare anns_d / forecast / holdertrade / pledge / suspend",
+    },
 }
 STATUS_GROUP_CONFIG = {
     "available": {"label": "可用", "tone": "ready", "empty": "暂无可用数据"},
@@ -77,12 +95,31 @@ def debug_status(data: Any) -> bool:
     data = as_mapping(data)
     if "ok" in data:
         return bool(data.get("ok"))
+    status = str(data.get("status") or "").lower()
+    if status in {"ready", "ok", "completed", "success"}:
+        return True
+    if status in {"failed", "error", "failure", "waiting", "missing"}:
+        return False
+    data_status = str(data.get("data_status") or data.get("cache_state") or "").lower()
+    if data_status == "ready":
+        return True
+    if data_status in {"missing", "failed", "waiting"}:
+        return False
     return bool(data.get("available"))
 
 
 def debug_note(data: Any) -> str:
     data = as_mapping(data)
-    return debug_text(data.get("warning") or data.get("message") or data.get("error") or "")
+    risk_notes = as_list(data.get("risk_notes"))
+    return debug_text(
+        data.get("warning")
+        or data.get("message")
+        or data.get("error")
+        or data.get("summary")
+        or data.get("manual_required_text")
+        or (risk_notes[0] if risk_notes else "")
+        or ""
+    )
 
 
 def debug_issue_matches(data: Any, keywords: tuple[str, ...]) -> str:
@@ -120,11 +157,15 @@ def build_fund_rows(
     dragon_data: Any = None,
     margin_data: Any = None,
     limit_emotion_data: Any = None,
+    chip_radar_data: Any = None,
+    hard_risk_data: Any = None,
 ) -> tuple[list[dict], list[str], list[str], list[str]]:
     moneyflow_data = as_mapping(moneyflow_data)
     dragon_data = as_mapping(dragon_data)
     margin_data = as_mapping(margin_data)
     limit_emotion_data = as_mapping(limit_emotion_data)
+    chip_radar_data = as_mapping(chip_radar_data)
+    hard_risk_data = as_mapping(hard_risk_data)
     fund_sources = [
         ("moneyflow", moneyflow_data, {
             "latest_date": moneyflow_data.get("date"),
@@ -149,6 +190,16 @@ def build_fund_rows(
             "limit_down_price": limit_emotion_data.get("down_limit"),
             "recent_limit_records_count": len(as_list(limit_emotion_data.get("limit_records"))),
         }),
+        ("chip_radar", chip_radar_data, {
+            "trade_date": chip_radar_data.get("trade_date") or chip_radar_data.get("date"),
+            "winner_rate": chip_radar_data.get("winner_rate"),
+            "pressure_state": chip_radar_data.get("pressure_state") or chip_radar_data.get("chip_pressure_comment"),
+        }),
+        ("hard_risk", hard_risk_data, {
+            "updated_at": hard_risk_data.get("updated_at"),
+            "risk_state": hard_risk_data.get("risk_state"),
+            "risk_item_count": hard_risk_data.get("risk_item_count") or len(as_list(hard_risk_data.get("risk_items"))),
+        }),
     ]
 
     fund_rows = []
@@ -156,7 +207,7 @@ def build_fund_rows(
     permission_issues = []
     stale_issues = []
     for name, data, extras in fund_sources:
-        available = bool(data.get("available"))
+        available = debug_status(data)
         ok = debug_status(data)
         if not available or not ok:
             funding_missing.append(name)
@@ -229,6 +280,8 @@ def build_legacy_a_share_debug_view_model(
     dragon_data: Any = None,
     margin_data: Any = None,
     limit_emotion_data: Any = None,
+    chip_radar_data: Any = None,
+    hard_risk_data: Any = None,
     ai_context_packet: Any = "",
     whale_fact_packet: Any = None,
     next_day_plan_fact_packet: Any = None,
@@ -240,6 +293,8 @@ def build_legacy_a_share_debug_view_model(
         dragon_data=dragon_data,
         margin_data=margin_data,
         limit_emotion_data=limit_emotion_data,
+        chip_radar_data=chip_radar_data,
+        hard_risk_data=hard_risk_data,
     )
     packet_status = build_packet_status(
         verified_technical_facts=verified_technical_facts,
@@ -361,6 +416,8 @@ def build_user_data_diagnostic_view_model(
     dragon_data: Any = None,
     margin_data: Any = None,
     limit_emotion_data: Any = None,
+    chip_radar_data: Any = None,
+    hard_risk_data: Any = None,
     ai_context_packet: Any = "",
     whale_fact_packet: Any = None,
     next_day_plan_fact_packet: Any = None,
@@ -372,6 +429,8 @@ def build_user_data_diagnostic_view_model(
         dragon_data=dragon_data,
         margin_data=margin_data,
         limit_emotion_data=limit_emotion_data,
+        chip_radar_data=chip_radar_data,
+        hard_risk_data=hard_risk_data,
         ai_context_packet=ai_context_packet,
         whale_fact_packet=whale_fact_packet,
         next_day_plan_fact_packet=next_day_plan_fact_packet,

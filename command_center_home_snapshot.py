@@ -1208,6 +1208,17 @@ def build_home_action_snapshot(
             or _as_mapping(state_map.get("limit_emotion_data"))
             or _as_mapping(state_map.get("a_share_limit_emotion_data"))
         ),
+        chip_radar_data=(
+            _as_mapping(a_share_professional_facts.get("chip_radar"))
+            or _as_mapping(state_map.get("command_center_chip_packet"))
+            or chip_packet
+        ),
+        hard_risk_data=(
+            _as_mapping(a_share_professional_facts.get("verified_hard_risks"))
+            or _as_mapping(a_share_professional_facts.get("hard_risk"))
+            or _as_mapping(state_map.get("command_center_hard_risk_packet"))
+            or hard_risk_packet
+        ),
     )
     data_recovery_actions = build_data_recovery_actions_snapshot(data_capability_console)
     risk_alerts = attach_hard_risk_risk_alerts(

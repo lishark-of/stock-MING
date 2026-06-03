@@ -614,6 +614,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("手动按钮", dumped)
         self.assertIn("command_center_moneyflow_packet", dumped)
         self.assertIn("command_center_dragon_tiger_packet", dumped)
+        self.assertIn("筹码 / 胜率", dumped)
+        self.assertIn("公告 / 硬风险", dumped)
+        self.assertIn("command_center_chip_packet", dumped)
+        self.assertIn("command_center_hard_risk_packet", dumped)
         self.assertIn("页面打开不会自动请求", diagnostic["safe_mode_text"])
         self.assertEqual(diagnostic["recovery_actions"][0]["label"], "个股资金流")
         self.assertEqual(diagnostic["recovery_actions"][0]["refresh_policy"], "button_gated")
@@ -621,8 +625,42 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("高级工具箱", diagnostic["recovery_actions"][0]["navigation_label"])
         self.assertEqual(diagnostic["status_console"]["title"], "A股数据能力控制台")
         self.assertIn("受限 1", diagnostic["status_console"]["summary"])
-        self.assertIn("暂无数据 1", diagnostic["status_console"]["summary"])
+        self.assertIn("暂无数据 3", diagnostic["status_console"]["summary"])
         self.assertEqual(diagnostic["status_console"]["decision_readiness_label"], "阻断加仓")
+        self.assertFalse(payload["deepseek_called"])
+
+    def test_home_snapshot_user_diagnostic_adds_chip_and_hard_risk_recovery_when_missing(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "updated_at": f"{today}T09:30:00",
+            },
+            "a_share_professional_facts": {
+                "verified_technical_facts": {"available": True},
+                "moneyflow": {"available": True, "api": "moneyflow"},
+                "dragon_tiger": {"available": True, "api": "top_list"},
+                "margin": {"available": True, "api": "margin_detail"},
+                "limit_emotion": {"available": True, "api": "stk_limit"},
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T09:40:00")
+        diagnostic = payload["a_share_user_data_diagnostic"]
+        dumped = json.dumps(diagnostic, ensure_ascii=False)
+
+        self.assertIn("筹码 / 胜率", dumped)
+        self.assertIn("公告 / 硬风险", dumped)
+        chip_action = next(action for action in diagnostic["recovery_actions"] if action["key"] == "chip_radar")
+        hard_action = next(action for action in diagnostic["recovery_actions"] if action["key"] == "hard_risk")
+        self.assertEqual(chip_action["writes_packet"], "command_center_chip_packet")
+        self.assertEqual(chip_action["refresh_policy"], "button_gated")
+        self.assertEqual(hard_action["legacy_tab"], "天眼风控")
+        self.assertEqual(hard_action["writes_packet"], "command_center_hard_risk_packet")
+        self.assertIn("暂无数据 2", diagnostic["status_console"]["summary"])
+        self.assertFalse(chip_action["deepseek_called"])
+        self.assertFalse(hard_action["deepseek_called"])
         self.assertFalse(payload["deepseek_called"])
 
     def test_loaded_home_snapshot_keeps_data_capability(self):
@@ -1142,6 +1180,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["chip_packet"]["winner_rate"], 72)
         self.assertEqual(payload["chip_packet"]["pressure_state"], "获利盘压力偏高")
         self.assertIn("手动刷新", payload["chip_packet"]["manual_required_text"])
+        diagnostic_dump = json.dumps(payload["a_share_user_data_diagnostic"], ensure_ascii=False)
+        self.assertIn("筹码 / 胜率", diagnostic_dump)
+        chip_item = next(item for item in payload["a_share_user_data_diagnostic"]["items"] if item["key"] == "chip_radar")
+        self.assertEqual(chip_item["status"], "available")
+        self.assertEqual(chip_item["writes_packet"], "command_center_chip_packet")
+        self.assertNotIn("command_center_chip_packet", json.dumps(payload["a_share_user_data_diagnostic"]["recovery_actions"], ensure_ascii=False))
         self.assertFalse(payload["chip_packet"]["deepseek_called"])
 
     def test_home_snapshot_persists_moneyflow_and_dragon_packets(self):
@@ -1210,6 +1254,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["hard_risk_packet"]["risk_state"], "风险线索存在")
         self.assertEqual(payload["hard_risk_packet"]["risk_item_count"], 1)
         self.assertIn("减持计划待验证", payload["hard_risk_packet"]["risk_items"][0]["message"])
+        diagnostic_dump = json.dumps(payload["a_share_user_data_diagnostic"], ensure_ascii=False)
+        self.assertIn("公告 / 硬风险", diagnostic_dump)
+        hard_item = next(item for item in payload["a_share_user_data_diagnostic"]["items"] if item["key"] == "hard_risk")
+        self.assertEqual(hard_item["status"], "available")
+        self.assertEqual(hard_item["writes_packet"], "command_center_hard_risk_packet")
+        self.assertNotIn("command_center_hard_risk_packet", json.dumps(payload["a_share_user_data_diagnostic"]["recovery_actions"], ensure_ascii=False))
         self.assertFalse(payload["hard_risk_packet"]["deepseek_called"])
 
     def test_home_snapshot_reads_legacy_tianyan_hard_risk_packet(self):
