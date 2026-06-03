@@ -6,6 +6,12 @@ from typing import Any
 
 PERMISSION_KEYWORDS = ("权限", "permission", "积分", "无接口访问权限")
 STALE_KEYWORDS = ("无数据", "暂未取得", "数据尚未更新")
+FUND_SOURCE_LABELS = {
+    "moneyflow": "个股资金流",
+    "dragon_tiger": "龙虎榜",
+    "margin": "融资融券",
+    "limit_emotion": "涨跌停 / 情绪",
+}
 
 
 def as_mapping(value: Any) -> dict:
@@ -220,4 +226,97 @@ def build_legacy_a_share_debug_view_model(
         "packet_status_rows": _dict_rows(packet_status, "字段", "状态"),
         "missing_summary": missing_summary,
         "missing_rows": _dict_rows(missing_summary, "类别", "摘要"),
+    }
+
+
+def _classify_fund_row(row: dict) -> tuple[str, str, str]:
+    name = str(row.get("name") or "")
+    note = str(row.get("note") or "")
+    if row.get("available") and row.get("ok"):
+        return "available", "已取得", "已读取到可验证数据。"
+    if debug_issue_matches({"message": note}, PERMISSION_KEYWORDS):
+        return "permission_denied", "权限不足", "当前接口可能需要更高 Tushare 权限或积分。"
+    if debug_issue_matches({"message": note}, STALE_KEYWORDS):
+        return "stale_or_empty", "暂无当日数据", "可能为非交易日、数据尚未发布或标的暂不覆盖。"
+    return "manual_required", "待手动刷新", "页面打开不会自动请求重接口，需要点击检测或刷新。"
+
+
+def build_user_data_diagnostic_view_model(
+    verified_technical_facts: Any = None,
+    moneyflow_data: Any = None,
+    dragon_data: Any = None,
+    margin_data: Any = None,
+    limit_emotion_data: Any = None,
+    ai_context_packet: Any = "",
+    whale_fact_packet: Any = None,
+    next_day_plan_fact_packet: Any = None,
+    single_stock_war_room_fact_packet: Any = None,
+) -> dict:
+    debug_view_model = build_legacy_a_share_debug_view_model(
+        verified_technical_facts=verified_technical_facts,
+        moneyflow_data=moneyflow_data,
+        dragon_data=dragon_data,
+        margin_data=margin_data,
+        limit_emotion_data=limit_emotion_data,
+        ai_context_packet=ai_context_packet,
+        whale_fact_packet=whale_fact_packet,
+        next_day_plan_fact_packet=next_day_plan_fact_packet,
+        single_stock_war_room_fact_packet=single_stock_war_room_fact_packet,
+    )
+
+    items = []
+    counts = {
+        "available": 0,
+        "permission_denied": 0,
+        "stale_or_empty": 0,
+        "manual_required": 0,
+    }
+    for row in debug_view_model.get("fund_rows") or []:
+        status, status_label, reason = _classify_fund_row(row)
+        counts[status] = counts.get(status, 0) + 1
+        items.append({
+            "key": row.get("name") or "",
+            "label": FUND_SOURCE_LABELS.get(row.get("name"), row.get("name") or "A股数据"),
+            "status": status,
+            "status_label": status_label,
+            "reason": reason,
+            "source": row.get("source") or "暂无可验证数据",
+            "api": row.get("api") or "暂无可验证数据",
+            "note": row.get("note") or "暂无可验证数据",
+        })
+
+    if counts["permission_denied"]:
+        tone = "warning"
+        headline = "部分 A股数据接口权限不足"
+        next_action = "如已升级 Tushare 权限，请点击对应重试或 A股数据能力检测；否则先使用缓存/空态。"
+    elif counts["stale_or_empty"]:
+        tone = "info"
+        headline = "部分 A股数据今日暂未取得"
+        next_action = "等待交易日数据发布后手动刷新，或先按上次成功缓存/空态观察。"
+    elif counts["manual_required"]:
+        tone = "info"
+        headline = "A股专业数据待手动刷新"
+        next_action = "点击上方 A股数据能力检测或对应刷新按钮；页面打开不会自动请求 Tushare 重接口。"
+    else:
+        tone = "success"
+        headline = "A股专业数据能力可用"
+        next_action = "可继续查看事实卡；如需 DeepSeek 解释，仍需手动点击对应按钮。"
+
+    reason_parts = []
+    missing_summary = debug_view_model.get("missing_summary") or {}
+    for key in ["权限不足项", "数据未更新项", "资金缺失项", "技术缺失项"]:
+        value = missing_summary.get(key)
+        if value and value != "无":
+            reason_parts.append(f"{key}：{value}")
+
+    return {
+        "title": "A股数据能力诊断",
+        "tone": tone,
+        "headline": headline,
+        "summary": "；".join(reason_parts) if reason_parts else "关键 A股事实已读取到可验证数据。",
+        "next_action": next_action,
+        "safe_mode_text": "页面打开不会自动请求 Tushare、AkShare、DeepSeek 或回测；所有重型动作仍需手动按钮触发。",
+        "items": items,
+        "counts": counts,
+        "debug_view_model": debug_view_model,
     }

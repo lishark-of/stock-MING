@@ -9702,6 +9702,37 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             limit_emotion_packet=st.session_state.get("command_center_limit_emotion_packet"),
             chip_packet=st.session_state.get("command_center_chip_packet"),
         )
+        legacy_user_diagnostic = legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(
+            verified_technical_facts=verified_technical_facts,
+            moneyflow_data=moneyflow_data,
+            dragon_data=dragon_data,
+            margin_data=margin_data,
+            limit_emotion_data=limit_emotion_data,
+        )
+        diagnostic_message = (
+            f"{legacy_user_diagnostic.get('title')}：{legacy_user_diagnostic.get('headline')}｜"
+            f"{legacy_user_diagnostic.get('summary')}｜下一步：{legacy_user_diagnostic.get('next_action')}"
+        )
+        diagnostic_tone = legacy_user_diagnostic.get("tone")
+        if diagnostic_tone == "warning":
+            st.warning(diagnostic_message)
+        elif diagnostic_tone == "success":
+            st.success(diagnostic_message)
+        else:
+            st.info(diagnostic_message)
+        st.caption(legacy_user_diagnostic.get("safe_mode_text") or "页面打开不会自动请求外部重接口。")
+        with st.expander("A股数据能力诊断明细", expanded=False):
+            diagnostic_df = pd.DataFrame(legacy_user_diagnostic.get("items") or [])
+            diagnostic_columns = [
+                "label",
+                "status_label",
+                "reason",
+                "source",
+                "api",
+                "note",
+            ]
+            diagnostic_columns = [column for column in diagnostic_columns if column in diagnostic_df.columns]
+            st.dataframe(diagnostic_df[diagnostic_columns], width="stretch", hide_index=True)
         st.caption(
             f"{legacy_packet_summary.get('title')}：{legacy_packet_summary.get('status_label')}｜"
             f"{legacy_packet_summary.get('summary')}｜{legacy_packet_summary.get('manual_note')}"

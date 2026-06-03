@@ -92,6 +92,53 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertIn("暂未取得", view_model["missing_summary"]["数据未更新项"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_user_data_diagnostic_explains_permission_issues(self):
+        view_model = debug_summary.build_user_data_diagnostic_view_model(
+            verified_technical_facts={"available": True},
+            moneyflow_data={"available": False, "error": "无接口访问权限"},
+            dragon_data={"available": True},
+            margin_data={"available": True},
+            limit_emotion_data={"available": True},
+        )
+
+        self.assertEqual(view_model["tone"], "warning")
+        self.assertIn("权限不足", view_model["headline"])
+        self.assertIn("Tushare 权限", view_model["next_action"])
+        self.assertIn("页面打开不会自动请求", view_model["safe_mode_text"])
+        item = next(item for item in view_model["items"] if item["key"] == "moneyflow")
+        self.assertEqual(item["status"], "permission_denied")
+        self.assertEqual(item["status_label"], "权限不足")
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_user_data_diagnostic_explains_stale_or_empty_data(self):
+        view_model = debug_summary.build_user_data_diagnostic_view_model(
+            verified_technical_facts={"available": False, "missing": ["verified_technical_facts"]},
+            moneyflow_data={"available": False, "warning": "近5日暂未取得可验证数据"},
+            dragon_data={"available": False, "warning": "数据尚未更新"},
+            margin_data={"available": True},
+            limit_emotion_data={"available": True},
+        )
+
+        self.assertEqual(view_model["tone"], "info")
+        self.assertIn("暂未取得", view_model["headline"])
+        self.assertIn("等待交易日数据发布", view_model["next_action"])
+        self.assertGreaterEqual(view_model["counts"]["stale_or_empty"], 2)
+        self.assertIn("技术缺失项", view_model["summary"])
+
+    def test_user_data_diagnostic_marks_all_available(self):
+        view_model = debug_summary.build_user_data_diagnostic_view_model(
+            verified_technical_facts={"available": True},
+            moneyflow_data={"available": True},
+            dragon_data={"available": True},
+            margin_data={"available": True},
+            limit_emotion_data={"available": True},
+        )
+
+        self.assertEqual(view_model["tone"], "success")
+        self.assertIn("可用", view_model["headline"])
+        self.assertEqual(view_model["counts"]["available"], 4)
+        self.assertIn("DeepSeek 解释", view_model["next_action"])
+
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_legacy_a_share_debug_summary.py").read_text(encoding="utf-8"))
         imports = []
