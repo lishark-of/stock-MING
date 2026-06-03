@@ -292,6 +292,73 @@ def build_market_method_guidance(analysis_method_packet: Any = None) -> dict:
     }
 
 
+def _evidence_validation_tone(evidence_state: str) -> str:
+    if evidence_state == "blocked":
+        return "danger"
+    if evidence_state in {"missing", "cached"}:
+        return "warning"
+    return "success"
+
+
+def _evidence_validation_action(label: str, evidence_state: str) -> str:
+    if evidence_state == "blocked":
+        return f"先排除 {label} 阻断项；未排除前不应加仓或放大仓位。"
+    if evidence_state == "missing":
+        return f"先补齐 {label}；缺失时只能保留观察或谨慎路径。"
+    if evidence_state == "cached":
+        return f"复核 {label} 缓存日期和口径；过期缓存不能当作今日事实。"
+    return f"{label}可作为辅助证据，但仍需价格、纪律和仓位共振。"
+
+
+def build_strategy_evidence_validation_items(evidence_radar_packet: Any = None) -> list[dict]:
+    evidence = _as_mapping(evidence_radar_packet)
+    queue = evidence.get("decision_evidence_queue") or []
+    if not isinstance(queue, list):
+        queue = []
+    if not queue:
+        queue = (
+            list(evidence.get("blocker_items") or [])
+            + list(evidence.get("missing_items") or [])
+            + list(evidence.get("cached_items") or [])
+            + list(evidence.get("support_items") or [])
+        )
+    items = []
+    for raw in queue:
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        evidence_state = _to_text(item.get("evidence_state")) or "missing"
+        label = _to_text(item.get("label")) or "A股证据"
+        items.append(
+            {
+                "key": _to_text(item.get("key")) or "a_share_evidence",
+                "label": label,
+                "priority": item.get("priority") or 3,
+                "evidence_state": evidence_state,
+                "evidence_label": _to_text(item.get("evidence_label")) or "待验证证据",
+                "tone": _evidence_validation_tone(evidence_state),
+                "check_text": _to_text(item.get("decision_signal")) or _evidence_validation_action(label, evidence_state),
+                "action_hint": _evidence_validation_action(label, evidence_state),
+            }
+        )
+        if len(items) >= 6:
+            break
+    if not items:
+        return [
+            {
+                "key": "a_share_evidence_missing",
+                "label": "A股证据雷达",
+                "priority": 1,
+                "evidence_state": "missing",
+                "evidence_label": "缺失证据",
+                "tone": "warning",
+                "check_text": "A股证据雷达尚未生成；策略执行只能作为待验证路径。",
+                "action_hint": "先刷新今日基础数据或手动检测关键 A股能力。",
+            }
+        ]
+    return items
+
+
 def _data_status_label(value: Any) -> str:
     state = _to_text(value).lower() or "missing"
     return DATA_STATUS_STATE_LABELS.get(state, _to_text(value) or "待刷新")
@@ -337,13 +404,18 @@ def _warning_items(packet: Mapping[str, Any]) -> list[str]:
     return warnings[:6] or ["暂无新增异常；仍需遵守不追高、不自动重仓。"]
 
 
-def build_strategy_summary_view_model(packet: Any, analysis_method_packet: Any = None) -> dict:
+def build_strategy_summary_view_model(
+    packet: Any,
+    analysis_method_packet: Any = None,
+    evidence_radar_packet: Any = None,
+) -> dict:
     payload = _as_mapping(packet)
     is_empty = not bool(payload)
     action = "尚未生成" if is_empty else strategy_action_label(payload)
     confidence = "待生成" if is_empty else (_to_text(payload.get("confidence")) or "低")
     summary = _to_text(payload.get("summary")) or "尚未生成策略执行建议。点击按钮后只读取缓存、量化摘要和纪律结果，不调用 DeepSeek，不跑回测。"
     market_guidance = build_market_method_guidance(analysis_method_packet)
+    evidence_validation_items = build_strategy_evidence_validation_items(evidence_radar_packet)
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -365,6 +437,8 @@ def build_strategy_summary_view_model(packet: Any, analysis_method_packet: Any =
         "data_status_items": build_strategy_data_status_items(payload),
         "warning_items": _warning_items(payload),
         "market_method_guidance": market_guidance,
+        "evidence_validation_items": evidence_validation_items,
+        "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
         "risk_label": _to_text(_as_mapping(payload.get("risk_budget")).get("risk_level")) or "未知",
         "deepseek_text": "DeepSeek：已调用" if bool(payload.get("deepseek_called")) else "DeepSeek：未调用",
         "updated_text": _to_text(payload.get("updated_at")) or "暂无",

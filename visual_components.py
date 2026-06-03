@@ -4498,6 +4498,15 @@ def render_strategy_execution_command_card(
         <div class="cc-strategy-guidance-row"><span>失效</span><b>{escape(str(guidance.get("invalidation_condition") or "市场画像无法确认时只保留观察。"))}</b></div>
       </div>
     """
+    evidence_validation_html = "".join(
+        f"<div class='cc-strategy-condition {_tone_to_strategy_class(item.get('tone'))}'>"
+        f"<div class='cc-strategy-label'>P{escape(str(item.get('priority') or 3))} · {escape(str(item.get('label') or '证据'))}</div>"
+        f"<div class='cc-strategy-text'>{escape(str(item.get('check_text') or '待验证。'))}</div>"
+        f"<div class='cc-strategy-check'>✓ {escape(str(item.get('action_hint') or '先验证再执行。'))}</div>"
+        "</div>"
+        for item in (vm.get("evidence_validation_items") or [])[:6]
+        if isinstance(item, dict)
+    )
     pill_items = [
         (f"状态：{vm.get('status_label') or '待生成'}", vm.get("status_tone")),
         (f"风险：{risk_level}", risk_level),
@@ -4528,6 +4537,8 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-section-title">操作条件</div>
       <div class="cc-strategy-condition-grid">{condition_html}</div>
       {guidance_html}
+      <div class="cc-strategy-section-title">证据验证重点 · {escape(str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
+      <div class="cc-strategy-condition-grid">{evidence_validation_html}</div>
       <div class="cc-strategy-section-title">未来 5-10 日路径</div>
       <div class="cc-strategy-path-grid">{path_html}</div>
       <div class="cc-strategy-foot-grid">

@@ -3915,7 +3915,7 @@ def render_command_center_decision_card(live_packet, target="", position_profile
     return live_packet
 
 
-def render_strategy_execution_card(live_packet, target="", position_profile=None, analysis_method_packet=None):
+def render_strategy_execution_card(live_packet, target="", position_profile=None, analysis_method_packet=None, evidence_radar_packet=None):
     live_packet = _attach_strategy_execution_packet(live_packet)
     packet = _get_strategy_execution_display_packet()
     st.caption("路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释")
@@ -3941,7 +3941,11 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
             strategy_packet=packet,
         )
 
-    strategy_vm = build_strategy_summary_view_model(packet, analysis_method_packet=analysis_method_packet)
+    strategy_vm = build_strategy_summary_view_model(
+        packet,
+        analysis_method_packet=analysis_method_packet,
+        evidence_radar_packet=evidence_radar_packet,
+    )
     render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
     return live_packet
 
@@ -4646,6 +4650,7 @@ packet:
     )
     with home_snapshot_slot.container():
         render_home_action_snapshot(home_snapshot)
+    evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
     st.caption("本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释。")
     analysis_method_packet = _build_analysis_methods_display_packet(
         live_packet=live_packet,
@@ -4678,6 +4683,7 @@ packet:
         target=target,
         position_profile=position_profile,
         analysis_method_packet=analysis_method_packet,
+        evidence_radar_packet=evidence_radar_vm,
     )
     render_command_center_live_cards(
         live_packet,

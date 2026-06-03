@@ -177,6 +177,55 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("回踩", joined)
         self.assertIn("流动性", joined)
 
+    def test_a_share_evidence_validation_items_block_unverified_execution(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            evidence_radar_packet={
+                "decision_summary": "支持 1｜阻断 1｜缓存 1｜缺失 1",
+                "decision_evidence_queue": [
+                    {
+                        "key": "hard_risk",
+                        "label": "硬风险/公告",
+                        "priority": 1,
+                        "evidence_state": "blocked",
+                        "evidence_label": "阻断证据",
+                        "decision_signal": "硬风险/公告失败/受限，不能支撑加仓或放大仓位。",
+                    },
+                    {
+                        "key": "margin",
+                        "label": "融资融券",
+                        "priority": 2,
+                        "evidence_state": "cached",
+                        "evidence_label": "缓存证据",
+                    },
+                    {
+                        "key": "dragon_tiger",
+                        "label": "龙虎榜",
+                        "priority": 3,
+                        "evidence_state": "missing",
+                        "evidence_label": "缺失证据",
+                    },
+                ],
+            },
+        )
+        items = view_model["evidence_validation_items"]
+        dumped = json.dumps(items, ensure_ascii=False)
+
+        self.assertEqual(view_model["evidence_validation_summary"], "支持 1｜阻断 1｜缓存 1｜缺失 1")
+        self.assertEqual(items[0]["key"], "hard_risk")
+        self.assertEqual(items[0]["tone"], "danger")
+        self.assertIn("不能支撑加仓", dumped)
+        self.assertIn("复核 融资融券 缓存", dumped)
+        self.assertIn("先补齐 龙虎榜", dumped)
+
+    def test_missing_evidence_validation_is_safe(self):
+        view_model = summary.build_strategy_summary_view_model({"status": "ready"}, evidence_radar_packet={})
+
+        self.assertEqual(view_model["evidence_validation_items"][0]["key"], "a_share_evidence_missing")
+        self.assertIn("先刷新今日基础数据", view_model["evidence_validation_items"][0]["action_hint"])
+        self.assertFalse("DeepSeek" in json.dumps(view_model["evidence_validation_items"], ensure_ascii=False))
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_strategy_summary.py").read_text())
         imports = []
