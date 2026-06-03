@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from command_center_data_capability_dashboard import build_data_capability_dashboard_view_model
 from command_center_evidence_summary import build_a_share_evidence_radar_view_model
 from command_center_decision_summary import build_decision_summary_view_model
 from command_center_strategy_summary import build_strategy_summary_view_model
@@ -4687,11 +4688,30 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     governance_summary = _home_text(data_gap_report.get("summary"), capability_summary)
     governance_checks = [str(item).strip() for item in (data_gap_report.get("next_manual_checks") or []) if str(item).strip()]
     capability_items = data_capability.get("items") or []
+    capability_dashboard = build_data_capability_dashboard_view_model(data_capability, data_gap_report)
     capability_text = "；".join(
         f"{_home_text(item.get('label'), item.get('api') or '数据')}: {_home_text(item.get('status'), item.get('state') or '待验证')}"
         for item in capability_items[:5]
         if isinstance(item, dict)
     ) or "暂无能力明细"
+    provider_html = ""
+    for card in (capability_dashboard.get("provider_cards") or [])[:4]:
+        details = "；".join(
+            f"{_home_text(item.get('label'), item.get('api') or '数据')}:{_home_text(item.get('status_label'), item.get('state') or '待验证')}"
+            for item in (card.get("items") or [])[:3]
+            if isinstance(item, dict)
+        ) or "暂无明细"
+        provider_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(card.get("provider"), "数据源"))}
+            <span class="cc-home-chip {escape(_home_text(card.get("tone"), "missing"))}">{escape(_home_text(card.get("summary"), "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(details)}</div>
+        </div>
+        """
+    if not provider_html:
+        provider_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>数据源尚未检测</div><div class='cc-home-item-meta'>页面打开不会自动 ping Tushare、AkShare、yfinance 或 Supabase。</div></div>"
     fact_items = [item for item in (facts_packet.get("items") or []) if isinstance(item, dict)]
     fact_gap_summary = _home_text(facts_packet.get("gap_summary"), "")
     fact_next_checks = [str(item).strip() for item in (facts_packet.get("next_manual_checks") or []) if str(item).strip()]
@@ -4802,6 +4822,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          <div class="cc-muted-note">数据能力诊断：{escape(_home_text(capability_dashboard.get("summary"), "尚未检测数据能力。"))}</div>
+          {provider_html}
           {_home_list(governance_checks, "暂无下一步检查建议。", limit=4)}
           <div class="cc-muted-note">{escape(capability_text)}</div>
           <div class="cc-home-row"><span>DeepSeek</span><strong>{'已调用' if payload.get('deepseek_called') else '未调用'}</strong></div>
