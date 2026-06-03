@@ -721,6 +721,51 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
     }
 
 
+def build_a_share_diagnostic_recovery_result_notice(state: Any = None) -> dict:
+    state_map = _as_mapping(state)
+    result = _as_mapping(state_map.get("command_center_last_a_share_diagnostic_recovery_result"))
+    if not result:
+        return {}
+    label = _to_text(result.get("label"), "A股数据")
+    writes_packet = _to_text(result.get("writes_packet"), "command_center_facts_packet")
+    capability_state = _to_text(result.get("capability_state") or result.get("state"), "unknown")
+    status_label = _to_text(result.get("status_label") or result.get("status"), "待验证")
+    message = _to_text(result.get("message") or result.get("action_hint") or result.get("error"), "已完成手动检测。")
+    updated_at = _to_text(result.get("checked_at") or result.get("updated_at"))
+    packet = _as_mapping(state_map.get(writes_packet))
+    has_packet_payload = _tool_packet_has_payload(packet, writes_packet)
+    if capability_state == "available" or has_packet_payload:
+        status = "recovered"
+        tone = "ready"
+        title = "A股数据恢复结果已回流"
+        next_action = "继续查看 Home Action Snapshot；执行前仍需复核日期、来源和仓位纪律。"
+    elif capability_state in {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}:
+        status = "blocked"
+        tone = "failed"
+        title = "A股数据恢复仍受限"
+        next_action = "保持安全空态或缓存观察；权限、网络或配置恢复后再手动检测。"
+    else:
+        status = "waiting"
+        tone = "stale"
+        title = "A股数据恢复待验证"
+        next_action = "等待交易日数据发布或稍后再次手动检测；不要把缺失数据当成无风险。"
+    return {
+        "status": status,
+        "tone": tone,
+        "title": title,
+        "label": label,
+        "capability_state": capability_state,
+        "status_label": status_label,
+        "message": f"{label}：{status_label}｜{message}",
+        "next_action": next_action,
+        "writes_packet": writes_packet,
+        "updated_at": updated_at,
+        "source": _to_text(result.get("source") or result.get("api_hint"), "A股手动检测"),
+        "deepseek_called": False,
+        "external_call_policy": "button_gated",
+    }
+
+
 def resolve_data_capability_packet(state: Any = None) -> dict:
     state_map = _as_mapping(state)
     healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))

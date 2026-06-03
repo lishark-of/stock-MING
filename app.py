@@ -4510,7 +4510,7 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
             with col:
                 st.caption(f"{action.get('label') or result_label}｜{action.get('status_label') or '待验证'}")
                 st.caption(action.get("reason") or "页面打开不会自动请求 Tushare。")
-                _render_manual_capability_check_button(
+                result = _render_manual_capability_check_button(
                     button_label,
                     f"btn_cc_home_a_share_diagnostic_recovery_{key}",
                     f"正在检测{result_label}...",
@@ -4520,6 +4520,33 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
                     position_profile=position_profile,
                     live_packet=live_packet,
                 )
+                if result:
+                    item = result.get("item") or {}
+                    st.session_state["command_center_last_a_share_diagnostic_recovery_result"] = {
+                        "key": key,
+                        "label": action.get("label") or result_label,
+                        "writes_packet": action.get("writes_packet") or "command_center_facts_packet",
+                        "api_hint": action.get("api_hint") or item.get("api"),
+                        "capability_state": item.get("capability_state") or item.get("state"),
+                        "status_label": item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证",
+                        "message": item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。",
+                        "checked_at": item.get("checked_at") or item.get("updated_at"),
+                        "deepseek_called": False,
+                    }
+        notice = home_snapshot_service.build_a_share_diagnostic_recovery_result_notice(st.session_state)
+        if notice:
+            if notice.get("status") == "recovered":
+                st.success(notice["message"])
+            elif notice.get("status") == "blocked":
+                st.warning(notice["message"])
+            else:
+                st.info(notice["message"])
+            st.caption(
+                f"回流：{notice.get('writes_packet') or 'command_center_facts_packet'}"
+                f"｜来源：{notice.get('source') or 'A股手动检测'}"
+                f"｜更新时间：{notice.get('updated_at') or '暂无'}"
+                f"｜{notice.get('next_action') or '继续观察。'}"
+            )
 
 
 def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", market_type="", position_profile=None, live_packet=None):

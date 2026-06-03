@@ -946,6 +946,57 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["external_call_policy"], "not_triggered")
         self.assertFalse(notice["deepseek_called"])
 
+    def test_a_share_diagnostic_recovery_result_notice_detects_recovered_packet(self):
+        notice = snapshot.build_a_share_diagnostic_recovery_result_notice(
+            {
+                "command_center_last_a_share_diagnostic_recovery_result": {
+                    "label": "个股资金流",
+                    "writes_packet": "command_center_moneyflow_packet",
+                    "capability_state": "available",
+                    "status_label": "可用",
+                    "message": "已读取到最近资金流数据。",
+                    "checked_at": "2026-06-03T10:00:00",
+                    "api_hint": "Tushare moneyflow",
+                    "deepseek_called": False,
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "summary": "资金流已回流",
+                    "updated_at": "2026-06-03T10:00:00",
+                },
+            }
+        )
+
+        self.assertEqual(notice["status"], "recovered")
+        self.assertEqual(notice["tone"], "ready")
+        self.assertIn("个股资金流", notice["message"])
+        self.assertEqual(notice["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(notice["external_call_policy"], "button_gated")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_a_share_diagnostic_recovery_result_notice_reports_blocked_state(self):
+        notice = snapshot.build_a_share_diagnostic_recovery_result_notice(
+            {
+                "command_center_last_a_share_diagnostic_recovery_result": {
+                    "label": "龙虎榜",
+                    "writes_packet": "command_center_dragon_tiger_packet",
+                    "capability_state": "permission_denied",
+                    "status_label": "权限不足",
+                    "message": "当前接口权限不足。",
+                    "checked_at": "2026-06-03T10:05:00",
+                    "api_hint": "Tushare top_list / top_inst",
+                    "deepseek_called": False,
+                }
+            }
+        )
+
+        self.assertEqual(notice["status"], "blocked")
+        self.assertEqual(notice["tone"], "failed")
+        self.assertIn("权限不足", notice["message"])
+        self.assertIn("权限", notice["next_action"])
+        self.assertEqual(notice["external_call_policy"], "button_gated")
+        self.assertFalse(notice["deepseek_called"])
+
     def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(
