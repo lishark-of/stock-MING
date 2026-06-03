@@ -4940,6 +4940,25 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     evidence_vm = build_a_share_evidence_radar_view_model(payload)
     evidence_items = [item for item in (evidence_vm.get("items") or []) if isinstance(item, dict)]
+    evidence_action_items = [item for item in (evidence_vm.get("next_evidence_actions") or []) if isinstance(item, dict)]
+    evidence_action_html = ""
+    for item in evidence_action_items[:3]:
+        manual_action = item.get("manual_action") or {}
+        refresh_policy = _home_text(manual_action.get("refresh_policy"), "button_gated")
+        refresh_policy_text = "手动触发" if refresh_policy == "button_gated" else refresh_policy
+        evidence_action_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "待补证据"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">P{escape(_home_number(item.get("priority")))} · {escape(_home_text(item.get("evidence_label"), "待验证证据"))}</span>
+          </div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("action_hint"), "手动补齐证据后再进入决策。"))}</div>
+          <div class="cc-home-item-meta">入口：{escape(_home_text(manual_action.get("toolbox_entry"), "高级工具箱 / 数据源体检"))} ｜ 动作：{escape(_home_text(manual_action.get("button_label"), "手动刷新"))}</div>
+          <div class="cc-home-item-meta">回流：{escape(_home_text(manual_action.get("writes_packet"), "command_center_facts_packet"))} ｜ 触发：{escape(refresh_policy_text)}</div>
+        </div>
+        """
+    if not evidence_action_html:
+        evidence_action_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>A股证据暂不需要补齐</div><div class='cc-home-item-meta'>当前证据队列没有阻断、缓存或缺失项；仍需结合价格纪律和仓位规则。</div></div>"
     evidence_html = ""
     for item in evidence_items:
         evidence_html += f"""
@@ -5038,6 +5057,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-panel-title">已验证事实</div>
           {discipline_html}
           <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))} ｜ {escape(_home_text(evidence_vm.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
+          <div class="cc-home-item-title">下一步证据补齐队列</div>
+          {evidence_action_html}
           {evidence_html}
           <div class="cc-muted-note">{escape(_home_text(facts_packet.get("summary"), "暂无可验证事实包。"))}</div>
           {fact_gap_html}

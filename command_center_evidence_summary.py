@@ -69,6 +69,40 @@ EVIDENCE_DEFS = (
 )
 
 
+EVIDENCE_ACTIONS = {
+    "moneyflow": {
+        "button_label": "手动刷新个股资金流",
+        "toolbox_entry": "高级工具箱 / A股专业实盘 / 个股资金流",
+        "writes_packet": "command_center_moneyflow_packet",
+    },
+    "hard_risk": {
+        "button_label": "手动刷新公告/硬风险",
+        "toolbox_entry": "高级工具箱 / 天眼风控 / A股公告风险",
+        "writes_packet": "command_center_hard_risk_packet",
+    },
+    "margin": {
+        "button_label": "手动刷新融资融券",
+        "toolbox_entry": "高级工具箱 / 融资 ETF / 融资融券",
+        "writes_packet": "command_center_margin_packet",
+    },
+    "limit_emotion": {
+        "button_label": "手动刷新涨跌停/情绪",
+        "toolbox_entry": "高级工具箱 / 数据源体检 / 涨跌停情绪",
+        "writes_packet": "command_center_limit_emotion_packet",
+    },
+    "dragon_tiger": {
+        "button_label": "手动刷新龙虎榜",
+        "toolbox_entry": "高级工具箱 / 下一票雷达 / 龙虎榜",
+        "writes_packet": "command_center_dragon_tiger_packet",
+    },
+    "chip_radar": {
+        "button_label": "手动刷新筹码/胜率",
+        "toolbox_entry": "高级工具箱 / 量化推演 / 筹码胜率",
+        "writes_packet": "command_center_chip_packet",
+    },
+}
+
+
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -175,6 +209,28 @@ def _decision_signal(label: str, headline: str, evidence_state: str) -> str:
     return f"{label}待验证，当前不进入核心决策依据。"
 
 
+def _evidence_action_hint(label: str, evidence_state: str) -> str:
+    if evidence_state == "blocked":
+        return f"先确认{label}是否权限不足、接口失败或本会话跳过；未恢复前不要把缺失写成利好。"
+    if evidence_state == "cached":
+        return f"交易前复核{label}交易日和更新时间；需要最新口径时手动刷新。"
+    if evidence_state == "missing":
+        return f"点击对应入口手动补齐{label}，补齐前只作为待验证证据。"
+    return f"{label}已可辅助验证，仍需和价格纪律、仓位规则一起看。"
+
+
+def _manual_action(key: str, label: str, evidence_state: str) -> dict:
+    config = EVIDENCE_ACTIONS.get(key, {})
+    return {
+        "button_label": to_text(config.get("button_label"), f"手动刷新{label}"),
+        "toolbox_entry": to_text(config.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+        "writes_packet": to_text(config.get("writes_packet"), f"command_center_{key}_packet"),
+        "refresh_policy": "button_gated",
+        "reason": _evidence_action_hint(label, evidence_state),
+        "deepseek_called": False,
+    }
+
+
 def _format_metric(key: str, value: int | float | None, suffix: str) -> str:
     if value is None:
         return "暂无数值"
@@ -218,9 +274,10 @@ def build_evidence_item(
         default="待验证" if data_status == "missing" else "已读取",
     )
     evidence_state = _evidence_state(status, data_status)
+    label_text = to_text(label, "A股证据")
     return {
         "key": key,
-        "label": label,
+        "label": label_text,
         "priority": priority,
         "decision_role": decision_role,
         "status": status,
@@ -236,6 +293,8 @@ def build_evidence_item(
         "updated_at": _first_text(payload.get("updated_at"), payload.get("trade_date"), default="暂无时间"),
         "risk_text": _risk_text(payload),
         "manual_required_text": _first_text(payload.get("manual_required_text"), default="缺失时需要手动刷新或权限校验。"),
+        "next_action": _evidence_action_hint(label_text, evidence_state),
+        "manual_action": _manual_action(key, label_text, evidence_state),
         "deepseek_called": False,
     }
 
@@ -271,6 +330,23 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
             item["label"],
         ),
     )
+    next_evidence_actions = [
+        {
+            "key": item["key"],
+            "label": item["label"],
+            "priority": item["priority"],
+            "evidence_state": item["evidence_state"],
+            "evidence_label": item["evidence_label"],
+            "status_label": item["status_label"],
+            "tone": item["tone"],
+            "action_hint": item["next_action"],
+            "manual_action": item["manual_action"],
+            "decision_role": item["decision_role"],
+            "deepseek_called": False,
+        }
+        for item in decision_evidence_queue
+        if item["evidence_state"] != "supporting"
+    ]
     summary = (
         f"已刷新 {len(ready)} 项｜使用缓存 {len(cached)} 项｜失败/受限 {len(failed)} 项｜待验证 {len(missing)} 项"
     )
@@ -287,6 +363,7 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         "cached_items": cached_items,
         "missing_items": missing_items,
         "decision_evidence_queue": decision_evidence_queue,
+        "next_evidence_actions": next_evidence_actions,
         "ready_count": len(ready),
         "cached_count": len(cached),
         "failed_count": len(failed),

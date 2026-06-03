@@ -78,6 +78,28 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(queue[1]["key"], "moneyflow")
         self.assertIn("硬风险", vm["blocker_items"][0]["label"])
 
+    def test_next_evidence_actions_explain_manual_packet_backfill(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "moneyflow_packet": {"status": "ready", "data_status": "ready", "summary": "资金流可用"},
+                "hard_risk_packet": {"status": "failed", "data_status": "missing", "summary": "公告权限不足"},
+                "margin_packet": {"status": "partial", "data_status": "cached", "summary": "融资缓存"},
+                "dragon_tiger_packet": {"status": "waiting", "data_status": "missing", "summary": "待查龙虎榜"},
+            }
+        )
+        actions = vm["next_evidence_actions"]
+        dumped = json.dumps(actions, ensure_ascii=False)
+
+        self.assertEqual(actions[0]["key"], "hard_risk")
+        self.assertNotIn("moneyflow", {item["key"] for item in actions})
+        self.assertIn("高级工具箱", dumped)
+        self.assertIn("command_center_hard_risk_packet", dumped)
+        self.assertIn("command_center_margin_packet", dumped)
+        for item in actions:
+            self.assertEqual(item["manual_action"]["refresh_policy"], "button_gated")
+            self.assertFalse(item["manual_action"]["deepseek_called"])
+            self.assertFalse(item["deepseek_called"])
+
     def test_limit_and_chip_specific_headlines_are_visible(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {
