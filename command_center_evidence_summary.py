@@ -10,6 +10,7 @@ EVIDENCE_DEFS = (
     ("dragon_tiger_packet", "dragon_tiger", "龙虎榜", "activity_state", ("net_buy_amount_yi",), "亿"),
     ("margin_packet", "margin", "融资融券", "leverage_state", ("financing_buy_yi", "financing_balance_yi"), "亿"),
     ("limit_emotion_packet", "limit_emotion", "涨跌停/情绪", "emotion_state", ("distance_to_up_pct", "up_limit"), ""),
+    ("hard_risk_packet", "hard_risk", "硬风险/公告", "risk_state", ("risk_item_count",), "项"),
     ("chip_packet", "chip_radar", "筹码/胜率", "pressure_state", ("winner_rate",), "%"),
 )
 
@@ -102,6 +103,8 @@ def _format_metric(key: str, value: int | float | None, suffix: str) -> str:
         return f"{value:.2f}%"
     if suffix == "亿":
         return f"{value:+.2f}亿"
+    if suffix == "项":
+        return f"{int(value)}项" if float(value).is_integer() else f"{value}项"
     return f"{value}"
 
 

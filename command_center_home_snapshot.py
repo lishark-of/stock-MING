@@ -19,6 +19,7 @@ import command_center_moneyflow_packet as moneyflow_packet_service
 import command_center_dragon_tiger_packet as dragon_tiger_packet_service
 import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
+import command_center_hard_risk_packet as hard_risk_packet_service
 
 
 CACHE_DIR_NAME = ".stock_ming_cache"
@@ -189,6 +190,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "dragon_tiger_packet": dragon_tiger_packet_service.build_command_center_dragon_tiger_packet({}),
         "margin_packet": margin_packet_service.build_command_center_margin_packet({}),
         "limit_emotion_packet": limit_emotion_packet_service.build_command_center_limit_emotion_packet({}),
+        "hard_risk_packet": hard_risk_packet_service.build_command_center_hard_risk_packet({}),
         "margin_etf_summary": {
             "current_margin_ratio": None,
             "recommended_margin_ratio": None,
@@ -280,6 +282,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["limit_emotion_packet"] = limit_emotion_packet_service.build_command_center_limit_emotion_packet(
         {"command_center_limit_emotion_packet": snapshot.get("limit_emotion_packet") or {}}
+    )
+    snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
+        {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
     return snapshot
 
@@ -697,6 +702,11 @@ def build_home_action_snapshot(
         live,
         target=target,
     )
+    hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet(
+        state_map,
+        live,
+        target=target,
+    )
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
     timestamp = _to_text(
         refresh.get("finished_at")
@@ -744,6 +754,7 @@ def build_home_action_snapshot(
         "dragon_tiger_packet": dragon_tiger_packet,
         "margin_packet": margin_packet,
         "limit_emotion_packet": limit_emotion_packet,
+        "hard_risk_packet": hard_risk_packet,
         "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
         "risk_alerts": build_risk_alerts(decision, strategy, coverage, errors),
         "data_coverage": coverage,
@@ -777,6 +788,7 @@ def build_home_action_snapshot(
         empty["dragon_tiger_packet"] = snapshot["dragon_tiger_packet"]
         empty["margin_packet"] = snapshot["margin_packet"]
         empty["limit_emotion_packet"] = snapshot["limit_emotion_packet"]
+        empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["errors"] = errors
         return empty
     return sanitize_snapshot_payload(snapshot)
@@ -796,6 +808,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
         or _as_mapping(payload.get("dragon_tiger_packet")).get("data_status") == "ready"
         or _as_mapping(payload.get("margin_packet")).get("data_status") == "ready"
         or _as_mapping(payload.get("limit_emotion_packet")).get("data_status") == "ready"
+        or _as_mapping(payload.get("hard_risk_packet")).get("data_status") == "ready"
         or _as_list(payload.get("next_ticket_candidates"))
         or _as_list(_as_mapping(payload.get("radar_packet")).get("top_candidates"))
         or _as_list(_as_mapping(payload.get("etf_packet")).get("recommended_etfs"))

@@ -555,6 +555,39 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(payload["moneyflow_packet"]["deepseek_called"])
         self.assertFalse(payload["dragon_tiger_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_hard_risk_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "a_share_professional_facts": {
+                "verified_hard_risks": {
+                    "available": True,
+                    "target": "002008.SZ",
+                    "updated_at": f"{today}T10:01:00",
+                    "risk_items": [
+                        {
+                            "type": "公告风险",
+                            "message": "减持计划待验证",
+                            "date": "20260603",
+                            "source": "Tushare anns_d",
+                        }
+                    ],
+                }
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["hard_risk_packet"]["data_status"], "ready")
+        self.assertEqual(payload["hard_risk_packet"]["risk_state"], "风险线索存在")
+        self.assertEqual(payload["hard_risk_packet"]["risk_item_count"], 1)
+        self.assertIn("减持计划待验证", payload["hard_risk_packet"]["risk_items"][0]["message"])
+        self.assertFalse(payload["hard_risk_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_margin_packet(self):
         today = _dt.date.today().isoformat()
         state = {

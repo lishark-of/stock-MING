@@ -10,10 +10,10 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
     def test_missing_snapshot_builds_waiting_radar(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model({})
 
-        self.assertEqual(len(vm["items"]), 5)
+        self.assertEqual(len(vm["items"]), 6)
         self.assertEqual(vm["ready_count"], 0)
-        self.assertEqual(vm["missing_count"], 5)
-        self.assertIn("待验证 5 项", vm["summary"])
+        self.assertEqual(vm["missing_count"], 6)
+        self.assertIn("待验证 6 项", vm["summary"])
         self.assertFalse(vm["deepseek_called"])
         json.dumps(vm, ensure_ascii=False)
 
@@ -76,6 +76,27 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(by_key["limit_emotion"]["headline"], "接近涨停/追高区")
         self.assertEqual(by_key["chip_radar"]["headline"], "获利盘压力偏高")
         self.assertEqual(by_key["chip_radar"]["metric"], "72.00%")
+
+    def test_hard_risk_packet_headline_and_count_are_visible(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "hard_risk_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "risk_state": "风险线索存在",
+                    "risk_item_count": 2,
+                    "risk_notes": ["公告标题线索涉及：减持。"],
+                    "source": "Tushare 硬风险缓存",
+                    "updated_at": "2026-06-03T10:00:00",
+                },
+            }
+        )
+        by_key = {item["key"]: item for item in vm["items"]}
+
+        self.assertEqual(by_key["hard_risk"]["headline"], "风险线索存在")
+        self.assertEqual(by_key["hard_risk"]["metric"], "2项")
+        self.assertIn("减持", by_key["hard_risk"]["risk_text"])
+        self.assertFalse(by_key["hard_risk"]["deepseek_called"])
 
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_evidence_summary.py").read_text(encoding="utf-8"))
