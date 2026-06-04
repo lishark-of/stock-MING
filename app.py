@@ -4753,6 +4753,52 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
             )
 
 
+def render_legacy_a_share_gap_recovery_panel(snapshot_context=None, key_prefix="legacy_a_share"):
+    payload = snapshot_context if isinstance(snapshot_context, dict) else {}
+    legacy_gap_summary = home_snapshot_service.build_legacy_a_share_gap_summary(payload)
+    if not isinstance(legacy_gap_summary, dict):
+        return
+    gap_items = [item for item in (legacy_gap_summary.get("items") or []) if isinstance(item, dict)]
+    if not gap_items:
+        return
+    absence_ledger = home_snapshot_service.build_old_workspace_data_absence_ledger(
+        {**payload, "legacy_a_share_gap_summary": legacy_gap_summary}
+    )
+    with st.container(border=True):
+        st.markdown("#### 数据恢复中心｜旧版数据缺口总账")
+        st.caption(
+            f"{legacy_gap_summary.get('headline') or '旧能力缺口待验证'}｜"
+            f"{legacy_gap_summary.get('summary') or '等待本地 packet 回流'}"
+        )
+        st.caption(
+            absence_ledger.get("short_answer")
+            or "Tushare 基础连接正常不等于每个旧版专业接口都有当日数据；这里按接口原因分账。"
+        )
+        st.caption(legacy_gap_summary.get("safe_mode_text") or "这里只读取本地 packet；不会自动调用外部接口。")
+        columns = st.columns(min(2, len(gap_items)))
+        for index, item in enumerate(gap_items):
+            with columns[index % len(columns)]:
+                st.markdown(f"**{item.get('label') or '旧版能力'}**")
+                st.caption(
+                    f"{item.get('readable_state') or item.get('status_label') or '待验证'}"
+                    f"｜写回：{item.get('writes_packet') or 'command_center_packet'}"
+                    f"｜入口：{item.get('toolbox_entry') or item.get('legacy_tab') or '高级工具箱'}"
+                )
+                st.caption(f"为什么搜不到：{item.get('why_not_found') or item.get('diagnostic_answer') or item.get('message') or '仍需核对接口、交易日和缓存。'}")
+                st.caption(f"按钮说明：{item.get('button_context') or item.get('recovery_button_context') or '按钮只做手动恢复，不自动触发 DeepSeek。'}")
+                st.caption(f"决策保护：{item.get('decision_guardrail') or '未恢复前不能作为加仓、追高或加融资依据。'}")
+                navigation_state = home_snapshot_service.build_tool_recovery_navigation_state(item)
+                if navigation_state and st.button(
+                    f"打开恢复入口：{item.get('label') or '旧版能力'}",
+                    key=f"btn_{key_prefix}_legacy_gap_recovery_{index}_{item.get('key') or item.get('writes_packet')}",
+                    help=item.get("navigation_label") or "切换到对应高级工具；检测仍需手动按钮触发。",
+                    width="stretch",
+                ):
+                    for nav_key, nav_value in navigation_state.items():
+                        st.session_state[nav_key] = nav_value
+                    st.rerun()
+
+
 def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", market_type="", position_profile=None, live_packet=None):
     profile = position_profile if isinstance(position_profile, dict) else {}
     ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
@@ -10133,6 +10179,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             position_profile=st.session_state.get("position_profile") or st.session_state.get("current_holding_context") or {},
             live_packet=st.session_state.get("command_center_live_packet") or {},
         )
+        legacy_gap_context = {
+            "moneyflow_packet": st.session_state.get("command_center_moneyflow_packet"),
+            "dragon_tiger_packet": st.session_state.get("command_center_dragon_tiger_packet"),
+            "margin_packet": st.session_state.get("command_center_margin_packet"),
+            "limit_emotion_packet": st.session_state.get("command_center_limit_emotion_packet"),
+            "chip_packet": st.session_state.get("command_center_chip_packet"),
+            "command_center_moneyflow_packet": st.session_state.get("command_center_moneyflow_packet"),
+            "command_center_dragon_tiger_packet": st.session_state.get("command_center_dragon_tiger_packet"),
+            "command_center_margin_packet": st.session_state.get("command_center_margin_packet"),
+            "command_center_limit_emotion_packet": st.session_state.get("command_center_limit_emotion_packet"),
+            "command_center_chip_packet": st.session_state.get("command_center_chip_packet"),
+        }
+        render_legacy_a_share_gap_recovery_panel(legacy_gap_context, key_prefix=f"legacy_a_share_{stock_code}")
         st.caption(
             f"{legacy_packet_summary.get('title')}：{legacy_packet_summary.get('status_label')}｜"
             f"{legacy_packet_summary.get('summary')}｜{legacy_packet_summary.get('manual_note')}"

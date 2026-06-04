@@ -42,6 +42,22 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("_run_manual_hard_risk_capability_check", tokens)
         self.assertIn("btn_cc_home_a_share_diagnostic_recovery_", tokens)
 
+    def test_legacy_a_share_page_surfaces_gap_recovery_ledger(self):
+        tokens = _function_tokens("render_legacy_a_share_gap_recovery_panel")
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        _assert_token_contains(self, tokens, "数据恢复中心｜旧版数据缺口总账")
+        _assert_token_contains(self, tokens, "为什么搜不到：")
+        _assert_token_contains(self, tokens, "按钮说明：")
+        _assert_token_contains(self, tokens, "决策保护：")
+        _assert_token_contains(self, tokens, "打开恢复入口：")
+        self.assertIn("build_legacy_a_share_gap_summary", tokens)
+        self.assertIn("build_old_workspace_data_absence_ledger", tokens)
+        self.assertIn("build_tool_recovery_navigation_state", tokens)
+        self.assertIn("render_legacy_a_share_gap_recovery_panel(legacy_gap_context", source)
+        self.assertIn("command_center_limit_emotion_packet", source)
+        self.assertIn("command_center_chip_packet", source)
+
     def test_evidence_backfill_controls_are_labeled_as_recovery_center(self):
         tokens = _function_tokens("render_home_evidence_backfill_controls")
 
