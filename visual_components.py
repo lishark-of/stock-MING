@@ -4814,6 +4814,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         or payload.get("data_health_timeline")
         or {}
     )
+    provider_data_cockpit = payload.get("provider_data_capability_cockpit") or {}
     data_health_timeline_recovery_actions = (
         payload.get("command_center_data_health_timeline_recovery_actions")
         or payload.get("data_health_timeline_recovery_actions")
@@ -5151,6 +5152,35 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">{escape(_home_text(provider_gap_explainer.get("explanation"), "不同数据源失败原因不同；不会自动请求外部接口。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(provider_gap_explainer.get("next_action"), "按数据恢复中心手动处理。"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(provider_gap_explainer.get("external_call_policy"), "not_triggered"))}</div>
           {provider_gap_item_html}
+        </div>
+        """
+    provider_cockpit_card_html = ""
+    for item in (provider_data_cockpit.get("providers") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        provider_cockpit_card_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), item.get("provider") or "数据源"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待检测"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(item.get("role"), "数据源"))}｜{escape(_home_text(item.get("summary"), "可用 0｜受限 0｜需手动 0｜缓存/待验证 0"))}</div>
+          <div class="cc-home-item-meta">最近成功：{escape(_home_text(item.get("last_success"), "暂无"))} ｜ 最近阻断：{escape(_home_text(item.get("last_failure"), "无"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}</div>
+          <div class="cc-home-item-meta">决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失或未验证不能作为加仓依据。"))}</div>
+        </div>
+        """
+    if not provider_cockpit_card_html:
+        provider_cockpit_card_html = "<div class='cc-home-item-meta'>暂无数据源能力驾驶舱；页面打开不会自动请求外部接口。</div>"
+    provider_cockpit_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(provider_data_cockpit.get("title"), "数据源能力驾驶舱"))}
+            <span class="cc-home-chip {escape(_home_text(provider_data_cockpit.get("tone"), "missing"))}">{escape(_home_text(provider_data_cockpit.get("summary"), "Tushare / AkShare / yfinance / Supabase｜待检测"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(provider_data_cockpit.get("headline"), "Provider 数据能力待检测"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(provider_data_cockpit.get("safe_mode_text"), "不会自动调用外部接口。"))} ｜ DeepSeek：未调用</div>
+          {provider_cockpit_card_html}
         </div>
         """
     old_absence_cause_html = ""
@@ -6153,6 +6183,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          {provider_cockpit_html}
           {tushare_gap_explainer_html}
           {provider_gap_explainer_html}
           {old_workspace_absence_html}
@@ -6223,6 +6254,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                         item.get("manual_check_instruction") or item.get("navigation_label"),
                         "切换到高级工具箱对应模块；不自动执行旧工具。",
                     ),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
+    valid_provider_cockpit_actions = [
+        item
+        for item in (provider_data_cockpit.get("recovery_actions") or [])[:4]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_provider_cockpit_actions:
+        st.caption("数据源能力驾驶舱｜打开恢复入口：这里只切换到高级工具箱；不会自动请求外部接口。")
+        provider_cols = st.columns(min(4, len(valid_provider_cockpit_actions)))
+        for index, item in enumerate(valid_provider_cockpit_actions):
+            with provider_cols[index % len(provider_cols)]:
+                st.button(
+                    f"{_home_text(item.get('status_label'), '待检测')}｜{_home_text(item.get('label'), '数据源')}",
+                    key=f"btn_open_provider_cockpit_{_home_text(item.get('provider'), 'provider')}_{index}",
+                    help=_home_text(item.get("recovery_button_context") or item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
                     on_click=_apply_tool_recovery_navigation,
                     args=(item,),
                     width="stretch",

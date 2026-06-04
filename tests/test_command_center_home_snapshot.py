@@ -963,7 +963,53 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("AkShare 重型刷新", dumped)
         self.assertIn("需要手动刷新", dumped)
         self.assertIn("provider_gap_explainer", json.dumps(payload["data_capability_console"], ensure_ascii=False))
+        cockpit = payload["provider_data_capability_cockpit"]
+        cockpit_dumped = json.dumps(cockpit, ensure_ascii=False)
+        self.assertIn("Tushare", cockpit_dumped)
+        self.assertIn("AkShare", cockpit_dumped)
+        self.assertIn("Supabase", cockpit_dumped)
+        self.assertIn("yfinance", cockpit_dumped)
+        self.assertTrue(cockpit["recovery_actions"])
+        self.assertFalse(cockpit["deepseek_called"])
         self.assertFalse(capability["deepseek_called"])
+
+    def test_provider_data_capability_cockpit_groups_core_providers(self):
+        cockpit = snapshot.build_provider_data_capability_cockpit(
+            {
+                "data_capability": {
+                    "items": [
+                        {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用", "latest_date": "20260604"},
+                        {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足"},
+                        {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                        {"provider": "yfinance", "api": "yfinance_market_data", "label": "yfinance 行情/新闻", "capability_state": "stale_cache", "status": "使用缓存"},
+                        {"provider": "Supabase", "api": "brain_memory", "label": "brain_memory", "capability_state": "not_configured", "status": "未配置"},
+                    ]
+                }
+            }
+        )
+        providers = {item["provider"]: item for item in cockpit["providers"]}
+
+        self.assertEqual(cockpit["title"], "数据源能力驾驶舱")
+        self.assertEqual(cockpit["status"], "blocked")
+        self.assertEqual(set(providers), {"Tushare", "AkShare", "yfinance", "Supabase"})
+        self.assertEqual(providers["Tushare"]["status"], "blocked")
+        self.assertEqual(providers["Tushare"]["available_count"], 1)
+        self.assertEqual(providers["Tushare"]["blocked_count"], 1)
+        self.assertEqual(providers["AkShare"]["manual_count"], 1)
+        self.assertEqual(providers["yfinance"]["stale_count"], 1)
+        self.assertEqual(providers["Supabase"]["blocked_count"], 1)
+        self.assertIn("不要用 A股口径替代美股数据", providers["yfinance"]["next_action"])
+        self.assertIn("Tushare / AkShare / yfinance / Supabase", cockpit["summary"])
+        self.assertTrue(cockpit["recovery_actions"])
+        tushare_action = next(item for item in cockpit["recovery_actions"] if item["provider"] == "Tushare")
+        navigation_state = snapshot.build_tool_recovery_navigation_state(tushare_action)
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "数据源体检")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_policy"], "navigation_only")
+        self.assertIn("不会自动调用 Tushare", cockpit["safe_mode_text"])
+        self.assertFalse(cockpit["deepseek_called"])
+        self.assertEqual(cockpit["external_call_policy"], "not_triggered")
+        json.dumps(cockpit, ensure_ascii=False)
 
     def test_home_snapshot_builds_data_gap_report(self):
         today = _dt.date.today().isoformat()

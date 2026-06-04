@@ -155,6 +155,39 @@ OLD_WORKSPACE_API_TO_WRITES_PACKET = {
     "cyq_perf": "command_center_chip_packet",
     "cyq_chips": "command_center_chip_packet",
     "akshare_manual_refresh": "command_center_data_capability_packet",
+    "yfinance_market_data": "command_center_data_capability_packet",
+    "brain_memory": "command_center_data_capability_packet",
+}
+
+PROVIDER_CAPABILITY_COCKPIT_CONFIG = {
+    "Tushare": {
+        "label": "Tushare",
+        "role": "A股专业数据",
+        "legacy_tab": "数据源体检",
+        "action_label": "手动检测 Tushare 专业接口",
+        "next_action": "优先处理权限/积分、本会话跳过和近期无记录；不要把缺口当成行情不存在。",
+    },
+    "AkShare": {
+        "label": "AkShare",
+        "role": "A股补充/重型刷新",
+        "legacy_tab": "数据源体检",
+        "action_label": "手动刷新 AkShare",
+        "next_action": "仅在需要时手动刷新；页面打开不会自动跑 AkShare 重型接口。",
+    },
+    "yfinance": {
+        "label": "yfinance",
+        "role": "美股/全球行情补充",
+        "legacy_tab": "数据源体检",
+        "action_label": "手动检测 yfinance",
+        "next_action": "手动检测美股/全球行情；不要用 A股口径替代美股数据。",
+    },
+    "Supabase": {
+        "label": "Supabase",
+        "role": "云端外脑/记忆",
+        "legacy_tab": "云端外脑",
+        "action_label": "检查 Supabase 配置",
+        "next_action": "检查本地配置和连接状态；云端外脑缺失不影响本地结构化决策链。",
+    },
 }
 
 SENSITIVE_KEY_PARTS = (
@@ -381,6 +414,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         snapshot["data_health_timeline"]
     )
     snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
+    snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot = attach_decision_loop_status(snapshot)
     return snapshot
@@ -443,6 +477,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         snapshot["data_health_timeline"]
     )
     snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
+    snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
     snapshot["a_share_user_data_diagnostic"] = (
         _as_mapping(snapshot.get("a_share_user_data_diagnostic"))
         or legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model()
@@ -1478,6 +1513,200 @@ def build_old_workspace_data_absence_ledger(snapshot: Any = None) -> dict:
         ),
         "next_action": next_action,
         "safe_mode_text": "这里只读取本地数据能力、恢复队列和旧工具 packet；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+def _provider_cockpit_name(provider: Any = "") -> str:
+    text = _to_text(provider, "数据源")
+    if "Tushare" in text:
+        return "Tushare"
+    if "AkShare" in text:
+        return "AkShare"
+    if "yfinance" in text or "Yahoo" in text:
+        return "yfinance"
+    if "Supabase" in text:
+        return "Supabase"
+    return text
+
+
+def _provider_cockpit_row(raw: Any = None) -> dict:
+    item = _as_mapping(raw)
+    if not item:
+        return {}
+    provider = _provider_cockpit_name(item.get("provider") or item.get("source"))
+    state = _to_text(item.get("state") or item.get("capability_state") or item.get("status"), "unknown")
+    category = _to_text(item.get("category"))
+    if not category:
+        if state in {"available", "ready", "ok", "success", "可用"}:
+            category = "available"
+        elif state in CAPABILITY_RESTRICTED_STATES or state in {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed", "error", "权限不足", "本会话跳过", "未配置", "网络失败"}:
+            category = "blocked"
+        elif state == "requires_manual_refresh" or _to_text(item.get("refresh_policy")) in {"button_gated", "manual_required"}:
+            category = "manual"
+        else:
+            category = "stale"
+    return {
+        "provider": provider,
+        "label": _to_text(item.get("label") or item.get("module") or item.get("api"), "数据能力"),
+        "api": _to_text(item.get("api") or item.get("table")),
+        "state": state,
+        "category": category,
+        "status_label": _to_text(item.get("status_label") or item.get("status") or item.get("capability_label"), state),
+        "tone": _to_text(item.get("tone"), "ready" if category == "available" else "failed" if category == "blocked" else "missing" if category == "manual" else "stale"),
+        "latest_date": _to_text(item.get("latest_date") or item.get("date") or item.get("trade_date")),
+        "last_checked": _to_text(item.get("last_checked") or item.get("checked_at") or item.get("updated_at")),
+        "last_success": _to_text(item.get("last_success") or item.get("last_success_text") or item.get("latest_date")),
+        "meaning": _to_text(item.get("meaning") or item.get("diagnostic_answer") or item.get("reason"), "仍需核对接口状态、日期和覆盖范围。"),
+        "decision_guardrail": _to_text(item.get("decision_guardrail") or item.get("decision_impact"), "缺失或未验证不能作为加仓、追高或加融资依据。"),
+        "writes_packet": _to_text(item.get("writes_packet") or _infer_old_workspace_writes_packet(item), "command_center_data_capability_packet"),
+        "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+def _collect_provider_cockpit_rows(snapshot: Mapping[str, Any]) -> list[dict]:
+    candidates: list[dict] = []
+    data_health_ledger = _as_mapping(snapshot.get("data_health_ledger"))
+    candidates.extend(_provider_cockpit_row(item) for item in _as_list(data_health_ledger.get("rows")))
+    data_capability = _as_mapping(snapshot.get("data_capability"))
+    candidates.extend(_provider_cockpit_row(item) for item in _as_list(data_capability.get("items")))
+    data_issue_explainer = _as_mapping(snapshot.get("data_issue_explainer"))
+    candidates.extend(_provider_cockpit_row(item) for item in _as_list(data_issue_explainer.get("interface_diagnostic_items")))
+    deduped = []
+    seen = set()
+    for item in candidates:
+        if not item:
+            continue
+        key = (
+            _to_text(item.get("provider")).lower(),
+            _to_text(item.get("api")).lower(),
+            _to_text(item.get("label")).lower(),
+            _to_text(item.get("state")).lower(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _provider_cockpit_status(rows: list[dict]) -> tuple[str, str, str]:
+    if not rows:
+        return "missing", "missing", "待检测"
+    if any(row["category"] == "blocked" for row in rows):
+        return "blocked", "failed", "受限"
+    if any(row["category"] in {"manual", "stale"} for row in rows):
+        return "partial", "stale", "待复核"
+    return "ready", "ready", "可用"
+
+
+def build_provider_data_capability_cockpit(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    rows = _collect_provider_cockpit_rows(payload)
+    provider_cards = []
+    provider_rows_by_name: dict[str, list[dict]] = {}
+    for row in rows:
+        provider_rows_by_name.setdefault(_provider_cockpit_name(row.get("provider")), []).append(row)
+    for provider, config in PROVIDER_CAPABILITY_COCKPIT_CONFIG.items():
+        provider_rows = provider_rows_by_name.get(provider, [])
+        available = [row for row in provider_rows if row["category"] == "available"]
+        blocked = [row for row in provider_rows if row["category"] == "blocked"]
+        manual = [row for row in provider_rows if row["category"] == "manual"]
+        stale = [row for row in provider_rows if row["category"] == "stale"]
+        status, tone, status_label = _provider_cockpit_status(provider_rows)
+        first_attention = (blocked or manual or stale or available or [{}])[0]
+        last_success = _to_text(
+            first_attention.get("last_success") or first_attention.get("latest_date"),
+            "暂无" if not available else "已返回可用结果",
+        )
+        last_failure = "、".join(_to_text(row.get("label"), "数据能力") for row in blocked[:3]) or "无"
+        action_label = _to_text(config.get("action_label"), f"手动检测{provider}")
+        legacy_tab = _to_text(config.get("legacy_tab"), "数据源体检")
+        recovery_action = {
+            "key": f"provider_cockpit:{provider}",
+            "label": _to_text(config.get("label"), provider),
+            "provider": provider,
+            "api": _to_text(first_attention.get("api")),
+            "state": status,
+            "status_label": status_label,
+            "tone": tone,
+            "action_label": action_label,
+            "toolbox_entry": f"高级工具箱 / {legacy_tab}",
+            "workspace_target": "高级工具箱（旧版保留）",
+            "workspace_state_key": "workspace_mode_v2",
+            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+            "legacy_tab": legacy_tab,
+            "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动处理 {provider} 数据能力。",
+            "writes_packet": _to_text(first_attention.get("writes_packet"), "command_center_data_capability_packet"),
+            "refresh_policy": "button_gated",
+            "recovery_button_context": f"只打开 {provider} 相关高级工具入口；不会自动调用外部接口、DeepSeek、回测或全市场扫描。",
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
+        provider_cards.append(
+            {
+                "provider": provider,
+                "label": _to_text(config.get("label"), provider),
+                "role": _to_text(config.get("role"), "数据源"),
+                "status": status,
+                "tone": tone,
+                "status_label": status_label,
+                "summary": f"可用 {len(available)}｜受限 {len(blocked)}｜需手动 {len(manual)}｜缓存/待验证 {len(stale)}",
+                "available_count": len(available),
+                "blocked_count": len(blocked),
+                "manual_count": len(manual),
+                "stale_count": len(stale),
+                "total_count": len(provider_rows),
+                "last_success": last_success,
+                "last_failure": last_failure,
+                "next_action": _to_text(config.get("next_action"), "按数据恢复中心手动处理。"),
+                "decision_guardrail": (
+                    f"{provider} 受限项恢复前不能支撑加仓、追高、加融资或自动交易。"
+                    if blocked
+                    else f"{provider} 未实时验证前，只能作为辅助证据。"
+                ),
+                "items": provider_rows[:4],
+                "recovery_action": recovery_action,
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    blocked_count = sum(card["blocked_count"] for card in provider_cards)
+    manual_count = sum(card["manual_count"] for card in provider_cards)
+    stale_count = sum(card["stale_count"] for card in provider_cards)
+    available_count = sum(card["available_count"] for card in provider_cards)
+    if blocked_count:
+        status = "blocked"
+        tone = "failed"
+        headline = f"Provider 数据能力有 {blocked_count} 个阻断项"
+    elif manual_count or stale_count:
+        status = "partial"
+        tone = "stale"
+        headline = f"Provider 数据能力有 {manual_count + stale_count} 个待手动/待复核项"
+    elif available_count:
+        status = "ready"
+        tone = "ready"
+        headline = "Provider 数据能力当前可辅助验证"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "Provider 数据能力待检测"
+    return {
+        "title": "数据源能力驾驶舱",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": f"Tushare / AkShare / yfinance / Supabase｜可用 {available_count}｜受限 {blocked_count}｜需手动 {manual_count}｜缓存/待验证 {stale_count}",
+        "providers": provider_cards,
+        "recovery_actions": [
+            card["recovery_action"]
+            for card in provider_cards
+            if card["status"] != "ready"
+        ],
+        "safe_mode_text": "这里只读取本地数据能力 packet 和健康账本；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
     }
@@ -3659,6 +3888,13 @@ def build_home_action_snapshot(
     data_health_visibility_summary = data_health_ledger_service.build_data_health_visibility_summary(data_health_ledger)
     data_health_timeline = data_health_ledger_service.build_data_health_timeline(data_health_ledger)
     data_health_timeline_recovery_actions = build_data_health_timeline_recovery_actions(data_health_timeline)
+    provider_data_capability_cockpit = build_provider_data_capability_cockpit(
+        {
+            "data_capability": data_capability_snapshot,
+            "data_issue_explainer": data_issue_explainer,
+            "data_health_ledger": data_health_ledger,
+        }
+    )
     a_share_professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
     a_share_user_data_diagnostic = legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(
         verified_technical_facts=(
@@ -3773,6 +4009,7 @@ def build_home_action_snapshot(
         "command_center_data_health_timeline": data_health_timeline,
         "data_health_timeline_recovery_actions": data_health_timeline_recovery_actions,
         "command_center_data_health_timeline_recovery_actions": data_health_timeline_recovery_actions,
+        "provider_data_capability_cockpit": provider_data_capability_cockpit,
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
@@ -3821,6 +4058,7 @@ def build_home_action_snapshot(
         empty["command_center_data_health_timeline"] = snapshot["command_center_data_health_timeline"]
         empty["data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
         empty["command_center_data_health_timeline_recovery_actions"] = snapshot["command_center_data_health_timeline_recovery_actions"]
+        empty["provider_data_capability_cockpit"] = snapshot["provider_data_capability_cockpit"]
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
