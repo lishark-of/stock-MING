@@ -5540,6 +5540,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     recovered_evidence_summary = _home_text(evidence_vm.get("recovered_evidence_summary"), "暂无已回流 A股证据模块")
     core_evidence_items = [item for item in (evidence_vm.get("core_evidence_items") or []) if isinstance(item, dict)]
     core_evidence_summary = _home_text(evidence_vm.get("core_evidence_summary"), "核心证据待验证")
+    core_evidence_action_brief = evidence_vm.get("core_evidence_action_brief") if isinstance(evidence_vm.get("core_evidence_action_brief"), dict) else {}
+    core_evidence_action_html = ""
+    for item in (core_evidence_action_brief.get("items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        core_evidence_action_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), "A股核心证据"))}：
+          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("action_label"), "待验证"))}</span>
+          {escape(_home_text(item.get("guardrail_text"), "证据未补齐前，不支撑放大仓位。"))}
+        </div>
+        """
+    if core_evidence_action_brief and not core_evidence_action_html:
+        core_evidence_action_html = "<div class='cc-home-item-meta'>A股核心证据执行摘要待生成；不会自动请求外部接口。</div>"
     core_evidence_html = ""
     for item in core_evidence_items[:3]:
         core_evidence_html += f"""
@@ -5840,6 +5854,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">风险警报</div>
           {_home_list(risk_alerts.get("must_not_do"), "不追高、不满仓、不在未刷新数据下加融资。")}
+          <div class="cc-home-item-title">{escape(_home_text(core_evidence_action_brief.get("title"), "A股核心证据执行摘要"))}</div>
+          <div class="cc-muted-note">{escape(_home_text(core_evidence_action_brief.get("headline"), "核心证据待验证"))}｜{escape(_home_text(core_evidence_action_brief.get("summary"), "可辅助 0｜阻断 0｜缓存 0｜待补 0"))}</div>
+          <div class="cc-muted-note">{escape(_home_text(core_evidence_action_brief.get("action_summary"), "证据未补齐前，不支撑放大仓位。"))}</div>
+          {core_evidence_action_html}
           {risk_recovery_priority_html}
           <div class="cc-muted-note">必须降风险条件：{escape("；".join(risk_alerts.get("reduce_conditions") or ["暂无新增条件"]))}</div>
           <div class="cc-muted-note">数据缺口：{escape("、".join(risk_alerts.get("data_gaps") or ["暂无"]))}</div>

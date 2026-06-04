@@ -2275,6 +2275,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(evidence["loop_status"]["tone"], "failed")
         self.assertEqual(evidence["loop_status"]["summary"], "支持 1｜阻断 1｜缓存 0｜缺失 4")
         self.assertFalse(evidence["loop_status"]["deepseek_called"])
+        self.assertEqual(evidence["core_evidence_action_brief"]["status"], "partial")
+        self.assertIn("核心证据", evidence["core_evidence_action_brief"]["title"])
+        self.assertIn("待补", evidence["core_evidence_action_brief"]["summary"])
+        self.assertFalse(evidence["core_evidence_action_brief"]["deepseek_called"])
         core = {item["key"]: item for item in evidence["core_evidence_items"]}
         self.assertEqual(list(core), ["dragon_tiger", "margin", "limit_emotion"])
         self.assertEqual(core["margin"]["writes_packet"], "command_center_margin_packet")

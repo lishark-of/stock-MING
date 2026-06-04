@@ -120,6 +120,9 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("A股证据条件门槛", source)
         self.assertIn("path_evidence_group_summary", source)
         self.assertIn("path_evidence_group_items", source)
+        self.assertIn("core_evidence_action_brief", source)
+        self.assertIn("A股核心证据执行摘要", source)
+        self.assertIn("core_evidence_action_html", source)
 
     def test_home_snapshot_renders_recovery_priority_lanes(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

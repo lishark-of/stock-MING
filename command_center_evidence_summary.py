@@ -354,6 +354,92 @@ def core_evidence_summary_text(core_items: Any = None) -> str:
     return f"已刷新 {len(ready)}｜受限 {len(blocked)}｜缓存 {len(cached)}｜待验证 {len(missing)}"
 
 
+def _core_evidence_action_mode(item: Mapping[str, Any]) -> tuple[str, str, str]:
+    state = to_text(item.get("evidence_state"), "missing")
+    if state == "supporting":
+        return "support", "可辅助验证", "已回流，可作为辅助证据；仍需价格纪律和仓位预算确认。"
+    if state == "blocked":
+        return "block", "阻断加仓", "仍受限或失败；不能把缺失写成利好，也不能支持加仓。"
+    if state == "cached":
+        return "verify_cache", "执行前复核", "当前使用缓存；执行前必须复核交易日、来源和覆盖口径。"
+    return "manual_required", "待手动补证", "尚未形成可验证 packet；补齐前只作为待验证。"
+
+
+def build_core_evidence_action_brief(core_items: Any = None) -> dict:
+    rows = [as_mapping(item) for item in as_list(core_items) if as_mapping(item)]
+    if not rows:
+        return {
+            "title": "A股核心证据执行摘要",
+            "status": "missing",
+            "tone": "missing",
+            "headline": "核心证据待验证",
+            "summary": "龙虎榜、融资融券、涨跌停/情绪尚未形成可读摘要。",
+            "action_summary": "先按数据恢复中心手动补证；页面打开不会自动请求 Tushare。",
+            "items": [],
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
+
+    items = []
+    for raw in rows:
+        mode, action_label, fallback = _core_evidence_action_mode(raw)
+        items.append(
+            {
+                "key": to_text(raw.get("key"), "core_evidence"),
+                "label": to_text(raw.get("label"), "A股核心证据"),
+                "status_label": to_text(raw.get("status_label"), "待验证"),
+                "tone": to_text(raw.get("tone"), "missing"),
+                "evidence_state": to_text(raw.get("evidence_state"), "missing"),
+                "action_mode": mode,
+                "action_label": action_label,
+                "guardrail_text": to_text(raw.get("decision_signal") or raw.get("guardrail"), fallback),
+                "next_action": to_text(raw.get("next_action"), fallback),
+                "writes_packet": to_text(raw.get("writes_packet"), "command_center_packet"),
+                "legacy_tab": to_text(raw.get("legacy_tab"), "高级工具箱"),
+                "source": to_text(raw.get("source"), "本地 packet"),
+                "updated_at": to_text(raw.get("updated_at"), "暂无时间"),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+
+    blocked = [item for item in items if item["action_mode"] == "block"]
+    cached = [item for item in items if item["action_mode"] == "verify_cache"]
+    missing = [item for item in items if item["action_mode"] == "manual_required"]
+    support = [item for item in items if item["action_mode"] == "support"]
+    if blocked:
+        status = "blocked"
+        tone = "failed"
+        headline = "核心证据阻断加仓"
+        action_summary = f"先处理{_join_labels(blocked, fallback='阻断证据')}；未恢复前不追高、不加融资、不把缺失写成利好。"
+    elif cached or missing:
+        status = "partial"
+        tone = "stale"
+        headline = "核心证据仍需复核"
+        action_summary = f"{_join_labels(cached + missing, fallback='缓存/缺失证据')}仍需手动复核；执行前保持小仓位或观察。"
+    elif support:
+        status = "ready"
+        tone = "ready"
+        headline = "核心证据可辅助验证"
+        action_summary = "核心证据已回流，可辅助验证；仍不自动交易，最终动作必须结合纪律和仓位规则。"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "核心证据待验证"
+        action_summary = "先补齐龙虎榜、融资融券、涨跌停/情绪；缺失时只观察。"
+    return {
+        "title": "A股核心证据执行摘要",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": f"可辅助 {len(support)}｜阻断 {len(blocked)}｜缓存 {len(cached)}｜待补 {len(missing)}",
+        "action_summary": action_summary,
+        "items": items,
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def _evidence_group_items(items: Any = None, limit: int = 4) -> list[dict]:
     result = []
     for raw in as_list(items):
@@ -736,6 +822,7 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
     promoted_evidence_key = to_text(latest_recovery_impact.get("evidence_key")) if latest_recovery_impact.get("evidence_state") == "supporting" else ""
     recovered_modules = build_recovered_evidence_modules(support_items, promoted_key=promoted_evidence_key)
     core_evidence_items = build_core_evidence_items(items)
+    core_evidence_action_brief = build_core_evidence_action_brief(core_evidence_items)
     evidence_status_groups = build_evidence_status_groups(
         support_items=support_items,
         blocker_items=blocker_items,
@@ -767,6 +854,7 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         "recovered_evidence_summary": recovered_evidence_summary_text(support_items, promoted_key=promoted_evidence_key),
         "core_evidence_items": core_evidence_items,
         "core_evidence_summary": core_evidence_summary_text(core_evidence_items),
+        "core_evidence_action_brief": core_evidence_action_brief,
         "core_evidence_manual_note": "龙虎榜、融资融券、涨跌停/情绪只读取本地 packet；补证和接口请求必须手动触发。",
         "evidence_status_groups": evidence_status_groups,
         "items": items,

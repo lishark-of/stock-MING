@@ -85,6 +85,15 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertIn("融资融券只验证杠杆变化", core["margin"]["guardrail"])
         self.assertEqual(core["limit_emotion"]["evidence_state"], "missing")
         self.assertIn("已刷新 0｜受限 1｜缓存 1｜待验证 1", vm["core_evidence_summary"])
+        action_brief = vm["core_evidence_action_brief"]
+        self.assertEqual(action_brief["status"], "blocked")
+        self.assertEqual(action_brief["headline"], "核心证据阻断加仓")
+        self.assertIn("龙虎榜", action_brief["action_summary"])
+        brief_items = {item["key"]: item for item in action_brief["items"]}
+        self.assertEqual(brief_items["dragon_tiger"]["action_mode"], "block")
+        self.assertEqual(brief_items["margin"]["action_label"], "执行前复核")
+        self.assertEqual(brief_items["limit_emotion"]["action_mode"], "manual_required")
+        self.assertFalse(action_brief["deepseek_called"])
         self.assertFalse(any(item["deepseek_called"] for item in core.values()))
         groups = {item["key"]: item for item in vm["evidence_status_groups"]}
         self.assertEqual(groups["recovered"]["count"], 1)
@@ -149,6 +158,48 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
 
         self.assertEqual(vm["recovered_evidence_modules"], [])
         self.assertIn("暂无已回流", vm["recovered_evidence_summary"])
+
+    def test_core_evidence_action_brief_marks_ready_cached_and_missing_modes(self):
+        core_items = [
+            {
+                "key": "dragon_tiger",
+                "label": "龙虎榜",
+                "evidence_state": "supporting",
+                "tone": "ready",
+                "status_label": "已刷新",
+                "decision_signal": "龙虎榜可辅助验证。",
+                "writes_packet": "command_center_dragon_tiger_packet",
+            },
+            {
+                "key": "margin",
+                "label": "融资融券",
+                "evidence_state": "cached",
+                "tone": "stale",
+                "status_label": "使用缓存",
+                "writes_packet": "command_center_margin_packet",
+            },
+            {
+                "key": "limit_emotion",
+                "label": "涨跌停/情绪",
+                "evidence_state": "missing",
+                "tone": "missing",
+                "status_label": "待验证",
+                "writes_packet": "command_center_limit_emotion_packet",
+            },
+        ]
+
+        brief = evidence_summary.build_core_evidence_action_brief(core_items)
+        by_key = {item["key"]: item for item in brief["items"]}
+
+        self.assertEqual(brief["status"], "partial")
+        self.assertEqual(brief["headline"], "核心证据仍需复核")
+        self.assertIn("融资融券", brief["action_summary"])
+        self.assertEqual(by_key["dragon_tiger"]["action_mode"], "support")
+        self.assertEqual(by_key["margin"]["action_mode"], "verify_cache")
+        self.assertEqual(by_key["limit_emotion"]["action_label"], "待手动补证")
+        self.assertEqual(brief["external_call_policy"], "not_triggered")
+        self.assertFalse(brief["deepseek_called"])
+        json.dumps(brief, ensure_ascii=False)
 
     def test_latest_chip_recovery_promotes_chip_into_visible_evidence_modules(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
