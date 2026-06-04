@@ -774,10 +774,14 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
                 "status": _to_text(payload.get("status") or payload.get("capability_label") or state, "待验证"),
                 "state": state,
                 "latest_date": _to_text(payload.get("latest_date")),
-                "updated_at": _to_text(payload.get("updated_at")),
+                "updated_at": _to_text(payload.get("updated_at") or payload.get("checked_at") or packet.get("checked_at")),
+                "rows": int(_to_number(payload.get("rows") or payload.get("count")) or 0),
+                "latency_ms": int(_to_number(payload.get("latency_ms")) or 0),
                 "source": _to_text(payload.get("source") or packet.get("source"), "数据能力"),
                 "action_hint": _to_text(payload.get("action_hint")),
                 "error": _to_text(payload.get("error")),
+                "message": _to_text(payload.get("message")),
+                "warning": _to_text(payload.get("warning")),
             }
         )
     items = items[:MAX_CAPABILITY_ITEMS]
@@ -1791,7 +1795,7 @@ def _provider_cockpit_name(provider: Any = "") -> str:
     return text
 
 
-def _provider_cockpit_row(raw: Any = None) -> dict:
+def _provider_cockpit_row(raw: Any = None, checked_at: Any = "") -> dict:
     item = _as_mapping(raw)
     if not item:
         return {}
@@ -1816,8 +1820,11 @@ def _provider_cockpit_row(raw: Any = None) -> dict:
         "status_label": _to_text(item.get("status_label") or item.get("status") or item.get("capability_label"), state),
         "tone": _to_text(item.get("tone"), "ready" if category == "available" else "failed" if category == "blocked" else "missing" if category == "manual" else "stale"),
         "latest_date": _to_text(item.get("latest_date") or item.get("date") or item.get("trade_date")),
-        "last_checked": _to_text(item.get("last_checked") or item.get("checked_at") or item.get("updated_at")),
+        "last_checked": _to_text(item.get("last_checked") or item.get("checked_at") or item.get("updated_at") or checked_at),
         "last_success": _to_text(item.get("last_success") or item.get("last_success_text") or item.get("latest_date")),
+        "rows": int(_to_number(item.get("rows") or item.get("count")) or 0),
+        "latency_ms": int(_to_number(item.get("latency_ms")) or 0),
+        "error": _to_text(item.get("error") or item.get("warning") or item.get("message")),
         "meaning": _to_text(item.get("meaning") or item.get("diagnostic_answer") or item.get("reason"), "仍需核对接口状态、日期和覆盖范围。"),
         "decision_guardrail": _to_text(item.get("decision_guardrail") or item.get("decision_impact"), "缺失或未验证不能作为加仓、追高或加融资依据。"),
         "writes_packet": _to_text(item.get("writes_packet") or _infer_old_workspace_writes_packet(item), "command_center_data_capability_packet"),
@@ -1832,11 +1839,15 @@ def _collect_provider_cockpit_rows(snapshot: Mapping[str, Any]) -> list[dict]:
     data_health_ledger = _as_mapping(snapshot.get("data_health_ledger"))
     candidates.extend(_provider_cockpit_row(item) for item in _as_list(data_health_ledger.get("rows")))
     data_capability = _as_mapping(snapshot.get("data_capability"))
-    candidates.extend(_provider_cockpit_row(item) for item in _as_list(data_capability.get("items")))
+    data_capability_checked_at = data_capability.get("checked_at")
+    candidates.extend(
+        _provider_cockpit_row(item, checked_at=data_capability_checked_at)
+        for item in _as_list(data_capability.get("items"))
+    )
     data_issue_explainer = _as_mapping(snapshot.get("data_issue_explainer"))
     candidates.extend(_provider_cockpit_row(item) for item in _as_list(data_issue_explainer.get("interface_diagnostic_items")))
     deduped = []
-    seen = set()
+    seen: dict[tuple[str, str, str, str], dict] = {}
     for item in candidates:
         if not item:
             continue
@@ -1847,8 +1858,15 @@ def _collect_provider_cockpit_rows(snapshot: Mapping[str, Any]) -> list[dict]:
             _to_text(item.get("state")).lower(),
         )
         if key in seen:
+            existing = seen[key]
+            for field in ("latest_date", "last_checked", "last_success", "error", "meaning", "decision_guardrail", "writes_packet"):
+                if _to_text(item.get(field)) and not _to_text(existing.get(field)):
+                    existing[field] = item[field]
+            for field in ("rows", "latency_ms"):
+                if int(_to_number(existing.get(field)) or 0) == 0 and int(_to_number(item.get(field)) or 0):
+                    existing[field] = item[field]
             continue
-        seen.add(key)
+        seen[key] = item
         deduped.append(item)
     return deduped
 
@@ -1861,6 +1879,53 @@ def _provider_cockpit_status(rows: list[dict]) -> tuple[str, str, str]:
     if any(row["category"] in {"manual", "stale"} for row in rows):
         return "partial", "stale", "待复核"
     return "ready", "ready", "可用"
+
+
+def _provider_last_checked(rows: list[dict]) -> str:
+    values = [_to_text(row.get("last_checked")) for row in rows if _to_text(row.get("last_checked"))]
+    return max(values) if values else "暂无"
+
+
+def _provider_row_brief(row: Mapping[str, Any]) -> str:
+    api = _to_text(row.get("api") or row.get("label"), "数据接口")
+    label = _to_text(row.get("label"), api)
+    status = _to_text(row.get("status_label"), row.get("state") or "待验证")
+    rows = int(_to_number(row.get("rows")) or 0)
+    latest_date = _to_text(row.get("latest_date"))
+    error = _to_text(row.get("error"))
+    parts = [f"{label}({api})：{status}"]
+    if rows:
+        parts.append(f"rows {rows}")
+    if latest_date:
+        parts.append(f"latest {latest_date}")
+    if error:
+        parts.append(error[:80])
+    return "｜".join(parts)
+
+
+def _provider_interface_summary(rows: list[dict], limit: int = 4) -> str:
+    if not rows:
+        return "暂无接口明细；请先手动运行数据源体检。"
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            {"blocked": 0, "manual": 1, "stale": 2, "available": 3}.get(_to_text(row.get("category")), 4),
+            _to_text(row.get("label")),
+        ),
+    )
+    return "；".join(_provider_row_brief(row) for row in ordered[: max(1, int(limit or 4))])
+
+
+def _provider_failure_summary(blocked: list[dict], manual: list[dict], stale: list[dict]) -> str:
+    if blocked:
+        return "；".join(_provider_row_brief(row) for row in blocked[:3])
+    if manual:
+        labels = "、".join(_to_text(row.get("label"), "数据能力") for row in manual[:3])
+        return f"需手动触发：{labels}"
+    if stale:
+        labels = "、".join(_to_text(row.get("label"), "数据能力") for row in stale[:3])
+        return f"缓存/待复核：{labels}"
+    return "无"
 
 
 def build_provider_data_capability_cockpit(snapshot: Any = None) -> dict:
@@ -1882,7 +1947,9 @@ def build_provider_data_capability_cockpit(snapshot: Any = None) -> dict:
             first_attention.get("last_success") or first_attention.get("latest_date"),
             "暂无" if not available else "已返回可用结果",
         )
-        last_failure = "、".join(_to_text(row.get("label"), "数据能力") for row in blocked[:3]) or "无"
+        last_checked = _provider_last_checked(provider_rows)
+        last_failure = _provider_failure_summary(blocked, manual, stale)
+        interface_summary = _provider_interface_summary(provider_rows)
         action_label = _to_text(config.get("action_label"), f"手动检测{provider}")
         legacy_tab = _to_text(config.get("legacy_tab"), "数据源体检")
         recovery_action = {
@@ -1920,8 +1987,11 @@ def build_provider_data_capability_cockpit(snapshot: Any = None) -> dict:
                 "manual_count": len(manual),
                 "stale_count": len(stale),
                 "total_count": len(provider_rows),
+                "last_checked": last_checked,
                 "last_success": last_success,
                 "last_failure": last_failure,
+                "failure_summary": last_failure,
+                "interface_summary": interface_summary,
                 "next_action": _to_text(config.get("next_action"), "按数据恢复中心手动处理。"),
                 "decision_guardrail": (
                     f"{provider} 受限项恢复前不能支撑加仓、追高、加融资或自动交易。"
@@ -2110,8 +2180,11 @@ def build_provider_recovery_matrix(snapshot: Any = None) -> dict:
                 "blocked_count": blocked_count,
                 "manual_count": manual_count,
                 "stale_count": stale_count,
+                "last_checked": _to_text(item.get("last_checked"), "暂无"),
                 "last_success": _to_text(item.get("last_success"), "暂无"),
                 "last_failure": _to_text(item.get("last_failure"), "无"),
+                "failure_summary": _to_text(item.get("failure_summary") or item.get("last_failure"), "无"),
+                "interface_summary": _to_text(item.get("interface_summary"), "暂无接口明细；请先手动运行数据源体检。"),
                 "why_not_available": why_not_available,
                 "next_action": _to_text(item.get("next_action"), "按数据恢复中心手动处理。"),
                 "decision_guardrail": _to_text(item.get("decision_guardrail"), "缺失或未验证不能作为加仓、追高或加融资依据。"),

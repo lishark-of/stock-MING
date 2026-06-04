@@ -4955,11 +4955,14 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         if not isinstance(item, dict):
             continue
         provider_matrix_item_html += f"""
-        <div class="cc-home-item-meta">
-          {escape(_home_text(item.get("label"), item.get("provider") or "数据源"))}：
-          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("recovery_state"), item.get("status_label") or "待检测"))}</span>
-          {escape(_home_text(item.get("summary"), "可用 0｜受限 0｜需手动 0｜缓存/待验证 0"))}
-        </div>
+          <div class="cc-home-item-meta">
+            {escape(_home_text(item.get("label"), item.get("provider") or "数据源"))}：
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("recovery_state"), item.get("status_label") or "待检测"))}</span>
+            {escape(_home_text(item.get("summary"), "可用 0｜受限 0｜需手动 0｜缓存/待验证 0"))}
+          </div>
+        <div class="cc-home-item-meta">最近检查：{escape(_home_text(item.get("last_checked"), "暂无"))} ｜ 最近成功：{escape(_home_text(item.get("last_success"), "暂无"))}</div>
+        <div class="cc-home-item-meta">失败/待处理：{escape(_home_text(item.get("failure_summary"), item.get("last_failure") or "无"))}</div>
+        <div class="cc-home-item-meta">接口明细：{escape(_home_text(item.get("interface_summary"), "暂无接口明细；请先手动运行数据源体检。"))}</div>
         <div class="cc-home-item-meta">为什么可能搜不到：{escape(_home_text(item.get("why_not_available"), "需要按 provider 分开诊断。"))}</div>
         """
     if not provider_matrix_item_html:
@@ -5313,7 +5316,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待检测"))}</span>
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(item.get("role"), "数据源"))}｜{escape(_home_text(item.get("summary"), "可用 0｜受限 0｜需手动 0｜缓存/待验证 0"))}</div>
-          <div class="cc-home-item-meta">最近成功：{escape(_home_text(item.get("last_success"), "暂无"))} ｜ 最近阻断：{escape(_home_text(item.get("last_failure"), "无"))}</div>
+          <div class="cc-home-item-meta">最近检查：{escape(_home_text(item.get("last_checked"), "暂无"))} ｜ 最近成功：{escape(_home_text(item.get("last_success"), "暂无"))}</div>
+          <div class="cc-home-item-meta">失败/待处理：{escape(_home_text(item.get("failure_summary"), item.get("last_failure") or "无"))}</div>
+          <div class="cc-home-item-meta">接口明细：{escape(_home_text(item.get("interface_summary"), "暂无接口明细；请先手动运行数据源体检。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}</div>
           <div class="cc-home-item-meta">决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失或未验证不能作为加仓依据。"))}</div>
         </div>

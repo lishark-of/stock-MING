@@ -1014,9 +1014,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                     "source": "Unified data capability",
                     "checked_at": f"{today}T10:01:00",
                     "items": [
-                        {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用"},
-                        {"provider": "Supabase", "api": "brain_memory", "label": "brain_memory", "capability_state": "not_configured", "status": "未配置"},
-                        {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                        {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用", "rows": 12, "latest_date": "20260604", "latency_ms": 88},
+                        {"provider": "Supabase", "api": "brain_memory", "label": "brain_memory", "capability_state": "not_configured", "status": "未配置", "error": "Supabase 未配置"},
+                        {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新", "error": "尚未手动检测"},
                     ],
                     "deepseek_called": False,
                 },
@@ -1045,9 +1045,21 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("AkShare", cockpit_dumped)
         self.assertIn("Supabase", cockpit_dumped)
         self.assertIn("yfinance", cockpit_dumped)
+        cockpit_providers = {item["provider"]: item for item in cockpit["providers"]}
+        self.assertEqual(cockpit_providers["Tushare"]["last_checked"], f"{today}T10:01:00")
+        self.assertIn("个股资金流(moneyflow)：可用", cockpit_providers["Tushare"]["interface_summary"])
+        self.assertIn("rows 12", cockpit_providers["Tushare"]["interface_summary"])
+        self.assertIn("latest 20260604", cockpit_providers["Tushare"]["interface_summary"])
+        self.assertIn("AkShare 重型刷新", cockpit_providers["AkShare"]["failure_summary"])
+        self.assertIn("brain_memory(brain_memory)：未配置", cockpit_providers["Supabase"]["failure_summary"])
+        self.assertIn("Supabase 未配置", cockpit_providers["Supabase"]["interface_summary"])
         matrix = payload["provider_recovery_matrix"]
         self.assertIn("Tushare / AkShare / yfinance / Supabase", matrix["summary"])
         self.assertIn("之前拉满基础连接", matrix["short_answer"])
+        matrix_providers = {item["provider"]: item for item in matrix["providers"]}
+        self.assertEqual(matrix_providers["Tushare"]["last_checked"], f"{today}T10:01:00")
+        self.assertIn("个股资金流(moneyflow)：可用", matrix_providers["Tushare"]["interface_summary"])
+        self.assertIn("Supabase 未配置", matrix_providers["Supabase"]["interface_summary"])
         self.assertFalse(matrix["deepseek_called"])
         self.assertEqual(matrix["external_call_policy"], "not_triggered")
         self.assertEqual(loop_items["provider_data_capability"]["status"], "blocked")
