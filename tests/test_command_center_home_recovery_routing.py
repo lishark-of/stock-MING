@@ -75,6 +75,15 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn('home_snapshot={"a_share_user_data_diagnostic": legacy_user_diagnostic}', source)
         self.assertIn('market_type="A股"', source)
 
+    def test_legacy_a_share_fact_cards_show_recovery_path(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn("recovery_action = card.get(\"recovery_action\") or {}", source)
+        self.assertIn("recovery_action = section.get(\"recovery_action\") or {}", source)
+        self.assertIn("恢复路径：{recovery_action.get('action_label')", source)
+        self.assertIn("回流：{recovery_action.get('writes_packet')", source)
+        self.assertIn("｜DeepSeek：未调用", source)
+
 
 if __name__ == "__main__":
     unittest.main()

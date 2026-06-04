@@ -9881,6 +9881,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 st.info(card.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
             if card.get("risk_note"):
                 st.caption(f"风险口径：{card.get('risk_note')}")
+            recovery_action = card.get("recovery_action") or {}
+            if recovery_action and recovery_action.get("refresh_policy") != "not_needed":
+                st.caption(
+                    f"恢复路径：{recovery_action.get('action_label') or '手动刷新'}"
+                    f"｜回流：{recovery_action.get('writes_packet') or 'command_center_packet'}"
+                    f"｜入口：{recovery_action.get('toolbox_entry') or '高级工具箱'}"
+                    "｜DeepSeek：未调用"
+                )
             st.caption(card.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
         
         # 第一排：龙虎榜 + 融资融券 + 个股资金流向
@@ -9929,6 +9937,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 st.info(section.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
             if section.get("risk_note"):
                 st.caption(f"风险口径：{section.get('risk_note')}")
+            recovery_action = section.get("recovery_action") or {}
+            if recovery_action and recovery_action.get("refresh_policy") != "not_needed":
+                st.caption(
+                    f"恢复路径：{recovery_action.get('action_label') or '手动刷新'}"
+                    f"｜回流：{recovery_action.get('writes_packet') or 'command_center_packet'}"
+                    f"｜入口：{recovery_action.get('toolbox_entry') or '高级工具箱'}"
+                    "｜DeepSeek：未调用"
+                )
             st.caption(section.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
 
         secondary_sections = legacy_secondary_sections.get("sections") or []

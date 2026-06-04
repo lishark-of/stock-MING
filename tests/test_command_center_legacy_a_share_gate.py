@@ -196,6 +196,8 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertIn("+0.80亿", dragon_card["metrics"][2]["value"])
         self.assertIn("上榜原因", " ".join(dragon_card["captions"]))
         self.assertIn("Tushare 龙虎榜缓存", dragon_card["source_caption"])
+        self.assertEqual(dragon_card["recovery_action"]["refresh_policy"], "not_needed")
+        self.assertEqual(dragon_card["recovery_action"]["writes_packet"], "command_center_dragon_tiger_packet")
         json.dumps(cards, ensure_ascii=False)
 
     def test_primary_fact_cards_hide_metrics_when_waiting_or_failed(self):
@@ -212,6 +214,11 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertEqual(by_key["dragon_tiger"]["metrics"], [])
         self.assertEqual(by_key["margin"]["metrics"], [])
         self.assertIn("权限不足", by_key["margin"]["risk_note"])
+        self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["refresh_policy"], "button_gated")
+        self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertIn("手动刷新龙虎榜", by_key["dragon_tiger"]["recovery_action"]["action_label"])
+        self.assertEqual(by_key["margin"]["recovery_action"]["writes_packet"], "command_center_margin_packet")
+        self.assertFalse(by_key["margin"]["recovery_action"]["deepseek_called"])
         json.dumps(cards, ensure_ascii=False)
 
     def test_primary_fact_cards_do_not_mutate_input(self):
@@ -266,10 +273,13 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertIn("¥13.50", limit_section["metrics"][0]["value"])
         self.assertEqual(limit_section["tables"][0]["rows"][0]["type"], "涨停")
         self.assertEqual(limit_section["tables"][1]["rows"][0]["name"], "半导体")
+        self.assertEqual(limit_section["recovery_action"]["refresh_policy"], "not_needed")
+        self.assertEqual(limit_section["recovery_action"]["writes_packet"], "command_center_limit_emotion_packet")
         self.assertEqual(chip_section["status"], "已回流")
         self.assertIn("63.20%", chip_section["metrics"][1]["value"])
         self.assertIn("筹码成本", chip_section["captions"][0])
         self.assertIn("筹码密集区", " ".join(chip_section["captions"]))
+        self.assertEqual(chip_section["recovery_action"]["writes_packet"], "command_center_chip_packet")
         json.dumps(sections, ensure_ascii=False)
 
     def test_secondary_fact_sections_hide_metrics_when_waiting_or_failed(self):
@@ -284,6 +294,10 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertEqual(by_key["limit_emotion"]["metrics"], [])
         self.assertEqual(by_key["chip_radar"]["metrics"], [])
         self.assertIn("权限不足", by_key["chip_radar"]["risk_note"])
+        self.assertEqual(by_key["limit_emotion"]["recovery_action"]["refresh_policy"], "button_gated")
+        self.assertEqual(by_key["limit_emotion"]["recovery_action"]["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(by_key["chip_radar"]["recovery_action"]["writes_packet"], "command_center_chip_packet")
+        self.assertFalse(by_key["chip_radar"]["recovery_action"]["deepseek_called"])
         json.dumps(sections, ensure_ascii=False)
 
     def test_secondary_fact_sections_do_not_mutate_input(self):

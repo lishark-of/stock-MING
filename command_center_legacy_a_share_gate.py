@@ -61,6 +61,28 @@ PACKET_SECTION_ORDER = [
     ("chip_radar", "筹码/胜率", "command_center_chip_packet"),
 ]
 
+FACT_RECOVERY_CONFIG = {
+    key: {
+        "label": label,
+        "writes_packet": packet_key,
+        "toolbox_entry": {
+            "dragon_tiger": "高级工具箱 / 下一票雷达 / 龙虎榜",
+            "margin": "高级工具箱 / 融资 ETF / 融资融券",
+            "moneyflow": "高级工具箱 / A股专业实盘 / 个股资金流",
+            "limit_emotion": "高级工具箱 / 数据源体检 / 涨跌停情绪",
+            "chip_radar": "高级工具箱 / 量化推演 / 筹码胜率",
+        }[key],
+        "action_label": {
+            "dragon_tiger": "手动刷新龙虎榜",
+            "margin": "手动刷新融资融券",
+            "moneyflow": "手动刷新个股资金流",
+            "limit_emotion": "手动刷新涨跌停/情绪",
+            "chip_radar": "手动刷新筹码/胜率",
+        }[key],
+    }
+    for key, label, packet_key in PACKET_SECTION_ORDER
+}
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -192,6 +214,43 @@ def _packet_tone(state: str) -> str:
     }.get(state, "missing")
 
 
+def _fact_recovery_action(key: str, state: str, packet: Mapping[str, Any]) -> dict:
+    config = FACT_RECOVERY_CONFIG.get(key, {})
+    label = _first_text(config.get("label"), key, default="A股事实")
+    api = _first_text(packet.get("api"), default=SECTION_SPECS.get(key, ("", "", ""))[1])
+    writes_packet = _first_text(config.get("writes_packet"), default=f"command_center_{key}_packet")
+    if state == "ready":
+        action_label = "无需恢复"
+        reason = f"{label}已回流；只需复核交易日、来源和口径。"
+        refresh_policy = "not_needed"
+    elif state == "failed":
+        action_label = _first_text(config.get("action_label"), default=f"手动刷新{label}")
+        reason = f"{label}受限/失败；不能把缺失写成利好，需手动检查权限、积分或网络。"
+        refresh_policy = "button_gated"
+    elif state == "cached":
+        action_label = _first_text(config.get("action_label"), default=f"手动刷新{label}")
+        reason = f"{label}正在使用缓存或待复核；执行前需要确认交易日和更新时间。"
+        refresh_policy = "button_gated"
+    else:
+        action_label = _first_text(config.get("action_label"), default=f"手动刷新{label}")
+        reason = f"{label}待手动刷新；页面打开不会自动请求 Tushare。"
+        refresh_policy = "button_gated"
+    return {
+        "key": key,
+        "label": label,
+        "state": state,
+        "status_label": _packet_state_label(state),
+        "action_label": action_label,
+        "reason": reason,
+        "toolbox_entry": _first_text(config.get("toolbox_entry"), default="高级工具箱 / 数据源体检"),
+        "writes_packet": writes_packet,
+        "api_hint": api,
+        "refresh_policy": refresh_policy,
+        "source_label": "旧版 A股事实卡",
+        "deepseek_called": False,
+    }
+
+
 def _packet_risk_text(packet: Mapping[str, Any]) -> str:
     notes = packet.get("risk_notes")
     if isinstance(notes, (list, tuple)):
@@ -216,6 +275,7 @@ def _packet_summary_item(key: str, label: str, source_key: str, packet_value: An
         "updated_at": _first_text(packet.get("updated_at"), packet.get("trade_date"), packet.get("date")),
         "summary": _first_text(packet.get("summary"), packet.get("message"), default=SECTION_SPECS.get(key, ("", "", ""))[2]),
         "risk_note": _packet_risk_text(packet),
+        "recovery_action": _fact_recovery_action(key, state, packet),
         "deepseek_called": bool(packet.get("deepseek_called", False)),
     }
 
@@ -307,6 +367,7 @@ def _primary_fact_card(key: str, title: str, packet_value: Any, metrics: list[di
         "captions": [item for item in captions if item and item != "暂无"] if state == "ready" else [],
         "source_caption": _format_source_caption(packet),
         "risk_note": _packet_risk_text(packet),
+        "recovery_action": _fact_recovery_action(key, state, packet),
         "deepseek_called": bool(packet.get("deepseek_called", False)),
     }
 
@@ -334,6 +395,7 @@ def _secondary_fact_section(
         "tables": tables if state == "ready" else [],
         "source_caption": _format_source_caption(packet),
         "risk_note": _packet_risk_text(packet),
+        "recovery_action": _fact_recovery_action(key, state, packet),
         "deepseek_called": bool(packet.get("deepseek_called", False)),
     }
 
