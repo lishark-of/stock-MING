@@ -100,6 +100,71 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(len(card["top_supports"]), 3)
         json.dumps(card, ensure_ascii=False)
 
+    def test_latest_recovery_result_promotes_recovered_packet_into_radar_card(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "个股资金流",
+                    "message": "个股资金流：可用｜已读取到最近资金流数据。",
+                    "writes_packet": "command_center_moneyflow_packet",
+                    "external_call_policy": "button_gated",
+                    "deepseek_called": False,
+                }
+            }
+        )
+        card = vm["radar_card"]
+
+        self.assertEqual(vm["latest_recovery_impact"]["evidence_state"], "supporting")
+        self.assertEqual(vm["latest_recovery_impact"]["evidence_key"], "moneyflow")
+        self.assertEqual(card["status"], "partial")
+        self.assertEqual(card["status_label"], "谨慎验证")
+        self.assertIn("最近恢复", card["execution_guardrail"])
+        self.assertIn("个股资金流", card["support_text"])
+        self.assertFalse(card["latest_recovery_impact"]["deepseek_called"])
+        json.dumps(vm, ensure_ascii=False)
+
+    def test_latest_recovery_result_blocks_radar_card_when_recovery_is_restricted(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "blocked",
+                    "label": "涨跌停/情绪",
+                    "message": "涨跌停/情绪：权限不足｜limit_cpt_list 权限不足。",
+                    "writes_packet": "command_center_limit_emotion_packet",
+                    "external_call_policy": "button_gated",
+                    "deepseek_called": False,
+                }
+            }
+        )
+        card = vm["radar_card"]
+
+        self.assertEqual(vm["latest_recovery_impact"]["evidence_state"], "blocked")
+        self.assertEqual(card["status"], "blocked")
+        self.assertEqual(card["status_label"], "阻断加仓")
+        self.assertIn("涨跌停/情绪", card["blocker_text"])
+        self.assertIn("不能把缺失数据当成利好", card["execution_guardrail"])
+
+    def test_latest_recovery_result_waiting_keeps_radar_card_unverified(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "waiting",
+                    "label": "龙虎榜",
+                    "message": "尚未检测到龙虎榜回流结果。",
+                    "writes_packet": "command_center_dragon_tiger_packet",
+                    "external_call_policy": "not_triggered",
+                    "deepseek_called": False,
+                }
+            }
+        )
+        card = vm["radar_card"]
+
+        self.assertEqual(vm["latest_recovery_impact"]["evidence_state"], "missing")
+        self.assertEqual(card["status"], "partial")
+        self.assertIn("龙虎榜", card["recovery_text"])
+        self.assertIn("最近恢复", card["execution_guardrail"])
+
     def test_decision_evidence_queue_orders_priority_and_blockers_first(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {

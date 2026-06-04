@@ -109,6 +109,13 @@ EVIDENCE_ACTIONS = {
 }
 
 
+WRITES_PACKET_TO_EVIDENCE_KEY = {
+    config["writes_packet"]: key
+    for key, config in EVIDENCE_ACTIONS.items()
+    if config.get("writes_packet")
+}
+
+
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -246,11 +253,54 @@ def _short_decision_signals(items: Any, limit: int = 3) -> list[str]:
     return signals
 
 
+def build_latest_recovery_evidence_impact(latest_recovery_result_notice: Any = None) -> dict:
+    notice = as_mapping(latest_recovery_result_notice)
+    if not notice:
+        return {}
+    status = to_text(notice.get("status"), "waiting")
+    label = to_text(notice.get("label"), "数据恢复")
+    writes_packet = to_text(notice.get("writes_packet"))
+    evidence_key = WRITES_PACKET_TO_EVIDENCE_KEY.get(writes_packet, "")
+    message = to_text(notice.get("message"), "已更新本地恢复状态。")
+    if status == "recovered":
+        evidence_state = "supporting"
+        tone = "ready"
+        impact_text = f"{label}刚刚回流；可进入证据链，但执行前仍需复核交易日、来源和仓位纪律。"
+        action_hint = "返回综合推演中心查看 Home Action Snapshot；不要把单项恢复写成自动加仓。"
+    elif status == "blocked":
+        evidence_state = "blocked"
+        tone = "failed"
+        impact_text = f"{label}恢复仍受限；证据门槛维持阻断，不能把缺失数据当成利好。"
+        action_hint = "先处理权限、积分、交易日、网络或覆盖范围问题；策略保持观察/降风险。"
+    else:
+        evidence_state = "missing"
+        tone = "missing"
+        impact_text = f"{label}恢复结果待验证；尚不能进入核心证据链。"
+        action_hint = "在高级工具箱对应模块手动运行后，再回到综合推演中心查看回流状态。"
+    return {
+        "key": "latest_recovery_result",
+        "evidence_key": evidence_key,
+        "label": label,
+        "status": status,
+        "evidence_state": evidence_state,
+        "tone": tone,
+        "impact_text": impact_text,
+        "action_hint": action_hint,
+        "message": message,
+        "writes_packet": writes_packet,
+        "updated_at": to_text(notice.get("updated_at")),
+        "source": to_text(notice.get("source"), "最近恢复结果"),
+        "external_call_policy": to_text(notice.get("external_call_policy"), "not_triggered"),
+        "deepseek_called": False,
+    }
+
+
 def build_evidence_radar_card_view_model(
     support_items: Any = None,
     blocker_items: Any = None,
     cached_items: Any = None,
     missing_items: Any = None,
+    latest_recovery_impact: Any = None,
 ) -> dict:
     support = as_list(support_items)
     blockers = as_list(blocker_items)
@@ -260,13 +310,26 @@ def build_evidence_radar_card_view_model(
     blocker_count = len(blockers)
     cached_count = len(cached)
     missing_count = len(missing)
+    latest_impact = as_mapping(latest_recovery_impact)
+    latest_state = to_text(latest_impact.get("evidence_state"))
+    if latest_state == "blocked" and not blocker_count:
+        blocker_count = 1
+    if latest_state == "supporting" and not support_count:
+        support_count = 1
+    if latest_state == "missing" and not missing_count:
+        missing_count = 1
+    blocker_text_items = blockers or ([latest_impact] if latest_state == "blocked" else [])
+    recovery_text_items = blockers + cached + missing
+    if latest_state in {"blocked", "missing"} and latest_impact:
+        recovery_text_items = [latest_impact] + recovery_text_items
+    support_text_items = support or ([latest_impact] if latest_state == "supporting" else [])
     if blocker_count:
         status = "blocked"
         status_label = "阻断加仓"
         tone = "danger"
         confidence_gate = "低置信度"
         execution_guardrail = (
-            f"先处理{_join_labels(blockers, fallback='阻断证据')}；未排除前不能把缺失数据写成利好，"
+            f"先处理{_join_labels(blocker_text_items, fallback='阻断证据')}；未排除前不能把缺失数据写成利好，"
             "策略只能观察、降风险或小额试探。"
         )
     elif cached_count or missing_count:
@@ -274,7 +337,7 @@ def build_evidence_radar_card_view_model(
         status_label = "谨慎验证"
         tone = "warning"
         confidence_gate = "中低置信度"
-        recovery = _join_labels(cached + missing, fallback="缓存/缺失证据")
+        recovery = _join_labels(recovery_text_items, fallback="缓存/缺失证据")
         execution_guardrail = f"{recovery}仍需复核；未补齐前不要追高、满仓或加融资。"
     elif support_count:
         status = "ready"
@@ -288,6 +351,10 @@ def build_evidence_radar_card_view_model(
         tone = "muted"
         confidence_gate = "不可验证"
         execution_guardrail = "A股证据雷达尚未生成；只能显示空态或上次缓存，不支撑交易动作。"
+    if latest_impact:
+        impact_text = to_text(latest_impact.get("impact_text"))
+        if impact_text:
+            execution_guardrail = f"{execution_guardrail} 最近恢复：{impact_text}"
     return {
         "status": status,
         "status_label": status_label,
@@ -297,12 +364,13 @@ def build_evidence_radar_card_view_model(
         "top_supports": [as_mapping(item) for item in support[:3]],
         "primary_blockers": [as_mapping(item) for item in blockers[:3]],
         "required_recovery": [as_mapping(item) for item in (blockers + cached + missing)[:4]],
-        "support_text": _join_labels(support, fallback="暂无支持证据"),
-        "blocker_text": _join_labels(blockers, fallback="暂无阻断证据"),
-        "recovery_text": _join_labels(blockers + cached + missing, fallback="暂无待补证据"),
+        "support_text": _join_labels(support_text_items, fallback="暂无支持证据"),
+        "blocker_text": _join_labels(blocker_text_items, fallback="暂无阻断证据"),
+        "recovery_text": _join_labels(recovery_text_items, fallback="暂无待补证据"),
         "decision_guardrail": execution_guardrail,
         "execution_guardrail": execution_guardrail,
         "decision_signals": _short_decision_signals(blockers + cached + missing + support),
+        "latest_recovery_impact": latest_impact,
         "manual_note": "证据雷达只读取本地 packet；所有补齐动作都必须手动触发。",
         "deepseek_called": False,
     }
@@ -460,17 +528,20 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
     decision_summary = (
         f"支持 {len(support_items)}｜阻断 {len(blocker_items)}｜缓存 {len(cached_items)}｜缺失 {len(missing_items)}"
     )
+    latest_recovery_impact = build_latest_recovery_evidence_impact(payload.get("latest_recovery_result_notice"))
     radar_card = build_evidence_radar_card_view_model(
         support_items=support_items,
         blocker_items=blocker_items,
         cached_items=cached_items,
         missing_items=missing_items,
+        latest_recovery_impact=latest_recovery_impact,
     )
     return {
         "title": "A股证据雷达",
         "summary": summary,
         "decision_summary": decision_summary,
         "radar_card": radar_card,
+        "latest_recovery_impact": latest_recovery_impact,
         "items": items,
         "support_items": support_items,
         "blocker_items": blocker_items,

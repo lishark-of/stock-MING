@@ -68,6 +68,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
 
         self.assertIn("latest_recovery_result_notice", source)
         self.assertIn("最近恢复结果", source)
+        self.assertIn("最近恢复影响", source)
+        self.assertIn("latest_evidence_impact", source)
         self.assertIn("external_call_policy", source)
         self.assertIn("DeepSeek：未调用", source)
 

@@ -5245,6 +5245,14 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     evidence_vm = build_a_share_evidence_radar_view_model(payload)
     evidence_card = evidence_vm.get("radar_card") or {}
+    latest_evidence_impact = evidence_card.get("latest_recovery_impact") or evidence_vm.get("latest_recovery_impact") or {}
+    latest_evidence_impact_html = ""
+    if latest_evidence_impact:
+        latest_evidence_impact_html = (
+            f"<div class='cc-home-item-meta'>最近恢复影响："
+            f"{escape(_home_text(latest_evidence_impact.get('impact_text'), '恢复结果待验证。'))}"
+            f" ｜ 外部接口：{escape(_home_text(latest_evidence_impact.get('external_call_policy'), 'not_triggered'))}</div>"
+        )
     evidence_card_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -5256,6 +5264,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">结论：{escape(_home_text(evidence_card.get("execution_guardrail"), "证据未补齐前，不支撑放大仓位。"))}</div>
           <div class="cc-home-item-meta">摘要：{escape(_home_text(evidence_card.get("summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))} ｜ 支持：{escape(_home_text(evidence_card.get("support_text"), "暂无支持证据"))}</div>
           <div class="cc-home-item-meta">待处理：{escape(_home_text(evidence_card.get("recovery_text"), "暂无待补证据"))} ｜ DeepSeek：未调用</div>
+          {latest_evidence_impact_html}
         </div>
         """
     evidence_items = [item for item in (evidence_vm.get("items") or []) if isinstance(item, dict)]
