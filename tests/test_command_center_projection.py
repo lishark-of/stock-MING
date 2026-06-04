@@ -258,6 +258,33 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("事实回流防守线", joined)
         self.assertFalse(packet["deepseek_called"])
 
+    def test_data_health_ledger_enriches_projection_without_changing_path_shape(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            data_health_ledger={
+                "status": "blocked",
+                "rows": [
+                    {
+                        "provider": "Tushare",
+                        "api": "moneyflow",
+                        "label": "个股资金流",
+                        "category": "blocked",
+                        "state": "permission_denied",
+                        "status_label": "权限不足",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(len(packet["paths"]), 3)
+        self.assertIn("接口健康：阻断加仓", packet["path_basis"])
+        self.assertIn("受限接口压制乐观路径", packet["paths"][0]["trigger"])
+        self.assertIn("不作为加仓依据", packet["paths"][0]["risk_note"])
+        self.assertEqual(packet["path_data_health_impact"]["status"], "blocked")
+        self.assertFalse(packet["deepseek_called"])
+
     def test_a_share_evidence_radar_does_not_pollute_us_projection(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
@@ -307,6 +334,32 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertEqual(packet["path_fact_recovery_items"], [])
         self.assertNotIn("A股事实回流", joined)
         self.assertNotIn("龙虎榜", joined)
+
+    def test_tushare_health_ledger_does_not_pollute_us_projection(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "美股", "summary": "美股分析框架"},
+            data_health_ledger={
+                "status": "blocked",
+                "rows": [
+                    {
+                        "provider": "Tushare",
+                        "api": "moneyflow",
+                        "label": "个股资金流",
+                        "category": "blocked",
+                        "state": "permission_denied",
+                        "status_label": "权限不足",
+                    }
+                ],
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["market_type"], "美股")
+        self.assertEqual(packet["path_data_health_summary"], "")
+        self.assertEqual(packet["path_data_health_impact"]["status"], "missing")
+        self.assertNotIn("接口健康", packet["path_basis"])
+        self.assertNotIn("个股资金流", joined)
 
     def test_build_from_state_can_read_evidence_radar_packet(self):
         packet = projection.build_projection_packet_from_state(

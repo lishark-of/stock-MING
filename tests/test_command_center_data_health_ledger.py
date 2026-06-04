@@ -107,6 +107,44 @@ class CommandCenterDataHealthLedgerTests(unittest.TestCase):
         self.assertEqual(packet["rows"][0]["state"], "empty_recent")
         self.assertIn("标的", packet["rows"][0]["meaning"])
 
+    def test_impact_summary_turns_blocked_rows_into_decision_guardrail(self):
+        packet = ledger.build_data_health_ledger(
+            data_capability_packet={
+                "items": [
+                    {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"provider": "Tushare", "api": "top_list", "label": "龙虎榜", "capability_state": "empty_recent", "status": "近期无数据"},
+                ]
+            }
+        )
+
+        impact = ledger.build_data_health_impact_summary(packet)
+
+        self.assertEqual(impact["status"], "blocked")
+        self.assertEqual(impact["label"], "阻断加仓")
+        self.assertIn("融资融券", impact["summary"])
+        self.assertIn("不能把缺失数据当成利好", impact["decision_impact"])
+        self.assertIn("观察/小额试探", impact["strategy_action"])
+        self.assertFalse(impact["deepseek_called"])
+
+    def test_impact_summary_filters_rows_by_market_type(self):
+        packet = ledger.build_data_health_ledger(
+            data_capability_packet={
+                "items": [
+                    {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"provider": "yfinance", "api": "yfinance_market_data", "label": "美股行情", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                ]
+            }
+        )
+
+        us_impact = ledger.build_data_health_impact_summary(packet, market_type="美股")
+        a_share_impact = ledger.build_data_health_impact_summary(packet, market_type="A股")
+
+        self.assertEqual(us_impact["status"], "partial")
+        self.assertIn("美股行情", us_impact["summary"])
+        self.assertNotIn("个股资金流", us_impact["summary"])
+        self.assertEqual(a_share_impact["status"], "blocked")
+        self.assertIn("个股资金流", a_share_impact["summary"])
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_data_health_ledger.py").read_text(encoding="utf-8"))
         imports = []

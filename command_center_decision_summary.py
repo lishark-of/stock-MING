@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_data_health_ledger import build_data_health_impact_summary
+
 
 COVERAGE_LABELS = {
     "market": "市场",
@@ -342,6 +344,7 @@ def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
 ) -> list[dict]:
@@ -365,6 +368,19 @@ def build_decision_evidence_chain_items(
     a_share_basis = build_a_share_data_basis_items(a_share_data_console)
     if a_share_basis:
         items.append(a_share_basis[0])
+    health_impact = build_data_health_impact_summary(data_health_ledger, market_type=market)
+    if health_impact.get("status") != "missing":
+        items.append(
+            {
+                "label": "接口健康",
+                "value": health_impact["label"],
+                "tone": health_impact["tone"],
+                "summary": health_impact["decision_impact"],
+                "blocked_count": health_impact["blocked_count"],
+                "manual_count": health_impact["manual_count"],
+                "stale_count": health_impact["stale_count"],
+            }
+        )
     fact_recovery_basis = build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary)
     if fact_recovery_basis:
         items.append(fact_recovery_basis)
@@ -396,10 +412,13 @@ def build_decision_summary_view_model(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
+    analysis = _as_mapping(analysis_method_packet)
+    market = _to_text(analysis.get("market"))
     status = normalize_decision_status(payload)
     action = decision_action_label(payload)
     risk = _to_text(payload.get("risk_level")) or "中"
@@ -430,9 +449,11 @@ def build_decision_summary_view_model(
             analysis_method_packet,
             evidence_radar_packet=evidence_radar_packet,
             a_share_data_console=a_share_data_console,
+            data_health_ledger=data_health_ledger,
             a_share_fact_recovery_summary=a_share_fact_recovery_summary,
             latest_recovery_result_notice=latest_recovery_result_notice,
         ),
+        "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
         "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
         "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),

@@ -244,6 +244,101 @@ def _ledger_status(rows: list[dict]) -> str:
     return "ready"
 
 
+def _limited_labels(rows: list[dict], fallback: str = "无", limit: int = 3) -> str:
+    labels = []
+    seen = set()
+    for row in rows:
+        label = to_text(row.get("label") or row.get("api"))
+        if label and label not in seen:
+            labels.append(label)
+            seen.add(label)
+        if len(labels) >= limit:
+            break
+    if not labels:
+        return fallback
+    suffix = f" 等 {len(rows)} 项" if len(rows) > limit else ""
+    return "、".join(labels) + suffix
+
+
+def _market_scoped_rows(rows: list[dict], market_type: Any = None) -> list[dict]:
+    market = to_text(market_type)
+    if market in {"美股", "US", "US_STOCK"}:
+        return [row for row in rows if to_text(row.get("provider")).lower() in {"yfinance", "supabase"}]
+    if market in {"A股", "A_SHARE"}:
+        return [row for row in rows if to_text(row.get("provider")).lower() in {"tushare", "akshare", "supabase"}]
+    return rows
+
+
+def build_data_health_impact_summary(data_health_ledger: Any = None, market_type: Any = None) -> dict:
+    ledger = as_mapping(data_health_ledger)
+    rows = [as_mapping(row) for row in as_list(ledger.get("rows")) if as_mapping(row)]
+    rows = _market_scoped_rows(rows, market_type=market_type)
+    blocked = [row for row in rows if row.get("category") == "blocked"]
+    manual = [row for row in rows if row.get("category") == "manual"]
+    stale = [row for row in rows if row.get("category") == "stale"]
+    available = [row for row in rows if row.get("category") == "available"]
+    status = _ledger_status(rows)
+    if status == "blocked":
+        tone = "danger"
+        label = "阻断加仓"
+        summary = f"接口健康阻断：{_limited_labels(blocked)}。"
+        decision_impact = "受限接口未恢复前，不能把缺失数据当成利好，也不能支撑加仓、追高或加融资。"
+        strategy_action = "策略执行降级为观察/小额试探；先按数据恢复中心手动恢复阻断接口。"
+        projection_note = f"受限接口压制乐观路径：{_limited_labels(blocked)}。"
+        risk_note = "关键接口受限时，趋势推演只用于观察验证，不作为加仓依据。"
+    elif status == "partial":
+        tone = "warning"
+        label = "谨慎验证"
+        pending_text = "；".join(
+            item
+            for item in [
+                f"待手动：{_limited_labels(manual)}" if manual else "",
+                f"缓存/待验证：{_limited_labels(stale)}" if stale else "",
+            ]
+            if item
+        )
+        summary = f"接口健康部分可用，{pending_text or '仍需复核'}。"
+        decision_impact = "可继续看盘，但执行前必须复核缓存日期、手动刷新项和待验证接口。"
+        strategy_action = "策略条件必须先验证数据新鲜度；不把缓存/无记录写成无风险。"
+        projection_note = f"路径仍待数据确认：{pending_text or '接口待验证'}。"
+        risk_note = "接口未完全确认时，乐观路径只能作为假设，优先维持中性/谨慎执行。"
+    elif status == "ready":
+        tone = "success"
+        label = "可进入证据链"
+        summary = f"接口健康可用：{_limited_labels(available)}。"
+        decision_impact = "接口状态可作为辅助证据；执行前仍需价格、纪律和仓位共振。"
+        strategy_action = "可把接口结果纳入策略验证，但仍需触发条件确认。"
+        projection_note = f"可用接口支持路径验证：{_limited_labels(available)}。"
+        risk_note = "即便接口可用，仍不自动交易、不保证收益。"
+    else:
+        tone = "muted"
+        label = "待检测"
+        summary = "接口健康账本待生成。"
+        decision_impact = "尚未检测接口状态；只能展示安全空态或上次成功结果。"
+        strategy_action = "先刷新今日基础数据或手动检测关键接口。"
+        projection_note = "接口健康待检测，路径为待验证。"
+        risk_note = "数据未检测时，不把乐观路径作为执行依据。"
+    return {
+        "status": status,
+        "tone": tone,
+        "label": label,
+        "summary": summary,
+        "decision_impact": decision_impact,
+        "strategy_action": strategy_action,
+        "projection_note": projection_note,
+        "risk_note": risk_note,
+        "blocked_count": len(blocked),
+        "manual_count": len(manual),
+        "stale_count": len(stale),
+        "available_count": len(available),
+        "blocked_labels": _limited_labels(blocked, fallback="无"),
+        "manual_labels": _limited_labels(manual, fallback="无"),
+        "stale_labels": _limited_labels(stale, fallback="无"),
+        "available_labels": _limited_labels(available, fallback="无"),
+        "deepseek_called": False,
+    }
+
+
 def build_data_health_ledger(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,

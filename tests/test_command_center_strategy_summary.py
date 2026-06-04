@@ -245,6 +245,32 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("龙虎榜", dumped)
         self.assertFalse("DeepSeek" in dumped)
 
+    def test_data_health_ledger_blocks_strategy_execution_when_interface_restricted(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            data_health_ledger={
+                "status": "blocked",
+                "rows": [
+                    {
+                        "provider": "Tushare",
+                        "api": "moneyflow",
+                        "label": "个股资金流",
+                        "category": "blocked",
+                        "state": "permission_denied",
+                        "status_label": "权限不足",
+                    }
+                ],
+            },
+        )
+        items = view_model["evidence_validation_items"]
+        dumped = json.dumps(items, ensure_ascii=False)
+
+        self.assertIn("data_health_ledger", dumped)
+        self.assertIn("接口健康账本", dumped)
+        self.assertIn("阻断加仓", dumped)
+        self.assertIn("观察/小额试探", dumped)
+        self.assertEqual(view_model["data_health_impact"]["status"], "blocked")
+
     def test_a_share_data_capability_all_available_enters_evidence_chain(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "只观察"},

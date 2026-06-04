@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_data_health_ledger import build_data_health_impact_summary
+
 
 DEFAULT_HORIZON_DAYS = 10
 HISTORICAL_DAYS = 10
@@ -549,6 +551,35 @@ def _merge_a_share_data_capability_guidance(
     return guided_paths, basis
 
 
+def _merge_data_health_ledger_guidance(
+    paths: list[dict],
+    data_health_ledger: Any,
+    market_type: Any = None,
+) -> tuple[list[dict], str, dict]:
+    impact = build_data_health_impact_summary(data_health_ledger, market_type=market_type)
+    if impact.get("status") == "missing":
+        return paths, "", impact
+    guided_paths = []
+    for index, path in enumerate(paths):
+        item = dict(path)
+        if index == 0:
+            trigger_note = impact["projection_note"]
+            risk = impact["risk_note"]
+        elif index == 1:
+            trigger_note = f"中性路径复核接口健康：{impact['summary']}"
+            risk = "接口健康未完全确认前，维持观察，不扩大仓位。"
+        else:
+            trigger_note = f"谨慎路径优先检查接口健康：{impact['summary']}"
+            risk = impact["risk_note"]
+        item["trigger"] = _append_evidence_text(item.get("trigger"), trigger_note)
+        item["risk"] = _append_evidence_text(item.get("risk"), risk)
+        item["risk_note"] = item["risk"]
+        item["data_health_label"] = impact["label"]
+        item["data_health_note"] = trigger_note
+        guided_paths.append(item)
+    return guided_paths, f"接口健康：{impact['label']}｜{impact['summary']}", impact
+
+
 def _a_share_fact_recovery_guidance(a_share_fact_recovery_summary: Any) -> dict:
     summary = _as_mapping(a_share_fact_recovery_summary)
     if not summary:
@@ -653,6 +684,7 @@ def build_projection_packet(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     base_date: Any = None,
@@ -689,6 +721,8 @@ def build_projection_packet(
     paths, evidence_basis = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
     data_console = _as_mapping(a_share_data_console) or _status_console_from_snapshot(snapshot)
     paths, data_capability_basis = _merge_a_share_data_capability_guidance(paths, data_console, market_type)
+    health_ledger = _as_mapping(data_health_ledger) or _as_mapping(snapshot.get("data_health_ledger")) or _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
+    paths, data_health_basis, data_health_impact = _merge_data_health_ledger_guidance(paths, health_ledger, market_type=market_type)
     fact_recovery = _as_mapping(a_share_fact_recovery_summary) or _fact_recovery_from_snapshot(snapshot)
     paths, fact_recovery_basis, fact_recovery_items, fact_recovery_tone = _merge_a_share_fact_recovery_guidance(
         paths,
@@ -704,9 +738,11 @@ def build_projection_packet(
         "historical": _historical_points(base, market_bias),
         "paths": paths,
         "market_type": market_type,
-        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis, fact_recovery_basis] if item]),
+        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis, data_health_basis, fact_recovery_basis] if item]),
         "path_evidence_summary": evidence_basis,
         "path_data_capability_summary": data_capability_basis,
+        "path_data_health_summary": data_health_basis,
+        "path_data_health_impact": data_health_impact,
         "path_fact_recovery_summary": fact_recovery_basis,
         "path_fact_recovery_items": fact_recovery_items,
         "path_fact_recovery_tone": fact_recovery_tone,
@@ -738,6 +774,7 @@ def build_projection_packet_from_state(
         analysis_method_packet=state_map.get("command_center_analysis_method_packet"),
         evidence_radar_packet=state_map.get("command_center_evidence_radar_packet"),
         a_share_data_console=state_map.get("command_center_a_share_data_console") or _status_console_from_snapshot(snapshot),
+        data_health_ledger=state_map.get("command_center_data_health_ledger") or snapshot.get("data_health_ledger"),
         a_share_fact_recovery_summary=state_map.get("command_center_a_share_fact_recovery_summary") or _fact_recovery_from_snapshot(snapshot),
         horizon_days=horizon_days,
         now=now,

@@ -192,6 +192,30 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("受限 1", view_model["a_share_data_basis_summary_text"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_evidence_chain_includes_data_health_ledger_guardrail(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "小幅进攻"},
+            data_health_ledger={
+                "status": "blocked",
+                "rows": [
+                    {
+                        "provider": "Tushare",
+                        "api": "margin_detail",
+                        "label": "融资融券",
+                        "category": "blocked",
+                        "state": "permission_denied",
+                        "status_label": "权限不足",
+                    }
+                ],
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("接口健康", joined)
+        self.assertIn("阻断加仓", joined)
+        self.assertIn("融资融券", view_model["data_health_impact"]["summary"])
+        self.assertIn("不能把缺失数据当成利好", view_model["data_health_impact"]["decision_impact"])
+
     def test_a_share_data_basis_marks_all_available_as_decision_ready(self):
         view_model = summary.build_decision_summary_view_model(
             {},

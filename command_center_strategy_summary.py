@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_data_health_ledger import build_data_health_impact_summary
+
 
 DATA_STATUS_LABELS = {
     "quant": "量化",
@@ -581,11 +583,27 @@ def build_strategy_latest_recovery_summary(latest_recovery_result_notice: Any = 
 def build_strategy_evidence_validation_items(
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    data_health_ledger: Any = None,
+    market_type: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
 ) -> list[dict]:
     evidence = _as_mapping(evidence_radar_packet)
     items = build_strategy_a_share_data_validation_items(a_share_data_console)
+    health_impact = build_data_health_impact_summary(data_health_ledger, market_type=market_type)
+    if health_impact.get("status") != "missing":
+        items.append(
+            {
+                "key": "data_health_ledger",
+                "label": "接口健康账本",
+                "priority": 0,
+                "evidence_state": "blocked" if health_impact["status"] == "blocked" else "cached" if health_impact["status"] == "partial" else "support",
+                "evidence_label": health_impact["label"],
+                "tone": health_impact["tone"],
+                "check_text": health_impact["summary"],
+                "action_hint": health_impact["strategy_action"],
+            }
+        )
     items.extend(build_strategy_a_share_fact_recovery_validation_items(a_share_fact_recovery_summary))
     items.extend(build_strategy_latest_recovery_validation_items(latest_recovery_result_notice))
     queue = evidence.get("decision_evidence_queue") or []
@@ -684,6 +702,7 @@ def build_strategy_summary_view_model(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
 ) -> dict:
@@ -693,9 +712,12 @@ def build_strategy_summary_view_model(
     confidence = "待生成" if is_empty else (_to_text(payload.get("confidence")) or "低")
     summary = _to_text(payload.get("summary")) or "尚未生成策略执行建议。点击按钮后只读取缓存、量化摘要和纪律结果，不调用 DeepSeek，不跑回测。"
     market_guidance = build_market_method_guidance(analysis_method_packet)
+    market_type = _to_text(_as_mapping(analysis_method_packet).get("market"))
     evidence_validation_items = build_strategy_evidence_validation_items(
         evidence_radar_packet,
         a_share_data_console=a_share_data_console,
+        data_health_ledger=data_health_ledger,
+        market_type=market_type,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
         latest_recovery_result_notice=latest_recovery_result_notice,
     )
@@ -724,6 +746,7 @@ def build_strategy_summary_view_model(
         "warning_items": _warning_items(payload),
         "market_method_guidance": market_guidance,
         "evidence_validation_items": evidence_validation_items,
+        "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market_type),
         "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
         "a_share_data_validation_summary": a_share_data_validation_summary,
         "a_share_fact_recovery_validation_summary": a_share_fact_recovery_validation_summary,
