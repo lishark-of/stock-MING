@@ -1509,6 +1509,87 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["deepseek_called"] is False for item in decision_queue))
         self.assertFalse(center["deepseek_called"])
 
+    def test_a_share_capability_matrix_feeds_home_recovery_center(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "a_share_capability_matrix": {
+                    "tushare_gap_explainer": {
+                        "items": [
+                            {
+                                "key": "margin",
+                                "label": "融资融券",
+                                "api_hint": "margin_detail",
+                                "state": "permission_denied",
+                                "status_label": "权限不足",
+                                "tone": "failed",
+                                "cause_code": "permission_scope",
+                                "cause_label": "接口权限/积分",
+                                "action_mode": "blocked",
+                                "why_not_found": "融资融券不是没搜到，而是权限不足。",
+                                "why_previous_full_not_enough": "之前“拉满”不代表 margin_detail 已开通。",
+                                "diagnostic_answer": "Tushare margin_detail 权限/积分不足。",
+                                "decision_guardrail": "融资融券未恢复前不能支持加融资。",
+                                "manual_button_label": "重新检测融资融券权限",
+                                "writes_packet": "command_center_margin_packet",
+                                "toolbox_entry": "高级工具箱入口 / 融资 ETF",
+                                "safe_recovery_steps": [
+                                    "先确认融资融券对应 Tushare 专业接口权限/积分。",
+                                    "进入高级工具箱入口 / 融资 ETF，点击“重新检测融资融券权限”。",
+                                    "结果回流 command_center_margin_packet 后，再进入综合中心决策链。",
+                                ],
+                                "deepseek_called": False,
+                                "external_call_policy": "not_triggered",
+                            },
+                            {
+                                "key": "dragon_tiger",
+                                "label": "龙虎榜",
+                                "api_hint": "top_list / top_inst",
+                                "state": "empty_recent",
+                                "status_label": "近期无数据",
+                                "tone": "stale",
+                                "cause_code": "publish_window",
+                                "cause_label": "交易日/标的覆盖",
+                                "action_mode": "verify_window",
+                                "diagnostic_answer": "龙虎榜近期无记录。",
+                                "manual_button_label": "重新检测龙虎榜",
+                                "writes_packet": "command_center_dragon_tiger_packet",
+                                "safe_recovery_steps": ["先核对交易日和标的覆盖。"],
+                                "deepseek_called": False,
+                            },
+                        ],
+                    }
+                }
+            }
+        )
+
+        actions = center["actions"]
+        by_packet = {item["writes_packet"]: item for item in actions}
+        group_counts = {item["key"]: item["count"] for item in center["groups"]}
+        decision_queue = center["decision_priority_queue"]
+
+        self.assertEqual(group_counts["a_share_capability_matrix"], 2)
+        self.assertIn("command_center_margin_packet", by_packet)
+        self.assertIn("command_center_dragon_tiger_packet", by_packet)
+        margin = by_packet["command_center_margin_packet"]
+        self.assertEqual(margin["source_label"], "A股能力矩阵")
+        self.assertEqual(margin["interface_cause_key"], "permission_scope")
+        self.assertEqual(margin["interface_cause_label"], "接口权限/积分")
+        self.assertIn("之前“拉满”", margin["why_previous_full_not_enough"])
+        self.assertEqual(margin["recovery_mode"], "check_permission")
+        self.assertIn("结果回流 command_center_margin_packet", margin["recovery_steps"][-1])
+        self.assertIn("批量 Tushare 请求", margin["recovery_button_context"])
+        self.assertEqual(margin["legacy_tab"], "融资 ETF")
+        self.assertEqual(decision_queue[0]["lane_key"], "p0")
+        self.assertEqual(decision_queue[0]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(decision_queue[0]["interface_cause_label"], "接口权限/积分")
+        self.assertIn("之前“拉满”", decision_queue[0]["why_previous_full_not_enough"])
+        self.assertEqual(decision_queue[1]["lane_key"], "p1")
+        self.assertEqual(decision_queue[1]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in actions))
+        self.assertTrue(all(item["deepseek_called"] is False for item in actions))
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
     def test_legacy_migration_actions_enter_home_recovery_center(self):
         legacy_migration_map = {
             "items": [

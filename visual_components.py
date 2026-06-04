@@ -5429,6 +5429,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">恢复模式：{escape(_home_text(item.get("recovery_mode_label"), "手动检查"))} ｜ 外部接口：{escape(_home_text(item.get("external_call_policy"), "not_triggered"))}</div>
           <div class="cc-home-item-meta">恢复步骤：{escape(_home_text(recovery_steps_text, "进入对应高级工具 → 手动检测 → 回流综合中心 packet"))}</div>
           <div class="cc-home-item-meta">接口原因：{escape(_home_text(item.get("interface_cause_label"), item.get("status_label") or "待验证"))} ｜ {escape(_home_text(item.get("interface_diagnostic_answer"), item.get("diagnostic_answer") or "仍需核对接口状态。"))}</div>
+          <div class="cc-home-item-meta">拉满解释：{escape(_home_text(item.get("why_previous_full_not_enough"), "之前拉满基础数据，不代表当前专业接口已验证。"))}</div>
           <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("reason"), "仍需手动确认。"))}</div>
           <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
           <div class="cc-home-item-meta">恢复结果：{escape(_home_text(item.get("recovery_result_status_label"), "待验证"))} ｜ {escape(_home_text(item.get("recovery_result_message"), "尚未检测到本项恢复结果回流。"))}</div>

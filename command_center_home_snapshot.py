@@ -812,6 +812,16 @@ def _recovery_legacy_tab(writes_packet: Any = "", key: Any = "") -> str:
     return _legacy_a_share_fact_legacy_tab(text, text)
 
 
+def _primary_writes_packet(value: Any = "", fallback: str = "command_center_packet") -> str:
+    text = _to_text(value)
+    if not text:
+        return fallback
+    for token in [part.strip() for part in text.replace(",", "/").split("/")]:
+        if token in RECOVERY_WRITES_PACKET_TO_SNAPSHOT_KEY or token.startswith("command_center_"):
+            return token
+    return text
+
+
 def build_data_recovery_actions_snapshot(
     data_capability_console: Any = None,
     data_issue_explainer: Any = None,
@@ -2108,6 +2118,9 @@ def _normalize_recovery_center_action(
         "reason": _to_text(item.get("reason") or item.get("action_hint"), f"{label}仍待验证。"),
         "diagnostic_answer": _to_text(item.get("diagnostic_answer") or item.get("meaning"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
         "interface_diagnostic_answer": _to_text(item.get("interface_diagnostic_answer") or item.get("diagnostic_answer") or item.get("meaning"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
+        "interface_cause_key": _to_text(item.get("interface_cause_key") or item.get("cause_code")),
+        "interface_cause_label": _to_text(item.get("interface_cause_label") or item.get("cause_label") or item.get("status_label"), "待验证"),
+        "why_previous_full_not_enough": _to_text(item.get("why_previous_full_not_enough")),
         "decision_guardrail": _to_text(item.get("decision_guardrail"), f"{label}未恢复前不能作为加仓、追高或加融资依据。"),
         "action_label": _to_text(item.get("action_label"), f"手动恢复{label}"),
         "toolbox_entry": _to_text(item.get("toolbox_entry") or item.get("advanced_entry"), "高级工具箱"),
@@ -2123,7 +2136,7 @@ def _normalize_recovery_center_action(
         "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
         "recovery_mode": _to_text(item.get("recovery_mode"), "manual_check"),
         "recovery_mode_label": _to_text(item.get("recovery_mode_label"), "手动检查"),
-        "recovery_steps": _as_list(item.get("recovery_steps")),
+        "recovery_steps": _as_list(item.get("recovery_steps")) or _as_list(item.get("safe_recovery_steps")),
         "recovery_button_context": _to_text(
             item.get("recovery_button_context") or item.get("button_context"),
             f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
@@ -2131,6 +2144,78 @@ def _normalize_recovery_center_action(
         "external_call_policy": _to_text(item.get("external_call_policy"), "not_triggered"),
         "deepseek_called": False,
     }
+
+
+def build_a_share_capability_matrix_recovery_actions_snapshot(
+    a_share_capability_matrix: Any = None,
+    limit: int = MAX_CAPABILITY_ITEMS,
+) -> list[dict]:
+    matrix = _as_mapping(a_share_capability_matrix)
+    if _to_text(matrix.get("status")) == "missing":
+        return []
+    explainer = _as_mapping(matrix.get("tushare_gap_explainer"))
+    raw_items = [_as_mapping(item) for item in _as_list(explainer.get("items")) if _as_mapping(item)]
+    actions = []
+    for item in raw_items:
+        action_mode = _to_text(item.get("action_mode"))
+        if action_mode in {"usable", "missing"}:
+            continue
+        label = _to_text(item.get("label"), "A股专业接口")
+        writes_packet = _primary_writes_packet(item.get("writes_packet"), "command_center_facts_packet")
+        priority = 1 if action_mode == "blocked" else 2 if action_mode in {"verify_cache", "verify_window"} else 3
+        recovery_mode = {
+            "blocked": "check_permission",
+            "verify_cache": "verify_cache",
+            "verify_window": "verify_window",
+            "manual_required": "manual_refresh",
+        }.get(action_mode, "manual_check")
+        recovery_mode_label = {
+            "check_permission": "先查权限/积分",
+            "verify_cache": "复核缓存日期",
+            "verify_window": "核对交易日/覆盖范围",
+            "manual_refresh": "手动刷新",
+        }.get(recovery_mode, "手动检查")
+        action_label = _to_text(item.get("manual_button_label"), f"手动检测{label}")
+        toolbox_entry = _to_text(item.get("toolbox_entry"), "高级工具箱入口 / 数据源体检")
+        legacy_tab = _recovery_legacy_tab(writes_packet, item.get("key") or item.get("api_hint"))
+        actions.append(
+            {
+                "key": _to_text(item.get("key"), writes_packet or label),
+                "label": label,
+                "provider": "Tushare",
+                "api": _to_text(item.get("api_hint"), "Tushare 专业接口"),
+                "state": _to_text(item.get("state"), "unknown"),
+                "status_label": _to_text(item.get("status_label"), "待验证"),
+                "priority": priority,
+                "reason": _to_text(item.get("why_not_found"), f"{label}仍待验证。"),
+                "diagnostic_answer": _to_text(item.get("diagnostic_answer"), f"{label}仍需核对接口权限、日期和覆盖范围。"),
+                "interface_diagnostic_answer": _to_text(item.get("diagnostic_answer"), f"{label}仍需核对接口权限、日期和覆盖范围。"),
+                "interface_cause_key": _to_text(item.get("cause_code")),
+                "interface_cause_label": _to_text(item.get("cause_label"), "待验证"),
+                "why_previous_full_not_enough": _to_text(item.get("why_previous_full_not_enough")),
+                "decision_guardrail": _to_text(item.get("decision_guardrail"), f"{label}未恢复前不能作为交易依据。"),
+                "action_label": action_label,
+                "toolbox_entry": toolbox_entry,
+                "workspace_target": "高级工具箱（旧版保留）",
+                "workspace_state_key": "workspace_mode_v2",
+                "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                "legacy_tab": legacy_tab,
+                "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                "writes_packet": writes_packet,
+                "refresh_policy": "button_gated",
+                "recovery_mode": recovery_mode,
+                "recovery_mode_label": recovery_mode_label,
+                "recovery_steps": _as_list(item.get("safe_recovery_steps")),
+                "recovery_button_context": (
+                    f"点击“{action_label}”只恢复 {label} 并回流 {writes_packet}；"
+                    "不会自动调用 DeepSeek、回测、全市场扫描或批量 Tushare 请求。"
+                ),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    actions = sorted(actions, key=lambda row: (row["priority"], row["label"], row["writes_packet"]))
+    return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
 RECOVERY_PRIORITY_LANES = (
@@ -2294,6 +2379,9 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "label": label,
                 "status": _to_text(action.get("status"), "waiting"),
                 "status_label": _to_text(action.get("status_label"), "待验证"),
+                "interface_cause_key": _to_text(action.get("interface_cause_key")),
+                "interface_cause_label": _to_text(action.get("interface_cause_label")),
+                "why_previous_full_not_enough": _to_text(action.get("why_previous_full_not_enough")),
                 "diagnostic_answer": diagnostic,
                 "decision_impact": _to_text(action.get("decision_guardrail") or action.get("decision_impact"), config["fallback_impact"]),
                 "why_first": config["why_first"],
@@ -2960,6 +3048,10 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         or payload.get("data_health_timeline_recovery_actions")
     )
     legacy_fact_actions = _as_list(payload.get("legacy_a_share_fact_recovery_actions"))
+    a_share_matrix_actions = build_a_share_capability_matrix_recovery_actions_snapshot(
+        payload.get("a_share_capability_matrix"),
+        limit=limit,
+    )
     a_share_actions = _as_list(_as_mapping(payload.get("a_share_user_data_diagnostic")).get("recovery_actions"))
     legacy_migration_actions = build_legacy_migration_recovery_actions_snapshot(
         payload.get("legacy_migration_map"),
@@ -2973,6 +3065,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     action_sources = [
         ("data_source", "数据源能力", data_actions, 1),
         ("data_health_timeline", "接口健康时间线", timeline_actions, 1),
+        ("a_share_capability_matrix", "A股能力矩阵", a_share_matrix_actions, 2),
         ("a_share_fact", "旧版 A股事实卡", legacy_fact_actions, 2),
         ("a_share", "A股数据能力", a_share_actions, 3),
         ("legacy_packet_checklist", "旧能力迁移清单", legacy_packet_checklist_actions, 3),
