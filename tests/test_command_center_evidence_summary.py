@@ -61,6 +61,44 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(by_key["margin"]["status_label"], "使用缓存")
         self.assertEqual(by_key["margin"]["evidence_label"], "缓存证据")
         self.assertFalse(any(item["deepseek_called"] for item in vm["items"]))
+        self.assertEqual(vm["radar_card"]["status"], "blocked")
+        self.assertEqual(vm["radar_card"]["status_label"], "阻断加仓")
+        self.assertIn("低置信度", vm["radar_card"]["confidence_gate"])
+        self.assertIn("不能把缺失数据写成利好", vm["radar_card"]["execution_guardrail"])
+
+    def test_radar_card_marks_cached_or_missing_as_cautious_validation(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "moneyflow_packet": {"status": "ready", "data_status": "ready", "summary": "资金流可用"},
+                "margin_packet": {"status": "partial", "data_status": "cached", "summary": "融资缓存"},
+            }
+        )
+        card = vm["radar_card"]
+
+        self.assertEqual(card["status"], "partial")
+        self.assertEqual(card["status_label"], "谨慎验证")
+        self.assertIn("中低置信度", card["confidence_gate"])
+        self.assertIn("不要追高", card["execution_guardrail"])
+        self.assertFalse(card["deepseek_called"])
+
+    def test_radar_card_marks_all_ready_as_evidence_chain_ready(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "hard_risk_packet": {"status": "ready", "data_status": "ready", "risk_state": "暂无硬风险"},
+                "moneyflow_packet": {"status": "ready", "data_status": "ready", "summary": "资金可用"},
+                "margin_packet": {"status": "ready", "data_status": "ready", "summary": "融资可用"},
+                "dragon_tiger_packet": {"status": "ready", "data_status": "ready", "summary": "龙虎榜可用"},
+                "limit_emotion_packet": {"status": "ready", "data_status": "ready", "summary": "情绪可用"},
+                "chip_packet": {"status": "ready", "data_status": "ready", "summary": "筹码可用"},
+            }
+        )
+        card = vm["radar_card"]
+
+        self.assertEqual(card["status"], "ready")
+        self.assertEqual(card["status_label"], "可进入证据链")
+        self.assertIn("价格纪律", card["execution_guardrail"])
+        self.assertEqual(len(card["top_supports"]), 3)
+        json.dumps(card, ensure_ascii=False)
 
     def test_decision_evidence_queue_orders_priority_and_blockers_first(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(

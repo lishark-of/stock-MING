@@ -219,6 +219,89 @@ def _evidence_action_hint(label: str, evidence_state: str) -> str:
     return f"{label}已可辅助验证，仍需和价格纪律、仓位规则一起看。"
 
 
+def _join_labels(items: Any, limit: int = 3, fallback: str = "暂无") -> str:
+    labels = [to_text(as_mapping(item).get("label")) for item in as_list(items)]
+    labels = [label for label in labels if label]
+    if not labels:
+        return fallback
+    suffix = f" 等 {len(labels)} 项" if len(labels) > limit else ""
+    return "、".join(labels[:limit]) + suffix
+
+
+def _short_decision_signals(items: Any, limit: int = 3) -> list[str]:
+    signals = []
+    for raw in as_list(items):
+        item = as_mapping(raw)
+        text = to_text(item.get("decision_signal")) or to_text(item.get("next_action")) or to_text(item.get("headline"))
+        if text:
+            signals.append(text)
+        if len(signals) >= limit:
+            break
+    return signals
+
+
+def build_evidence_radar_card_view_model(
+    support_items: Any = None,
+    blocker_items: Any = None,
+    cached_items: Any = None,
+    missing_items: Any = None,
+) -> dict:
+    support = as_list(support_items)
+    blockers = as_list(blocker_items)
+    cached = as_list(cached_items)
+    missing = as_list(missing_items)
+    support_count = len(support)
+    blocker_count = len(blockers)
+    cached_count = len(cached)
+    missing_count = len(missing)
+    if blocker_count:
+        status = "blocked"
+        status_label = "阻断加仓"
+        tone = "danger"
+        confidence_gate = "低置信度"
+        execution_guardrail = (
+            f"先处理{_join_labels(blockers, fallback='阻断证据')}；未排除前不能把缺失数据写成利好，"
+            "策略只能观察、降风险或小额试探。"
+        )
+    elif cached_count or missing_count:
+        status = "partial"
+        status_label = "谨慎验证"
+        tone = "warning"
+        confidence_gate = "中低置信度"
+        recovery = _join_labels(cached + missing, fallback="缓存/缺失证据")
+        execution_guardrail = f"{recovery}仍需复核；未补齐前不要追高、满仓或加融资。"
+    elif support_count:
+        status = "ready"
+        status_label = "可进入证据链"
+        tone = "success"
+        confidence_gate = "可验证"
+        execution_guardrail = "关键 A股证据已形成支持链，但仍需价格纪律、仓位预算和失效条件共同确认。"
+    else:
+        status = "missing"
+        status_label = "待刷新"
+        tone = "muted"
+        confidence_gate = "不可验证"
+        execution_guardrail = "A股证据雷达尚未生成；只能显示空态或上次缓存，不支撑交易动作。"
+    return {
+        "status": status,
+        "status_label": status_label,
+        "tone": tone,
+        "confidence_gate": confidence_gate,
+        "summary": f"支持 {support_count}｜阻断 {blocker_count}｜缓存 {cached_count}｜缺失 {missing_count}",
+        "top_supports": [as_mapping(item) for item in support[:3]],
+        "primary_blockers": [as_mapping(item) for item in blockers[:3]],
+        "required_recovery": [as_mapping(item) for item in (blockers + cached + missing)[:4]],
+        "support_text": _join_labels(support, fallback="暂无支持证据"),
+        "blocker_text": _join_labels(blockers, fallback="暂无阻断证据"),
+        "recovery_text": _join_labels(blockers + cached + missing, fallback="暂无待补证据"),
+        "decision_guardrail": execution_guardrail,
+        "execution_guardrail": execution_guardrail,
+        "decision_signals": _short_decision_signals(blockers + cached + missing + support),
+        "manual_note": "证据雷达只读取本地 packet；所有补齐动作都必须手动触发。",
+        "deepseek_called": False,
+    }
+
+
 def _manual_action(key: str, label: str, evidence_state: str) -> dict:
     config = EVIDENCE_ACTIONS.get(key, {})
     return {
@@ -353,10 +436,17 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
     decision_summary = (
         f"支持 {len(support_items)}｜阻断 {len(blocker_items)}｜缓存 {len(cached_items)}｜缺失 {len(missing_items)}"
     )
+    radar_card = build_evidence_radar_card_view_model(
+        support_items=support_items,
+        blocker_items=blocker_items,
+        cached_items=cached_items,
+        missing_items=missing_items,
+    )
     return {
         "title": "A股证据雷达",
         "summary": summary,
         "decision_summary": decision_summary,
+        "radar_card": radar_card,
         "items": items,
         "support_items": support_items,
         "blocker_items": blocker_items,

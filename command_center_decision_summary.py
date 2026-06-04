@@ -389,6 +389,16 @@ def build_decision_evidence_chain_items(
         items.append(latest_recovery_basis)
     evidence = _as_mapping(evidence_radar_packet)
     if evidence:
+        radar_card = _as_mapping(evidence.get("radar_card"))
+        if radar_card:
+            items.append(
+                {
+                    "label": "A股证据雷达",
+                    "value": f"{_to_text(radar_card.get('status_label')) or '待验证'}｜{_to_text(radar_card.get('confidence_gate')) or '不可验证'}",
+                    "tone": _to_text(radar_card.get("tone")) or "warning",
+                    "summary": _to_text(radar_card.get("decision_guardrail")),
+                }
+            )
         blockers = len(evidence.get("blocker_items") or [])
         support = len(evidence.get("support_items") or [])
         cached = len(evidence.get("cached_items") or [])
@@ -454,6 +464,7 @@ def build_decision_summary_view_model(
             latest_recovery_result_notice=latest_recovery_result_notice,
         ),
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market),
+        "a_share_evidence_radar_card": _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card")),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
         "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
         "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),

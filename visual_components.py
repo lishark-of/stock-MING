@@ -4511,7 +4511,11 @@ def render_strategy_execution_command_card(
     a_share_data_validation_summary = str(vm.get("a_share_data_validation_summary") or "").strip()
     a_share_fact_recovery_validation_summary = str(vm.get("a_share_fact_recovery_validation_summary") or "").strip()
     latest_recovery_validation_summary = str(vm.get("latest_recovery_validation_summary") or "").strip()
+    evidence_card = vm.get("evidence_radar_card") or {}
+    evidence_gate = str(vm.get("evidence_confidence_gate") or evidence_card.get("confidence_gate") or "不可验证")
     validation_title = str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0")
+    if evidence_card:
+        validation_title = f"{validation_title} ｜ 证据门槛：{evidence_card.get('status_label') or '待验证'}"
     if a_share_data_validation_summary:
         validation_title = f"{validation_title} ｜ A股数据：{a_share_data_validation_summary}"
     if a_share_fact_recovery_validation_summary:
@@ -4536,6 +4540,15 @@ def render_strategy_execution_command_card(
         for item in (vm.get("evidence_validation_items") or [])[:8]
         if isinstance(item, dict)
     )
+    evidence_gate_html = ""
+    if evidence_card:
+        evidence_gate_html = f"""
+          <div class="cc-strategy-condition {_tone_to_strategy_class(evidence_card.get('tone'))}">
+            <div class="cc-strategy-label">A股证据门槛 · {escape(str(evidence_card.get('status_label') or '待验证'))}</div>
+            <div class="cc-strategy-text">{escape(str(evidence_card.get('execution_guardrail') or '证据未补齐前，不支撑放大仓位。'))}</div>
+            <div class="cc-strategy-check">✓ {escape(str(evidence_card.get('summary') or validation_title))}</div>
+          </div>
+        """
     pill_items = [
         (f"状态：{vm.get('status_label') or '待生成'}", vm.get("status_tone")),
         (f"风险：{risk_level}", risk_level),
@@ -4559,7 +4572,7 @@ def render_strategy_execution_command_card(
         <aside class="cc-strategy-side">
           <div class="cc-strategy-side-label">置信度</div>
           <div class="cc-strategy-confidence">{escape(confidence)}</div>
-          <div class="cc-muted-note">不放大确定性；缺少量化或纪律缓存时，只能作为待验证路径。</div>
+          <div class="cc-muted-note">证据门槛：{escape(evidence_gate)}。不放大确定性；缺少量化、纪律或 A股证据时，只能作为待验证路径。</div>
         </aside>
       </div>
       <div class="cc-strategy-budget-grid">{budget_html}</div>
@@ -4567,6 +4580,7 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-condition-grid">{condition_html}</div>
       {guidance_html}
       <div class="cc-strategy-section-title">证据验证重点 · {escape(validation_title)}</div>
+      {evidence_gate_html}
       <div class="cc-strategy-condition-grid">{evidence_validation_html}</div>
       <div class="cc-strategy-section-title">未来 5-10 日路径</div>
       <div class="cc-strategy-path-grid">{path_html}</div>
@@ -5230,6 +5244,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         """
     evidence_vm = build_a_share_evidence_radar_view_model(payload)
+    evidence_card = evidence_vm.get("radar_card") or {}
+    evidence_card_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            A股证据门槛
+            <span class="cc-home-chip {escape(_home_text(evidence_card.get("tone"), "missing"))}">
+              {escape(_home_text(evidence_card.get("status_label"), "待刷新"))} · {escape(_home_text(evidence_card.get("confidence_gate"), "不可验证"))}
+            </span>
+          </div>
+          <div class="cc-home-item-meta">结论：{escape(_home_text(evidence_card.get("execution_guardrail"), "证据未补齐前，不支撑放大仓位。"))}</div>
+          <div class="cc-home-item-meta">摘要：{escape(_home_text(evidence_card.get("summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))} ｜ 支持：{escape(_home_text(evidence_card.get("support_text"), "暂无支持证据"))}</div>
+          <div class="cc-home-item-meta">待处理：{escape(_home_text(evidence_card.get("recovery_text"), "暂无待补证据"))} ｜ DeepSeek：未调用</div>
+        </div>
+        """
     evidence_items = [item for item in (evidence_vm.get("items") or []) if isinstance(item, dict)]
     evidence_action_items = [item for item in (evidence_vm.get("next_evidence_actions") or []) if isinstance(item, dict)]
     evidence_action_html = ""
@@ -5422,6 +5450,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {a_share_fact_recovery_html}
           {discipline_html}
           <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))} ｜ {escape(_home_text(evidence_vm.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
+          {evidence_card_html}
           <div class="cc-home-item-title">下一步证据补齐队列</div>
           {evidence_action_html}
           {evidence_html}

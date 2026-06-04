@@ -219,6 +219,37 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("复核 融资融券 缓存", dumped)
         self.assertIn("先补齐 龙虎榜", dumped)
 
+    def test_a_share_evidence_radar_card_sets_strategy_execution_gate(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            evidence_radar_packet={
+                "decision_summary": "支持 1｜阻断 1｜缓存 0｜缺失 4",
+                "radar_card": {
+                    "status": "blocked",
+                    "status_label": "阻断加仓",
+                    "tone": "danger",
+                    "confidence_gate": "低置信度",
+                    "execution_guardrail": "公告/硬风险未排除前只能观察或降风险。",
+                    "deepseek_called": False,
+                },
+                "decision_evidence_queue": [
+                    {
+                        "key": "hard_risk",
+                        "label": "公告/硬风险",
+                        "priority": 1,
+                        "evidence_state": "blocked",
+                        "decision_signal": "公告/硬风险失败/受限，不能支撑加仓。",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(view_model["evidence_confidence_gate"], "低置信度")
+        self.assertIn("只能观察", view_model["evidence_execution_guardrail"])
+        self.assertEqual(view_model["evidence_radar_card"]["status_label"], "阻断加仓")
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_a_share_data_capability_blocks_strategy_execution_when_restricted(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "小幅进攻"},

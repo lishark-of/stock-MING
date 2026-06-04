@@ -165,6 +165,33 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("支持证据", joined)
         self.assertEqual(view_model["a_share_evidence_summary_text"], "支持 1｜阻断 1｜缓存 1｜缺失 3")
 
+    def test_evidence_chain_includes_a_share_evidence_radar_card_gate(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "小幅进攻"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            evidence_radar_packet={
+                "decision_summary": "支持 1｜阻断 1｜缓存 0｜缺失 4",
+                "radar_card": {
+                    "status": "blocked",
+                    "status_label": "阻断加仓",
+                    "tone": "danger",
+                    "confidence_gate": "低置信度",
+                    "decision_guardrail": "硬风险未排除前不能加仓。",
+                    "deepseek_called": False,
+                },
+                "blocker_items": [{"label": "公告/硬风险"}],
+                "support_items": [{"label": "个股资金流"}],
+                "cached_items": [],
+                "missing_items": [{}, {}, {}, {}],
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("A股证据雷达", joined)
+        self.assertIn("阻断加仓", joined)
+        self.assertEqual(view_model["a_share_evidence_radar_card"]["confidence_gate"], "低置信度")
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_evidence_chain_includes_a_share_data_capability_blockers(self):
         console = {
             "decision_readiness_label": "阻断加仓",
