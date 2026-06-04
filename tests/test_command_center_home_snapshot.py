@@ -1098,6 +1098,18 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(ledger["deepseek_called"])
         self.assertEqual(ledger["external_call_policy"], "not_triggered")
         self.assertIn("不会自动调用 Tushare", ledger["safe_mode_text"])
+        by_label = {item["label"]: item for item in ledger["items"]}
+        self.assertEqual(by_label["融资融券"]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(by_label["融资融券"]["legacy_tab"], "融资 ETF")
+        self.assertIn("手动执行后回流 command_center_margin_packet", by_label["融资融券"]["navigation_label"])
+        self.assertIn("不会自动调用 DeepSeek", by_label["融资融券"]["recovery_button_context"])
+        margin_navigation = snapshot.build_tool_recovery_navigation_state(by_label["融资融券"])
+        self.assertEqual(margin_navigation["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(margin_navigation["legacy_workspace_selected_tab"], "融资 ETF")
+        self.assertEqual(margin_navigation["command_center_last_tool_recovery_policy"], "navigation_only")
+        self.assertEqual(by_label["涨跌停/情绪"]["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(by_label["涨跌停/情绪"]["legacy_tab"], "数据源体检")
+        self.assertEqual(by_label["AkShare 重型刷新"]["legacy_tab"], "数据源体检")
         json.dumps(ledger, ensure_ascii=False)
 
     def test_home_snapshot_builds_data_capability_console(self):

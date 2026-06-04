@@ -6227,6 +6227,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                     args=(item,),
                     width="stretch",
                 )
+    valid_old_absence_actions = [
+        item
+        for item in (old_workspace_absence_ledger.get("items") or [])[:5]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_old_absence_actions:
+        st.caption("旧工作台数据缺失原因｜打开恢复入口：这里只切换到高级工具箱；对应检测仍需手动点击。")
+        absence_cols = st.columns(min(4, len(valid_old_absence_actions)))
+        for index, item in enumerate(valid_old_absence_actions):
+            with absence_cols[index % len(absence_cols)]:
+                st.button(
+                    f"{_home_text(item.get('cause_label'), '待验证')}｜{_home_text(item.get('label'), '旧能力')}",
+                    key=f"btn_open_old_absence_{_home_text(item.get('cause_key'), 'cause')}_{_home_text(item.get('key'), index)}",
+                    help=_home_text(item.get("recovery_button_context") or item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
     valid_data_health_timeline_actions = [
         item
         for item in data_health_timeline_recovery_actions[:4]

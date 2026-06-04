@@ -144,6 +144,19 @@ RECOVERY_WRITES_PACKET_TO_SNAPSHOT_KEY = {
     "command_center_market_packet": "market_packet",
 }
 
+OLD_WORKSPACE_API_TO_WRITES_PACKET = {
+    "moneyflow": "command_center_moneyflow_packet",
+    "top_list": "command_center_dragon_tiger_packet",
+    "top_inst": "command_center_dragon_tiger_packet",
+    "margin_detail": "command_center_margin_packet",
+    "stk_limit": "command_center_limit_emotion_packet",
+    "limit_list_d": "command_center_limit_emotion_packet",
+    "limit_cpt_list": "command_center_limit_emotion_packet",
+    "cyq_perf": "command_center_chip_packet",
+    "cyq_chips": "command_center_chip_packet",
+    "akshare_manual_refresh": "command_center_data_capability_packet",
+}
+
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
@@ -747,6 +760,8 @@ def _recovery_legacy_tab(writes_packet: Any = "", key: Any = "") -> str:
     text = _to_text(writes_packet) or _to_text(key)
     if text in {"hard_risk", "command_center_hard_risk_packet"}:
         return "天眼风控"
+    if text in {"data_capability", "command_center_data_capability_packet", "akshare_manual_refresh"}:
+        return "数据源体检"
     return _legacy_a_share_fact_legacy_tab(text, text)
 
 
@@ -1291,6 +1306,20 @@ def _old_workspace_absence_cause_key(item: Mapping[str, Any]) -> str:
     return "unverified"
 
 
+def _infer_old_workspace_writes_packet(item: Mapping[str, Any]) -> str:
+    explicit = _to_text(item.get("writes_packet"))
+    if explicit:
+        return explicit
+    api = _to_text(item.get("api") or item.get("table")).lower()
+    if api in OLD_WORKSPACE_API_TO_WRITES_PACKET:
+        return OLD_WORKSPACE_API_TO_WRITES_PACKET[api]
+    key = _to_text(item.get("key") or item.get("section")).lower()
+    for config in A_SHARE_FACT_RECOVERY_SOURCES:
+        if key == _to_text(config.get("key")).lower():
+            return _to_text(config.get("writes_packet"), "command_center_packet")
+    return "command_center_data_capability_packet"
+
+
 def _old_workspace_absence_item(raw: Any = None, source_type: str = "") -> dict:
     item = _as_mapping(raw)
     if not item:
@@ -1300,6 +1329,10 @@ def _old_workspace_absence_item(raw: Any = None, source_type: str = "") -> dict:
     label = _to_text(item.get("label") or item.get("module") or item.get("api") or item.get("key"), "旧工作台能力")
     api = _to_text(item.get("api") or item.get("table"))
     provider = _to_text(item.get("provider") or item.get("source"), "本地 packet")
+    writes_packet = _infer_old_workspace_writes_packet(item)
+    legacy_tab = _to_text(item.get("legacy_tab"), _recovery_legacy_tab(writes_packet, item.get("key") or api or label))
+    toolbox_entry = _to_text(item.get("toolbox_entry"), f"高级工具箱 / {legacy_tab}")
+    action_label = _to_text(item.get("action_label") or item.get("manual_check_button_label"), f"手动检测{label}")
     return {
         "key": _to_text(item.get("key") or api or label, "old_workspace_data"),
         "label": label,
@@ -1318,11 +1351,21 @@ def _old_workspace_absence_item(raw: Any = None, source_type: str = "") -> dict:
         ),
         "next_action": _to_text(item.get("next_action") or item.get("action_hint"), cause["next_action"]),
         "decision_guardrail": _to_text(item.get("decision_guardrail"), cause["decision_guardrail"]),
-        "writes_packet": _to_text(item.get("writes_packet"), "command_center_packet"),
-        "toolbox_entry": _to_text(item.get("toolbox_entry") or item.get("legacy_tab"), "高级工具箱"),
+        "action_label": action_label,
+        "writes_packet": writes_packet,
+        "toolbox_entry": toolbox_entry,
+        "workspace_target": "高级工具箱（旧版保留）",
+        "workspace_state_key": "workspace_mode_v2",
+        "legacy_tab": legacy_tab,
+        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+        "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
         "source_type": _to_text(source_type, "local_status"),
         "updated_at": _to_text(item.get("updated_at") or item.get("latest_date"), "暂无"),
         "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+        "recovery_button_context": _to_text(
+            item.get("recovery_button_context") or item.get("button_context"),
+            f"点击“{action_label}”只处理 {api or label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测、全市场扫描或重型接口。",
+        ),
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
     }
