@@ -37,6 +37,29 @@ STATUS_TO_LEGACY_STATE = {
     STATUS_UNKNOWN: "unknown",
 }
 
+LEGACY_STATE_TO_STATUS = {
+    data_capability.STATE_AVAILABLE: STATUS_AVAILABLE,
+    data_capability.STATE_PERMISSION_DENIED: STATUS_NO_PERMISSION,
+    data_capability.STATE_FAILED: STATUS_FAILED,
+    data_capability.STATE_NETWORK_FAILED: STATUS_FAILED,
+    data_capability.STATE_NOT_CONFIGURED: STATUS_NO_PERMISSION,
+    data_capability.STATE_EMPTY_RECENT: STATUS_NO_DATA,
+    data_capability.STATE_STALE_CACHE: STATUS_CACHED,
+    data_capability.STATE_FALLBACK_USED: STATUS_CACHED,
+    data_capability.STATE_DISABLED_THIS_SESSION: STATUS_SKIPPED,
+    data_capability.STATE_REQUIRES_MANUAL_REFRESH: STATUS_SKIPPED,
+}
+
+STATUS_LABELS = {
+    STATUS_AVAILABLE: "可用",
+    STATUS_FAILED: "失败",
+    STATUS_NO_PERMISSION: "权限不足/未配置",
+    STATUS_NO_DATA: "无数据",
+    STATUS_CACHED: "缓存",
+    STATUS_SKIPPED: "跳过",
+    STATUS_UNKNOWN: "未知",
+}
+
 
 _PROVIDER_ITEM_API_FALLBACK = {
     "deepseek": "deepseek_explain",
@@ -55,6 +78,25 @@ def map_status_to_legacy_state(status: Any) -> str:
     if normalized == STATUS_UNKNOWN:
         return data_capability.STATE_EMPTY_RECENT
     return STATUS_TO_LEGACY_STATE.get(normalized, data_capability.STATE_EMPTY_RECENT)
+
+
+def _infer_status_from_text(*values: Any) -> str:
+    text = " ".join(str(value or "") for value in values).strip().lower()
+    if not text:
+        return STATUS_UNKNOWN
+    if any(word in text for word in ("permission", "权限", "forbidden", "unauthorized", "403")):
+        return STATUS_NO_PERMISSION
+    if any(word in text for word in ("未配置", "not configured", "missing key", "缺少 key", "no api key", "key 为空")):
+        return STATUS_NO_PERMISSION
+    if any(word in text for word in ("no data", "empty", "暂无数据", "近期无数据", "无样本", "空数据")):
+        return STATUS_NO_DATA
+    if any(word in text for word in ("cache", "cached", "缓存", "stale")):
+        return STATUS_CACHED
+    if any(word in text for word in ("skip", "skipped", "跳过", "手动刷新", "manual refresh")):
+        return STATUS_SKIPPED
+    if any(word in text for word in ("timeout", "failed", "failure", "error", "异常", "失败")):
+        return STATUS_FAILED
+    return STATUS_UNKNOWN
 
 
 def _legacy_capability_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -97,6 +139,8 @@ def _legacy_capability_item(item: dict[str, Any]) -> dict[str, Any]:
             "market": payload.get("market") or "",
             "tier": payload.get("tier") or TIER_CORE,
             "status": reason or payload.get("status") or status,
+            "governance_status": status,
+            "governance_label": STATUS_LABELS.get(status, "未知"),
             "capability_state": legacy_state,
             "capability_label": data_capability.state_label(legacy_state),
             "last_success_at": latest_at,
@@ -128,6 +172,7 @@ def build_data_capability_packet(registry: dict[str, Any] | None) -> dict[str, A
     # keep registry 原始字段以便界面回读。
     unified_packet["registry_version"] = "mvp_v1"
     unified_packet["items"] = normalized_items
+    unified_packet["status_groups"] = summarize_data_capability_packet({"items": normalized_items})
     return unified_packet
 
 
@@ -153,26 +198,20 @@ def _infer_single_item_status(
             data_capability.STATE_NOT_CONFIGURED,
             data_capability.STATE_REQUIRES_MANUAL_REFRESH,
         }:
-            if current == data_capability.STATE_AVAILABLE:
-                return STATUS_AVAILABLE
-            if current == data_capability.STATE_EMPTY_RECENT:
-                return STATUS_NO_DATA
-            if current == data_capability.STATE_STALE_CACHE:
-                return STATUS_CACHED
-            if current == data_capability.STATE_PERMISSION_DENIED:
-                return STATUS_NO_PERMISSION
-            if current == data_capability.STATE_DISABLED_THIS_SESSION:
-                return STATUS_SKIPPED
-            if current == data_capability.STATE_REQUIRES_MANUAL_REFRESH:
-                return STATUS_SKIPPED
-            return STATUS_FAILED
+            return LEGACY_STATE_TO_STATUS.get(current, STATUS_FAILED)
     if item.get("ok") is True:
         return STATUS_AVAILABLE
+    if item.get("ok") is False:
+        text_status = _infer_status_from_text(item.get("error"), item.get("status"), item.get("message"))
+        return STATUS_FAILED if text_status == STATUS_UNKNOWN else text_status
     if item.get("available") is True:
         return STATUS_AVAILABLE
     if item.get("disabled") is True:
         return STATUS_SKIPPED
-    if item.get("permission") is True or "permission" in str(item.get("error") or "").lower():
+    text_status = _infer_status_from_text(item.get("error"), item.get("status"), item.get("message"))
+    if text_status != STATUS_UNKNOWN:
+        return text_status
+    if item.get("permission") is True:
         return STATUS_NO_PERMISSION
     if item.get("cached") is True:
         return STATUS_CACHED
@@ -231,6 +270,15 @@ def apply_tushare_health(registry: dict[str, Any], health_result: dict[str, Any]
     }
 
     latest = {}
+    priority = {
+        STATUS_AVAILABLE: 6,
+        STATUS_CACHED: 5,
+        STATUS_NO_PERMISSION: 4,
+        STATUS_NO_DATA: 3,
+        STATUS_FAILED: 2,
+        STATUS_SKIPPED: 1,
+        STATUS_UNKNOWN: 0,
+    }
     for row in items:
         if not isinstance(row, dict):
             continue
@@ -241,12 +289,12 @@ def apply_tushare_health(registry: dict[str, Any], health_result: dict[str, Any]
         for name, api_list in grouped.items():
             if api in api_list:
                 current = latest.setdefault(name, (STATUS_UNKNOWN, "", ""))
-                if row_status == STATUS_AVAILABLE:
+                if priority.get(row_status, 0) >= priority.get(current[0], 0):
                     latest[name] = (row_status, last_success, "")
                 else:
                     latest[name] = (
-                        STATUS_SKIPPED if current[0] == STATUS_AVAILABLE else row_status,
-                        current[1] if current[1] else last_success,
+                        current[0],
+                        current[1] or last_success,
                         current[2] or row_error,
                     )
 
@@ -320,23 +368,47 @@ def apply_deepseek_status(registry: dict[str, Any], is_configured: bool, key_cou
             registry,
             "DeepSeek 解释",
             STATUS_AVAILABLE,
-            last_success_at=now_iso(),
+            last_success_at="",
             last_error="",
+            action_hint=f"DeepSeek 已配置（key_count={key_count}），本轮未调用；点击解释按钮才会消耗 token。",
         )
     return update_capability_status(
         registry,
         "DeepSeek 解释",
         STATUS_NO_PERMISSION,
         last_error=f"DeepSeek 未配置或 key 为空（key_count={key_count}）",
+        action_hint="配置 DeepSeek key 后，仍需手动点击解释按钮才会调用。",
     )
 
 
 def apply_yfinance_quote(registry: dict[str, Any], quote_snapshot: dict[str, Any] | None, market_type: str = "") -> dict[str, Any]:
     if not isinstance(quote_snapshot, dict):
-        return registry
+        return update_capability_status(
+            registry,
+            "yfinance 行情",
+            STATUS_SKIPPED,
+            last_error="yfinance 本轮未触发",
+        )
+
+    if quote_snapshot.get("skipped") is True or quote_snapshot.get("not_called") is True:
+        return update_capability_status(
+            registry,
+            "yfinance 行情",
+            STATUS_SKIPPED,
+            last_success_at=str(quote_snapshot.get("data_date") or quote_snapshot.get("updated_at") or ""),
+            last_error=str(quote_snapshot.get("warning") or quote_snapshot.get("reason") or "yfinance 本轮跳过"),
+        )
 
     source = str(quote_snapshot.get("raw_source") or "").lower()
     has_price = quote_snapshot.get("price") not in (None, "")
+    if quote_snapshot.get("cached") is True and has_price:
+        return update_capability_status(
+            registry,
+            "yfinance 行情",
+            STATUS_CACHED,
+            last_success_at=str(quote_snapshot.get("data_date") or now_iso()),
+            last_error=str(quote_snapshot.get("warning") or "使用 yfinance 缓存"),
+        )
     if market_type and not str(market_type).startswith("A_SHARE") and not has_price:
         return update_capability_status(
             registry,
@@ -500,6 +572,49 @@ def apply_basic_refresh_capability_probe(
     updated = apply_akshare_snapshot(updated, akshare_snapshot)
     updated = apply_home_snapshot_status(updated, home_snapshot)
     return updated, build_data_capability_packet(updated)
+
+
+def normalize_packet_item_status(item: dict[str, Any] | None) -> str:
+    payload = item or {}
+    explicit = to_status_dict(payload.get("governance_status") or payload.get("status_code"))
+    if explicit != STATUS_UNKNOWN:
+        return explicit
+    state = str(payload.get("capability_state") or payload.get("state") or "").strip().lower()
+    if state in LEGACY_STATE_TO_STATUS:
+        return LEGACY_STATE_TO_STATUS[state]
+    inferred = _infer_status_from_text(payload.get("status"), payload.get("capability_label"), payload.get("error"), payload.get("last_error"))
+    if inferred != STATUS_UNKNOWN:
+        return inferred
+    return STATUS_AVAILABLE if payload.get("ok") is True else STATUS_UNKNOWN
+
+
+def summarize_data_capability_packet(packet: dict[str, Any] | None) -> dict[str, Any]:
+    items = (packet or {}).get("items") or []
+    groups = {
+        STATUS_AVAILABLE: [],
+        STATUS_FAILED: [],
+        STATUS_NO_PERMISSION: [],
+        STATUS_NO_DATA: [],
+        STATUS_CACHED: [],
+        STATUS_SKIPPED: [],
+        STATUS_UNKNOWN: [],
+    }
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        status = normalize_packet_item_status(raw)
+        label = str(raw.get("label") or raw.get("name") or raw.get("api") or "数据能力")
+        groups.setdefault(status, []).append(label)
+    return {
+        "available": groups.get(STATUS_AVAILABLE, []),
+        "failed": groups.get(STATUS_FAILED, []),
+        "no_permission": groups.get(STATUS_NO_PERMISSION, []),
+        "no_data": groups.get(STATUS_NO_DATA, []),
+        "cached": groups.get(STATUS_CACHED, []),
+        "skipped": groups.get(STATUS_SKIPPED, []),
+        "unknown": groups.get(STATUS_UNKNOWN, []),
+        "counts": {key: len(value) for key, value in groups.items()},
+    }
 
 
 def diagnose_capability(registry: dict[str, Any], name: str, probe: Any) -> dict[str, Any]:

@@ -15,6 +15,27 @@ MODULES = (
 )
 
 READY_STATUSES = {"ok", "ready", "completed", "complete", "success", "succeeded", "已刷新"}
+GOVERNANCE_STATUS_LABELS = {
+    "available": "可用",
+    "failed": "失败",
+    "no_permission": "权限不足",
+    "no_data": "无数据",
+    "cached": "缓存",
+    "skipped": "跳过",
+    "unknown": "未知",
+}
+LEGACY_TO_GOVERNANCE_STATUS = {
+    "available": "available",
+    "permission_denied": "no_permission",
+    "not_configured": "no_permission",
+    "failed": "failed",
+    "network_failed": "failed",
+    "empty_recent": "no_data",
+    "stale_cache": "cached",
+    "fallback_used": "cached",
+    "disabled_this_session": "skipped",
+    "requires_manual_refresh": "skipped",
+}
 
 
 def _as_mapping(value: Any) -> dict:
@@ -215,13 +236,48 @@ def _coverage_summary_text(coverage_items: list[dict]) -> str:
 
 
 def _capability_tone(state: str) -> str:
-    if state == "available":
-        return "success"
     if state in {"permission_denied", "disabled_this_session", "failed", "network_failed", "not_configured"}:
         return "danger"
-    if state in {"empty_recent", "stale_cache", "fallback_used", "requires_manual_refresh"}:
+    normalized = _governance_status({"state": state, "capability_state": state})
+    if normalized == "available":
+        return "success"
+    if normalized in {"failed", "no_permission"}:
+        return "danger"
+    if normalized in {"no_data", "cached", "skipped"}:
         return "warning"
     return "muted"
+
+
+def _status_from_text(*values: Any) -> str:
+    text = " ".join(str(value or "") for value in values).strip().lower()
+    if not text:
+        return "unknown"
+    if any(word in text for word in ("permission", "权限", "forbidden", "unauthorized", "未配置", "not configured", "缺少 key")):
+        return "no_permission"
+    if any(word in text for word in ("cache", "cached", "缓存", "stale")):
+        return "cached"
+    if any(word in text for word in ("no data", "empty", "暂无数据", "近期无数据", "无数据", "无样本")):
+        return "no_data"
+    if any(word in text for word in ("skip", "skipped", "跳过", "手动刷新", "manual refresh")):
+        return "skipped"
+    if any(word in text for word in ("failed", "failure", "error", "timeout", "失败", "异常")):
+        return "failed"
+    return "unknown"
+
+
+def _governance_status(payload: Mapping[str, Any]) -> str:
+    explicit = _to_text(payload.get("governance_status") or payload.get("status_code"))
+    if explicit in GOVERNANCE_STATUS_LABELS:
+        return explicit
+    state = _to_text(payload.get("capability_state") or payload.get("state"))
+    if state in LEGACY_TO_GOVERNANCE_STATUS:
+        return LEGACY_TO_GOVERNANCE_STATUS[state]
+    text_status = _status_from_text(payload.get("status"), payload.get("capability_label"), payload.get("error"), payload.get("last_error"))
+    if text_status != "unknown":
+        return text_status
+    if payload.get("ok") is True:
+        return "available"
+    return "unknown"
 
 
 def build_data_capability_items(data_capability_packet: Any = None) -> list[dict]:
@@ -243,12 +299,15 @@ def build_data_capability_items(data_capability_packet: Any = None) -> list[dict
                 state = "available"
             else:
                 state = "unknown"
+        governance_status = _governance_status(payload)
         items.append(
             {
                 "key": _to_text(payload.get("section") or payload.get("api")) or "data_capability",
                 "label": _to_text(payload.get("label") or payload.get("api")) or "数据能力",
                 "api": _to_text(payload.get("api")),
                 "status": status or state,
+                "governance_status": governance_status,
+                "governance_label": GOVERNANCE_STATUS_LABELS.get(governance_status, "未知"),
                 "state": state,
                 "tone": _capability_tone(state),
                 "latest_date": _to_text(payload.get("latest_date")),
@@ -264,17 +323,23 @@ def build_data_capability_items(data_capability_packet: Any = None) -> list[dict
 def _data_capability_summary_text(items: list[dict]) -> str:
     if not items:
         return "尚未检测；页面打开不会自动请求 Tushare、AkShare 或 yfinance。"
-    available = [item["label"] for item in items if item["state"] == "available"]
-    blocked = [item["label"] for item in items if item["state"] in {"permission_denied", "disabled_this_session", "not_configured"}]
-    pending = [
-        item["label"]
-        for item in items
-        if item["state"] in {"empty_recent", "stale_cache", "fallback_used", "requires_manual_refresh", "unknown"}
-    ]
+    available = [item["label"] for item in items if item.get("governance_status") == "available"]
+    failed = [item["label"] for item in items if item.get("governance_status") == "failed"]
+    no_permission = [item["label"] for item in items if item.get("governance_status") == "no_permission"]
+    no_data = [item["label"] for item in items if item.get("governance_status") == "no_data"]
+    cached = [item["label"] for item in items if item.get("governance_status") == "cached"]
+    skipped = [item["label"] for item in items if item.get("governance_status") == "skipped"]
+    unknown = [item["label"] for item in items if item.get("governance_status") == "unknown"]
+    blocked = no_permission + skipped
     return (
         f"可用：{'、'.join(available) if available else '无'}｜"
-        f"受限：{'、'.join(blocked) if blocked else '无'}｜"
-        f"待验证：{'、'.join(pending) if pending else '无'}"
+        f"失败：{'、'.join(failed) if failed else '无'}｜"
+        f"权限不足：{'、'.join(no_permission) if no_permission else '无'}｜"
+        f"缓存：{'、'.join(cached) if cached else '无'}｜"
+        f"无数据：{'、'.join(no_data) if no_data else '无'}｜"
+        f"跳过：{'、'.join(skipped) if skipped else '无'}｜"
+        f"未知：{'、'.join(unknown) if unknown else '无'}｜"
+        f"受限：{'、'.join(blocked) if blocked else '无'}"
     )
 
 
@@ -304,7 +369,7 @@ def build_command_center_overview_view_model(
     deepseek_called = any(
         bool(_as_mapping(packet).get("deepseek_called"))
         for packet in (live_packet, decision_packet, strategy_packet)
-    )
+    ) or bool(_to_text(deepseek_summary))
     data_capability_items = build_data_capability_items(data_capability_packet)
     return {
         "overall_status_label": status_label,
@@ -314,7 +379,7 @@ def build_command_center_overview_view_model(
         "error_items": error_items,
         "stale_items": stale_items,
         "updated_text": _latest_updated_text(live_packet, refresh_summary),
-        "deepseek_text": "DeepSeek：已调用" if deepseek_called else "DeepSeek：未调用",
+        "deepseek_text": "DeepSeek：手动解释" if _to_text(deepseek_summary) else ("DeepSeek：已调用" if deepseek_called else "DeepSeek：未调用"),
         "usage_boundary_text": build_center_usage_boundary_text(),
         "data_capability_items": data_capability_items,
         "data_capability_summary_text": _data_capability_summary_text(data_capability_items),

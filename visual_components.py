@@ -6827,7 +6827,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             with loop_cols[index % len(loop_cols)]:
                 st.button(
                     f"恢复{_home_text(item.get('loop_label'), '闭环')}｜{_home_text(item.get('label'), '恢复项')}",
-                    key=f"btn_open_decision_loop_{_home_text(item.get('loop_key'), 'loop')}_{_home_text(item.get('key'), index)}",
+                    key=f"btn_open_decision_loop_{index}_{_home_text(item.get('loop_key'), 'loop')}_{_home_text(item.get('key'), index)}",
                     help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
                     on_click=_apply_tool_recovery_navigation,
                     args=(item,),
@@ -6840,7 +6840,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             with priority_cols[index % len(priority_cols)]:
                 st.button(
                     f"处理{_home_text(item.get('priority_label'), 'P1')}｜{_home_text(item.get('label'), '恢复项')}",
-                    key=f"btn_open_decision_priority_{_home_text(item.get('lane_key'), 'p1')}_{_home_text(item.get('key'), index)}",
+                    key=f"btn_open_decision_priority_{index}_{_home_text(item.get('lane_key'), 'p1')}_{_home_text(item.get('key'), index)}",
                     help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
                     on_click=_apply_tool_recovery_navigation,
                     args=(item,),
@@ -6858,7 +6858,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             with issue_cols[index % len(issue_cols)]:
                 st.button(
                     f"处理根因｜{_home_text(item.get('label'), '数据能力')}",
-                    key=f"btn_open_home_data_issue_{_home_text(item.get('key'), index)}",
+                    key=f"btn_open_home_data_issue_{index}_{_home_text(item.get('key'), index)}",
                     help=_home_text(
                         item.get("navigation_label") or item.get("recovery_button_context"),
                         "切换到高级工具箱对应模块；不自动执行旧工具。",
