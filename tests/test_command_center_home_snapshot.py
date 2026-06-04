@@ -94,6 +94,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(len(items), 3)
         self.assertEqual(items[0]["ticker"], "A")
         self.assertEqual(items[0]["action_state"], "可准备")
+        self.assertEqual(items[0]["decision_brief"]["execution_label"], "可准备")
+        self.assertFalse(items[0]["decision_brief"]["deepseek_called"])
 
     def test_next_ticket_candidates_prefer_radar_packet(self):
         state = {
@@ -115,6 +117,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]["ticker"], "X")
+        self.assertEqual(items[0]["decision_brief"]["execution_label"], "可准备")
 
     def test_home_snapshot_persists_radar_packet(self):
         today = _dt.date.today().isoformat()
@@ -148,6 +151,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["next_ticket_candidates"][0]["evidence_items"])
         self.assertTrue(payload["next_ticket_candidates"][0]["evidence_chain"])
         self.assertEqual(payload["next_ticket_candidates"][0]["evidence_chain"][0]["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(payload["next_ticket_candidates"][0]["decision_brief"]["execution_label"], "等验证")
+        self.assertIn("资金流", payload["next_ticket_candidates"][0]["decision_brief"]["missing_evidence"])
+        self.assertIn("高级工具箱", payload["next_ticket_candidates"][0]["decision_brief"]["recovery_route"])
         self.assertIn("候选不是买入指令", payload["next_ticket_candidates"][0]["action_guardrail"])
         self.assertIn("不会自动全市场扫描", payload["next_ticket_candidates"][0]["manual_required_text"])
         self.assertFalse(payload["radar_packet"]["deepseek_called"])

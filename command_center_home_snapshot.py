@@ -2434,7 +2434,12 @@ def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, l
     state_map = _as_mapping(state)
     radar_packet = _as_mapping(state_map.get("command_center_radar_packet"))
     if radar_packet.get("top_candidates"):
-        return _as_list(radar_packet.get("top_candidates"))[:limit]
+        enriched = radar_packet_service.build_command_center_radar_packet(
+            {"command_center_radar_packet": radar_packet},
+            live_packet=live_packet,
+            limit=limit,
+        )
+        return _as_list(enriched.get("top_candidates"))[:limit]
     live = _as_mapping(live_packet)
     live_section = _as_mapping(live.get("next_ticket"))
     scan_state = _as_mapping(state_map.get("radar_scan_results"))
@@ -2444,7 +2449,12 @@ def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, l
     candidates = []
     seen = set()
     for row in rows:
-        item = _candidate_from_row(row, scan_state=scan_state, live_section=live_section)
+        item = radar_packet_service.normalize_radar_candidate(
+            row,
+            scan_packet=scan_state,
+            live_section=live_section,
+            rank=len(candidates) + 1,
+        )
         key = item.get("ticker") or item.get("name")
         if not key or key in seen:
             continue

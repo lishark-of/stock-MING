@@ -7,6 +7,7 @@ from typing import Any
 
 MAX_TOP_CANDIDATES = 3
 MAX_EVIDENCE_ITEMS = 5
+MAX_BRIEF_ITEMS = 4
 
 RADAR_EVIDENCE_LINKS = (
     {
@@ -233,6 +234,138 @@ def _candidate_evidence_chain_summary(chain: Any = None) -> str:
     return f"可参考 {len(ready)}｜待补证 {len(missing)}｜偏弱 {len(blocked)}｜需复核 {len(stale)}"
 
 
+def _candidate_execution_mode(action_state: str) -> dict:
+    label = _candidate_status_label(action_state)
+    if label == "可准备":
+        return {
+            "execution_status": "prepare",
+            "execution_label": "可准备",
+            "tone": "ready",
+            "summary": "候选可进入作战准备，但不是买入指令。",
+            "next_action": "复核触发条件、风险预算和当前持仓纪律；缺失证据先补证。",
+        }
+    if label == "等验证":
+        return {
+            "execution_status": "verify",
+            "execution_label": "等验证",
+            "tone": "stale",
+            "summary": "先补齐关键证据，再判断是否进入作战准备。",
+            "next_action": "手动恢复资金流、龙虎榜、涨跌停/情绪、硬风险等证据 packet。",
+        }
+    if label == "暂不纳入":
+        return {
+            "execution_status": "blocked",
+            "execution_label": "暂不纳入",
+            "tone": "failed",
+            "summary": "当前候选暂不纳入交易准备。",
+            "next_action": "保持排除；除非下一票雷达手动扫描重新给出有效信号。",
+        }
+    return {
+        "execution_status": "observe",
+        "execution_label": "只观察",
+        "tone": "missing",
+        "summary": "只观察，不主动买入。",
+        "next_action": "等待下一次手动扫描、基础数据刷新或证据链改善。",
+    }
+
+
+def _evidence_labels_by_status(chain: Any, statuses: set[str]) -> list[str]:
+    labels = []
+    seen = set()
+    for item in as_list(chain):
+        payload = as_mapping(item)
+        status = to_text(payload.get("status"))
+        label = to_text(payload.get("label"), "证据")
+        if status in statuses and label and label not in seen:
+            labels.append(label)
+            seen.add(label)
+        if len(labels) >= MAX_BRIEF_ITEMS:
+            break
+    return labels
+
+
+def build_candidate_decision_brief(candidate: Any = None) -> dict:
+    payload = as_mapping(candidate)
+    mode = _candidate_execution_mode(
+        _first_text(payload.get("status_label"), payload.get("action_state"), default="只观察")
+    )
+    chain = as_list(payload.get("evidence_chain"))
+    missing_evidence = _evidence_labels_by_status(chain, {"missing", "cached"})
+    blocking_evidence = _evidence_labels_by_status(chain, {"blocked", "failed"})
+    data_gaps = [to_text(item) for item in as_list(payload.get("data_gaps")) if to_text(item)][:MAX_BRIEF_ITEMS]
+    trigger = _first_text(payload.get("trigger_condition"), default="等待规则雷达触发条件确认。")
+    invalidation = _first_text(payload.get("invalidation_condition"), default="风险转弱或触发条件失效。")
+    confidence_gate = "可验证"
+    if blocking_evidence or mode["execution_status"] == "blocked":
+        confidence_gate = "不可执行"
+    elif missing_evidence or data_gaps or mode["execution_status"] in {"verify", "observe"}:
+        confidence_gate = "待补证"
+    next_action = mode["next_action"]
+    if missing_evidence:
+        next_action = f"{next_action} 优先补证：{'、'.join(missing_evidence[:MAX_BRIEF_ITEMS])}。"
+    elif data_gaps:
+        next_action = f"{next_action} 优先处理数据缺口：{'、'.join(data_gaps[:MAX_BRIEF_ITEMS])}。"
+    return {
+        "execution_status": mode["execution_status"],
+        "execution_label": mode["execution_label"],
+        "tone": mode["tone"],
+        "confidence_gate": confidence_gate,
+        "summary": mode["summary"],
+        "trigger_text": trigger,
+        "invalidation_text": invalidation,
+        "next_action": next_action,
+        "missing_evidence": missing_evidence,
+        "blocking_evidence": blocking_evidence,
+        "data_gaps": data_gaps,
+        "recovery_route": (
+            "高级工具箱 → 下一票雷达 / A股数据恢复"
+            if missing_evidence or data_gaps
+            else "下一票雷达手动扫描"
+        ),
+        "guardrail": "候选不是买入指令；证据链、触发条件、纪律和仓位预算同时通过后，才允许进入执行准备。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def _with_candidate_decision_brief(candidate: Any = None, rank: int = 0) -> dict:
+    payload = as_mapping(candidate)
+    if rank and not payload.get("rank"):
+        payload["rank"] = rank
+    payload["decision_brief"] = build_candidate_decision_brief(payload)
+    return payload
+
+
+def build_radar_decision_summary(candidates: Any = None) -> dict:
+    rows = [_with_candidate_decision_brief(item, rank=index + 1) for index, item in enumerate(as_list(candidates))]
+    if not rows:
+        return {
+            "headline": "暂无可执行候选",
+            "tone": "missing",
+            "summary": "下一票雷达没有可展示 Top3；点击手动扫描或刷新基础数据后再看。",
+            "next_action": "先手动刷新今日基础数据或进入高级工具箱运行下一票雷达。",
+            "guardrail": "页面打开不会自动全市场扫描，DeepSeek 未调用。",
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
+    counts = {"prepare": 0, "verify": 0, "observe": 0, "blocked": 0}
+    for row in rows:
+        status = to_text(as_mapping(row.get("decision_brief")).get("execution_status"), "observe")
+        if status in counts:
+            counts[status] += 1
+    headline = f"可准备 {counts['prepare']}｜等验证 {counts['verify']}｜只观察 {counts['observe']}｜暂不纳入 {counts['blocked']}"
+    tone = "ready" if counts["prepare"] else "stale" if counts["verify"] else "missing"
+    return {
+        "headline": headline,
+        "tone": tone,
+        "summary": "Top3 候选已转成执行摘要；它们是待验证线索，不是自动买入指令。",
+        "next_action": "先看每只候选的待补证、触发条件和失效条件，再决定是否进入作战准备。",
+        "guardrail": "下一票候选不自动触发扫描、DeepSeek 或下单。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_section: Any = None, rank: int = 0) -> dict:
     row_map = as_mapping(row)
     scan = as_mapping(scan_packet)
@@ -278,7 +411,7 @@ def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_sec
     reason = _first_text(score.get("battle_state_reason"), row_map.get("reason"), score.get("one_sentence_conclusion"), default="规则雷达缓存候选。")
     gap_items = [to_text(item) for item in data_gaps if to_text(item)][:5]
     evidence_chain = _candidate_evidence_chain(score, gap_items)
-    return {
+    result = {
         "rank": rank,
         "ticker": ticker,
         "name": name,
@@ -308,6 +441,8 @@ def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_sec
         "manual_required_text": "下一票候选来自本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
         "deepseek_called": False,
     }
+    result["decision_brief"] = build_candidate_decision_brief(result)
+    return result
 
 
 def _packet_status(scan_packet: Mapping[str, Any], rows: list, errors: list, status_raw: str) -> str:
@@ -332,9 +467,16 @@ def build_command_center_radar_packet(
     live_section = as_mapping(live.get("next_ticket"))
     existing = as_mapping(state_map.get("command_center_radar_packet"))
     if existing.get("top_candidates"):
+        top_candidates = [
+            _with_candidate_decision_brief(item, rank=index + 1)
+            for index, item in enumerate(as_list(existing.get("top_candidates"))[: int(limit or MAX_TOP_CANDIDATES)])
+        ]
         return {
             **existing,
+            "top_candidates": top_candidates,
+            "display_count": len(top_candidates),
             "cache_state": _first_text(existing.get("cache_state"), existing.get("data_status"), default="ready"),
+            "decision_summary": build_radar_decision_summary(top_candidates),
             "manual_required_text": _first_text(
                 existing.get("manual_required_text"),
                 default="下一票雷达必须手动扫描或读取缓存；页面打开不会自动全市场扫描。",
@@ -391,6 +533,7 @@ def build_command_center_radar_packet(
         ),
         "errors": [to_text(item) for item in errors if to_text(item)][:8],
         "data_status": "ready" if top_candidates else "missing",
+        "decision_summary": build_radar_decision_summary(top_candidates),
         "manual_required_text": "下一票雷达只读取本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
         "deepseek_called": bool(summary.get("deepseek_called", False)),
     }

@@ -49,6 +49,16 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(chain["dragon_tiger"]["writes_packet"], "command_center_dragon_tiger_packet")
         self.assertIn("待补证", packet["top_candidates"][0]["evidence_chain_summary"])
         self.assertIn("候选不是买入指令", packet["top_candidates"][0]["action_guardrail"])
+        brief = packet["top_candidates"][0]["decision_brief"]
+        self.assertEqual(brief["execution_status"], "verify")
+        self.assertEqual(brief["execution_label"], "等验证")
+        self.assertEqual(brief["confidence_gate"], "待补证")
+        self.assertIn("资金流", brief["missing_evidence"])
+        self.assertIn("高级工具箱", brief["recovery_route"])
+        self.assertIn("候选不是买入指令", brief["guardrail"])
+        self.assertFalse(brief["deepseek_called"])
+        self.assertEqual(brief["external_call_policy"], "not_triggered")
+        self.assertIn("等验证", packet["decision_summary"]["headline"])
         self.assertFalse(any(item["deepseek_called"] for item in chain.values()))
         self.assertIn("不会自动全市场扫描", packet["top_candidates"][0]["manual_required_text"])
         self.assertIn("不会自动全市场扫描", packet["manual_required_text"])
@@ -88,6 +98,7 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["display_count"], 1)
         self.assertEqual(packet["top_candidates"][0]["ticker"], "300750.SZ")
         self.assertEqual(packet["top_candidates"][0]["status_label"], "等验证")
+        self.assertEqual(packet["top_candidates"][0]["decision_brief"]["execution_label"], "等验证")
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -102,7 +113,30 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
 
         self.assertIsNot(packet, existing)
         self.assertEqual(packet["top_candidates"][0]["ticker"], "A")
+        self.assertIn("decision_brief", packet["top_candidates"][0])
+        self.assertIn("decision_summary", packet)
         self.assertEqual(existing, state["command_center_radar_packet"])
+
+    def test_candidate_decision_brief_modes_are_actionable(self):
+        ready = radar.build_candidate_decision_brief({"action_state": "可准备", "evidence_chain": []})
+        verify = radar.build_candidate_decision_brief(
+            {
+                "action_state": "等验证",
+                "evidence_chain": [{"label": "资金流", "status": "missing"}],
+            }
+        )
+        observe = radar.build_candidate_decision_brief({"action_state": "只观察"})
+        blocked = radar.build_candidate_decision_brief({"action_state": "暂不纳入"})
+
+        self.assertEqual(ready["execution_status"], "prepare")
+        self.assertIn("触发条件", ready["next_action"])
+        self.assertEqual(verify["execution_status"], "verify")
+        self.assertIn("资金流", verify["missing_evidence"])
+        self.assertEqual(observe["execution_label"], "只观察")
+        self.assertEqual(blocked["confidence_gate"], "不可执行")
+        for brief in [ready, verify, observe, blocked]:
+            self.assertFalse(brief["deepseek_called"])
+            json.dumps(brief, ensure_ascii=False)
 
     def test_forbidden_imports(self):
         tree = ast.parse(Path("command_center_radar_packet.py").read_text(encoding="utf-8"))
