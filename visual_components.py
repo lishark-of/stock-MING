@@ -5585,12 +5585,15 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         for item in (discipline_packet.get("warnings") or [])[:3]
         if str(item).strip()
     ) or _home_text(discipline_packet.get("backtest_required_text"), "回测必须手动触发。")
+    discipline_decision_brief = discipline_packet.get("decision_brief") if isinstance(discipline_packet.get("decision_brief"), dict) else {}
     discipline_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
             纪律/回测证据
             <span class="cc-home-chip {escape(discipline_tone)}">{escape(discipline_status)}</span>
           </div>
+          <div class="cc-home-item-meta">{escape(_home_text(discipline_decision_brief.get("title"), "纪律/回测执行摘要"))}：<span class="cc-home-chip {escape(_home_text(discipline_decision_brief.get("tone"), discipline_tone))}">{escape(_home_text(discipline_decision_brief.get("action_label"), "待手动回测"))}</span> {escape(_home_text(discipline_decision_brief.get("guardrail_text"), "缺少回测缓存时不能把策略当成已验证纪律结果。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(discipline_decision_brief.get("next_action"), "进入高级工具箱手动运行回测；综合中心不会自动跑回测。"))}</div>
           <div class="cc-home-item-meta">动作边界：{escape(_home_text(discipline_packet.get("action_state"), "待刷新"))} ｜ 最新信号：{escape(_home_text(discipline_packet.get("latest_signal"), "待验证"))}</div>
           <div class="cc-home-item-meta">指标：{escape(discipline_metrics)}</div>
           <div class="cc-home-item-meta">证据：{escape(discipline_evidence)}</div>

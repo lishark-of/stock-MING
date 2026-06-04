@@ -285,6 +285,63 @@ def _build_warnings(report: Mapping[str, Any], check: Mapping[str, Any], max_dra
     return _dedupe_text(warnings, limit=MAX_WARNINGS)
 
 
+def build_discipline_decision_brief(packet: Any = None) -> dict:
+    payload = as_mapping(packet)
+    status = to_text(payload.get("status"), "waiting")
+    data_status = _first_text(payload.get("data_status"), payload.get("cache_state"), default="missing")
+    action_state = to_text(payload.get("action_state"), "待刷新")
+    backtest_status = to_text(payload.get("backtest_status"), "待手动运行回测")
+    max_drawdown = _normalize_drawdown(payload.get("max_drawdown"))
+    win_rate = to_number(payload.get("win_rate"))
+    if action_state == "降风险" or (max_drawdown is not None and max_drawdown >= 20):
+        status_label = "纪律要求降风险"
+        tone = "failed"
+        action_mode = "reduce_risk"
+        action_label = "先降风险"
+        guardrail = "纪律或回撤已转弱，不能加仓、追高或加融资。"
+        next_action = "先降低暴露，再手动复核回测区间和最新信号。"
+    elif status == "ready" and data_status == "ready":
+        status_label = "回测缓存可辅助"
+        tone = "ready"
+        action_mode = "usable_evidence"
+        action_label = "可辅助验证"
+        guardrail = "回测缓存只提供纪律边界，不直接决定买卖。"
+        next_action = "结合价格、资金流、A股证据和仓位预算再执行。"
+    elif data_status == "cached" or status in {"partial", "cached"}:
+        status_label = "回测缓存需复核"
+        tone = "stale"
+        action_mode = "verify_cache"
+        action_label = "执行前复核"
+        guardrail = "缓存可防白屏，但执行前必须复核日期、样本和最新信号。"
+        next_action = "需要最新纪律边界时，在高级工具箱手动运行回测。"
+    else:
+        status_label = "回测待手动运行"
+        tone = "missing"
+        action_mode = "manual_backtest_required"
+        action_label = "待手动回测"
+        guardrail = "缺少回测缓存时不能把策略当成已验证纪律结果。"
+        next_action = "进入高级工具箱手动运行回测；综合中心不会自动跑回测。"
+    metric_summary = (
+        f"胜率 {win_rate if win_rate is not None else '待验证'}｜最大回撤 {max_drawdown if max_drawdown is not None else '待验证'}"
+    )
+    return {
+        "title": "纪律/回测执行摘要",
+        "status": "blocked" if tone == "failed" else "ready" if tone == "ready" else "partial" if tone == "stale" else "missing",
+        "tone": tone,
+        "headline": status_label,
+        "action_mode": action_mode,
+        "action_label": action_label,
+        "summary": _first_text(payload.get("summary"), default=f"{backtest_status}；{metric_summary}。"),
+        "metric_summary": metric_summary,
+        "guardrail_text": guardrail,
+        "next_action": next_action,
+        "backtest_status": backtest_status,
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+        "backtest_policy": "button_gated",
+    }
+
+
 def build_command_center_discipline_packet(
     state: Any = None,
     live_packet: Any = None,
@@ -301,7 +358,7 @@ def build_command_center_discipline_packet(
         sharpe = to_number(existing.get("sharpe"))
         trade_count = to_number(existing.get("trade_count"))
         data_status = _first_text(existing.get("data_status"), default=_derive_data_status(existing.get("status"), existing, live_section))
-        return {
+        packet = {
             **existing,
             "key_rules": _rules_from_value(existing.get("key_rules")) or ["仅按已缓存纪律 packet 展示。"],
             "warnings": _dedupe_text(existing.get("warnings")) or ["DeepSeek 未调用；回测解释仍需手动按钮触发。"],
@@ -318,6 +375,8 @@ def build_command_center_discipline_packet(
             ],
             "deepseek_called": False,
         }
+        packet["decision_brief"] = build_discipline_decision_brief(packet)
+        return packet
     report = as_mapping(state_map.get("last_backtest_report"))
     if report and target and report.get("ticker") and _ticker_base(report.get("ticker")) != _ticker_base(target):
         report = {}
@@ -363,7 +422,7 @@ def build_command_center_discipline_packet(
         ),
     )
     data_status = _derive_data_status(status, report, live_section)
-    return {
+    packet = {
         "status": status,
         "source": _first_text(report.get("source"), check.get("source"), live_section.get("source"), default="交易纪律实验室回测缓存"),
         "updated_at": updated_at,
@@ -389,3 +448,5 @@ def build_command_center_discipline_packet(
         "backtest_required_text": "回测必须在高级工具箱手动触发；综合中心不会自动跑回测。",
         "deepseek_called": False,
     }
+    packet["decision_brief"] = build_discipline_decision_brief(packet)
+    return packet

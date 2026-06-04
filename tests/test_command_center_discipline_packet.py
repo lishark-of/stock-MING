@@ -42,6 +42,8 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertEqual(packet["metric_items"][0]["value"], "待验证")
         self.assertEqual(packet["evidence_items"][0]["value"], "待刷新")
         self.assertIn("不会自动跑回测", packet["backtest_required_text"])
+        self.assertEqual(packet["decision_brief"]["action_mode"], "manual_backtest_required")
+        self.assertIn("不会自动跑回测", packet["decision_brief"]["next_action"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_cached_backtest_builds_ready_packet(self):
@@ -64,6 +66,9 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertTrue(any(item["label"] == "胜率" and item["value"] == "62%" for item in packet["metric_items"]))
         self.assertTrue(any(item["label"] == "回测区间" for item in packet["evidence_items"]))
         self.assertIn(packet["action_state"], {"允许小幅试探", "只观察"})
+        self.assertEqual(packet["decision_brief"]["action_mode"], "usable_evidence")
+        self.assertEqual(packet["decision_brief"]["backtest_policy"], "button_gated")
+        self.assertIn("不直接决定买卖", packet["decision_brief"]["guardrail_text"])
         self.assertTrue(packet["key_rules"])
         self.assertIn("高 beta 过热不追", packet["warnings"])
         self.assertFalse(packet["deepseek_called"])
@@ -81,6 +86,8 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
 
         self.assertEqual(reduce_packet["action_state"], "降风险")
         self.assertEqual(drawdown_packet["action_state"], "降风险")
+        self.assertEqual(reduce_packet["decision_brief"]["action_mode"], "reduce_risk")
+        self.assertIn("不能加仓", drawdown_packet["decision_brief"]["guardrail_text"])
         self.assertIn("历史最大回撤偏高", " ".join(drawdown_packet["warnings"]))
 
     def test_target_mismatch_ignores_backtest_report(self):
@@ -113,7 +120,26 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertEqual(packet["warnings"], ["风险 B"])
         self.assertTrue(packet["metric_items"])
         self.assertTrue(packet["evidence_items"])
+        self.assertEqual(packet["decision_brief"]["action_mode"], "usable_evidence")
         self.assertFalse(packet["deepseek_called"])
+
+    def test_discipline_decision_brief_handles_cached_packet_without_external_calls(self):
+        brief = discipline_packet.build_discipline_decision_brief(
+            {
+                "status": "partial",
+                "data_status": "cached",
+                "backtest_status": "使用上次回测缓存",
+                "summary": "旧版缓存仍需复核。",
+                "win_rate": 55,
+                "max_drawdown": 14,
+            }
+        )
+
+        self.assertEqual(brief["action_mode"], "verify_cache")
+        self.assertEqual(brief["external_call_policy"], "not_triggered")
+        self.assertEqual(brief["backtest_policy"], "button_gated")
+        self.assertFalse(brief["deepseek_called"])
+        json.dumps(brief, ensure_ascii=False)
 
     def test_existing_packet_target_mismatch_is_not_reused(self):
         packet = discipline_packet.build_command_center_discipline_packet(
