@@ -1109,6 +1109,48 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(matrix["external_call_policy"], "not_triggered")
         json.dumps(matrix, ensure_ascii=False)
 
+    def test_provider_recovery_matrix_actions_enter_home_recovery_center(self):
+        cockpit = snapshot.build_provider_data_capability_cockpit(
+            {
+                "data_capability": {
+                    "items": [
+                        {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用"},
+                        {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足"},
+                        {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                        {"provider": "yfinance", "api": "yfinance_market_data", "label": "yfinance 行情/新闻", "capability_state": "stale_cache", "status": "使用缓存"},
+                        {"provider": "Supabase", "api": "brain_memory", "label": "brain_memory", "capability_state": "not_configured", "status": "未配置"},
+                    ]
+                }
+            }
+        )
+        matrix = snapshot.build_provider_recovery_matrix({"provider_data_capability_cockpit": cockpit})
+        center = snapshot.build_home_data_recovery_center({"provider_recovery_matrix": matrix}, limit=8)
+
+        by_provider = {item["provider"]: item for item in center["actions"]}
+        group_counts = {item["key"]: item["count"] for item in center["groups"]}
+        lane_counts = {item["key"]: item["count"] for item in center["priority_lanes"]}
+
+        self.assertEqual(group_counts["provider_recovery_matrix"], 4)
+        self.assertEqual(set(by_provider), {"Tushare", "AkShare", "yfinance", "Supabase"})
+        self.assertEqual(lane_counts["p0"], 2)
+        self.assertEqual(lane_counts["p1"], 2)
+        self.assertEqual(by_provider["Tushare"]["recovery_mode"], "check_permission_or_config")
+        self.assertEqual(by_provider["AkShare"]["recovery_mode"], "manual_refresh")
+        self.assertEqual(by_provider["yfinance"]["recovery_mode"], "review_cache")
+        self.assertIn("拉满基础连接", by_provider["Tushare"]["why_previous_full_not_enough"])
+        self.assertIn("不自动调用外部接口", by_provider["Supabase"]["recovery_button_context"])
+        self.assertIn("回流 command_center_data_capability_packet", by_provider["yfinance"]["recovery_steps"][-1])
+        self.assertEqual(center["decision_priority_queue"][0]["priority_label"], "P0 阻断交易判断")
+        self.assertIn("数据源恢复矩阵", center["decision_priority_queue"][0]["source_label"])
+        navigation = snapshot.build_tool_recovery_navigation_state(by_provider["AkShare"])
+        self.assertEqual(navigation["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation["legacy_workspace_selected_tab"], "数据源体检")
+        self.assertEqual(navigation["command_center_last_tool_recovery_policy"], "navigation_only")
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in center["actions"]))
+        self.assertTrue(all(item["external_call_policy"] == "not_triggered" for item in center["actions"]))
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
     def test_home_snapshot_builds_data_gap_report(self):
         today = _dt.date.today().isoformat()
         state = {

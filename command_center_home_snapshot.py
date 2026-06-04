@@ -1980,6 +1980,49 @@ PROVIDER_RECOVERY_WHY_TEXT = {
 }
 
 
+def _provider_recovery_mode(
+    blocked_count: int = 0,
+    manual_count: int = 0,
+    stale_count: int = 0,
+    available_count: int = 0,
+) -> tuple[str, str, str, str, int]:
+    if blocked_count:
+        return "check_permission_or_config", "先查权限/配置", "permission_or_config", "权限/配置阻断", 2
+    if manual_count:
+        return "manual_refresh", "手动刷新", "manual_gate", "需要手动刷新", 3
+    if stale_count:
+        return "review_cache", "复核缓存", "cache_or_stale", "使用缓存/待复核", 3
+    if available_count:
+        return "review_available", "复核可用结果", "available", "可用", 3
+    return "manual_check", "手动检测", "not_checked", "待检测", 3
+
+
+def _provider_recovery_steps(provider: str, mode: str, writes_packet: str) -> list[str]:
+    if provider == "Tushare":
+        first_step = "先确认 token、积分、专业接口权限、交易日发布节奏和当前标的覆盖。"
+    elif provider == "AkShare":
+        first_step = "先确认是否确实需要 AkShare 补充数据，避免不必要的重型刷新。"
+    elif provider == "yfinance":
+        first_step = "先确认当前标的是否属于美股/全球行情口径，避免用 A股数据替代。"
+    elif provider == "Supabase":
+        first_step = "先确认本地 Supabase URL / key / 表连接配置，不读取或展示任何密钥值。"
+    else:
+        first_step = "先确认 provider、接口权限、交易日和本地配置。"
+    if mode == "manual_refresh":
+        second_step = f"进入高级工具箱对应模块，只点击 {provider} 的手动刷新/检测按钮。"
+    elif mode == "review_cache":
+        second_step = f"进入高级工具箱对应模块，复核 {provider} 缓存日期、来源和是否覆盖当前标的。"
+    elif mode == "check_permission_or_config":
+        second_step = f"进入高级工具箱对应模块，先处理 {provider} 权限、积分、配置或本会话跳过问题。"
+    else:
+        second_step = f"进入高级工具箱对应模块，手动检测 {provider} 数据能力。"
+    return [
+        first_step,
+        second_step,
+        f"成功或失败结果回流 {writes_packet} 后，再回到综合中心确认数据恢复状态。",
+    ]
+
+
 def build_provider_recovery_matrix(snapshot: Any = None) -> dict:
     payload = _as_mapping(snapshot)
     cockpit = _as_mapping(payload.get("provider_data_capability_cockpit")) or build_provider_data_capability_cockpit(payload)
@@ -2004,6 +2047,54 @@ def build_provider_recovery_matrix(snapshot: Any = None) -> dict:
             recovery_state = "可用"
         else:
             recovery_state = "待检测"
+        mode, mode_label, cause_code, cause_label, priority = _provider_recovery_mode(
+            blocked_count=blocked_count,
+            manual_count=manual_count,
+            stale_count=stale_count,
+            available_count=available_count,
+        )
+        why_not_available = PROVIDER_RECOVERY_WHY_TEXT.get(provider, "不同数据源失败原因不同；需要按 provider 分开诊断。")
+        recovery_action = dict(_as_mapping(item.get("recovery_action")))
+        writes_packet = _to_text(
+            recovery_action.get("writes_packet") or item.get("writes_packet"),
+            "command_center_data_capability_packet",
+        )
+        recovery_action.update(
+            {
+                "key": _to_text(recovery_action.get("key"), f"provider_recovery:{provider}"),
+                "label": _to_text(recovery_action.get("label"), provider),
+                "provider": provider,
+                "status": status,
+                "status_label": recovery_state,
+                "tone": _to_text(item.get("tone"), "missing"),
+                "priority": priority,
+                "reason": _to_text(item.get("next_action"), "按数据恢复中心手动处理。"),
+                "diagnostic_answer": why_not_available,
+                "interface_diagnostic_answer": why_not_available,
+                "root_cause_code": cause_code,
+                "root_cause_label": cause_label,
+                "interface_cause_key": cause_code,
+                "interface_cause_label": cause_label,
+                "why_previous_full_not_enough": (
+                    "之前拉满基础连接只证明 provider 有接入尝试，不证明每个专业接口、交易日、标的覆盖和缓存状态都已通过。"
+                ),
+                "decision_guardrail": _to_text(
+                    item.get("decision_guardrail"),
+                    "缺失或未验证不能作为加仓、追高或加融资依据。",
+                ),
+                "action_label": _to_text(recovery_action.get("action_label"), f"手动检测{provider}"),
+                "writes_packet": writes_packet,
+                "refresh_policy": "button_gated",
+                "recovery_mode": mode,
+                "recovery_mode_label": mode_label,
+                "recovery_steps": _provider_recovery_steps(provider, mode, writes_packet),
+                "recovery_button_context": (
+                    f"这里只打开 {provider} 恢复入口；实际检测仍需手动按钮触发，不自动调用外部接口、DeepSeek、回测或全市场扫描。"
+                ),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
         provider_items.append(
             {
                 "provider": provider,
@@ -2020,10 +2111,10 @@ def build_provider_recovery_matrix(snapshot: Any = None) -> dict:
                 "stale_count": stale_count,
                 "last_success": _to_text(item.get("last_success"), "暂无"),
                 "last_failure": _to_text(item.get("last_failure"), "无"),
-                "why_not_available": PROVIDER_RECOVERY_WHY_TEXT.get(provider, "不同数据源失败原因不同；需要按 provider 分开诊断。"),
+                "why_not_available": why_not_available,
                 "next_action": _to_text(item.get("next_action"), "按数据恢复中心手动处理。"),
                 "decision_guardrail": _to_text(item.get("decision_guardrail"), "缺失或未验证不能作为加仓、追高或加融资依据。"),
-                "recovery_action": _as_mapping(item.get("recovery_action")),
+                "recovery_action": recovery_action,
                 "deepseek_called": False,
                 "external_call_policy": "not_triggered",
             }
@@ -2456,6 +2547,7 @@ def _normalize_recovery_center_action(
     return {
         "key": _to_text(item.get("key") or item.get("api") or writes_packet or label),
         "label": label,
+        "provider": _to_text(item.get("provider")),
         "source_type": _to_text(source_type, "recovery"),
         "source_label": _to_text(source_label, "恢复队列"),
         "status": status,
@@ -2744,6 +2836,8 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "label": label,
                 "status": _to_text(action.get("status"), "waiting"),
                 "status_label": _to_text(action.get("status_label"), "待验证"),
+                "source_type": _to_text(action.get("source_type"), "recovery"),
+                "source_label": _to_text(action.get("source_label"), "恢复队列"),
                 "interface_cause_key": _to_text(action.get("interface_cause_key")),
                 "interface_cause_label": _to_text(action.get("interface_cause_label")),
                 "root_cause_code": _to_text(action.get("root_cause_code") or action.get("interface_cause_key")),
@@ -3869,6 +3963,10 @@ def build_legacy_packet_checklist_recovery_actions_snapshot(
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
+    provider_matrix = _as_mapping(payload.get("provider_recovery_matrix"))
+    if not provider_matrix and _as_mapping(payload.get("provider_data_capability_cockpit")):
+        provider_matrix = build_provider_recovery_matrix(payload)
+    provider_actions = _as_list(provider_matrix.get("recovery_actions"))
     visibility_summary = _as_mapping(
         payload.get("command_center_data_health_visibility_summary")
         or payload.get("data_health_visibility_summary")
@@ -3895,6 +3993,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     tool_actions = _as_list(payload.get("tool_recovery_actions"))
     action_sources = [
         ("data_source", "数据源能力", data_actions, 1),
+        ("provider_recovery_matrix", "数据源恢复矩阵", provider_actions, 1),
         ("data_health_visibility", "为什么搜不到", visibility_actions, 1),
         ("data_health_timeline", "接口健康时间线", timeline_actions, 1),
         ("a_share_capability_matrix", "A股能力矩阵", a_share_matrix_actions, 2),
@@ -3920,6 +4019,8 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
             dedupe_key = item.get("writes_packet") or f"{source_type}:{item.get('key')}"
             if source_type == "next_ticket_evidence":
                 dedupe_key = f"{source_type}:{dedupe_key}"
+            if source_type == "provider_recovery_matrix":
+                dedupe_key = f"{source_type}:{item.get('provider') or item.get('key') or dedupe_key}"
             if dedupe_key in seen:
                 existing = action_by_dedupe_key.get(dedupe_key)
                 if existing:
