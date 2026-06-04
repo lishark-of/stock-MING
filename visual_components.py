@@ -4852,6 +4852,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     )
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
+    legacy_decision_chain = payload.get("legacy_decision_chain_summary") or {}
     a_share_evidence_ledger = payload.get("a_share_evidence_recovery_ledger") or {}
     strategy_prerequisite_ledger = payload.get("strategy_prerequisite_recovery_ledger") or {}
     old_workspace_absence_ledger = payload.get("old_workspace_data_absence_ledger") or {}
@@ -4859,6 +4860,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     legacy_a_share_gap = payload.get("legacy_a_share_gap_summary") or {}
     a_share_fact_summary_text = _home_text(a_share_fact_recovery.get("summary"), "A股事实：待验证")
     a_share_fact_tone = _home_text(a_share_fact_recovery.get("tone"), "missing")
+    legacy_decision_chain_summary_text = _home_text(
+        legacy_decision_chain.get("summary"),
+        risk_alerts.get("legacy_decision_chain_summary") or "旧能力：待验证",
+    )
+    legacy_decision_chain_tone = _home_text(legacy_decision_chain.get("tone"), "missing")
     a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
@@ -6216,6 +6222,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip stale">缓存 {coverage_cached}</span>
             <span class="cc-home-chip missing">待刷新 {coverage_missing}</span>
             <span class="cc-home-chip {escape(a_share_fact_tone)}">A股事实：{escape(a_share_fact_summary_text)}</span>
+            <span class="cc-home-chip {escape(legacy_decision_chain_tone)}">旧能力链：{escape(legacy_decision_chain_summary_text)}</span>
             <span class="cc-home-chip">DeepSeek：{'已调用' if payload.get('deepseek_called') else '未调用'}</span>
           </div>
         </div>
@@ -6290,6 +6297,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-big-value">{escape(str(freshness_label))}</div>
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
+          <div class="cc-home-row"><span>旧能力决策链</span><strong>{escape(legacy_decision_chain_summary_text)}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
           {provider_cockpit_html}
           {tushare_gap_explainer_html}

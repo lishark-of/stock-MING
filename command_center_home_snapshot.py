@@ -399,6 +399,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "deepseek_called": False,
     }
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
@@ -523,6 +524,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         attach_next_ticket_evidence_recovery_results(snapshot)
     )
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
@@ -548,12 +550,15 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["recovery_result_timeline"] = snapshot["command_center_recovery_result_timeline"]
     snapshot["risk_alerts"] = attach_old_workspace_packet_bridge_risk_alerts(
-        attach_recovery_priority_risk_alerts(
-            attach_hard_risk_risk_alerts(
-                snapshot.get("risk_alerts") or {},
-                snapshot.get("hard_risk_packet") or {},
+        attach_legacy_decision_chain_risk_alerts(
+            attach_recovery_priority_risk_alerts(
+                attach_hard_risk_risk_alerts(
+                    snapshot.get("risk_alerts") or {},
+                    snapshot.get("hard_risk_packet") or {},
+                ),
+                snapshot.get("data_recovery_center") or {},
             ),
-            snapshot.get("data_recovery_center") or {},
+            snapshot.get("legacy_decision_chain_summary") or {},
         ),
         snapshot.get("old_workspace_packet_bridge") or {},
     )
@@ -1077,6 +1082,115 @@ def build_a_share_fact_recovery_summary(snapshot: Any = None) -> dict:
         "items": items,
         "next_action": next_action,
         "safe_mode_text": "这里只汇总本地 packet 状态；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+    }
+
+
+def _legacy_decision_chain_item(config: Mapping[str, Any], packet: Any = None) -> dict:
+    payload = _as_mapping(packet)
+    writes_packet = _to_text(config.get("writes_packet"), "command_center_packet")
+    decision_state = _tool_packet_decision_chain_state(payload)
+    if not decision_state:
+        recovery_state = _tool_packet_recovery_state(payload, writes_packet)
+        if recovery_state == "recovered":
+            decision_state = "ready"
+        elif recovery_state == "cached":
+            decision_state = "cache_only"
+        elif recovery_state == "blocked":
+            decision_state = "blocked"
+        else:
+            decision_state = "waiting"
+    label = _to_text(config.get("label"), "旧能力")
+    status_label = _tool_packet_status_label(payload) or _to_text(payload.get("capability_label"), "待验证")
+    state_label = {
+        "ready": "已验证",
+        "cache_only": "缓存辅助",
+        "blocked": "阻断决策",
+        "waiting": "待验证",
+    }.get(decision_state, "待验证")
+    tone = {
+        "ready": "ready",
+        "cache_only": "stale",
+        "blocked": "failed",
+        "waiting": "missing",
+    }.get(decision_state, "missing")
+    guardrail = {
+        "ready": f"{label}可进入证据链，但仍需和价格、纪律、仓位共同确认。",
+        "cache_only": f"{label}只能作为缓存/替代证据；执行前复核日期、来源和覆盖口径。",
+        "blocked": f"{label}仍阻断加仓、追高、加融资或把风险写成已排除。",
+        "waiting": f"{label}待验证；未回流前只能保留安全空态。",
+    }.get(decision_state, f"{label}待验证。")
+    return {
+        "key": _to_text(config.get("key")),
+        "label": label,
+        "writes_packet": writes_packet,
+        "decision_chain_state": decision_state,
+        "state_label": state_label,
+        "tone": tone,
+        "status_label": status_label,
+        "can_enter_decision_chain": decision_state in {"ready", "cache_only"},
+        "guardrail": guardrail,
+        "updated_at": _to_text(
+            payload.get("updated_at")
+            or payload.get("checked_at")
+            or payload.get("generated_at")
+            or payload.get("latest_date"),
+            "暂无",
+        ),
+        "source": _to_text(payload.get("source") or payload.get("source_key"), _to_text(config.get("source_fallback"), "本地 packet")),
+        "deepseek_called": False,
+    }
+
+
+def build_legacy_decision_chain_summary(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    items = [
+        _legacy_decision_chain_item(config, payload.get(config["packet_key"]) or payload.get(config["writes_packet"]))
+        for config in A_SHARE_FACT_RECOVERY_SOURCES
+    ]
+    ready = [item for item in items if item["decision_chain_state"] == "ready"]
+    cache_only = [item for item in items if item["decision_chain_state"] == "cache_only"]
+    blocked = [item for item in items if item["decision_chain_state"] == "blocked"]
+    waiting = [item for item in items if item["decision_chain_state"] == "waiting"]
+    if blocked:
+        status = "blocked"
+        tone = "failed"
+        headline = f"旧能力仍有 {len(blocked)} 项阻断决策"
+        next_action = f"优先恢复 {blocked[0]['label']}；未恢复前不放大仓位。"
+    elif cache_only:
+        status = "cache_only"
+        tone = "stale"
+        headline = f"旧能力 {len(cache_only)} 项仅作缓存辅助"
+        next_action = "执行前复核缓存日期、来源和覆盖口径。"
+    elif waiting:
+        status = "partial"
+        tone = "missing" if not ready else "stale"
+        headline = f"旧能力已验证 {len(ready)}｜待验证 {len(waiting)}"
+        next_action = "按恢复队列补齐待验证 packet；页面打开不会自动请求 Tushare。"
+    else:
+        status = "ready"
+        tone = "ready"
+        headline = "旧能力可进入决策链"
+        next_action = "继续复核价格、纪律、仓位和市场方法。"
+    summary = (
+        f"已验证 {len(ready)}｜缓存辅助 {len(cache_only)}｜"
+        f"阻断决策 {len(blocked)}｜待验证 {len(waiting)}"
+    )
+    return {
+        "title": "旧能力决策链状态",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": summary,
+        "ready_count": len(ready),
+        "cache_only_count": len(cache_only),
+        "blocked_count": len(blocked),
+        "waiting_count": len(waiting),
+        "total_count": len(items),
+        "items": items,
+        "priority_items": [*blocked, *cache_only, *waiting][:3],
+        "next_action": next_action,
+        "safe_mode_text": "这里只读取本地 packet 合同；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
     }
 
@@ -4443,6 +4557,58 @@ def attach_old_workspace_packet_bridge_risk_alerts(
     return alerts
 
 
+def attach_legacy_decision_chain_risk_alerts(
+    risk_alerts: Any = None,
+    legacy_decision_chain_summary: Any = None,
+) -> dict:
+    alerts = _as_mapping(risk_alerts)
+    summary = _as_mapping(legacy_decision_chain_summary)
+    if not summary:
+        alerts.setdefault("legacy_decision_chain_summary", "旧能力决策链状态待生成")
+        alerts.setdefault("deepseek_called", False)
+        return alerts
+    blocked_count = int(_to_number(summary.get("blocked_count")) or 0)
+    cache_count = int(_to_number(summary.get("cache_only_count")) or 0)
+    waiting_count = int(_to_number(summary.get("waiting_count")) or 0)
+    must_not_do = [_to_text(item) for item in _as_list(alerts.get("must_not_do"))]
+    reduce_conditions = [_to_text(item) for item in _as_list(alerts.get("reduce_conditions"))]
+    data_gaps = [
+        _to_text(item)
+        for item in _as_list(alerts.get("data_gaps"))
+        if _to_text(item) not in {"暂无", "暂无显式数据缺口"}
+    ]
+    priority_items = [_as_mapping(item) for item in _as_list(summary.get("priority_items")) if _as_mapping(item)]
+    if blocked_count:
+        labels = "、".join(_to_text(item.get("label"), "旧能力") for item in priority_items if item.get("decision_chain_state") == "blocked")
+        labels = labels or "旧能力 packet"
+        must_not_do.insert(0, f"旧能力阻断决策链：{labels}；不加仓、不追高、不加融资。")
+        data_gaps.append(f"旧能力阻断决策链 {blocked_count} 项：{labels}")
+    if cache_count:
+        labels = "、".join(_to_text(item.get("label"), "旧能力") for item in priority_items if item.get("decision_chain_state") == "cache_only")
+        labels = labels or "旧能力缓存"
+        reduce_conditions.append(f"旧能力缓存辅助 {cache_count} 项：{labels}；执行前复核日期和来源。")
+        alerts["uses_cache"] = True
+    if waiting_count:
+        reduce_conditions.append(f"旧能力仍有 {waiting_count} 项待验证；相关结论只能保留安全空态。")
+    alerts["must_not_do"] = _dedupe_text_items(must_not_do, limit=6)
+    alerts["reduce_conditions"] = _dedupe_text_items(reduce_conditions, limit=MAX_CANDIDATES)
+    alerts["data_gaps"] = _dedupe_text_items(data_gaps, limit=MAX_ERRORS + 2)
+    alerts["legacy_decision_chain_summary"] = _to_text(summary.get("summary"), "旧能力决策链状态待验证")
+    alerts["legacy_decision_chain_status"] = _to_text(summary.get("status"), "waiting")
+    alerts["legacy_decision_chain_priority_items"] = [
+        {
+            "label": _to_text(item.get("label"), "旧能力"),
+            "state_label": _to_text(item.get("state_label"), "待验证"),
+            "decision_chain_state": _to_text(item.get("decision_chain_state"), "waiting"),
+            "guardrail": _to_text(item.get("guardrail"), "未验证前不能作为交易依据。"),
+            "deepseek_called": False,
+        }
+        for item in priority_items[:3]
+    ]
+    alerts["deepseek_called"] = False
+    return alerts
+
+
 def _hard_risk_item_text(item: Any) -> str:
     payload = _as_mapping(item)
     if not payload:
@@ -4705,6 +4871,7 @@ def build_home_action_snapshot(
         "limit_emotion_packet": limit_emotion_packet,
         "hard_risk_packet": hard_risk_packet,
         "a_share_fact_recovery_summary": {},
+        "legacy_decision_chain_summary": {},
         "legacy_a_share_gap_summary": {},
         "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
         "risk_alerts": risk_alerts,
@@ -4819,12 +4986,17 @@ def build_home_action_snapshot(
         empty["limit_emotion_packet"] = snapshot["limit_emotion_packet"]
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(empty)
+        empty["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(empty)
         empty["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(empty)
         empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(empty)
         empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
         empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
+        empty["risk_alerts"] = attach_legacy_decision_chain_risk_alerts(
+            empty.get("risk_alerts") or {},
+            empty.get("legacy_decision_chain_summary") or {},
+        )
         empty = attach_decision_loop_status(
             empty,
             data_capability_console=empty.get("data_capability_console") or {},
@@ -4838,6 +5010,7 @@ def build_home_action_snapshot(
         empty["errors"] = errors
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
@@ -4866,9 +5039,12 @@ def build_home_action_snapshot(
     )
     snapshot["recovery_result_timeline"] = snapshot["command_center_recovery_result_timeline"]
     snapshot["risk_alerts"] = attach_old_workspace_packet_bridge_risk_alerts(
-        attach_recovery_priority_risk_alerts(
-            snapshot.get("risk_alerts") or {},
-            snapshot.get("data_recovery_center") or {},
+        attach_legacy_decision_chain_risk_alerts(
+            attach_recovery_priority_risk_alerts(
+                snapshot.get("risk_alerts") or {},
+                snapshot.get("data_recovery_center") or {},
+            ),
+            snapshot.get("legacy_decision_chain_summary") or {},
         ),
         snapshot.get("old_workspace_packet_bridge") or {},
     )

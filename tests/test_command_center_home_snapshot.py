@@ -3459,6 +3459,106 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(summary["deepseek_called"])
         json.dumps(summary, ensure_ascii=False)
 
+    def test_legacy_decision_chain_summary_counts_packet_contract_states(self):
+        summary = snapshot.build_legacy_decision_chain_summary(
+            {
+                "moneyflow_packet": {
+                    "decision_chain_state": "ready",
+                    "status_label": "可用",
+                    "updated_at": "2026-06-04T10:00:00",
+                },
+                "dragon_tiger_packet": {
+                    "items": [
+                        {
+                            "label": "龙虎榜",
+                            "decision_chain_state": "cache_only",
+                            "status_label": "使用替代口径",
+                            "can_enter_decision_chain": True,
+                        }
+                    ],
+                    "updated_at": "2026-06-04T10:01:00",
+                },
+                "margin_packet": {
+                    "items": [
+                        {
+                            "label": "融资融券",
+                            "decision_chain_state": "blocked",
+                            "status_label": "权限不足",
+                            "can_enter_decision_chain": False,
+                        }
+                    ],
+                    "updated_at": "2026-06-04T10:02:00",
+                },
+            }
+        )
+        by_key = {item["key"]: item for item in summary["items"]}
+
+        self.assertEqual(summary["ready_count"], 1)
+        self.assertEqual(summary["cache_only_count"], 1)
+        self.assertEqual(summary["blocked_count"], 1)
+        self.assertEqual(summary["waiting_count"], 2)
+        self.assertEqual(summary["status"], "blocked")
+        self.assertIn("已验证 1", summary["summary"])
+        self.assertIn("缓存辅助 1", summary["summary"])
+        self.assertIn("阻断决策 1", summary["summary"])
+        self.assertEqual(by_key["moneyflow"]["state_label"], "已验证")
+        self.assertEqual(by_key["dragon_tiger"]["state_label"], "缓存辅助")
+        self.assertEqual(by_key["margin"]["state_label"], "阻断决策")
+        self.assertFalse(by_key["margin"]["can_enter_decision_chain"])
+        self.assertFalse(summary["deepseek_called"])
+        json.dumps(summary, ensure_ascii=False)
+
+    def test_legacy_decision_chain_summary_falls_back_to_recovery_state(self):
+        summary = snapshot.build_legacy_decision_chain_summary(
+            {
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "recovery_state": "recovered",
+                    "status_label": "可用",
+                },
+                "dragon_tiger_packet": {
+                    "recovery_state": "cached",
+                    "status_label": "使用缓存",
+                },
+                "margin_packet": {
+                    "recovery_state": "blocked",
+                    "status_label": "权限不足",
+                },
+            }
+        )
+
+        self.assertEqual(summary["ready_count"], 1)
+        self.assertEqual(summary["cache_only_count"], 1)
+        self.assertEqual(summary["blocked_count"], 1)
+        self.assertEqual(summary["waiting_count"], 2)
+        self.assertFalse(summary["deepseek_called"])
+
+    def test_legacy_decision_chain_summary_feeds_risk_alerts(self):
+        summary = snapshot.build_legacy_decision_chain_summary(
+            {
+                "moneyflow_packet": {"decision_chain_state": "ready", "status_label": "可用"},
+                "dragon_tiger_packet": {
+                    "items": [{"decision_chain_state": "cache_only", "status_label": "使用替代口径"}],
+                },
+                "margin_packet": {
+                    "items": [{"decision_chain_state": "blocked", "status_label": "权限不足"}],
+                },
+            }
+        )
+        alerts = snapshot.attach_legacy_decision_chain_risk_alerts(
+            {"must_not_do": [], "reduce_conditions": [], "data_gaps": [], "uses_cache": False},
+            summary,
+        )
+
+        self.assertTrue(alerts["uses_cache"])
+        self.assertIn("旧能力阻断决策链", alerts["must_not_do"][0])
+        self.assertTrue(any("缓存辅助" in item for item in alerts["reduce_conditions"]))
+        self.assertTrue(any("阻断决策链" in item for item in alerts["data_gaps"]))
+        self.assertEqual(alerts["legacy_decision_chain_summary"], summary["summary"])
+        self.assertFalse(alerts["deepseek_called"])
+        json.dumps(alerts, ensure_ascii=False)
+
     def test_a_share_evidence_recovery_ledger_explains_decision_impact(self):
         ledger = snapshot.build_a_share_evidence_recovery_ledger(
             {
@@ -3628,6 +3728,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(legacy_gap["deepseek_called"])
         ledger = payload["a_share_evidence_recovery_ledger"]
         self.assertEqual(ledger["title"], "A股证据回流总账")
+        chain_summary = payload["legacy_decision_chain_summary"]
+        self.assertEqual(chain_summary["ready_count"], 1)
+        self.assertEqual(chain_summary["blocked_count"], 1)
+        self.assertIn("阻断决策 1", chain_summary["summary"])
+        self.assertIn("旧能力阻断决策链", "；".join(payload["risk_alerts"]["must_not_do"]))
+        self.assertFalse(chain_summary["deepseek_called"])
         self.assertIn("融资融券", json.dumps(ledger, ensure_ascii=False))
         self.assertIn("阻断加仓", json.dumps(ledger, ensure_ascii=False))
         self.assertFalse(ledger["deepseek_called"])
