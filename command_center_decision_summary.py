@@ -302,13 +302,87 @@ def build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary: Any = 
             f"｜仍受限 {_safe_int(summary.get('blocked_count'))}"
             f"｜待验证 {_safe_int(summary.get('waiting_count'))}"
         )
+    detail_items = build_a_share_fact_recovery_detail_items(summary)
+    focus_text = "；".join(_to_text(item.get("value")) for item in detail_items[:2] if _to_text(item.get("value")))
+    guardrail = (
+        _to_text(summary.get("decision_guardrail"))
+        or "A股事实未完全回流前，今日总动作不能把缺口写成已验证依据。"
+    )
     return {
         "label": "A股事实回流",
         "value": text,
         "tone": _a_share_fact_recovery_tone(summary),
         "summary": text,
+        "focus_text": focus_text,
+        "guardrail": guardrail,
+        "detail_items": detail_items,
         "next_action": _to_text(summary.get("next_action")),
     }
+
+
+def _fact_recovery_detail_tone(state: str) -> str:
+    if state == "recovered":
+        return "success"
+    if state == "blocked":
+        return "danger"
+    if state == "waiting":
+        return "warning"
+    return "muted"
+
+
+def _fact_recovery_detail_label(state: str) -> str:
+    return {
+        "recovered": "已回流事实",
+        "blocked": "受限事实",
+        "waiting": "待验证事实",
+    }.get(state, "A股事实")
+
+
+def _fact_recovery_detail_guardrail(state: str, labels: str) -> str:
+    target = labels or "A股事实"
+    if state == "recovered":
+        return f"{target} 可进入依据链，但仍需价格、纪律和仓位共同确认。"
+    if state == "blocked":
+        return f"{target} 仍受限，不能支持加仓、追高、加融资或把风险写成已排除。"
+    return f"{target} 待验证，只能保留安全空态或低置信度解释。"
+
+
+def build_a_share_fact_recovery_detail_items(a_share_fact_recovery_summary: Any = None) -> list[dict]:
+    summary = _as_mapping(a_share_fact_recovery_summary)
+    items = [_as_mapping(item) for item in _as_list(summary.get("items")) if _as_mapping(item)]
+    if not items:
+        return []
+    detail_items = []
+    for state in ("blocked", "waiting", "recovered"):
+        rows = [
+            item
+            for item in items
+            if _to_text(item.get("recovery_state")).lower() == state
+        ]
+        if not rows:
+            continue
+        labels = "、".join(_to_text(item.get("label")) for item in rows[:3] if _to_text(item.get("label")))
+        root_causes = "、".join(
+            _to_text(item.get("root_cause_label"))
+            for item in rows[:3]
+            if _to_text(item.get("root_cause_label"))
+        )
+        value = labels or _fact_recovery_detail_label(state)
+        if root_causes and state != "recovered":
+            value = f"{value}｜{root_causes}"
+        detail_items.append(
+            {
+                "key": f"a_share_fact_{state}",
+                "label": _fact_recovery_detail_label(state),
+                "value": value,
+                "tone": _fact_recovery_detail_tone(state),
+                "guardrail": _fact_recovery_detail_guardrail(state, labels),
+                "count": len(rows),
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    return detail_items[:3]
 
 
 def build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary: Any = None) -> str:
@@ -843,6 +917,7 @@ def build_decision_evidence_chain_items(
     fact_recovery_basis = build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary)
     if fact_recovery_basis:
         items.append(fact_recovery_basis)
+        items.extend(fact_recovery_basis.get("detail_items") or [])
     recovery_timeline_basis = build_recovery_timeline_basis_item(recovery_result_timeline)
     if recovery_timeline_basis:
         items.append(recovery_timeline_basis)
@@ -952,6 +1027,7 @@ def build_decision_summary_view_model(
         "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
         "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),
         "a_share_fact_recovery_basis_item": build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary),
+        "a_share_fact_recovery_detail_items": build_a_share_fact_recovery_detail_items(a_share_fact_recovery_summary),
         "a_share_fact_recovery_summary_text": build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary),
         "latest_recovery_result_basis_item": build_latest_recovery_result_basis_item(latest_recovery_result_notice),
         "latest_recovery_result_summary_text": build_latest_recovery_result_summary_text(latest_recovery_result_notice),

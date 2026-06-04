@@ -523,14 +523,41 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
                 "blocked_count": 1,
                 "waiting_count": 2,
                 "total_count": 5,
+                "items": [
+                    {
+                        "label": "融资融券",
+                        "recovery_state": "blocked",
+                        "root_cause_label": "接口权限/积分",
+                    },
+                    {
+                        "label": "龙虎榜",
+                        "recovery_state": "waiting",
+                        "root_cause_label": "近期无记录",
+                    },
+                    {
+                        "label": "个股资金流",
+                        "recovery_state": "recovered",
+                        "root_cause_label": "已可用",
+                    },
+                ],
                 "deepseek_called": False,
             },
         )
         joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+        details = view_model["a_share_fact_recovery_detail_items"]
 
         self.assertIn("A股事实回流", joined)
         self.assertIn("仍受限 1", joined)
+        self.assertIn("融资融券", joined)
+        self.assertIn("接口权限/积分", joined)
+        self.assertEqual(details[0]["label"], "受限事实")
+        self.assertEqual(details[0]["tone"], "danger")
+        self.assertIn("融资融券", details[0]["value"])
+        self.assertEqual(details[1]["label"], "待验证事实")
+        self.assertIn("龙虎榜", details[1]["value"])
+        self.assertFalse(details[0]["deepseek_called"])
         self.assertEqual(view_model["a_share_fact_recovery_basis_item"]["tone"], "danger")
+        self.assertIn("不能把缺口写成已验证", view_model["a_share_fact_recovery_basis_item"]["guardrail"])
         self.assertIn("已回流 2", view_model["a_share_fact_recovery_summary_text"])
         json.dumps(view_model, ensure_ascii=False)
 

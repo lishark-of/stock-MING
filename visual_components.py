@@ -4691,6 +4691,19 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
     )
     if a_share_data_basis_html:
         a_share_data_basis_html = f"<div class='cc-decision-chain'>{a_share_data_basis_html}</div>"
+    a_share_fact_detail_items = vm.get("a_share_fact_recovery_detail_items") or []
+    a_share_fact_detail_html = "".join(
+        f"<span class='cc-decision-chain-pill {escape(str(item.get('tone') or 'muted'))}'>"
+        f"{escape(str(item.get('label') or 'A股事实'))}：{escape(str(item.get('value') or '待验证'))}"
+        "</span>"
+        for item in a_share_fact_detail_items[:3]
+    )
+    if a_share_fact_detail_html:
+        guardrail_text = str((vm.get("a_share_fact_recovery_basis_item") or {}).get("guardrail") or "A股事实未完全回流前，不能把缺口写成已验证依据。")
+        a_share_fact_detail_html = (
+            f"<div class='cc-decision-chain'>{a_share_fact_detail_html}"
+            f"<span class='cc-decision-chain-pill muted'>{escape(guardrail_text)}</span></div>"
+        )
     a_share_evidence_group = vm.get("a_share_evidence_group_basis_item") or {}
     a_share_evidence_group_html = ""
     if a_share_evidence_group:
@@ -4729,6 +4742,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
           </div>
           <div class="cc-decision-chain">{evidence_chain_html}</div>
           {a_share_data_basis_html}
+          {a_share_fact_detail_html}
           {a_share_evidence_group_html}
           {recovery_timeline_basis_html}
         </div>
