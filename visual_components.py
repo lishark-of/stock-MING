@@ -4804,6 +4804,13 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_capability_console = payload.get("data_capability_console") or {}
     data_recovery_center = payload.get("data_recovery_center") or {}
     data_health_ledger = payload.get("data_health_ledger") or data_capability_console.get("data_health_ledger") or {}
+    data_health_visibility = (
+        payload.get("command_center_data_health_visibility_summary")
+        or payload.get("data_health_visibility_summary")
+        or {}
+    )
+    if not isinstance(data_health_visibility, dict):
+        data_health_visibility = {}
     legacy_migration_map = payload.get("legacy_migration_map") or {}
     latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
     recovery_result_status = payload.get("recovery_result_status_strip") or {}
@@ -5009,7 +5016,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
     data_health_ledger_rows = [item for item in (data_health_ledger.get("rows") or []) if isinstance(item, dict)]
-    data_health_visibility = build_data_health_visibility_summary(data_health_ledger)
+    if not data_health_visibility:
+        data_health_visibility = build_data_health_visibility_summary(data_health_ledger)
     data_health_visibility_item_html = ""
     for item in (data_health_visibility.get("items") or [])[:4]:
         if not isinstance(item, dict):

@@ -35,6 +35,7 @@ class CommandCenterLocalApiContractTests(unittest.TestCase):
         self.assertGreater(manifest["endpoint_count"], 10)
         self.assertIn("/api/command-center/packets/command_center_live_packet", dumped)
         self.assertIn("/api/command-center/packets/command_center_decision_priority_queue", dumped)
+        self.assertIn("/api/command-center/packets/command_center_data_health_visibility_summary", dumped)
         for endpoint in manifest["endpoints"]:
             self.assertEqual(endpoint["method"], "GET")
             self.assertTrue(endpoint["read_only"])
@@ -66,6 +67,18 @@ class CommandCenterLocalApiContractTests(unittest.TestCase):
         self.assertEqual(response["meta"]["generated_at"], "2026-06-04T09:30:00")
         self.assertFalse(response["deepseek_called"])
         self.assertEqual(contract.validate_packet_response_envelope(response), {"valid": True, "errors": []})
+
+    def test_blocked_status_is_valid_for_read_only_governance_packets(self):
+        response = contract.build_packet_response_envelope(
+            "command_center_data_health_visibility_summary",
+            payload={"status": "blocked", "headline": "Tushare 拉满 ≠ 每个专业接口都有权限"},
+            status="blocked",
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["status"], "blocked")
+        self.assertEqual(response["meta"]["area"], "data_governance")
+        self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])
 
     def test_packet_response_redacts_secrets_without_mutating_input(self):
         payload = {

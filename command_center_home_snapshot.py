@@ -24,6 +24,7 @@ import command_center_market_profile_summary as market_profile_summary_service
 import command_center_evidence_summary as evidence_summary_service
 import command_center_data_issue_explainer as data_issue_explainer_service
 import command_center_data_capability_console as data_capability_console_service
+import command_center_data_health_ledger as data_health_ledger_service
 import command_center_a_share_capability_matrix as a_share_capability_matrix_service
 import command_center_legacy_a_share_debug_summary as legacy_a_share_debug_summary_service
 import command_center_legacy_a_share_gate as legacy_a_share_gate_service
@@ -334,6 +335,10 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
+    snapshot["data_health_visibility_summary"] = data_health_ledger_service.build_data_health_visibility_summary(
+        snapshot["data_health_ledger"]
+    )
+    snapshot["command_center_data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
     return snapshot
 
 
@@ -383,6 +388,11 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         data_issue_explainer=snapshot.get("data_issue_explainer") or {},
         errors=snapshot.get("errors") or [],
     )
+    snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
+    snapshot["data_health_visibility_summary"] = data_health_ledger_service.build_data_health_visibility_summary(
+        snapshot["data_health_ledger"]
+    )
+    snapshot["command_center_data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
     snapshot["a_share_user_data_diagnostic"] = (
         _as_mapping(snapshot.get("a_share_user_data_diagnostic"))
         or legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model()
@@ -2342,6 +2352,7 @@ def build_home_action_snapshot(
         errors=errors,
     )
     data_health_ledger = _as_mapping(data_capability_console.get("data_health_ledger"))
+    data_health_visibility_summary = data_health_ledger_service.build_data_health_visibility_summary(data_health_ledger)
     a_share_professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
     a_share_user_data_diagnostic = legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(
         verified_technical_facts=(
@@ -2445,6 +2456,8 @@ def build_home_action_snapshot(
         "data_issue_explainer": data_issue_explainer,
         "data_capability_console": data_capability_console,
         "data_health_ledger": data_health_ledger,
+        "data_health_visibility_summary": data_health_visibility_summary,
+        "command_center_data_health_visibility_summary": data_health_visibility_summary,
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
@@ -2479,6 +2492,8 @@ def build_home_action_snapshot(
         empty["data_issue_explainer"] = snapshot["data_issue_explainer"]
         empty["data_capability_console"] = snapshot["data_capability_console"]
         empty["data_health_ledger"] = snapshot["data_health_ledger"]
+        empty["data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
+        empty["command_center_data_health_visibility_summary"] = snapshot["command_center_data_health_visibility_summary"]
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)

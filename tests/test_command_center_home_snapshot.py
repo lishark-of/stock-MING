@@ -818,6 +818,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
         console = payload["data_capability_console"]
         health_ledger = payload["data_health_ledger"]
+        visibility = payload["command_center_data_health_visibility_summary"]
         dumped = json.dumps(console, ensure_ascii=False)
 
         self.assertEqual(console["status"], "blocked")
@@ -831,6 +832,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(health_ledger["status"], "blocked")
         self.assertTrue(any(row["label"] == "融资融券" for row in health_ledger["rows"]))
         self.assertTrue(any(row["writes_packet"] == "command_center_margin_packet" for row in health_ledger["rows"]))
+        self.assertEqual(visibility, payload["data_health_visibility_summary"])
+        self.assertEqual(visibility["title"], "为什么搜不到")
+        self.assertEqual(visibility["status"], "blocked")
+        self.assertIn("Tushare 拉满", visibility["headline"])
+        self.assertIn("融资融券", visibility["permission_labels"])
+        self.assertFalse(visibility["deepseek_called"])
         self.assertEqual(payload["data_recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(payload["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(payload["data_recovery_actions"][0]["refresh_policy"], "button_gated")

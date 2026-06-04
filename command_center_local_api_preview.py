@@ -47,6 +47,12 @@ def _payload_from_state(state: Any, packet_key: str) -> Any:
             or snapshot.get("a_share_evidence_packet")
             or {}
         )
+    if packet_key == "command_center_data_health_visibility_summary":
+        return deepcopy(
+            snapshot.get("command_center_data_health_visibility_summary")
+            or snapshot.get("data_health_visibility_summary")
+            or {}
+        )
     if packet_key == "command_center_decision_priority_queue":
         recovery_center = _as_mapping(snapshot.get("data_recovery_center"))
         queue = recovery_center.get("decision_priority_queue") or []

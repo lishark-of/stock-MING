@@ -56,7 +56,11 @@ SURFACE_SPECS = [
         "label": "数据新鲜度条",
         "description": "今日已刷新、使用缓存、待刷新、部分失败和 DeepSeek 状态。",
         "required_any": ["command_center_refresh_summary", "command_center_live_packet"],
-        "supporting_packets": ["command_center_data_capability_packet", "a_share_professional_data_capability"],
+        "supporting_packets": [
+            "command_center_data_capability_packet",
+            "command_center_data_health_visibility_summary",
+            "a_share_professional_data_capability",
+        ],
         "next_action": "刷新今日基础数据或查看数据能力状态，不自动重试接口。",
     },
     {

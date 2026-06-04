@@ -12,7 +12,7 @@ CONTRACT_VERSION = "2026-06-command-center-local-api-v1"
 RESPONSE_KIND = "command_center_packet_response"
 MANIFEST_KIND = "command_center_local_api_manifest"
 
-OK_STATUSES = {"ok", "ready", "cached", "partial", "empty", "waiting"}
+OK_STATUSES = {"ok", "ready", "cached", "partial", "blocked", "missing", "empty", "waiting"}
 SECRET_KEY_PARTS = ("api_key", "apikey", "secret", "token", "password", "passwd", "credential")
 SECRET_VALUE_PREFIXES = ("sk-", "tushare_", "supabase_")
 REDACTED_VALUE = "[REDACTED]"

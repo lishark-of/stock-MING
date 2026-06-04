@@ -49,6 +49,16 @@ def sample_state():
                 "status": "ready",
                 "writes_packet": "command_center_moneyflow_packet",
             },
+            "command_center_data_health_visibility_summary": {
+                "title": "为什么搜不到",
+                "status": "blocked",
+                "headline": "Tushare 拉满 ≠ 每个专业接口都有权限",
+                "permission_labels": "融资融券",
+                "skipped_labels": "涨跌停/情绪",
+                "summary": "阻断 1｜手动 0｜缓存/近期无数据 1｜可用 1",
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            },
             "data_recovery_center": {
                 "decision_priority_summary": "先处理 P0 阻断交易判断：融资融券。",
                 "safe_mode_text": "这里只整理恢复队列；所有数据请求仍由按钮触发。",
@@ -159,6 +169,24 @@ class CommandCenterLocalApiPreviewTests(unittest.TestCase):
         self.assertEqual(response["payload"]["loop_status"]["label"], "证据闭环")
         self.assertEqual(response["payload"]["loop_status"]["tone"], "stale")
         self.assertFalse(response["payload"]["deepseek_called"])
+
+    def test_data_health_visibility_summary_can_be_read_from_home_snapshot(self):
+        response = preview.get_preview_response_for_path(
+            sample_state(),
+            "command_center_data_health_visibility_summary",
+        )
+        payload = response["payload"]
+
+        self.assertEqual(response["packet_key"], "command_center_data_health_visibility_summary")
+        self.assertEqual(response["status"], "blocked")
+        self.assertTrue(response["ok"])
+        self.assertTrue(response["meta"]["available"])
+        self.assertEqual(response["meta"]["area"], "data_governance")
+        self.assertIn("Tushare 拉满", payload["headline"])
+        self.assertIn("融资融券", payload["permission_labels"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertEqual(payload["external_call_policy"], "not_triggered")
+        self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])
 
     def test_decision_priority_queue_can_be_read_from_home_snapshot(self):
         response = preview.get_preview_response_for_path(
