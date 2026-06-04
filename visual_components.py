@@ -5091,6 +5091,29 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-item-title">恢复优先级影响</div>
         {risk_recovery_priority_html}
         """
+    decision_priority_items = [item for item in (data_recovery_center.get("decision_priority_queue") or []) if isinstance(item, dict)]
+    decision_priority_html = ""
+    for item in decision_priority_items[:5]:
+        decision_priority_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "恢复项"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("priority_label"), "P1 执行前验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">决策模式：{escape(_home_text(item.get("decision_mode"), "谨慎验证"))} ｜ 状态：{escape(_home_text(item.get("status_label"), item.get("status") or "待验证"))}</div>
+          <div class="cc-home-item-meta">为什么优先：{escape(_home_text(item.get("why_first"), "先恢复会影响交易判断的数据缺口。"))}</div>
+          <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
+          <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">按钮边界：{escape(_home_text(item.get("recovery_button_context"), "按钮只恢复当前 packet；不会自动调用 DeepSeek 或重型任务。"))}</div>
+          <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ 触发：{escape(_home_text(item.get("refresh_policy"), "button_gated"))}</div>
+        </div>
+        """
+    if decision_priority_html:
+        decision_priority_html = f"""
+        <div class="cc-home-item-title">决策优先队列</div>
+        <div class="cc-home-item-meta">{escape(_home_text(data_recovery_center.get("decision_priority_summary"), "按 P0/P1/P2 手动恢复关键数据。"))}</div>
+        {decision_priority_html}
+        """
     data_recovery_center_action_html = ""
     for item in data_recovery_center_actions[:6]:
         data_recovery_center_action_html += f"""
@@ -5194,6 +5217,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">下一步：{escape(_home_text(data_recovery_center.get("next_action"), "按队列手动恢复。"))}</div>
           <div class="cc-home-item-meta">安全边界：{escape(_home_text(data_recovery_center.get("safe_mode_text"), "页面打开不会自动请求外部接口。"))}</div>
           {latest_recovery_html}
+          {decision_priority_html}
           {recovery_priority_html}
           {data_recovery_center_action_html}
         </div>

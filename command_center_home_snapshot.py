@@ -1127,6 +1127,8 @@ def _normalize_recovery_center_action(
         "priority": int(_to_number(item.get("priority")) or default_priority),
         "reason": _to_text(item.get("reason") or item.get("action_hint"), f"{label}仍待验证。"),
         "diagnostic_answer": _to_text(item.get("diagnostic_answer") or item.get("meaning"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
+        "interface_diagnostic_answer": _to_text(item.get("interface_diagnostic_answer") or item.get("diagnostic_answer") or item.get("meaning"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
+        "decision_guardrail": _to_text(item.get("decision_guardrail"), f"{label}未恢复前不能作为加仓、追高或加融资依据。"),
         "action_label": _to_text(item.get("action_label"), f"手动恢复{label}"),
         "toolbox_entry": _to_text(item.get("toolbox_entry") or item.get("advanced_entry"), "高级工具箱"),
         "workspace_target": _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）"),
@@ -1136,6 +1138,10 @@ def _normalize_recovery_center_action(
         "legacy_tab": _to_text(item.get("legacy_tab")),
         "writes_packet": writes_packet,
         "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+        "recovery_button_context": _to_text(
+            item.get("recovery_button_context") or item.get("button_context"),
+            f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
+        ),
         "deepseek_called": False,
     }
 
@@ -1240,6 +1246,83 @@ def build_recovery_priority_lanes(actions: Any = None) -> list[dict]:
     return lanes
 
 
+DECISION_PRIORITY_QUEUE_CONFIG = {
+    "p0": {
+        "rank": 1,
+        "priority_label": "P0 阻断交易判断",
+        "tone": "failed",
+        "decision_mode": "阻断加仓",
+        "why_first": "权限、本会话跳过、网络或配置问题会让关键证据不可用，不能把缺口当成行情不存在。",
+        "fallback_impact": "未恢复前，不支持加仓、追高、加融资或把风险写成已排除。",
+    },
+    "p1": {
+        "rank": 2,
+        "priority_label": "P1 执行前验证",
+        "tone": "stale",
+        "decision_mode": "谨慎验证",
+        "why_first": "缓存、替代口径或近期无记录只能防白屏，不能当作实时已验证事实。",
+        "fallback_impact": "执行前必须复核交易日、缓存时间、标的覆盖和接口口径。",
+    },
+    "p2": {
+        "rank": 3,
+        "priority_label": "P2 能力回流补强",
+        "tone": "missing",
+        "decision_mode": "补强证据链",
+        "why_first": "旧工具能力未回流时，综合中心只能展示待验证或上次成功结果。",
+        "fallback_impact": "不阻断看盘，但不能把旧工具缺失项当作已验证依据。",
+    },
+}
+
+
+def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> list[dict]:
+    action_list = [_as_mapping(item) for item in _as_list(actions)]
+    action_list = [item for item in action_list if item]
+    rows = []
+    seen = set()
+    for action in action_list:
+        lane_key = _recovery_action_lane_key(action)
+        config = DECISION_PRIORITY_QUEUE_CONFIG.get(lane_key, DECISION_PRIORITY_QUEUE_CONFIG["p1"])
+        writes_packet = _to_text(action.get("writes_packet"), "command_center_packet")
+        dedupe_key = (lane_key, writes_packet, _to_text(action.get("label")))
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        label = _to_text(action.get("label"), "恢复项")
+        diagnostic = _to_text(
+            action.get("interface_diagnostic_answer")
+            or action.get("diagnostic_answer")
+            or action.get("reason"),
+            f"{label}仍需核对接口状态、日期和覆盖范围。",
+        )
+        rows.append(
+            {
+                "key": f"{lane_key}:{writes_packet or _to_text(action.get('key'), 'recovery')}",
+                "lane_key": lane_key,
+                "rank": config["rank"],
+                "priority_label": config["priority_label"],
+                "tone": _to_text(action.get("tone"), config["tone"]),
+                "decision_mode": config["decision_mode"],
+                "label": label,
+                "status": _to_text(action.get("status"), "waiting"),
+                "status_label": _to_text(action.get("status_label"), "待验证"),
+                "diagnostic_answer": diagnostic,
+                "decision_impact": _to_text(action.get("decision_guardrail") or action.get("decision_impact"), config["fallback_impact"]),
+                "why_first": config["why_first"],
+                "action_label": _to_text(action.get("action_label"), f"手动恢复{label}"),
+                "navigation_label": _to_text(action.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
+                "writes_packet": writes_packet,
+                "refresh_policy": _to_text(action.get("refresh_policy"), "button_gated"),
+                "recovery_button_context": _to_text(
+                    action.get("recovery_button_context") or action.get("button_context"),
+                    f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
+                ),
+                "deepseek_called": False,
+            }
+        )
+    rows = sorted(rows, key=lambda item: (item["rank"], item["label"], item["writes_packet"]))
+    return rows[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+
+
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
@@ -1278,6 +1361,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     actions = sorted(actions, key=lambda item: (item["priority"], item["source_label"], item["label"]))
     actions = actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
     priority_lanes = build_recovery_priority_lanes(actions)
+    decision_priority_queue = build_decision_priority_queue(actions)
     if not actions:
         tone = "ready"
         headline = "恢复队列为空"
@@ -1299,6 +1383,12 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         "actions": actions,
         "groups": groups,
         "priority_lanes": priority_lanes,
+        "decision_priority_queue": decision_priority_queue,
+        "decision_priority_summary": (
+            f"先处理 {decision_priority_queue[0]['priority_label']}：{decision_priority_queue[0]['label']}。"
+            if decision_priority_queue
+            else "暂无阻断交易判断的数据恢复项。"
+        ),
         "action_count": len(actions),
         "safe_mode_text": "这里只整理恢复队列；所有数据请求仍由按钮触发，DeepSeek 不参与恢复动作。",
         "deepseek_called": False,

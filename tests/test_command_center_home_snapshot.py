@@ -931,6 +931,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                         "label": "融资融券",
                         "status_label": "权限不足",
                         "priority": 1,
+                        "diagnostic_answer": "Tushare margin_detail 权限不足。",
+                        "decision_guardrail": "融资融券未恢复前不能支持加融资。",
+                        "recovery_button_context": "只检测 margin_detail 并回流 command_center_margin_packet。",
                         "action_label": "手动刷新融资融券",
                         "writes_packet": "command_center_margin_packet",
                         "refresh_policy": "button_gated",
@@ -974,6 +977,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         group_counts = {item["key"]: item["count"] for item in center["groups"]}
         lane_counts = {item["key"]: item["count"] for item in center["priority_lanes"]}
         lane_summaries = {item["key"]: item["summary"] for item in center["priority_lanes"]}
+        decision_queue = center["decision_priority_queue"]
 
         self.assertEqual(center["title"], "数据恢复中心")
         self.assertEqual(center["action_count"], 3)
@@ -989,7 +993,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("融资融券", lane_summaries["p0"])
         self.assertIn("筹码", lane_summaries["p1"])
         self.assertIn("下一票雷达", lane_summaries["p2"])
+        self.assertEqual([item["lane_key"] for item in decision_queue], ["p0", "p1", "p2"])
+        self.assertEqual(decision_queue[0]["decision_mode"], "阻断加仓")
+        self.assertEqual(decision_queue[0]["writes_packet"], "command_center_margin_packet")
+        self.assertIn("不能支持加融资", decision_queue[0]["decision_impact"])
+        self.assertIn("只检测 margin_detail", decision_queue[0]["recovery_button_context"])
+        self.assertIn("先处理 P0 阻断交易判断", center["decision_priority_summary"])
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in center["actions"]))
+        self.assertTrue(all(item["deepseek_called"] is False for item in decision_queue))
         self.assertFalse(center["deepseek_called"])
 
     def test_recovery_priority_lanes_classify_session_skip_cache_and_legacy(self):
