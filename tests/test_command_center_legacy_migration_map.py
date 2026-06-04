@@ -101,10 +101,40 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         lane_counts = {lane["key"]: lane["count"] for lane in packet["lanes"]}
 
         self.assertEqual(by_key["today_pool"]["migration_state"], "packet_ready")
+        self.assertEqual(by_key["today_pool"]["completion_status"], "complete")
+        self.assertTrue(by_key["today_pool"]["completion_checks"][0]["passed"])
         self.assertEqual(by_key["margin_etf"]["migration_state"], "blocked")
+        self.assertEqual(by_key["margin_etf"]["completion_status"], "partial")
+        self.assertFalse(by_key["margin_etf"]["is_complete"])
         self.assertEqual(by_key["margin_etf"]["data_status_label"], "权限不足")
         self.assertGreaterEqual(lane_counts["blocked"], 1)
         self.assertGreaterEqual(lane_counts["packet_ready"], 1)
+
+    def test_waiting_packet_completion_names_missing_target(self):
+        packet = migration.build_legacy_migration_map(keys=["next_ticket_radar"])
+        item = packet["items"][0]
+        check = item["completion_checks"][0]
+
+        self.assertEqual(item["completion_status"], "waiting")
+        self.assertEqual(check["key"], "command_center_radar_packet")
+        self.assertEqual(check["current_label"], "待回流")
+        self.assertIn("尚未写入", check["reason"])
+        self.assertFalse(item["is_complete"])
+
+    def test_data_healthcheck_is_complete_when_capability_packet_exists(self):
+        packet = migration.build_legacy_migration_map(
+            keys=["data_healthcheck"],
+            data_capability_packet=sample_data_capability_packet(),
+        )
+        item = packet["items"][0]
+        check = item["completion_checks"][0]
+
+        self.assertEqual(item["completion_status"], "complete")
+        self.assertEqual(item["migration_state"], "packet_ready")
+        self.assertEqual(check["kind"], "capability")
+        self.assertEqual(check["current_label"], "已检测")
+        self.assertIn("受限项进入恢复队列", check["reason"])
+        self.assertTrue(item["is_complete"])
 
     def test_filtering_keeps_next_ticket_mapping(self):
         packet = migration.build_legacy_migration_map(keys=["next_ticket_radar"])
@@ -119,6 +149,7 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         self.assertEqual(item["legacy_tab_state_key"], "legacy_workspace_selected_tab")
         self.assertEqual(item["writes_packet"], "command_center_radar_packet")
         self.assertIn("高级工具箱", item["navigation_label"])
+        self.assertEqual(item["completion_checks"][0]["required"], "command_center_radar_packet.status/data_status 可用于综合中心")
         self.assertFalse(item["deepseek_called"])
 
     def test_migration_item_reuses_navigation_state_contract(self):

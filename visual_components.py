@@ -4976,6 +4976,25 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not legacy_migration_lane_html:
         legacy_migration_lane_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>迁移地图待生成</div><div class='cc-home-item-meta'>尚未读取旧版能力迁移表；不会自动运行旧工具。</div></div>"
+    legacy_migration_completion_html = ""
+    for item in (legacy_migration_map.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        checks = [check for check in (item.get("completion_checks") or []) if isinstance(check, dict)]
+        check_text = "；".join(
+            f"{_home_text(check.get('label'), '完成条件')}:{_home_text(check.get('current_label'), '待验证')}"
+            for check in checks[:2]
+        ) or "完成条件待定义"
+        legacy_migration_completion_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "旧版能力"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("completion_label"), "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">完成条件：{escape(check_text)}</div>
+          <div class="cc-home-item-meta">{escape(_home_text(item.get("completion_summary"), "目标 packet / 能力状态仍待手动恢复。"))}</div>
+        </div>
+        """
     legacy_migration_actions = [str(item).strip() for item in (legacy_migration_map.get("next_actions") or [])[:3] if str(item).strip()]
     legacy_migration_html = f"""
         <div class="cc-home-candidate">
@@ -4985,6 +5004,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">安全边界：{escape(_home_text(legacy_migration_map.get("safe_mode_text"), "只读取本地 packet；不会自动请求外部接口。"))}</div>
           {legacy_migration_lane_html}
+          {legacy_migration_completion_html}
           {_home_list(legacy_migration_actions, "继续保持综合推演中心为主入口；旧工具只在按钮触发时运行。", limit=3)}
         </div>
         """

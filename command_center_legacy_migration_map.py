@@ -23,6 +23,12 @@ MIGRATION_STATE_TONES = {
     "legacy_only": "missing",
 }
 
+READY_PACKET_STATUSES = {"ready", "partial", "completed", "success", "ok"}
+READY_DATA_STATUSES = {"ready", "cached"}
+BLOCKED_PACKET_STATUSES = {"failed", "error", "failure"}
+BLOCKED_CAPABILITY_STATES = {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}
+READY_CAPABILITY_STATES = {"available", "ready", "ok", "success"}
+
 HOME_SURFACES = {
     "today_pool": "Home Action Snapshot / 市场口径",
     "tianyan_risk": "风险警报 / 今日总决策",
@@ -32,6 +38,34 @@ HOME_SURFACES = {
     "data_healthcheck": "数据新鲜度 / 数据恢复中心",
     "next_ticket_radar": "下一票 Top3 / A股证据雷达",
     "cloud_brain": "可选 DeepSeek 解释上下文",
+}
+
+COMPLETION_REQUIREMENTS = {
+    "today_pool": [
+        ("packet", "command_center_market_packet", "市场风格 packet"),
+    ],
+    "tianyan_risk": [
+        ("packet", "command_center_hard_risk_packet", "公告/硬风险 packet"),
+    ],
+    "discipline_lab": [
+        ("packet", "command_center_discipline_packet", "纪律/回测 packet"),
+    ],
+    "quant_projection": [
+        ("packet", "command_center_quant_packet", "量化推演 packet"),
+    ],
+    "margin_etf": [
+        ("packet", "command_center_etf_packet", "ETF 配置 packet"),
+        ("packet", "command_center_margin_packet", "融资融券 packet"),
+    ],
+    "data_healthcheck": [
+        ("capability", "data_capability", "数据能力检测 packet"),
+    ],
+    "next_ticket_radar": [
+        ("packet", "command_center_radar_packet", "下一票雷达 packet"),
+    ],
+    "cloud_brain": [
+        ("capability", "supabase", "Supabase 能力检测"),
+    ],
 }
 
 LEGACY_TOOL_ROUTES = {
@@ -121,6 +155,136 @@ def _packet_status_from_state(state: Any, targets: Iterable[str]) -> str:
     return "packet_missing"
 
 
+def _packet_completion_check(state: Any, packet_key: str, label: str) -> dict:
+    state_map = as_mapping(state)
+    packet = as_mapping(state_map.get(packet_key))
+    status = to_text(packet.get("status"), "missing").lower() if packet else "missing"
+    data_status = to_text(packet.get("data_status") or packet.get("cache_state"), "").lower()
+    if not packet:
+        state_key = "missing"
+        state_label = "待回流"
+        passed = False
+        reason = f"{label} 尚未写入 {packet_key}。"
+    elif status in BLOCKED_PACKET_STATUSES:
+        state_key = "blocked"
+        state_label = "失败/受限"
+        passed = False
+        reason = to_text(packet.get("manual_required_text") or packet.get("summary"), f"{label} 已失败或受限。")
+    elif status in READY_PACKET_STATUSES or data_status in READY_DATA_STATUSES:
+        state_key = "complete"
+        state_label = "已完成"
+        passed = True
+        reason = f"{label} 已回流 {packet_key}，状态 {status or data_status}。"
+    else:
+        state_key = "waiting"
+        state_label = "待数据"
+        passed = False
+        reason = to_text(packet.get("manual_required_text") or packet.get("summary"), f"{label} 已接入但仍待数据。")
+    return {
+        "kind": "packet",
+        "key": packet_key,
+        "label": label,
+        "required": f"{packet_key}.status/data_status 可用于综合中心",
+        "current_state": state_key,
+        "current_label": state_label,
+        "passed": passed,
+        "reason": reason,
+        "deepseek_called": False,
+    }
+
+
+def _capability_rows(data_capability_packet: Any = None, term: str = "") -> list[dict]:
+    packet = as_mapping(data_capability_packet)
+    rows = []
+    term_text = to_text(term).lower()
+    for raw in as_list(packet.get("items")):
+        item = as_mapping(raw)
+        if not item:
+            continue
+        haystack = " ".join(
+            to_text(item.get(key)).lower()
+            for key in ("provider", "api", "label", "state", "capability_state", "status")
+        )
+        if term_text and term_text not in haystack:
+            continue
+        state = to_text(item.get("state") or item.get("capability_state") or item.get("status"), "unknown").lower()
+        rows.append({**item, "normalized_state": state})
+    return rows
+
+
+def _capability_completion_check(data_capability_packet: Any, term: str, label: str) -> dict:
+    rows = _capability_rows(data_capability_packet, "" if term == "data_capability" else term)
+    states = {to_text(row.get("normalized_state")).lower() for row in rows}
+    if not rows:
+        state_key = "missing"
+        state_label = "待检测"
+        passed = False
+        reason = f"{label} 尚未形成本地能力检测结果。"
+    elif term == "data_capability":
+        state_key = "complete"
+        state_label = "已检测"
+        passed = True
+        reason = f"{label} 已形成 {len(rows)} 项本地能力状态；受限项进入恢复队列。"
+    elif states & BLOCKED_CAPABILITY_STATES:
+        state_key = "blocked"
+        state_label = "受限/失败"
+        passed = False
+        reason = f"{label} 检测到权限、配置、网络或本会话跳过问题。"
+    elif states & READY_CAPABILITY_STATES:
+        state_key = "complete"
+        state_label = "已检测"
+        passed = True
+        reason = f"{label} 已形成本地能力检测结果。"
+    else:
+        state_key = "waiting"
+        state_label = "待验证"
+        passed = False
+        reason = f"{label} 仍需手动检测或复核缓存状态。"
+    return {
+        "kind": "capability",
+        "key": term,
+        "label": label,
+        "required": f"{label} 有本地数据能力状态",
+        "current_state": state_key,
+        "current_label": state_label,
+        "passed": passed,
+        "reason": reason,
+        "deepseek_called": False,
+    }
+
+
+def build_completion_checks(
+    key: str,
+    targets: list[str],
+    state: Any = None,
+    data_capability_packet: Any = None,
+) -> list[dict]:
+    requirements = COMPLETION_REQUIREMENTS.get(key)
+    if not requirements:
+        requirements = [("packet", target, target) for target in targets if target.startswith("command_center_")]
+    checks = []
+    for kind, target, label in requirements:
+        if kind == "capability":
+            checks.append(_capability_completion_check(data_capability_packet, target, label))
+        else:
+            checks.append(_packet_completion_check(state, target, label))
+    return checks
+
+
+def _completion_status(checks: list[dict]) -> tuple[str, str, str, bool]:
+    if not checks:
+        return "missing", "完成条件待定义", "尚未定义可验证完成条件。", False
+    passed_count = sum(1 for item in checks if item.get("passed"))
+    blocked_count = sum(1 for item in checks if item.get("current_state") == "blocked")
+    if passed_count == len(checks):
+        return "complete", "迁移完成", "所有目标 packet / 能力状态已满足完成条件。", True
+    if blocked_count:
+        return "blocked", "迁移受阻", f"{blocked_count} 项完成条件受限或失败。", False
+    if passed_count:
+        return "partial", "部分完成", f"{passed_count}/{len(checks)} 项完成条件已满足。", False
+    return "waiting", "待回流", "目标 packet / 能力状态仍待手动恢复。", False
+
+
 def _migration_state(packet_wiring: str, data_status: str) -> str:
     if data_status in {"blocked", "failed"}:
         return "blocked"
@@ -168,6 +332,8 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
     status_key = to_text(status.get("status"), "missing")
     targets = extract_packet_targets(payload.get("packet"))
     packet_state = _packet_status_from_state(state, targets)
+    checks = build_completion_checks(key, targets, state=state)
+    completion_status, completion_label, completion_summary, is_complete = _completion_status(checks)
     if packet_state == "packet_missing" and any(target.startswith("command_center_") for target in targets):
         packet_wiring = "packet_defined"
     elif packet_state == "packet_cached":
@@ -176,7 +342,7 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
         packet_wiring = "packet_ready"
     else:
         packet_wiring = "legacy_only"
-    migration_state = _migration_state(packet_wiring, status_key)
+    migration_state = "packet_ready" if is_complete else _migration_state(packet_wiring, status_key)
     manual_action = _manual_action_for_item(key, label, payload, targets)
     return {
         "key": key,
@@ -188,6 +354,11 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
         "packet_state": packet_state,
         "data_status": status_key,
         "data_status_label": to_text(status.get("status_label"), "待检测"),
+        "completion_status": completion_status,
+        "completion_label": completion_label,
+        "completion_summary": completion_summary,
+        "completion_checks": checks,
+        "is_complete": is_complete,
         "migration_state": migration_state,
         "migration_label": MIGRATION_STATE_LABELS.get(migration_state, "待迁移"),
         "tone": MIGRATION_STATE_TONES.get(migration_state, "missing"),
@@ -240,7 +411,39 @@ def build_legacy_migration_map(
         keys=keys,
         data_capability_packet=data_capability_packet,
     )
-    items = [build_legacy_migration_item(item, state=state) for item in as_list(toolbox_packet.get("items"))]
+    state_map = as_mapping(state)
+    if data_capability_packet is not None:
+        state_map = {**state_map, "data_capability": data_capability_packet}
+    items = []
+    for raw in as_list(toolbox_packet.get("items")):
+        item = build_legacy_migration_item(raw, state=state_map)
+        targets = item.get("command_center_packets") or []
+        checks = build_completion_checks(
+            item.get("key", ""),
+            targets,
+            state=state_map,
+            data_capability_packet=data_capability_packet,
+        )
+        completion_status, completion_label, completion_summary, is_complete = _completion_status(checks)
+        item.update(
+            {
+                "completion_status": completion_status,
+                "completion_label": completion_label,
+                "completion_summary": completion_summary,
+                "completion_checks": checks,
+                "is_complete": is_complete,
+                "migration_state": "packet_ready" if is_complete else item.get("migration_state", "wired_waiting_data"),
+                "migration_label": MIGRATION_STATE_LABELS.get(
+                    "packet_ready" if is_complete else item.get("migration_state", "wired_waiting_data"),
+                    "待迁移",
+                ),
+                "tone": MIGRATION_STATE_TONES.get(
+                    "packet_ready" if is_complete else item.get("migration_state", "wired_waiting_data"),
+                    "missing",
+                ),
+            }
+        )
+        items.append(item)
     lanes = [
         _lane(items, "blocked", "数据/权限阻断"),
         _lane(items, "manual_required", "需要手动恢复"),
