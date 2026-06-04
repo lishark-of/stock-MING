@@ -10,6 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from command_center_data_capability_dashboard import build_data_capability_dashboard_view_model
+from command_center_data_health_ledger import build_data_health_visibility_summary
 from command_center_evidence_summary import build_a_share_evidence_radar_view_model
 from command_center_home_snapshot import build_tool_recovery_navigation_state
 from command_center_decision_summary import build_decision_summary_view_model
@@ -4944,6 +4945,38 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
     data_health_ledger_rows = [item for item in (data_health_ledger.get("rows") or []) if isinstance(item, dict)]
+    data_health_visibility = build_data_health_visibility_summary(data_health_ledger)
+    data_health_visibility_item_html = ""
+    for item in (data_health_visibility.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        data_health_visibility_item_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), "数据接口"))}：
+          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+          {escape(_home_text(item.get("meaning"), "仍需核对接口状态。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}
+          ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))}
+          ｜最近成功：{escape(_home_text(item.get("last_success_text"), "暂无"))}
+        </div>
+        """
+    if not data_health_visibility_item_html:
+        data_health_visibility_item_html = "<div class='cc-home-item-meta'>暂无接口级诊断；页面打开不会自动请求外部接口。</div>"
+    data_health_visibility_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(data_health_visibility.get("title"), "为什么搜不到"))}
+            <span class="cc-home-chip {escape(_home_text(data_health_visibility.get("tone"), "missing"))}">{escape(_home_text(data_health_visibility.get("headline"), "数据能力待检测"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(data_health_visibility.get("summary"), "暂无接口级健康账本"))}</div>
+          <div class="cc-home-item-meta">{escape(_home_text(data_health_visibility.get("explanation"), "不会自动请求外部接口。"))}</div>
+          <div class="cc-home-item-meta">权限不足：{escape(_home_text(data_health_visibility.get("permission_labels"), "无"))} ｜ 本会话跳过：{escape(_home_text(data_health_visibility.get("skipped_labels"), "无"))}</div>
+          <div class="cc-home-item-meta">缓存：{escape(_home_text(data_health_visibility.get("cache_labels"), "无"))} ｜ 近期无数据：{escape(_home_text(data_health_visibility.get("empty_labels"), "无"))} ｜ DeepSeek：未调用</div>
+          {data_health_visibility_item_html}
+        </div>
+        """
     data_health_ledger_html = ""
     for item in data_health_ledger_rows[:6]:
         data_health_ledger_html += f"""
@@ -5527,6 +5560,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          {data_health_visibility_html}
           {data_recovery_center_html}
           {legacy_migration_html}
           {diagnostic_details_html}

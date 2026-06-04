@@ -145,6 +145,33 @@ class CommandCenterDataHealthLedgerTests(unittest.TestCase):
         self.assertEqual(a_share_impact["status"], "blocked")
         self.assertIn("个股资金流", a_share_impact["summary"])
 
+    def test_visibility_summary_explains_why_tushare_still_has_gaps(self):
+        packet = ledger.build_data_health_ledger(
+            data_capability_packet={
+                "items": [
+                    {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用"},
+                    {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"provider": "Tushare", "api": "limit_cpt_list", "label": "涨跌停/情绪", "capability_state": "disabled_this_session", "status": "本会话跳过"},
+                    {"provider": "Tushare", "api": "top_list", "label": "龙虎榜", "capability_state": "empty_recent", "status": "近期无数据"},
+                    {"provider": "Tushare", "api": "cyq_perf", "label": "筹码/胜率", "capability_state": "stale_cache", "status": "使用缓存"},
+                ]
+            }
+        )
+
+        summary = ledger.build_data_health_visibility_summary(packet)
+        dumped = json.dumps(summary, ensure_ascii=False)
+
+        self.assertEqual(summary["status"], "blocked")
+        self.assertIn("Tushare 拉满", summary["headline"])
+        self.assertIn("token 或基础行情可用", summary["explanation"])
+        self.assertIn("融资融券", summary["permission_labels"])
+        self.assertIn("涨跌停/情绪", summary["skipped_labels"])
+        self.assertIn("筹码/胜率", summary["cache_labels"])
+        self.assertIn("龙虎榜", summary["empty_labels"])
+        self.assertEqual(summary["external_call_policy"], "not_triggered")
+        self.assertFalse(summary["deepseek_called"])
+        self.assertIn("command_center_margin_packet", dumped)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_data_health_ledger.py").read_text(encoding="utf-8"))
         imports = []

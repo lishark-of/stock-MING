@@ -339,6 +339,93 @@ def build_data_health_impact_summary(data_health_ledger: Any = None, market_type
     }
 
 
+def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: int = 4) -> dict:
+    ledger = as_mapping(data_health_ledger)
+    rows = [as_mapping(row) for row in as_list(ledger.get("rows")) if as_mapping(row)]
+    if not rows:
+        return {
+            "title": "为什么搜不到",
+            "status": "missing",
+            "tone": "missing",
+            "headline": "数据能力待检测",
+            "summary": "暂无接口级健康账本；页面打开不会自动请求外部接口。",
+            "explanation": "先刷新今日基础数据或在数据恢复中心手动检测关键接口。",
+            "items": [],
+            "permission_labels": "无",
+            "skipped_labels": "无",
+            "cache_labels": "无",
+            "empty_labels": "无",
+            "manual_labels": "无",
+            "external_call_policy": "not_triggered",
+            "deepseek_called": False,
+        }
+    permission = [row for row in rows if row.get("state") == "permission_denied"]
+    skipped = [row for row in rows if row.get("state") == "disabled_this_session"]
+    cache = [row for row in rows if row.get("state") in {"stale_cache", "fallback_used"}]
+    empty = [row for row in rows if row.get("state") == "empty_recent"]
+    manual = [row for row in rows if row.get("category") == "manual"]
+    blocked = [row for row in rows if row.get("category") == "blocked"]
+    stale = [row for row in rows if row.get("category") == "stale"]
+    available = [row for row in rows if row.get("category") == "available"]
+    if permission or skipped:
+        status = "blocked"
+        tone = "failed"
+        headline = "Tushare 拉满 ≠ 每个专业接口都有权限"
+        explanation = "token 或基础行情可用，不代表融资融券、涨跌停情绪、龙虎榜等专业接口都有权限；受限项不能写成利好。"
+    elif cache or empty or manual or stale:
+        status = "partial"
+        tone = "stale"
+        headline = "部分数据来自缓存、近期无记录或需要手动刷新"
+        explanation = "搜不到可能是非交易日、数据尚未更新、标的未覆盖、缓存过期或接口需要手动刷新；执行前要复核日期和来源。"
+    else:
+        status = "ready"
+        tone = "ready"
+        headline = "关键数据能力当前可读"
+        explanation = "接口健康可作为辅助证据；仍需价格纪律、仓位预算和失效条件共同确认。"
+    visible_rows = []
+    seen = set()
+    for row in blocked + manual + cache + empty + stale + available:
+        key = _row_key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        visible_rows.append(
+            {
+                "label": to_text(row.get("label"), "数据接口"),
+                "provider": to_text(row.get("provider"), "数据源"),
+                "api": to_text(row.get("api")),
+                "state": to_text(row.get("state"), "unknown"),
+                "status_label": to_text(row.get("status_label"), STATE_LABELS.get(to_text(row.get("state")), "待验证")),
+                "tone": to_text(row.get("tone"), "missing"),
+                "meaning": to_text(row.get("meaning"), "仍需核对接口状态。"),
+                "next_action": to_text(row.get("next_action"), "按数据恢复中心手动处理。"),
+                "writes_packet": to_text(row.get("writes_packet"), "command_center_data_capability_packet"),
+                "last_success_text": to_text(row.get("last_success_text"), "暂无"),
+                "refresh_policy": to_text(row.get("refresh_policy"), "button_gated"),
+            }
+        )
+        if len(visible_rows) >= max(1, int(limit or 4)):
+            break
+    return {
+        "title": "为什么搜不到",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": (
+            f"阻断 {len(blocked)}｜手动 {len(manual)}｜缓存/近期无数据 {len(stale)}｜可用 {len(available)}"
+        ),
+        "explanation": explanation,
+        "items": visible_rows,
+        "permission_labels": _limited_labels(permission, fallback="无"),
+        "skipped_labels": _limited_labels(skipped, fallback="无"),
+        "cache_labels": _limited_labels(cache, fallback="无"),
+        "empty_labels": _limited_labels(empty, fallback="无"),
+        "manual_labels": _limited_labels(manual, fallback="无"),
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_data_health_ledger(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,

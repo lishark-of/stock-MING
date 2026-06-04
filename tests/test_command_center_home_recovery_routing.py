@@ -121,6 +121,16 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("最近检查", source)
         self.assertIn("最近成功", source)
 
+    def test_home_snapshot_surfaces_data_visibility_summary(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("build_data_health_visibility_summary", source)
+        self.assertIn("data_health_visibility_html", source)
+        self.assertIn("为什么搜不到", source)
+        self.assertIn("权限不足：", source)
+        self.assertIn("本会话跳过：", source)
+        self.assertIn("近期无数据：", source)
+
     def test_home_snapshot_renders_recovered_evidence_modules(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 
