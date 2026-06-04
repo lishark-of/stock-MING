@@ -146,7 +146,15 @@ def _home_snapshot_from_state(state: Any) -> dict:
     return _as_mapping(_as_mapping(state).get("command_center_home_snapshot"))
 
 
+def _home_snapshot_freshness_fields(home_snapshot: Mapping[str, Any]) -> dict:
+    return {
+        "timestamp": home_snapshot.get("timestamp") or home_snapshot.get("updated_at") or "",
+        "data_freshness": _as_mapping(home_snapshot.get("data_freshness")),
+    }
+
+
 def _home_snapshot_fallback_payload(home_snapshot: Mapping[str, Any], packet_key: str) -> dict:
+    freshness_fields = _home_snapshot_freshness_fields(home_snapshot)
     if packet_key == "command_center_refresh_summary":
         data_freshness = _as_mapping(home_snapshot.get("data_freshness"))
         if _has_mapping_payload(data_freshness) and data_freshness.get("state") != "missing":
@@ -154,6 +162,7 @@ def _home_snapshot_fallback_payload(home_snapshot: Mapping[str, Any], packet_key
                 "status": "cached",
                 "source": "command_center_home_snapshot.data_freshness",
                 "data_freshness": data_freshness,
+                **freshness_fields,
             }
     if packet_key == "command_center_radar_packet":
         candidates = _as_list(home_snapshot.get("next_ticket_candidates"))
@@ -164,15 +173,16 @@ def _home_snapshot_fallback_payload(home_snapshot: Mapping[str, Any], packet_key
                 "source": "command_center_home_snapshot.next_ticket_candidates",
                 "top_candidates": candidates,
                 "display_count": len(candidates),
+                **freshness_fields,
             }
         if _has_mapping_payload(radar_packet):
-            return {**radar_packet, "source": radar_packet.get("source") or "command_center_home_snapshot.radar_packet"}
+            return {**radar_packet, **freshness_fields, "source": radar_packet.get("source") or "command_center_home_snapshot.radar_packet"}
     if packet_key == "command_center_etf_packet":
         etf_packet = _as_mapping(home_snapshot.get("etf_packet"))
         margin_summary = _as_mapping(home_snapshot.get("margin_etf_summary"))
         recommended = _as_list(margin_summary.get("recommended_etfs"))
         if _has_mapping_payload(etf_packet):
-            return {**etf_packet, "source": etf_packet.get("source") or "command_center_home_snapshot.etf_packet"}
+            return {**etf_packet, **freshness_fields, "source": etf_packet.get("source") or "command_center_home_snapshot.etf_packet"}
         if recommended:
             return {
                 "status": "cached",
@@ -182,17 +192,19 @@ def _home_snapshot_fallback_payload(home_snapshot: Mapping[str, Any], packet_key
                 "recommended_cash_ratio": margin_summary.get("recommended_cash_ratio"),
                 "today_main_direction": margin_summary.get("today_main_direction"),
                 "watch_not_chase": margin_summary.get("watch_not_chase") or [],
+                **freshness_fields,
             }
     if packet_key == "command_center_hard_risk_packet":
         hard_risk_packet = _as_mapping(home_snapshot.get("hard_risk_packet"))
         risk_alerts = _as_mapping(home_snapshot.get("risk_alerts"))
         if _has_mapping_payload(hard_risk_packet):
-            return {**hard_risk_packet, "source": hard_risk_packet.get("source") or "command_center_home_snapshot.hard_risk_packet"}
+            return {**hard_risk_packet, **freshness_fields, "source": hard_risk_packet.get("source") or "command_center_home_snapshot.hard_risk_packet"}
         if _has_text_or_items(risk_alerts):
             return {
                 "status": "cached",
                 "source": "command_center_home_snapshot.risk_alerts",
                 "risk_alerts": risk_alerts,
+                **freshness_fields,
             }
     return {}
 
@@ -279,6 +291,58 @@ def _is_snapshot_response(response: Mapping[str, Any]) -> bool:
     return _to_text(meta.get("preview_source")) == "command_center_home_snapshot"
 
 
+def _first_text(*values: Any, default: str = "") -> str:
+    for value in values:
+        text = _to_text(value)
+        if text:
+            return text
+    return default
+
+
+def _freshness_from_response(response: Mapping[str, Any]) -> dict:
+    payload = _as_mapping(response.get("payload"))
+    meta = _as_mapping(response.get("meta"))
+    freshness = _as_mapping(payload.get("data_freshness"))
+    label = _first_text(
+        freshness.get("label"),
+        payload.get("freshness_label"),
+        payload.get("cache_state_label"),
+        payload.get("data_status_label"),
+    )
+    updated_at = _first_text(
+        freshness.get("last_updated"),
+        payload.get("updated_at"),
+        payload.get("timestamp"),
+        payload.get("generated_at"),
+        payload.get("finished_at"),
+        payload.get("trade_date"),
+        meta.get("generated_at"),
+    )
+    source = _first_text(payload.get("source"), meta.get("source"), meta.get("preview_source"))
+    parts = [item for item in [label, updated_at] if item and item != "暂无"]
+    return {
+        "freshness_label": label,
+        "updated_at": updated_at,
+        "raw_source": source,
+        "freshness_text": "｜".join(parts),
+    }
+
+
+def _freshness_for_source(responses: list[dict]) -> dict:
+    for response in responses:
+        if not _is_available(response):
+            continue
+        freshness = _freshness_from_response(response)
+        if freshness["freshness_text"] or freshness["raw_source"]:
+            return freshness
+    return {
+        "freshness_label": "",
+        "updated_at": "",
+        "raw_source": "",
+        "freshness_text": "",
+    }
+
+
 def _source_summary(
     required_keys: list[str],
     required_responses: list[dict],
@@ -311,24 +375,31 @@ def _source_summary(
         for key, response in zip(required_keys, required_responses)
         if key in available_required
     ]
+    freshness = _freshness_for_source(required_available_responses)
     if any(_is_snapshot_response(response) for response in required_available_responses):
         return {
             "source_state": "home_snapshot",
             "source_label": "本地快照",
-            "source_detail": "Home Action Snapshot 已含可展示结构",
+            "source_detail": freshness["freshness_text"] or "Home Action Snapshot 已含可展示结构",
+            "freshness_label": freshness["freshness_label"],
+            "updated_at": freshness["updated_at"],
             "source_packets": source_packets,
         }
     if status == "partial":
         return {
             "source_state": "mixed",
             "source_label": "部分 packet",
-            "source_detail": "、".join(source_packets[:3]),
+            "source_detail": freshness["freshness_text"] or "、".join(source_packets[:3]),
+            "freshness_label": freshness["freshness_label"],
+            "updated_at": freshness["updated_at"],
             "source_packets": source_packets,
         }
     return {
         "source_state": "current_packet",
         "source_label": "最新 packet",
-        "source_detail": "、".join(source_packets[:3]),
+        "source_detail": freshness["freshness_text"] or "、".join(source_packets[:3]),
+        "freshness_label": freshness["freshness_label"],
+        "updated_at": freshness["updated_at"],
         "source_packets": source_packets,
     }
 
@@ -364,6 +435,8 @@ def _surface_item(spec: Mapping[str, Any], responses: Mapping[str, dict]) -> dic
         "source_state": source["source_state"],
         "source_label": source["source_label"],
         "source_detail": source["source_detail"],
+        "freshness_label": source.get("freshness_label", ""),
+        "updated_at": source.get("updated_at", ""),
         "source_packets": source["source_packets"],
         "required_any": required_keys,
         "supporting_packets": support_keys,

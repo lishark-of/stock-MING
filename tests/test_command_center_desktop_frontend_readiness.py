@@ -110,7 +110,8 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
             "command_center_home_snapshot": {
                 "status": "ready",
                 "is_empty": False,
-                "data_freshness": {"state": "today", "label": "今日已刷新"},
+                "timestamp": "2026-06-04T09:30:00",
+                "data_freshness": {"state": "today", "label": "今日已刷新", "last_updated": "2026-06-04T09:30:00"},
                 "next_ticket_candidates": [{"ticker": "002008.SZ", "name": "大族激光"}],
                 "margin_etf_summary": {
                     "recommended_margin_ratio": 25,
@@ -132,16 +133,19 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
         self.assertEqual(surfaces["data_freshness"]["status"], "ready")
         self.assertIn("command_center_refresh_summary", surfaces["data_freshness"]["available_required_packets"])
         self.assertEqual(surfaces["data_freshness"]["source_label"], "本地快照")
+        self.assertEqual(surfaces["data_freshness"]["source_detail"], "今日已刷新｜2026-06-04T09:30:00")
+        self.assertEqual(surfaces["data_freshness"]["updated_at"], "2026-06-04T09:30:00")
         self.assertEqual(surfaces["next_ticket_candidates"]["status"], "ready")
         self.assertIn("command_center_radar_packet", surfaces["next_ticket_candidates"]["available_required_packets"])
         self.assertEqual(surfaces["next_ticket_candidates"]["source_label"], "本地快照")
+        self.assertEqual(surfaces["next_ticket_candidates"]["source_detail"], "今日已刷新｜2026-06-04T09:30:00")
         self.assertEqual(surfaces["etf_margin_action"]["status"], "ready")
         self.assertIn("command_center_etf_packet", surfaces["etf_margin_action"]["available_required_packets"])
         self.assertEqual(surfaces["etf_margin_action"]["source_label"], "本地快照")
         self.assertEqual(surfaces["risk_alerts"]["status"], "ready")
         self.assertIn("command_center_hard_risk_packet", surfaces["risk_alerts"]["available_required_packets"])
         self.assertEqual(surfaces["risk_alerts"]["source_label"], "本地快照")
-        self.assertEqual(surfaces["risk_alerts"]["source_detail"], "Home Action Snapshot 已含可展示结构")
+        self.assertEqual(surfaces["risk_alerts"]["source_detail"], "今日已刷新｜2026-06-04T09:30:00")
 
     def test_empty_home_snapshot_does_not_satisfy_nested_surfaces(self):
         state = {

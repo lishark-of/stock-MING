@@ -6045,11 +6045,13 @@ def render_command_center_packet_registry_card(view_model: dict | None = None, r
     for item in readiness_surfaces[:9]:
         tone = _registry_tone_class(item.get("tone"))
         source_label = str(item.get("source_label") or "")
+        source_detail = str(item.get("source_detail") or "")
         readiness_surface_html += (
             f"<span class='cc-readiness-surface {tone}'>"
             f"{escape(str(item.get('label') or item.get('key') or '首屏模块'))}"
             f"<b>{escape(str(item.get('status_label') or item.get('status') or '待验证'))}</b>"
             f"<em>{escape(source_label)}</em>"
+            f"{'<small>' + escape(source_detail) + '</small>' if source_detail else ''}"
             "</span>"
         )
 
@@ -6289,6 +6291,11 @@ def render_command_center_packet_registry_card(view_model: dict | None = None, r
           font-style: normal;
           color: #64748b;
           font-weight: 650;
+        }}
+        .cc-readiness-surface small {{
+          color: #64748b;
+          font-size: 0.68rem;
+          font-weight: 600;
         }}
         .cc-readiness-blockers {{
           display: grid;
