@@ -4820,6 +4820,12 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     etfs = margin_etf.get("recommended_etfs") or []
     errors = payload.get("errors") or []
     coverage = payload.get("data_coverage") or {}
+    evidence_vm = payload.get("command_center_evidence_radar_packet") or payload.get("a_share_evidence_packet") or {}
+    if not isinstance(evidence_vm, dict):
+        evidence_vm = {}
+    if not evidence_vm:
+        evidence_vm = build_a_share_evidence_radar_view_model(payload)
+    evidence_loop_status = evidence_vm.get("loop_status") or {}
 
     freshness_state = str(freshness.get("state") or "missing")
     freshness_label = freshness.get("label") or "待刷新"
@@ -4893,6 +4899,28 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div>
           <div class="cc-home-item-meta">{escape(a_share_status_group_text)}</div>
           <div class="cc-home-profile-meta">{escape(_home_text(a_share_status_console.get("safe_mode_text"), "只读取本地诊断结果；不会自动请求外部接口。"))}</div>
+        </div>
+      </div>
+    """
+    evidence_external_policy = _home_text(evidence_loop_status.get("external_call_policy"), "not_triggered")
+    if evidence_external_policy == "not_triggered":
+        evidence_external_policy = "未触发"
+    evidence_loop_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(evidence_loop_status.get("label"), "证据闭环"))}
+            <span class="cc-home-chip {escape(_home_text(evidence_loop_status.get("tone"), "missing"))}">
+              {escape(_home_text(evidence_loop_status.get("status_label"), "待验证"))} · {escape(_home_text(evidence_loop_status.get("confidence_gate"), "不可验证"))}
+            </span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(evidence_loop_status.get("summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
+          </div>
+        </div>
+        <div>
+          <div class="cc-home-profile-meta">交易保护：{escape(_home_text(evidence_loop_status.get("decision_guardrail"), "证据未补齐前，不支撑放大仓位。"))}</div>
+          <div class="cc-home-profile-meta">DeepSeek：未调用 ｜ 外部接口：{escape(evidence_external_policy)}</div>
         </div>
       </div>
     """
@@ -5428,7 +5456,6 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">边界：{escape(discipline_warnings)}</div>
         </div>
         """
-    evidence_vm = build_a_share_evidence_radar_view_model(payload)
     evidence_card = evidence_vm.get("radar_card") or {}
     recovered_evidence_modules = [item for item in (evidence_vm.get("recovered_evidence_modules") or []) if isinstance(item, dict)]
     recovered_evidence_summary = _home_text(evidence_vm.get("recovered_evidence_summary"), "暂无已回流 A股证据模块")
@@ -5680,6 +5707,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       </div>
       {market_profile_html}
       {a_share_status_console_html}
+      {evidence_loop_html}
       <div class="cc-home-grid">
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">当前持仓动作</div>

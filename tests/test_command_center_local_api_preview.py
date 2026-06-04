@@ -33,6 +33,15 @@ def sample_state():
                 "status": "partial",
                 "title": "A股证据雷达",
                 "decision_summary": "支持 1｜阻断 0｜缓存 1｜缺失 4",
+                "loop_status": {
+                    "label": "证据闭环",
+                    "status": "partial",
+                    "status_label": "谨慎验证",
+                    "tone": "stale",
+                    "summary": "支持 1｜阻断 0｜缓存 1｜缺失 4",
+                    "deepseek_called": False,
+                    "external_call_policy": "not_triggered",
+                },
                 "items": [{"key": "moneyflow", "label": "个股资金流"}],
                 "deepseek_called": False,
             },
@@ -147,6 +156,8 @@ class CommandCenterLocalApiPreviewTests(unittest.TestCase):
         self.assertTrue(response["meta"]["available"])
         self.assertEqual(response["payload"]["title"], "A股证据雷达")
         self.assertIn("支持 1", response["payload"]["decision_summary"])
+        self.assertEqual(response["payload"]["loop_status"]["label"], "证据闭环")
+        self.assertEqual(response["payload"]["loop_status"]["tone"], "stale")
         self.assertFalse(response["payload"]["deepseek_called"])
 
     def test_decision_priority_queue_can_be_read_from_home_snapshot(self):

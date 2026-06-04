@@ -478,6 +478,50 @@ def build_evidence_radar_card_view_model(
     }
 
 
+def _home_loop_tone(card_tone: str, card_status: str) -> str:
+    if card_tone in {"danger", "failed"} or card_status == "blocked":
+        return "failed"
+    if card_tone in {"warning", "stale"} or card_status == "partial":
+        return "stale"
+    if card_tone in {"success", "ready"} or card_status == "ready":
+        return "ready"
+    return "missing"
+
+
+def build_evidence_loop_status(
+    radar_card: Any = None,
+    *,
+    support_items: Any = None,
+    blocker_items: Any = None,
+    cached_items: Any = None,
+    missing_items: Any = None,
+) -> dict:
+    card = as_mapping(radar_card)
+    status = to_text(card.get("status"), "missing")
+    status_label = to_text(card.get("status_label"), "待刷新")
+    summary = to_text(
+        card.get("summary"),
+        f"支持 {len(as_list(support_items))}｜阻断 {len(as_list(blocker_items))}｜缓存 {len(as_list(cached_items))}｜缺失 {len(as_list(missing_items))}",
+    )
+    return {
+        "key": "a_share_evidence_loop",
+        "label": "证据闭环",
+        "status": status,
+        "status_label": status_label,
+        "tone": _home_loop_tone(to_text(card.get("tone")), status),
+        "confidence_gate": to_text(card.get("confidence_gate"), "不可验证"),
+        "summary": summary,
+        "decision_guardrail": to_text(card.get("execution_guardrail"), "证据未补齐前，不支撑放大仓位。"),
+        "support_count": len(as_list(support_items)),
+        "blocker_count": len(as_list(blocker_items)),
+        "cached_count": len(as_list(cached_items)),
+        "missing_count": len(as_list(missing_items)),
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+        "manual_note": "证据闭环只读取本地 packet；补证、刷新和外部接口必须手动触发。",
+    }
+
+
 def _manual_action(key: str, label: str, evidence_state: str) -> dict:
     config = EVIDENCE_ACTIONS.get(key, {})
     writes_packet = to_text(config.get("writes_packet"), f"command_center_{key}_packet")
@@ -646,11 +690,19 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         missing_items=missing_items,
         latest_recovery_impact=latest_recovery_impact,
     )
+    loop_status = build_evidence_loop_status(
+        radar_card,
+        support_items=support_items,
+        blocker_items=blocker_items,
+        cached_items=cached_items,
+        missing_items=missing_items,
+    )
     return {
         "title": "A股证据雷达",
         "summary": summary,
         "decision_summary": decision_summary,
         "radar_card": radar_card,
+        "loop_status": loop_status,
         "latest_recovery_impact": latest_recovery_impact,
         "recovered_evidence_modules": recovered_modules,
         "recovered_evidence_summary": recovered_evidence_summary_text(support_items, promoted_key=promoted_evidence_key),
