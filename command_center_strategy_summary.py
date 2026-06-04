@@ -35,6 +35,16 @@ def _as_mapping(value: Any) -> dict:
     return {}
 
 
+def _as_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (tuple, set)):
+        return list(value)
+    return [value]
+
+
 def _to_text(value: Any) -> str:
     if value is None:
         return ""
@@ -332,6 +342,115 @@ def _limited_text_join(value: Any, fallback: str = "暂无明细", limit: int = 
         return fallback
     suffix = f" 等 {len(values)} 项" if len(values) > limit else ""
     return "、".join(values[:limit]) + suffix
+
+
+def _evidence_group_count(group: Mapping[str, Any]) -> int:
+    try:
+        return max(0, int(float(group.get("count"))))
+    except Exception:
+        return len([item for item in _as_list(group.get("items")) if _as_mapping(item)])
+
+
+def _fallback_evidence_status_groups(evidence_radar_packet: Mapping[str, Any]) -> list[dict]:
+    group_configs = [
+        ("recovered", "已回流", "ready", evidence_radar_packet.get("support_items")),
+        ("blocked", "仍受限", "failed", evidence_radar_packet.get("blocker_items")),
+        ("cached", "使用缓存", "stale", evidence_radar_packet.get("cached_items")),
+        ("manual", "待手动", "missing", evidence_radar_packet.get("missing_items")),
+    ]
+    groups = []
+    for key, label, tone, raw_items in group_configs:
+        items = [_as_mapping(item) for item in _as_list(raw_items) if _as_mapping(item)]
+        labels = [_to_text(item.get("label")) for item in items]
+        groups.append(
+            {
+                "key": key,
+                "label": label,
+                "tone": tone,
+                "count": len(items),
+                "labels_text": "、".join([item for item in labels if item][:4]) or "无",
+                "items": items,
+                "deepseek_called": False,
+            }
+        )
+    return groups
+
+
+def _evidence_group_highlights(groups: list[dict]) -> list[dict]:
+    highlights = []
+    for group in groups:
+        count = _evidence_group_count(group)
+        if count <= 0:
+            continue
+        labels_text = _to_text(group.get("labels_text")) or _limited_text_join(
+            [_to_text(_as_mapping(item).get("label")) for item in _as_list(group.get("items")) if _as_mapping(item)],
+            fallback=f"{count} 项",
+            limit=3,
+        )
+        highlights.append(
+            {
+                "key": _to_text(group.get("key")) or "evidence_group",
+                "label": _to_text(group.get("label")) or "证据分组",
+                "count": count,
+                "labels_text": labels_text,
+                "tone": _to_text(group.get("tone")) or "missing",
+                "deepseek_called": False,
+            }
+        )
+    return highlights
+
+
+def build_strategy_a_share_evidence_group_guidance(evidence_radar_packet: Any = None) -> dict:
+    evidence = _as_mapping(evidence_radar_packet)
+    if not evidence:
+        return {}
+    groups = [_as_mapping(item) for item in _as_list(evidence.get("evidence_status_groups")) if _as_mapping(item)]
+    if not groups:
+        groups = _fallback_evidence_status_groups(evidence)
+    counts = {group.get("key"): _evidence_group_count(group) for group in groups}
+    if not any(counts.values()):
+        return {}
+
+    recovered = counts.get("recovered", 0)
+    blocked = counts.get("blocked", 0)
+    cached = counts.get("cached", 0)
+    manual = counts.get("manual", 0)
+    summary = f"已回流 {recovered}｜仍受限 {blocked}｜缓存 {cached}｜待手动 {manual}"
+    if blocked:
+        status = "blocked"
+        tone = "danger"
+        add_guardrail = "仍受限证据未恢复前，不支持加仓、追高或加融资；只能观察、小额试探或降风险。"
+        reduce_guardrail = "若价格走弱且阻断证据未排除，优先减暴露、降杠杆、保现金。"
+        invalidation_guardrail = "公告硬风险、龙虎榜、融资等关键证据持续受限时，本轮进攻路径失效。"
+    elif cached or manual:
+        status = "partial"
+        tone = "warning"
+        add_guardrail = "缓存和待手动证据只能辅助观察；加仓前需复核交易日、来源和回流 packet。"
+        reduce_guardrail = "缓存过期或待手动项无法验证时，减仓条件优先级上调。"
+        invalidation_guardrail = "关键证据超过有效交易日或无法回流时，本轮乐观路径降级为待验证。"
+    else:
+        status = "ready"
+        tone = "success"
+        add_guardrail = "已回流证据可作为加仓条件的辅助依据，但仍需 MA/量能/纪律和仓位预算共振。"
+        reduce_guardrail = "已回流证据若转弱或和价格纪律冲突，按纪律线减仓。"
+        invalidation_guardrail = "证据链从支持转为分歧或失败时，本轮策略建议失效并重新生成。"
+
+    condition_items = [
+        {"key": "add", "label": "加仓门槛", "text": add_guardrail, "tone": tone if status != "ready" else "success"},
+        {"key": "reduce", "label": "减仓/降风险", "text": reduce_guardrail, "tone": "danger" if status == "blocked" else "warning"},
+        {"key": "invalidation", "label": "失效门槛", "text": invalidation_guardrail, "tone": "danger" if status != "ready" else "warning"},
+    ]
+    return {
+        "status": status,
+        "tone": tone,
+        "summary": summary,
+        "group_highlights": _evidence_group_highlights(groups),
+        "add_condition_guardrail": add_guardrail,
+        "reduce_condition_guardrail": reduce_guardrail,
+        "invalidation_guardrail": invalidation_guardrail,
+        "condition_items": condition_items,
+        "deepseek_called": False,
+    }
 
 
 def _a_share_capability_state_from_readiness(readiness: str, summary: str = "") -> str:
@@ -728,6 +847,7 @@ def build_strategy_summary_view_model(
     latest_recovery_validation_summary = build_strategy_latest_recovery_summary(latest_recovery_result_notice)
     evidence_radar_card = _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card"))
     projection_confidence = build_projection_confidence_summary(projection_packet)
+    evidence_group_guidance = build_strategy_a_share_evidence_group_guidance(evidence_radar_packet)
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -754,6 +874,7 @@ def build_strategy_summary_view_model(
         "evidence_confidence_gate": _to_text(evidence_radar_card.get("confidence_gate")) or "不可验证",
         "evidence_execution_guardrail": _to_text(evidence_radar_card.get("execution_guardrail")),
         "evidence_validation_items": evidence_validation_items,
+        "a_share_evidence_group_guidance": evidence_group_guidance,
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market_type),
         "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
         "a_share_data_validation_summary": a_share_data_validation_summary,

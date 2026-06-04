@@ -250,6 +250,54 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(view_model["evidence_radar_card"]["status_label"], "阻断加仓")
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_a_share_evidence_status_groups_drive_strategy_condition_gate(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            evidence_radar_packet={
+                "decision_summary": "支持 2｜阻断 1｜缓存 1｜缺失 2",
+                "evidence_status_groups": [
+                    {"key": "recovered", "label": "已回流", "count": 2, "tone": "ready", "labels_text": "个股资金流、公告/硬风险"},
+                    {"key": "blocked", "label": "仍受限", "count": 1, "tone": "failed", "labels_text": "龙虎榜"},
+                    {"key": "cached", "label": "使用缓存", "count": 1, "tone": "stale", "labels_text": "融资融券"},
+                    {"key": "manual", "label": "待手动", "count": 2, "tone": "missing", "labels_text": "筹码/胜率、涨跌停/情绪"},
+                ],
+            },
+        )
+        guidance = view_model["a_share_evidence_group_guidance"]
+        dumped = json.dumps(guidance, ensure_ascii=False)
+
+        self.assertEqual(guidance["status"], "blocked")
+        self.assertEqual(guidance["tone"], "danger")
+        self.assertEqual(guidance["summary"], "已回流 2｜仍受限 1｜缓存 1｜待手动 2")
+        self.assertIn("不支持加仓", guidance["add_condition_guardrail"])
+        self.assertIn("优先减暴露", guidance["reduce_condition_guardrail"])
+        self.assertIn("本轮进攻路径失效", guidance["invalidation_guardrail"])
+        self.assertIn("龙虎榜", dumped)
+        self.assertIn("筹码/胜率", dumped)
+        self.assertFalse(guidance["deepseek_called"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_a_share_evidence_group_guidance_falls_back_to_evidence_lists(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "只观察"},
+            analysis_method_packet={"market": "A股"},
+            evidence_radar_packet={
+                "support_items": [{"label": "个股资金流"}, {"label": "公告/硬风险"}],
+                "cached_items": [{"label": "融资融券"}],
+                "missing_items": [{"label": "龙虎榜"}],
+            },
+        )
+        guidance = view_model["a_share_evidence_group_guidance"]
+        dumped = json.dumps(guidance, ensure_ascii=False)
+
+        self.assertEqual(guidance["status"], "partial")
+        self.assertIn("已回流 2｜仍受限 0｜缓存 1｜待手动 1", guidance["summary"])
+        self.assertIn("加仓前需复核交易日", guidance["add_condition_guardrail"])
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("龙虎榜", dumped)
+        self.assertFalse(guidance["deepseek_called"])
+
     def test_a_share_data_capability_blocks_strategy_execution_when_restricted(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "小幅进攻"},

@@ -82,6 +82,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("路径只做条件化推演，不直接决定仓位", source)
         self.assertIn("a_share_evidence_group_html", source)
         self.assertIn("A股证据分组：", source)
+        self.assertIn("a_share_evidence_group_guidance", source)
+        self.assertIn("A股证据条件门槛", source)
 
     def test_home_snapshot_renders_recovery_priority_lanes(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
