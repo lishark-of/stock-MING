@@ -320,6 +320,52 @@ def build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary: Any = 
     }
 
 
+def _data_capability_brief_tone(brief: Mapping[str, Any]) -> str:
+    status = _to_text(brief.get("status"))
+    tone = _to_text(brief.get("tone"))
+    if status == "blocked" or tone in {"failed", "danger"}:
+        return "danger"
+    if status == "partial" or tone in {"stale", "warning"}:
+        return "warning"
+    if status == "ready" or tone in {"ready", "success"}:
+        return "success"
+    return "muted"
+
+
+def build_data_capability_brief_basis_item(data_capability_brief: Any = None) -> dict:
+    brief = _as_mapping(data_capability_brief)
+    if not brief:
+        return {}
+    headline = _to_text(brief.get("headline")) or "数据能力待检测"
+    trust_label = _to_text(brief.get("trust_label"))
+    summary = _to_text(brief.get("summary"))
+    value = f"{headline}｜{trust_label}" if trust_label else headline
+    guardrail = (
+        _to_text(brief.get("guardrail"))
+        or "数据能力未确认前，今日总动作只能作为待验证快照。"
+    )
+    next_action = _to_text(brief.get("next_action"))
+    return {
+        "label": "数据能力",
+        "value": value,
+        "tone": _data_capability_brief_tone(brief),
+        "summary": summary or value,
+        "guardrail": guardrail,
+        "next_action": next_action,
+        "status": _to_text(brief.get("status")) or "missing",
+        "external_call_policy": _to_text(brief.get("external_call_policy")) or "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def build_data_capability_brief_summary_text(data_capability_brief: Any = None) -> str:
+    item = build_data_capability_brief_basis_item(data_capability_brief)
+    if not item:
+        return ""
+    summary = _to_text(item.get("summary"))
+    return f"{item['value']}｜{summary}" if summary and summary != item["value"] else item["value"]
+
+
 def _fact_recovery_detail_tone(state: str) -> str:
     if state == "recovered":
         return "success"
@@ -849,6 +895,7 @@ def build_legacy_decision_chain_basis_item(projection_packet: Any = None) -> dic
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
+    data_capability_brief: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     data_health_ledger: Any = None,
@@ -862,6 +909,9 @@ def build_decision_evidence_chain_items(
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
     items = [{"label": "市场类型", "value": market, "tone": "success" if market in {"A股", "美股", "ETF"} else "muted"}]
+    data_capability_basis = build_data_capability_brief_basis_item(data_capability_brief)
+    if data_capability_basis:
+        items.append(data_capability_basis)
     projection_confidence = build_projection_confidence_summary(projection_packet)
     if projection_confidence.get("status") != "missing":
         items.append(
@@ -964,6 +1014,7 @@ def build_decision_summary_view_model(
     packet: Any,
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
+    data_capability_brief: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     data_health_ledger: Any = None,
@@ -1007,6 +1058,7 @@ def build_decision_summary_view_model(
         "evidence_chain_items": build_decision_evidence_chain_items(
             analysis_method_packet,
             projection_packet=projection_packet,
+            data_capability_brief=data_capability_brief,
             evidence_radar_packet=evidence_radar_packet,
             a_share_data_console=a_share_data_console,
             data_health_ledger=data_health_ledger,
@@ -1018,6 +1070,8 @@ def build_decision_summary_view_model(
             old_workspace_packet_bridge=old_workspace_packet_bridge,
         ),
         "projection_confidence_summary": projection_confidence,
+        "data_capability_brief_basis_item": build_data_capability_brief_basis_item(data_capability_brief),
+        "data_capability_brief_summary_text": build_data_capability_brief_summary_text(data_capability_brief),
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market),
         "a_share_evidence_radar_card": _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card")),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),

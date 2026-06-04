@@ -4011,6 +4011,11 @@ def render_command_center_decision_card(live_packet, target="", position_profile
         if isinstance(home_snapshot, dict)
         else {}
     ) or {}
+    data_capability_brief = (
+        home_snapshot.get("data_capability_brief")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or {}
     latest_recovery_result_notice = (
         home_snapshot.get("latest_recovery_result_notice")
         if isinstance(home_snapshot, dict)
@@ -4026,6 +4031,7 @@ def render_command_center_decision_card(live_packet, target="", position_profile
         packet,
         analysis_method_packet=analysis_method_packet,
         projection_packet=projection_packet,
+        data_capability_brief=data_capability_brief,
         evidence_radar_packet=evidence_radar_vm,
         a_share_data_console=a_share_data_console,
         data_health_ledger=data_health_ledger,

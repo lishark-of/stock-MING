@@ -288,6 +288,50 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("受限 1", view_model["a_share_data_basis_summary_text"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_evidence_chain_includes_home_data_capability_brief_blocker(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "小幅进攻"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            data_capability_brief={
+                "status": "blocked",
+                "tone": "failed",
+                "headline": "数据能力存在阻断",
+                "trust_label": "低置信度 / 禁止放大仓位",
+                "summary": "Provider 可用 2｜受限 1｜待验证 1；A股事实 已回流 2｜仍受限 1｜待验证 2",
+                "guardrail": "受限接口或旧能力未恢复前，不加仓、不追高、不加融资。",
+                "next_action": "先手动恢复受限接口。",
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("数据能力", joined)
+        self.assertIn("数据能力存在阻断", joined)
+        self.assertIn("禁止放大仓位", joined)
+        self.assertEqual(view_model["data_capability_brief_basis_item"]["tone"], "danger")
+        self.assertFalse(view_model["data_capability_brief_basis_item"]["deepseek_called"])
+        self.assertIn("受限 1", view_model["data_capability_brief_summary_text"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_data_capability_brief_basis_tones_are_stable(self):
+        partial = summary.build_data_capability_brief_basis_item({
+            "status": "partial",
+            "headline": "数据能力待验证",
+            "trust_label": "可看快照 / 执行前复核",
+        })
+        ready = summary.build_data_capability_brief_basis_item({
+            "status": "ready",
+            "headline": "数据能力可进入闭环",
+            "trust_label": "可验证 / 仍需纪律确认",
+        })
+        empty = summary.build_data_capability_brief_basis_item(object())
+
+        self.assertEqual(partial["tone"], "warning")
+        self.assertEqual(ready["tone"], "success")
+        self.assertEqual(empty, {})
+        self.assertEqual(partial["external_call_policy"], "not_triggered")
+        self.assertFalse(ready["deepseek_called"])
+
     def test_evidence_chain_includes_data_health_ledger_guardrail(self):
         view_model = summary.build_decision_summary_view_model(
             {"status": "ready", "overall_action": "小幅进攻"},
