@@ -4996,6 +4996,15 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))}
           ｜最近成功：{escape(_home_text(item.get("last_success_text"), "暂无"))}
         </div>
+        <div class="cc-home-item-meta">
+          诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          按钮边界：{escape(_home_text(item.get("recovery_button_context"), "按钮只检测当前接口并回流 packet；不会自动调用 DeepSeek 或重型任务。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失或未知状态不能作为加仓依据。"))}
+        </div>
         """
     if not data_health_visibility_item_html:
         data_health_visibility_item_html = "<div class='cc-home-item-meta'>暂无接口级诊断；页面打开不会自动请求外部接口。</div>"

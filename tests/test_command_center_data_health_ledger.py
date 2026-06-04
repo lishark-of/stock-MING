@@ -177,6 +177,33 @@ class CommandCenterDataHealthLedgerTests(unittest.TestCase):
         self.assertFalse(summary["deepseek_called"])
         self.assertIn("command_center_margin_packet", dumped)
 
+    def test_limit_boundary_apis_route_to_limit_emotion_recovery_packet(self):
+        packet = ledger.build_data_health_ledger(
+            data_capability_packet={
+                "items": [
+                    {"provider": "Tushare", "api": "stk_limit", "label": "涨跌停价格边界", "capability_state": "empty_recent", "status": "近期无数据"},
+                    {"provider": "Tushare", "api": "limit_list_d", "label": "涨跌停明细", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"provider": "Tushare", "api": "limit_cpt_list", "label": "概念涨跌停强度", "capability_state": "disabled_this_session", "status": "本会话跳过"},
+                ]
+            }
+        )
+
+        summary = ledger.build_data_health_visibility_summary(packet, limit=6)
+        rows = {item["api"]: item for item in summary["items"]}
+        actions = {item["api"]: item for item in summary["recovery_actions"]}
+
+        self.assertEqual(rows["stk_limit"]["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(rows["limit_list_d"]["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(rows["limit_cpt_list"]["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(actions["limit_list_d"]["legacy_tab"], "数据源体检")
+        self.assertIn("之前拉满", rows["limit_list_d"]["diagnostic_answer"])
+        self.assertIn("本会话跳过重复请求", rows["limit_cpt_list"]["diagnostic_answer"])
+        self.assertIn("标的未上榜", rows["stk_limit"]["diagnostic_answer"])
+        self.assertIn("不触发 DeepSeek", rows["limit_list_d"]["recovery_button_context"])
+        self.assertIn("不能用缺失数据支持加仓", rows["limit_list_d"]["decision_guardrail"])
+        self.assertFalse(summary["deepseek_called"])
+        json.dumps(summary, ensure_ascii=False)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_data_health_ledger.py").read_text(encoding="utf-8"))
         imports = []

@@ -39,6 +39,8 @@ API_RECOVERY_MAP = {
     "margin_detail": ("手动刷新融资融券", "command_center_margin_packet", "高级工具箱 / 融资 ETF / 融资融券"),
     "top_list": ("手动刷新龙虎榜", "command_center_dragon_tiger_packet", "高级工具箱 / 下一票雷达 / 龙虎榜"),
     "top_inst": ("手动刷新龙虎榜", "command_center_dragon_tiger_packet", "高级工具箱 / 下一票雷达 / 龙虎榜"),
+    "stk_limit": ("手动刷新涨跌停/情绪", "command_center_limit_emotion_packet", "高级工具箱 / 数据源体检 / 涨跌停情绪"),
+    "limit_list_d": ("手动刷新涨跌停/情绪", "command_center_limit_emotion_packet", "高级工具箱 / 数据源体检 / 涨跌停情绪"),
     "limit_cpt_list": ("手动刷新涨跌停/情绪", "command_center_limit_emotion_packet", "高级工具箱 / 数据源体检 / 涨跌停情绪"),
     "cyq_perf": ("手动刷新筹码/胜率", "command_center_chip_packet", "高级工具箱 / 量化推演 / 筹码胜率"),
     "cyq_chips": ("手动刷新筹码/胜率", "command_center_chip_packet", "高级工具箱 / 量化推演 / 筹码胜率"),
@@ -131,6 +133,51 @@ def _legacy_tab_from_recovery_target(writes_packet: Any = "", toolbox_entry: Any
     return "数据源体检"
 
 
+def _interface_diagnostic_answer(state: str, provider: str, label: str, api: str) -> str:
+    api_text = f" {api}" if api else ""
+    if provider.lower() == "tushare" and state == "permission_denied":
+        return (
+            f"{label}不是“没搜到行情”，而是 Tushare{api_text} 权限/积分不足；"
+            "token 可用、之前拉满或其他接口正常，都不等于这个专业接口已开通。"
+        )
+    if provider.lower() == "tushare" and state == "disabled_this_session":
+        return (
+            f"{label}此前已被判定受限或失败，本会话跳过重复请求以防页面卡顿；"
+            "确认权限恢复后再点对应手动检测。"
+        )
+    if provider.lower() == "tushare" and state == "empty_recent":
+        return (
+            f"{label}接口可读但近窗口无记录；常见原因是非交易日、数据尚未发布、"
+            "标的未上榜、窗口期过短或接口暂不覆盖。"
+        )
+    if state in {"stale_cache", "fallback_used"}:
+        return f"{label}当前来自缓存或替代口径，能防白屏，但不是实时已验证事实。"
+    if state == "requires_manual_refresh":
+        return f"{label}属于按钮触发型能力；页面打开不会自动请求 {provider} 重型接口。"
+    if state in AVAILABLE_STATES:
+        return f"{label}已有可用返回，可进入证据链；执行前仍需核对交易日、来源和当前标的。"
+    if state == "not_configured":
+        return f"{label}本地配置缺失；先检查 token、secrets 或连接设置。"
+    if state == "network_failed":
+        return f"{label}网络请求失败；保留缓存或安全空态，网络恢复后手动重试。"
+    return f"{label}仍待验证；不要把缺失或未知状态写成利好、无风险或可加仓依据。"
+
+
+def _recovery_button_context(api: str, label: str) -> str:
+    api_text = api or label or "当前接口"
+    return f"只检测 {api_text} 并回流对应 packet；不触发 DeepSeek、回测、全市场扫描或自动交易。"
+
+
+def _decision_guardrail_for_row(state: str, label: str) -> str:
+    if state in BLOCKED_STATES:
+        return f"{label}受限前，不能用缺失数据支持加仓、追高或加融资。"
+    if state in {"empty_recent", "stale_cache", "fallback_used"}:
+        return f"{label}未实时验证前，只能作为待验证/缓存证据，不能写成无风险。"
+    if state == "requires_manual_refresh":
+        return f"{label}未手动刷新前，不进入当日交易动作依据。"
+    return f"{label}需要和价格、纪律、仓位、风险预算一起验证。"
+
+
 def _row_category(state: str) -> str:
     if state in AVAILABLE_STATES:
         return "available"
@@ -162,6 +209,10 @@ def normalize_health_ledger_row(raw: Any = None, checked_at: Any = "") -> dict:
     meaning = _first_text(payload.get("meaning"), payload.get("reason"), payload.get("message"), default=meaning_for_capability_state(state, provider, label))
     decision_impact = _first_text(payload.get("decision_impact"), default=decision_impact_for_capability_state(state, label))
     next_action = _first_text(payload.get("next_action"), payload.get("action_hint"), default=next_action_for_capability_state(state, label))
+    diagnostic_answer = _first_text(
+        payload.get("diagnostic_answer"),
+        default=_interface_diagnostic_answer(state, provider, label, api),
+    )
     return {
         "key": _first_text(payload.get("key"), payload.get("section"), payload.get("api"), payload.get("table"), default="data_capability"),
         "provider": provider,
@@ -176,12 +227,19 @@ def normalize_health_ledger_row(raw: Any = None, checked_at: Any = "") -> dict:
         "last_success_text": latest_date or ("暂无" if state not in AVAILABLE_STATES else "已返回可用结果"),
         "error_text": _first_text(payload.get("error"), payload.get("last_error"), payload.get("reason")),
         "meaning": meaning,
+        "diagnostic_answer": diagnostic_answer,
         "decision_impact": decision_impact,
+        "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail_for_row(state, label)),
         "next_action": next_action,
         "action_label": action_label,
         "toolbox_entry": toolbox_entry,
         "writes_packet": writes_packet,
         "refresh_policy": "button_gated" if state != "not_configured" else "manual_config",
+        "recovery_button_context": _first_text(
+            payload.get("recovery_button_context"),
+            payload.get("button_context"),
+            default=_recovery_button_context(api, label),
+        ),
         "deepseek_called": False,
     }
 
@@ -224,6 +282,9 @@ def _merge_recovery_action(row: dict, actions: list[dict]) -> dict:
             "refresh_policy": _first_text(action.get("refresh_policy"), default=row["refresh_policy"]),
             "next_action": _first_text(action.get("action_hint"), action.get("next_action"), default=row["next_action"]),
             "meaning": _first_text(action.get("diagnostic_answer"), action.get("reason"), default=row["meaning"]),
+            "diagnostic_answer": _first_text(action.get("diagnostic_answer"), default=row.get("diagnostic_answer")),
+            "decision_guardrail": _first_text(action.get("decision_guardrail"), default=row.get("decision_guardrail")),
+            "recovery_button_context": _first_text(action.get("recovery_button_context"), action.get("button_context"), default=row.get("recovery_button_context")),
         }
     return row
 
@@ -429,6 +490,9 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
             "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {to_text(row.get('writes_packet'), 'command_center_data_capability_packet')}。",
             "writes_packet": to_text(row.get("writes_packet"), "command_center_data_capability_packet"),
             "refresh_policy": to_text(row.get("refresh_policy"), "button_gated"),
+            "diagnostic_answer": to_text(row.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"),
+            "decision_guardrail": to_text(row.get("decision_guardrail"), "缺失或未知状态不能作为加仓依据。"),
+            "recovery_button_context": to_text(row.get("recovery_button_context"), "按钮只检测当前接口并回流 packet；不会自动调用 DeepSeek 或重型任务。"),
             "deepseek_called": False,
         }
         visible_rows.append(
@@ -450,6 +514,9 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
                     )
                 },
                 "meaning": to_text(row.get("meaning"), "仍需核对接口状态。"),
+                "diagnostic_answer": recovery_action["diagnostic_answer"],
+                "decision_guardrail": recovery_action["decision_guardrail"],
+                "recovery_button_context": recovery_action["recovery_button_context"],
                 "next_action": to_text(row.get("next_action"), "按数据恢复中心手动处理。"),
                 "last_success_text": to_text(row.get("last_success_text"), "暂无"),
                 "navigation_label": recovery_action["navigation_label"],
