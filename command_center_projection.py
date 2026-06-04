@@ -372,6 +372,13 @@ def _a_share_evidence_guidance(evidence_radar_packet: Any) -> dict:
     blockers = evidence.get("blocker_items")
     cached = evidence.get("cached_items")
     missing = evidence.get("missing_items")
+    latest_impact = _as_mapping(
+        evidence.get("latest_recovery_impact")
+        or _as_mapping(evidence.get("radar_card")).get("latest_recovery_impact")
+    )
+    latest_state = _to_text(latest_impact.get("evidence_state"))
+    latest_label = _to_text(latest_impact.get("label"), "最近恢复")
+    latest_text = _to_text(latest_impact.get("impact_text"))
     return {
         "summary": _to_text(evidence.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"),
         "support_text": _evidence_label_text(support),
@@ -382,15 +389,84 @@ def _a_share_evidence_guidance(evidence_radar_packet: Any) -> dict:
         "has_blockers": bool(_as_list(blockers)),
         "has_cached": bool(_as_list(cached)),
         "has_missing": bool(_as_list(missing)),
+        "latest_impact": latest_impact,
+        "latest_state": latest_state,
+        "latest_label": latest_label,
+        "latest_text": latest_text,
+        "has_latest_recovered": latest_state == "supporting",
+        "has_latest_blocked": latest_state == "blocked",
+        "has_latest_waiting": latest_state == "missing",
     }
 
 
-def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: Any, market_type: str) -> tuple[list[dict], str]:
+def _latest_recovery_projection_note(evidence: Mapping[str, Any], index: int) -> tuple[str, str, str]:
+    latest_text = _to_text(evidence.get("latest_text"))
+    latest_label = _to_text(evidence.get("latest_label"), "最近恢复")
+    if not latest_text:
+        return "", "", ""
+    if evidence.get("has_latest_recovered"):
+        if index == 0:
+            return (
+                f"最近恢复支持乐观路径：{latest_text}",
+                "刚回流证据只提升可验证性，不等于自动加仓；仍需价格纪律确认。",
+                "最近恢复已回流",
+            )
+        if index == 1:
+            return (
+                f"中性路径复核最近恢复：{latest_text}",
+                "单项恢复不能替代完整证据链；保持触发条件优先。",
+                "最近恢复待复核",
+            )
+        return (
+            f"若{latest_label}回流后无法持续验证，谨慎路径仍优先。",
+            "刚回流证据若过期或口径不一致，仍按保守路径处理。",
+            "最近恢复防守线",
+        )
+    if evidence.get("has_latest_blocked"):
+        if index == 0:
+            return (
+                f"最近恢复受限压制乐观路径：{latest_text}",
+                "恢复受限前，乐观路径不能作为加仓依据。",
+                "最近恢复仍受限",
+            )
+        if index == 1:
+            return (
+                f"中性路径等待最近恢复解除受限：{latest_text}",
+                "恢复受限时维持观察，不扩大仓位。",
+                "最近恢复待解除",
+            )
+        return (
+            f"最近恢复仍受限触发谨慎边界：{latest_text}",
+            "受限证据未解除前，优先保现金、降杠杆、收缩试探仓位。",
+            "最近恢复阻断",
+        )
+    if evidence.get("has_latest_waiting"):
+        if index == 0:
+            return (
+                f"最近恢复待验证，乐观路径只能等待：{latest_text}",
+                "未检测到回流前，不能把缺失数据当成趋势确认。",
+                "最近恢复待验证",
+            )
+        if index == 1:
+            return (
+                f"中性路径继续跟踪最近恢复：{latest_text}",
+                "恢复待验证时不扩大仓位。",
+                "最近恢复观察",
+            )
+        return (
+            f"若最近恢复持续待验证，谨慎路径优先：{latest_text}",
+            "证据未回流时按数据缺口处理。",
+            "最近恢复缺口",
+        )
+    return "", "", ""
+
+
+def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: Any, market_type: str) -> tuple[list[dict], str, dict]:
     if market_type != "A股":
-        return paths, ""
+        return paths, "", {}
     evidence = _a_share_evidence_guidance(evidence_radar_packet)
     if not evidence:
-        return paths, ""
+        return paths, "", {}
 
     support_text = evidence["support_text"]
     blocker_text = evidence["blocker_text"]
@@ -428,12 +504,22 @@ def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: A
                 note = f"若{verification_summary}迟迟无法确认，按谨慎边界管理。"
             risk = "阻断证据或数据缺口未排除前，优先保现金、降杠杆、收缩试探仓位。"
             item["evidence_label"] = "阻断证据优先" if evidence["has_blockers"] else "数据缺口防守"
+        latest_note, latest_risk, latest_label = _latest_recovery_projection_note(evidence, index)
+        if latest_note:
+            note = _append_evidence_text(note, latest_note)
+        if latest_risk:
+            risk = _append_evidence_text(risk, latest_risk)
+        if latest_label:
+            item["latest_recovery_label"] = latest_label
         item["trigger"] = _append_evidence_text(item.get("trigger"), note)
         item["risk"] = _append_evidence_text(item.get("risk"), risk)
         item["risk_note"] = item["risk"]
         item["evidence_note"] = note
         guided_paths.append(item)
-    return guided_paths, f"A股证据雷达：{evidence['summary']}"
+    basis = f"A股证据雷达：{evidence['summary']}"
+    if evidence["latest_text"]:
+        basis = f"{basis}｜最近恢复：{evidence['latest_label']} {evidence['latest_state'] or 'waiting'}"
+    return guided_paths, basis, evidence["latest_impact"]
 
 
 def _status_console_from_snapshot(home_snapshot: Any) -> dict:
@@ -718,7 +804,7 @@ def build_projection_packet(
             }
         )
     paths, market_type, path_basis = _merge_path_guidance(paths, analysis_method_packet)
-    paths, evidence_basis = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
+    paths, evidence_basis, latest_recovery_impact = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
     data_console = _as_mapping(a_share_data_console) or _status_console_from_snapshot(snapshot)
     paths, data_capability_basis = _merge_a_share_data_capability_guidance(paths, data_console, market_type)
     health_ledger = _as_mapping(data_health_ledger) or _as_mapping(snapshot.get("data_health_ledger")) or _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
@@ -740,6 +826,8 @@ def build_projection_packet(
         "market_type": market_type,
         "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis, data_health_basis, fact_recovery_basis] if item]),
         "path_evidence_summary": evidence_basis,
+        "path_recovery_impact": latest_recovery_impact,
+        "path_recovery_impact_summary": _to_text(latest_recovery_impact.get("impact_text")),
         "path_data_capability_summary": data_capability_basis,
         "path_data_health_summary": data_health_basis,
         "path_data_health_impact": data_health_impact,

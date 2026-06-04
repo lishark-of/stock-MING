@@ -185,6 +185,56 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("阻断证据", joined)
         self.assertFalse(packet["deepseek_called"])
 
+    def test_latest_recovery_impact_enriches_a_share_projection_paths(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 0｜缓存 0｜缺失 6",
+                "latest_recovery_impact": {
+                    "status": "recovered",
+                    "evidence_state": "supporting",
+                    "label": "个股资金流",
+                    "impact_text": "个股资金流刚刚回流；可进入证据链，但执行前仍需复核交易日、来源和仓位纪律。",
+                    "writes_packet": "command_center_moneyflow_packet",
+                    "external_call_policy": "button_gated",
+                    "deepseek_called": False,
+                },
+            },
+        )
+
+        self.assertIn("最近恢复：个股资金流 supporting", packet["path_basis"])
+        self.assertIn("最近恢复支持乐观路径", packet["paths"][0]["trigger"])
+        self.assertIn("不等于自动加仓", packet["paths"][0]["risk_note"])
+        self.assertEqual(packet["paths"][0]["latest_recovery_label"], "最近恢复已回流")
+        self.assertIn("个股资金流刚刚回流", packet["path_recovery_impact_summary"])
+        self.assertFalse(packet["path_recovery_impact"]["deepseek_called"])
+
+    def test_blocked_recovery_impact_keeps_projection_defensive(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 5",
+                "latest_recovery_impact": {
+                    "status": "blocked",
+                    "evidence_state": "blocked",
+                    "label": "涨跌停/情绪",
+                    "impact_text": "涨跌停/情绪恢复仍受限；证据门槛维持阻断，不能把缺失数据当成利好。",
+                    "writes_packet": "command_center_limit_emotion_packet",
+                    "external_call_policy": "button_gated",
+                    "deepseek_called": False,
+                },
+            },
+        )
+
+        self.assertIn("最近恢复：涨跌停/情绪 blocked", packet["path_basis"])
+        self.assertIn("最近恢复受限压制乐观路径", packet["paths"][0]["trigger"])
+        self.assertIn("不能作为加仓依据", packet["paths"][0]["risk_note"])
+        self.assertEqual(packet["paths"][2]["latest_recovery_label"], "最近恢复阻断")
+        self.assertFalse(packet["deepseek_called"])
+
     def test_a_share_data_capability_enriches_projection_paths(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
