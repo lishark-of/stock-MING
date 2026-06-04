@@ -4509,9 +4509,12 @@ def render_strategy_execution_command_card(
     guidance = vm.get("market_method_guidance") or {}
     focus_html = "".join(f"<span>{escape(str(item))}</span>" for item in (guidance.get("focus_items") or [])[:5])
     a_share_data_validation_summary = str(vm.get("a_share_data_validation_summary") or "").strip()
+    a_share_fact_recovery_validation_summary = str(vm.get("a_share_fact_recovery_validation_summary") or "").strip()
     validation_title = str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0")
     if a_share_data_validation_summary:
         validation_title = f"{validation_title} ｜ A股数据：{a_share_data_validation_summary}"
+    if a_share_fact_recovery_validation_summary:
+        validation_title = f"{validation_title} ｜ A股事实：{a_share_fact_recovery_validation_summary}"
     guidance_html = f"""
       <div class="cc-strategy-guidance">
         <div class="cc-strategy-guidance-title">{escape(str(guidance.get("title") or "市场验证重点"))}</div>
@@ -4527,7 +4530,7 @@ def render_strategy_execution_command_card(
         f"<div class='cc-strategy-text'>{escape(str(item.get('check_text') or '待验证。'))}</div>"
         f"<div class='cc-strategy-check'>✓ {escape(str(item.get('action_hint') or '先验证再执行。'))}</div>"
         "</div>"
-        for item in (vm.get("evidence_validation_items") or [])[:6]
+        for item in (vm.get("evidence_validation_items") or [])[:8]
         if isinstance(item, dict)
     )
     pill_items = [

@@ -426,12 +426,116 @@ def build_strategy_a_share_data_validation_summary(a_share_data_console: Any = N
     return f"{readiness}｜{summary}" if summary else readiness
 
 
+def _fact_recovery_group_text(items: list[dict], state: str, fallback: str) -> str:
+    labels = [item["label"] for item in items if item.get("recovery_state") == state]
+    return _limited_text_join(labels, fallback=fallback)
+
+
+def _fact_recovery_state(blocked_text: str, waiting_text: str, recovered_text: str, blocked_count: int = 0, waiting_count: int = 0) -> str:
+    if blocked_text or blocked_count:
+        return "blocked"
+    if waiting_text or waiting_count:
+        return "missing"
+    if recovered_text:
+        return "support"
+    return "missing"
+
+
+def _fact_recovery_action(label: str, state: str) -> str:
+    if state == "blocked":
+        return f"先恢复受限事实：{label}；未恢复前策略只能降级为观察或小额试探。"
+    if state == "missing":
+        return f"先补齐待验证事实：{label}；缺失时不能把乐观路径当作加仓依据。"
+    return f"已回流事实：{label}；仍需价格、纪律和仓位预算共振。"
+
+
+def build_strategy_a_share_fact_recovery_validation_items(a_share_fact_recovery_summary: Any = None) -> list[dict]:
+    summary = _as_mapping(a_share_fact_recovery_summary)
+    if not summary:
+        return []
+    fact_items = []
+    for raw in summary.get("items") or []:
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        fact_items.append(
+            {
+                "label": _to_text(item.get("label")) or "A股事实",
+                "recovery_state": _to_text(item.get("recovery_state")) or "waiting",
+                "status_label": _to_text(item.get("status_label")) or "待验证",
+            }
+        )
+    recovered_text = _fact_recovery_group_text(fact_items, "recovered", "")
+    blocked_text = _fact_recovery_group_text(fact_items, "blocked", "")
+    waiting_text = _fact_recovery_group_text(fact_items, "waiting", "")
+    blocked_count = _safe_int(summary.get("blocked_count"))
+    waiting_count = _safe_int(summary.get("waiting_count"))
+    summary_text = _to_text(summary.get("summary"))
+    if not summary_text:
+        summary_text = (
+            f"A股事实 {_safe_int(summary.get('total_count')) or 5} 项："
+            f"已回流 {_safe_int(summary.get('recovered_count'))}"
+            f"｜仍受限 {blocked_count}"
+            f"｜待验证 {waiting_count}"
+        )
+    state = _fact_recovery_state(blocked_text, waiting_text, recovered_text, blocked_count, waiting_count)
+    items = [
+        {
+            "key": "a_share_fact_recovery",
+            "label": "A股事实回流",
+            "priority": 0,
+            "evidence_state": state,
+            "evidence_label": "事实回流",
+            "tone": _evidence_validation_tone(state),
+            "check_text": summary_text,
+            "action_hint": _fact_recovery_action(blocked_text or waiting_text or recovered_text or "五类事实", state),
+        }
+    ]
+    group_specs = [
+        ("blocked", "受限事实", blocked_text, 1),
+        ("missing", "待验证事实", waiting_text, 2),
+        ("support", "已回流事实", recovered_text, 4),
+    ]
+    for state_key, label, text, priority in group_specs:
+        if not text:
+            continue
+        items.append(
+            {
+                "key": f"a_share_fact_recovery_{state_key}",
+                "label": label,
+                "priority": priority,
+                "evidence_state": state_key,
+                "evidence_label": "事实回流",
+                "tone": _evidence_validation_tone(state_key),
+                "check_text": text,
+                "action_hint": _fact_recovery_action(text, state_key),
+            }
+        )
+    return items[:4]
+
+
+def build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary: Any = None) -> str:
+    summary = _as_mapping(a_share_fact_recovery_summary)
+    if not summary:
+        return ""
+    if _to_text(summary.get("summary")):
+        return _to_text(summary.get("summary"))
+    return (
+        f"A股事实 {_safe_int(summary.get('total_count')) or 5} 项："
+        f"已回流 {_safe_int(summary.get('recovered_count'))}"
+        f"｜仍受限 {_safe_int(summary.get('blocked_count'))}"
+        f"｜待验证 {_safe_int(summary.get('waiting_count'))}"
+    )
+
+
 def build_strategy_evidence_validation_items(
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    a_share_fact_recovery_summary: Any = None,
 ) -> list[dict]:
     evidence = _as_mapping(evidence_radar_packet)
     items = build_strategy_a_share_data_validation_items(a_share_data_console)
+    items.extend(build_strategy_a_share_fact_recovery_validation_items(a_share_fact_recovery_summary))
     queue = evidence.get("decision_evidence_queue") or []
     if not isinstance(queue, list):
         queue = []
@@ -528,6 +632,7 @@ def build_strategy_summary_view_model(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    a_share_fact_recovery_summary: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     is_empty = not bool(payload)
@@ -538,8 +643,10 @@ def build_strategy_summary_view_model(
     evidence_validation_items = build_strategy_evidence_validation_items(
         evidence_radar_packet,
         a_share_data_console=a_share_data_console,
+        a_share_fact_recovery_summary=a_share_fact_recovery_summary,
     )
     a_share_data_validation_summary = build_strategy_a_share_data_validation_summary(a_share_data_console)
+    a_share_fact_recovery_validation_summary = build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary)
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -564,6 +671,7 @@ def build_strategy_summary_view_model(
         "evidence_validation_items": evidence_validation_items,
         "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
         "a_share_data_validation_summary": a_share_data_validation_summary,
+        "a_share_fact_recovery_validation_summary": a_share_fact_recovery_validation_summary,
         "risk_label": _to_text(_as_mapping(payload.get("risk_budget")).get("risk_level")) or "未知",
         "deepseek_text": "DeepSeek：已调用" if bool(payload.get("deepseek_called")) else "DeepSeek：未调用",
         "updated_text": _to_text(payload.get("updated_at")) or "暂无",

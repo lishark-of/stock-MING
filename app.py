@@ -3965,11 +3965,17 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
     home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
     a_share_diagnostic = home_snapshot.get("a_share_user_data_diagnostic") if isinstance(home_snapshot, dict) else {}
     a_share_data_console = (a_share_diagnostic or {}).get("status_console") if isinstance(a_share_diagnostic, dict) else {}
+    a_share_fact_recovery_summary = (
+        home_snapshot.get("a_share_fact_recovery_summary")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or {}
     strategy_vm = build_strategy_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_packet,
         a_share_data_console=a_share_data_console,
+        a_share_fact_recovery_summary=a_share_fact_recovery_summary,
     )
     render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
     return live_packet
