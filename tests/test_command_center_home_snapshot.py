@@ -802,6 +802,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("个股资金流", dumped)
         self.assertIn("龙虎榜", dumped)
         self.assertIn("融资融券", dumped)
+        self.assertIn("a_share_evidence_module_panel", payload)
+        self.assertEqual(payload["a_share_evidence_module_panel"]["total_count"], 5)
+        self.assertIn("资金流", payload["a_share_evidence_module_panel"]["summary"])
         self.assertEqual(console["status"], "blocked")
         self.assertFalse(capability["deepseek_called"])
         self.assertFalse(console["deepseek_called"])
@@ -3525,6 +3528,54 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("页面打开不会自动请求 Tushare", by_key["margin"]["next_action"])
         self.assertFalse(summary["deepseek_called"])
         json.dumps(summary, ensure_ascii=False)
+
+    def test_a_share_evidence_module_panel_groups_legacy_packets(self):
+        panel = snapshot.build_a_share_evidence_module_panel(
+            {
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "recovery_state": "recovered",
+                    "status_label": "可用",
+                    "source": "Tushare moneyflow",
+                    "updated_at": "2026-06-04T10:00:00",
+                },
+                "dragon_tiger_packet": {
+                    "status": "failed",
+                    "capability_state": "permission_denied",
+                    "recovery_state": "blocked",
+                    "status_label": "权限不足",
+                    "source": "Tushare top_list",
+                },
+                "margin_packet": {
+                    "status": "waiting",
+                    "capability_state": "empty_recent",
+                    "recovery_state": "waiting",
+                    "status_label": "近期无数据",
+                },
+            }
+        )
+
+        by_key = {item["key"]: item for item in panel["modules"]}
+        self.assertEqual(panel["title"], "A股证据模块恢复面板")
+        self.assertEqual(panel["total_count"], 5)
+        self.assertEqual(panel["recovered_count"], 1)
+        self.assertEqual(panel["blocked_count"], 1)
+        self.assertEqual(panel["waiting_count"], 3)
+        self.assertEqual(panel["tone"], "failed")
+        self.assertIn("资金流", panel["summary"])
+        self.assertIn("龙虎榜", panel["summary"])
+        self.assertIn("融资融券", panel["summary"])
+        self.assertEqual(by_key["moneyflow"]["action_label"], "查看已回流 packet")
+        self.assertEqual(by_key["dragon_tiger"]["target_text"], "高级工具箱 / 下一票雷达")
+        self.assertEqual(by_key["dragon_tiger"]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertIn("龙虎榜", by_key["dragon_tiger"]["role"])
+        self.assertIn("阻断加仓", by_key["dragon_tiger"]["decision_guardrail"])
+        self.assertEqual(by_key["margin"]["refresh_policy"], "button_gated")
+        self.assertIn("手动按钮触发", by_key["margin"]["manual_only_text"])
+        self.assertFalse(panel["deepseek_called"])
+        self.assertEqual(panel["external_call_policy"], "not_triggered")
+        json.dumps(panel, ensure_ascii=False)
 
     def test_legacy_decision_chain_summary_counts_packet_contract_states(self):
         summary = snapshot.build_legacy_decision_chain_summary(

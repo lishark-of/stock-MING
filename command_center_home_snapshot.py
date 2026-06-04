@@ -1306,6 +1306,88 @@ def build_a_share_evidence_recovery_ledger(snapshot: Any = None) -> dict:
     }
 
 
+A_SHARE_EVIDENCE_MODULE_ROLES = {
+    "moneyflow": "验证资金流向和机构行为，避免把无资金确认的反弹写成进攻信号。",
+    "dragon_tiger": "验证龙虎榜、游资或机构异动，区分真实上榜和近期无记录。",
+    "margin": "验证融资融券和杠杆风险，决定是否允许加融资或必须降风险。",
+    "limit_emotion": "验证涨跌停、连板和情绪边界，避免追高或把题材退潮误读成机会。",
+    "chip_radar": "验证筹码/胜率结构，判断候选是否仍有可执行质量。",
+}
+
+
+def build_a_share_evidence_module_panel(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    fact_summary = _as_mapping(payload.get("a_share_fact_recovery_summary"))
+    if not fact_summary:
+        fact_summary = build_a_share_fact_recovery_summary(payload)
+    modules = []
+    for raw in _as_list(fact_summary.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        key = _to_text(item.get("key"), "a_share_evidence")
+        recovery_state = _to_text(item.get("recovery_state"), "waiting")
+        action_label = (
+            "查看已回流 packet"
+            if recovery_state == "recovered"
+            else _to_text(item.get("action_label"), "手动检测")
+        )
+        modules.append(
+            {
+                "key": key,
+                "label": _to_text(item.get("label"), "A股证据"),
+                "role": A_SHARE_EVIDENCE_MODULE_ROLES.get(key, "验证旧工作台能力是否已回流综合中心。"),
+                "module_status": recovery_state,
+                "module_status_label": _to_text(item.get("readable_state"), "待验证"),
+                "tone": _to_text(item.get("tone"), "missing"),
+                "status_label": _to_text(item.get("status_label"), "待验证"),
+                "source": _to_text(item.get("source"), "本地 packet"),
+                "updated_at": _to_text(item.get("updated_at"), "暂无"),
+                "writes_packet": _to_text(item.get("writes_packet"), "command_center_packet"),
+                "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱"),
+                "target_text": _to_text(item.get("toolbox_entry"), "高级工具箱"),
+                "action_label": action_label,
+                "next_action": _to_text(item.get("next_action"), "按恢复队列手动处理。"),
+                "decision_guardrail": _a_share_evidence_ledger_decision_impact(item),
+                "navigation_label": _to_text(item.get("navigation_label"), "进入高级工具箱对应模块后手动检测。"),
+                "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+                "manual_only_text": "只整理本地 packet 状态；需要数据时必须手动按钮触发，不自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    recovered_count = len([item for item in modules if item["module_status"] == "recovered"])
+    blocked_count = len([item for item in modules if item["module_status"] == "blocked"])
+    waiting_count = len([item for item in modules if item["module_status"] not in {"recovered", "blocked"}])
+    if blocked_count:
+        tone = "failed"
+        headline = f"A股证据模块仍有 {blocked_count} 项阻断"
+        next_action = "先恢复仍受限模块；未恢复前不把缺口写成利好、无风险或可加仓依据。"
+    elif waiting_count:
+        tone = "stale" if recovered_count else "missing"
+        headline = f"A股证据模块已回流 {recovered_count}｜待验证 {waiting_count}"
+        next_action = "继续按模块入口补齐待验证证据；页面打开不会自动请求 Tushare。"
+    else:
+        tone = "ready"
+        headline = "五类 A股证据模块已回流综合中心"
+        next_action = "可进入交易闭环复核；执行前仍需价格、纪律和仓位确认。"
+    return {
+        "title": "A股证据模块恢复面板",
+        "tone": tone,
+        "headline": headline,
+        "summary": f"资金流 / 龙虎榜 / 融资融券 / 涨跌停 / 筹码：已回流 {recovered_count}｜仍受限 {blocked_count}｜待验证 {waiting_count}",
+        "modules": modules,
+        "recovered_count": recovered_count,
+        "blocked_count": blocked_count,
+        "waiting_count": waiting_count,
+        "total_count": len(modules),
+        "next_action": next_action,
+        "safe_mode_text": "这里只把旧工作台能力按 packet 模块回流到首页；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 STRATEGY_PREREQUISITE_RECOVERY_SOURCES = (
     {
         "packet_key": "quant_packet",
@@ -5125,6 +5207,7 @@ def build_home_action_snapshot(
         empty["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(empty)
         empty["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(empty)
         empty["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(empty)
+        empty["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(empty)
         empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(empty)
@@ -5149,6 +5232,7 @@ def build_home_action_snapshot(
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
+    snapshot["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)

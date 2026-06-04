@@ -4854,6 +4854,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
     legacy_decision_chain = payload.get("legacy_decision_chain_summary") or {}
     a_share_evidence_ledger = payload.get("a_share_evidence_recovery_ledger") or {}
+    a_share_evidence_module_panel = payload.get("a_share_evidence_module_panel") or {}
     strategy_prerequisite_ledger = payload.get("strategy_prerequisite_recovery_ledger") or {}
     old_workspace_absence_ledger = payload.get("old_workspace_data_absence_ledger") or {}
     old_workspace_packet_bridge = payload.get("old_workspace_packet_bridge") or {}
@@ -6133,6 +6134,37 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not a_share_evidence_ledger_items_html:
         a_share_evidence_ledger_items_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>A股证据总账待生成</div><div class='cc-home-item-meta'>页面打开不会自动请求 Tushare；点击刷新或手动恢复后回流 packet。</div></div>"
+    a_share_evidence_module_html = ""
+    for item in (a_share_evidence_module_panel.get("modules") or [])[:5]:
+        if not isinstance(item, dict):
+            continue
+        a_share_evidence_module_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "A股证据"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("module_status_label"), item.get("status_label") or "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">用途：{escape(_home_text(item.get("role"), "验证旧工作台能力是否已回流综合中心。"))}</div>
+          <div class="cc-home-item-meta">动作：{escape(_home_text(item.get("action_label"), "手动检测"))} ｜ 入口：{escape(_home_text(item.get("target_text"), "高级工具箱"))}</div>
+          <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ 状态：{escape(_home_text(item.get("status_label"), "待验证"))}</div>
+          <div class="cc-home-item-meta">交易保护：{escape(_home_text(item.get("decision_guardrail"), "缺失时不能作为买入、追高或放大仓位依据。"))}</div>
+          <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地 packet"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无"))}</div>
+        </div>
+        """
+    if not a_share_evidence_module_html:
+        a_share_evidence_module_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>A股证据模块待生成</div><div class='cc-home-item-meta'>资金流、龙虎榜、融资融券、涨跌停和筹码会按 packet 回流到这里。</div></div>"
+    a_share_evidence_module_panel_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(a_share_evidence_module_panel.get("title"), "A股证据模块恢复面板"))}
+            <span class="cc-home-chip {escape(_home_text(a_share_evidence_module_panel.get("tone"), "missing"))}">{escape(_home_text(a_share_evidence_module_panel.get("summary"), "五类 A股证据待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(a_share_evidence_module_panel.get("headline"), "A股证据模块待回流综合中心。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(a_share_evidence_module_panel.get("next_action"), "按模块入口手动恢复。"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(a_share_evidence_module_panel.get("safe_mode_text"), "不会自动调用外部接口。"))} ｜ DeepSeek：未调用</div>
+          {a_share_evidence_module_html}
+        </div>
+        """
     a_share_evidence_ledger_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -6339,6 +6371,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">已验证事实</div>
+          {a_share_evidence_module_panel_html}
           {a_share_evidence_ledger_html}
           {strategy_prerequisite_ledger_html}
           {legacy_gap_html}
