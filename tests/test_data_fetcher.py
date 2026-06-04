@@ -26,7 +26,10 @@ class DataFetcherTest(unittest.TestCase):
             index=pd.date_range("2026-01-01", periods=130),
         )
 
-        with patch("data_fetcher.fetch_price_history", return_value=frame):
+        with (
+            patch("data_fetcher.fetch_ohlcv", return_value=pd.DataFrame()),
+            patch("data_fetcher.fetch_price_history", return_value=frame),
+        ):
             snapshot = compute_technical_snapshot("002158")
 
         self.assertIn("ma120", snapshot)
