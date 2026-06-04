@@ -1117,6 +1117,7 @@ def _normalize_recovery_center_action(
     label = _to_text(item.get("label"), "数据能力")
     writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
     status = _to_text(item.get("status") or item.get("state") or item.get("data_status"), "waiting")
+    legacy_tab = _to_text(item.get("legacy_tab"), _recovery_legacy_tab(writes_packet, item.get("key") or item.get("api")))
     return {
         "key": _to_text(item.get("key") or item.get("api") or writes_packet or label),
         "label": label,
@@ -1134,8 +1135,11 @@ def _normalize_recovery_center_action(
         "workspace_target": _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）"),
         "workspace_state_key": _to_text(item.get("workspace_state_key"), "workspace_mode_v2"),
         "legacy_tab_state_key": _to_text(item.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
-        "navigation_label": _to_text(item.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
-        "legacy_tab": _to_text(item.get("legacy_tab")),
+        "navigation_label": _to_text(
+            item.get("navigation_label"),
+            f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+        ),
+        "legacy_tab": legacy_tab,
         "writes_packet": writes_packet,
         "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
         "recovery_button_context": _to_text(
@@ -1310,6 +1314,10 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "why_first": config["why_first"],
                 "action_label": _to_text(action.get("action_label"), f"手动恢复{label}"),
                 "navigation_label": _to_text(action.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
+                "workspace_target": _to_text(action.get("workspace_target"), "高级工具箱（旧版保留）"),
+                "workspace_state_key": _to_text(action.get("workspace_state_key"), "workspace_mode_v2"),
+                "legacy_tab_state_key": _to_text(action.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
+                "legacy_tab": _to_text(action.get("legacy_tab")),
                 "writes_packet": writes_packet,
                 "refresh_policy": _to_text(action.get("refresh_policy"), "button_gated"),
                 "recovery_button_context": _to_text(
