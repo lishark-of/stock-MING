@@ -46,6 +46,9 @@ class CommandCenterChipPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["status"], "ready")
         self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["capability_state"], "available")
+        self.assertEqual(packet["status_label"], "可用")
+        self.assertEqual(packet["recovery_state"], "recovered")
         self.assertEqual(packet["winner_rate"], 72.5)
         self.assertEqual(packet["weight_avg"], 23.4)
         self.assertEqual(packet["pressure_state"], "获利盘压力偏高")
@@ -73,7 +76,69 @@ class CommandCenterChipPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["status"], "partial")
         self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "empty_recent")
+        self.assertEqual(packet["status_label"], "近期无数据")
+        self.assertEqual(packet["recovery_state"], "waiting")
         self.assertIn("不能写筹码压力", " ".join(packet["risk_notes"]))
+
+    def test_permission_denied_is_blocked_not_low_pressure(self):
+        packet = chip_packet.build_command_center_chip_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "chip_radar",
+                            "label": "筹码/胜率",
+                            "state": "permission_denied",
+                            "status": "权限不足",
+                            "api": "cyq_perf/cyq_chips",
+                            "risk": "抱歉，您没有访问该接口的权限。",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "failed")
+        self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "permission_denied")
+        self.assertEqual(packet["status_label"], "权限不足")
+        self.assertEqual(packet["recovery_state"], "blocked")
+        self.assertEqual(packet["updated_at"], "2026-06-03T10:02:00")
+        self.assertEqual(packet["checked_at"], "2026-06-03T10:02:00")
+        self.assertIn("不能写筹码压力", " ".join(packet["risk_notes"]))
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_available_capability_item_marks_recovered_without_fake_chip_metrics(self):
+        packet = chip_packet.build_command_center_chip_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "chip_radar",
+                            "label": "筹码/胜率",
+                            "state": "available",
+                            "status": "可用",
+                            "api": "cyq_perf/cyq_chips",
+                            "rows": 5,
+                            "latest_date": "20260603",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["capability_state"], "available")
+        self.assertEqual(packet["status_label"], "可用")
+        self.assertEqual(packet["recovery_state"], "recovered")
+        self.assertEqual(packet["winner_rate"], None)
+        self.assertEqual(packet["trade_date"], "20260603")
+        self.assertEqual(packet["chips_top_areas"], [])
+        self.assertFalse(packet["deepseek_called"])
 
     def test_existing_packet_is_preserved_without_mutating_input(self):
         state = {

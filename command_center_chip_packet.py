@@ -114,7 +114,7 @@ def _status_from(payload: Mapping[str, Any]) -> str:
     state = to_text(payload.get("state") or payload.get("capability_state")).lower()
     if state == "available":
         return "ready"
-    if state in {"permission_denied", "disabled_this_session", "failed", "network_failed"}:
+    if state in {"permission_denied", "disabled_this_session", "failed", "network_failed", "not_configured"}:
         return "failed"
     if payload:
         return "partial"
@@ -127,6 +127,45 @@ def _data_status(status: str, payload: Mapping[str, Any]) -> str:
     if status in {"partial", "failed"} and payload:
         return "cached" if payload.get("available") else "missing"
     return "missing"
+
+
+def _capability_state(payload: Mapping[str, Any], status: str) -> str:
+    state = _first_text(payload.get("capability_state"), payload.get("state")).lower()
+    if state:
+        return state
+    if status == "ready":
+        return "available"
+    if status == "failed":
+        return "failed"
+    if status == "partial":
+        return "empty_recent"
+    return "requires_manual_refresh"
+
+
+def _status_label(payload: Mapping[str, Any], capability_state: str, status: str) -> str:
+    explicit = _first_text(payload.get("status_label"), payload.get("capability_label"), payload.get("status"))
+    if explicit and explicit.lower() not in {"ready", "ok", "completed", "success", "failed", "error", "partial", "waiting"}:
+        return explicit
+    return {
+        "available": "可用",
+        "permission_denied": "权限不足",
+        "disabled_this_session": "本会话跳过",
+        "empty_recent": "近期无数据",
+        "stale_cache": "使用缓存",
+        "fallback_used": "使用替代口径",
+        "requires_manual_refresh": "需要手动刷新",
+        "network_failed": "网络失败",
+        "not_configured": "未配置",
+        "failed": "调用失败",
+    }.get(capability_state, {"ready": "可用", "failed": "调用失败", "partial": "待验证"}.get(status, "待刷新"))
+
+
+def _recovery_state(status: str, capability_state: str, data_status: str) -> str:
+    if status == "ready" or data_status in {"ready", "cached"}:
+        return "recovered"
+    if capability_state in {"permission_denied", "disabled_this_session", "network_failed", "not_configured", "failed"}:
+        return "blocked"
+    return "waiting"
 
 
 def _normalize_top_areas(value: Any) -> list[dict]:
@@ -193,6 +232,10 @@ def build_command_center_chip_packet(
         payload = {}
 
     status = _status_from(payload)
+    data_status = _data_status(status, payload)
+    capability_state = _capability_state(payload, status)
+    status_label = _status_label(payload, capability_state, status)
+    recovery_state = _recovery_state(status, capability_state, data_status)
     winner_rate = to_number(payload.get("winner_rate"))
     weight_avg = to_number(payload.get("weight_avg") or payload.get("avg_cost"))
     current_vs_weight_avg_pct = to_number(payload.get("current_vs_weight_avg_pct"))
@@ -211,12 +254,16 @@ def build_command_center_chip_packet(
     )
     return {
         "status": status,
-        "data_status": _data_status(status, payload),
+        "data_status": data_status,
+        "capability_state": capability_state,
+        "status_label": status_label,
+        "recovery_state": recovery_state,
         "source": _first_text(payload.get("source"), default="Tushare 筹码/胜率缓存"),
         "source_key": to_text(source.get("source_key")),
         "api": _first_text(payload.get("api"), default="cyq_perf/cyq_chips"),
-        "updated_at": _first_text(payload.get("updated_at"), payload.get("trade_date"), payload.get("date")),
-        "trade_date": _first_text(payload.get("trade_date"), payload.get("date")),
+        "updated_at": _first_text(payload.get("updated_at"), payload.get("checked_at"), payload.get("trade_date"), payload.get("date")),
+        "checked_at": _first_text(payload.get("checked_at"), payload.get("updated_at")),
+        "trade_date": _first_text(payload.get("trade_date"), payload.get("date"), payload.get("latest_date")),
         "target": _first_text(target, existing_target),
         "ticker": _first_text(payload.get("ticker"), payload.get("ts_code"), target),
         "winner_rate": winner_rate,
