@@ -368,6 +368,134 @@ def build_radar_decision_summary(candidates: Any = None) -> dict:
     }
 
 
+def _radar_brief_counts(candidates: Any = None) -> dict[str, int]:
+    counts = {"prepare": 0, "verify": 0, "observe": 0, "blocked": 0}
+    for row in as_list(candidates):
+        brief = as_mapping(as_mapping(row).get("decision_brief"))
+        status = to_text(brief.get("execution_status"), "observe")
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def _radar_verification_status(status: str, data_status: str, candidates: Any = None, errors: Any = None) -> str:
+    if status == "failed" or as_list(errors):
+        return "阻断决策" if status == "failed" else "待验证"
+    if data_status == "missing" or not as_list(candidates):
+        return "待验证"
+    counts = _radar_brief_counts(candidates)
+    if counts["prepare"]:
+        return "已验证"
+    if data_status in {"cached", "cache_only"}:
+        return "缓存辅助"
+    return "待验证"
+
+
+def _build_radar_packet_evidence_summary(status: str, data_status: str, candidates: Any = None, errors: Any = None) -> str:
+    rows = as_list(candidates)
+    if not rows:
+        if status == "failed":
+            return "下一票雷达读取失败；候选池不能进入执行准备。"
+        return "暂无下一票 Top3；页面打开不会自动全市场扫描，需手动扫描或刷新基础数据。"
+    counts = _radar_brief_counts(rows)
+    error_count = len(as_list(errors))
+    parts = [
+        f"下一票 Top{len(rows)}",
+        f"可准备 {counts['prepare']}",
+        f"等验证 {counts['verify']}",
+        f"只观察 {counts['observe']}",
+        f"暂不纳入 {counts['blocked']}",
+    ]
+    if error_count:
+        parts.append(f"错误 {error_count}")
+    first = as_mapping(rows[0])
+    chain_summary = to_text(first.get("evidence_chain_summary"))
+    if chain_summary:
+        parts.append(f"首位证据链：{chain_summary}")
+    return "｜".join(parts)
+
+
+def _build_radar_packet_evidence_items(status: str, data_status: str, candidates: Any = None, errors: Any = None) -> list[dict]:
+    rows = as_list(candidates)
+    counts = _radar_brief_counts(rows)
+    error_count = len(as_list(errors))
+    return [
+        {
+            "label": "候选覆盖",
+            "value": f"Top{len(rows)}" if rows else "待生成",
+            "detail": "只读取本地缓存或手动扫描结果；不会自动全市场扫描。",
+            "tone": "ready" if rows else "missing",
+        },
+        {
+            "label": "执行分层",
+            "value": f"可准备 {counts['prepare']}｜等验证 {counts['verify']}",
+            "detail": f"只观察 {counts['observe']}｜暂不纳入 {counts['blocked']}",
+            "tone": "ready" if counts["prepare"] else "stale" if counts["verify"] else "missing",
+        },
+        {
+            "label": "数据状态",
+            "value": data_status or "missing",
+            "detail": "候选进入交易前仍需资金流、龙虎榜、情绪、硬风险等证据复核。",
+            "tone": "ready" if data_status == "ready" else "stale" if data_status == "cached" else "missing",
+        },
+        {
+            "label": "错误/缺口",
+            "value": f"{error_count}项" if error_count else "暂无",
+            "detail": "错误或缺口不会被写成利好，也不会触发自动补数。",
+            "tone": "failed" if error_count else "ready",
+        },
+    ][:MAX_EVIDENCE_ITEMS]
+
+
+def _radar_action_hint(status: str, candidates: Any = None, errors: Any = None) -> str:
+    rows = as_list(candidates)
+    if status == "failed":
+        return "先处理下一票雷达错误；未恢复前候选池不能进入执行准备。"
+    if not rows:
+        return "进入高级工具箱手动运行下一票雷达，或刷新今日基础数据后再查看 Top3。"
+    counts = _radar_brief_counts(rows)
+    if counts["prepare"]:
+        return "先复核可准备候选的触发条件、失效条件、证据链和仓位预算，再进入策略执行。"
+    if counts["verify"]:
+        return "优先补齐等验证候选的资金流、龙虎榜、涨跌停/情绪和硬风险证据。"
+    return "当前候选只观察；等待手动扫描、基础数据刷新或证据链改善。"
+
+
+def _radar_decision_guardrail(status: str, candidates: Any = None) -> str:
+    if status == "failed" or not as_list(candidates):
+        return "没有可验证 Top3 时，不能把下一票雷达写成买入、追高或加融资依据。"
+    return "下一票候选不是买入指令；只有触发条件成立、证据链不阻断、纪律和仓位预算同时通过，才允许进入执行准备。"
+
+
+def _apply_radar_packet_contract(packet: Any = None, errors: Any = None) -> dict:
+    payload = as_mapping(packet)
+    candidates = as_list(payload.get("top_candidates"))
+    status = to_text(payload.get("status"), "waiting")
+    data_status = to_text(payload.get("data_status") or payload.get("cache_state"), "missing")
+    error_items = as_list(errors) or as_list(payload.get("errors"))
+    payload.update(
+        {
+            "packet_role": _first_text(payload.get("packet_role"), default="下一票 Top3 候选证据"),
+            "verification_status": _first_text(
+                payload.get("verification_status"),
+                default=_radar_verification_status(status, data_status, candidates, error_items),
+            ),
+            "evidence_summary": _first_text(
+                payload.get("evidence_summary"),
+                default=_build_radar_packet_evidence_summary(status, data_status, candidates, error_items),
+            ),
+            "evidence_items": as_list(payload.get("evidence_items"))
+            or _build_radar_packet_evidence_items(status, data_status, candidates, error_items),
+            "action_hint": _first_text(payload.get("action_hint"), default=_radar_action_hint(status, candidates, error_items)),
+            "decision_guardrail": _first_text(
+                payload.get("decision_guardrail"),
+                default=_radar_decision_guardrail(status, candidates),
+            ),
+        }
+    )
+    return payload
+
+
 def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_section: Any = None, rank: int = 0) -> dict:
     row_map = as_mapping(row)
     scan = as_mapping(scan_packet)
@@ -496,7 +624,7 @@ def build_command_center_radar_packet(
                 capability_state=packet.get("capability_state"),
             )
         )
-        return packet
+        return _apply_radar_packet_contract(packet)
     scan_packet = as_mapping(state_map.get("radar_scan_results"))
     summary = as_mapping(state_map.get("radar_scan_summary") or scan_packet.get("summary"))
     rows = _first_list(
@@ -562,4 +690,4 @@ def build_command_center_radar_packet(
             capability_state=summary.get("capability_state"),
         )
     )
-    return packet
+    return _apply_radar_packet_contract(packet, errors=errors)

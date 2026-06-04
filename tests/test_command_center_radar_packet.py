@@ -65,6 +65,13 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["decision_chain_state"], "ready")
         self.assertTrue(packet["can_enter_decision_chain"])
         self.assertIn("下一票雷达", packet["decision_chain_effect"])
+        self.assertEqual(packet["packet_role"], "下一票 Top3 候选证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("下一票 Top3", packet["evidence_summary"])
+        self.assertIn("等验证 1", packet["evidence_summary"])
+        self.assertTrue(packet["evidence_items"])
+        self.assertIn("候选不是买入指令", packet["decision_guardrail"])
+        self.assertIn("补齐", packet["action_hint"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -77,6 +84,11 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["cache_state"], "missing")
         self.assertEqual(packet["decision_chain_state"], "waiting")
         self.assertFalse(packet["can_enter_decision_chain"])
+        self.assertEqual(packet["packet_role"], "下一票 Top3 候选证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("暂无下一票 Top3", packet["evidence_summary"])
+        self.assertIn("手动", packet["action_hint"])
+        self.assertIn("不能把下一票雷达写成买入", packet["decision_guardrail"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_builds_from_top_candidates_cache_shape(self):
@@ -122,6 +134,9 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertIn("decision_summary", packet)
         self.assertEqual(packet["decision_chain_state"], "ready")
         self.assertTrue(packet["can_enter_decision_chain"])
+        self.assertEqual(packet["packet_role"], "下一票 Top3 候选证据")
+        self.assertTrue(packet["evidence_summary"])
+        self.assertTrue(packet["evidence_items"])
         self.assertEqual(existing, state["command_center_radar_packet"])
 
     def test_candidate_decision_brief_modes_are_actionable(self):

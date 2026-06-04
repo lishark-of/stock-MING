@@ -16,6 +16,13 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertFalse(packet["recommended_etfs"])
         self.assertFalse(packet["deepseek_called"])
         self.assertIn("不自动全量发现", packet["summary"])
+        self.assertEqual(packet["packet_role"], "ETF/融资配置证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("暂无 ETF/融资快照", packet["evidence_summary"])
+        self.assertTrue(packet["evidence_items"])
+        self.assertIn("手动刷新", packet["action_hint"])
+        self.assertIn("不能作为买入", packet["decision_guardrail"])
+        self.assertEqual(packet["decision_chain_state"], "waiting")
 
     def test_allocation_candidates_are_flattened_to_top_three(self):
         state = {
@@ -63,6 +70,15 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertEqual(packet["data_status"], "ready")
         self.assertEqual(packet["cache_state"], "ready")
         self.assertIn("不会自动全量发现", packet["manual_required_text"])
+        self.assertEqual(packet["packet_role"], "ETF/融资配置证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("ETF Top3", packet["evidence_summary"])
+        self.assertIn("融资：25%", packet["evidence_summary"])
+        self.assertIn("现金：20%", packet["evidence_summary"])
+        self.assertTrue(packet["evidence_items"])
+        self.assertIn("跟踪指数", packet["action_hint"])
+        self.assertIn("ETF 候选不是买入指令", packet["decision_guardrail"])
+        self.assertEqual(packet["decision_chain_state"], "ready")
         self.assertFalse(packet["deepseek_called"])
 
     def test_risk_state_is_conservative_when_current_ratio_exceeds_recommendation(self):
@@ -103,6 +119,10 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertTrue(packet["recommended_etfs"][0]["evidence_chain"])
         self.assertIn("可参考", packet["recommended_etfs"][0]["evidence_chain_summary"])
         self.assertIn("不会自动全量发现", packet["manual_required_text"])
+        self.assertEqual(packet["packet_role"], "ETF/融资配置证据")
+        self.assertTrue(packet["evidence_summary"])
+        self.assertTrue(packet["evidence_items"])
+        self.assertEqual(packet["decision_chain_state"], "ready")
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 

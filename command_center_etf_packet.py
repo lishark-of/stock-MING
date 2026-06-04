@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_RECOMMENDED_ETFS = 3
 MAX_RISK_NOTES = 6
@@ -250,6 +252,174 @@ def _summarize_evidence_chain(chain: list[dict]) -> str:
     missing = len([item for item in chain if item.get("status") == "missing"])
     review = len([item for item in chain if item.get("status") in {"stale", "failed"}])
     return f"可参考 {ready}｜待补证 {missing}｜需复核 {review}"
+
+
+def _packet_verification_status(status: str, data_status: str, etfs: Any = None, risk_state: str = "") -> str:
+    rows = as_list(etfs)
+    risk = to_text(risk_state)
+    if status == "failed":
+        return "阻断决策"
+    if not rows:
+        return "待验证"
+    if data_status in {"cached", "cache_only"}:
+        return "缓存辅助"
+    if any(word in risk for word in ("降", "过热", "暂停", "规避")):
+        return "待验证"
+    if any(as_list(as_mapping(item).get("data_gaps")) for item in rows):
+        return "待验证"
+    return "已验证"
+
+
+def _build_packet_evidence_summary(
+    status: str,
+    data_status: str,
+    etfs: Any = None,
+    *,
+    main_direction: str = "",
+    recommended_margin_ratio: Any = None,
+    recommended_cash_ratio: Any = None,
+    risk_state: str = "",
+) -> str:
+    rows = as_list(etfs)
+    if not rows:
+        if status == "failed":
+            return "ETF/融资快照读取失败；不能作为加融资或追高依据。"
+        return "暂无 ETF/融资快照；页面打开不会自动全量发现或拉取重行情。"
+    margin = to_number(recommended_margin_ratio)
+    cash = to_number(recommended_cash_ratio)
+    parts = [
+        f"ETF Top{len(rows)}",
+        f"主方向：{main_direction or '待验证'}",
+        f"融资：{margin:g}%" if margin is not None else "融资：待验证",
+        f"现金：{cash:g}%" if cash is not None else "现金：待验证",
+        f"风险：{risk_state or '只观察不追'}",
+    ]
+    if data_status == "cached":
+        parts.append("使用缓存")
+    return "｜".join(parts)
+
+
+def _build_packet_evidence_items(
+    data_status: str,
+    etfs: Any = None,
+    *,
+    main_direction: str = "",
+    recommended_margin_ratio: Any = None,
+    recommended_cash_ratio: Any = None,
+    risk_state: str = "",
+) -> list[dict]:
+    rows = as_list(etfs)
+    margin = to_number(recommended_margin_ratio)
+    cash = to_number(recommended_cash_ratio)
+    data_gap_count = sum(len(as_list(as_mapping(item).get("data_gaps"))) for item in rows)
+    return [
+        {
+            "label": "ETF覆盖",
+            "value": f"Top{len(rows)}" if rows else "待刷新",
+            "detail": "只读取本地配置或手动刷新结果；不会自动全量发现。",
+            "tone": "ready" if rows else "missing",
+        },
+        {
+            "label": "主方向",
+            "value": main_direction or "待验证",
+            "detail": "方向只代表配置倾向，仍需跟踪指数、流动性和追高边界复核。",
+            "tone": "ready" if main_direction and main_direction != "待刷新" else "missing",
+        },
+        {
+            "label": "融资/现金",
+            "value": (
+                f"融资 {margin:g}%｜现金 {cash:g}%"
+                if margin is not None and cash is not None
+                else "待验证"
+            ),
+            "detail": "融资比例不能自动放大仓位；现金缓冲必须先确认。",
+            "tone": "ready" if margin is not None and cash is not None else "missing",
+        },
+        {
+            "label": "风险边界",
+            "value": risk_state or "只观察不追",
+            "detail": "追高、溢价折价、同类重叠和流动性不足会阻断加仓。",
+            "tone": _action_tone(risk_state or "只观察不追"),
+        },
+        {
+            "label": "数据缺口",
+            "value": f"{data_gap_count}项" if data_gap_count else "暂无",
+            "detail": "缺口不会被写成利好，也不会触发自动补数。",
+            "tone": "missing" if data_gap_count else "ready",
+        },
+    ][:MAX_EVIDENCE_ITEMS]
+
+
+def _packet_action_hint(status: str, etfs: Any = None, risk_state: str = "") -> str:
+    rows = as_list(etfs)
+    risk = to_text(risk_state)
+    if status == "failed":
+        return "先处理 ETF/融资快照错误；未恢复前不能加融资或追高。"
+    if not rows:
+        return "先手动刷新融资 ETF 配置或读取缓存；没有快照时只保留观察。"
+    if any(word in risk for word in ("降", "过热", "暂停", "规避")):
+        return "优先降风险或等待回踩确认；不要把 ETF 候选写成加融资指令。"
+    return "复核跟踪指数、流动性、同类重叠、追高/溢价和现金缓冲后，再考虑小额配置。"
+
+
+def _packet_decision_guardrail(status: str, etfs: Any = None) -> str:
+    if status == "failed" or not as_list(etfs):
+        return "缺少 ETF/融资快照时，不能作为买入、追高、加融资或放大仓位依据。"
+    return "ETF 候选不是买入指令；跟踪指数、流动性、同类重叠、追高风险和现金缓冲同时确认前，不允许放大仓位。"
+
+
+def _apply_etf_packet_contract(packet: Any = None) -> dict:
+    payload = as_mapping(packet)
+    etfs = as_list(payload.get("recommended_etfs"))
+    status = to_text(payload.get("status"), "waiting")
+    data_status = to_text(payload.get("data_status") or payload.get("cache_state"), "missing")
+    risk_state = to_text(payload.get("risk_state"))
+    payload.update(
+        {
+            "packet_role": _first_text(payload.get("packet_role"), default="ETF/融资配置证据"),
+            "verification_status": _first_text(
+                payload.get("verification_status"),
+                default=_packet_verification_status(status, data_status, etfs, risk_state),
+            ),
+            "evidence_summary": _first_text(
+                payload.get("evidence_summary"),
+                default=_build_packet_evidence_summary(
+                    status,
+                    data_status,
+                    etfs,
+                    main_direction=to_text(payload.get("today_main_direction")),
+                    recommended_margin_ratio=payload.get("recommended_margin_ratio"),
+                    recommended_cash_ratio=payload.get("recommended_cash_ratio"),
+                    risk_state=risk_state,
+                ),
+            ),
+            "evidence_items": as_list(payload.get("evidence_items"))
+            or _build_packet_evidence_items(
+                data_status,
+                etfs,
+                main_direction=to_text(payload.get("today_main_direction")),
+                recommended_margin_ratio=payload.get("recommended_margin_ratio"),
+                recommended_cash_ratio=payload.get("recommended_cash_ratio"),
+                risk_state=risk_state,
+            ),
+            "action_hint": _first_text(payload.get("action_hint"), default=_packet_action_hint(status, etfs, risk_state)),
+            "decision_guardrail": _first_text(
+                payload.get("decision_guardrail"),
+                default=_packet_decision_guardrail(status, etfs),
+            ),
+        }
+    )
+    payload.update(
+        build_legacy_packet_decision_contract(
+            payload,
+            label="ETF/融资配置",
+            status=status,
+            data_status=data_status,
+            recovery_state=payload.get("recovery_state"),
+            capability_state=payload.get("capability_state"),
+        )
+    )
+    return payload
 
 
 def _build_evidence_chain(payload: Mapping[str, Any], bucket: str, margin_context: Mapping[str, Any] | None = None) -> list[dict]:
@@ -500,7 +670,7 @@ def build_command_center_etf_packet(
             "recommended_margin_ratio": existing.get("recommended_margin_ratio"),
             "recommended_cash_ratio": existing.get("recommended_cash_ratio"),
         }
-        return {
+        packet = {
             **existing,
             "recommended_etfs": [
                 normalize_etf_candidate(
@@ -520,6 +690,7 @@ def build_command_center_etf_packet(
             ),
             "deepseek_called": False,
         }
+        return _apply_etf_packet_contract(packet)
     allocation = as_mapping(state_map.get("legacy_margin_etf_allocation_result"))
     daily = as_mapping(state_map.get("legacy_margin_etf_daily_packet"))
     current_ratio = _first_number(
@@ -546,7 +717,7 @@ def build_command_center_etf_packet(
         allocation.get("updated_at"),
     )
     source = _first_text(live_section.get("source"), daily.get("source"), allocation.get("data_source"), default="融资 ETF 本地配置快照")
-    return {
+    packet = {
         "status": status,
         "cache_state": _derive_data_status(status, daily, etfs),
         "source": source,
@@ -572,3 +743,4 @@ def build_command_center_etf_packet(
         ),
         "deepseek_called": False,
     }
+    return _apply_etf_packet_contract(packet)
