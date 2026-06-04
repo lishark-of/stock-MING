@@ -7618,6 +7618,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         "missing": "gray",
     }.get(evidence_group_status, "gray")
     fact_recovery_items = [item for item in (payload.get("path_fact_recovery_items") or []) if isinstance(item, dict)]
+    fact_recovery_detail_items = [item for item in (payload.get("path_fact_recovery_detail_items") or []) if isinstance(item, dict)]
     fact_recovery_summary = str(payload.get("path_fact_recovery_summary") or "")
     fact_tone = str(payload.get("path_fact_recovery_tone") or "missing")
     legacy_chain_summary = str(payload.get("path_legacy_decision_chain_summary") or "")
@@ -7659,6 +7660,26 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         )
     if not fact_pills_html:
         fact_pills_html = "<span class='projection-fact-pill gray'>A股事实：待验证</span>"
+    fact_detail_html = ""
+    for item in fact_recovery_detail_items[:3]:
+        item_tone = str(item.get("tone") or "missing")
+        item_tone_class = {
+            "ready": "green",
+            "success": "green",
+            "stale": "blue",
+            "warning": "blue",
+            "failed": "orange",
+            "danger": "orange",
+            "missing": "gray",
+            "muted": "gray",
+        }.get(item_tone, "gray")
+        label = str(item.get("label") or "A股事实")
+        value = str(item.get("value") or item.get("path_impact") or "待验证")
+        fact_detail_html += (
+            f"<span class='projection-fact-pill {escape(item_tone_class)}'>"
+            f"{escape(label)}：{escape(value)}"
+            "</span>"
+        )
     fact_strip_html = ""
     capability_pill_html = (
         f"<span class='projection-fact-summary blue'>数据能力：{escape(data_capability_summary)}</span>"
@@ -7688,6 +7709,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           {legacy_chain_pill_html}
           <div class="projection-fact-pills">{evidence_group_item_html}</div>
           <span class="projection-fact-summary {escape(fact_tone_class)}">{escape(fact_recovery_summary or "A股事实回流待验证")}</span>
+          <div class="projection-fact-pills">{fact_detail_html}</div>
           <div class="projection-fact-pills">{fact_pills_html}</div>
         </div>
         """

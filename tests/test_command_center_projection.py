@@ -481,23 +481,48 @@ class CommandCenterProjectionTests(unittest.TestCase):
                 "tone": "failed",
                 "items": [
                     {"label": "个股资金流", "recovery_state": "recovered", "status_label": "可用", "tone": "ready"},
-                    {"label": "龙虎榜", "recovery_state": "blocked", "status_label": "权限不足", "tone": "failed"},
-                    {"label": "筹码/胜率", "recovery_state": "waiting", "status_label": "近期无数据", "tone": "missing"},
+                    {
+                        "label": "龙虎榜",
+                        "recovery_state": "blocked",
+                        "status_label": "权限不足",
+                        "tone": "failed",
+                        "root_cause_label": "接口权限不足",
+                    },
+                    {
+                        "label": "筹码/胜率",
+                        "recovery_state": "waiting",
+                        "status_label": "近期无数据",
+                        "tone": "missing",
+                        "root_cause_label": "近五日暂无数据",
+                    },
                 ],
                 "deepseek_called": False,
             },
         )
         joined = json.dumps(packet, ensure_ascii=False)
+        confidence = projection.build_projection_confidence_summary(packet)
 
         self.assertIn("A股事实回流", packet["path_basis"])
         self.assertIn("仍受限 1", packet["path_fact_recovery_summary"])
         self.assertEqual(packet["path_fact_recovery_tone"], "failed")
         self.assertEqual(len(packet["path_fact_recovery_items"]), 3)
+        self.assertEqual(
+            [item["label"] for item in packet["path_fact_recovery_detail_items"]],
+            ["受限事实", "待验证事实", "已回流事实"],
+        )
+        self.assertIn("龙虎榜｜接口权限不足", packet["path_fact_recovery_detail_items"][0]["value"])
+        self.assertIn("筹码/胜率｜近五日暂无数据", packet["path_fact_recovery_detail_items"][1]["value"])
+        self.assertIn("个股资金流", packet["path_fact_recovery_detail_items"][2]["guardrail"])
         self.assertIn("乐观路径仍需受限事实恢复", packet["paths"][0]["trigger"])
         self.assertIn("龙虎榜", packet["paths"][0]["trigger"])
-        self.assertIn("A股事实仍受限前", packet["paths"][0]["risk_note"])
+        self.assertIn("乐观路径不能写成加仓依据", packet["paths"][0]["risk_note"])
+        self.assertIn("先恢复 龙虎榜", packet["paths"][0]["fact_recovery_path_impact"])
+        self.assertIn("受限事实：龙虎榜", json.dumps(confidence["blocker_items"], ensure_ascii=False))
+        self.assertIn("待验证事实：筹码/胜率", json.dumps(confidence["pending_items"], ensure_ascii=False))
+        self.assertIn("已回流事实：个股资金流", json.dumps(confidence["support_items"], ensure_ascii=False))
         self.assertIn("事实回流防守线", joined)
         self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(confidence["deepseek_called"])
 
     def test_data_health_ledger_enriches_projection_without_changing_path_shape(self):
         packet = projection.build_projection_packet(
@@ -573,6 +598,7 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertEqual(packet["market_type"], "美股")
         self.assertEqual(packet["path_fact_recovery_summary"], "")
         self.assertEqual(packet["path_fact_recovery_items"], [])
+        self.assertEqual(packet["path_fact_recovery_detail_items"], [])
         self.assertNotIn("A股事实回流", joined)
         self.assertNotIn("龙虎榜", joined)
 
