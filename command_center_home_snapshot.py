@@ -337,6 +337,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_recovery_actions": [],
         "legacy_a_share_fact_recovery_actions": [],
         "tool_recovery_actions": [],
+        "next_ticket_evidence_recovery_actions": [],
         "data_recovery_center": build_home_data_recovery_center(),
         "legacy_migration_map": legacy_migration_map_service.build_legacy_migration_map(),
         "latest_recovery_result_notice": {},
@@ -468,6 +469,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+    snapshot["next_ticket_evidence_recovery_actions"] = build_next_ticket_evidence_recovery_actions_snapshot(snapshot)
     snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
         snapshot,
         data_capability_packet=snapshot.get("data_capability") or {},
@@ -1157,6 +1159,77 @@ def build_tool_recovery_actions_snapshot(snapshot: Any = None, limit: int = MAX_
     return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
+def build_next_ticket_evidence_recovery_actions_snapshot(
+    snapshot: Any = None,
+    limit: int = MAX_CAPABILITY_ITEMS,
+) -> list[dict]:
+    payload = _as_mapping(snapshot)
+    candidates = _as_list(payload.get("next_ticket_candidates"))
+    if not candidates and _as_mapping(payload.get("radar_packet")).get("top_candidates"):
+        candidates = _as_list(_as_mapping(payload.get("radar_packet")).get("top_candidates"))
+    actions_by_packet: dict[str, dict] = {}
+    for candidate in candidates:
+        item = _as_mapping(candidate)
+        if not item:
+            continue
+        ticker = _to_text(item.get("ticker") or item.get("name"), "候选")
+        name = _to_text(item.get("name"))
+        brief = _as_mapping(item.get("decision_brief"))
+        missing_labels = set(_to_text(label) for label in _as_list(brief.get("missing_evidence")))
+        blocking_labels = set(_to_text(label) for label in _as_list(brief.get("blocking_evidence")))
+        for evidence in _as_list(item.get("evidence_chain")):
+            row = _as_mapping(evidence)
+            if not row:
+                continue
+            status = _to_text(row.get("status"))
+            if status not in {"missing", "cached", "blocked", "failed"}:
+                continue
+            label = _to_text(row.get("label"), "候选证据")
+            if missing_labels and label not in missing_labels and status in {"missing", "cached"}:
+                continue
+            writes_packet = _to_text(row.get("writes_packet"), "command_center_packet")
+            if not writes_packet:
+                continue
+            legacy_tab = _legacy_a_share_fact_legacy_tab(row.get("key"), writes_packet)
+            action = actions_by_packet.setdefault(
+                writes_packet,
+                {
+                    "key": f"next_ticket_evidence:{_to_text(row.get('key'), writes_packet)}",
+                    "label": label,
+                    "status": status,
+                    "status_label": _to_text(row.get("status_label"), "待补证"),
+                    "priority": 1 if status in {"blocked", "failed"} or label in blocking_labels else 2,
+                    "reason": f"下一票候选需要补齐{label}，否则不能升级为作战准备依据。",
+                    "diagnostic_answer": f"{label}证据来自旧工作台能力；缺失时候选只能保持待验证或只观察。",
+                    "interface_diagnostic_answer": f"{label}证据未回流到 {writes_packet}，可能是权限、近期无数据、缓存或尚未手动运行旧工具。",
+                    "decision_guardrail": f"{label}未验证前，下一票候选不能作为买入、追高或加融资依据。",
+                    "action_label": f"手动补齐{label}证据",
+                    "toolbox_entry": f"高级工具箱 / {legacy_tab}",
+                    "workspace_target": "高级工具箱（旧版保留）",
+                    "workspace_state_key": "workspace_mode_v2",
+                    "legacy_tab": legacy_tab,
+                    "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                    "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                    "writes_packet": writes_packet,
+                    "refresh_policy": "button_gated",
+                    "recovery_button_context": f"这里只打开“{legacy_tab}”入口补齐{label}证据；不会自动运行扫描、DeepSeek、回测或重型数据接口。",
+                    "candidate_refs": [],
+                    "deepseek_called": False,
+                },
+            )
+            ref = f"{ticker} {name}".strip()
+            refs = action.setdefault("candidate_refs", [])
+            if ref not in refs:
+                refs.append(ref)
+            action["reason"] = f"{label}待补证影响：{'、'.join(refs[:3])}。缺失时候选不能升级为作战准备依据。"
+            if status in {"blocked", "failed"}:
+                action["priority"] = 1
+                action["status"] = status
+                action["status_label"] = _to_text(row.get("status_label"), "阻断")
+    actions = sorted(actions_by_packet.values(), key=lambda item: (item["priority"], item["label"]))
+    return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+
+
 def _legacy_a_share_fact_priority(action: Mapping[str, Any]) -> int:
     state = _to_text(action.get("state") or action.get("status"), "waiting")
     if state in {"failed", "error", "permission_denied", "权限不足", "失败"}:
@@ -1698,6 +1771,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         ("a_share", "A股数据能力", a_share_actions, 3),
         ("legacy_migration", "旧版迁移地图", legacy_migration_actions, 3),
         ("legacy_tool", "旧工具能力", tool_actions, 3),
+        ("next_ticket_evidence", "下一票候选证据", _as_list(payload.get("next_ticket_evidence_recovery_actions")), 2),
     ]
     recovery_result_lookup = _recovery_result_lookup_from_state(payload)
     seen = set()
@@ -1711,6 +1785,8 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
                 continue
             item = attach_recovery_result_status_to_action(item, payload, recovery_result_lookup)
             dedupe_key = item.get("writes_packet") or f"{source_type}:{item.get('key')}"
+            if source_type == "next_ticket_evidence":
+                dedupe_key = f"{source_type}:{dedupe_key}"
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
@@ -2926,6 +3002,7 @@ def build_home_action_snapshot(
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
         "tool_recovery_actions": [],
+        "next_ticket_evidence_recovery_actions": [],
         "data_recovery_center": {},
         "latest_recovery_result_notice": latest_recovery_result_notice,
         "recovery_result_status_strip": {},
@@ -2968,6 +3045,7 @@ def build_home_action_snapshot(
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+        empty["next_ticket_evidence_recovery_actions"] = build_next_ticket_evidence_recovery_actions_snapshot(empty)
         empty["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
             empty,
             data_capability_packet=empty.get("data_capability") or {},
@@ -3013,6 +3091,7 @@ def build_home_action_snapshot(
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+    snapshot["next_ticket_evidence_recovery_actions"] = build_next_ticket_evidence_recovery_actions_snapshot(snapshot)
     snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
         snapshot,
         data_capability_packet=snapshot.get("data_capability") or {},

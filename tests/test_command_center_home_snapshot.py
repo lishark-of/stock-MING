@@ -158,6 +158,54 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("不会自动全市场扫描", payload["next_ticket_candidates"][0]["manual_required_text"])
         self.assertFalse(payload["radar_packet"]["deepseek_called"])
 
+    def test_next_ticket_missing_evidence_enters_recovery_center(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "radar_scan_status": "completed",
+            "radar_scan_results": {
+                "generated_at": f"{today}T10:01:00",
+                "rule_rows": [
+                    {
+                        "candidate": {"ticker": "300750.SZ", "name": "宁德时代"},
+                        "score": {
+                            "total_score": 82,
+                            "battle_state": "等验证",
+                            "trigger_conditions": ["放量站稳 MA20"],
+                            "score_notes": {"data_gaps": ["资金流待验证", "龙虎榜待验证"]},
+                        },
+                    },
+                ],
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+        actions = payload["next_ticket_evidence_recovery_actions"]
+        center = payload["data_recovery_center"]
+        writes_packets = {item["writes_packet"] for item in actions}
+        center_writes_packets = {item["writes_packet"] for item in center["actions"]}
+        source_groups = {item["key"]: item for item in center["groups"]}
+
+        self.assertIn("command_center_moneyflow_packet", writes_packets)
+        self.assertIn("command_center_dragon_tiger_packet", writes_packets)
+        self.assertIn("command_center_moneyflow_packet", center_writes_packets)
+        self.assertIn("next_ticket_evidence", source_groups)
+        self.assertGreaterEqual(source_groups["next_ticket_evidence"]["count"], 2)
+        first_action = next(item for item in actions if item["writes_packet"] == "command_center_moneyflow_packet")
+        self.assertEqual(first_action["refresh_policy"], "button_gated")
+        self.assertEqual(first_action["legacy_tab"], "今日关注池")
+        self.assertIn("300750.SZ", first_action["reason"])
+        self.assertFalse(first_action["deepseek_called"])
+        navigation_state = snapshot.build_tool_recovery_navigation_state(first_action)
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "今日关注池")
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(payload, ensure_ascii=False)
+
     def test_home_snapshot_persists_etf_packet_and_uses_it_for_summary(self):
         today = _dt.date.today().isoformat()
         state = {
