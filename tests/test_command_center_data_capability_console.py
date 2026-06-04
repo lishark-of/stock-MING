@@ -60,6 +60,8 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(packet["recovery_actions"][0]["action_label"], "手动刷新融资融券")
         self.assertEqual(packet["recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(packet["recovery_actions"][0]["refresh_policy"], "button_gated")
+        self.assertIn("不是“没搜到行情”", packet["recovery_actions"][0]["diagnostic_answer"])
+        self.assertIn("token 可用", packet["recovery_actions"][0]["diagnostic_answer"])
         self.assertIn("融资融券", packet["recovery_summary"])
         self.assertIn("个股资金流", dumped)
         self.assertIn("融资融券", dumped)
@@ -94,6 +96,31 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(packet["short_answer"], "接口可用也可能搜不到。")
         self.assertEqual(packet["recovery_actions"][0]["label"], "龙虎榜")
         self.assertEqual(packet["recovery_actions"][0]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertIn("近窗口无记录", packet["recovery_actions"][0]["diagnostic_answer"])
+
+    def test_console_diagnostic_answer_explains_session_skip(self):
+        packet = console.build_data_capability_console_packet(
+            data_issue_explainer={
+                "items": [
+                    {
+                        "label": "涨跌停/情绪",
+                        "provider": "Tushare",
+                        "api": "limit_cpt_list",
+                        "state": "disabled_this_session",
+                        "status_label": "本会话跳过",
+                        "tone": "failed",
+                        "next_action": "重新检测权限。",
+                    }
+                ],
+                "deepseek_called": False,
+            }
+        )
+        action = packet["recovery_actions"][0]
+
+        self.assertEqual(action["state"], "disabled_this_session")
+        self.assertIn("本会话跳过重复请求", action["diagnostic_answer"])
+        self.assertIn("确认接口权限恢复", action["diagnostic_answer"])
+        self.assertFalse(action["deepseek_called"])
 
     def test_console_recovery_action_handles_supabase_configuration(self):
         packet = console.build_data_capability_console_packet(

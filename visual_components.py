@@ -4916,6 +4916,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("status_label"), item.get("status") or "待验证"))} ｜ 动作：{escape(_home_text(item.get("action_label"), "手动恢复"))}</div>
           <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("reason"), "仍需手动确认。"))}</div>
+          <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
           <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
           <div class="cc-home-item-meta">触发：手动按钮 ｜ DeepSeek：未调用</div>
         </div>

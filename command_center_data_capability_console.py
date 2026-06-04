@@ -205,6 +205,36 @@ def _recovery_reason(item: Mapping[str, Any]) -> str:
     return _to_text(item.get("meaning") or item.get("next_action"), f"{label}仍待验证。")
 
 
+def _diagnostic_answer(item: Mapping[str, Any]) -> str:
+    label = _to_text(item.get("label"), "数据能力")
+    provider = _to_text(item.get("provider"), "数据源")
+    api = _to_text(item.get("api"))
+    state = _to_text(item.get("state"))
+    api_text = f" {api}" if api else ""
+    if provider.lower() == "tushare" and state == "permission_denied":
+        return (
+            f"{label}不是“没搜到行情”，而是 Tushare{api_text} 返回权限/积分不足；"
+            "token 可用或积分较高也不等于该专业接口已开通。"
+        )
+    if provider.lower() == "tushare" and state == "disabled_this_session":
+        return (
+            f"{label}此前已被判定受限或失败，本会话跳过重复请求以避免卡顿；"
+            "确认接口权限恢复后再点手动检测。"
+        )
+    if provider.lower() == "tushare" and state == "empty_recent":
+        return (
+            f"{label}接口可用但近窗口无记录，常见原因是非交易日、数据尚未发布、"
+            "标的未上榜或该接口暂不覆盖。"
+        )
+    if state == "requires_manual_refresh":
+        return f"{label}被标记为按钮触发型能力；页面打开不会自动请求 {provider} 重型接口。"
+    if state == "stale_cache":
+        return f"{label}正在使用缓存防白屏；执行前要核对最后更新时间和来源。"
+    if state == "fallback_used":
+        return f"{label}使用替代口径，只能辅助判断，不能等同于原始接口事实。"
+    return _to_text(item.get("meaning") or item.get("decision_impact"), f"{label}仍需核对接口状态、日期和覆盖范围。")
+
+
 def _recovery_priority(item: Mapping[str, Any]) -> int:
     state = _to_text(item.get("state"))
     if state in BLOCKED_STATES:
@@ -236,6 +266,7 @@ def build_data_capability_recovery_actions(
                 "tone": item["tone"],
                 "priority": _recovery_priority(item),
                 "reason": _recovery_reason(item),
+                "diagnostic_answer": _diagnostic_answer(item),
                 "action_label": action_label,
                 "action_hint": item["next_action"],
                 "toolbox_entry": toolbox_entry,
