@@ -366,6 +366,117 @@ def _provider_diagnostic_cards(items: list[dict]) -> list[dict]:
     ]
 
 
+def _interface_diagnostic_key(state: str) -> str:
+    if state == "permission_denied":
+        return "permission_or_points"
+    if state == "disabled_this_session":
+        return "session_skip"
+    if state == "empty_recent":
+        return "no_recent_record"
+    if state in {"stale_cache", "fallback_used"}:
+        return "cache_or_fallback"
+    if state == "requires_manual_refresh":
+        return "manual_gate"
+    if state in AVAILABLE_STATES:
+        return "available"
+    if state == "not_configured":
+        return "not_configured"
+    if state == "network_failed":
+        return "network_failed"
+    return "unverified"
+
+
+def _interface_diagnostic_label(state: str) -> str:
+    return {
+        "permission_denied": "权限/积分不足",
+        "disabled_this_session": "本会话已跳过",
+        "empty_recent": "近期无记录",
+        "stale_cache": "正在使用缓存",
+        "fallback_used": "替代口径",
+        "requires_manual_refresh": "需要手动触发",
+        "available": "接口可用",
+        "not_configured": "本地未配置",
+        "network_failed": "网络失败",
+        "failed": "调用失败",
+    }.get(state, "状态待验证")
+
+
+def _interface_diagnostic_answer(item: Mapping[str, Any]) -> str:
+    provider = _to_text(item.get("provider"), "数据源")
+    label = _to_text(item.get("label"), "数据能力")
+    api = _to_text(item.get("api"))
+    state = _to_text(item.get("state"))
+    api_text = f" {api}" if api else ""
+    if provider.lower() == "tushare" and state == "permission_denied":
+        return (
+            f"{label}不是“没搜到”，而是 Tushare{api_text} 返回权限/积分不足；"
+            "token 可用、积分较高或其他接口正常，都不等于这个专业接口已开通。"
+        )
+    if provider.lower() == "tushare" and state == "disabled_this_session":
+        return (
+            f"{label}此前已被判定受限或失败，本会话跳过重复请求来防卡顿；"
+            "确认权限或接口恢复后，再手动检测。"
+        )
+    if provider.lower() == "tushare" and state == "empty_recent":
+        return (
+            f"{label}接口可读但近窗口无记录；常见原因是非交易日、数据尚未发布、"
+            "标的未上榜、窗口期过短或接口暂不覆盖。"
+        )
+    if state == "stale_cache":
+        return f"{label}正在使用上次成功缓存，能防白屏，但不是实时已验证事实。"
+    if state == "fallback_used":
+        return f"{label}使用替代口径，只能辅助观察，不能等同于原始接口事实。"
+    if state == "requires_manual_refresh":
+        return f"{label}属于按钮触发型能力；页面打开不会自动请求 {provider} 重型接口。"
+    if state in AVAILABLE_STATES:
+        return f"{label}已有可用返回，可进入证据链；执行前仍需核对日期、来源和当前标的。"
+    if state == "not_configured":
+        return f"{label}本地配置缺失；需要先检查 token、secrets 或连接设置。"
+    if state == "network_failed":
+        return f"{label}网络请求失败；保留缓存或安全空态，网络恢复后再手动重试。"
+    return _to_text(item.get("meaning") or item.get("decision_impact"), f"{label}仍待验证。")
+
+
+def _interface_sort_key(item: Mapping[str, Any]) -> tuple[int, str, str]:
+    state = _to_text(item.get("state"))
+    if state in RESTRICTED_STATES:
+        priority = 0
+    elif state in PENDING_STATES:
+        priority = 1
+    elif state in AVAILABLE_STATES:
+        priority = 2
+    else:
+        priority = 3
+    return (priority, _to_text(item.get("provider")), _to_text(item.get("label")))
+
+
+def _interface_diagnostic_items(items: list[dict]) -> list[dict]:
+    rows = []
+    for item in sorted(items, key=_interface_sort_key):
+        state = _to_text(item.get("state"), "unknown")
+        rows.append(
+            {
+                "key": item.get("key") or "data_issue",
+                "provider": item.get("provider") or "数据源",
+                "label": item.get("label") or "数据能力",
+                "api": item.get("api") or "",
+                "state": state,
+                "status_label": item.get("status_label") or STATE_LABELS.get(state, "待验证"),
+                "tone": item.get("tone") or _tone(state),
+                "cause_key": _interface_diagnostic_key(state),
+                "cause_label": _interface_diagnostic_label(state),
+                "diagnostic_answer": _interface_diagnostic_answer(item),
+                "decision_impact": item.get("decision_impact") or _decision_impact_for_state(state, item.get("label")),
+                "next_action": item.get("next_action") or _next_action_for_state(state, item.get("label")),
+                "latest_date": item.get("latest_date") or "",
+                "deepseek_called": False,
+            }
+        )
+        if len(rows) >= MAX_ITEMS:
+            break
+    return rows
+
+
 def build_data_issue_explainer_packet(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,
@@ -393,6 +504,7 @@ def build_data_issue_explainer_packet(
         "items": items,
         "root_cause_items": _root_cause_items(items),
         "provider_diagnostic_cards": _provider_diagnostic_cards(items),
+        "interface_diagnostic_items": _interface_diagnostic_items(items),
         "next_actions": actions,
         "source": "local data capability packet / gap report",
         "deepseek_called": False,

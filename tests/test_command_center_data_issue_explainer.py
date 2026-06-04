@@ -66,6 +66,13 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertIn("不是“没拉满”", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("单独权限或积分", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("防卡顿", packet["provider_diagnostic_cards"][0]["answer"])
+        interface_rows = {item["api"]: item for item in packet["interface_diagnostic_items"]}
+        self.assertEqual(interface_rows["margin_detail"]["cause_key"], "permission_or_points")
+        self.assertIn("token 可用", interface_rows["margin_detail"]["diagnostic_answer"])
+        self.assertIn("专业接口已开通", interface_rows["margin_detail"]["diagnostic_answer"])
+        self.assertEqual(interface_rows["limit_cpt_list"]["cause_key"], "session_skip")
+        self.assertIn("本会话跳过重复请求", interface_rows["limit_cpt_list"]["diagnostic_answer"])
+        self.assertFalse(interface_rows["limit_cpt_list"]["deepseek_called"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_empty_recent_is_explained_as_no_recent_record_not_positive_signal(self):
@@ -90,6 +97,11 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertEqual(packet["root_cause_items"][0]["key"], "empty_recent")
         self.assertIn("标的未上榜", item["meaning"])
         self.assertIn("无记录不能写成利好", item["decision_impact"])
+        interface_row = packet["interface_diagnostic_items"][0]
+        self.assertEqual(interface_row["cause_key"], "no_recent_record")
+        self.assertIn("接口可读但近窗口无记录", interface_row["diagnostic_answer"])
+        self.assertIn("标的未上榜", interface_row["diagnostic_answer"])
+        self.assertIn("不能写成利好", interface_row["decision_impact"])
         self.assertEqual(packet["provider_diagnostic_cards"][0]["pending_count"], 1)
         self.assertIn("非交易日", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("标的未上榜", packet["provider_diagnostic_cards"][0]["answer"])
@@ -109,6 +121,8 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertEqual(packet["pending_count"], 2)
         self.assertIn("缓存或替代口径", packet["short_answer"])
         self.assertTrue(any(item["key"] == "cache_or_fallback" for item in packet["root_cause_items"]))
+        causes = {item["cause_key"] for item in packet["interface_diagnostic_items"]}
+        self.assertEqual(causes, {"cache_or_fallback"})
         self.assertIn("不是实时数据", dumped)
         self.assertIn("不能等同于原始接口事实", dumped)
 

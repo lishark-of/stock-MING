@@ -104,6 +104,9 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("provider_diagnostic_cards", source)
         self.assertIn("provider_diagnostic_html", source)
         self.assertIn("诊断结论", source)
+        self.assertIn("interface_diagnostic_items", source)
+        self.assertIn("interface_diagnostic_html", source)
+        self.assertIn("接口诊断待生成", source)
         self.assertIn("为什么搜不到", source)
 
     def test_home_snapshot_renders_data_health_ledger(self):

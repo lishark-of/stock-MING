@@ -5106,6 +5106,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         """
     issue_items = [item for item in (data_issue_explainer.get("items") or []) if isinstance(item, dict)]
+    interface_diagnostic_items = [
+        item for item in (data_issue_explainer.get("interface_diagnostic_items") or []) if isinstance(item, dict)
+    ]
     root_cause_items = [item for item in (data_issue_explainer.get("root_cause_items") or []) if isinstance(item, dict)]
     root_cause_html = ""
     for item in root_cause_items[:4]:
@@ -5121,6 +5124,22 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not root_cause_html:
         root_cause_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>原因待确认</div><div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div></div>"
+    interface_diagnostic_html = ""
+    for item in interface_diagnostic_items[:5]:
+        interface_diagnostic_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "数据接口"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("cause_label"), item.get("status_label") or "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">接口：{escape(_home_text(item.get("provider"), "数据源"))} {escape(_home_text(item.get("api"), ""))} ｜ 状态：{escape(_home_text(item.get("status_label"), item.get("state") or "待验证"))}</div>
+          <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口权限、日期和覆盖范围。"))}</div>
+          <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "保留安全空态或手动刷新。"))}</div>
+        </div>
+        """
+    if not interface_diagnostic_html:
+        interface_diagnostic_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>接口诊断待生成</div><div class='cc-home-item-meta'>暂无本地检测结果；页面打开不会自动请求外部接口。</div></div>"
     issue_html = ""
     for item in issue_items[:3]:
         issue_html += f"""
@@ -5397,6 +5416,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             </div>
             <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
             {provider_diagnostic_html}
+            {interface_diagnostic_html}
             {a_share_diagnostic_html}
             {root_cause_html}
             {issue_html}
