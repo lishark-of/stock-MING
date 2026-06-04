@@ -4865,6 +4865,22 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         risk_alerts.get("legacy_decision_chain_summary") or "旧能力：待验证",
     )
     legacy_decision_chain_tone = _home_text(legacy_decision_chain.get("tone"), "missing")
+    legacy_decision_priority_html = ""
+    for item in (legacy_decision_chain.get("priority_items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        legacy_decision_priority_html += (
+            f"<span class='cc-home-chip {escape(_home_text(item.get('tone'), 'missing'))}'>"
+            f"{escape(_home_text(item.get('label'), '旧能力'))}：{escape(_home_text(item.get('state_label'), '待验证'))}"
+            "</span>"
+        )
+    if legacy_decision_priority_html:
+        legacy_decision_priority_html = (
+            "<div class='cc-home-chip-row'>"
+            "<span class='cc-home-chip'>决策链优先项</span>"
+            f"{legacy_decision_priority_html}"
+            "</div>"
+        )
     a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
@@ -6225,6 +6241,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(legacy_decision_chain_tone)}">旧能力链：{escape(legacy_decision_chain_summary_text)}</span>
             <span class="cc-home-chip">DeepSeek：{'已调用' if payload.get('deepseek_called') else '未调用'}</span>
           </div>
+          {legacy_decision_priority_html}
         </div>
         <aside class="cc-home-side">
           <div class="cc-home-side-label">风险等级</div>

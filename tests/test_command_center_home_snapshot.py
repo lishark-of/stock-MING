@@ -3489,22 +3489,48 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                     ],
                     "updated_at": "2026-06-04T10:02:00",
                 },
+                "hard_risk_packet": {
+                    "decision_chain_state": "ready",
+                    "status_label": "硬风险已验证",
+                    "source": "Tushare anns_d",
+                },
+                "radar_packet": {
+                    "decision_chain_state": "ready",
+                    "status_label": "Top3 可参考",
+                    "source": "下一票雷达缓存",
+                },
+                "discipline_packet": {
+                    "decision_chain_state": "cache_only",
+                    "status_label": "使用回测缓存",
+                    "source": "交易纪律实验室回测缓存",
+                },
+                "quant_packet": {
+                    "decision_chain_state": "blocked",
+                    "status_label": "量化失败",
+                    "source": "量化推演缓存",
+                },
             }
         )
         by_key = {item["key"]: item for item in summary["items"]}
 
-        self.assertEqual(summary["ready_count"], 1)
-        self.assertEqual(summary["cache_only_count"], 1)
-        self.assertEqual(summary["blocked_count"], 1)
+        self.assertEqual(summary["ready_count"], 3)
+        self.assertEqual(summary["cache_only_count"], 2)
+        self.assertEqual(summary["blocked_count"], 2)
         self.assertEqual(summary["waiting_count"], 2)
+        self.assertEqual(summary["total_count"], 9)
         self.assertEqual(summary["status"], "blocked")
-        self.assertIn("已验证 1", summary["summary"])
-        self.assertIn("缓存辅助 1", summary["summary"])
-        self.assertIn("阻断决策 1", summary["summary"])
+        self.assertIn("已验证 3", summary["summary"])
+        self.assertIn("缓存辅助 2", summary["summary"])
+        self.assertIn("阻断决策 2", summary["summary"])
         self.assertEqual(by_key["moneyflow"]["state_label"], "已验证")
         self.assertEqual(by_key["dragon_tiger"]["state_label"], "缓存辅助")
         self.assertEqual(by_key["margin"]["state_label"], "阻断决策")
+        self.assertEqual(by_key["hard_risk"]["state_label"], "已验证")
+        self.assertEqual(by_key["next_ticket_radar"]["state_label"], "已验证")
+        self.assertEqual(by_key["discipline_backtest"]["state_label"], "缓存辅助")
+        self.assertEqual(by_key["quant_projection"]["state_label"], "阻断决策")
         self.assertFalse(by_key["margin"]["can_enter_decision_chain"])
+        self.assertFalse(by_key["quant_projection"]["can_enter_decision_chain"])
         self.assertFalse(summary["deepseek_called"])
         json.dumps(summary, ensure_ascii=False)
 
@@ -3531,7 +3557,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(summary["ready_count"], 1)
         self.assertEqual(summary["cache_only_count"], 1)
         self.assertEqual(summary["blocked_count"], 1)
-        self.assertEqual(summary["waiting_count"], 2)
+        self.assertEqual(summary["waiting_count"], 6)
+        self.assertEqual(summary["total_count"], 9)
         self.assertFalse(summary["deepseek_called"])
 
     def test_legacy_decision_chain_summary_feeds_risk_alerts(self):

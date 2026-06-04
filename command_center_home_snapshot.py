@@ -95,6 +95,39 @@ A_SHARE_FACT_RECOVERY_SOURCES = (
     },
 )
 
+LEGACY_AUXILIARY_DECISION_SOURCES = (
+    {
+        "key": "hard_risk",
+        "label": "硬风险",
+        "packet_key": "hard_risk_packet",
+        "writes_packet": "command_center_hard_risk_packet",
+        "source_fallback": "公告/硬风险本地 packet",
+    },
+    {
+        "key": "next_ticket_radar",
+        "label": "下一票雷达",
+        "packet_key": "radar_packet",
+        "writes_packet": "command_center_radar_packet",
+        "source_fallback": "下一票雷达缓存",
+    },
+    {
+        "key": "discipline_backtest",
+        "label": "交易纪律/回测",
+        "packet_key": "discipline_packet",
+        "writes_packet": "command_center_discipline_packet",
+        "source_fallback": "交易纪律实验室回测缓存",
+    },
+    {
+        "key": "quant_projection",
+        "label": "量化推演",
+        "packet_key": "quant_packet",
+        "writes_packet": "command_center_quant_packet",
+        "source_fallback": "量化推演缓存",
+    },
+)
+
+LEGACY_DECISION_CHAIN_SOURCES = (*A_SHARE_FACT_RECOVERY_SOURCES, *LEGACY_AUXILIARY_DECISION_SOURCES)
+
 LEGACY_A_SHARE_GAP_KEYS = {"limit_emotion", "chip_radar"}
 
 LEGACY_A_SHARE_GAP_DIAGNOSTICS = {
@@ -1146,7 +1179,7 @@ def build_legacy_decision_chain_summary(snapshot: Any = None) -> dict:
     payload = _as_mapping(snapshot)
     items = [
         _legacy_decision_chain_item(config, payload.get(config["packet_key"]) or payload.get(config["writes_packet"]))
-        for config in A_SHARE_FACT_RECOVERY_SOURCES
+        for config in LEGACY_DECISION_CHAIN_SOURCES
     ]
     ready = [item for item in items if item["decision_chain_state"] == "ready"]
     cache_only = [item for item in items if item["decision_chain_state"] == "cache_only"]
