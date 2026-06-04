@@ -110,6 +110,27 @@ def _api_recovery_config(api: str, provider: str, label: str) -> tuple[str, str,
     return (f"手动检查{label}", "command_center_data_capability_packet", "高级工具箱 / 数据源体检")
 
 
+def _legacy_tab_from_recovery_target(writes_packet: Any = "", toolbox_entry: Any = "") -> str:
+    packet = to_text(writes_packet)
+    if packet in {"command_center_moneyflow_packet"}:
+        return "今日关注池"
+    if packet in {"command_center_margin_packet", "command_center_etf_packet"}:
+        return "融资 ETF"
+    if packet in {"command_center_dragon_tiger_packet", "command_center_radar_packet"}:
+        return "下一票雷达"
+    if packet in {"command_center_limit_emotion_packet", "command_center_data_capability_packet"}:
+        return "数据源体检"
+    if packet in {"command_center_chip_packet", "command_center_quant_packet"}:
+        return "量化推演"
+    if packet in {"command_center_hard_risk_packet"}:
+        return "天眼风控"
+    entry = to_text(toolbox_entry)
+    for tab in ("今日关注池", "融资 ETF", "下一票雷达", "数据源体检", "量化推演", "天眼风控", "云端外脑"):
+        if tab in entry:
+            return tab
+    return "数据源体检"
+
+
 def _row_category(state: str) -> str:
     if state in AVAILABLE_STATES:
         return "available"
@@ -383,27 +404,59 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
         headline = "关键数据能力当前可读"
         explanation = "接口健康可作为辅助证据；仍需价格纪律、仓位预算和失效条件共同确认。"
     visible_rows = []
+    recovery_actions = []
     seen = set()
     for row in blocked + manual + cache + empty + stale + available:
         key = _row_key(row)
         if key in seen:
             continue
         seen.add(key)
+        legacy_tab = _legacy_tab_from_recovery_target(row.get("writes_packet"), row.get("toolbox_entry"))
+        recovery_action = {
+            "key": f"data_health_visibility:{to_text(row.get('api') or row.get('label'), 'data_capability')}",
+            "label": to_text(row.get("label"), "数据接口"),
+            "provider": to_text(row.get("provider"), "数据源"),
+            "api": to_text(row.get("api")),
+            "state": to_text(row.get("state"), "unknown"),
+            "status_label": to_text(row.get("status_label"), STATE_LABELS.get(to_text(row.get("state")), "待验证")),
+            "tone": to_text(row.get("tone"), "missing"),
+            "action_label": to_text(row.get("action_label"), f"手动检查{to_text(row.get('label'), '数据接口')}"),
+            "toolbox_entry": to_text(row.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+            "workspace_target": "高级工具箱（旧版保留）",
+            "workspace_state_key": "workspace_mode_v2",
+            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+            "legacy_tab": legacy_tab,
+            "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {to_text(row.get('writes_packet'), 'command_center_data_capability_packet')}。",
+            "writes_packet": to_text(row.get("writes_packet"), "command_center_data_capability_packet"),
+            "refresh_policy": to_text(row.get("refresh_policy"), "button_gated"),
+            "deepseek_called": False,
+        }
         visible_rows.append(
             {
-                "label": to_text(row.get("label"), "数据接口"),
-                "provider": to_text(row.get("provider"), "数据源"),
-                "api": to_text(row.get("api")),
-                "state": to_text(row.get("state"), "unknown"),
-                "status_label": to_text(row.get("status_label"), STATE_LABELS.get(to_text(row.get("state")), "待验证")),
-                "tone": to_text(row.get("tone"), "missing"),
+                **{
+                    key: recovery_action[key]
+                    for key in (
+                        "label",
+                        "provider",
+                        "api",
+                        "state",
+                        "status_label",
+                        "tone",
+                        "action_label",
+                        "toolbox_entry",
+                        "legacy_tab",
+                        "writes_packet",
+                        "refresh_policy",
+                    )
+                },
                 "meaning": to_text(row.get("meaning"), "仍需核对接口状态。"),
                 "next_action": to_text(row.get("next_action"), "按数据恢复中心手动处理。"),
-                "writes_packet": to_text(row.get("writes_packet"), "command_center_data_capability_packet"),
                 "last_success_text": to_text(row.get("last_success_text"), "暂无"),
-                "refresh_policy": to_text(row.get("refresh_policy"), "button_gated"),
+                "navigation_label": recovery_action["navigation_label"],
             }
         )
+        if recovery_action["refresh_policy"] == "button_gated":
+            recovery_actions.append(recovery_action)
         if len(visible_rows) >= max(1, int(limit or 4)):
             break
     return {
@@ -421,6 +474,7 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
         "cache_labels": _limited_labels(cache, fallback="无"),
         "empty_labels": _limited_labels(empty, fallback="无"),
         "manual_labels": _limited_labels(manual, fallback="无"),
+        "recovery_actions": recovery_actions,
         "external_call_policy": "not_triggered",
         "deepseek_called": False,
     }

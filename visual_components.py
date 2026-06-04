@@ -5571,6 +5571,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     </section>
     """
     st.html(html)
+    valid_data_health_visibility_actions = [
+        item
+        for item in (data_health_visibility.get("recovery_actions") or [])[:4]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_data_health_visibility_actions:
+        st.caption("为什么搜不到｜打开恢复入口：这里只切换到高级工具箱；对应检测仍需在旧模块里手动点击。")
+        visibility_cols = st.columns(min(4, len(valid_data_health_visibility_actions)))
+        for index, item in enumerate(valid_data_health_visibility_actions):
+            with visibility_cols[index % len(visibility_cols)]:
+                st.button(
+                    f"处理{_home_text(item.get('label'), '数据接口')}",
+                    key=f"btn_open_data_health_visibility_{_home_text(item.get('key'), index)}",
+                    help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
     valid_recovery_navigation_actions = [
         item
         for item in data_recovery_center_actions[:6]

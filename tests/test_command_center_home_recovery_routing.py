@@ -130,6 +130,9 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("权限不足：", source)
         self.assertIn("本会话跳过：", source)
         self.assertIn("近期无数据：", source)
+        self.assertIn("valid_data_health_visibility_actions", source)
+        self.assertIn("btn_open_data_health_visibility_", source)
+        self.assertIn("为什么搜不到｜打开恢复入口", source)
 
     def test_home_snapshot_renders_recovered_evidence_modules(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
