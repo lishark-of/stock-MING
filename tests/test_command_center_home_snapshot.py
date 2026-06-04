@@ -1941,6 +1941,73 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["deepseek_called"] is False for item in bridge["items"]))
         self.assertFalse(bridge["deepseek_called"])
 
+    def test_old_workspace_packet_bridge_feeds_risk_alerts(self):
+        alerts = snapshot.attach_old_workspace_packet_bridge_risk_alerts(
+            {
+                "must_not_do": ["不追高"],
+                "reduce_conditions": [],
+                "data_gaps": ["暂无显式数据缺口"],
+            },
+            {
+                "summary": "已回流 1｜使用缓存 1｜仍阻断 1｜待回流 1",
+                "items": [
+                    {
+                        "label": "融资 ETF",
+                        "bridge_status": "blocked",
+                        "writes_packet": "command_center_margin_packet",
+                        "decision_guardrail": "融资 ETF 未回流前不能加融资。",
+                    },
+                    {
+                        "label": "量化推演",
+                        "bridge_status": "waiting",
+                        "writes_packet": "command_center_quant_packet",
+                    },
+                    {
+                        "label": "交易纪律/回测",
+                        "bridge_status": "cached",
+                        "writes_packet": "command_center_discipline_packet",
+                    },
+                ],
+            },
+        )
+        dumped = json.dumps(alerts, ensure_ascii=False)
+
+        self.assertIn("旧工具能力未回流前", alerts["must_not_do"][0])
+        self.assertIn("融资 ETF", alerts["must_not_do"][0])
+        self.assertTrue(any("量化推演" in item for item in alerts["reduce_conditions"]))
+        self.assertTrue(any("交易纪律/回测" in item for item in alerts["reduce_conditions"]))
+        self.assertTrue(any("旧工具 packet 仍阻断" in item for item in alerts["data_gaps"]))
+        self.assertTrue(alerts["uses_cache"])
+        self.assertIn("command_center_margin_packet", dumped)
+        self.assertFalse(alerts["deepseek_called"])
+
+    def test_home_snapshot_risk_alerts_include_old_workspace_packet_bridge_gaps(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_margin_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+        alerts = payload["risk_alerts"]
+        dumped = json.dumps(alerts, ensure_ascii=False)
+
+        self.assertIn("old_workspace_packet_bridge_summary", alerts)
+        self.assertTrue(alerts["old_workspace_packet_bridge_items"])
+        self.assertIn("旧工具 packet 待回流", dumped)
+        self.assertTrue(any("旧工具 packet" in item for item in alerts["data_gaps"]))
+        self.assertFalse(alerts["deepseek_called"])
+
     def test_tool_recovery_navigation_state_is_safe_for_empty_action(self):
         self.assertEqual(snapshot.build_tool_recovery_navigation_state({}), {})
         self.assertEqual(snapshot.build_tool_recovery_navigation_state(object()), {})

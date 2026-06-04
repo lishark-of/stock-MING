@@ -544,12 +544,15 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         status_strip=snapshot.get("recovery_result_status_strip") or {},
     )
     snapshot["recovery_result_timeline"] = snapshot["command_center_recovery_result_timeline"]
-    snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
-        attach_hard_risk_risk_alerts(
-            snapshot.get("risk_alerts") or {},
-            snapshot.get("hard_risk_packet") or {},
+    snapshot["risk_alerts"] = attach_old_workspace_packet_bridge_risk_alerts(
+        attach_recovery_priority_risk_alerts(
+            attach_hard_risk_risk_alerts(
+                snapshot.get("risk_alerts") or {},
+                snapshot.get("hard_risk_packet") or {},
+            ),
+            snapshot.get("data_recovery_center") or {},
         ),
-        snapshot.get("data_recovery_center") or {},
+        snapshot.get("old_workspace_packet_bridge") or {},
     )
     existing_market_profile = _as_mapping(snapshot.get("market_profile_evidence"))
     normalized_market_profile = market_profile_summary_service.build_market_profile_evidence_strip(
@@ -3833,6 +3836,72 @@ def attach_recovery_priority_risk_alerts(risk_alerts: Any = None, data_recovery_
     return alerts
 
 
+def attach_old_workspace_packet_bridge_risk_alerts(
+    risk_alerts: Any = None,
+    old_workspace_packet_bridge: Any = None,
+) -> dict:
+    alerts = _as_mapping(risk_alerts)
+    bridge = _as_mapping(old_workspace_packet_bridge)
+    items = [_as_mapping(item) for item in _as_list(bridge.get("items")) if _as_mapping(item)]
+    if not items:
+        alerts.setdefault("old_workspace_packet_bridge_summary", "旧工具 packet 桥待生成")
+        alerts.setdefault("deepseek_called", False)
+        return alerts
+
+    blocked = [item for item in items if _to_text(item.get("bridge_status")) == "blocked"]
+    waiting = [item for item in items if _to_text(item.get("bridge_status")) == "waiting"]
+    cached = [item for item in items if _to_text(item.get("bridge_status")) == "cached"]
+    must_not_do = [_to_text(item) for item in _as_list(alerts.get("must_not_do"))]
+    reduce_conditions = [_to_text(item) for item in _as_list(alerts.get("reduce_conditions"))]
+    data_gaps = [
+        _to_text(item)
+        for item in _as_list(alerts.get("data_gaps"))
+        if _to_text(item) not in {"暂无", "暂无显式数据缺口"}
+    ]
+    bridge_data_gaps = []
+
+    if blocked:
+        labels = "、".join(_to_text(item.get("label"), "旧工具能力") for item in blocked[:3])
+        must_not_do.insert(0, f"旧工具能力未回流前，不加仓、不追高、不加融资：{labels}。")
+        bridge_data_gaps.append(f"旧工具 packet 仍阻断：{labels}")
+    if waiting:
+        labels = "、".join(_to_text(item.get("label"), "旧工具能力") for item in waiting[:3])
+        reduce_conditions.append(f"旧工具 packet 待回流：{labels}；相关结论只能待验证。")
+        bridge_data_gaps.append(f"旧工具 packet 待回流：{labels}")
+    if cached:
+        labels = "、".join(_to_text(item.get("label"), "旧工具能力") for item in cached[:3])
+        reduce_conditions.append(f"旧工具 packet 使用缓存：{labels}；执行前复核日期、来源和覆盖口径。")
+        bridge_data_gaps.append(f"旧工具 packet 使用缓存：{labels}")
+        alerts["uses_cache"] = True
+
+    alerts["must_not_do"] = _dedupe_text_items(must_not_do, limit=6)
+    alerts["reduce_conditions"] = _dedupe_text_items(reduce_conditions, limit=MAX_CANDIDATES)
+    alerts["data_gaps"] = _dedupe_text_items(
+        [*bridge_data_gaps, *data_gaps],
+        limit=MAX_ERRORS + min(len(bridge_data_gaps), 3),
+    )
+    alerts["old_workspace_packet_bridge_summary"] = _to_text(
+        bridge.get("summary"),
+        f"已回流 {len([item for item in items if _to_text(item.get('bridge_status')) == 'recovered'])}｜"
+        f"使用缓存 {len(cached)}｜仍阻断 {len(blocked)}｜待回流 {len(waiting)}",
+    )
+    alerts["old_workspace_packet_bridge_items"] = [
+        {
+            "label": _to_text(item.get("label"), "旧工具能力"),
+            "bridge_status": _to_text(item.get("bridge_status"), "waiting"),
+            "writes_packet": _to_text(item.get("writes_packet"), "command_center_packet"),
+            "decision_guardrail": _to_text(
+                item.get("decision_guardrail"),
+                "未回流前只能标记为待验证，不能作为交易依据。",
+            ),
+            "deepseek_called": False,
+        }
+        for item in [*blocked, *waiting, *cached][:4]
+    ]
+    alerts["deepseek_called"] = False
+    return alerts
+
+
 def _hard_risk_item_text(item: Any) -> str:
     payload = _as_mapping(item)
     if not payload:
@@ -4185,9 +4254,12 @@ def build_home_action_snapshot(
             status_strip=empty.get("recovery_result_status_strip") or {},
         )
         empty["recovery_result_timeline"] = empty["command_center_recovery_result_timeline"]
-        empty["risk_alerts"] = attach_recovery_priority_risk_alerts(
-            empty.get("risk_alerts") or {},
-            empty.get("data_recovery_center") or {},
+        empty["risk_alerts"] = attach_old_workspace_packet_bridge_risk_alerts(
+            attach_recovery_priority_risk_alerts(
+                empty.get("risk_alerts") or {},
+                empty.get("data_recovery_center") or {},
+            ),
+            empty.get("old_workspace_packet_bridge") or {},
         )
         empty["latest_recovery_result_notice"] = snapshot["latest_recovery_result_notice"]
         empty["market_packet"] = snapshot["market_packet"]
@@ -4250,9 +4322,12 @@ def build_home_action_snapshot(
         status_strip=snapshot.get("recovery_result_status_strip") or {},
     )
     snapshot["recovery_result_timeline"] = snapshot["command_center_recovery_result_timeline"]
-    snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
-        snapshot.get("risk_alerts") or {},
-        snapshot.get("data_recovery_center") or {},
+    snapshot["risk_alerts"] = attach_old_workspace_packet_bridge_risk_alerts(
+        attach_recovery_priority_risk_alerts(
+            snapshot.get("risk_alerts") or {},
+            snapshot.get("data_recovery_center") or {},
+        ),
+        snapshot.get("old_workspace_packet_bridge") or {},
     )
     snapshot = attach_decision_loop_status(
         snapshot,
