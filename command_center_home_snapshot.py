@@ -529,6 +529,7 @@ def attach_decision_loop_status(
         strategy_packet=strategy_packet or payload.get("strategy_packet") or {},
         decision_packet=decision_packet or payload.get("decision_packet") or {},
         deepseek_summary=deepseek_summary or payload.get("deepseek_summary") or {},
+        data_recovery_center=payload.get("data_recovery_center") or {},
     )
     return payload
 

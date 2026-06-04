@@ -42,6 +42,43 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(loop_items["decision"]["status"], "ready")
         self.assertEqual(loop_items["deepseek"]["status"], "manual")
 
+    def test_attach_decision_loop_status_keeps_recovery_navigation_action(self):
+        payload = snapshot.attach_decision_loop_status(
+            {
+                "data_capability_console": {"blocked_count": 1, "headline": "数据能力有 1 个阻断项"},
+                "data_recovery_center": {
+                    "decision_priority_queue": [
+                        {
+                            "key": "p0:command_center_moneyflow_packet",
+                            "source_type": "data_source",
+                            "priority_label": "P0 阻断交易判断",
+                            "label": "个股资金流",
+                            "status": "permission_denied",
+                            "status_label": "权限不足",
+                            "action_label": "手动刷新个股资金流",
+                            "toolbox_entry": "高级工具箱 / 今日关注池",
+                            "workspace_target": "高级工具箱（旧版保留）",
+                            "workspace_state_key": "workspace_mode_v2",
+                            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                            "legacy_tab": "今日关注池",
+                            "writes_packet": "command_center_moneyflow_packet",
+                            "refresh_policy": "button_gated",
+                        }
+                    ]
+                },
+            }
+        )
+        loop_status = payload["decision_loop_status"]
+        action = loop_status["recovery_actions"][0]
+        navigation_state = snapshot.build_tool_recovery_navigation_state(action)
+
+        self.assertEqual(loop_status["status"], "blocked")
+        self.assertEqual(action["loop_key"], "data_capability")
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "今日关注池")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_moneyflow_packet")
+        self.assertFalse(action["deepseek_called"])
+
     def test_snapshot_filters_secrets_and_prompts(self):
         payload = snapshot.build_home_action_snapshot(
             {

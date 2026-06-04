@@ -4968,6 +4968,23 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     decision_loop_external_policy = _home_text(decision_loop_status.get("external_call_policy"), "not_triggered")
     if decision_loop_external_policy == "not_triggered":
         decision_loop_external_policy = "未触发"
+    loop_recovery_actions = [
+        item for item in (decision_loop_status.get("recovery_actions") or [])
+        if isinstance(item, dict)
+    ]
+    loop_recovery_html = ""
+    for item in loop_recovery_actions[:3]:
+        loop_recovery_html += (
+            "<div class='cc-home-item-meta'>"
+            f"恢复：{escape(_home_text(item.get('loop_label'), '闭环'))} / {escape(_home_text(item.get('label'), '恢复项'))}"
+            f" ｜ 入口：{escape(_home_text(item.get('toolbox_entry'), '高级工具箱'))}"
+            f" ｜ 回流：{escape(_home_text(item.get('writes_packet'), 'command_center_packet'))}"
+            "</div>"
+        )
+    if not loop_recovery_html:
+        loop_recovery_html = (
+            "<div class='cc-home-item-meta'>恢复：暂无闭环恢复入口；继续查看快照或使用刷新今日基础数据。</div>"
+        )
     decision_loop_html = f"""
       <div class="cc-home-profile-strip">
         <div>
@@ -4983,6 +5000,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         <div>
           <div class="cc-home-profile-pills">{loop_items_html}</div>
+          <div class="cc-home-profile-meta">{escape(_home_text(decision_loop_status.get("recovery_summary"), "暂无闭环恢复入口。"))}</div>
+          {loop_recovery_html}
           <div class="cc-home-profile-meta">
             {escape(_home_text(decision_loop_status.get("safe_mode_text"), "页面打开只读取本地 packet；重型任务仍保持按钮触发。"))}
             ｜外部接口：{escape(decision_loop_external_policy)}
@@ -6058,6 +6077,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         for item in decision_priority_items[:5]
         if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
     ]
+    valid_loop_recovery_actions = [
+        item
+        for item in loop_recovery_actions[:3]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_loop_recovery_actions:
+        st.caption("决策闭环｜打开恢复入口：这里只切换到高级工具箱；对应检测仍需手动点击。")
+        loop_cols = st.columns(min(3, len(valid_loop_recovery_actions)))
+        for index, item in enumerate(valid_loop_recovery_actions):
+            with loop_cols[index % len(loop_cols)]:
+                st.button(
+                    f"恢复{_home_text(item.get('loop_label'), '闭环')}｜{_home_text(item.get('label'), '恢复项')}",
+                    key=f"btn_open_decision_loop_{_home_text(item.get('loop_key'), 'loop')}_{_home_text(item.get('key'), index)}",
+                    help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
     if valid_decision_priority_actions:
         st.caption("决策优先队列｜打开恢复入口：这里只切换到高级工具箱；对应检测仍需在旧模块里手动点击。")
         priority_cols = st.columns(min(4, len(valid_decision_priority_actions)))

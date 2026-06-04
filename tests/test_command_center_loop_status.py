@@ -85,6 +85,45 @@ class CommandCenterLoopStatusTests(unittest.TestCase):
         self.assertEqual(by_key["projection"]["status"], "blocked")
         self.assertEqual(view_model["status"], "blocked")
 
+    def test_recovery_center_actions_attach_to_loop_status(self):
+        view_model = loop_status.build_command_center_loop_status_view_model(
+            data_capability_console={
+                "headline": "数据能力有 1 个阻断项，不能直接放大仓位。",
+                "blocked_count": 1,
+            },
+            data_recovery_center={
+                "decision_priority_queue": [
+                    {
+                        "key": "p0:command_center_dragon_tiger_packet",
+                        "source_type": "next_ticket_evidence",
+                        "priority_label": "P0 阻断交易判断",
+                        "label": "龙虎榜",
+                        "status": "permission_denied",
+                        "status_label": "权限不足",
+                        "action_label": "手动刷新龙虎榜",
+                        "toolbox_entry": "高级工具箱 / 下一票雷达",
+                        "workspace_target": "高级工具箱（旧版保留）",
+                        "workspace_state_key": "workspace_mode_v2",
+                        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                        "legacy_tab": "下一票雷达",
+                        "writes_packet": "command_center_dragon_tiger_packet",
+                        "refresh_policy": "button_gated",
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(view_model["recovery_action_count"], 1)
+        action = view_model["recovery_actions"][0]
+        self.assertEqual(action["loop_key"], "projection")
+        self.assertEqual(action["legacy_tab"], "下一票雷达")
+        self.assertEqual(action["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertEqual(action["external_call_policy"], "navigation_only")
+        self.assertFalse(action["deepseek_called"])
+        by_key = {item["key"]: item for item in view_model["items"]}
+        self.assertEqual(by_key["projection"]["recovery_action_count"], 1)
+        self.assertIn("龙虎榜", view_model["recovery_summary"])
+
     def test_analysis_methods_unknown_market_stays_waiting(self):
         view_model = loop_status.build_command_center_loop_status_view_model(
             analysis_method_packet={"market": "未知", "methods": [{"name": "趋势跟踪", "status": "待验证"}]}

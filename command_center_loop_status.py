@@ -202,6 +202,87 @@ def _deepseek_item(*packets: Any) -> dict:
     return item
 
 
+def _recovery_loop_key(action: Mapping[str, Any]) -> str:
+    source_type = _to_text(action.get("source_type"))
+    writes_packet = _to_text(action.get("writes_packet"))
+    if source_type in {"data_source", "data_health_timeline", "a_share"}:
+        return "data_capability"
+    if "strategy" in writes_packet or "discipline" in writes_packet or "quant" in writes_packet:
+        return "strategy_execution"
+    if "decision" in writes_packet:
+        return "decision"
+    if source_type in {"next_ticket_evidence", "a_share_fact", "legacy_migration", "legacy_tool"}:
+        return "projection"
+    return "data_capability"
+
+
+def _recovery_loop_label(loop_key: str) -> str:
+    return {
+        "data_capability": "数据能力",
+        "analysis_methods": "分析方法",
+        "projection": "趋势推演",
+        "strategy_execution": "策略执行",
+        "decision": "今日总决策",
+    }.get(loop_key, "数据能力")
+
+
+def _normalize_recovery_action(action: Any) -> dict:
+    item = _as_mapping(action)
+    if not item:
+        return {}
+    loop_key = _recovery_loop_key(item)
+    label = _to_text(item.get("label"), "恢复项")
+    writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
+    return {
+        "key": _to_text(item.get("key"), writes_packet or label),
+        "loop_key": loop_key,
+        "loop_label": _recovery_loop_label(loop_key),
+        "label": label,
+        "priority_label": _to_text(item.get("priority_label"), "P1 执行前验证"),
+        "tone": _to_text(item.get("tone") or item.get("recovery_result_tone"), "missing"),
+        "status": _to_text(item.get("status"), "waiting"),
+        "status_label": _to_text(item.get("status_label") or item.get("recovery_result_status_label"), "待验证"),
+        "action_label": _to_text(item.get("action_label"), f"手动恢复{label}"),
+        "navigation_label": _to_text(item.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
+        "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱"),
+        "workspace_target": _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）"),
+        "workspace_state_key": _to_text(item.get("workspace_state_key"), "workspace_mode_v2"),
+        "legacy_tab_state_key": _to_text(item.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
+        "legacy_tab": _to_text(item.get("legacy_tab")),
+        "writes_packet": writes_packet,
+        "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+        "decision_impact": _to_text(
+            item.get("decision_impact") or item.get("decision_guardrail") or item.get("diagnostic_answer"),
+            "未恢复前不能作为加仓、追高或加融资依据。",
+        ),
+        "recovery_button_context": _to_text(
+            item.get("recovery_button_context") or item.get("button_context"),
+            f"按钮只打开 {label} 的恢复入口；不会自动调用 DeepSeek、回测或全市场扫描。",
+        ),
+        "external_call_policy": "navigation_only",
+        "deepseek_called": False,
+    }
+
+
+def _recovery_actions_from_center(data_recovery_center: Any = None, limit: int = 3) -> list[dict]:
+    center = _as_mapping(data_recovery_center)
+    candidates = _as_list(center.get("decision_priority_queue")) or _as_list(center.get("actions"))
+    actions = []
+    seen = set()
+    for raw in candidates:
+        action = _normalize_recovery_action(raw)
+        if not action:
+            continue
+        dedupe_key = (action["loop_key"], action["writes_packet"], action["label"])
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        actions.append(action)
+        if len(actions) >= max(1, int(limit or 3)):
+            break
+    return actions
+
+
 def build_command_center_loop_status_view_model(
     data_capability_console: Any = None,
     analysis_method_packet: Any = None,
@@ -210,6 +291,7 @@ def build_command_center_loop_status_view_model(
     strategy_packet: Any = None,
     decision_packet: Any = None,
     deepseek_summary: Any = None,
+    data_recovery_center: Any = None,
 ) -> dict:
     items = [
         _data_capability_item(data_capability_console),
@@ -219,6 +301,16 @@ def build_command_center_loop_status_view_model(
         _decision_item(decision_packet),
         _deepseek_item(deepseek_summary, strategy_packet, decision_packet, projection_packet, analysis_method_packet),
     ]
+    recovery_actions = _recovery_actions_from_center(data_recovery_center)
+    if recovery_actions:
+        actions_by_loop: dict[str, list[dict]] = {}
+        for action in recovery_actions:
+            actions_by_loop.setdefault(action["loop_key"], []).append(action)
+        for item in items:
+            item_actions = actions_by_loop.get(item["key"], [])
+            if item_actions:
+                item["recovery_actions"] = item_actions
+                item["recovery_action_count"] = len(item_actions)
     blocked_count = len([item for item in items if item["status"] == "blocked"])
     waiting_count = len([item for item in items if item["status"] == "waiting"])
     stale_count = len([item for item in items if item["status"] == "stale"])
@@ -248,6 +340,13 @@ def build_command_center_loop_status_view_model(
         "stale_count": stale_count,
         "ready_count": ready_count,
         "manual_count": manual_count,
+        "recovery_actions": recovery_actions,
+        "recovery_action_count": len(recovery_actions),
+        "recovery_summary": (
+            f"优先恢复 {recovery_actions[0]['loop_label']}：{recovery_actions[0]['label']}，回流 {recovery_actions[0]['writes_packet']}。"
+            if recovery_actions
+            else "暂无闭环恢复入口；继续查看快照或使用刷新今日基础数据。"
+        ),
         "deepseek_called": any(bool(item.get("deepseek_called")) for item in items),
         "safe_mode_text": "页面打开只读取本地 packet / 快照；DeepSeek、回测、全市场扫描和重型数据接口仍保持按钮触发。",
         "external_call_policy": "not_triggered",
