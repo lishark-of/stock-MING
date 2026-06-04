@@ -56,6 +56,16 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
             self.assertIn(spec["external_call_policy"], {"button_gated", "not_triggered"})
             self.assertEqual(spec["deepseek_policy"], "never")
 
+    def test_decision_priority_queue_is_recovery_derived_packet(self):
+        spec = registry.get_command_center_packet_spec("command_center_decision_priority_queue")
+
+        self.assertEqual(spec["area"], "recovery")
+        self.assertEqual(spec["refresh_policy"], "derived_display")
+        self.assertEqual(spec["external_call_policy"], "not_triggered")
+        self.assertEqual(spec["deepseek_policy"], "never")
+        self.assertFalse(spec["writes_session_state"])
+        self.assertIn("P0/P1/P2", spec["description"])
+
     def test_local_api_paths_are_stable_and_unique(self):
         api_map = registry.build_local_api_packet_map()
         paths = [item["path"] for item in api_map.values()]

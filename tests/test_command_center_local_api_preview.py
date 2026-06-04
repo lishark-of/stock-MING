@@ -33,6 +33,21 @@ def sample_state():
                 "status": "ready",
                 "writes_packet": "command_center_moneyflow_packet",
             },
+            "data_recovery_center": {
+                "decision_priority_summary": "先处理 P0 阻断交易判断：融资融券。",
+                "safe_mode_text": "这里只整理恢复队列；所有数据请求仍由按钮触发。",
+                "decision_priority_queue": [
+                    {
+                        "lane_key": "p0",
+                        "priority_label": "P0 阻断交易判断",
+                        "decision_mode": "阻断加仓",
+                        "label": "融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "refresh_policy": "button_gated",
+                        "deepseek_called": False,
+                    }
+                ],
+            },
         },
         "command_center_live_packet": {
             "status": "ready",
@@ -113,6 +128,25 @@ class CommandCenterLocalApiPreviewTests(unittest.TestCase):
         self.assertEqual(response["packet_key"], "latest_recovery_result_notice")
         self.assertTrue(response["meta"]["available"])
         self.assertEqual(response["payload"]["writes_packet"], "command_center_moneyflow_packet")
+
+    def test_decision_priority_queue_can_be_read_from_home_snapshot(self):
+        response = preview.get_preview_response_for_path(
+            sample_state(),
+            "command_center_decision_priority_queue",
+        )
+        payload = response["payload"]
+
+        self.assertEqual(response["packet_key"], "command_center_decision_priority_queue")
+        self.assertEqual(response["status"], "ready")
+        self.assertTrue(response["meta"]["available"])
+        self.assertEqual(response["meta"]["area"], "recovery")
+        self.assertEqual(response["meta"]["refresh_policy"], "derived_display")
+        self.assertEqual(payload["items"][0]["lane_key"], "p0")
+        self.assertEqual(payload["items"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertIn("P0 阻断交易判断", payload["summary"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertEqual(payload["external_call_policy"], "not_triggered")
+        self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])
 
     def test_preview_index_maps_paths_to_packet_status(self):
         index = preview.build_local_api_preview_index(

@@ -34,6 +34,7 @@ class CommandCenterLocalApiContractTests(unittest.TestCase):
         self.assertEqual(manifest["external_call_policy"], "not_triggered")
         self.assertGreater(manifest["endpoint_count"], 10)
         self.assertIn("/api/command-center/packets/command_center_live_packet", dumped)
+        self.assertIn("/api/command-center/packets/command_center_decision_priority_queue", dumped)
         for endpoint in manifest["endpoints"]:
             self.assertEqual(endpoint["method"], "GET")
             self.assertTrue(endpoint["read_only"])
@@ -118,6 +119,16 @@ class CommandCenterLocalApiContractTests(unittest.TestCase):
         self.assertEqual(by_key, by_path)
         self.assertEqual(by_key["packet_key"], "command_center_decision_packet")
         self.assertEqual(contract.get_local_api_endpoint_contract("unknown"), {})
+
+    def test_decision_priority_queue_endpoint_is_read_only_derived_recovery(self):
+        endpoint = contract.get_local_api_endpoint_contract("command_center_decision_priority_queue")
+
+        self.assertEqual(endpoint["path"], "/api/command-center/packets/command_center_decision_priority_queue")
+        self.assertEqual(endpoint["area"], "recovery")
+        self.assertEqual(endpoint["refresh_policy"], "derived_display")
+        self.assertEqual(endpoint["external_call_policy"], "not_triggered")
+        self.assertEqual(endpoint["deepseek_policy"], "never")
+        self.assertTrue(endpoint["read_only"])
 
     def test_validate_packet_response_envelope_reports_contract_errors(self):
         validation = contract.validate_packet_response_envelope(

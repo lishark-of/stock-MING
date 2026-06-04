@@ -38,9 +38,23 @@ def _payload_from_state(state: Any, packet_key: str) -> Any:
     state_map = _as_mapping(state)
     if packet_key in state_map:
         return deepcopy(state_map.get(packet_key))
+    snapshot = _as_mapping(state_map.get("command_center_home_snapshot"))
     if packet_key == "latest_recovery_result_notice":
-        snapshot = _as_mapping(state_map.get("command_center_home_snapshot"))
         return deepcopy(snapshot.get("latest_recovery_result_notice") or {})
+    if packet_key == "command_center_decision_priority_queue":
+        recovery_center = _as_mapping(snapshot.get("data_recovery_center"))
+        queue = recovery_center.get("decision_priority_queue") or []
+        if not _has_payload(queue):
+            return {}
+        return {
+            "status": "ready",
+            "title": "决策优先恢复队列",
+            "summary": recovery_center.get("decision_priority_summary") or "",
+            "items": deepcopy(queue),
+            "safe_mode_text": recovery_center.get("safe_mode_text") or "只读取本地恢复队列；不会自动请求外部接口。",
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
     return {}
 
 
