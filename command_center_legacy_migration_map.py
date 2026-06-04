@@ -28,6 +28,9 @@ READY_DATA_STATUSES = {"ready", "cached"}
 BLOCKED_PACKET_STATUSES = {"failed", "error", "failure"}
 BLOCKED_CAPABILITY_STATES = {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}
 READY_CAPABILITY_STATES = {"available", "ready", "ok", "success"}
+MANUAL_CAPABILITY_STATES = {"requires_manual_refresh"}
+STALE_CAPABILITY_STATES = {"empty_recent", "stale_cache", "fallback_used", "unknown", "missing"}
+CORE_PROVIDERS = ("Tushare", "AkShare", "yfinance", "Supabase")
 
 HOME_SURFACES = {
     "today_pool": "Home Action Snapshot / 市场口径",
@@ -325,6 +328,128 @@ def _completion_progress(checks: list[dict]) -> dict:
     }
 
 
+def _provider_tone(state: str) -> str:
+    if state in BLOCKED_CAPABILITY_STATES:
+        return "failed"
+    if state in MANUAL_CAPABILITY_STATES or state in STALE_CAPABILITY_STATES:
+        return "stale"
+    if state in READY_CAPABILITY_STATES:
+        return "ready"
+    return "missing"
+
+
+def _provider_status_label(state: str) -> str:
+    if state == "available":
+        return "可用"
+    if state == "permission_denied":
+        return "权限不足"
+    if state == "disabled_this_session":
+        return "本会话跳过"
+    if state == "not_configured":
+        return "未配置"
+    if state == "network_failed":
+        return "网络失败"
+    if state == "failed":
+        return "调用失败"
+    if state == "requires_manual_refresh":
+        return "需要手动刷新"
+    if state == "empty_recent":
+        return "近期无数据"
+    if state in {"stale_cache", "fallback_used"}:
+        return "使用缓存/替代"
+    return "待检测"
+
+
+def _infer_providers_from_dependencies(dependencies: list[str]) -> list[dict]:
+    rows = []
+    seen = set()
+    dependency_text = " / ".join(dependencies)
+    dependency_lower = dependency_text.lower()
+    for provider in CORE_PROVIDERS:
+        if provider.lower() not in dependency_lower:
+            continue
+        seen.add(provider)
+        rows.append(
+            {
+                "provider": provider,
+                "status": "missing",
+                "status_label": "待检测",
+                "tone": "missing",
+                "interfaces": [
+                    dependency
+                    for dependency in dependencies
+                    if provider.lower() in dependency.lower()
+                ][:4],
+                "summary": f"{provider} 依赖已声明，但尚未匹配到本地能力检测结果。",
+                "deepseek_called": False,
+            }
+        )
+    if not rows and dependencies:
+        rows.append(
+            {
+                "provider": "本地缓存/规则",
+                "status": "missing",
+                "status_label": "待检测",
+                "tone": "missing",
+                "interfaces": dependencies[:4],
+                "summary": "依赖本地缓存或规则结果；尚未匹配到 provider 能力检测结果。",
+                "deepseek_called": False,
+            }
+        )
+    return rows
+
+
+def _provider_dependencies_for_item(payload: Mapping[str, Any]) -> list[dict]:
+    capability_status = as_mapping(payload.get("capability_status"))
+    matched = [as_mapping(item) for item in as_list(capability_status.get("matched_items")) if as_mapping(item)]
+    dependencies = _text_items(payload.get("data_dependencies"), limit=8)
+    if not matched:
+        return _infer_providers_from_dependencies(dependencies)
+    grouped: dict[str, list[dict]] = {}
+    for row in matched:
+        provider = to_text(row.get("provider"), "数据源")
+        grouped.setdefault(provider, []).append(row)
+    result = []
+    for provider, rows in grouped.items():
+        states = [to_text(row.get("state") or row.get("capability_state") or row.get("status"), "unknown").lower() for row in rows]
+        if any(state in BLOCKED_CAPABILITY_STATES for state in states):
+            status = next(state for state in states if state in BLOCKED_CAPABILITY_STATES)
+        elif any(state in MANUAL_CAPABILITY_STATES for state in states):
+            status = "requires_manual_refresh"
+        elif any(state in STALE_CAPABILITY_STATES for state in states):
+            status = next(state for state in states if state in STALE_CAPABILITY_STATES)
+        elif any(state in READY_CAPABILITY_STATES for state in states):
+            status = "available"
+        else:
+            status = "unknown"
+        interfaces = [
+            to_text(row.get("label") or row.get("api"), "数据能力")
+            + (f"({to_text(row.get('api'))})" if to_text(row.get("api")) and to_text(row.get("api")) not in to_text(row.get("label")) else "")
+            for row in rows[:4]
+        ]
+        result.append(
+            {
+                "provider": provider,
+                "status": status,
+                "status_label": _provider_status_label(status),
+                "tone": _provider_tone(status),
+                "interfaces": interfaces,
+                "summary": f"{provider}｜{_provider_status_label(status)}｜{len(rows)} 项匹配能力。",
+                "deepseek_called": False,
+            }
+        )
+    return result
+
+
+def _provider_dependency_summary(provider_dependencies: list[dict]) -> str:
+    if not provider_dependencies:
+        return "provider 依赖待确认。"
+    return "；".join(
+        f"{item['provider']}:{item['status_label']}"
+        for item in provider_dependencies[:4]
+    )
+
+
 def _migration_state(packet_wiring: str, data_status: str) -> str:
     if data_status in {"blocked", "failed"}:
         return "blocked"
@@ -385,6 +510,21 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
         packet_wiring = "legacy_only"
     migration_state = "packet_ready" if is_complete else _migration_state(packet_wiring, status_key)
     manual_action = _manual_action_for_item(key, label, payload, targets)
+    provider_dependencies = _provider_dependencies_for_item(payload)
+    provider_dependency_summary = _provider_dependency_summary(provider_dependencies)
+    route_target_text = completion_progress["target_packet_text"]
+    if route_target_text == "暂无目标 packet":
+        route_targets = [
+            to_text(check.get("key"))
+            for check in checks
+            if to_text(check.get("key"))
+        ]
+        route_target_text = "、".join(route_targets) if route_targets else route_target_text
+    packet_route_summary = (
+        f"{label} → {route_target_text} → "
+        f"{HOME_SURFACES.get(key, '综合推演中心')} → "
+        f"{to_text(payload.get('migration_target'), '逐步回流到综合推演中心 packet。')}"
+    )
     return {
         "key": key,
         "label": label,
@@ -413,6 +553,9 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
         "deepseek_policy": "manual_only",
         "safe_empty_state": to_text(payload.get("safe_empty_state"), "显示待验证，不自动触发重型请求。"),
         "data_dependencies": _text_items(payload.get("data_dependencies"), limit=6),
+        "provider_dependencies": provider_dependencies,
+        "provider_dependency_summary": provider_dependency_summary,
+        "packet_route_summary": packet_route_summary,
         "why_missing": _text_items(payload.get("common_missing_reasons"), limit=4),
         "current_blocker": to_text(status.get("summary"), "尚未读取到匹配的数据能力检测结果。"),
         "next_action": (

@@ -109,6 +109,10 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         self.assertEqual(by_key["margin_etf"]["completion_status"], "partial")
         self.assertFalse(by_key["margin_etf"]["is_complete"])
         self.assertEqual(by_key["margin_etf"]["data_status_label"], "权限不足")
+        self.assertIn("Tushare", by_key["margin_etf"]["provider_dependency_summary"])
+        self.assertIn("权限不足", by_key["margin_etf"]["provider_dependency_summary"])
+        self.assertIn("command_center_etf_packet", by_key["margin_etf"]["packet_route_summary"])
+        self.assertIn("ETF / 融资动作", by_key["margin_etf"]["packet_route_summary"])
         self.assertEqual(by_key["margin_etf"]["completion_progress"]["progress_label"], "1/2")
         self.assertEqual(by_key["margin_etf"]["completion_progress"]["cached"], 1)
         self.assertIn("command_center_margin_packet", by_key["margin_etf"]["completion_progress"]["missing_target_text"])
@@ -165,6 +169,35 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         self.assertEqual(check["current_label"], "已检测")
         self.assertIn("受限项进入恢复队列", check["reason"])
         self.assertTrue(item["is_complete"])
+
+    def test_data_healthcheck_names_core_provider_dependencies(self):
+        packet = migration.build_legacy_migration_map(
+            keys=["data_healthcheck"],
+            data_capability_packet={
+                "source": "Unified data capability",
+                "items": [
+                    {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用"},
+                    {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                    {"provider": "yfinance", "api": "yfinance_market_data", "label": "yfinance 行情/新闻", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                    {"provider": "Supabase", "api": "brain_memory", "label": "brain_memory", "capability_state": "not_configured", "status": "未配置"},
+                ],
+            },
+        )
+        item = packet["items"][0]
+        provider_rows = {row["provider"]: row for row in item["provider_dependencies"]}
+
+        self.assertIn("Tushare", provider_rows)
+        self.assertIn("AkShare", provider_rows)
+        self.assertIn("yfinance", provider_rows)
+        self.assertIn("Supabase", provider_rows)
+        self.assertEqual(provider_rows["Tushare"]["status_label"], "可用")
+        self.assertEqual(provider_rows["AkShare"]["status_label"], "需要手动刷新")
+        self.assertEqual(provider_rows["Supabase"]["status_label"], "未配置")
+        self.assertIn("Tushare:可用", item["provider_dependency_summary"])
+        self.assertIn("Supabase:未配置", item["provider_dependency_summary"])
+        self.assertIn("data_capability", item["packet_route_summary"])
+        self.assertFalse(item["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
 
     def test_filtering_keeps_next_ticket_mapping(self):
         packet = migration.build_legacy_migration_map(keys=["next_ticket_radar"])

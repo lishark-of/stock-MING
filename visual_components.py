@@ -5809,12 +5809,16 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         progress_text = _home_text(progress.get("progress_label"), "0/0")
         target_packet_text = _home_text(progress.get("target_packet_text") or item.get("target_packet_text"), "暂无目标 packet")
         missing_target_text = _home_text(progress.get("missing_target_text") or item.get("missing_target_text"), "无")
+        provider_dependency_text = _home_text(item.get("provider_dependency_summary"), "provider 依赖待确认")
+        packet_route_text = _home_text(item.get("packet_route_summary"), "旧能力 → command_center_packet → 综合推演中心")
         legacy_migration_completion_html += f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
             {escape(_home_text(item.get("label"), "旧版能力"))}
             <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("completion_label"), "待验证"))}</span>
           </div>
+          <div class="cc-home-item-meta">provider 依赖：{escape(provider_dependency_text)}</div>
+          <div class="cc-home-item-meta">packet 路由：{escape(packet_route_text)}</div>
           <div class="cc-home-item-meta">迁移进度：{escape(progress_text)} ｜ 目标 packet：{escape(target_packet_text)}</div>
           <div class="cc-home-item-meta">已完成：{escape(_home_number(progress.get("complete")))} ｜ 缓存：{escape(_home_number(progress.get("cached")))} ｜ 受阻：{escape(_home_number(progress.get("blocked")))} ｜ 待回流：{escape(_home_number(progress.get("waiting")))}</div>
           <div class="cc-home-item-meta">完成条件：{escape(check_text)}</div>
