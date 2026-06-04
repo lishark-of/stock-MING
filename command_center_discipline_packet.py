@@ -255,6 +255,74 @@ def _derive_data_status(status: str, report: Mapping[str, Any], live_section: Ma
     return "missing"
 
 
+def _recovery_state_from(status: str, data_status: str) -> str:
+    if status == "ready" or data_status in {"ready", "cached"}:
+        return "recovered"
+    return "waiting"
+
+
+def _capability_state_from(status: str, data_status: str) -> str:
+    if status == "ready":
+        return "available"
+    if data_status == "cached":
+        return "stale_cache"
+    return "requires_manual_refresh"
+
+
+def _verification_status(status: str, data_status: str, action_state: str) -> str:
+    if action_state == "降风险":
+        return "阻断决策"
+    if status == "ready" and data_status == "ready":
+        return "已验证"
+    if data_status == "cached":
+        return "缓存辅助"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    data_status: str,
+    action_state: str,
+    win_rate: int | float | None,
+    max_drawdown: int | float | None,
+    trade_count: int | float | None,
+) -> str:
+    if status == "ready":
+        parts = [f"纪律边界：{action_state}"]
+        if win_rate is not None:
+            parts.append(f"胜率 {win_rate}%")
+        if max_drawdown is not None:
+            parts.append(f"最大回撤 {max_drawdown}%")
+        if trade_count is not None:
+            parts.append(f"交易次数 {trade_count} 次")
+        if len(parts) == 1:
+            parts.append("回测缓存已读取，指标待验证")
+        return "｜".join(parts)
+    if data_status == "cached":
+        return f"纪律/回测使用缓存：{action_state or '待复核'}；执行前必须复核日期和样本。"
+    return "纪律/回测待手动运行；未回流前不能标记策略已纪律验证。"
+
+
+def _action_hint(status: str, data_status: str, action_state: str) -> str:
+    if action_state == "降风险":
+        return "先降低暴露并复核回撤、止损和失效条件；纪律转弱前不加仓。"
+    if status == "ready" and data_status == "ready":
+        return "把回测缓存作为纪律边界；仍需价格、资金流和仓位预算共同确认。"
+    if data_status == "cached":
+        return "执行前复核回测缓存日期、样本和最新信号；需要时手动重跑回测。"
+    return "需要时在高级工具箱手动运行回测；综合中心不会自动跑回测。"
+
+
+def _decision_guardrail(status: str, data_status: str, action_state: str) -> str:
+    if action_state == "降风险":
+        return "纪律或回撤已转弱，不能加仓、追高或加融资。"
+    if status == "ready" and data_status == "ready":
+        return "回测缓存只提供纪律边界，不直接决定买卖或仓位。"
+    if data_status == "cached":
+        return "缓存可防白屏，但不能把过期回测写成已验证纪律。"
+    return "缺少回测缓存时，策略不能被标记为纪律已验证。"
+
+
 def _build_key_rules(report: Mapping[str, Any], multi_result: Mapping[str, Any], win_rate: Any, max_drawdown: Any) -> list[str]:
     rules = _rules_from_value(report.get("key_rules") or report.get("discipline_rules"))
     if rules:
@@ -360,17 +428,35 @@ def build_command_center_discipline_packet(
         sharpe = to_number(existing.get("sharpe"))
         trade_count = to_number(existing.get("trade_count"))
         data_status = _first_text(existing.get("data_status"), default=_derive_data_status(existing.get("status"), existing, live_section))
+        action_state = _first_text(existing.get("action_state"), default="已读取")
         packet = {
             **existing,
+            "action_state": action_state,
+            "capability_state": _first_text(existing.get("capability_state"), default=_capability_state_from(existing.get("status"), data_status)),
+            "recovery_state": _first_text(existing.get("recovery_state"), default=_recovery_state_from(existing.get("status"), data_status)),
             "key_rules": _rules_from_value(existing.get("key_rules")) or ["仅按已缓存纪律 packet 展示。"],
             "warnings": _dedupe_text(existing.get("warnings")) or ["DeepSeek 未调用；回测解释仍需手动按钮触发。"],
             "backtest_status": _first_text(existing.get("backtest_status"), default=_backtest_status_text(existing.get("status"), data_status)),
             "cache_state": data_status,
+            "packet_role": _first_text(existing.get("packet_role"), default="交易纪律/回测证据"),
+            "verification_status": _first_text(
+                existing.get("verification_status"),
+                default=_verification_status(existing.get("status"), data_status, action_state),
+            ),
+            "evidence_summary": _first_text(
+                existing.get("evidence_summary"),
+                default=_build_evidence_summary(existing.get("status"), data_status, action_state, win_rate, max_drawdown, trade_count),
+            ),
+            "action_hint": _first_text(existing.get("action_hint"), default=_action_hint(existing.get("status"), data_status, action_state)),
+            "decision_guardrail": _first_text(
+                existing.get("decision_guardrail"),
+                default=_decision_guardrail(existing.get("status"), data_status, action_state),
+            ),
             "metric_items": as_list(existing.get("metric_items")) or _build_metric_items(win_rate, max_drawdown, sharpe, trade_count),
             "evidence_items": as_list(existing.get("evidence_items")) or [
                 {
                     "label": "纪律缓存",
-                    "value": _first_text(existing.get("action_state"), default="已读取"),
+                    "value": action_state,
                     "detail": _first_text(existing.get("summary"), default="仅按已缓存纪律 packet 展示。"),
                     "tone": "ready",
                 }
@@ -434,13 +520,22 @@ def build_command_center_discipline_packet(
         ),
     )
     data_status = _derive_data_status(status, report, live_section)
+    recovery_state = _recovery_state_from(status, data_status)
+    capability_state = _capability_state_from(status, data_status)
     packet = {
         "status": status,
+        "capability_state": capability_state,
+        "recovery_state": recovery_state,
         "source": _first_text(report.get("source"), check.get("source"), live_section.get("source"), default="交易纪律实验室回测缓存"),
         "updated_at": updated_at,
         "target": _first_text(target, report.get("ticker"), check.get("target")),
         "ticker": to_text(report.get("ticker")),
         "summary": summary,
+        "packet_role": "交易纪律/回测证据",
+        "verification_status": _verification_status(status, data_status, action_state),
+        "evidence_summary": _build_evidence_summary(status, data_status, action_state, win_rate, max_drawdown, trade_count),
+        "action_hint": _action_hint(status, data_status, action_state),
+        "decision_guardrail": _decision_guardrail(status, data_status, action_state),
         "backtest_status": _backtest_status_text(status, data_status),
         "cache_state": data_status,
         "date_range": _date_range_from(report),
@@ -467,8 +562,8 @@ def build_command_center_discipline_packet(
             label="交易纪律/回测",
             status=status,
             data_status=data_status,
-            recovery_state=check.get("recovery_state"),
-            capability_state=check.get("capability_state"),
+            recovery_state=recovery_state,
+            capability_state=capability_state,
         )
     )
     return packet

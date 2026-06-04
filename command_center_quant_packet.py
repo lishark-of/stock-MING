@@ -177,23 +177,104 @@ def _build_risk_notes(status: str, payload: Mapping[str, Any], live_section: Map
     return _dedupe_text(notes, limit=MAX_RISK_NOTES)
 
 
+def _recovery_state_from(status: str, data_status: str) -> str:
+    if status == "ready" or data_status in {"ready", "cached"}:
+        return "recovered"
+    if status == "failed":
+        return "blocked"
+    return "waiting"
+
+
+def _capability_state_from(status: str, data_status: str) -> str:
+    if status == "ready":
+        return "available"
+    if status == "failed":
+        return "failed"
+    if data_status == "cached":
+        return "stale_cache"
+    return "requires_manual_refresh"
+
+
+def _verification_status(status: str, data_status: str, action_state: str) -> str:
+    if action_state == "防守观察" or status == "failed":
+        return "阻断决策"
+    if status == "ready" and data_status == "ready":
+        return "已验证"
+    if data_status == "cached":
+        return "缓存辅助"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    data_status: str,
+    action_state: str,
+    score: int | float | None,
+    confidence: str,
+    direction: str,
+) -> str:
+    if status in {"ready", "cached", "partial"} or data_status in {"ready", "cached"}:
+        parts = [f"量化动作：{action_state or '待验证'}", f"置信度：{confidence or '低'}"]
+        if score is not None:
+            parts.append(f"分数 {score}")
+        if direction and direction != "待验证":
+            parts.append(f"方向：{direction}")
+        return "｜".join(parts)
+    if status == "failed":
+        return "量化推演失败；不能把缺失评分写成有效诊断。"
+    return "量化推演待手动生成；未回流前不能假装已有评分或单票诊断。"
+
+
+def _action_hint(status: str, data_status: str, action_state: str) -> str:
+    if action_state == "防守观察":
+        return "量化偏弱或风险偏高时先观察/降风险；不要用轻量摘要支持加仓。"
+    if status == "ready" and data_status == "ready":
+        return "把量化摘要作为置信度证据；仍需纪律、资金流和仓位预算共同确认。"
+    if data_status == "cached":
+        return "执行前复核量化缓存和回测引用；需要高置信度时手动运行完整推演。"
+    return "需要时手动生成量化推演；页面打开不会自动跑完整底座、回测或 DeepSeek。"
+
+
+def _decision_guardrail(status: str, data_status: str, action_state: str) -> str:
+    if action_state == "防守观察":
+        return "量化偏弱或风险偏高，不能作为加仓、追高或加融资依据。"
+    if status == "ready" and data_status == "ready":
+        return "量化只辅助置信度验证，不直接决定买卖或仓位。"
+    if data_status == "cached":
+        return "缓存量化摘要不能单独当作完整诊断；缺回测时不能放大仓位。"
+    return "没有量化缓存时，不能假装已有评分或单票诊断。"
+
+
 def _normalize_existing(existing: Mapping[str, Any]) -> dict:
     payload = dict(existing)
     status = _first_text(payload.get("status"), default="ready")
     score = to_number(payload.get("score"))
     direction = _first_text(payload.get("direction"), payload.get("label"))
     summary = _first_text(payload.get("summary"), default="量化 packet 已缓存。")
+    action_state = _first_text(payload.get("action_state"), default=_derive_action_state(score, direction, summary, status))
+    data_status = _first_text(payload.get("data_status"), default="ready" if status == "ready" else "cached")
+    confidence = _first_text(payload.get("confidence"), default=_confidence_from(score, status, {}))
     payload.update(
         {
             "status": status,
             "score": score,
             "direction": direction,
             "summary": summary,
-            "action_state": _first_text(payload.get("action_state"), default=_derive_action_state(score, direction, summary, status)),
-            "confidence": _first_text(payload.get("confidence"), default=_confidence_from(score, status, {})),
+            "action_state": action_state,
+            "confidence": confidence,
             "evidence_items": _dedupe_text(payload.get("evidence_items")) or [summary],
             "risk_notes": _dedupe_text(payload.get("risk_notes")) or ["旧版完整量化推演、回测和 DeepSeek 解释都必须手动触发。"],
-            "data_status": _first_text(payload.get("data_status"), default="ready" if status == "ready" else "cached"),
+            "data_status": data_status,
+            "capability_state": _first_text(payload.get("capability_state"), default=_capability_state_from(status, data_status)),
+            "recovery_state": _first_text(payload.get("recovery_state"), default=_recovery_state_from(status, data_status)),
+            "packet_role": _first_text(payload.get("packet_role"), default="量化推演证据"),
+            "verification_status": _first_text(payload.get("verification_status"), default=_verification_status(status, data_status, action_state)),
+            "evidence_summary": _first_text(
+                payload.get("evidence_summary"),
+                default=_build_evidence_summary(status, data_status, action_state, score, confidence, direction),
+            ),
+            "action_hint": _first_text(payload.get("action_hint"), default=_action_hint(status, data_status, action_state)),
+            "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, data_status, action_state)),
             "deepseek_called": False,
         }
     )
@@ -306,8 +387,14 @@ def build_command_center_quant_packet(
     action_state = _derive_action_state(score, direction, summary, status)
     evidence = _build_evidence(payload, live_section, backtest_report)
     risk_notes = _build_risk_notes(status, payload, live_section, backtest_report)
+    data_status = _derive_data_status(status, payload, live_section)
+    confidence = _confidence_from(score, status, backtest_report)
+    recovery_state = _recovery_state_from(status, data_status)
+    capability_state = _capability_state_from(status, data_status)
     packet = {
         "status": status,
+        "capability_state": capability_state,
+        "recovery_state": recovery_state,
         "source": _first_text(payload.get("source"), live_section.get("source"), default="量化推演缓存"),
         "updated_at": _first_text(payload.get("generated_at"), payload.get("updated_at"), live_section.get("updated_at")),
         "target": _first_text(target, payload_target),
@@ -317,11 +404,16 @@ def build_command_center_quant_packet(
         "direction": direction,
         "summary": summary,
         "action_state": action_state,
-        "confidence": _confidence_from(score, status, backtest_report),
+        "confidence": confidence,
         "evidence_items": evidence or ["量化证据待刷新。"],
         "risk_notes": risk_notes,
         "backtest_reference": _backtest_summary(backtest_report, target=target),
-        "data_status": _derive_data_status(status, payload, live_section),
+        "data_status": data_status,
+        "packet_role": "量化推演证据",
+        "verification_status": _verification_status(status, data_status, action_state),
+        "evidence_summary": _build_evidence_summary(status, data_status, action_state, score, confidence, direction),
+        "action_hint": _action_hint(status, data_status, action_state),
+        "decision_guardrail": _decision_guardrail(status, data_status, action_state),
         "manual_required_text": "完整量化推演、回测和 DeepSeek 解释必须在高级工具箱或按钮中手动触发。",
         "deepseek_called": False,
     }
@@ -332,8 +424,8 @@ def build_command_center_quant_packet(
             label="量化推演",
             status=status,
             data_status=packet.get("data_status"),
-            recovery_state=payload.get("recovery_state"),
-            capability_state=payload.get("capability_state"),
+            recovery_state=recovery_state,
+            capability_state=capability_state,
         )
     )
     return packet
