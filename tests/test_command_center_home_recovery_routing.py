@@ -157,6 +157,9 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("valid_decision_priority_actions", source)
         self.assertIn("btn_open_decision_priority_", source)
         self.assertIn("决策优先队列｜打开恢复入口", source)
+        self.assertIn("recovery_result_status_label", source)
+        self.assertIn("recovery_result_message", source)
+        self.assertIn("恢复结果：", source)
 
     def test_home_snapshot_renders_data_health_ledger(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

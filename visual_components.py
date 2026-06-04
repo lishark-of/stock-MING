@@ -5200,6 +5200,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">为什么优先：{escape(_home_text(item.get("why_first"), "先恢复会影响交易判断的数据缺口。"))}</div>
           <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
           <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">恢复结果：{escape(_home_text(item.get("recovery_result_status_label"), "待验证"))} ｜ {escape(_home_text(item.get("recovery_result_message"), "尚未检测到本项恢复结果回流。"))}</div>
+          <div class="cc-home-item-meta">结果时间：{escape(_home_text(item.get("recovery_result_updated_at"), "暂无"))} ｜ 来源：{escape(_home_text(item.get("recovery_result_source"), "本地恢复状态"))}</div>
           <div class="cc-home-item-meta">按钮边界：{escape(_home_text(item.get("recovery_button_context"), "按钮只恢复当前 packet；不会自动调用 DeepSeek 或重型任务。"))}</div>
           <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ 触发：{escape(_home_text(item.get("refresh_policy"), "button_gated"))}</div>
         </div>
@@ -5222,6 +5224,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">接口原因：{escape(_home_text(item.get("interface_cause_label"), item.get("status_label") or "待验证"))} ｜ {escape(_home_text(item.get("interface_diagnostic_answer"), item.get("diagnostic_answer") or "仍需核对接口状态。"))}</div>
           <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("reason"), "仍需手动确认。"))}</div>
           <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
+          <div class="cc-home-item-meta">恢复结果：{escape(_home_text(item.get("recovery_result_status_label"), "待验证"))} ｜ {escape(_home_text(item.get("recovery_result_message"), "尚未检测到本项恢复结果回流。"))}</div>
+          <div class="cc-home-item-meta">结果时间：{escape(_home_text(item.get("recovery_result_updated_at"), "暂无"))} ｜ 来源：{escape(_home_text(item.get("recovery_result_source"), "本地恢复状态"))}</div>
           <div class="cc-home-item-meta">按钮说明：{escape(_home_text(item.get("recovery_button_context"), "按钮只负责打开/触发对应手动恢复，不自动调用 DeepSeek。"))}</div>
           <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
           <div class="cc-home-item-meta">触发：手动按钮 ｜ DeepSeek：未调用</div>

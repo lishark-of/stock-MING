@@ -1469,11 +1469,138 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                     action.get("recovery_button_context") or action.get("button_context"),
                     f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
                 ),
+                "recovery_result_status": _to_text(action.get("recovery_result_status"), "waiting"),
+                "recovery_result_status_label": _to_text(action.get("recovery_result_status_label"), "待验证"),
+                "recovery_result_tone": _to_text(action.get("recovery_result_tone"), "missing"),
+                "recovery_result_message": _to_text(
+                    action.get("recovery_result_message"),
+                    "尚未检测到本项恢复结果回流。",
+                ),
+                "recovery_result_updated_at": _to_text(action.get("recovery_result_updated_at"), "暂无"),
+                "recovery_result_source": _to_text(action.get("recovery_result_source"), "本地恢复状态"),
                 "deepseek_called": False,
             }
         )
     rows = sorted(rows, key=lambda item: (item["rank"], item["label"], item["writes_packet"]))
     return rows[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+
+
+def _recovery_result_lookup_from_state(state: Any = None) -> dict[str, dict]:
+    payload = _as_mapping(state)
+    lookup = {}
+
+    def add_item(raw: Any = None) -> None:
+        item = _as_mapping(raw)
+        if not item:
+            return
+        writes_packet = _to_text(item.get("writes_packet"))
+        if not writes_packet or writes_packet in lookup:
+            return
+        lookup[writes_packet] = {
+            "status": _to_text(item.get("status"), "waiting"),
+            "status_label": _to_text(item.get("status_label"), "待验证"),
+            "tone": _to_text(item.get("tone"), "missing"),
+            "message": _to_text(item.get("message"), "恢复结果待验证。"),
+            "updated_at": _to_text(item.get("updated_at"), "暂无"),
+            "source": _to_text(item.get("source"), "本地恢复状态"),
+            "packet_key": _to_text(item.get("packet_key"), writes_packet),
+            "next_action": _to_text(item.get("next_action"), "按恢复队列手动处理。"),
+            "external_call_policy": _to_text(item.get("external_call_policy"), "not_triggered"),
+            "deepseek_called": False,
+        }
+
+    timeline = (
+        _as_mapping(payload.get("command_center_recovery_result_timeline"))
+        or _as_mapping(payload.get("recovery_result_timeline"))
+    )
+    for raw in _as_list(timeline.get("items")):
+        add_item(raw)
+
+    strip = _as_mapping(payload.get("recovery_result_status_strip"))
+    if not strip and _as_mapping(payload.get("latest_recovery_result_notice")):
+        strip = build_recovery_result_status_strip(payload)
+    for raw in _as_list(strip.get("items")):
+        add_item(raw)
+
+    latest = _as_mapping(payload.get("latest_recovery_result_notice"))
+    if latest:
+        add_item(latest)
+    return lookup
+
+
+def _fallback_recovery_result_item(action: Mapping[str, Any], state: Any = None) -> dict:
+    payload = _as_mapping(state)
+    writes_packet = _to_text(action.get("writes_packet"), "command_center_packet")
+    packet_key, packet = _resolve_recovery_packet(payload, writes_packet)
+    if packet:
+        display_state = _recovery_display_state(
+            packet,
+            writes_packet,
+            fallback_status=action.get("status"),
+        )
+        label = _to_text(action.get("label"), "恢复项")
+        status = display_state["status"]
+        if status == "recovered":
+            message = f"{label} 已回流到 {writes_packet}；综合中心可读取这项结构化结果。"
+        elif status == "cached":
+            message = f"{label} 当前读取到缓存；执行前仍需复核日期、来源和覆盖口径。"
+        elif status == "blocked":
+            message = f"{label} 仍未形成可用回流；不能把缺失数据当成安全信号。"
+        else:
+            message = f"{label} 尚未检测到可读回流；需要在高级工具箱手动运行按钮。"
+        return {
+            "status": status,
+            "status_label": display_state["label"],
+            "tone": display_state["tone"],
+            "message": message,
+            "updated_at": _to_text(
+                packet.get("updated_at")
+                or packet.get("generated_at")
+                or packet.get("checked_at"),
+                "暂无",
+            ),
+            "source": _to_text(packet.get("source"), "本地恢复状态"),
+            "packet_key": packet_key,
+            "next_action": "返回综合推演中心查看 Home Action Snapshot。",
+            "external_call_policy": "not_triggered",
+            "deepseek_called": False,
+        }
+    return {
+        "status": "waiting",
+        "status_label": "待验证",
+        "tone": "missing",
+        "message": "尚未检测到本项恢复结果回流。",
+        "updated_at": "暂无",
+        "source": "本地恢复状态",
+        "packet_key": writes_packet,
+        "next_action": "按恢复队列手动处理；页面打开不会自动请求外部接口。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def attach_recovery_result_status_to_action(
+    action: Any = None,
+    state: Any = None,
+    result_lookup: Any = None,
+) -> dict:
+    item = _as_mapping(action)
+    if not item:
+        return {}
+    lookup = _as_mapping(result_lookup)
+    writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
+    result = _as_mapping(lookup.get(writes_packet)) or _fallback_recovery_result_item(item, state)
+    item["recovery_result_status"] = _to_text(result.get("status"), "waiting")
+    item["recovery_result_status_label"] = _to_text(result.get("status_label"), "待验证")
+    item["recovery_result_tone"] = _to_text(result.get("tone"), "missing")
+    item["recovery_result_message"] = _to_text(result.get("message"), "尚未检测到本项恢复结果回流。")
+    item["recovery_result_updated_at"] = _to_text(result.get("updated_at"), "暂无")
+    item["recovery_result_source"] = _to_text(result.get("source"), "本地恢复状态")
+    item["recovery_result_packet_key"] = _to_text(result.get("packet_key"), writes_packet)
+    item["recovery_result_next_action"] = _to_text(result.get("next_action"), "按恢复队列手动处理。")
+    item["recovery_result_external_call_policy"] = _to_text(result.get("external_call_policy"), "not_triggered")
+    item["deepseek_called"] = False
+    return item
 
 
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
@@ -1493,6 +1620,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         ("a_share", "A股数据能力", a_share_actions, 3),
         ("legacy_tool", "旧工具能力", tool_actions, 3),
     ]
+    recovery_result_lookup = _recovery_result_lookup_from_state(payload)
     seen = set()
     actions = []
     groups = []
@@ -1502,6 +1630,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
             item = _normalize_recovery_center_action(raw, source_type, source_label, default_priority)
             if not item or item.get("refresh_policy") == "not_needed":
                 continue
+            item = attach_recovery_result_status_to_action(item, payload, recovery_result_lookup)
             dedupe_key = item.get("writes_packet") or f"{source_type}:{item.get('key')}"
             if dedupe_key in seen:
                 continue

@@ -1123,6 +1123,78 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["deepseek_called"] is False for item in decision_queue))
         self.assertFalse(center["deepseek_called"])
 
+    def test_home_data_recovery_center_attaches_current_recovery_result_statuses(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "data_recovery_actions": [
+                    {
+                        "label": "融资融券",
+                        "status_label": "权限不足",
+                        "action_label": "手动刷新融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+                "data_health_timeline_recovery_actions": [
+                    {
+                        "label": "筹码/胜率",
+                        "status_label": "使用缓存",
+                        "action_label": "手动检测筹码/胜率",
+                        "writes_packet": "command_center_chip_packet",
+                        "legacy_tab": "量化推演",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+                "tool_recovery_actions": [
+                    {
+                        "label": "下一票雷达",
+                        "status_label": "待验证",
+                        "action_label": "手动运行下一票雷达",
+                        "writes_packet": "command_center_radar_packet",
+                        "legacy_tab": "下一票雷达",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+                "command_center_margin_packet": {
+                    "status": "ready",
+                    "summary": "融资融券已回流",
+                    "updated_at": "2026-06-04T10:00:00",
+                    "source": "Tushare margin_detail",
+                },
+                "chip_packet": {
+                    "data_status": "cached",
+                    "summary": "筹码/胜率使用缓存",
+                    "updated_at": "2026-06-03T10:00:00",
+                    "source": "Tushare cyq_perf",
+                },
+                "command_center_radar_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                    "updated_at": "2026-06-04T10:02:00",
+                    "source": "下一票雷达",
+                },
+            }
+        )
+        by_label = {item["label"]: item for item in center["actions"]}
+        queue_by_label = {item["label"]: item for item in center["decision_priority_queue"]}
+
+        self.assertEqual(by_label["融资融券"]["recovery_result_status"], "recovered")
+        self.assertEqual(by_label["融资融券"]["recovery_result_status_label"], "已回流")
+        self.assertEqual(by_label["融资融券"]["recovery_result_updated_at"], "2026-06-04T10:00:00")
+        self.assertEqual(by_label["筹码/胜率"]["recovery_result_status"], "cached")
+        self.assertEqual(by_label["筹码/胜率"]["recovery_result_status_label"], "使用缓存")
+        self.assertIn("缓存", by_label["筹码/胜率"]["recovery_result_message"])
+        self.assertEqual(by_label["下一票雷达"]["recovery_result_status"], "blocked")
+        self.assertEqual(by_label["下一票雷达"]["recovery_result_status_label"], "权限不足")
+        self.assertIn("不能把缺失数据当成安全信号", by_label["下一票雷达"]["recovery_result_message"])
+        self.assertEqual(queue_by_label["融资融券"]["recovery_result_status_label"], "已回流")
+        self.assertEqual(queue_by_label["筹码/胜率"]["recovery_result_status_label"], "使用缓存")
+        self.assertEqual(queue_by_label["下一票雷达"]["recovery_result_status_label"], "权限不足")
+        self.assertTrue(all(item["recovery_result_external_call_policy"] == "not_triggered" for item in center["actions"]))
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
     def test_recovery_priority_lanes_classify_session_skip_cache_and_legacy(self):
         lanes = snapshot.build_recovery_priority_lanes(
             [
