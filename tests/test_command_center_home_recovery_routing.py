@@ -72,6 +72,18 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("latest_evidence_impact", source)
         self.assertIn("external_call_policy", source)
         self.assertIn("DeepSeek：未调用", source)
+        self.assertIn("latest_recovery_context_html", source)
+        self.assertIn("为什么搜不到：", source)
+        self.assertIn("决策保护：", source)
+
+    def test_manual_capability_buttons_record_latest_recovery_result(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn("_remember_a_share_manual_recovery_result", source)
+        self.assertIn("command_center_last_a_share_diagnostic_recovery_result", source)
+        self.assertIn("command_center_limit_emotion_packet", source)
+        self.assertIn("command_center_chip_packet", source)
+        self.assertIn("btn_cc_home_evidence_backfill_", source)
 
     def test_decision_and_strategy_cards_surface_projection_confidence(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

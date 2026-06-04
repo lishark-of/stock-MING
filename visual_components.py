@@ -5150,6 +5150,19 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     latest_recovery_html = ""
     if latest_recovery_result:
+        latest_manual_steps_text = " → ".join(
+            _home_text(step)
+            for step in (latest_recovery_result.get("manual_recovery_steps") or [])
+            if _home_text(step)
+        )
+        latest_recovery_context_html = ""
+        if latest_recovery_result.get("why_not_found") or latest_recovery_result.get("decision_guardrail"):
+            latest_recovery_context_html = f"""
+          <div class="cc-home-item-meta">为什么搜不到：{escape(_home_text(latest_recovery_result.get("why_not_found"), "可能因为权限、交易日更新、近期无数据或缓存过期而暂不可见。"))}</div>
+          <div class="cc-home-item-meta">按钮说明：{escape(_home_text(latest_recovery_result.get("button_context"), "只检测本项并回流 packet；不会自动调用 DeepSeek 或重型接口。"))}</div>
+          <div class="cc-home-item-meta">决策保护：{escape(_home_text(latest_recovery_result.get("decision_guardrail"), "缺失时不能当成无风险或已验证结论。"))}</div>
+          <div class="cc-home-item-meta">步骤：{escape(_home_text(latest_manual_steps_text, "进入高级工具箱 → 手动检测 → 回流综合中心 packet"))}</div>
+            """
         latest_recovery_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -5158,6 +5171,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(latest_recovery_result.get("message"), "已更新本地恢复状态。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(latest_recovery_result.get("next_action"), "返回综合推演中心查看快照。"))}</div>
+          {latest_recovery_context_html}
           <div class="cc-home-item-meta">回流：{escape(_home_text(latest_recovery_result.get("writes_packet"), "command_center_packet"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(latest_recovery_result.get("external_call_policy"), "not_triggered"))}</div>
         </div>
         """

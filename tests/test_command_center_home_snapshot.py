@@ -1490,6 +1490,36 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["status"], "blocked")
         self.assertEqual(notice["tone"], "failed")
         self.assertEqual(notice["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertIn("Tushare 之前拉满不等于今天一定可见", notice["why_not_found"])
+        self.assertIn("只检测 stk_limit / limit_list_d / limit_cpt_list", notice["button_context"])
+        self.assertIn("缺少涨跌停/情绪", notice["decision_guardrail"])
+        self.assertTrue(notice["manual_recovery_steps"])
+        self.assertEqual(notice["external_call_policy"], "button_gated")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_latest_recovery_result_notice_explains_chip_gap_after_manual_check(self):
+        notice = snapshot.build_latest_recovery_result_notice(
+            {
+                "command_center_last_a_share_diagnostic_recovery_result": {
+                    "label": "筹码/胜率",
+                    "writes_packet": "command_center_chip_packet",
+                    "capability_state": "empty_recent",
+                    "status_label": "近期无数据",
+                    "message": "近 30 日暂无 cyq_perf/cyq_chips 可验证数据。",
+                    "checked_at": "2026-06-03T10:05:00",
+                    "api_hint": "Tushare cyq_perf/cyq_chips",
+                    "deepseek_called": False,
+                }
+            }
+        )
+
+        self.assertEqual(notice["source_type"], "a_share_diagnostic")
+        self.assertEqual(notice["status"], "waiting")
+        self.assertEqual(notice["tone"], "stale")
+        self.assertIn("cyq_perf 或 cyq_chips 权限", notice["why_not_found"])
+        self.assertIn("只检测 cyq_perf / cyq_chips", notice["button_context"])
+        self.assertIn("缺少筹码/胜率", notice["decision_guardrail"])
+        self.assertIn("command_center_chip_packet", notice["manual_recovery_steps"][-1])
         self.assertEqual(notice["external_call_policy"], "button_gated")
         self.assertFalse(notice["deepseek_called"])
 

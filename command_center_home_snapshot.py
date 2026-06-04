@@ -106,6 +106,11 @@ LEGACY_A_SHARE_GAP_DIAGNOSTICS = {
     },
 }
 
+LEGACY_A_SHARE_GAP_WRITES_TO_KEY = {
+    "command_center_limit_emotion_packet": "limit_emotion",
+    "command_center_chip_packet": "chip_radar",
+}
+
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
@@ -854,6 +859,21 @@ def _legacy_gap_diagnostic(item: Mapping[str, Any]) -> dict:
     }
 
 
+def _legacy_gap_diagnostic_for_writes_packet(writes_packet: str, label: str = "") -> dict:
+    key = LEGACY_A_SHARE_GAP_WRITES_TO_KEY.get(_to_text(writes_packet))
+    if not key:
+        return {}
+    return _legacy_gap_diagnostic(
+        {
+            "key": key,
+            "label": label or A_SHARE_FACT_RECOVERY_SOURCES[0]["label"],
+            "writes_packet": writes_packet,
+            "action_label": TOOL_RECOVERY_MANUAL_CHECKS.get(writes_packet, {}).get("button_label"),
+            "toolbox_entry": _legacy_a_share_fact_legacy_tab(key, writes_packet),
+        }
+    )
+
+
 def build_legacy_a_share_gap_summary(snapshot: Any = None) -> dict:
     payload = _as_mapping(snapshot)
     recovery_summary = _as_mapping(payload.get("a_share_fact_recovery_summary"))
@@ -1540,6 +1560,7 @@ def build_a_share_diagnostic_recovery_result_notice(state: Any = None) -> dict:
         return {}
     label = _to_text(result.get("label"), "A股数据")
     writes_packet = _to_text(result.get("writes_packet"), "command_center_facts_packet")
+    legacy_gap_diagnostic = _legacy_gap_diagnostic_for_writes_packet(writes_packet, label)
     capability_state = _to_text(result.get("capability_state") or result.get("state"), "unknown")
     status_label = _to_text(result.get("status_label") or result.get("status"), "待验证")
     message = _to_text(result.get("message") or result.get("action_hint") or result.get("error"), "已完成手动检测。")
@@ -1573,6 +1594,10 @@ def build_a_share_diagnostic_recovery_result_notice(state: Any = None) -> dict:
         "writes_packet": writes_packet,
         "updated_at": updated_at,
         "source": _to_text(result.get("source") or result.get("api_hint"), "A股手动检测"),
+        "why_not_found": _to_text(legacy_gap_diagnostic.get("why_not_found")),
+        "button_context": _to_text(legacy_gap_diagnostic.get("button_context")),
+        "decision_guardrail": _to_text(legacy_gap_diagnostic.get("decision_guardrail")),
+        "manual_recovery_steps": _as_list(legacy_gap_diagnostic.get("manual_recovery_steps")),
         "deepseek_called": False,
         "external_call_policy": "button_gated",
     }

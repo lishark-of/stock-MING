@@ -4508,6 +4508,26 @@ def _run_manual_hard_risk_capability_check(target="", position_profile=None, liv
     }
 
 
+def _remember_a_share_manual_recovery_result(result=None, *, key="", label="", writes_packet="", api_hint=""):
+    payload = result if isinstance(result, dict) else {}
+    item = payload.get("item") if isinstance(payload.get("item"), dict) else {}
+    if not item or not writes_packet:
+        return {}
+    record = {
+        "key": key,
+        "label": label or item.get("label") or "A股数据",
+        "writes_packet": writes_packet,
+        "api_hint": api_hint or item.get("api"),
+        "capability_state": item.get("capability_state") or item.get("state"),
+        "status_label": item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证",
+        "message": item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。",
+        "checked_at": item.get("checked_at") or item.get("updated_at"),
+        "deepseek_called": False,
+    }
+    st.session_state["command_center_last_a_share_diagnostic_recovery_result"] = record
+    return record
+
+
 def _render_manual_capability_check_button(
     button_label,
     button_key,
@@ -4550,16 +4570,16 @@ def render_a_share_data_capability_controls(target="", position_profile=None, li
         )
         check_cols = st.columns(3)
         checks = [
-            ("检测资金流", "moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check),
-            ("检测龙虎榜", "dragon_tiger_capability_check", "正在手动检测龙虎榜...", "龙虎榜", _run_manual_dragon_tiger_capability_check),
-            ("检测融资融券", "margin_capability_check", "正在手动检测融资融券权限...", "融资融券", _run_manual_margin_detail_capability_check),
-            ("检测涨跌停", "limit_cpt_capability_check", "正在手动检测涨跌停/情绪权限...", "涨跌停/情绪", _run_manual_limit_cpt_capability_check),
-            ("检测筹码胜率", "chip_capability_check", "正在手动检测筹码/胜率...", "筹码/胜率", _run_manual_chip_radar_capability_check),
-            ("检测公告硬风险", "hard_risk_capability_check", "正在手动检测公告/硬风险...", "公告/硬风险", _run_manual_hard_risk_capability_check),
+            ("检测资金流", "moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check, "moneyflow", "command_center_moneyflow_packet"),
+            ("检测龙虎榜", "dragon_tiger_capability_check", "正在手动检测龙虎榜...", "龙虎榜", _run_manual_dragon_tiger_capability_check, "dragon_tiger", "command_center_dragon_tiger_packet"),
+            ("检测融资融券", "margin_capability_check", "正在手动检测融资融券权限...", "融资融券", _run_manual_margin_detail_capability_check, "margin", "command_center_margin_packet"),
+            ("检测涨跌停", "limit_cpt_capability_check", "正在手动检测涨跌停/情绪权限...", "涨跌停/情绪", _run_manual_limit_cpt_capability_check, "limit_emotion", "command_center_limit_emotion_packet"),
+            ("检测筹码胜率", "chip_capability_check", "正在手动检测筹码/胜率...", "筹码/胜率", _run_manual_chip_radar_capability_check, "chip_radar", "command_center_chip_packet"),
+            ("检测公告硬风险", "hard_risk_capability_check", "正在手动检测公告/硬风险...", "公告/硬风险", _run_manual_hard_risk_capability_check, "hard_risk", "command_center_hard_risk_packet"),
         ]
-        for index, (button_label, button_key, status_label, result_label, runner) in enumerate(checks):
+        for index, (button_label, button_key, status_label, result_label, runner, recovery_key, writes_packet) in enumerate(checks):
             with check_cols[index % len(check_cols)]:
-                _render_manual_capability_check_button(
+                result = _render_manual_capability_check_button(
                     button_label,
                     f"btn_{key_prefix}_{button_key}",
                     status_label,
@@ -4569,6 +4589,18 @@ def render_a_share_data_capability_controls(target="", position_profile=None, li
                     position_profile=position_profile,
                     live_packet=live_packet,
                 )
+                if result:
+                    _remember_a_share_manual_recovery_result(
+                        result,
+                        key=recovery_key,
+                        label=result_label,
+                        writes_packet=writes_packet,
+                    )
+                    _persist_home_action_snapshot(
+                        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+                        target=target,
+                        position_profile=position_profile,
+                    )
 
 
 def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target="", market_type="", position_profile=None, live_packet=None):
@@ -4620,18 +4652,13 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
                     live_packet=live_packet,
                 )
                 if result:
-                    item = result.get("item") or {}
-                    st.session_state["command_center_last_a_share_diagnostic_recovery_result"] = {
-                        "key": key,
-                        "label": action.get("label") or result_label,
-                        "writes_packet": action.get("writes_packet") or "command_center_facts_packet",
-                        "api_hint": action.get("api_hint") or item.get("api"),
-                        "capability_state": item.get("capability_state") or item.get("state"),
-                        "status_label": item.get("status") or item.get("capability_label") or item.get("capability_state") or "待验证",
-                        "message": item.get("action_hint") or item.get("error") or item.get("message") or "已更新本地数据能力状态。",
-                        "checked_at": item.get("checked_at") or item.get("updated_at"),
-                        "deepseek_called": False,
-                    }
+                    _remember_a_share_manual_recovery_result(
+                        result,
+                        key=key,
+                        label=action.get("label") or result_label,
+                        writes_packet=action.get("writes_packet") or "command_center_facts_packet",
+                        api_hint=action.get("api_hint"),
+                    )
                     _persist_home_action_snapshot(
                         live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
                         target=ticker,
@@ -4690,7 +4717,7 @@ def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", ma
             with col:
                 st.caption(f"{action.get('evidence_label') or '待验证证据'}｜{action.get('label') or result_label}")
                 st.caption(action_hint)
-                _render_manual_capability_check_button(
+                result = _render_manual_capability_check_button(
                     button_label,
                     f"btn_cc_home_evidence_backfill_{key}",
                     f"正在补齐{result_label}证据...",
@@ -4700,6 +4727,27 @@ def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", ma
                     position_profile=position_profile,
                     live_packet=live_packet,
                 )
+                if result:
+                    fallback_writes_packets = {
+                        "moneyflow": "command_center_moneyflow_packet",
+                        "dragon_tiger": "command_center_dragon_tiger_packet",
+                        "margin": "command_center_margin_packet",
+                        "limit_emotion": "command_center_limit_emotion_packet",
+                        "chip_radar": "command_center_chip_packet",
+                        "hard_risk": "command_center_hard_risk_packet",
+                    }
+                    _remember_a_share_manual_recovery_result(
+                        result,
+                        key=key,
+                        label=action.get("label") or result_label,
+                        writes_packet=manual_action.get("writes_packet") or fallback_writes_packets.get(key) or f"command_center_{key}_packet",
+                        api_hint=manual_action.get("api") or manual_action.get("api_hint"),
+                    )
+                    _persist_home_action_snapshot(
+                        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+                        target=ticker,
+                        position_profile=position_profile,
+                    )
 
 
 def _get_command_center_facts_packet(target="", name=""):
