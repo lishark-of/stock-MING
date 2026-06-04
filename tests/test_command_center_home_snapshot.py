@@ -2172,6 +2172,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["quant_packet"]["data_status"], "ready")
         self.assertEqual(payload["quant_packet"]["score"], 68)
         self.assertEqual(payload["quant_packet"]["action_state"], "轻仓验证")
+        self.assertIn(payload["quant_packet"]["decision_brief"]["action_mode"], {"usable_evidence", "verify_quant"})
+        self.assertIn("量化", payload["quant_packet"]["decision_brief"]["title"])
         self.assertIn("手动触发", payload["quant_packet"]["manual_required_text"])
         self.assertFalse(payload["quant_packet"]["deepseek_called"])
 

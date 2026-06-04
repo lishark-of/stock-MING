@@ -130,6 +130,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("多数据源为什么不可用", source)
         self.assertIn("discipline_decision_brief", source)
         self.assertIn("纪律/回测执行摘要", source)
+        self.assertIn("quant_decision_brief", source)
+        self.assertIn("量化推演执行摘要", source)
 
     def test_home_snapshot_renders_recovery_priority_lanes(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

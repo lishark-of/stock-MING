@@ -4841,6 +4841,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
+    quant_packet = payload.get("quant_packet") or {}
     market_profile = payload.get("market_profile_evidence") or {}
     candidates = payload.get("next_ticket_candidates") or []
     etfs = margin_etf.get("recommended_etfs") or []
@@ -5600,6 +5601,30 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">边界：{escape(discipline_warnings)}</div>
         </div>
         """
+    quant_decision_brief = quant_packet.get("decision_brief") if isinstance(quant_packet.get("decision_brief"), dict) else {}
+    quant_evidence = "；".join(
+        str(item).strip()
+        for item in (quant_packet.get("evidence_items") or [])[:3]
+        if str(item).strip()
+    ) or "量化证据待刷新。"
+    quant_risks = "；".join(
+        str(item).strip()
+        for item in (quant_packet.get("risk_notes") or [])[:3]
+        if str(item).strip()
+    ) or _home_text(quant_packet.get("manual_required_text"), "完整量化推演必须手动触发。")
+    quant_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            量化推演证据
+            <span class="cc-home-chip {escape(_home_text(quant_decision_brief.get("tone"), "missing"))}">{escape(_home_text(quant_decision_brief.get("action_label"), "待手动量化"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(quant_decision_brief.get("title"), "量化推演执行摘要"))}：{escape(_home_text(quant_decision_brief.get("headline"), "量化待手动生成"))} ｜ 分数：{escape(_home_text(quant_decision_brief.get("score_text"), "待验证"))} ｜ 置信度：{escape(_home_text(quant_decision_brief.get("confidence"), "低"))}</div>
+          <div class="cc-home-item-meta">决策保护：{escape(_home_text(quant_decision_brief.get("guardrail_text"), "没有量化缓存时，不能假装已有评分或单票诊断。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(quant_decision_brief.get("next_action"), "先刷新今日基础数据，或进入高级工具箱手动生成量化推演。"))}</div>
+          <div class="cc-home-item-meta">证据：{escape(quant_evidence)}</div>
+          <div class="cc-home-item-meta">边界：{escape(quant_risks)}</div>
+        </div>
+        """
     evidence_card = evidence_vm.get("radar_card") or {}
     recovered_evidence_modules = [item for item in (evidence_vm.get("recovered_evidence_modules") or []) if isinstance(item, dict)]
     recovered_evidence_summary = _home_text(evidence_vm.get("recovered_evidence_summary"), "暂无已回流 A股证据模块")
@@ -5933,6 +5958,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-panel-title">已验证事实</div>
           {legacy_gap_html}
           {a_share_fact_recovery_html}
+          {quant_html}
           {discipline_html}
           <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))} ｜ {escape(_home_text(evidence_vm.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
           {evidence_card_html}

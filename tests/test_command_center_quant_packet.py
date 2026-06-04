@@ -26,6 +26,8 @@ class CommandCenterQuantPacketTests(unittest.TestCase):
         self.assertEqual(packet["data_status"], "missing")
         self.assertEqual(packet["action_state"], "待刷新")
         self.assertIn("手动触发", packet["manual_required_text"])
+        self.assertEqual(packet["decision_brief"]["action_mode"], "manual_quant_required")
+        self.assertIn("不能假装已有评分", packet["decision_brief"]["guardrail_text"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -54,6 +56,9 @@ class CommandCenterQuantPacketTests(unittest.TestCase):
         self.assertEqual(packet["action_state"], "轻仓验证")
         self.assertIn(packet["confidence"], {"低", "中"})
         self.assertIn("回测缓存", packet["backtest_reference"])
+        self.assertIn(packet["decision_brief"]["action_mode"], {"usable_evidence", "verify_quant"})
+        self.assertEqual(packet["decision_brief"]["quant_policy"], "button_gated")
+        self.assertFalse(packet["decision_brief"]["deepseek_called"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_defensive_quant_result_stays_conservative(self):
@@ -70,6 +75,8 @@ class CommandCenterQuantPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["action_state"], "防守观察")
         self.assertEqual(packet["confidence"], "低")
+        self.assertEqual(packet["decision_brief"]["action_mode"], "defensive_only")
+        self.assertIn("不能作为加仓", packet["decision_brief"]["guardrail_text"])
         self.assertIn("缺少回测缓存", " ".join(packet["risk_notes"]))
 
     def test_existing_packet_is_preserved_without_mutating_input(self):
@@ -93,7 +100,25 @@ class CommandCenterQuantPacketTests(unittest.TestCase):
         self.assertEqual(packet["score"], 66)
         self.assertEqual(packet["evidence_items"], ["证据 A"])
         self.assertEqual(packet["risk_notes"], ["风险 B"])
+        self.assertEqual(packet["decision_brief"]["action_mode"], "verify_quant")
         self.assertFalse(packet["deepseek_called"])
+
+    def test_quant_decision_brief_handles_cached_packet_without_external_calls(self):
+        brief = quant_packet.build_quant_decision_brief(
+            {
+                "status": "partial",
+                "data_status": "cached",
+                "score": 61,
+                "confidence": "低",
+                "summary": "轻量量化缓存。",
+            }
+        )
+
+        self.assertEqual(brief["action_mode"], "verify_quant")
+        self.assertEqual(brief["external_call_policy"], "not_triggered")
+        self.assertEqual(brief["quant_policy"], "button_gated")
+        self.assertFalse(brief["deepseek_called"])
+        json.dumps(brief, ensure_ascii=False)
 
     def test_target_mismatch_ignores_legacy_quant_result(self):
         packet = quant_packet.build_command_center_quant_packet(

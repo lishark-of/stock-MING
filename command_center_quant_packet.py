@@ -195,7 +195,66 @@ def _normalize_existing(existing: Mapping[str, Any]) -> dict:
             "deepseek_called": False,
         }
     )
+    payload["decision_brief"] = build_quant_decision_brief(payload)
     return payload
+
+
+def build_quant_decision_brief(packet: Any = None) -> dict:
+    payload = as_mapping(packet)
+    status = _first_text(payload.get("status"), default="waiting")
+    data_status = _first_text(payload.get("data_status"), default="missing")
+    action_state = _first_text(payload.get("action_state"), default="待刷新")
+    confidence = _first_text(payload.get("confidence"), default="低")
+    score = to_number(payload.get("score"))
+    if action_state == "防守观察" or (score is not None and score <= 50):
+        tone = "failed"
+        action_mode = "defensive_only"
+        action_label = "只防守观察"
+        headline = "量化不支持进攻"
+        guardrail = "量化偏弱或风险偏高，不能作为加仓、追高或加融资依据。"
+        next_action = "先等待量化和纪律重新同向；需要完整推演时手动进入高级工具箱。"
+    elif status == "ready" and data_status == "ready" and confidence in {"中", "高"}:
+        tone = "ready"
+        action_mode = "usable_evidence"
+        action_label = "可辅助验证"
+        headline = "量化可进入证据链"
+        guardrail = "量化只辅助验证，必须结合纪律、资金流和仓位预算。"
+        next_action = "把量化分数和触发条件与趋势路径、策略执行一起复核。"
+    elif status in {"ready", "cached", "partial"} or data_status in {"ready", "cached"}:
+        tone = "stale"
+        action_mode = "verify_quant"
+        action_label = "执行前复核"
+        headline = "量化需要复核"
+        guardrail = "轻量量化摘要不能单独当作完整诊断；缺回测时尤其不能放大仓位。"
+        next_action = "需要更高置信度时，手动运行完整量化推演和回测。"
+    else:
+        tone = "missing"
+        action_mode = "manual_quant_required"
+        action_label = "待手动量化"
+        headline = "量化待手动生成"
+        guardrail = "没有量化缓存时，不能假装已有评分或单票诊断。"
+        next_action = "先刷新今日基础数据，或进入高级工具箱手动生成量化推演。"
+    score_text = str(score) if score is not None else "待验证"
+    return {
+        "title": "量化推演执行摘要",
+        "status": "blocked" if tone == "failed" else "ready" if tone == "ready" else "partial" if tone == "stale" else "missing",
+        "tone": tone,
+        "headline": headline,
+        "action_mode": action_mode,
+        "action_label": action_label,
+        "score_text": score_text,
+        "confidence": confidence,
+        "summary": _first_text(payload.get("summary"), default=f"量化分数 {score_text}｜置信度 {confidence}"),
+        "guardrail_text": guardrail,
+        "next_action": next_action,
+        "manual_required_text": _first_text(
+            payload.get("manual_required_text"),
+            default="完整量化推演、回测和 DeepSeek 解释必须手动触发。",
+        ),
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+        "quant_policy": "button_gated",
+    }
 
 
 def build_command_center_quant_packet(
@@ -235,7 +294,7 @@ def build_command_center_quant_packet(
     action_state = _derive_action_state(score, direction, summary, status)
     evidence = _build_evidence(payload, live_section, backtest_report)
     risk_notes = _build_risk_notes(status, payload, live_section, backtest_report)
-    return {
+    packet = {
         "status": status,
         "source": _first_text(payload.get("source"), live_section.get("source"), default="量化推演缓存"),
         "updated_at": _first_text(payload.get("generated_at"), payload.get("updated_at"), live_section.get("updated_at")),
@@ -254,3 +313,5 @@ def build_command_center_quant_packet(
         "manual_required_text": "完整量化推演、回测和 DeepSeek 解释必须在高级工具箱或按钮中手动触发。",
         "deepseek_called": False,
     }
+    packet["decision_brief"] = build_quant_decision_brief(packet)
+    return packet
