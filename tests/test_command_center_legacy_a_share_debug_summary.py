@@ -147,6 +147,28 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["status_console"]["decision_readiness_label"], "谨慎验证")
         self.assertIn("暂无数据 4", view_model["status_console"]["summary"])
 
+    def test_possible_permission_wording_stays_stale_not_permission_blocked(self):
+        view_model = debug_summary.build_user_data_diagnostic_view_model(
+            verified_technical_facts={"available": True},
+            moneyflow_data={
+                "available": False,
+                "message": "近5日未取得可验证个股资金流，可能为非交易日、数据尚未更新、接口权限不足或标的暂不覆盖。",
+            },
+            dragon_data={"available": True},
+            margin_data={"available": True},
+            limit_emotion_data={"available": True},
+            chip_radar_data={"available": True},
+            hard_risk_data={"available": True},
+        )
+        item = next(item for item in view_model["items"] if item["key"] == "moneyflow")
+
+        self.assertEqual(item["status"], "stale_or_empty")
+        self.assertEqual(item["status_label"], "近期无数据")
+        self.assertEqual(view_model["tone"], "info")
+        self.assertEqual(view_model["counts"]["permission_denied"], 0)
+        self.assertIn("非交易日", item["reason"])
+        self.assertIn("不能把缺失写成利好", item["recovery"]["reason"])
+
     def test_user_data_diagnostic_marks_all_available(self):
         view_model = debug_summary.build_user_data_diagnostic_view_model(
             verified_technical_facts={"available": True},

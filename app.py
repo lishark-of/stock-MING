@@ -9836,6 +9836,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             ]
             diagnostic_columns = [column for column in diagnostic_columns if column in diagnostic_df.columns]
             st.dataframe(diagnostic_df[diagnostic_columns], width="stretch", hide_index=True)
+        render_home_a_share_diagnostic_recovery_controls(
+            home_snapshot={"a_share_user_data_diagnostic": legacy_user_diagnostic},
+            target=target,
+            market_type="A股",
+            position_profile=st.session_state.get("position_profile") or st.session_state.get("current_holding_context") or {},
+            live_packet=st.session_state.get("command_center_live_packet") or {},
+        )
         st.caption(
             f"{legacy_packet_summary.get('title')}：{legacy_packet_summary.get('status_label')}｜"
             f"{legacy_packet_summary.get('summary')}｜{legacy_packet_summary.get('manual_note')}"

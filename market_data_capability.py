@@ -270,6 +270,8 @@ def normalize_capability_state_value(value: Any) -> str:
     lower = text.lower()
     if lower in set(STATE_LABELS):
         return lower
+    if lower in {"missing", "waiting", "pending"} or text in {"待刷新", "待验证"}:
+        return STATE_EMPTY_RECENT
     if is_session_skip_error(text):
         return STATE_DISABLED_THIS_SESSION
     if is_permission_error(text):

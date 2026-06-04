@@ -68,6 +68,13 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertNotIn("旧工具恢复队列", source)
         self.assertNotIn("恢复动作：暂无需要手动恢复的数据源动作", source)
 
+    def test_legacy_a_share_screen_routes_diagnostic_to_recovery_controls(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn("render_home_a_share_diagnostic_recovery_controls(", source)
+        self.assertIn('home_snapshot={"a_share_user_data_diagnostic": legacy_user_diagnostic}', source)
+        self.assertIn('market_type="A股"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+import market_data_capability as capability_language
+
 
 PERMISSION_KEYWORDS = ("权限", "permission", "积分", "无接口访问权限")
 STALE_KEYWORDS = ("无数据", "暂无可验证", "暂未取得", "数据尚未更新", "待刷新", "待验证", "缺失")
@@ -133,6 +135,24 @@ def debug_issue_matches(data: Any, keywords: tuple[str, ...]) -> str:
     return debug_text(text)
 
 
+def _issue_text(data: Any) -> str:
+    payload = as_mapping(data)
+    return " ".join(str(payload.get(key) or "") for key in ["message", "warning", "error", "status", "capability_state"])
+
+
+def _capability_state_from_data(data: Any) -> str:
+    payload = as_mapping(data)
+    explicit = payload.get("capability_state") or payload.get("state")
+    if explicit:
+        normalized = capability_language.normalize_capability_state_value(explicit)
+        if normalized != "unknown":
+            return normalized
+    text = _issue_text(payload)
+    if not text.strip():
+        return capability_language.STATE_EMPTY_RECENT
+    return capability_language.normalize_capability_state_value(text)
+
+
 def build_technical_summary(verified_technical_facts: Any) -> dict:
     facts = as_mapping(verified_technical_facts)
     technical_missing = as_list(facts.get("missing")) or as_list(facts.get("missing_items"))
@@ -211,8 +231,10 @@ def build_fund_rows(
         ok = debug_status(data)
         if not available or not ok:
             funding_missing.append(name)
-        permission_note = debug_issue_matches(data, PERMISSION_KEYWORDS)
-        stale_note = debug_issue_matches(data, STALE_KEYWORDS)
+        capability_state = _capability_state_from_data(data)
+        issue_text = debug_text(_issue_text(data), fallback="")
+        permission_note = issue_text if capability_state in {"permission_denied", "disabled_this_session"} else ""
+        stale_note = issue_text if capability_state in {"empty_recent", "stale_cache", "fallback_used"} else ""
         if permission_note:
             permission_issues.append(f"{name}: {permission_note}")
         if stale_note:
@@ -224,6 +246,7 @@ def build_fund_rows(
             "source": debug_text(data.get("source")),
             "api": debug_text(data.get("api")),
             "note": debug_note(data),
+            "capability_state": capability_state,
         }
         for key, value in extras.items():
             row[key] = value if isinstance(value, bool) else debug_text(value)
@@ -325,14 +348,19 @@ def build_legacy_a_share_debug_view_model(
 
 
 def _classify_fund_row(row: dict) -> tuple[str, str, str]:
-    name = str(row.get("name") or "")
-    note = str(row.get("note") or "")
     if row.get("available") and row.get("ok"):
         return "available", "已取得", "已读取到可验证数据。"
-    if debug_issue_matches({"message": note}, PERMISSION_KEYWORDS):
-        return "permission_denied", "权限不足", "当前接口可能需要更高 Tushare 权限或积分。"
-    if debug_issue_matches({"message": note}, STALE_KEYWORDS):
-        return "stale_or_empty", "暂无当日数据", "可能为非交易日、数据尚未发布或标的暂不覆盖。"
+    state = str(row.get("capability_state") or "")
+    if state == "permission_denied":
+        return "permission_denied", "权限不足", "当前接口需要更高 Tushare 权限或积分。"
+    if state == "disabled_this_session":
+        return "permission_denied", "本会话跳过", "当前接口此前已判定受限，本会话跳过重复请求以避免卡顿。"
+    if state in {"not_configured", "network_failed", "failed"}:
+        return "permission_denied", "调用受限", capability_language.meaning_for_capability_state(state, "Tushare", FUND_SOURCE_LABELS.get(row.get("name"), "A股数据"))
+    if state in {"empty_recent", "stale_cache", "fallback_used"}:
+        return "stale_or_empty", capability_language.STATE_LABELS.get(state, "暂无当日数据"), capability_language.meaning_for_capability_state(state, "Tushare", FUND_SOURCE_LABELS.get(row.get("name"), "A股数据"))
+    if state == "requires_manual_refresh":
+        return "manual_required", "待手动刷新", "页面打开不会自动请求重接口，需要点击检测或刷新。"
     return "manual_required", "待手动刷新", "页面打开不会自动请求重接口，需要点击检测或刷新。"
 
 
@@ -342,7 +370,7 @@ def _recovery_reason(status: str, label: str) -> str:
     if status == "permission_denied":
         return f"{label}可能需要更高 Tushare 权限或积分；如已升级权限，再手动检测。"
     if status == "stale_or_empty":
-        return f"{label}可能尚未发布、非交易日或标的不覆盖；等待发布后手动检测。"
+        return f"{label}可能尚未发布、非交易日或标的不覆盖；不能把缺失写成利好，等待发布后手动检测。"
     return f"{label}待手动检测；页面打开不会自动请求 Tushare 重接口。"
 
 
