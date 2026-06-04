@@ -423,6 +423,26 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("龙虎榜", json.dumps(projection_summary, ensure_ascii=False))
         self.assertFalse(projection_summary["deepseek_called"])
 
+    def test_legacy_decision_chain_status_enters_strategy_projection_gate(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            projection_packet={
+                "status": "ready",
+                "path_basis": "旧能力链：已验证 3｜缓存辅助 2｜阻断决策 1｜待验证 3",
+                "path_legacy_decision_chain_status": "blocked",
+                "path_legacy_decision_chain_label": "旧能力仍有阻断项",
+                "path_legacy_decision_chain_summary": "已验证 3｜缓存辅助 2｜阻断决策 1｜待验证 3",
+                "deepseek_called": False,
+            },
+        )
+        projection_summary = view_model["projection_confidence_summary"]
+
+        self.assertEqual(projection_summary["status"], "blocked")
+        self.assertEqual(projection_summary["confidence_label"], "低置信度")
+        self.assertIn("旧能力仍有阻断项", json.dumps(projection_summary["blocker_items"], ensure_ascii=False))
+        self.assertIn("不能把乐观路径当作加仓依据", projection_summary["guardrail"])
+        self.assertFalse(projection_summary["deepseek_called"])
+
     def test_a_share_data_capability_all_available_enters_evidence_chain(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "只观察"},

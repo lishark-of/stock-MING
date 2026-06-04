@@ -373,6 +373,59 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertEqual(summary["label"], "路径待验证")
         self.assertIn("龙虎榜", json.dumps(summary["pending_items"], ensure_ascii=False))
 
+    def test_legacy_decision_chain_blocks_projection_confidence(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            home_snapshot={
+                "timestamp": "2026-06-01T10:00:00",
+                "legacy_decision_chain_summary": {
+                    "status": "blocked",
+                    "headline": "旧能力仍有阻断项",
+                    "summary": "已验证 3｜缓存辅助 2｜阻断决策 1｜待验证 3",
+                    "priority_items": [
+                        {
+                            "label": "量化推演",
+                            "decision_chain_state": "blocked",
+                            "state_label": "阻断决策",
+                        }
+                    ],
+                },
+            },
+        )
+        confidence = projection.build_projection_confidence_summary(packet)
+
+        self.assertEqual(packet["path_legacy_decision_chain_status"], "blocked")
+        self.assertIn("旧能力链：已验证 3", packet["path_basis"])
+        self.assertIn("旧能力阻断压制乐观路径", packet["paths"][0]["trigger"])
+        self.assertIn("量化推演", packet["paths"][0]["risk_note"])
+        self.assertEqual(confidence["status"], "blocked")
+        self.assertIn("旧能力仍有阻断项", json.dumps(confidence["blocker_items"], ensure_ascii=False))
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(confidence["deepseek_called"])
+
+    def test_legacy_decision_chain_ready_supports_projection_confidence(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "等待", "confidence": "低"},
+            home_snapshot={
+                "timestamp": "2026-06-01T10:00:00",
+                "legacy_decision_chain_summary": {
+                    "status": "ready",
+                    "headline": "旧能力可进入决策链",
+                    "summary": "已验证 9｜缓存辅助 0｜阻断决策 0｜待验证 0",
+                    "priority_items": [],
+                },
+            },
+        )
+        confidence = projection.build_projection_confidence_summary(packet)
+
+        self.assertEqual(packet["path_legacy_decision_chain_status"], "ready")
+        self.assertIn("旧能力链已验证", packet["paths"][0]["trigger"])
+        self.assertIn("旧能力可进入决策链", json.dumps(confidence["support_items"], ensure_ascii=False))
+        self.assertFalse(packet["deepseek_called"])
+
     def test_a_share_data_capability_enriches_projection_paths(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},

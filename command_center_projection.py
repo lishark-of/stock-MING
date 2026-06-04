@@ -422,6 +422,74 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _legacy_decision_chain_guidance(legacy_summary: Any = None) -> dict:
+    summary = _as_mapping(legacy_summary)
+    if not summary:
+        return {}
+    items = [_as_mapping(item) for item in _as_list(summary.get("priority_items") or summary.get("items")) if _as_mapping(item)]
+    blocked = [item for item in items if _to_text(item.get("decision_chain_state")) == "blocked"]
+    cache_only = [item for item in items if _to_text(item.get("decision_chain_state")) == "cache_only"]
+    waiting = [item for item in items if _to_text(item.get("decision_chain_state")) == "waiting"]
+    ready = [item for item in items if _to_text(item.get("decision_chain_state")) == "ready"]
+    status = _to_text(summary.get("status"), "waiting")
+    return {
+        "status": status,
+        "label": _to_text(summary.get("headline") or summary.get("title"), "旧能力决策链"),
+        "summary": _to_text(summary.get("summary"), "旧能力决策链待验证"),
+        "blocked_text": _limited_join([_to_text(item.get("label")) for item in blocked], fallback="旧能力阻断项", limit=3),
+        "cache_text": _limited_join([_to_text(item.get("label")) for item in cache_only], fallback="旧能力缓存项", limit=3),
+        "waiting_text": _limited_join([_to_text(item.get("label")) for item in waiting], fallback="旧能力待验证项", limit=3),
+        "ready_text": _limited_join([_to_text(item.get("label")) for item in ready], fallback="旧能力已验证项", limit=3),
+        "items": items[:6],
+        "deepseek_called": False,
+    }
+
+
+def _merge_legacy_decision_chain_guidance(paths: list[dict], legacy_summary: Any = None) -> tuple[list[dict], str, dict]:
+    guidance = _legacy_decision_chain_guidance(legacy_summary)
+    if not guidance:
+        return paths, "", {}
+    guided_paths = []
+    status = guidance["status"]
+    for index, path in enumerate(paths):
+        item = dict(path)
+        if status == "blocked":
+            if index == 0:
+                note = f"旧能力阻断压制乐观路径：{guidance['blocked_text']}。"
+                risk = f"旧能力阻断未解除前（{guidance['blocked_text']}），不能把乐观路径当作加仓、追高或加融资依据。"
+            elif index == 1:
+                note = f"中性路径复核旧能力链：{guidance['summary']}。"
+                risk = "旧能力阻断存在时，中性路径也只允许观察和等待补证。"
+            else:
+                note = f"旧能力阻断触发谨慎边界：{guidance['blocked_text']}。"
+                risk = f"优先保现金、降风险，并按高级工具箱手动恢复对应 packet：{guidance['blocked_text']}。"
+            item["legacy_decision_chain_label"] = "旧能力阻断"
+        elif status in {"cache_only", "partial"}:
+            if index == 0:
+                note = f"旧能力缓存/待验证限制乐观路径：{guidance['cache_text']}；{guidance['waiting_text']}。"
+                risk = "缓存和待验证旧能力只能辅助判断，执行前必须复核日期、来源和覆盖口径。"
+            elif index == 1:
+                note = f"中性路径等待旧能力补证：{guidance['summary']}。"
+                risk = "旧能力未完全回流时，保持等待或只观察，不放大仓位。"
+            else:
+                note = f"若缓存旧能力转弱或补证失败，谨慎路径优先：{guidance['cache_text']}。"
+                risk = "缓存过期或补证失败时，优先降低暴露。"
+            item["legacy_decision_chain_label"] = "旧能力待复核"
+        elif status == "ready":
+            note = f"旧能力链已验证，可辅助路径判断：{guidance['ready_text']}。"
+            risk = "旧能力已验证也不等于自动交易，仍需价格、纪律和仓位共同确认。"
+            item["legacy_decision_chain_label"] = "旧能力可参考"
+        else:
+            note = "旧能力链待验证，趋势路径只能保留示例和安全空态。"
+            risk = "旧能力未回流前，不把趋势路径写成交易依据。"
+            item["legacy_decision_chain_label"] = "旧能力待验证"
+        item["trigger"] = _append_evidence_text(item.get("trigger"), note)
+        item["risk"] = _append_evidence_text(item.get("risk"), risk)
+        item["risk_note"] = item["risk"]
+        guided_paths.append(item)
+    return guided_paths, f"旧能力链：{guidance['summary']}", guidance
+
+
 def _limited_join(values: Any, fallback: str = "暂无", limit: int = 2) -> str:
     if isinstance(values, (list, tuple, set)):
         labels = [_to_text(item) for item in values]
@@ -1016,6 +1084,16 @@ def build_projection_confidence_summary(projection_packet: Any = None) -> dict:
     elif fact_summary:
         support_items.append(fact_summary)
 
+    legacy_chain_status = _to_text(packet.get("path_legacy_decision_chain_status"))
+    legacy_chain_summary = _to_text(packet.get("path_legacy_decision_chain_summary"))
+    legacy_chain_label = _to_text(packet.get("path_legacy_decision_chain_label"), "旧能力决策链")
+    if legacy_chain_status == "blocked":
+        blocker_items.append(f"{legacy_chain_label}：{legacy_chain_summary or '仍有阻断项'}")
+    elif legacy_chain_status in {"cache_only", "partial"}:
+        pending_items.append(f"{legacy_chain_label}：{legacy_chain_summary or '缓存/待验证'}")
+    elif legacy_chain_status == "ready":
+        support_items.append(f"{legacy_chain_label}：{legacy_chain_summary or '已验证'}")
+
     if blocker_items:
         status = "blocked"
         label = "路径受限"
@@ -1056,6 +1134,8 @@ def build_projection_confidence_summary(projection_packet: Any = None) -> dict:
         "summary": "｜".join(summary_parts) or "趋势推演暂无可读依据。",
         "guardrail": guardrail,
         "path_basis": path_basis,
+        "legacy_decision_chain_summary": legacy_chain_summary,
+        "legacy_decision_chain_status": legacy_chain_status,
         "evidence_group_summary": evidence_group_summary,
         "evidence_group_status": evidence_group_status,
         "evidence_group_guardrail": _to_text(packet.get("path_evidence_group_guardrail")),
@@ -1120,6 +1200,11 @@ def build_projection_packet(
         fact_recovery,
         market_type,
     )
+    legacy_decision_chain = _as_mapping(snapshot.get("legacy_decision_chain_summary"))
+    paths, legacy_decision_chain_basis, legacy_decision_chain_guidance = _merge_legacy_decision_chain_guidance(
+        paths,
+        legacy_decision_chain,
+    )
     fallback = status == "waiting" or not _has_payload(decision, strategy, live, snapshot)
     note = "示例路径 / 待刷新" if fallback else "基于现有结构化 packet 的条件化路径推演"
     return {
@@ -1129,7 +1214,20 @@ def build_projection_packet(
         "historical": _historical_points(base, market_bias),
         "paths": paths,
         "market_type": market_type,
-        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis, data_health_basis, fact_recovery_basis] if item]),
+        "path_basis": " ｜ ".join(
+            [
+                item
+                for item in [
+                    path_basis,
+                    evidence_basis,
+                    data_capability_basis,
+                    data_health_basis,
+                    fact_recovery_basis,
+                    legacy_decision_chain_basis,
+                ]
+                if item
+            ]
+        ),
         "path_evidence_summary": evidence_basis,
         "path_evidence_group_summary": _to_text(evidence_group_summary.get("summary")),
         "path_evidence_group_status": _to_text(evidence_group_summary.get("status")),
@@ -1144,6 +1242,10 @@ def build_projection_packet(
         "path_fact_recovery_summary": fact_recovery_basis,
         "path_fact_recovery_items": fact_recovery_items,
         "path_fact_recovery_tone": fact_recovery_tone,
+        "path_legacy_decision_chain_summary": _to_text(legacy_decision_chain_guidance.get("summary")),
+        "path_legacy_decision_chain_status": _to_text(legacy_decision_chain_guidance.get("status")),
+        "path_legacy_decision_chain_label": _to_text(legacy_decision_chain_guidance.get("label")),
+        "path_legacy_decision_chain_items": legacy_decision_chain_guidance.get("items") or [],
         "market_method_summary": _to_text(_as_mapping(analysis_method_packet).get("summary"), "分析方法待验证"),
         "source": SOURCE_FALLBACK if fallback else SOURCE_READY,
         "updated_at": updated_at,
