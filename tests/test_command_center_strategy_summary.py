@@ -278,6 +278,57 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertFalse(guidance["deepseek_called"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_recovered_limit_and_chip_evidence_tighten_strategy_conditions(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            evidence_radar_packet={
+                "decision_summary": "支持 2｜阻断 0｜缓存 0｜缺失 0",
+                "support_items": [
+                    {"key": "limit_emotion", "label": "涨跌停/情绪", "headline": "接近涨停/追高区"},
+                    {"key": "chip_radar", "label": "筹码/胜率", "headline": "获利盘压力偏高"},
+                ],
+            },
+        )
+        guidance = view_model["a_share_evidence_group_guidance"]
+        dumped = json.dumps(guidance, ensure_ascii=False)
+
+        self.assertEqual(guidance["status"], "ready")
+        self.assertIn("旧能力验证", guidance["add_condition_guardrail"])
+        self.assertIn("避开追高和涨跌停情绪边界", guidance["add_condition_guardrail"])
+        self.assertIn("压力位、获利盘和胜率口径", guidance["add_condition_guardrail"])
+        self.assertIn("获利盘压力偏高", guidance["reduce_condition_guardrail"])
+        self.assertIn("题材热度退潮", guidance["invalidation_guardrail"])
+        self.assertIn("筹码压力和胜率口径转弱", guidance["invalidation_guardrail"])
+        self.assertIn("limit_emotion", dumped)
+        self.assertFalse(guidance["legacy_condition_notes"]["deepseek_called"])
+
+    def test_missing_limit_and_chip_evidence_keep_strategy_conditions_defensive(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 1",
+                "blocker_items": [
+                    {"key": "limit_emotion", "label": "涨跌停/情绪", "status_label": "权限不足"},
+                ],
+                "missing_items": [
+                    {"key": "chip_radar", "label": "筹码/胜率", "status_label": "待验证"},
+                ],
+            },
+        )
+        guidance = view_model["a_share_evidence_group_guidance"]
+        dumped = json.dumps(guidance, ensure_ascii=False)
+
+        self.assertEqual(guidance["status"], "blocked")
+        self.assertIn("不支持追高", guidance["add_condition_guardrail"])
+        self.assertIn("不能把压力位或胜率写成加仓依据", guidance["add_condition_guardrail"])
+        self.assertIn("减仓条件优先于加仓条件", guidance["reduce_condition_guardrail"])
+        self.assertIn("乐观执行条件不完整", guidance["invalidation_guardrail"])
+        self.assertIn("不能确认题材温度", guidance["invalidation_guardrail"])
+        self.assertIn("chip_radar", dumped)
+        self.assertFalse(guidance["deepseek_called"])
+
     def test_a_share_evidence_group_guidance_falls_back_to_evidence_lists(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "只观察"},

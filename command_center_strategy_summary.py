@@ -400,6 +400,88 @@ def _evidence_group_highlights(groups: list[dict]) -> list[dict]:
     return highlights
 
 
+def _first_evidence_item(evidence: Mapping[str, Any], key: str) -> tuple[str, dict]:
+    state_sources = [
+        ("supporting", evidence.get("support_items")),
+        ("blocked", evidence.get("blocker_items")),
+        ("cached", evidence.get("cached_items")),
+        ("missing", evidence.get("missing_items")),
+    ]
+    for state, raw_items in state_sources:
+        for item in _as_list(raw_items):
+            payload = _as_mapping(item)
+            if _to_text(payload.get("key")) == key:
+                return state, payload
+    return "", {}
+
+
+def _evidence_item_brief(item: Mapping[str, Any], fallback: str) -> str:
+    text = _to_text(
+        item.get("headline")
+        or item.get("metric")
+        or item.get("status_label")
+        or item.get("evidence_label")
+        or item.get("label")
+    )
+    return text or fallback
+
+
+def _legacy_a_share_strategy_condition_notes(evidence: Mapping[str, Any]) -> dict:
+    configs = {
+        "limit_emotion": {
+            "label": "涨跌停/情绪",
+            "supporting_add": "已回流，加仓仍必须避开追高和涨跌停情绪边界",
+            "supporting_reduce": "若情绪转弱或冲板失败，减仓/降风险优先级上调",
+            "supporting_invalidation": "题材热度退潮或涨跌停风险恶化时，乐观路径失效",
+            "pending_add": "未验证前不支持追高、加融资或把情绪当作买入依据",
+            "pending_reduce": "情绪边界未确认时，减仓条件优先于加仓条件",
+            "pending_invalidation": "不能确认题材温度和涨跌停风险时，本轮进攻假设降级",
+        },
+        "chip_radar": {
+            "label": "筹码/胜率",
+            "supporting_add": "已回流，加仓前仍需复核压力位、获利盘和胜率口径",
+            "supporting_reduce": "获利盘压力偏高或压力位失守时，先减暴露",
+            "supporting_invalidation": "筹码压力和胜率口径转弱时，本轮策略建议失效",
+            "pending_add": "未验证前不能把压力位或胜率写成加仓依据",
+            "pending_reduce": "筹码压力缺失时，价格走弱优先触发减仓/降风险",
+            "pending_invalidation": "筹码/胜率无法回流时，乐观执行条件不完整",
+        },
+    }
+    add_notes = []
+    reduce_notes = []
+    invalidation_notes = []
+    items = []
+    for key, config in configs.items():
+        state, item = _first_evidence_item(evidence, key)
+        if not state:
+            continue
+        label = config["label"]
+        brief = _evidence_item_brief(item, label)
+        prefix = f"{label}：{brief}"
+        is_supporting = state == "supporting"
+        state_key = "supporting" if is_supporting else "pending"
+        add_notes.append(f"{prefix}；{config[state_key + '_add']}")
+        reduce_notes.append(f"{prefix}；{config[state_key + '_reduce']}")
+        invalidation_notes.append(f"{prefix}；{config[state_key + '_invalidation']}")
+        items.append(
+            {
+                "key": key,
+                "label": label,
+                "state": state,
+                "state_label": _to_text(item.get("evidence_label") or item.get("status_label")) or "待验证",
+                "summary": prefix,
+                "deepseek_called": False,
+            }
+        )
+    return {
+        "add_note": "；".join(add_notes),
+        "reduce_note": "；".join(reduce_notes),
+        "invalidation_note": "；".join(invalidation_notes),
+        "items": items,
+        "deepseek_called": False,
+    }
+
+
 def build_strategy_a_share_evidence_group_guidance(evidence_radar_packet: Any = None) -> dict:
     evidence = _as_mapping(evidence_radar_packet)
     if not evidence:
@@ -410,6 +492,7 @@ def build_strategy_a_share_evidence_group_guidance(evidence_radar_packet: Any = 
     counts = {group.get("key"): _evidence_group_count(group) for group in groups}
     if not any(counts.values()):
         return {}
+    legacy_condition_notes = _legacy_a_share_strategy_condition_notes(evidence)
 
     recovered = counts.get("recovered", 0)
     blocked = counts.get("blocked", 0)
@@ -434,6 +517,12 @@ def build_strategy_a_share_evidence_group_guidance(evidence_radar_packet: Any = 
         add_guardrail = "已回流证据可作为加仓条件的辅助依据，但仍需 MA/量能/纪律和仓位预算共振。"
         reduce_guardrail = "已回流证据若转弱或和价格纪律冲突，按纪律线减仓。"
         invalidation_guardrail = "证据链从支持转为分歧或失败时，本轮策略建议失效并重新生成。"
+    if legacy_condition_notes.get("add_note"):
+        add_guardrail = f"{add_guardrail} 旧能力验证：{legacy_condition_notes['add_note']}。"
+    if legacy_condition_notes.get("reduce_note"):
+        reduce_guardrail = f"{reduce_guardrail} 旧能力验证：{legacy_condition_notes['reduce_note']}。"
+    if legacy_condition_notes.get("invalidation_note"):
+        invalidation_guardrail = f"{invalidation_guardrail} 旧能力验证：{legacy_condition_notes['invalidation_note']}。"
 
     condition_items = [
         {"key": "add", "label": "加仓门槛", "text": add_guardrail, "tone": tone if status != "ready" else "success"},
@@ -448,6 +537,7 @@ def build_strategy_a_share_evidence_group_guidance(evidence_radar_packet: Any = 
         "add_condition_guardrail": add_guardrail,
         "reduce_condition_guardrail": reduce_guardrail,
         "invalidation_guardrail": invalidation_guardrail,
+        "legacy_condition_notes": legacy_condition_notes,
         "condition_items": condition_items,
         "deepseek_called": False,
     }
