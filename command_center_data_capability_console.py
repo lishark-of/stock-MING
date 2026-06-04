@@ -229,11 +229,106 @@ def _diagnostic_answer(item: Mapping[str, Any]) -> str:
         )
     if state == "requires_manual_refresh":
         return f"{label}被标记为按钮触发型能力；页面打开不会自动请求 {provider} 重型接口。"
+    if state == "not_configured":
+        return f"{label}本地配置缺失或 token/secrets 不可用；这不是数据不存在。"
     if state == "stale_cache":
         return f"{label}正在使用缓存防白屏；执行前要核对最后更新时间和来源。"
     if state == "fallback_used":
         return f"{label}使用替代口径，只能辅助判断，不能等同于原始接口事实。"
     return _to_text(item.get("meaning") or item.get("decision_impact"), f"{label}仍需核对接口状态、日期和覆盖范围。")
+
+
+def _provider_guardrail(item: Mapping[str, Any]) -> str:
+    label = _to_text(item.get("label"), "数据能力")
+    state = _to_text(item.get("state"))
+    provider = _to_text(item.get("provider"), "数据源")
+    if state in BLOCKED_STATES:
+        return f"{provider} {label}恢复前不能支撑加仓、追高、加融资或自动交易。"
+    if state in MANUAL_STATES:
+        return f"{provider} {label}必须按钮触发，未刷新前只能作为待验证缺口。"
+    if state in STALE_STATES:
+        return f"{provider} {label}执行前要复核日期、来源和覆盖范围。"
+    return f"{provider} {label}只作辅助证据，仍需价格、纪律和仓位共同确认。"
+
+
+def _provider_gap_headline(status: str, blocked_count: int, manual_count: int, stale_count: int) -> str:
+    if status == "blocked":
+        return f"多数据源有 {blocked_count} 个阻断项"
+    if status == "partial":
+        return f"多数据源有 {manual_count + stale_count} 个待手动或待复核项"
+    if status == "ready":
+        return "多数据源当前可辅助验证"
+    return "多数据源能力待检测"
+
+
+def build_provider_gap_explainer(
+    recovery_actions: Any = None,
+    ready_items: Any = None,
+) -> dict:
+    actions = [_as_mapping(item) for item in _as_list(recovery_actions) if _as_mapping(item)]
+    ready = [_as_mapping(item) for item in _as_list(ready_items) if _as_mapping(item)]
+    if not actions and not ready:
+        return {
+            "title": "多数据源为什么不可用",
+            "status": "missing",
+            "tone": "missing",
+            "headline": "多数据源能力待检测",
+            "summary": "暂无本地能力检测结果；页面打开不会自动请求 Tushare、AkShare、yfinance 或 Supabase。",
+            "explanation": "先读取上次快照或手动检测关键接口，再把结果回流到综合中心 packet。",
+            "items": [],
+            "next_action": "在数据源体检或对应高级工具里手动检测。",
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
+    blocked = [item for item in actions if _to_text(item.get("state")) in BLOCKED_STATES]
+    manual = [item for item in actions if _to_text(item.get("state")) in MANUAL_STATES]
+    stale = [item for item in actions if _to_text(item.get("state")) in STALE_STATES]
+    if blocked:
+        status = "blocked"
+    elif manual or stale:
+        status = "partial"
+    elif ready:
+        status = "ready"
+    else:
+        status = "missing"
+    rows = []
+    for action in actions + ready:
+        state = _to_text(action.get("state"), "available" if action in ready else "unknown")
+        rows.append(
+            {
+                "provider": _to_text(action.get("provider"), "数据源"),
+                "label": _to_text(action.get("label"), "数据能力"),
+                "api": _to_text(action.get("api")),
+                "state": state,
+                "status_label": _to_text(action.get("status_label") or action.get("status"), state),
+                "tone": _to_text(action.get("tone"), _tone(status)),
+                "why_unavailable": _to_text(action.get("diagnostic_answer") or action.get("reason"), _diagnostic_answer(action)),
+                "decision_guardrail": _provider_guardrail(action),
+                "action_label": _to_text(action.get("action_label"), "手动检查"),
+                "toolbox_entry": _to_text(action.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+                "writes_packet": _to_text(action.get("writes_packet"), "command_center_data_capability_packet"),
+                "refresh_policy": _to_text(action.get("refresh_policy"), "button_gated"),
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    summary = f"阻断 {len(blocked)}｜手动 {len(manual)}｜缓存/待验证 {len(stale)}｜可用 {len(ready)}"
+    return {
+        "title": "多数据源为什么不可用",
+        "status": status,
+        "tone": _tone(status),
+        "headline": _provider_gap_headline(status, len(blocked), len(manual), len(stale)),
+        "summary": summary,
+        "explanation": "不同数据源失败原因不同：Tushare 可能是权限/近期无数据，AkShare/yfinance 多为手动刷新，Supabase 多为本地配置。",
+        "items": rows[:MAX_QUEUE_ITEMS],
+        "next_action": (
+            "先处理阻断项，再按按钮手动刷新 AkShare/yfinance；Supabase 只检查本地配置。"
+            if actions
+            else "继续复核可用数据的日期、来源和适用标的。"
+        ),
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
 
 
 def _recovery_priority(item: Mapping[str, Any]) -> int:
@@ -318,6 +413,7 @@ def build_data_capability_console_packet(
     readiness, readiness_label, safe_mode_text = _decision_readiness(status)
     decision_blockers = _decision_blockers(blocked_items, manual_items, stale_items)
     recovery_actions = build_data_capability_recovery_actions(blocked_items, manual_items, stale_items)
+    provider_gap_explainer = build_provider_gap_explainer(recovery_actions, ready_items=ready_items)
     data_health_ledger = build_data_health_ledger(
         data_capability_packet=data_capability_packet,
         data_gap_report=data_gap_report,
@@ -339,6 +435,7 @@ def build_data_capability_console_packet(
         "manual_items": manual_items,
         "stale_items": stale_items,
         "recovery_actions": recovery_actions,
+        "provider_gap_explainer": provider_gap_explainer,
         "recovery_summary": (
             f"优先处理 {recovery_actions[0]['label']}：{recovery_actions[0]['action_label']}。"
             if recovery_actions

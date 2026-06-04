@@ -649,7 +649,7 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
         f"受限：{'、'.join(restricted) if restricted else '无'}｜"
         f"待验证：{'、'.join(pending) if pending else '无'}"
         if items
-        else "尚未检测；页面打开不会自动请求 Tushare、AkShare 或 yfinance。"
+        else "尚未检测；页面打开不会自动请求 Tushare、AkShare、yfinance 或 Supabase。"
     )
     return {
         "source": _to_text(packet.get("source"), "数据能力"),

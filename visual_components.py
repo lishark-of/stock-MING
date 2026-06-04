@@ -5023,7 +5023,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
 
     error_line = "无" if not errors else f"{len(errors)} 个失败/错误"
     watch_not_chase_text = "；".join([str(item) for item in (margin_etf.get("watch_not_chase") or []) if str(item).strip()]) or "不追高 ETF；等待回踩、量能和风险线确认。"
-    capability_summary = _home_text(data_capability.get("summary"), "尚未检测；页面打开不会自动请求 Tushare、AkShare 或 yfinance。")
+    capability_summary = _home_text(data_capability.get("summary"), "尚未检测；页面打开不会自动请求 Tushare、AkShare、yfinance 或 Supabase。")
     governance_summary = _home_text(data_gap_report.get("summary"), capability_summary)
     governance_checks = [str(item).strip() for item in (data_gap_report.get("next_manual_checks") or []) if str(item).strip()]
     capability_items = data_capability.get("items") or []
@@ -5035,6 +5035,37 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     console_tone = _home_text(data_capability_console.get("tone"), "missing")
     console_readiness = _home_text(data_capability_console.get("decision_readiness_label"), "待检测")
     console_safe_mode = _home_text(data_capability_console.get("safe_mode_text"), "尚未检测数据能力；只能展示安全空态或上次成功结果。")
+    provider_gap_explainer = data_capability_console.get("provider_gap_explainer") if isinstance(data_capability_console.get("provider_gap_explainer"), dict) else {}
+    provider_gap_item_html = ""
+    for item in (provider_gap_explainer.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        provider_gap_item_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("provider"), "数据源"))} · {escape(_home_text(item.get("label"), "数据能力"))}：
+          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+          {escape(_home_text(item.get("why_unavailable"), "仍需核对状态、日期和覆盖范围。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失或未验证不能作为加仓依据。"))}
+          ｜恢复：{escape(_home_text(item.get("action_label"), "手动检查"))}
+          ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))}
+        </div>
+        """
+    if not provider_gap_item_html:
+        provider_gap_item_html = "<div class='cc-home-item-meta'>暂无多数据源能力诊断；页面打开不会自动请求外部接口。</div>"
+    provider_gap_explainer_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(provider_gap_explainer.get("title"), "多数据源为什么不可用"))}
+            <span class="cc-home-chip {escape(_home_text(provider_gap_explainer.get("tone"), "missing"))}">{escape(_home_text(provider_gap_explainer.get("headline"), "多数据源能力待检测"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(provider_gap_explainer.get("summary"), "暂无本地能力检测结果。"))}</div>
+          <div class="cc-home-item-meta">{escape(_home_text(provider_gap_explainer.get("explanation"), "不同数据源失败原因不同；不会自动请求外部接口。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(provider_gap_explainer.get("next_action"), "按数据恢复中心手动处理。"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(provider_gap_explainer.get("external_call_policy"), "not_triggered"))}</div>
+          {provider_gap_item_html}
+        </div>
+        """
     console_queue_html = ""
     console_queues = [
         ("可用证据", data_capability_console.get("ready_items") or []),
@@ -5803,6 +5834,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               </div>
               <div class="cc-home-item-meta">可用 {escape(_home_number(console_ready))}｜阻断 {escape(_home_number(console_blocked))}｜手动 {escape(_home_number(console_manual))}｜缓存/待验证 {escape(_home_number(console_stale))}</div>
               <div class="cc-home-item-meta">决策模式：{escape(console_readiness)}｜{escape(console_safe_mode)}</div>
+              {provider_gap_explainer_html}
               {console_queue_html}
             </div>
             <div class="cc-home-candidate">
@@ -5915,6 +5947,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
           {tushare_gap_explainer_html}
+          {provider_gap_explainer_html}
           {data_health_visibility_html}
           {data_recovery_center_html}
           {legacy_migration_html}

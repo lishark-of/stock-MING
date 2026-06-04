@@ -65,6 +65,10 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertIn("融资融券", packet["recovery_summary"])
         self.assertEqual(packet["data_health_ledger"]["status"], "blocked")
         self.assertTrue(any(row["writes_packet"] == "command_center_margin_packet" for row in packet["data_health_ledger"]["rows"]))
+        self.assertEqual(packet["provider_gap_explainer"]["status"], "blocked")
+        self.assertIn("多数据源", packet["provider_gap_explainer"]["title"])
+        self.assertIn("Tushare", packet["provider_gap_explainer"]["explanation"])
+        self.assertIn("AkShare", packet["provider_gap_explainer"]["explanation"])
         self.assertEqual(packet["provider_diagnostic_cards"][0]["provider"], "Tushare")
         self.assertIn("不是“没拉满”", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("个股资金流", dumped)
@@ -147,7 +151,31 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(action["provider"], "Supabase")
         self.assertEqual(action["refresh_policy"], "manual_config")
         self.assertIn("检查 Supabase 本地配置", action["action_label"])
+        self.assertEqual(packet["provider_gap_explainer"]["status"], "blocked")
+        self.assertIn("Supabase", json.dumps(packet["provider_gap_explainer"], ensure_ascii=False))
+        self.assertIn("本地配置", packet["provider_gap_explainer"]["items"][0]["why_unavailable"])
+        self.assertIn("manual_config", packet["provider_gap_explainer"]["items"][0]["refresh_policy"])
         self.assertFalse(action["deepseek_called"])
+
+    def test_provider_gap_explainer_handles_akshare_and_yfinance_manual_sources(self):
+        packet = console.build_data_capability_console_packet(
+            data_capability_packet={
+                "items": [
+                    {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                    {"provider": "yfinance", "api": "yfinance_market_data", "label": "yfinance 行情/新闻", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                ]
+            }
+        )
+        explainer = packet["provider_gap_explainer"]
+        dumped = json.dumps(explainer, ensure_ascii=False)
+
+        self.assertEqual(explainer["status"], "partial")
+        self.assertIn("待手动", explainer["headline"])
+        self.assertIn("AkShare", dumped)
+        self.assertIn("yfinance", dumped)
+        self.assertIn("按钮触发", dumped)
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in explainer["items"]))
+        self.assertFalse(explainer["deepseek_called"])
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_data_capability_console.py").read_text(encoding="utf-8"))

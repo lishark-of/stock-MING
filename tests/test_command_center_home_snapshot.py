@@ -483,6 +483,15 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(matrix["deepseek_called"])
         self.assertFalse(capability["deepseek_called"])
 
+    def test_empty_data_capability_summary_names_all_external_providers(self):
+        capability = snapshot.build_data_capability_snapshot({})
+
+        self.assertIn("Tushare", capability["summary"])
+        self.assertIn("AkShare", capability["summary"])
+        self.assertIn("yfinance", capability["summary"])
+        self.assertIn("Supabase", capability["summary"])
+        self.assertFalse(capability["deepseek_called"])
+
     def test_home_snapshot_prefers_current_a_share_capability_over_stale_command_packet(self):
         today = _dt.date.today().isoformat()
         state = {
@@ -738,6 +747,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("Supabase", dumped)
         self.assertIn("AkShare 重型刷新", dumped)
         self.assertIn("需要手动刷新", dumped)
+        self.assertIn("provider_gap_explainer", json.dumps(payload["data_capability_console"], ensure_ascii=False))
         self.assertFalse(capability["deepseek_called"])
 
     def test_home_snapshot_builds_data_gap_report(self):

@@ -126,6 +126,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("tushare_gap_explainer", source)
         self.assertIn("Tushare 专业接口为什么搜不到", source)
         self.assertIn("决策保护：", source)
+        self.assertIn("provider_gap_explainer", source)
+        self.assertIn("多数据源为什么不可用", source)
 
     def test_home_snapshot_renders_recovery_priority_lanes(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
