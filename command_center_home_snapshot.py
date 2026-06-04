@@ -463,6 +463,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
+    snapshot = attach_next_ticket_evidence_recovery_results(snapshot)
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
@@ -1674,6 +1675,112 @@ def attach_recovery_result_status_to_action(
     item["recovery_result_external_call_policy"] = _to_text(result.get("external_call_policy"), "not_triggered")
     item["deepseek_called"] = False
     return item
+
+
+def attach_next_ticket_evidence_recovery_results(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    candidates = []
+    for raw_candidate in _as_list(payload.get("next_ticket_candidates")):
+        candidate = _as_mapping(raw_candidate)
+        if not candidate:
+            continue
+        evidence_rows = []
+        counts = {"recovered": 0, "cached": 0, "blocked": 0, "waiting": 0}
+        for raw_evidence in _as_list(candidate.get("evidence_chain")):
+            evidence = _as_mapping(raw_evidence)
+            if not evidence:
+                continue
+            writes_packet = _to_text(evidence.get("writes_packet"))
+            label = _to_text(evidence.get("label"), "证据")
+            if writes_packet:
+                result = _fallback_recovery_result_item(
+                    {
+                        "writes_packet": writes_packet,
+                        "label": label,
+                        "status": evidence.get("status"),
+                    },
+                    payload,
+                )
+                status = _to_text(result.get("status"), "waiting")
+                evidence["recovery_result_status"] = status
+                evidence["recovery_result_status_label"] = _to_text(result.get("status_label"), "待验证")
+                evidence["recovery_result_tone"] = _to_text(result.get("tone"), "missing")
+                evidence["recovery_result_message"] = _to_text(result.get("message"), f"{label}恢复结果待验证。")
+                evidence["recovery_result_updated_at"] = _to_text(result.get("updated_at"), "暂无")
+                evidence["recovery_result_source"] = _to_text(result.get("source"), "本地恢复状态")
+                evidence["recovery_result_packet_key"] = _to_text(result.get("packet_key"), writes_packet)
+                evidence["recovery_result_external_call_policy"] = _to_text(result.get("external_call_policy"), "not_triggered")
+            else:
+                status = "waiting"
+                evidence["recovery_result_status"] = "waiting"
+                evidence["recovery_result_status_label"] = "待验证"
+                evidence["recovery_result_tone"] = "missing"
+                evidence["recovery_result_message"] = f"{label}尚未绑定回流 packet。"
+                evidence["recovery_result_external_call_policy"] = "not_triggered"
+            if status in {"recovered", "cached", "blocked"}:
+                counts[status] += 1
+            else:
+                counts["waiting"] += 1
+            evidence["deepseek_called"] = False
+            evidence_rows.append(evidence)
+        candidate["evidence_chain"] = evidence_rows
+        candidate["evidence_recovery_items"] = [
+            {
+                "label": _to_text(item.get("label"), "证据"),
+                "status": _to_text(item.get("recovery_result_status"), "waiting"),
+                "status_label": _to_text(item.get("recovery_result_status_label"), "待验证"),
+                "tone": _to_text(item.get("recovery_result_tone"), "missing"),
+                "writes_packet": _to_text(item.get("writes_packet")),
+                "message": _to_text(item.get("recovery_result_message"), "恢复结果待验证。"),
+                "deepseek_called": False,
+            }
+            for item in evidence_rows
+        ]
+        candidate["evidence_recovery_summary"] = (
+            f"已回流 {counts['recovered']}｜使用缓存 {counts['cached']}｜仍阻断 {counts['blocked']}｜待验证 {counts['waiting']}"
+            if evidence_rows
+            else "证据恢复结果待验证"
+        )
+        if counts["blocked"]:
+            impact_status = "blocked"
+            impact_label = "仍不可执行"
+            impact_tone = "failed"
+            impact_text = "存在阻断证据未恢复，候选不能升级为作战准备。"
+        elif counts["waiting"] or counts["cached"]:
+            impact_status = "still_verify"
+            impact_label = "仍等验证"
+            impact_tone = "stale"
+            impact_text = "证据链仍未完全实时验证，候选保持等验证/只观察。"
+        elif counts["recovered"]:
+            impact_status = "recovered"
+            impact_label = "证据已回流"
+            impact_tone = "ready"
+            impact_text = "核心证据已回流；仍需触发条件、纪律和风险预算共同确认。"
+        else:
+            impact_status = "waiting"
+            impact_label = "待验证"
+            impact_tone = "missing"
+            impact_text = "尚未形成可判断的候选证据恢复结果。"
+        candidate["evidence_recovery_impact"] = {
+            "status": impact_status,
+            "label": impact_label,
+            "tone": impact_tone,
+            "summary": candidate["evidence_recovery_summary"],
+            "impact_text": impact_text,
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
+        decision_brief = _as_mapping(candidate.get("decision_brief"))
+        if decision_brief:
+            decision_brief["recovery_impact_label"] = impact_label
+            decision_brief["recovery_impact_text"] = impact_text
+            decision_brief["recovery_impact_tone"] = impact_tone
+            decision_brief["external_call_policy"] = "not_triggered"
+            decision_brief["deepseek_called"] = False
+            candidate["decision_brief"] = decision_brief
+        candidates.append(candidate)
+    payload["next_ticket_candidates"] = candidates
+    return payload
 
 
 def build_legacy_migration_recovery_actions_snapshot(
@@ -3014,6 +3121,7 @@ def build_home_action_snapshot(
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
     }
+    snapshot = attach_next_ticket_evidence_recovery_results(snapshot)
     has_payload = bool(decision or strategy or snapshot["next_ticket_candidates"] or snapshot["margin_etf_summary"]["recommended_etfs"])
     if not has_payload:
         empty = _empty_snapshot()

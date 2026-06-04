@@ -4956,6 +4956,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         candidate_html = ""
         for item in candidates[:3]:
             decision_brief = item.get("decision_brief") if isinstance(item.get("decision_brief"), dict) else {}
+            recovery_impact = item.get("evidence_recovery_impact") if isinstance(item.get("evidence_recovery_impact"), dict) else {}
             evidence_chain = [evidence for evidence in (item.get("evidence_chain") or []) if isinstance(evidence, dict)]
             evidence_text = "；".join(
                 f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('status_label'), evidence.get('value') or '待验证')}"
@@ -4975,6 +4976,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 for value in (decision_brief.get("missing_evidence") or [])
                 if str(value).strip()
             ) or "暂无显式待补证"
+            recovery_items_text = "；".join(
+                f"{_home_text(row.get('label'), '证据')}:{_home_text(row.get('status_label'), '待验证')}"
+                for row in (item.get("evidence_recovery_items") or [])[:4]
+                if isinstance(row, dict)
+            ) or "恢复结果待验证"
             candidate_html += f"""
             <div class="cc-home-candidate">
               <div class="cc-home-item-title">
@@ -4985,6 +4991,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               <div class="cc-home-item-meta">下一步：{escape(_home_text(decision_brief.get("next_action"), "先补齐证据链，再判断是否进入作战准备。"))}</div>
               <div class="cc-home-item-meta">综合分：{escape(_home_number(item.get("score")))} ｜ 入选依据：{escape(evidence_text)}</div>
               <div class="cc-home-item-meta">证据链：{escape(_home_text(item.get("evidence_chain_summary"), "证据链待验证"))} ｜ {escape(evidence_guardrail)}</div>
+              <div class="cc-home-item-meta">恢复影响：<span class="cc-home-chip {escape(_home_text(recovery_impact.get("tone"), decision_brief.get("recovery_impact_tone") or "missing"))}">{escape(_home_text(recovery_impact.get("label"), decision_brief.get("recovery_impact_label") or "待验证"))}</span> {escape(_home_text(recovery_impact.get("summary"), item.get("evidence_recovery_summary") or "证据恢复结果待验证"))} ｜ {escape(_home_text(recovery_impact.get("impact_text"), decision_brief.get("recovery_impact_text") or "恢复结果不会自动改变候选状态。"))}</div>
+              <div class="cc-home-item-meta">恢复结果：{escape(recovery_items_text)}</div>
               <div class="cc-home-item-meta">待补证：{escape(missing_evidence_text)} ｜ 恢复路径：{escape(_home_text(decision_brief.get("recovery_route"), "高级工具箱 → 下一票雷达"))}</div>
               <div class="cc-home-item-meta">触发：{escape(_home_text(item.get("trigger_condition"), "等待触发条件确认。"))}</div>
               <div class="cc-home-item-meta">失效：{escape(_home_text(item.get("invalidation_condition"), "条件失效或风险转弱。"))}</div>

@@ -154,6 +154,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["next_ticket_candidates"][0]["decision_brief"]["execution_label"], "等验证")
         self.assertIn("资金流", payload["next_ticket_candidates"][0]["decision_brief"]["missing_evidence"])
         self.assertIn("高级工具箱", payload["next_ticket_candidates"][0]["decision_brief"]["recovery_route"])
+        self.assertIn("evidence_recovery_impact", payload["next_ticket_candidates"][0])
+        self.assertIn("evidence_recovery_summary", payload["next_ticket_candidates"][0])
         self.assertIn("候选不是买入指令", payload["next_ticket_candidates"][0]["action_guardrail"])
         self.assertIn("不会自动全市场扫描", payload["next_ticket_candidates"][0]["manual_required_text"])
         self.assertFalse(payload["radar_packet"]["deepseek_called"])
@@ -204,6 +206,56 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
         self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "今日关注池")
         self.assertFalse(center["deepseek_called"])
+        json.dumps(payload, ensure_ascii=False)
+
+    def test_next_ticket_evidence_recovery_results_describe_candidate_impact(self):
+        payload = snapshot.attach_next_ticket_evidence_recovery_results(
+            {
+                "next_ticket_candidates": [
+                    {
+                        "ticker": "300750.SZ",
+                        "name": "宁德时代",
+                        "decision_brief": {"execution_label": "等验证", "deepseek_called": False},
+                        "evidence_chain": [
+                            {
+                                "key": "moneyflow",
+                                "label": "资金流",
+                                "status": "missing",
+                                "writes_packet": "command_center_moneyflow_packet",
+                            },
+                            {
+                                "key": "dragon_tiger",
+                                "label": "龙虎榜",
+                                "status": "missing",
+                                "writes_packet": "command_center_dragon_tiger_packet",
+                            },
+                        ],
+                    }
+                ],
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "updated_at": "2026-06-04T10:00:00",
+                    "source": "Tushare moneyflow",
+                    "items": [{"ticker": "300750.SZ"}],
+                },
+                "command_center_dragon_tiger_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                    "source": "Tushare top_list",
+                },
+            }
+        )
+        candidate = payload["next_ticket_candidates"][0]
+        by_label = {item["label"]: item for item in candidate["evidence_recovery_items"]}
+
+        self.assertEqual(by_label["资金流"]["status_label"], "已回流")
+        self.assertEqual(by_label["龙虎榜"]["status_label"], "权限不足")
+        self.assertEqual(candidate["evidence_recovery_impact"]["label"], "仍不可执行")
+        self.assertIn("仍阻断 1", candidate["evidence_recovery_summary"])
+        self.assertIn("候选不能升级", candidate["evidence_recovery_impact"]["impact_text"])
+        self.assertEqual(candidate["decision_brief"]["recovery_impact_label"], "仍不可执行")
+        self.assertFalse(candidate["evidence_recovery_impact"]["deepseek_called"])
         json.dumps(payload, ensure_ascii=False)
 
     def test_home_snapshot_persists_etf_packet_and_uses_it_for_summary(self):
