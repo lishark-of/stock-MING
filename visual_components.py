@@ -5615,7 +5615,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             """
         if scope_check_html:
             scope_check_html = f"""
-            <div class="cc-home-item-meta">拉满解释：{escape(_home_text(item.get("full_refresh_answer"), "拉满基础连接不等于每个专业接口都可用。"))}</div>
+            <div class="cc-home-item-meta">能力解释：{escape(_home_text(item.get("full_refresh_answer"), "基础连接不等于每个接口、市场口径或缓存状态都可用。"))}</div>
             {scope_check_html}
             """
         evidence_text = "；".join(

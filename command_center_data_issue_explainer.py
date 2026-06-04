@@ -294,7 +294,7 @@ def _root_cause_items(items: list[dict]) -> list[dict]:
     return result[:MAX_ACTIONS]
 
 
-def _provider_diagnostic_cards(items: list[dict]) -> list[dict]:
+def _tushare_provider_diagnostic_cards(items: list[dict]) -> list[dict]:
     tushare_items = [item for item in items if _to_text(item.get("provider")).lower() == "tushare"]
     if not tushare_items:
         return []
@@ -378,6 +378,183 @@ def _provider_diagnostic_cards(items: list[dict]) -> list[dict]:
             "deepseek_called": False,
         }
     ]
+
+
+CORE_NON_TUSHARE_PROVIDERS = ("AkShare", "yfinance", "Supabase")
+
+
+def _provider_group(items: list[dict], provider_name: str) -> list[dict]:
+    provider_key = provider_name.lower()
+    return [item for item in items if _to_text(item.get("provider")).lower() == provider_key]
+
+
+def _generic_provider_text(provider: str, states: set[str]) -> tuple[str, str, str]:
+    if provider == "AkShare":
+        if "requires_manual_refresh" in states:
+            return (
+                "AkShare 被标记为手动刷新型补充源",
+                "AkShare 适合补充资金穿透、情绪或部分行情，但重型刷新必须按钮触发；不可用不代表 Tushare 主证据链失效。",
+                "只在确实需要补充视角时进入对应模块手动刷新，结果回流后再复核。",
+            )
+        return (
+            "AkShare 补充源状态待复核",
+            "AkShare 远端接口和页面结构可能变化；它只能作为补充证据，不能替代 Tushare A股专业事实。",
+            "需要时手动刷新，并确认日期、来源和是否覆盖当前标的。",
+        )
+    if provider == "yfinance":
+        return (
+            "yfinance 全球行情能力待复核" if states - AVAILABLE_STATES else "yfinance 当前有可用结果",
+            "yfinance 主要服务美股/全球行情、财报和新闻线索；不能用来替代 A股 Tushare 资金流、龙虎榜、融资融券或涨跌停口径。",
+            "美股/全球标的需要手动复核行情、财报、RS、行业和宏观口径。",
+        )
+    if provider == "Supabase":
+        return (
+            "Supabase 云端外脑配置待复核" if states - AVAILABLE_STATES else "Supabase 云端记忆可读取",
+            "Supabase 是云端记忆/资料库，不是实时行情源；未配置或连接失败不应被解释成行情不存在。",
+            "先检查本地配置和表连接，再决定是否手动读取云端记忆档案。",
+        )
+    return (
+        f"{provider} 数据能力待复核",
+        f"{provider} 需要按接口、日期和覆盖范围单独诊断。",
+        "按数据恢复中心手动处理。",
+    )
+
+
+def _generic_provider_scope_checks(provider: str, items: list[dict]) -> list[dict]:
+    states = {item["state"] for item in items}
+    blocked_items = [item for item in items if item["state"] in RESTRICTED_STATES]
+    manual_items = [item for item in items if item["state"] == "requires_manual_refresh"]
+    cache_items = [item for item in items if item["state"] in {"stale_cache", "fallback_used"}]
+    ready_items = [item for item in items if item["state"] in AVAILABLE_STATES]
+    blocked_label = _labels_for_items(blocked_items)
+    manual_label = _labels_for_items(manual_items)
+    cache_label = _labels_for_items(cache_items)
+    ready_label = _labels_for_items(ready_items)
+    if provider == "AkShare":
+        scope_label = "补充源/重型刷新边界"
+        scope_message = "AkShare 只作为补充证据；资金穿透、重型刷新或批量刷新必须按钮触发。"
+    elif provider == "yfinance":
+        scope_label = "市场口径/美股全球边界"
+        scope_message = "yfinance 用于美股/全球行情，不替代 A股 Tushare 专业接口。"
+    elif provider == "Supabase":
+        scope_label = "云端记忆/资料边界"
+        scope_message = "Supabase 存储资料和记忆，不是实时行情源，也不会自动决定仓位。"
+    else:
+        scope_label = "接口口径"
+        scope_message = f"{provider} 仍需按接口和市场范围复核。"
+    return [
+        {
+            "key": "provider_config",
+            "label": "配置/连接",
+            "status": "blocked" if blocked_items else ("ready" if ready_items or manual_items or cache_items else "missing"),
+            "tone": "failed" if blocked_items else ("ready" if ready_items else "missing"),
+            "status_label": "有阻断" if blocked_items else ("已检测" if ready_items or manual_items or cache_items else "待检测"),
+            "message": (
+                f"阻断：{blocked_label}；先检查配置、网络、权限或本地连接。"
+                if blocked_items
+                else "未见配置/连接阻断；仍需按接口复核。"
+            ),
+        },
+        {
+            "key": "manual_gate",
+            "label": "手动触发边界",
+            "status": "partial" if manual_items else "ready",
+            "tone": "stale" if manual_items else "ready",
+            "status_label": "需要手动" if manual_items else "未触发",
+            "message": (
+                f"需手动：{manual_label}；页面打开不会自动运行该 provider 的重型刷新。"
+                if manual_items
+                else "当前没有被标记为自动刷新；仍保持按钮触发。"
+            ),
+        },
+        {
+            "key": "provider_scope",
+            "label": scope_label,
+            "status": "ready" if ready_items else ("partial" if manual_items or cache_items else "missing"),
+            "tone": "ready" if ready_items else ("stale" if manual_items or cache_items else "missing"),
+            "status_label": "可参考" if ready_items else "待验证",
+            "message": scope_message,
+        },
+        {
+            "key": "cache_result_guard",
+            "label": "缓存/结果保护",
+            "status": "partial" if cache_items else ("ready" if ready_items else "missing"),
+            "tone": "stale" if cache_items else ("ready" if ready_items else "missing"),
+            "status_label": "使用缓存" if cache_items else ("已返回" if ready_items else "待检测"),
+            "message": (
+                f"缓存/替代：{cache_label}；只能防白屏，不能当作实时已验证事实。"
+                if cache_items
+                else f"可用结果：{ready_label}；执行前仍需核对日期和口径。"
+            ),
+        },
+    ]
+
+
+def _generic_provider_diagnostic_cards(items: list[dict]) -> list[dict]:
+    cards = []
+    for provider in CORE_NON_TUSHARE_PROVIDERS:
+        provider_items = _provider_group(items, provider)
+        if not provider_items:
+            continue
+        states = {item["state"] for item in provider_items}
+        ready_items = [item for item in provider_items if item["state"] in AVAILABLE_STATES]
+        blocked_items = [item for item in provider_items if item["state"] in RESTRICTED_STATES]
+        manual_items = [item for item in provider_items if item["state"] == "requires_manual_refresh"]
+        pending_items = [
+            item
+            for item in provider_items
+            if item["state"] in PENDING_STATES and item["state"] != "requires_manual_refresh"
+        ]
+        if blocked_items:
+            tone = "failed"
+        elif manual_items or pending_items:
+            tone = "stale"
+        elif ready_items:
+            tone = "ready"
+        else:
+            tone = "missing"
+        headline, answer, next_action = _generic_provider_text(provider, states)
+        evidence = []
+        for label, rows in (
+            ("可用", ready_items),
+            ("阻断", blocked_items),
+            ("手动刷新", manual_items),
+            ("缓存/待验证", pending_items),
+        ):
+            if not rows:
+                continue
+            evidence.append(
+                {
+                    "label": label,
+                    "count": len(rows),
+                    "apis": [_first_text(item.get("api"), item.get("label"), default=f"{provider} 接口") for item in rows[:4]],
+                }
+            )
+        cards.append(
+            {
+                "provider": provider,
+                "tone": tone,
+                "headline": headline,
+                "answer": answer,
+                "full_refresh_answer": answer,
+                "scope_checks": _generic_provider_scope_checks(provider, provider_items),
+                "next_action": next_action,
+                "states": sorted(states),
+                "available_count": len(ready_items),
+                "blocked_count": len(blocked_items),
+                "pending_count": len(manual_items) + len(pending_items),
+                "evidence_items": evidence[:MAX_ACTIONS],
+                "deepseek_called": False,
+            }
+        )
+    return cards
+
+
+def _provider_diagnostic_cards(items: list[dict]) -> list[dict]:
+    return [
+        *_tushare_provider_diagnostic_cards(items),
+        *_generic_provider_diagnostic_cards(items),
+    ][:MAX_ACTIONS]
 
 
 def _labels_for_items(items: list[dict], default: str = "暂无") -> str:

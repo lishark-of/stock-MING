@@ -159,6 +159,56 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertEqual(packet["items"][0]["state"], "failed")
         self.assertIn("不能支撑加仓", packet["items"][0]["decision_impact"])
 
+    def test_non_tushare_providers_have_scope_diagnostics(self):
+        packet = explainer.build_data_issue_explainer_packet(
+            data_capability_packet={
+                "source": "Unified data capability",
+                "items": [
+                    {
+                        "label": "AkShare 重型刷新",
+                        "api": "akshare_manual_refresh",
+                        "provider": "AkShare",
+                        "capability_state": "requires_manual_refresh",
+                        "status": "需要手动刷新",
+                    },
+                    {
+                        "label": "yfinance 行情/新闻",
+                        "api": "yfinance_market_data",
+                        "provider": "yfinance",
+                        "capability_state": "requires_manual_refresh",
+                        "status": "需要手动刷新",
+                    },
+                    {
+                        "label": "brain_memory",
+                        "api": "brain_memory",
+                        "provider": "Supabase",
+                        "capability_state": "not_configured",
+                        "status": "未配置",
+                        "error": "Supabase 未配置",
+                    },
+                ],
+            }
+        )
+        cards = {item["provider"]: item for item in packet["provider_diagnostic_cards"]}
+
+        self.assertNotIn("Tushare", cards)
+        self.assertIn("AkShare", cards)
+        self.assertIn("yfinance", cards)
+        self.assertIn("Supabase", cards)
+        self.assertIn("按钮触发", cards["AkShare"]["answer"])
+        self.assertIn("美股/全球行情", cards["yfinance"]["answer"])
+        self.assertIn("云端记忆/资料库", cards["Supabase"]["answer"])
+        akshare_scope = {item["key"]: item for item in cards["AkShare"]["scope_checks"]}
+        yfinance_scope = {item["key"]: item for item in cards["yfinance"]["scope_checks"]}
+        supabase_scope = {item["key"]: item for item in cards["Supabase"]["scope_checks"]}
+        self.assertEqual(akshare_scope["manual_gate"]["status_label"], "需要手动")
+        self.assertIn("重型刷新", akshare_scope["provider_scope"]["message"])
+        self.assertIn("不替代 A股 Tushare", yfinance_scope["provider_scope"]["message"])
+        self.assertEqual(supabase_scope["provider_config"]["status"], "blocked")
+        self.assertIn("实时行情源", supabase_scope["provider_scope"]["message"])
+        self.assertTrue(all(card["deepseek_called"] is False for card in cards.values()))
+        json.dumps(packet, ensure_ascii=False)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_data_issue_explainer.py").read_text(encoding="utf-8"))
         imports = []
