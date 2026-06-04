@@ -463,7 +463,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
-    snapshot = attach_next_ticket_evidence_recovery_results(snapshot)
+    snapshot = attach_margin_etf_evidence_recovery_results(
+        attach_next_ticket_evidence_recovery_results(snapshot)
+    )
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
@@ -1780,6 +1782,155 @@ def attach_next_ticket_evidence_recovery_results(snapshot: Any = None) -> dict:
             candidate["decision_brief"] = decision_brief
         candidates.append(candidate)
     payload["next_ticket_candidates"] = candidates
+    return payload
+
+
+ETF_EVIDENCE_WRITES_PACKET = {
+    "tracking_index": "command_center_etf_packet",
+    "liquidity": "command_center_etf_packet",
+    "overlap": "command_center_etf_packet",
+    "overheat": "command_center_etf_packet",
+    "margin_cash": "command_center_margin_packet",
+}
+
+
+def _etf_evidence_recovery_status(evidence: Mapping[str, Any], payload: Mapping[str, Any]) -> dict:
+    key = _to_text(evidence.get("key"))
+    label = _to_text(evidence.get("label"), "ETF 证据")
+    writes_packet = _to_text(evidence.get("writes_packet"), ETF_EVIDENCE_WRITES_PACKET.get(key, "command_center_etf_packet"))
+    packet_result = _fallback_recovery_result_item(
+        {
+            "writes_packet": writes_packet,
+            "label": label,
+            "status": evidence.get("status"),
+        },
+        payload,
+    )
+    packet_status = _to_text(packet_result.get("status"), "waiting")
+    evidence_status = _to_text(evidence.get("status"), "missing")
+    if packet_status == "blocked":
+        status = "blocked"
+        status_label = _to_text(packet_result.get("status_label"), "仍阻断")
+        tone = "failed"
+        message = f"{label}对应回流仍不可用；ETF 不能据此放大融资或追高。"
+    elif evidence_status == "ready":
+        status = "verified"
+        status_label = "已验证"
+        tone = "ready"
+        message = f"{label}已形成可读证据；执行前仍需和风险预算一起复核。"
+    elif evidence_status in {"stale", "failed"} or packet_status == "cached":
+        status = "review"
+        status_label = "需复核"
+        tone = "stale"
+        message = f"{label}仍需复核日期、口径或风险边界。"
+    else:
+        status = "waiting"
+        status_label = "待验证"
+        tone = "missing"
+        message = f"{label}尚未形成可执行证据；只能观察，不放大仓位。"
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "status_label": status_label,
+        "tone": tone,
+        "writes_packet": writes_packet,
+        "message": message,
+        "recovery_result_status": packet_status,
+        "recovery_result_status_label": _to_text(packet_result.get("status_label"), "待验证"),
+        "recovery_result_updated_at": _to_text(packet_result.get("updated_at"), "暂无"),
+        "recovery_result_source": _to_text(packet_result.get("source"), "本地恢复状态"),
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def attach_margin_etf_evidence_recovery_results(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    margin_summary = _as_mapping(payload.get("margin_etf_summary"))
+    etf_packet = _as_mapping(payload.get("etf_packet"))
+    candidates = _as_list(margin_summary.get("recommended_etfs")) or _as_list(etf_packet.get("recommended_etfs"))
+    enriched = []
+    for raw_candidate in candidates:
+        candidate = _as_mapping(raw_candidate)
+        if not candidate:
+            continue
+        evidence_rows = []
+        counts = {"verified": 0, "review": 0, "blocked": 0, "waiting": 0}
+        for raw_evidence in _as_list(candidate.get("evidence_chain")):
+            evidence = _as_mapping(raw_evidence)
+            if not evidence:
+                continue
+            result = _etf_evidence_recovery_status(evidence, payload)
+            evidence["writes_packet"] = result["writes_packet"]
+            evidence["recovery_result_status"] = result["status"]
+            evidence["recovery_result_status_label"] = result["status_label"]
+            evidence["recovery_result_tone"] = result["tone"]
+            evidence["recovery_result_message"] = result["message"]
+            evidence["recovery_result_updated_at"] = result["recovery_result_updated_at"]
+            evidence["recovery_result_source"] = result["recovery_result_source"]
+            evidence["recovery_result_external_call_policy"] = "not_triggered"
+            evidence["deepseek_called"] = False
+            counts[result["status"]] = counts.get(result["status"], 0) + 1
+            evidence_rows.append(evidence)
+        candidate["evidence_chain"] = evidence_rows
+        candidate["evidence_recovery_items"] = [
+            {
+                "label": item["label"],
+                "status": item["status"],
+                "status_label": item["status_label"],
+                "tone": item["tone"],
+                "writes_packet": item["writes_packet"],
+                "message": item["message"],
+                "deepseek_called": False,
+            }
+            for item in (_etf_evidence_recovery_status(row, payload) for row in evidence_rows)
+        ]
+        candidate["evidence_recovery_summary"] = (
+            f"已验证 {counts['verified']}｜需复核 {counts['review']}｜仍阻断 {counts['blocked']}｜待验证 {counts['waiting']}"
+            if evidence_rows
+            else "ETF 证据恢复结果待验证"
+        )
+        if counts["blocked"]:
+            impact = {
+                "status": "blocked",
+                "label": "仍不可放大",
+                "tone": "failed",
+                "impact_text": "存在阻断证据，ETF 不能加融资、追高或扩大风险暴露。",
+            }
+        elif counts["waiting"] or counts["review"]:
+            impact = {
+                "status": "still_verify",
+                "label": "仍需复核",
+                "tone": "stale",
+                "impact_text": "ETF 证据未完全验证，只能按观察/小仓位准备处理。",
+            }
+        elif counts["verified"]:
+            impact = {
+                "status": "verified",
+                "label": "证据已验证",
+                "tone": "ready",
+                "impact_text": "ETF 核心证据已回流；仍需遵守不追高和融资现金缓冲。",
+            }
+        else:
+            impact = {
+                "status": "waiting",
+                "label": "待验证",
+                "tone": "missing",
+                "impact_text": "ETF 证据恢复结果待验证。",
+            }
+        candidate["evidence_recovery_impact"] = {
+            **impact,
+            "summary": candidate["evidence_recovery_summary"],
+            "external_call_policy": "not_triggered",
+            "deepseek_called": False,
+        }
+        enriched.append(candidate)
+    margin_summary["recommended_etfs"] = enriched[:MAX_CANDIDATES]
+    payload["margin_etf_summary"] = margin_summary
+    if etf_packet:
+        etf_packet["recommended_etfs"] = enriched[:MAX_CANDIDATES]
+        payload["etf_packet"] = etf_packet
     return payload
 
 
@@ -3121,7 +3272,9 @@ def build_home_action_snapshot(
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
     }
-    snapshot = attach_next_ticket_evidence_recovery_results(snapshot)
+    snapshot = attach_margin_etf_evidence_recovery_results(
+        attach_next_ticket_evidence_recovery_results(snapshot)
+    )
     has_payload = bool(decision or strategy or snapshot["next_ticket_candidates"] or snapshot["margin_etf_summary"]["recommended_etfs"])
     if not has_payload:
         empty = _empty_snapshot()

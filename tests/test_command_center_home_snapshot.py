@@ -292,9 +292,69 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_items"])
         self.assertTrue(payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_chain"])
         self.assertIn("可参考", payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_chain_summary"])
+        self.assertIn("evidence_recovery_impact", payload["margin_etf_summary"]["recommended_etfs"][0])
+        self.assertIn("evidence_recovery_summary", payload["margin_etf_summary"]["recommended_etfs"][0])
         self.assertIn("不能放大仓位", payload["margin_etf_summary"]["recommended_etfs"][0]["action_guardrail"])
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])
+
+    def test_margin_etf_evidence_recovery_results_describe_position_impact(self):
+        payload = snapshot.attach_margin_etf_evidence_recovery_results(
+            {
+                "margin_etf_summary": {
+                    "recommended_etfs": [
+                        {
+                            "code": "560780.SH",
+                            "name": "半导体设备ETF广发",
+                            "evidence_chain": [
+                                {
+                                    "key": "tracking_index",
+                                    "label": "跟踪指数",
+                                    "status": "ready",
+                                    "value": "中证半导体设备",
+                                },
+                                {
+                                    "key": "liquidity",
+                                    "label": "流动性",
+                                    "status": "missing",
+                                    "value": "待验证",
+                                },
+                                {
+                                    "key": "margin_cash",
+                                    "label": "融资/现金",
+                                    "status": "missing",
+                                    "value": "待验证",
+                                },
+                            ],
+                        }
+                    ],
+                },
+                "etf_packet": {
+                    "status": "ready",
+                    "updated_at": "2026-06-04T10:00:00",
+                    "source": "融资 ETF 本地配置快照",
+                    "recommended_etfs": [{"code": "560780.SH"}],
+                },
+                "command_center_margin_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                    "source": "Tushare margin_detail",
+                },
+            }
+        )
+        etf = payload["margin_etf_summary"]["recommended_etfs"][0]
+        by_label = {item["label"]: item for item in etf["evidence_recovery_items"]}
+
+        self.assertEqual(by_label["跟踪指数"]["status_label"], "已验证")
+        self.assertEqual(by_label["流动性"]["status_label"], "待验证")
+        self.assertEqual(by_label["融资/现金"]["status_label"], "权限不足")
+        self.assertEqual(etf["evidence_recovery_impact"]["label"], "仍不可放大")
+        self.assertIn("已验证 1", etf["evidence_recovery_summary"])
+        self.assertIn("仍阻断 1", etf["evidence_recovery_summary"])
+        self.assertIn("不能加融资", etf["evidence_recovery_impact"]["impact_text"])
+        self.assertFalse(etf["evidence_recovery_impact"]["deepseek_called"])
+        json.dumps(payload, ensure_ascii=False)
 
     def test_home_snapshot_persists_market_profile_evidence(self):
         today = _dt.date.today().isoformat()

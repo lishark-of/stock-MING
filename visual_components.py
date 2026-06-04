@@ -5007,6 +5007,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if etfs:
         etf_html = ""
         for item in etfs[:3]:
+            etf_recovery_impact = item.get("evidence_recovery_impact") if isinstance(item.get("evidence_recovery_impact"), dict) else {}
             etf_chain = [evidence for evidence in (item.get("evidence_chain") or []) if isinstance(evidence, dict)]
             etf_evidence = "；".join(
                 f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('status_label'), evidence.get('value') or '待验证')}"
@@ -5021,6 +5022,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 for evidence in etf_chain[:3]
             ) or "跟踪指数、流动性、同类重叠和融资现金缓冲仍需逐步回流为 packet。"
             etf_gaps = "；".join(str(gap).strip() for gap in (item.get("data_gaps") or [])[:3] if str(gap).strip()) or "暂无显式数据缺口"
+            etf_recovery_text = "；".join(
+                f"{_home_text(row.get('label'), '证据')}:{_home_text(row.get('status_label'), '待验证')}"
+                for row in (item.get("evidence_recovery_items") or [])[:5]
+                if isinstance(row, dict)
+            ) or "ETF 证据恢复结果待验证"
             etf_html += f"""
             <div class="cc-home-etf">
               <div class="cc-home-item-title">
@@ -5030,6 +5036,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               <div class="cc-home-item-meta">{escape(_home_text(item.get("bucket"), "ETF"))} ｜ 分数：{escape(_home_number(item.get("score")))} ｜ {escape(_home_text(item.get("action_state"), "只观察不追"))}</div>
               <div class="cc-home-item-meta">证据：{escape(etf_evidence)}</div>
               <div class="cc-home-item-meta">证据链：{escape(_home_text(item.get("evidence_chain_summary"), "证据链待验证"))} ｜ {escape(etf_guardrail)}</div>
+              <div class="cc-home-item-meta">恢复影响：<span class="cc-home-chip {escape(_home_text(etf_recovery_impact.get("tone"), "missing"))}">{escape(_home_text(etf_recovery_impact.get("label"), "待验证"))}</span> {escape(_home_text(etf_recovery_impact.get("summary"), item.get("evidence_recovery_summary") or "ETF 证据恢复结果待验证"))} ｜ {escape(_home_text(etf_recovery_impact.get("impact_text"), "ETF 证据不会自动改变仓位动作。"))}</div>
+              <div class="cc-home-item-meta">恢复结果：{escape(etf_recovery_text)}</div>
               <div class="cc-home-item-meta">触发：{escape(_home_text(item.get("trigger_condition"), "等待回踩、量能和风险线确认。"))}</div>
               <div class="cc-home-item-meta">风险：{escape(_home_text(item.get("risk_note"), "ETF 需复核流动性、跟踪指数、同类重叠和追高风险。"))}</div>
               <div class="cc-home-item-meta">执行保护：{escape(_home_text(item.get("action_guardrail"), "ETF 候选不是买入指令；融资现金缓冲未确认前不能放大仓位。"))}</div>
