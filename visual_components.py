@@ -4738,6 +4738,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
     data_recovery_center = payload.get("data_recovery_center") or {}
+    data_health_ledger = payload.get("data_health_ledger") or data_capability_console.get("data_health_ledger") or {}
     legacy_migration_map = payload.get("legacy_migration_map") or {}
     latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
@@ -4912,6 +4913,23 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             console_queue_html += f"<div class='cc-home-item-meta'>{escape(queue_label)}：{escape(queue_text)}</div>"
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
+    data_health_ledger_rows = [item for item in (data_health_ledger.get("rows") or []) if isinstance(item, dict)]
+    data_health_ledger_html = ""
+    for item in data_health_ledger_rows[:6]:
+        data_health_ledger_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "数据接口"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), item.get("state") or "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">接口：{escape(_home_text(item.get("provider"), "数据源"))} {escape(_home_text(item.get("api"), ""))} ｜ 最近检查：{escape(_home_text(item.get("last_checked"), "暂无"))} ｜ 最近成功：{escape(_home_text(item.get("last_success_text"), "暂无"))}</div>
+          <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("meaning"), "仍需核对接口状态。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}</div>
+          <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))} ｜ 触发：{escape(_home_text(item.get("refresh_policy"), "button_gated"))}</div>
+        </div>
+        """
+    if not data_health_ledger_html:
+        data_health_ledger_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>接口级健康账本待生成</div><div class='cc-home-item-meta'>暂无本地检测结果；页面打开不会自动请求外部接口。</div></div>"
     provider_diagnostic_cards = [
         item for item in (data_issue_explainer.get("provider_diagnostic_cards") or data_capability_console.get("provider_diagnostic_cards") or [])
         if isinstance(item, dict)
@@ -5315,6 +5333,14 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               <div class="cc-home-item-meta">可用 {escape(_home_number(console_ready))}｜阻断 {escape(_home_number(console_blocked))}｜手动 {escape(_home_number(console_manual))}｜缓存/待验证 {escape(_home_number(console_stale))}</div>
               <div class="cc-home-item-meta">决策模式：{escape(console_readiness)}｜{escape(console_safe_mode)}</div>
               {console_queue_html}
+            </div>
+            <div class="cc-home-candidate">
+              <div class="cc-home-item-title">
+                接口级健康账本
+                <span class="cc-home-chip {escape(_home_text(data_health_ledger.get("tone"), "missing"))}">{escape(_home_text(data_health_ledger.get("summary"), "暂无接口级健康账本"))}</span>
+              </div>
+              <div class="cc-home-item-meta">{escape(_home_text(data_health_ledger.get("manual_note"), "只整理本地检测结果；不会自动请求外部接口。"))}</div>
+              {data_health_ledger_html}
             </div>
             <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
             {provider_diagnostic_html}

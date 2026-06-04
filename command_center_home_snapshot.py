@@ -278,6 +278,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "deepseek_called": False,
     }
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
     return snapshot
 
 
@@ -1839,6 +1840,7 @@ def build_home_action_snapshot(
         refresh_summary=refresh,
         errors=errors,
     )
+    data_health_ledger = _as_mapping(data_capability_console.get("data_health_ledger"))
     a_share_professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
     a_share_user_data_diagnostic = legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(
         verified_technical_facts=(
@@ -1940,6 +1942,7 @@ def build_home_action_snapshot(
         "data_gap_report": data_gap_report,
         "data_issue_explainer": data_issue_explainer,
         "data_capability_console": data_capability_console,
+        "data_health_ledger": data_health_ledger,
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
@@ -1972,6 +1975,7 @@ def build_home_action_snapshot(
         empty["data_gap_report"] = snapshot["data_gap_report"]
         empty["data_issue_explainer"] = snapshot["data_issue_explainer"]
         empty["data_capability_console"] = snapshot["data_capability_console"]
+        empty["data_health_ledger"] = snapshot["data_health_ledger"]
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)

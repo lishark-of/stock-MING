@@ -63,6 +63,8 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertIn("不是“没搜到行情”", packet["recovery_actions"][0]["diagnostic_answer"])
         self.assertIn("token 可用", packet["recovery_actions"][0]["diagnostic_answer"])
         self.assertIn("融资融券", packet["recovery_summary"])
+        self.assertEqual(packet["data_health_ledger"]["status"], "blocked")
+        self.assertTrue(any(row["writes_packet"] == "command_center_margin_packet" for row in packet["data_health_ledger"]["rows"]))
         self.assertEqual(packet["provider_diagnostic_cards"][0]["provider"], "Tushare")
         self.assertIn("不是“没拉满”", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("个股资金流", dumped)

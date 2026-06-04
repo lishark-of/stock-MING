@@ -6,6 +6,7 @@ from typing import Any
 
 from command_center_data_capability_dashboard import build_data_capability_dashboard_view_model
 from command_center_data_issue_explainer import build_data_issue_explainer_packet
+from command_center_data_health_ledger import build_data_health_ledger
 
 
 MAX_QUEUE_ITEMS = 5
@@ -317,6 +318,12 @@ def build_data_capability_console_packet(
     readiness, readiness_label, safe_mode_text = _decision_readiness(status)
     decision_blockers = _decision_blockers(blocked_items, manual_items, stale_items)
     recovery_actions = build_data_capability_recovery_actions(blocked_items, manual_items, stale_items)
+    data_health_ledger = build_data_health_ledger(
+        data_capability_packet=data_capability_packet,
+        data_gap_report=data_gap_report,
+        data_issue_explainer=issue_packet,
+        recovery_actions=recovery_actions,
+    )
     return {
         "status": status,
         "tone": _tone(status),
@@ -337,6 +344,7 @@ def build_data_capability_console_packet(
             if recovery_actions
             else "暂无需要手动恢复的数据源动作。"
         ),
+        "data_health_ledger": data_health_ledger,
         "provider_diagnostic_cards": _as_list(issue_packet.get("provider_diagnostic_cards"))[:MAX_QUEUE_ITEMS],
         "next_actions": _as_list(issue_packet.get("next_actions"))[:MAX_QUEUE_ITEMS],
         "available_count": len(ready_items),

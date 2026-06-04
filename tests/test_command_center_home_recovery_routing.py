@@ -96,6 +96,15 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("诊断结论", source)
         self.assertIn("为什么搜不到", source)
 
+    def test_home_snapshot_renders_data_health_ledger(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("data_health_ledger", source)
+        self.assertIn("data_health_ledger_html", source)
+        self.assertIn("接口级健康账本", source)
+        self.assertIn("最近检查", source)
+        self.assertIn("最近成功", source)
+
     def test_home_snapshot_collapses_verbose_diagnostics(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 

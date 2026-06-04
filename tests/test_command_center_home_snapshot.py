@@ -817,6 +817,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
         console = payload["data_capability_console"]
+        health_ledger = payload["data_health_ledger"]
         dumped = json.dumps(console, ensure_ascii=False)
 
         self.assertEqual(console["status"], "blocked")
@@ -827,6 +828,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(console["recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(console["recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertIn("融资融券", console["recovery_summary"])
+        self.assertEqual(health_ledger["status"], "blocked")
+        self.assertTrue(any(row["label"] == "融资融券" for row in health_ledger["rows"]))
+        self.assertTrue(any(row["writes_packet"] == "command_center_margin_packet" for row in health_ledger["rows"]))
         self.assertEqual(payload["data_recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(payload["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(payload["data_recovery_actions"][0]["refresh_policy"], "button_gated")
