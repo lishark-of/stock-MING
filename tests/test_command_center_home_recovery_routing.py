@@ -171,6 +171,10 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("legacy_gap_item_html", source)
         self.assertIn("旧能力缺口待生成", source)
         self.assertIn("涨跌停/情绪、筹码/胜率", source)
+        self.assertIn("为什么搜不到：", source)
+        self.assertIn("按钮说明：", source)
+        self.assertIn("决策保护：", source)
+        self.assertIn("manual_recovery_steps", source)
 
     def test_refresh_summary_routes_a_share_fact_recovery_to_navigation_only(self):
         source = Path("app.py").read_text(encoding="utf-8")

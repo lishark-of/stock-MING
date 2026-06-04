@@ -5485,6 +5485,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     for item in (legacy_a_share_gap.get("items") or [])[:2]:
         if not isinstance(item, dict):
             continue
+        manual_steps_text = " → ".join(
+            _home_text(step)
+            for step in (item.get("manual_recovery_steps") or [])
+            if _home_text(step)
+        )
         legacy_gap_item_html += f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -5492,8 +5497,12 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("readable_state"), item.get("status_label") or "待验证"))}</span>
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(item.get("message"), "保持安全空态或缓存观察。"))}</div>
+          <div class="cc-home-item-meta">为什么搜不到：{escape(_home_text(item.get("why_not_found"), "可能因为权限、交易日更新、近期无数据或缓存过期而暂不可见。"))}</div>
           <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("status_label"), "待验证"))} ｜ 来源：{escape(_home_text(item.get("source"), "本地 packet"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无"))}</div>
           <div class="cc-home-item-meta">恢复：{escape(_home_text(item.get("action_label"), "手动检测"))} ｜ 入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))}</div>
+          <div class="cc-home-item-meta">步骤：{escape(_home_text(manual_steps_text, "进入高级工具箱 → 手动检测 → 回流综合中心 packet"))}</div>
+          <div class="cc-home-item-meta">按钮说明：{escape(_home_text(item.get("button_context"), "只检测本项并回流 packet；不会自动调用 DeepSeek 或重型接口。"))}</div>
+          <div class="cc-home-item-meta">决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失时不能当成无风险或已验证结论。"))}</div>
           <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ 触发：{escape("无需恢复" if _home_text(item.get("refresh_policy")) == "not_needed" else "手动按钮")} ｜ DeepSeek：未调用</div>
         </div>
         """

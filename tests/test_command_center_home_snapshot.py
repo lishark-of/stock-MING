@@ -1797,8 +1797,21 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual([item["key"] for item in summary["items"]], ["limit_emotion", "chip_radar"])
         self.assertIn("不能把缺失数据当成无风险", dumped)
         self.assertIn("页面打开不会自动请求 Tushare", dumped)
+        self.assertIn("Tushare 之前拉满不等于今天一定可见", dumped)
+        self.assertIn("limit_cpt_list 权限不足", dumped)
+        self.assertIn("cyq_perf 或 cyq_chips 权限", dumped)
+        self.assertIn("近期无数据或缓存过期", dumped)
+        self.assertIn("只检测 stk_limit / limit_list_d / limit_cpt_list", dumped)
+        self.assertIn("只检测 cyq_perf / cyq_chips", dumped)
+        self.assertIn("缺少筹码/胜率", dumped)
         self.assertIn("command_center_limit_emotion_packet", dumped)
         self.assertIn("command_center_chip_packet", dumped)
+        for item in summary["items"]:
+            self.assertTrue(item["manual_recovery_steps"])
+            self.assertIn("why_not_found", item)
+            self.assertIn("button_context", item)
+            self.assertIn("decision_guardrail", item)
+            self.assertFalse(item["deepseek_called"])
         self.assertFalse(summary["deepseek_called"])
 
     def test_home_snapshot_includes_a_share_fact_recovery_summary(self):

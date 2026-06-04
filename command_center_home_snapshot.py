@@ -77,6 +77,35 @@ A_SHARE_FACT_RECOVERY_SOURCES = (
 
 LEGACY_A_SHARE_GAP_KEYS = {"limit_emotion", "chip_radar"}
 
+LEGACY_A_SHARE_GAP_DIAGNOSTICS = {
+    "limit_emotion": {
+        "why_not_found": (
+            "Tushare 之前拉满不等于今天一定可见；常见原因是当日数据尚未发布、"
+            "limit_cpt_list 权限不足、本会话已跳过重复请求，或最近交易日没有可验证涨跌停/情绪覆盖。"
+        ),
+        "manual_recovery_steps": [
+            "进入高级工具箱 / 数据源体检",
+            "点击“手动检测涨跌停/情绪”",
+            "成功后写回 command_center_limit_emotion_packet，再回到综合中心复核交易日和来源",
+        ],
+        "button_context": "只检测 stk_limit / limit_list_d / limit_cpt_list；不触发 DeepSeek、回测或全市场扫描。",
+        "decision_guardrail": "缺少涨跌停/情绪时，不能确认题材温度、追高边界或涨跌停风险。",
+    },
+    "chip_radar": {
+        "why_not_found": (
+            "筹码/胜率可能因为 cyq_perf 或 cyq_chips 权限、标的覆盖、交易日更新节奏、"
+            "近期无数据或缓存过期而不可见；这不是胜率安全，也不是没有压力位。"
+        ),
+        "manual_recovery_steps": [
+            "进入高级工具箱 / 量化推演",
+            "点击“手动检测筹码/胜率”",
+            "成功后写回 command_center_chip_packet，再回到综合中心检查筹码压力和胜率口径",
+        ],
+        "button_context": "只检测 cyq_perf / cyq_chips；不触发 DeepSeek、回测或全市场扫描。",
+        "decision_guardrail": "缺少筹码/胜率时，不能把压力位、获利盘或历史胜率写成已验证依据。",
+    },
+}
+
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
@@ -798,6 +827,33 @@ def _legacy_gap_item_message(item: Mapping[str, Any]) -> str:
     return f"{label}待验证；保持安全空态或缓存观察，需要时手动检测。"
 
 
+def _legacy_gap_diagnostic(item: Mapping[str, Any]) -> dict:
+    key = _to_text(item.get("key"))
+    config = LEGACY_A_SHARE_GAP_DIAGNOSTICS.get(key, {})
+    label = _to_text(item.get("label"), "旧版 A股能力")
+    writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
+    return {
+        "why_not_found": _to_text(
+            config.get("why_not_found"),
+            f"{label}可能因为权限、交易日更新、近期无数据或缓存过期而暂不可见。",
+        ),
+        "manual_recovery_steps": _as_list(config.get("manual_recovery_steps"))
+        or [
+            f"进入{_to_text(item.get('toolbox_entry'), '高级工具箱')}",
+            f"点击“{_to_text(item.get('action_label'), '手动检测')}”",
+            f"成功后写回 {writes_packet}，再回到综合中心复核。",
+        ],
+        "button_context": _to_text(
+            config.get("button_context"),
+            f"只检测 {label} 并写回 {writes_packet}；不会自动调用 DeepSeek 或重型接口。",
+        ),
+        "decision_guardrail": _to_text(
+            config.get("decision_guardrail"),
+            f"缺少{label}时，不能把数据缺口当成无风险或已验证结论。",
+        ),
+    }
+
+
 def build_legacy_a_share_gap_summary(snapshot: Any = None) -> dict:
     payload = _as_mapping(snapshot)
     recovery_summary = _as_mapping(payload.get("a_share_fact_recovery_summary"))
@@ -810,6 +866,7 @@ def build_legacy_a_share_gap_summary(snapshot: Any = None) -> dict:
     ]
     for item in items:
         item["message"] = _legacy_gap_item_message(item)
+        item.update(_legacy_gap_diagnostic(item))
         item["is_recovered"] = item.get("recovery_state") == "recovered"
         item["requires_manual"] = item.get("refresh_policy") == "button_gated"
         item["deepseek_called"] = False
