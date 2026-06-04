@@ -5153,8 +5153,12 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {escape(_home_text(item.get("label"), "A股事实"))}：
           <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("readable_state"), item.get("status_label") or "待验证"))}</span>
           {escape(_home_text(item.get("status_label"), "待验证"))}
-          ｜来源：{escape(_home_text(item.get("source"), "本地 packet"))}
+          ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}
           ｜{escape(_home_text(item.get("updated_at"), "暂无"))}
+        </div>
+        <div class="cc-home-item-meta">
+          下一步：{escape(_home_text(item.get("next_action"), item.get("action_label") or "按数据恢复中心手动处理。"))}
+          ｜来源：{escape(_home_text(item.get("source"), "本地 packet"))}
         </div>
         """
     if not a_share_fact_recovery_items_html:

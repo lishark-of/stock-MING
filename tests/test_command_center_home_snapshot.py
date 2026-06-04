@@ -1478,6 +1478,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("已回流 1", summary["summary"])
         self.assertIn("仍受限 1", summary["summary"])
         self.assertEqual(summary["tone"], "failed")
+        by_key = {item["key"]: item for item in summary["items"]}
+        self.assertEqual(by_key["moneyflow"]["packet_status_text"], "已回流｜可用｜command_center_moneyflow_packet")
+        self.assertEqual(by_key["dragon_tiger"]["action_label"], "手动检测龙虎榜")
+        self.assertIn("回流 command_center_dragon_tiger_packet", by_key["dragon_tiger"]["next_action"])
+        self.assertIn("不能把缺失数据当成利好", by_key["dragon_tiger"]["diagnostic_answer"])
+        self.assertIn("页面打开不会自动请求 Tushare", by_key["margin"]["next_action"])
         self.assertFalse(summary["deepseek_called"])
         json.dumps(summary, ensure_ascii=False)
 
@@ -1516,6 +1522,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         dumped = json.dumps(summary, ensure_ascii=False)
         self.assertIn("个股资金流", dumped)
         self.assertIn("融资融券", dumped)
+        self.assertIn("command_center_margin_packet", dumped)
+        self.assertIn("点击“手动检测融资融券”", dumped)
         self.assertFalse(summary["deepseek_called"])
 
     def test_home_snapshot_persists_hard_risk_packet(self):

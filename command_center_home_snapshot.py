@@ -582,6 +582,22 @@ def _a_share_fact_recovery_state(packet: Mapping[str, Any], writes_packet: str =
     return _tool_packet_recovery_state(packet, writes_packet)
 
 
+def _a_share_fact_next_action(label: str, recovery_state: str, writes_packet: str, action_label: str) -> str:
+    if recovery_state == "recovered":
+        return f"{label}已写回 {writes_packet}；执行前复核交易日、来源和风险纪律。"
+    if recovery_state == "blocked":
+        return f"{label}仍受限；点击“{action_label}”后只检测这一项，结果回流 {writes_packet}。"
+    return f"{label}待验证；需要时点击“{action_label}”，页面打开不会自动请求 Tushare。"
+
+
+def _a_share_fact_diagnostic_text(label: str, recovery_state: str, status_label: str) -> str:
+    if recovery_state == "recovered":
+        return f"{label}已有可读 packet，可进入综合中心证据链。"
+    if recovery_state == "blocked":
+        return f"{label}当前为{status_label}，不能把缺失数据当成利好或无风险。"
+    return f"{label}尚未形成当日可验证事实；保持空态或缓存，等待手动检测。"
+
+
 def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) -> dict:
     payload = _as_mapping(packet)
     writes_packet = _to_text(config.get("writes_packet"), "command_center_packet")
@@ -608,9 +624,12 @@ def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) ->
     else:
         tone = "missing"
         readable_state = "待验证"
+    manual_config = TOOL_RECOVERY_MANUAL_CHECKS.get(writes_packet, {})
+    action_label = _to_text(manual_config.get("button_label"), f"手动检测{_to_text(config.get('label'), 'A股事实')}")
+    label = _to_text(config.get("label"), "A股事实")
     return {
         "key": _to_text(config.get("key")),
-        "label": _to_text(config.get("label"), "A股事实"),
+        "label": label,
         "packet_key": _to_text(config.get("packet_key")),
         "writes_packet": writes_packet,
         "recovery_state": recovery_state,
@@ -622,6 +641,10 @@ def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) ->
         "status_label": status_label,
         "updated_at": updated_at,
         "source": source,
+        "action_label": action_label if recovery_state != "recovered" else "查看回流结果",
+        "next_action": _a_share_fact_next_action(label, recovery_state, writes_packet, action_label),
+        "diagnostic_answer": _a_share_fact_diagnostic_text(label, recovery_state, status_label),
+        "packet_status_text": f"{readable_state}｜{status_label}｜{writes_packet}",
         "deepseek_called": False,
     }
 
