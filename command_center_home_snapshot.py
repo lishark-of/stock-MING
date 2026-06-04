@@ -341,6 +341,8 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         snapshot["data_health_ledger"]
     )
     snapshot["command_center_data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
+    snapshot["data_health_timeline"] = data_health_ledger_service.build_data_health_timeline(snapshot["data_health_ledger"])
+    snapshot["command_center_data_health_timeline"] = snapshot["data_health_timeline"]
     return snapshot
 
 
@@ -395,6 +397,8 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         snapshot["data_health_ledger"]
     )
     snapshot["command_center_data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
+    snapshot["data_health_timeline"] = data_health_ledger_service.build_data_health_timeline(snapshot["data_health_ledger"])
+    snapshot["command_center_data_health_timeline"] = snapshot["data_health_timeline"]
     snapshot["a_share_user_data_diagnostic"] = (
         _as_mapping(snapshot.get("a_share_user_data_diagnostic"))
         or legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model()
@@ -2482,6 +2486,7 @@ def build_home_action_snapshot(
     )
     data_health_ledger = _as_mapping(data_capability_console.get("data_health_ledger"))
     data_health_visibility_summary = data_health_ledger_service.build_data_health_visibility_summary(data_health_ledger)
+    data_health_timeline = data_health_ledger_service.build_data_health_timeline(data_health_ledger)
     a_share_professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
     a_share_user_data_diagnostic = legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(
         verified_technical_facts=(
@@ -2587,6 +2592,8 @@ def build_home_action_snapshot(
         "data_health_ledger": data_health_ledger,
         "data_health_visibility_summary": data_health_visibility_summary,
         "command_center_data_health_visibility_summary": data_health_visibility_summary,
+        "data_health_timeline": data_health_timeline,
+        "command_center_data_health_timeline": data_health_timeline,
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
@@ -2625,6 +2632,8 @@ def build_home_action_snapshot(
         empty["data_health_ledger"] = snapshot["data_health_ledger"]
         empty["data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
         empty["command_center_data_health_visibility_summary"] = snapshot["command_center_data_health_visibility_summary"]
+        empty["data_health_timeline"] = snapshot["data_health_timeline"]
+        empty["command_center_data_health_timeline"] = snapshot["command_center_data_health_timeline"]
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)

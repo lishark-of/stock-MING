@@ -825,6 +825,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         console = payload["data_capability_console"]
         health_ledger = payload["data_health_ledger"]
         visibility = payload["command_center_data_health_visibility_summary"]
+        health_timeline = payload["command_center_data_health_timeline"]
         dumped = json.dumps(console, ensure_ascii=False)
 
         self.assertEqual(console["status"], "blocked")
@@ -849,6 +850,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(visibility["recovery_actions"][0]["legacy_workspace_route"]["legacy_tab"], "融资 ETF")
         self.assertEqual(visibility["items"][0]["manual_check_key"], "margin")
         self.assertFalse(visibility["deepseek_called"])
+        self.assertEqual(health_timeline, payload["data_health_timeline"])
+        self.assertEqual(health_timeline["title"], "接口健康时间线")
+        self.assertEqual(health_timeline["status"], "blocked")
+        self.assertIn("最近失败", health_timeline["summary"])
+        self.assertEqual(health_timeline["items"][0]["event_type"], "last_failure")
+        self.assertEqual(health_timeline["items"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(health_timeline["items"][0]["external_call_policy"], "not_triggered")
+        self.assertFalse(health_timeline["deepseek_called"])
         self.assertEqual(payload["data_recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(payload["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(payload["data_recovery_actions"][0]["refresh_policy"], "button_gated")

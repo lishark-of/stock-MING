@@ -36,6 +36,7 @@ class CommandCenterLocalApiContractTests(unittest.TestCase):
         self.assertIn("/api/command-center/packets/command_center_live_packet", dumped)
         self.assertIn("/api/command-center/packets/command_center_decision_priority_queue", dumped)
         self.assertIn("/api/command-center/packets/command_center_data_health_visibility_summary", dumped)
+        self.assertIn("/api/command-center/packets/command_center_data_health_timeline", dumped)
         for endpoint in manifest["endpoints"]:
             self.assertEqual(endpoint["method"], "GET")
             self.assertTrue(endpoint["read_only"])

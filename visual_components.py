@@ -4809,8 +4809,15 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         or payload.get("data_health_visibility_summary")
         or {}
     )
+    data_health_timeline = (
+        payload.get("command_center_data_health_timeline")
+        or payload.get("data_health_timeline")
+        or {}
+    )
     if not isinstance(data_health_visibility, dict):
         data_health_visibility = {}
+    if not isinstance(data_health_timeline, dict):
+        data_health_timeline = {}
     legacy_migration_map = payload.get("legacy_migration_map") or {}
     latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
     recovery_result_status = payload.get("recovery_result_status_strip") or {}
@@ -5070,6 +5077,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not data_health_visibility_item_html:
         data_health_visibility_item_html = "<div class='cc-home-item-meta'>暂无接口级诊断；页面打开不会自动请求外部接口。</div>"
+    data_health_timeline_item_html = ""
+    for item in (data_health_timeline.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        data_health_timeline_item_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), "数据接口"))}：
+          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+          最近检查 {escape(_home_text(item.get("last_checked"), "暂无"))}
+          ｜最近成功 {escape(_home_text(item.get("last_success"), "暂无"))}
+          ｜恢复入口 {escape(_home_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"))}
+        </div>
+        <div class="cc-home-item-meta">
+          时间线说明：{escape(_home_text(item.get("message"), "仍需核对接口状态。"))}
+        </div>
+        """
+    if not data_health_timeline_item_html:
+        data_health_timeline_item_html = "<div class='cc-home-item-meta'>接口健康时间线待生成；页面打开不会自动请求外部接口。</div>"
     data_health_visibility_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -5081,6 +5106,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">权限不足：{escape(_home_text(data_health_visibility.get("permission_labels"), "无"))} ｜ 本会话跳过：{escape(_home_text(data_health_visibility.get("skipped_labels"), "无"))}</div>
           <div class="cc-home-item-meta">缓存：{escape(_home_text(data_health_visibility.get("cache_labels"), "无"))} ｜ 近期无数据：{escape(_home_text(data_health_visibility.get("empty_labels"), "无"))} ｜ DeepSeek：未调用</div>
           {data_health_visibility_item_html}
+          <div class="cc-home-item-meta">{escape(_home_text(data_health_timeline.get("title"), "接口健康时间线"))}：{escape(_home_text(data_health_timeline.get("summary"), "暂无接口级历史"))} ｜ 外部接口：{escape(_home_text(data_health_timeline.get("external_call_policy"), "not_triggered"))}</div>
+          {data_health_timeline_item_html}
         </div>
         """
     data_health_ledger_html = ""

@@ -119,6 +119,28 @@ def sample_state():
                 "deepseek_called": False,
                 "external_call_policy": "not_triggered",
             },
+            "command_center_data_health_timeline": {
+                "title": "接口健康时间线",
+                "status": "blocked",
+                "headline": "最近失败优先处理",
+                "summary": "最近失败 1｜缓存/无数据 0｜最近成功 1｜共 2 项",
+                "items": [
+                    {
+                        "event_type": "last_failure",
+                        "label": "融资融券",
+                        "api": "margin_detail",
+                        "status_label": "最近失败",
+                        "tone": "failed",
+                        "last_checked": "2026-06-04T10:01:00",
+                        "last_success": "暂无",
+                        "writes_packet": "command_center_margin_packet",
+                        "external_call_policy": "not_triggered",
+                        "deepseek_called": False,
+                    }
+                ],
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            },
             "data_recovery_center": {
                 "decision_priority_summary": "先处理 P0 阻断交易判断：融资融券。",
                 "safe_mode_text": "这里只整理恢复队列；所有数据请求仍由按钮触发。",
@@ -266,6 +288,24 @@ class CommandCenterLocalApiPreviewTests(unittest.TestCase):
         self.assertEqual(payload["recovery_actions"][0]["manual_check_button_label"], "手动检测融资融券")
         self.assertEqual(payload["recovery_actions"][0]["legacy_workspace_route"]["legacy_tab"], "融资 ETF")
         self.assertIn("只检测 margin_detail", payload["items"][0]["manual_check_instruction"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertEqual(payload["external_call_policy"], "not_triggered")
+
+    def test_data_health_timeline_can_be_read_from_home_snapshot(self):
+        response = preview.get_preview_response_for_path(
+            sample_state(),
+            "command_center_data_health_timeline",
+        )
+        payload = response["payload"]
+
+        self.assertEqual(response["packet_key"], "command_center_data_health_timeline")
+        self.assertEqual(response["status"], "blocked")
+        self.assertTrue(response["ok"])
+        self.assertTrue(response["meta"]["available"])
+        self.assertEqual(response["meta"]["area"], "data_governance")
+        self.assertEqual(payload["title"], "接口健康时间线")
+        self.assertEqual(payload["items"][0]["event_type"], "last_failure")
+        self.assertEqual(payload["items"][0]["writes_packet"], "command_center_margin_packet")
         self.assertFalse(payload["deepseek_called"])
         self.assertEqual(payload["external_call_policy"], "not_triggered")
         self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])

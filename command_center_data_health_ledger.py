@@ -636,6 +636,157 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
     }
 
 
+def _timeline_event_type(row: Mapping[str, Any]) -> str:
+    state = to_text(row.get("state"))
+    category = to_text(row.get("category"))
+    if category == "available" or state in AVAILABLE_STATES:
+        return "last_success"
+    if category == "blocked" or state in BLOCKED_STATES:
+        return "last_failure"
+    if state in {"stale_cache", "fallback_used"}:
+        return "cache_used"
+    if state == "empty_recent":
+        return "empty_recent"
+    if category == "manual" or state in MANUAL_STATES:
+        return "manual_required"
+    return "needs_check"
+
+
+def _timeline_status_label(event_type: str, row: Mapping[str, Any]) -> str:
+    if event_type == "last_success":
+        return "最近成功"
+    if event_type == "last_failure":
+        return "最近失败"
+    if event_type == "cache_used":
+        return "使用缓存"
+    if event_type == "empty_recent":
+        return "近期无数据"
+    if event_type == "manual_required":
+        return "需要手动刷新"
+    return to_text(row.get("status_label"), "待验证")
+
+
+def _timeline_tone(event_type: str, row: Mapping[str, Any]) -> str:
+    if event_type == "last_success":
+        return "ready"
+    if event_type == "last_failure":
+        return "failed"
+    if event_type in {"cache_used", "empty_recent"}:
+        return "stale"
+    return to_text(row.get("tone"), "missing")
+
+
+def _timeline_message(event_type: str, row: Mapping[str, Any]) -> str:
+    label = to_text(row.get("label"), "数据接口")
+    if event_type == "last_success":
+        return f"{label}最近有可用返回；仍需核对交易日、来源和适用标的。"
+    if event_type == "last_failure":
+        return _first_text(
+            row.get("diagnostic_answer"),
+            row.get("meaning"),
+            row.get("error_text"),
+            default=f"{label}最近失败；不要把缺失数据当成无风险或利好。",
+        )
+    if event_type == "cache_used":
+        return f"{label}当前依赖缓存或替代口径；能防白屏，但不是实时已验证事实。"
+    if event_type == "empty_recent":
+        return f"{label}接口可读但近窗口无记录；可能是非交易日、尚未发布、标的未上榜或接口暂不覆盖。"
+    if event_type == "manual_required":
+        return f"{label}需要手动按钮触发；页面打开不会自动请求外部重接口。"
+    return _first_text(row.get("diagnostic_answer"), row.get("meaning"), default=f"{label}仍待验证。")
+
+
+def _timeline_item(row: Mapping[str, Any]) -> dict:
+    event_type = _timeline_event_type(row)
+    label = to_text(row.get("label"), "数据接口")
+    api = to_text(row.get("api"))
+    last_success = _first_text(row.get("latest_date"), row.get("last_success_text"))
+    if last_success == "暂无":
+        last_success = ""
+    last_checked = _first_text(row.get("last_checked"))
+    failure_text = _first_text(row.get("error_text"), row.get("diagnostic_answer"), row.get("meaning"))
+    return {
+        "key": f"{to_text(row.get('provider'), '数据源')}:{api or label}:{event_type}",
+        "event_type": event_type,
+        "provider": to_text(row.get("provider"), "数据源"),
+        "api": api,
+        "label": label,
+        "state": to_text(row.get("state"), "unknown"),
+        "status_label": _timeline_status_label(event_type, row),
+        "tone": _timeline_tone(event_type, row),
+        "message": _timeline_message(event_type, row),
+        "last_checked": last_checked or "暂无",
+        "last_success": last_success or "暂无",
+        "last_failure": failure_text if event_type == "last_failure" else "",
+        "action_label": to_text(row.get("action_label"), f"手动检查{label}"),
+        "toolbox_entry": to_text(row.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+        "writes_packet": to_text(row.get("writes_packet"), "command_center_data_capability_packet"),
+        "refresh_policy": to_text(row.get("refresh_policy"), "button_gated"),
+        "decision_guardrail": to_text(row.get("decision_guardrail"), f"{label}未验证前不能作为加仓依据。"),
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def build_data_health_timeline(data_health_ledger: Any = None, limit: int = 6) -> dict:
+    ledger = as_mapping(data_health_ledger)
+    rows = [as_mapping(row) for row in as_list(ledger.get("rows")) if as_mapping(row)]
+    if not rows:
+        return {
+            "title": "接口健康时间线",
+            "status": "missing",
+            "tone": "missing",
+            "headline": "暂无接口级历史",
+            "summary": "还没有本地接口健康账本；页面打开不会自动请求外部接口。",
+            "items": [],
+            "checked_at": to_text(ledger.get("checked_at")),
+            "external_call_policy": "not_triggered",
+            "deepseek_called": False,
+        }
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: (
+            {"blocked": 0, "manual": 1, "stale": 2, "available": 3}.get(to_text(row.get("category")), 4),
+            to_text(row.get("provider")),
+            to_text(row.get("label")),
+        ),
+    )
+    items = []
+    seen = set()
+    for row in sorted_rows:
+        item = _timeline_item(row)
+        if item["key"] in seen:
+            continue
+        seen.add(item["key"])
+        items.append(item)
+        if len(items) >= max(1, int(limit or 6)):
+            break
+    blocked = [item for item in items if item["event_type"] == "last_failure"]
+    stale = [item for item in items if item["event_type"] in {"cache_used", "empty_recent"}]
+    available = [item for item in items if item["event_type"] == "last_success"]
+    status = "blocked" if blocked else "partial" if stale or any(item["event_type"] == "manual_required" for item in items) else "ready" if available else "missing"
+    tone = "failed" if status == "blocked" else "stale" if status == "partial" else "ready" if status == "ready" else "missing"
+    if status == "blocked":
+        headline = "最近失败优先处理"
+    elif status == "partial":
+        headline = "缓存/近期无数据需要复核"
+    elif status == "ready":
+        headline = "最近接口可用"
+    else:
+        headline = "接口状态待验证"
+    return {
+        "title": "接口健康时间线",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": f"最近失败 {len(blocked)}｜缓存/无数据 {len(stale)}｜最近成功 {len(available)}｜共 {len(items)} 项",
+        "items": items,
+        "checked_at": to_text(ledger.get("checked_at")),
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_data_health_ledger(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,

@@ -184,6 +184,37 @@ class CommandCenterDataHealthLedgerTests(unittest.TestCase):
         self.assertFalse(summary["deepseek_called"])
         self.assertIn("command_center_margin_packet", dumped)
 
+    def test_health_timeline_explains_success_failure_cache_and_manual_routes(self):
+        packet = ledger.build_data_health_ledger(
+            data_capability_packet={
+                "checked_at": "2026-06-04T10:00:00",
+                "items": [
+                    {"provider": "Tushare", "api": "moneyflow", "label": "个股资金流", "capability_state": "available", "status": "可用", "latest_date": "20260603"},
+                    {"provider": "Tushare", "api": "margin_detail", "label": "融资融券", "capability_state": "permission_denied", "status": "权限不足", "error": "抱歉，您没有访问该接口的权限"},
+                    {"provider": "Tushare", "api": "top_list", "label": "龙虎榜", "capability_state": "empty_recent", "status": "近期无数据"},
+                    {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                ],
+            }
+        )
+
+        timeline = ledger.build_data_health_timeline(packet)
+        dumped = json.dumps(timeline, ensure_ascii=False)
+        by_label = {item["label"]: item for item in timeline["items"]}
+
+        self.assertEqual(timeline["status"], "blocked")
+        self.assertEqual(timeline["headline"], "最近失败优先处理")
+        self.assertIn("最近失败 1", timeline["summary"])
+        self.assertEqual(by_label["融资融券"]["event_type"], "last_failure")
+        self.assertIn("权限", by_label["融资融券"]["message"])
+        self.assertEqual(by_label["融资融券"]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(by_label["个股资金流"]["event_type"], "last_success")
+        self.assertEqual(by_label["个股资金流"]["last_success"], "20260603")
+        self.assertEqual(by_label["龙虎榜"]["event_type"], "empty_recent")
+        self.assertEqual(by_label["AkShare 重型刷新"]["event_type"], "manual_required")
+        self.assertEqual(by_label["融资融券"]["external_call_policy"], "not_triggered")
+        self.assertFalse(timeline["deepseek_called"])
+        self.assertIn("高级工具箱", dumped)
+
     def test_limit_boundary_apis_route_to_limit_emotion_recovery_packet(self):
         packet = ledger.build_data_health_ledger(
             data_capability_packet={
