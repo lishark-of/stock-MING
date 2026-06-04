@@ -16,9 +16,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["data_freshness"]["state"], "missing")
         self.assertIn("暂无可执行候选", payload["empty_message"])
         self.assertIn("decision_loop_status", payload)
-        self.assertEqual(len(payload["decision_loop_status"]["items"]), 7)
+        self.assertEqual(len(payload["decision_loop_status"]["items"]), 8)
         loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
         self.assertIn("provider_data_capability", loop_items)
+        self.assertIn("old_workspace_packets", loop_items)
         self.assertFalse(payload["decision_loop_status"]["deepseek_called"])
 
     def test_save_and_load_snapshot(self):
@@ -1925,11 +1926,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
             now=f"{today}T10:02:00",
         )
         bridge = payload["old_workspace_packet_bridge"]
+        loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
         dumped = json.dumps(bridge, ensure_ascii=False)
 
         self.assertEqual(bridge["title"], "旧工具能力 → 综合中心 packet 桥")
         self.assertIn(bridge["status"], {"blocked", "partial", "ready"})
         self.assertTrue(bridge["items"])
+        self.assertIn("old_workspace_packets", loop_items)
+        self.assertIn(loop_items["old_workspace_packets"]["status"], {"blocked", "stale", "ready"})
         self.assertIn("下一票雷达", dumped)
         self.assertIn("融资 ETF", dumped)
         self.assertIn("command_center_radar_packet", dumped)

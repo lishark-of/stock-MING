@@ -571,6 +571,7 @@ def attach_decision_loop_status(
     *,
     data_capability_console: Any = None,
     provider_data_capability_cockpit: Any = None,
+    old_workspace_packet_bridge: Any = None,
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
     strategy_packet: Any = None,
@@ -581,6 +582,7 @@ def attach_decision_loop_status(
     payload["decision_loop_status"] = loop_status_service.build_command_center_loop_status_view_model(
         data_capability_console=data_capability_console or payload.get("data_capability_console") or {},
         provider_data_capability_cockpit=provider_data_capability_cockpit or payload.get("provider_data_capability_cockpit") or {},
+        old_workspace_packet_bridge=old_workspace_packet_bridge or payload.get("old_workspace_packet_bridge") or {},
         analysis_method_packet=analysis_method_packet or payload.get("analysis_method_packet") or {},
         market_profile_evidence=payload.get("market_profile_evidence") or {},
         projection_packet=projection_packet or payload.get("projection_packet") or {},
@@ -4213,6 +4215,7 @@ def build_home_action_snapshot(
             empty,
             data_capability_console=empty.get("data_capability_console") or {},
             provider_data_capability_cockpit=empty.get("provider_data_capability_cockpit") or {},
+            old_workspace_packet_bridge=empty.get("old_workspace_packet_bridge") or {},
             analysis_method_packet=empty.get("analysis_method_packet") or {},
             projection_packet=empty.get("projection_packet") or {},
             strategy_packet=empty.get("strategy_packet") or {},

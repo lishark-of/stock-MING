@@ -166,6 +166,49 @@ def _provider_data_capability_item(provider_data_capability_cockpit: Any = None)
     return item
 
 
+def _old_workspace_packet_bridge_item(old_workspace_packet_bridge: Any = None) -> dict:
+    bridge = _as_mapping(old_workspace_packet_bridge)
+    if not bridge:
+        return {}
+    status_text = _to_text(bridge.get("status"), "missing")
+    if status_text in {"blocked", "failed", "error"}:
+        status = "blocked"
+        guardrail = "旧工具能力未回流或仍阻断时，相关证据只能标记待验证；不能用旧页面缺失结果直接支持交易动作。"
+    elif status_text in {"partial", "stale", "cached", "in_progress"}:
+        status = "stale"
+        guardrail = "旧工具能力仍有待回流/缓存复核项；执行前需要确认目标 packet、日期和来源。"
+    elif status_text in {"ready", "ok", "available"}:
+        status = "ready"
+        guardrail = "旧工具能力已回流为综合中心 packet；仍需和价格、纪律、仓位规则共同复核。"
+    else:
+        status = "waiting"
+        guardrail = "旧工具能力 packet 桥待生成；页面不会自动运行旧工具或重型接口。"
+    bridge_items = [_as_mapping(item) for item in _as_list(bridge.get("items")) if _as_mapping(item)]
+    blocked_count = len([item for item in bridge_items if _to_text(item.get("bridge_status")) == "blocked"])
+    waiting_count = len([item for item in bridge_items if _to_text(item.get("bridge_status")) == "waiting"])
+    cached_count = len([item for item in bridge_items if _to_text(item.get("bridge_status")) == "cached"])
+    recovered_count = len([item for item in bridge_items if _to_text(item.get("bridge_status")) == "recovered"])
+    summary = _to_text(
+        bridge.get("summary") or bridge.get("headline"),
+        f"已回流 {recovered_count}｜使用缓存 {cached_count}｜仍阻断 {blocked_count}｜待回流 {waiting_count}",
+    )
+    item = _status_item(
+        "old_workspace_packets",
+        "旧能力回流",
+        status,
+        summary,
+        _to_text(bridge.get("safe_mode_text"), guardrail) if status != "ready" else guardrail,
+        "old_workspace_packet_bridge",
+    )
+    item["bridge_item_count"] = len(bridge_items)
+    item["blocked_bridge_count"] = blocked_count
+    item["waiting_bridge_count"] = waiting_count
+    item["cached_bridge_count"] = cached_count
+    item["recovered_bridge_count"] = recovered_count
+    item["decision_guardrail"] = guardrail
+    return item
+
+
 def _analysis_methods_item(analysis_method_packet: Any = None, market_profile_evidence: Any = None) -> dict:
     packet = _as_mapping(analysis_method_packet)
     profile = _as_mapping(market_profile_evidence)
@@ -257,6 +300,7 @@ def _recovery_loop_label(loop_key: str) -> str:
     return {
         "data_capability": "数据能力",
         "provider_data_capability": "数据源能力",
+        "old_workspace_packets": "旧能力回流",
         "analysis_methods": "分析方法",
         "projection": "趋势推演",
         "strategy_execution": "策略执行",
@@ -345,6 +389,7 @@ def _recovery_actions_from_provider_cockpit(provider_data_capability_cockpit: An
 def build_command_center_loop_status_view_model(
     data_capability_console: Any = None,
     provider_data_capability_cockpit: Any = None,
+    old_workspace_packet_bridge: Any = None,
     analysis_method_packet: Any = None,
     market_profile_evidence: Any = None,
     projection_packet: Any = None,
@@ -359,6 +404,9 @@ def build_command_center_loop_status_view_model(
     provider_item = _provider_data_capability_item(provider_data_capability_cockpit)
     if provider_item:
         items.append(provider_item)
+    old_workspace_item = _old_workspace_packet_bridge_item(old_workspace_packet_bridge)
+    if old_workspace_item:
+        items.append(old_workspace_item)
     items.extend(
         [
             _analysis_methods_item(analysis_method_packet, market_profile_evidence),

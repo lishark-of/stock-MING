@@ -94,6 +94,43 @@ class CommandCenterLoopStatusTests(unittest.TestCase):
         self.assertIn("数据源能力", view_model["recovery_summary"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_old_workspace_packet_bridge_blocks_loop_when_legacy_packets_are_missing(self):
+        view_model = loop_status.build_command_center_loop_status_view_model(
+            old_workspace_packet_bridge={
+                "status": "blocked",
+                "summary": "已回流 1｜使用缓存 0｜仍阻断 1｜待回流 2",
+                "safe_mode_text": "这里只读取旧版迁移地图、本地 packet 和恢复状态；不会自动调用 DeepSeek。",
+                "items": [
+                    {
+                        "label": "融资 ETF",
+                        "bridge_status": "blocked",
+                        "writes_packet": "command_center_margin_packet",
+                    },
+                    {
+                        "label": "下一票雷达",
+                        "bridge_status": "recovered",
+                        "writes_packet": "command_center_radar_packet",
+                    },
+                    {
+                        "label": "量化推演",
+                        "bridge_status": "waiting",
+                        "writes_packet": "command_center_quant_packet",
+                    },
+                ],
+            }
+        )
+        by_key = {item["key"]: item for item in view_model["items"]}
+
+        self.assertEqual(view_model["status"], "blocked")
+        self.assertEqual(by_key["old_workspace_packets"]["status"], "blocked")
+        self.assertEqual(by_key["old_workspace_packets"]["bridge_item_count"], 3)
+        self.assertEqual(by_key["old_workspace_packets"]["blocked_bridge_count"], 1)
+        self.assertEqual(by_key["old_workspace_packets"]["waiting_bridge_count"], 1)
+        self.assertEqual(by_key["old_workspace_packets"]["recovered_bridge_count"], 1)
+        self.assertIn("旧工具能力", by_key["old_workspace_packets"]["decision_guardrail"])
+        self.assertFalse(view_model["deepseek_called"])
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_ready_chain_keeps_deepseek_manual(self):
         view_model = loop_status.build_command_center_loop_status_view_model(
             data_capability_console={"ready_count": 3, "headline": "数据能力已读取，3 个接口可进入证据链。"},
