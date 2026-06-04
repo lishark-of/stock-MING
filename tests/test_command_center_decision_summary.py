@@ -376,6 +376,62 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(basis["external_call_policy"], "not_triggered")
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_evidence_chain_includes_old_workspace_packet_bridge_guardrail(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "小幅进攻"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            old_workspace_packet_bridge={
+                "status": "blocked",
+                "summary": "已回流 1｜使用缓存 0｜仍阻断 1｜待回流 2",
+                "items": [
+                    {
+                        "label": "融资 ETF",
+                        "bridge_status": "blocked",
+                        "writes_packet": "command_center_margin_packet",
+                    },
+                    {
+                        "label": "下一票雷达",
+                        "bridge_status": "recovered",
+                        "writes_packet": "command_center_radar_packet",
+                    },
+                    {
+                        "label": "量化推演",
+                        "bridge_status": "waiting",
+                        "writes_packet": "command_center_quant_packet",
+                    },
+                ],
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+        basis = view_model["old_workspace_packet_bridge_basis_item"]
+
+        self.assertIn("旧能力回流", joined)
+        self.assertIn("仍阻断 1", joined)
+        self.assertEqual(basis["tone"], "danger")
+        self.assertEqual(basis["blocked_count"], 1)
+        self.assertIn("旧页面缺失结果", basis["guardrail"])
+        self.assertEqual(basis["external_call_policy"], "not_triggered")
+        self.assertFalse(basis["deepseek_called"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_old_workspace_packet_bridge_basis_marks_recovered_as_supporting(self):
+        item = summary.build_old_workspace_packet_bridge_basis_item(
+            {
+                "status": "ready",
+                "summary": "已回流 3｜使用缓存 0｜仍阻断 0｜待回流 0",
+                "items": [
+                    {"label": "下一票雷达", "bridge_status": "recovered"},
+                    {"label": "融资 ETF", "bridge_status": "recovered"},
+                ],
+            }
+        )
+
+        self.assertEqual(item["tone"], "success")
+        self.assertEqual(item["recovered_count"], 2)
+        self.assertIn("已回流为综合中心 packet", item["guardrail"])
+        self.assertFalse(item["deepseek_called"])
+
     def test_a_share_data_basis_marks_all_available_as_decision_ready(self):
         view_model = summary.build_decision_summary_view_model(
             {},

@@ -3999,6 +3999,11 @@ def render_command_center_decision_card(live_packet, target="", position_profile
             if isinstance(home_snapshot, dict)
             else {}
         ),
+        old_workspace_packet_bridge=(
+            home_snapshot.get("old_workspace_packet_bridge")
+            if isinstance(home_snapshot, dict)
+            else {}
+        ),
     )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):

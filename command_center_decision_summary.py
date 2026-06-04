@@ -582,6 +582,54 @@ def build_execution_recovery_basis_item(
     }
 
 
+def build_old_workspace_packet_bridge_basis_item(old_workspace_packet_bridge: Any = None) -> dict:
+    bridge = _as_mapping(old_workspace_packet_bridge)
+    if not bridge:
+        return {}
+    items = [_as_mapping(item) for item in _as_list(bridge.get("items")) if _as_mapping(item)]
+    counts = {
+        "blocked": len([item for item in items if _to_text(item.get("bridge_status")) == "blocked"]),
+        "waiting": len([item for item in items if _to_text(item.get("bridge_status")) == "waiting"]),
+        "cached": len([item for item in items if _to_text(item.get("bridge_status")) == "cached"]),
+        "recovered": len([item for item in items if _to_text(item.get("bridge_status")) == "recovered"]),
+    }
+    status = _to_text(bridge.get("status"))
+    if status == "blocked" or counts["blocked"]:
+        tone = "danger"
+        guardrail = "旧工具能力未回流或仍阻断时，相关证据只能待验证，不能把旧页面缺失结果当成交易依据。"
+    elif status in {"partial", "stale"} or counts["waiting"] or counts["cached"]:
+        tone = "warning"
+        guardrail = "旧工具能力仍有待回流/缓存复核项；执行前需要确认目标 packet、日期和来源。"
+    elif status == "ready" or counts["recovered"]:
+        tone = "success"
+        guardrail = "旧工具能力已回流为综合中心 packet；仍需和价格、纪律、仓位规则共同复核。"
+    else:
+        tone = "muted"
+        guardrail = "旧工具能力 packet 桥待生成；页面不会自动运行旧工具或重型接口。"
+    summary = _to_text(
+        bridge.get("summary")
+    ) or f"已回流 {counts['recovered']}｜使用缓存 {counts['cached']}｜仍阻断 {counts['blocked']}｜待回流 {counts['waiting']}"
+    focus_items = [
+        item
+        for item in items
+        if _to_text(item.get("bridge_status")) in {"blocked", "waiting", "cached"}
+    ] or items[:2]
+    focus_text = "、".join(_to_text(item.get("label")) for item in focus_items[:2] if _to_text(item.get("label")))
+    return {
+        "label": "旧能力回流",
+        "value": summary,
+        "tone": tone,
+        "summary": f"{focus_text}｜{guardrail}" if focus_text else guardrail,
+        "guardrail": guardrail,
+        "blocked_count": counts["blocked"],
+        "waiting_count": counts["waiting"],
+        "cached_count": counts["cached"],
+        "recovered_count": counts["recovered"],
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
@@ -592,6 +640,7 @@ def build_decision_evidence_chain_items(
     latest_recovery_result_notice: Any = None,
     next_ticket_candidates: Any = None,
     margin_etf_summary: Any = None,
+    old_workspace_packet_bridge: Any = None,
 ) -> list[dict]:
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
@@ -622,6 +671,9 @@ def build_decision_evidence_chain_items(
     )
     if execution_recovery_basis:
         items.append(execution_recovery_basis)
+    old_workspace_basis = build_old_workspace_packet_bridge_basis_item(old_workspace_packet_bridge)
+    if old_workspace_basis:
+        items.append(old_workspace_basis)
     if not_applicable:
         not_applicable_item = {"label": "不适用", "value": "、".join(not_applicable[:2]), "tone": "muted"}
     else:
@@ -695,6 +747,7 @@ def build_decision_summary_view_model(
     latest_recovery_result_notice: Any = None,
     next_ticket_candidates: Any = None,
     margin_etf_summary: Any = None,
+    old_workspace_packet_bridge: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     analysis = _as_mapping(analysis_method_packet)
@@ -736,6 +789,7 @@ def build_decision_summary_view_model(
             latest_recovery_result_notice=latest_recovery_result_notice,
             next_ticket_candidates=next_ticket_candidates,
             margin_etf_summary=margin_etf_summary,
+            old_workspace_packet_bridge=old_workspace_packet_bridge,
         ),
         "projection_confidence_summary": projection_confidence,
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market),
@@ -751,6 +805,7 @@ def build_decision_summary_view_model(
         "latest_recovery_result_basis_item": build_latest_recovery_result_basis_item(latest_recovery_result_notice),
         "latest_recovery_result_summary_text": build_latest_recovery_result_summary_text(latest_recovery_result_notice),
         "execution_recovery_basis_item": build_execution_recovery_basis_item(next_ticket_candidates, margin_etf_summary),
+        "old_workspace_packet_bridge_basis_item": build_old_workspace_packet_bridge_basis_item(old_workspace_packet_bridge),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),
