@@ -1562,8 +1562,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(migration_action["missing_target_text"], "command_center_margin_packet")
         self.assertEqual(migration_action["source_type"], "legacy_migration")
         self.assertEqual(migration_action["refresh_policy"], "button_gated")
-        self.assertEqual(center["groups"][4]["key"], "legacy_migration")
-        self.assertEqual(center["groups"][4]["count"], 1)
+        group_counts = {item["key"]: item["count"] for item in center["groups"]}
+        self.assertEqual(group_counts["legacy_migration"], 1)
         self.assertEqual(center_action["source_label"], "旧版迁移地图")
         self.assertEqual(center_action["writes_packet"], "command_center_margin_packet")
         self.assertEqual(center["decision_priority_queue"][0]["lane_key"], "p2")
@@ -1571,6 +1571,80 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_margin_packet")
         self.assertTrue(all(item["deepseek_called"] is False for item in migration_actions))
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
+    def test_legacy_packet_checklist_feeds_decision_priority_queue(self):
+        checklist = {
+            "title": "旧工作台能力迁移清单",
+            "items": [
+                {
+                    "key": "moneyflow",
+                    "label": "个股资金流",
+                    "migration_state": "packet_ready",
+                    "migration_label": "已回流",
+                    "target_packet": "command_center_moneyflow_packet",
+                    "writes_packet": "command_center_moneyflow_packet",
+                    "deepseek_called": False,
+                },
+                {
+                    "key": "margin",
+                    "label": "融资融券",
+                    "migration_state": "blocked",
+                    "migration_label": "数据/权限阻断",
+                    "tone": "failed",
+                    "target_packet": "command_center_margin_packet",
+                    "writes_packet": "command_center_margin_packet",
+                    "legacy_entry": "高级工具箱 / 融资 ETF / 融资融券",
+                    "recovery_action_label": "手动检测融资融券",
+                    "decision_guardrail": "缺少融资融券时，融资比例和风险预算必须保守。",
+                    "deepseek_called": False,
+                },
+                {
+                    "key": "discipline_backtest",
+                    "label": "纪律/回测",
+                    "migration_state": "manual_required",
+                    "migration_label": "需要手动恢复",
+                    "target_packet": "command_center_discipline_packet",
+                    "writes_packet": "command_center_discipline_packet",
+                    "legacy_entry": "高级工具箱 / 交易纪律实验室",
+                    "recovery_action_label": "手动运行纪律/回测",
+                    "decision_guardrail": "缺少纪律/回测缓存时，策略不能被标记为纪律已验证。",
+                    "deepseek_called": False,
+                },
+                {
+                    "key": "next_ticket_radar",
+                    "label": "下一票雷达",
+                    "migration_state": "wired_waiting_data",
+                    "migration_label": "已接 packet，待数据",
+                    "target_packet": "command_center_radar_packet",
+                    "writes_packet": "command_center_radar_packet",
+                    "legacy_entry": "高级工具箱 / 下一票雷达",
+                    "recovery_action_label": "手动运行下一票雷达",
+                    "decision_guardrail": "缺少雷达 packet 时，首页不能把候选池当成可执行清单。",
+                    "deepseek_called": False,
+                },
+            ],
+        }
+        center = snapshot.build_home_data_recovery_center({"legacy_packet_migration_checklist": checklist})
+        writes_packets = [item["writes_packet"] for item in center["actions"]]
+        group_counts = {item["key"]: item["count"] for item in center["groups"]}
+        decision_queue = center["decision_priority_queue"]
+        queue_by_packet = {item["writes_packet"]: item for item in decision_queue}
+
+        self.assertEqual(center["action_count"], 3)
+        self.assertNotIn("command_center_moneyflow_packet", writes_packets)
+        self.assertIn("command_center_margin_packet", writes_packets)
+        self.assertIn("command_center_discipline_packet", writes_packets)
+        self.assertIn("command_center_radar_packet", writes_packets)
+        self.assertEqual(group_counts["legacy_packet_checklist"], 3)
+        self.assertEqual(queue_by_packet["command_center_margin_packet"]["lane_key"], "p0")
+        self.assertEqual(queue_by_packet["command_center_margin_packet"]["decision_mode"], "阻断加仓")
+        self.assertEqual(queue_by_packet["command_center_discipline_packet"]["lane_key"], "p2")
+        self.assertEqual(queue_by_packet["command_center_radar_packet"]["lane_key"], "p2")
+        self.assertIn("策略不能被标记为纪律已验证", queue_by_packet["command_center_discipline_packet"]["decision_impact"])
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in center["actions"]))
+        self.assertTrue(all(item["deepseek_called"] is False for item in decision_queue))
         self.assertFalse(center["deepseek_called"])
         json.dumps(center, ensure_ascii=False)
 

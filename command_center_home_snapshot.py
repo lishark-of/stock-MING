@@ -416,9 +416,9 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         snapshot["data_health_timeline"]
     )
     snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
+    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
-    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot = attach_decision_loop_status(snapshot)
     return snapshot
 
@@ -536,9 +536,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         snapshot,
         data_capability_packet=snapshot.get("data_capability") or {},
     )
+    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
-    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
     snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
@@ -2178,8 +2178,10 @@ def _recovery_action_lane_key(action: Mapping[str, Any]) -> str:
             "failed",
             "error",
             "权限不足",
+            "权限",
             "本会话跳过",
             "受限",
+            "阻断",
             "失败",
         )
     ):
@@ -2200,7 +2202,7 @@ def _recovery_action_lane_key(action: Mapping[str, Any]) -> str:
         )
     ):
         return "p1"
-    if action.get("source_type") in {"legacy_tool", "legacy_migration", "a_share_fact"}:
+    if action.get("source_type") in {"legacy_tool", "legacy_migration", "legacy_packet_checklist", "a_share_fact"}:
         return "p2"
     return "p1"
 
@@ -2872,6 +2874,84 @@ def build_old_workspace_packet_bridge(snapshot: Any = None, limit: int = MAX_CAP
     }
 
 
+def _legacy_packet_checklist_priority(item: Mapping[str, Any]) -> int:
+    state = _to_text(item.get("migration_state")).lower()
+    if state == "blocked":
+        return 1
+    if state in {"manual_required", "wired_waiting_data"}:
+        return 2
+    return 3
+
+
+def build_legacy_packet_checklist_recovery_actions_snapshot(
+    legacy_packet_migration_checklist: Any = None,
+    limit: int = MAX_CAPABILITY_ITEMS,
+) -> list[dict]:
+    checklist = _as_mapping(legacy_packet_migration_checklist)
+    actions = []
+    for raw in _as_list(checklist.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        migration_state = _to_text(item.get("migration_state"), "legacy_only")
+        if migration_state == "packet_ready":
+            continue
+        writes_packet = _to_text(item.get("writes_packet") or item.get("target_packet"), "command_center_packet")
+        label = _to_text(item.get("label"), "旧工作台能力")
+        status_label = _to_text(item.get("migration_label"), "待迁移")
+        legacy_tab = _recovery_legacy_tab(writes_packet, item.get("key"))
+        reason = _to_text(item.get("next_action"), f"{label}仍需从旧工作台迁入 {writes_packet}。")
+        diagnostic = _to_text(
+            item.get("source_summary"),
+            f"{label}迁移状态：{status_label}；目标 packet：{writes_packet}。",
+        )
+        actions.append(
+            {
+                "key": f"legacy_packet_checklist:{_to_text(item.get('key'), writes_packet)}",
+                "label": label,
+                "source_type": "legacy_packet_checklist",
+                "source_label": "旧能力迁移清单",
+                "status": migration_state,
+                "status_label": status_label,
+                "tone": _to_text(item.get("tone"), "missing"),
+                "priority": _legacy_packet_checklist_priority(item),
+                "reason": reason,
+                "diagnostic_answer": diagnostic,
+                "interface_diagnostic_answer": diagnostic,
+                "decision_guardrail": _to_text(item.get("decision_guardrail"), f"{label}未迁入综合中心前只能作为待验证。"),
+                "action_label": _to_text(item.get("recovery_action_label"), f"手动恢复{label}"),
+                "toolbox_entry": _to_text(item.get("legacy_entry"), "高级工具箱"),
+                "workspace_target": "高级工具箱（旧版保留）",
+                "workspace_state_key": "workspace_mode_v2",
+                "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                "legacy_tab": legacy_tab,
+                "navigation_label": (
+                    f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；"
+                    f"手动执行后回流 {writes_packet}。"
+                ),
+                "writes_packet": writes_packet,
+                "refresh_policy": "button_gated",
+                "recovery_mode": "manual_check",
+                "recovery_mode_label": "按清单手动恢复",
+                "recovery_steps": [
+                    _to_text(item.get("legacy_entry"), "进入高级工具箱"),
+                    _to_text(item.get("recovery_action_label"), f"手动恢复{label}"),
+                    f"确认结果写回 {writes_packet}",
+                ],
+                "recovery_button_context": (
+                    f"按钮只恢复 {label} 并回流 {writes_packet}；"
+                    "不会自动调用 DeepSeek、回测、全市场扫描或批量数据接口。"
+                ),
+                "home_surface": _to_text(item.get("home_surface"), "综合推演中心"),
+                "decision_chain_stage": _to_text(item.get("decision_chain_stage"), "数据能力状态 → 今日总决策"),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    actions = sorted(actions, key=lambda action: (action["priority"], action["label"], action["writes_packet"]))
+    return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+
+
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
@@ -2885,12 +2965,17 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         payload.get("legacy_migration_map"),
         limit=limit,
     )
+    legacy_packet_checklist_actions = build_legacy_packet_checklist_recovery_actions_snapshot(
+        payload.get("legacy_packet_migration_checklist"),
+        limit=limit,
+    )
     tool_actions = _as_list(payload.get("tool_recovery_actions"))
     action_sources = [
         ("data_source", "数据源能力", data_actions, 1),
         ("data_health_timeline", "接口健康时间线", timeline_actions, 1),
         ("a_share_fact", "旧版 A股事实卡", legacy_fact_actions, 2),
         ("a_share", "A股数据能力", a_share_actions, 3),
+        ("legacy_packet_checklist", "旧能力迁移清单", legacy_packet_checklist_actions, 3),
         ("legacy_migration", "旧版迁移地图", legacy_migration_actions, 3),
         ("legacy_tool", "旧工具能力", tool_actions, 3),
         ("next_ticket_evidence", "下一票候选证据", _as_list(payload.get("next_ticket_evidence_recovery_actions")), 2),
@@ -4257,9 +4342,9 @@ def build_home_action_snapshot(
             empty,
             data_capability_packet=empty.get("data_capability") or {},
         )
+        empty["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(empty)
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
         empty["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(empty)
-        empty["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(empty)
         empty["recovery_result_status_strip"] = build_recovery_result_status_strip(
             empty,
             latest_notice=empty.get("latest_recovery_result_notice") or snapshot["latest_recovery_result_notice"],
@@ -4326,9 +4411,9 @@ def build_home_action_snapshot(
         snapshot,
         data_capability_packet=snapshot.get("data_capability") or {},
     )
+    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
-    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(
         snapshot,
         latest_notice=snapshot.get("latest_recovery_result_notice") or {},
