@@ -85,9 +85,27 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
 
         self.assertIn("_remember_a_share_manual_recovery_result", source)
         self.assertIn("command_center_last_a_share_diagnostic_recovery_result", source)
+        self.assertIn("command_center_last_recovery_result_source", source)
         self.assertIn("command_center_limit_emotion_packet", source)
         self.assertIn("command_center_chip_packet", source)
         self.assertIn("btn_cc_home_evidence_backfill_", source)
+
+    def test_legacy_tool_packet_writes_refresh_home_snapshot(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+        tokens = _function_tokens("_remember_legacy_tool_packet_recovery_result")
+
+        self.assertIn("_remember_legacy_tool_packet_recovery_result", source)
+        self.assertIn("_persist_home_action_snapshot", tokens)
+        self.assertIn("command_center_last_recovery_result_source", tokens)
+        self.assertIn("tool_recovery", tokens)
+        self.assertIn("command_center_discipline_packet", source)
+        self.assertIn("command_center_quant_packet", source)
+        self.assertIn("command_center_etf_packet", source)
+        self.assertIn("command_center_radar_packet", source)
+        self.assertIn("legacy_discipline", source)
+        self.assertIn("legacy_quant", source)
+        self.assertIn("legacy_margin_etf", source)
+        self.assertIn("legacy_next_ticket_radar", source)
 
     def test_decision_and_strategy_cards_surface_projection_confidence(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

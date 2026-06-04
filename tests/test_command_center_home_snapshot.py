@@ -1515,6 +1515,41 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["external_call_policy"], "button_gated")
         self.assertFalse(notice["deepseek_called"])
 
+    def test_latest_recovery_result_notice_can_prefer_latest_tool_recovery(self):
+        notice = snapshot.build_latest_recovery_result_notice(
+            {
+                "command_center_last_recovery_result_source": "tool_recovery",
+                "command_center_last_a_share_diagnostic_recovery_result": {
+                    "label": "涨跌停/情绪",
+                    "writes_packet": "command_center_limit_emotion_packet",
+                    "capability_state": "permission_denied",
+                    "status_label": "权限不足",
+                    "message": "limit_cpt_list 权限不足。",
+                    "checked_at": "2026-06-03T10:05:00",
+                    "api_hint": "Tushare limit_cpt_list",
+                    "deepseek_called": False,
+                },
+                "command_center_last_tool_recovery_label": "下一票雷达",
+                "command_center_last_tool_recovery_writes_packet": "command_center_radar_packet",
+                "command_center_last_tool_recovery_target_tab": "下一票雷达",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "下一票雷达",
+                "command_center_radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [{"ticker": "002008.SZ", "name": "大族激光"}],
+                    "generated_at": "2026-06-03T10:10:00",
+                    "source": "下一票雷达本地缓存",
+                },
+            },
+            selected_tab="下一票雷达",
+        )
+
+        self.assertEqual(notice["source_type"], "tool_recovery")
+        self.assertEqual(notice["status"], "recovered")
+        self.assertEqual(notice["writes_packet"], "command_center_radar_packet")
+        self.assertIn("下一票雷达", notice["message"])
+        self.assertFalse(notice["deepseek_called"])
+
     def test_latest_recovery_result_notice_explains_chip_gap_after_manual_check(self):
         notice = snapshot.build_latest_recovery_result_notice(
             {

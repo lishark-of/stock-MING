@@ -1848,6 +1848,16 @@ def _with_recovery_notice_source(notice: Mapping[str, Any], source_type: str) ->
 
 
 def build_latest_recovery_result_notice(state: Any = None, selected_tab: Any = "") -> dict:
+    state_map = _as_mapping(state)
+    preferred_source = _to_text(state_map.get("command_center_last_recovery_result_source"))
+    if preferred_source == "tool_recovery":
+        tool_notice = build_tool_recovery_result_notice(state, selected_tab=selected_tab)
+        if tool_notice:
+            return _with_recovery_notice_source(tool_notice, "tool_recovery")
+        diagnostic_notice = build_a_share_diagnostic_recovery_result_notice(state)
+        if diagnostic_notice:
+            return _with_recovery_notice_source(diagnostic_notice, "a_share_diagnostic")
+        return {}
     diagnostic_notice = build_a_share_diagnostic_recovery_result_notice(state)
     if diagnostic_notice:
         return _with_recovery_notice_source(diagnostic_notice, "a_share_diagnostic")

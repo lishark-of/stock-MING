@@ -3850,6 +3850,31 @@ def _persist_home_action_snapshot(live_packet=None, target="", position_profile=
     return snapshot
 
 
+def _remember_legacy_tool_packet_recovery_result(
+    *,
+    key="",
+    label="",
+    writes_packet="",
+    target_tab="",
+    live_packet=None,
+    target="",
+    position_profile=None,
+):
+    if not writes_packet:
+        return {}
+    st.session_state["command_center_last_recovery_result_source"] = "tool_recovery"
+    st.session_state["command_center_last_tool_recovery_key"] = key or writes_packet
+    st.session_state["command_center_last_tool_recovery_label"] = label or target_tab or "旧工具能力"
+    st.session_state["command_center_last_tool_recovery_writes_packet"] = writes_packet
+    st.session_state["command_center_last_tool_recovery_target_tab"] = target_tab or st.session_state.get("legacy_workspace_selected_tab") or "高级工具"
+    st.session_state["command_center_last_tool_recovery_policy"] = "navigation_only"
+    return _persist_home_action_snapshot(
+        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        target=target,
+        position_profile=position_profile,
+    )
+
+
 def _sync_tianyan_hard_risk_to_command_center(tianyan_packet, target="", position_profile=None, live_packet=None):
     if not isinstance(tianyan_packet, dict):
         return {}
@@ -4531,6 +4556,7 @@ def _remember_a_share_manual_recovery_result(result=None, *, key="", label="", w
         "deepseek_called": False,
     }
     st.session_state["command_center_last_a_share_diagnostic_recovery_result"] = record
+    st.session_state["command_center_last_recovery_result_source"] = "a_share_diagnostic"
     return record
 
 
@@ -11880,6 +11906,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             },
                             target=target,
                         )
+                        _remember_legacy_tool_packet_recovery_result(
+                            key="legacy_discipline",
+                            label="交易纪律/回测",
+                            writes_packet="command_center_discipline_packet",
+                            target_tab="交易纪律实验室",
+                            target=target,
+                            position_profile=position_profile_preview,
+                        )
                         st.warning("没有抓到可用行情。")
                         st.caption(f"识别结果：{target}｜{market_type}｜行情源：{bt_provider}｜区间：{bt_start} 至 {bt_end}")
                         diag = cached_fetch_ohlcv_diagnostics(
@@ -11933,6 +11967,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         st.session_state["command_center_discipline_packet"] = legacy_packet_sync_service.sync_legacy_discipline_packet(
                             st.session_state,
                             target=target,
+                        )
+                        _remember_legacy_tool_packet_recovery_result(
+                            key="legacy_discipline",
+                            label="交易纪律/回测",
+                            writes_packet="command_center_discipline_packet",
+                            target_tab="交易纪律实验室",
+                            target=target,
+                            position_profile=position_profile_preview,
                         )
                         st.success(f"回测完成：{multi_result.get('summary') or report.get('summary', '')}")
 
@@ -12889,6 +12931,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.session_state,
             target=target,
         )
+        _remember_legacy_tool_packet_recovery_result(
+            key="legacy_quant",
+            label="量化推演",
+            writes_packet="command_center_quant_packet",
+            target_tab="量化推演",
+            target=target,
+            position_profile=position_profile_preview,
+        )
 
     if legacy_tab == "融资 ETF":
         st.markdown("### 🧮 融资版 ETF 投资法")
@@ -13216,6 +13266,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 }
             },
         )
+        _remember_legacy_tool_packet_recovery_result(
+            key="legacy_margin_etf",
+            label="融资 ETF",
+            writes_packet="command_center_etf_packet",
+            target_tab="融资 ETF",
+            target=target,
+            position_profile=position_profile_preview,
+        )
 
         account_risk_profile = {
             "account": margin_account,
@@ -13490,6 +13548,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "source": "下一票雷达本地缓存快照",
                     }
                 },
+            )
+            _remember_legacy_tool_packet_recovery_result(
+                key="legacy_next_ticket_radar",
+                label="下一票雷达",
+                writes_packet="command_center_radar_packet",
+                target_tab="下一票雷达",
+                target=target,
+                position_profile=position_profile_preview,
             )
     # 模块 D：云端外脑
     if legacy_tab == "云端外脑":
