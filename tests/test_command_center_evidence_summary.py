@@ -432,20 +432,65 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
                     "data_status": "ready",
                     "emotion_state": "接近涨停/追高区",
                     "distance_to_up_pct": 2.1,
+                    "evidence_summary": "情绪：接近涨停/追高区｜距涨停 2.1%",
+                    "action_hint": "先防追高；只作为辅助证据。",
+                    "decision_guardrail": "接近涨停时禁止把热度写成追高理由。",
+                    "evidence_items": [{"key": "limit_distance", "label": "涨停距离", "value": "2.1%", "status": "已验证"}],
                 },
                 "chip_packet": {
                     "status": "ready",
                     "data_status": "ready",
                     "pressure_state": "获利盘压力偏高",
                     "winner_rate": 72,
+                    "evidence_summary": "筹码压力：获利盘压力偏高｜胜率 72%",
+                    "action_hint": "先把获利盘压力写入纪律约束。",
+                    "decision_guardrail": "获利盘压力偏高时禁止把胜率写成加仓理由。",
+                    "evidence_items": [{"key": "winner_rate", "label": "胜率", "value": "72%", "status": "已验证"}],
                 },
             }
         )
         by_key = {item["key"]: item for item in vm["items"]}
 
         self.assertEqual(by_key["limit_emotion"]["headline"], "接近涨停/追高区")
+        self.assertIn("距涨停 2.1%", by_key["limit_emotion"]["evidence_summary"])
+        self.assertIn("防追高", by_key["limit_emotion"]["next_action"])
+        self.assertIn("禁止把热度写成追高理由", by_key["limit_emotion"]["decision_signal"])
+        self.assertEqual(by_key["limit_emotion"]["evidence_items"][0]["key"], "limit_distance")
         self.assertEqual(by_key["chip_radar"]["headline"], "获利盘压力偏高")
         self.assertEqual(by_key["chip_radar"]["metric"], "72.00%")
+        self.assertIn("筹码压力：获利盘压力偏高", by_key["chip_radar"]["evidence_summary"])
+        self.assertIn("纪律约束", by_key["chip_radar"]["next_action"])
+        self.assertIn("禁止把胜率写成加仓理由", by_key["chip_radar"]["decision_signal"])
+        self.assertEqual(by_key["chip_radar"]["evidence_items"][0]["key"], "winner_rate")
+
+    def test_limit_and_chip_guardrails_flow_into_core_evidence_brief(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "margin_packet": {"status": "ready", "data_status": "ready", "summary": "融资已回流"},
+                "dragon_tiger_packet": {"status": "ready", "data_status": "ready", "summary": "龙虎榜已回流"},
+                "limit_emotion_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "emotion_state": "接近涨停/追高区",
+                    "decision_guardrail": "接近涨停时禁止把热度写成追高理由。",
+                    "action_hint": "先防追高，再看量价和资金流。",
+                },
+                "chip_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "pressure_state": "获利盘压力偏高",
+                    "decision_guardrail": "获利盘压力偏高时禁止把胜率写成加仓理由。",
+                },
+            }
+        )
+        core = {item["key"]: item for item in vm["core_evidence_items"]}
+        brief_items = {item["key"]: item for item in vm["core_evidence_action_brief"]["items"]}
+        dumped = json.dumps(vm, ensure_ascii=False)
+
+        self.assertIn("禁止把热度写成追高理由", core["limit_emotion"]["decision_signal"])
+        self.assertIn("防追高", core["limit_emotion"]["next_action"])
+        self.assertIn("禁止把热度写成追高理由", brief_items["limit_emotion"]["guardrail_text"])
+        self.assertIn("禁止把胜率写成加仓理由", dumped)
 
     def test_hard_risk_packet_headline_and_count_are_visible(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(

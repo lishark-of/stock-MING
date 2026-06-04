@@ -3686,6 +3686,58 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(evidence["deepseek_called"])
         json.dumps(payload, ensure_ascii=False)
 
+    def test_home_snapshot_surfaces_limit_and_chip_evidence_summaries(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_limit_emotion_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "emotion_state": "接近涨停/追高区",
+                    "distance_to_up_pct": 2.1,
+                    "evidence_summary": "情绪：接近涨停/追高区｜距涨停 2.1%",
+                    "action_hint": "先防追高；只作为辅助证据。",
+                    "decision_guardrail": "接近涨停时禁止把热度写成追高理由。",
+                    "evidence_items": [{"key": "limit_distance", "label": "涨停距离", "value": "2.1%", "status": "已验证"}],
+                    "updated_at": f"{today}T10:01:00",
+                },
+                "command_center_chip_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "pressure_state": "获利盘压力偏高",
+                    "winner_rate": 72,
+                    "evidence_summary": "筹码压力：获利盘压力偏高｜胜率 72%",
+                    "action_hint": "先把获利盘压力写入纪律约束。",
+                    "decision_guardrail": "获利盘压力偏高时禁止把胜率写成加仓理由。",
+                    "evidence_items": [{"key": "winner_rate", "label": "胜率", "value": "72%", "status": "已验证"}],
+                    "updated_at": f"{today}T10:01:00",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+
+        evidence = payload["a_share_evidence_packet"]
+        by_key = {item["key"]: item for item in evidence["items"]}
+        dumped = json.dumps(payload, ensure_ascii=False)
+
+        self.assertIn("距涨停 2.1%", by_key["limit_emotion"]["evidence_summary"])
+        self.assertIn("防追高", by_key["limit_emotion"]["next_action"])
+        self.assertIn("禁止把热度写成追高理由", by_key["limit_emotion"]["decision_signal"])
+        self.assertEqual(by_key["limit_emotion"]["evidence_items"][0]["key"], "limit_distance")
+        self.assertIn("筹码压力：获利盘压力偏高", by_key["chip_radar"]["evidence_summary"])
+        self.assertIn("纪律约束", by_key["chip_radar"]["next_action"])
+        self.assertIn("禁止把胜率写成加仓理由", by_key["chip_radar"]["decision_signal"])
+        self.assertIn("command_center_limit_emotion_packet", dumped)
+        self.assertIn("command_center_chip_packet", dumped)
+        self.assertFalse(evidence["deepseek_called"])
+        json.dumps(payload, ensure_ascii=False)
+
     def test_a_share_fact_recovery_summary_counts_packet_states(self):
         summary = snapshot.build_a_share_fact_recovery_summary(
             {

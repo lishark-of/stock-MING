@@ -705,7 +705,12 @@ def _format_metric(key: str, value: int | float | None, suffix: str) -> str:
 def _risk_text(packet: Mapping[str, Any]) -> str:
     notes = [to_text(item) for item in as_list(packet.get("risk_notes"))]
     notes = [item for item in notes if item]
-    return notes[0] if notes else _first_text(packet.get("manual_required_text"), packet.get("summary"), default="待验证，不能单独作为交易依据。")
+    return notes[0] if notes else _first_text(
+        packet.get("decision_guardrail"),
+        packet.get("manual_required_text"),
+        packet.get("summary"),
+        default="待验证，不能单独作为交易依据。",
+    )
 
 
 def build_evidence_item(
@@ -725,11 +730,15 @@ def build_evidence_item(
     metric = _first_number(payload, metric_keys)
     headline = _first_text(
         payload.get(headline_key),
+        payload.get("evidence_summary"),
         payload.get("summary"),
         default="待验证" if data_status == "missing" else "已读取",
     )
     evidence_state = _evidence_state(status, data_status)
     label_text = to_text(label, "A股证据")
+    evidence_summary = _first_text(payload.get("evidence_summary"), payload.get("summary"), default=headline)
+    packet_guardrail = _first_text(payload.get("decision_guardrail"), default="")
+    packet_action_hint = _first_text(payload.get("action_hint"), default="")
     return {
         "key": key,
         "label": label_text,
@@ -743,12 +752,17 @@ def build_evidence_item(
         "tone": _status_tone(status, data_status),
         "headline": headline,
         "metric": _format_metric(key, metric, metric_suffix),
-        "decision_signal": _decision_signal(label, headline, evidence_state),
+        "evidence_summary": evidence_summary,
+        "evidence_items": as_list(payload.get("evidence_items")),
+        "verification_status": _first_text(payload.get("verification_status"), default=_evidence_label(evidence_state)),
+        "packet_role": _first_text(payload.get("packet_role"), default=label_text),
+        "decision_guardrail": packet_guardrail,
+        "decision_signal": packet_guardrail or _decision_signal(label, headline, evidence_state),
         "source": _first_text(payload.get("source"), payload.get("api"), default="本地缓存"),
         "updated_at": _first_text(payload.get("updated_at"), payload.get("trade_date"), default="暂无时间"),
         "risk_text": _risk_text(payload),
         "manual_required_text": _first_text(payload.get("manual_required_text"), default="缺失时需要手动刷新或权限校验。"),
-        "next_action": _evidence_action_hint(label_text, evidence_state),
+        "next_action": packet_action_hint or _evidence_action_hint(label_text, evidence_state),
         "manual_action": _manual_action(key, label_text, evidence_state),
         "deepseek_called": False,
     }
