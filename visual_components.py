@@ -5810,9 +5810,15 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         for index, item in enumerate(valid_data_health_visibility_actions):
             with visibility_cols[index % len(visibility_cols)]:
                 st.button(
-                    f"处理{_home_text(item.get('label'), '数据接口')}",
+                    _home_text(
+                        item.get("manual_check_button_label"),
+                        f"处理{_home_text(item.get('label'), '数据接口')}",
+                    ),
                     key=f"btn_open_data_health_visibility_{_home_text(item.get('key'), index)}",
-                    help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                    help=_home_text(
+                        item.get("manual_check_instruction") or item.get("navigation_label"),
+                        "切换到高级工具箱对应模块；不自动执行旧工具。",
+                    ),
                     on_click=_apply_tool_recovery_navigation,
                     args=(item,),
                     width="stretch",

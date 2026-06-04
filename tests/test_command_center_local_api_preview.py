@@ -56,6 +56,45 @@ def sample_state():
                 "permission_labels": "融资融券",
                 "skipped_labels": "涨跌停/情绪",
                 "summary": "阻断 1｜手动 0｜缓存/近期无数据 1｜可用 1",
+                "items": [
+                    {
+                        "label": "融资融券",
+                        "api": "margin_detail",
+                        "writes_packet": "command_center_margin_packet",
+                        "legacy_tab": "融资 ETF",
+                        "manual_check_key": "margin",
+                        "manual_check_button_label": "手动检测融资融券",
+                        "manual_check_instruction": "切到融资 ETF后点击“手动检测融资融券”；只检测 margin_detail 并回流 command_center_margin_packet。",
+                    }
+                ],
+                "recovery_actions": [
+                    {
+                        "key": "data_health_visibility:margin_detail",
+                        "label": "融资融券",
+                        "api": "margin_detail",
+                        "writes_packet": "command_center_margin_packet",
+                        "legacy_tab": "融资 ETF",
+                        "workspace_state_key": "workspace_mode_v2",
+                        "workspace_target": "高级工具箱（旧版保留）",
+                        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                        "manual_check_available": True,
+                        "manual_check_key": "margin",
+                        "manual_check_button_label": "手动检测融资融券",
+                        "manual_check_instruction": "切到融资 ETF后点击“手动检测融资融券”；只检测 margin_detail 并回流 command_center_margin_packet。",
+                        "legacy_workspace_route": {
+                            "workspace_state_key": "workspace_mode_v2",
+                            "workspace_target": "高级工具箱（旧版保留）",
+                            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                            "legacy_tab": "融资 ETF",
+                            "writes_packet": "command_center_margin_packet",
+                            "refresh_policy": "button_gated",
+                            "external_call_policy": "not_triggered",
+                            "deepseek_called": False,
+                        },
+                        "refresh_policy": "button_gated",
+                        "deepseek_called": False,
+                    }
+                ],
                 "deepseek_called": False,
                 "external_call_policy": "not_triggered",
             },
@@ -184,6 +223,10 @@ class CommandCenterLocalApiPreviewTests(unittest.TestCase):
         self.assertEqual(response["meta"]["area"], "data_governance")
         self.assertIn("Tushare 拉满", payload["headline"])
         self.assertIn("融资融券", payload["permission_labels"])
+        self.assertEqual(payload["recovery_actions"][0]["manual_check_key"], "margin")
+        self.assertEqual(payload["recovery_actions"][0]["manual_check_button_label"], "手动检测融资融券")
+        self.assertEqual(payload["recovery_actions"][0]["legacy_workspace_route"]["legacy_tab"], "融资 ETF")
+        self.assertIn("只检测 margin_detail", payload["items"][0]["manual_check_instruction"])
         self.assertFalse(payload["deepseek_called"])
         self.assertEqual(payload["external_call_policy"], "not_triggered")
         self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])

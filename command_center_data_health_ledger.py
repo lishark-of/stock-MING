@@ -55,6 +55,51 @@ API_RECOVERY_MAP = {
     "brain_memory": ("检查 Supabase 本地配置", "command_center_data_capability_packet", "高级工具箱 / 云端外脑"),
 }
 
+MANUAL_CHECK_HINTS_BY_PACKET = {
+    "command_center_moneyflow_packet": {
+        "manual_check_key": "moneyflow",
+        "manual_check_label": "个股资金流",
+        "manual_check_button_label": "手动检测个股资金流",
+        "manual_check_status_label": "正在手动检测个股资金流...",
+        "manual_check_result_label": "资金流",
+    },
+    "command_center_dragon_tiger_packet": {
+        "manual_check_key": "dragon_tiger",
+        "manual_check_label": "龙虎榜",
+        "manual_check_button_label": "手动检测龙虎榜",
+        "manual_check_status_label": "正在手动检测龙虎榜...",
+        "manual_check_result_label": "龙虎榜",
+    },
+    "command_center_margin_packet": {
+        "manual_check_key": "margin",
+        "manual_check_label": "融资融券",
+        "manual_check_button_label": "手动检测融资融券",
+        "manual_check_status_label": "正在手动检测融资融券权限...",
+        "manual_check_result_label": "融资融券",
+    },
+    "command_center_limit_emotion_packet": {
+        "manual_check_key": "limit_emotion",
+        "manual_check_label": "涨跌停/情绪",
+        "manual_check_button_label": "手动检测涨跌停/情绪",
+        "manual_check_status_label": "正在手动检测涨跌停/情绪权限...",
+        "manual_check_result_label": "涨跌停/情绪",
+    },
+    "command_center_chip_packet": {
+        "manual_check_key": "chip_radar",
+        "manual_check_label": "筹码/胜率",
+        "manual_check_button_label": "手动检测筹码/胜率",
+        "manual_check_status_label": "正在手动检测筹码/胜率...",
+        "manual_check_result_label": "筹码/胜率",
+    },
+    "command_center_hard_risk_packet": {
+        "manual_check_key": "hard_risk",
+        "manual_check_label": "公告/硬风险",
+        "manual_check_button_label": "手动检测公告/硬风险",
+        "manual_check_status_label": "正在手动检测公告/硬风险...",
+        "manual_check_result_label": "公告/硬风险",
+    },
+}
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -131,6 +176,42 @@ def _legacy_tab_from_recovery_target(writes_packet: Any = "", toolbox_entry: Any
         if tab in entry:
             return tab
     return "数据源体检"
+
+
+def _manual_check_hint_for_recovery(row: Mapping[str, Any], legacy_tab: str) -> dict:
+    writes_packet = to_text(row.get("writes_packet"), "command_center_data_capability_packet")
+    api = to_text(row.get("api"))
+    label = to_text(row.get("label"), "数据接口")
+    config = MANUAL_CHECK_HINTS_BY_PACKET.get(writes_packet, {})
+    manual_check_label = to_text(config.get("manual_check_label"), label)
+    manual_check_button_label = _first_text(
+        config.get("manual_check_button_label"),
+        row.get("action_label"),
+        default=f"手动检查{label}",
+    )
+    manual_check_instruction = (
+        f"切到{legacy_tab}后点击“{manual_check_button_label}”；"
+        f"只检测 {api or label} 并回流 {writes_packet}。"
+    )
+    return {
+        "manual_check_available": bool(config),
+        "manual_check_key": to_text(config.get("manual_check_key")),
+        "manual_check_label": manual_check_label,
+        "manual_check_button_label": manual_check_button_label,
+        "manual_check_status_label": to_text(config.get("manual_check_status_label"), f"正在手动检测{manual_check_label}..."),
+        "manual_check_result_label": to_text(config.get("manual_check_result_label"), manual_check_label),
+        "manual_check_instruction": manual_check_instruction,
+        "legacy_workspace_route": {
+            "workspace_state_key": "workspace_mode_v2",
+            "workspace_target": "高级工具箱（旧版保留）",
+            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+            "legacy_tab": legacy_tab,
+            "writes_packet": writes_packet,
+            "refresh_policy": to_text(row.get("refresh_policy"), "button_gated"),
+            "external_call_policy": "not_triggered",
+            "deepseek_called": False,
+        },
+    }
 
 
 def _interface_diagnostic_answer(state: str, provider: str, label: str, api: str) -> str:
@@ -473,6 +554,7 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
             continue
         seen.add(key)
         legacy_tab = _legacy_tab_from_recovery_target(row.get("writes_packet"), row.get("toolbox_entry"))
+        manual_check_hint = _manual_check_hint_for_recovery(row, legacy_tab)
         recovery_action = {
             "key": f"data_health_visibility:{to_text(row.get('api') or row.get('label'), 'data_capability')}",
             "label": to_text(row.get("label"), "数据接口"),
@@ -494,6 +576,7 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
             "decision_guardrail": to_text(row.get("decision_guardrail"), "缺失或未知状态不能作为加仓依据。"),
             "recovery_button_context": to_text(row.get("recovery_button_context"), "按钮只检测当前接口并回流 packet；不会自动调用 DeepSeek 或重型任务。"),
             "deepseek_called": False,
+            **manual_check_hint,
         }
         visible_rows.append(
             {
@@ -511,12 +594,18 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
                         "legacy_tab",
                         "writes_packet",
                         "refresh_policy",
+                        "manual_check_available",
+                        "manual_check_key",
+                        "manual_check_label",
+                        "manual_check_button_label",
                     )
                 },
                 "meaning": to_text(row.get("meaning"), "仍需核对接口状态。"),
                 "diagnostic_answer": recovery_action["diagnostic_answer"],
                 "decision_guardrail": recovery_action["decision_guardrail"],
                 "recovery_button_context": recovery_action["recovery_button_context"],
+                "manual_check_instruction": recovery_action["manual_check_instruction"],
+                "legacy_workspace_route": recovery_action["legacy_workspace_route"],
                 "next_action": to_text(row.get("next_action"), "按数据恢复中心手动处理。"),
                 "last_success_text": to_text(row.get("last_success_text"), "暂无"),
                 "navigation_label": recovery_action["navigation_label"],
