@@ -5659,6 +5659,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {escape(_home_text(item.get("why_not_found"), "仍需核对接口权限、日期和覆盖范围。"))}
         </div>
         <div class="cc-home-item-meta">
+          诊断：{escape(_home_text(item.get("diagnostic_answer"), item.get("why_not_found") or "仍需核对接口权限、日期和覆盖范围。"))}
+        </div>
+        <div class="cc-home-item-meta">
           决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失数据不能作为加仓依据。"))}
           ｜恢复：{escape(_home_text(item.get("manual_button_label"), "手动检测"))}
           ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_facts_packet"))}
@@ -5673,6 +5676,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(tushare_gap_explainer.get("tone"), "missing"))}">{escape(_home_text(tushare_gap_explainer.get("headline"), "尚未检测 A股专业接口"))}</span>
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(tushare_gap_explainer.get("summary"), "页面打开不会自动请求 Tushare。"))}</div>
+          <div class="cc-home-item-meta">{escape(_home_text(tushare_gap_explainer.get("plain_answer"), "之前拉满基础连接，不代表每个专业接口都有当日可用证据。"))}</div>
           <div class="cc-home-item-meta">{escape(_home_text(tushare_gap_explainer.get("explanation"), "基础行情可用不代表所有专业接口已验证。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(tushare_gap_explainer.get("next_action"), "按数据恢复中心手动处理。"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(tushare_gap_explainer.get("external_call_policy"), "not_triggered"))}</div>
           {tushare_gap_item_html}

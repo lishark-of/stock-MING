@@ -298,6 +298,36 @@ def _gap_guardrail_for_state(item: Mapping[str, Any]) -> str:
     return f"{label}待验证时只观察，不放大仓位。"
 
 
+def _diagnostic_answer_for_state(item: Mapping[str, Any]) -> str:
+    label = to_text(item.get("label"), "A股数据")
+    api_hint = to_text(item.get("api_hint") or item.get("api"), "Tushare 专业接口")
+    state = normalize_state(item.get("state"))
+    if state == "permission_denied":
+        return (
+            f"{label}不是“没搜到”，而是 {api_hint} 权限/积分不足；"
+            "之前拉满基础数据不代表这个专业接口已开通。"
+        )
+    if state == "disabled_this_session":
+        return (
+            f"{label}此前已判定受限或失败，本会话跳过重复请求以防卡顿；"
+            "确认权限恢复后再手动检测。"
+        )
+    if state == "empty_recent":
+        return (
+            f"{label}接口可能可读但近窗口无记录；常见原因是非交易日、数据尚未发布、"
+            "标的未上榜或接口暂不覆盖。"
+        )
+    if state == "stale_cache":
+        return f"{label}当前使用上次成功缓存；这是防白屏结果，不是实时新数据。"
+    if state == "fallback_used":
+        return f"{label}使用替代口径；可辅助观察，但不能等同于原始 Tushare 专业事实。"
+    if state == "requires_manual_refresh":
+        return f"{label}需要按钮触发；页面打开不会自动请求 {api_hint}。"
+    if state == "available":
+        return f"{label}已有可用返回；仍需核对交易日、来源和是否匹配当前标的。"
+    return f"{label}尚未形成可验证结果；当前只能记录为数据缺口。"
+
+
 def _gap_action_mode(state: str) -> str:
     normalized = normalize_state(state)
     if normalized == "available":
@@ -328,6 +358,7 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
             "tone": "missing",
             "headline": "尚未检测 A股专业接口",
             "summary": "页面打开不会自动请求 Tushare；需要手动刷新或读取上次快照。",
+            "plain_answer": "还没有本地检测结果；页面打开不会自动拉取 Tushare 专业接口，以避免白屏和卡顿。",
             "explanation": "Tushare token 可用不代表龙虎榜、融资融券、涨跌停/情绪、筹码等专业接口都已验证。",
             "items": [],
             "next_action": "先刷新今日基础数据，或在数据源体检里手动检测对应接口。",
@@ -343,21 +374,31 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
         status = "blocked"
         tone = "failed"
         headline = "拉满基础数据 ≠ 专业接口全可用"
+        plain_answer = (
+            "之前“拉满”通常表示基础行情或已授权接口已取到；现在搜不到，多半是细分专业接口权限、"
+            "本会话跳过、交易日发布或标的覆盖问题，不是系统自动把数据清空。"
+        )
         next_action = "先处理权限不足、本会话跳过或失败项；未恢复前不要把缺失写成利好。"
     elif manual or stale:
         status = "partial"
         tone = "stale"
         headline = "部分接口是缓存、近期无记录或待手动刷新"
+        plain_answer = (
+            "当前不是完全没数据，而是部分结果来自缓存、近期无记录或需要手动刷新；"
+            "执行前要核对交易日、来源和覆盖口径。"
+        )
         next_action = "执行前复核交易日、来源和覆盖口径；需要最新数据时再点手动检测。"
     elif available:
         status = "ready"
         tone = "ready"
         headline = "A股专业接口当前可辅助验证"
+        plain_answer = "当前有可用 Tushare 证据；仍要核对交易日、接口口径和当前标的，不能单独决定买卖。"
         next_action = "继续把可用接口回流到综合中心 packet，并结合价格纪律与仓位规则。"
     else:
         status = "missing"
         tone = "missing"
         headline = "A股专业接口仍待验证"
+        plain_answer = "当前缺少足够本地检测结果；综合中心会保留安全空态或上次成功结果，不自动请求重接口。"
         next_action = "保留安全空态或上次成功结果；不要自动请求重接口。"
     ordered = blocked + manual + stale + available
     seen = set()
@@ -379,6 +420,7 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
                 "tone": tone_for_state(state),
                 "action_mode": _gap_action_mode(state),
                 "why_not_found": _gap_reason_for_state(raw),
+                "diagnostic_answer": _diagnostic_answer_for_state(raw),
                 "decision_guardrail": _gap_guardrail_for_state(raw),
                 "next_action": to_text(raw.get("next_action"), next_action),
                 "manual_button_label": to_text(manual_action.get("button_label"), "手动检测"),
@@ -399,6 +441,7 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
         "tone": tone,
         "headline": headline,
         "summary": summary,
+        "plain_answer": plain_answer,
         "explanation": "基础行情或 token 正常，不代表每个 A股专业接口都有权限、当日数据或当前标的覆盖。",
         "items": items[:6],
         "next_action": next_action,
