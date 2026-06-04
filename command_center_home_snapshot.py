@@ -627,6 +627,7 @@ def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) ->
     manual_config = TOOL_RECOVERY_MANUAL_CHECKS.get(writes_packet, {})
     action_label = _to_text(manual_config.get("button_label"), f"手动检测{_to_text(config.get('label'), 'A股事实')}")
     label = _to_text(config.get("label"), "A股事实")
+    legacy_tab = _legacy_a_share_fact_legacy_tab(config.get("key"), writes_packet)
     return {
         "key": _to_text(config.get("key")),
         "label": label,
@@ -645,6 +646,14 @@ def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) ->
         "next_action": _a_share_fact_next_action(label, recovery_state, writes_packet, action_label),
         "diagnostic_answer": _a_share_fact_diagnostic_text(label, recovery_state, status_label),
         "packet_status_text": f"{readable_state}｜{status_label}｜{writes_packet}",
+        "toolbox_entry": f"高级工具箱 / {legacy_tab}",
+        "workspace_target": "高级工具箱（旧版保留）",
+        "workspace_state_key": "workspace_mode_v2",
+        "legacy_tab": legacy_tab,
+        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+        "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+        "refresh_policy": "not_needed" if recovery_state == "recovered" else "button_gated",
+        "source_label": "A股事实回流",
         "deepseek_called": False,
     }
 

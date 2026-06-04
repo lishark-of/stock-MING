@@ -3759,6 +3759,13 @@ def _get_a_share_fact_recovery_summary_from_state():
     return home_snapshot.get("a_share_fact_recovery_summary") or {}
 
 
+def _apply_tool_recovery_navigation_state(action):
+    navigation_state = home_snapshot_service.build_tool_recovery_navigation_state(action)
+    for nav_key, nav_value in navigation_state.items():
+        st.session_state[nav_key] = nav_value
+    return bool(navigation_state)
+
+
 def build_command_center_view_model(live_packet=None):
     view_model = cc_state_adapter.build_command_center_view_model_from_state(
         st.session_state,
@@ -4907,6 +4914,25 @@ packet:
                         f"{item.get('packet_status_text') or item.get('status_label') or '待验证'}；"
                         f"{item.get('diagnostic_answer') or item.get('next_action') or '需要复核来源、日期和权限。'}"
                     )
+                nav_items = [
+                    item
+                    for item in a_share_fact_items[:5]
+                    if item.get("recovery_state") != "recovered"
+                    and home_snapshot_service.build_tool_recovery_navigation_state(item)
+                ]
+                if nav_items:
+                    st.caption("恢复入口只切换到高级工具箱，不会自动运行 Tushare、DeepSeek、回测或全市场扫描。")
+                    nav_cols = st.columns(min(3, len(nav_items)))
+                    for index, item in enumerate(nav_items):
+                        with nav_cols[index % len(nav_cols)]:
+                            if st.button(
+                                f"进入恢复：{item.get('label') or 'A股事实'}",
+                                key=f"btn_cc_refresh_fact_recovery_{item.get('key') or index}",
+                                help=item.get("navigation_label") or "切换到对应高级工具模块；不自动执行接口请求。",
+                                width="stretch",
+                            ):
+                                _apply_tool_recovery_navigation_state(item)
+                                st.rerun()
 
     live_packet = command_center_view_model["live_packet"]
     live_errors = overview_vm.get("error_items") or []

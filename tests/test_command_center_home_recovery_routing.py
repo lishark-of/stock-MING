@@ -79,6 +79,14 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("a_share_fact_summary_text", source)
         self.assertIn("A股事实：{escape(a_share_fact_summary_text)}", source)
 
+    def test_refresh_summary_routes_a_share_fact_recovery_to_navigation_only(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn("A股事实回流状态", source)
+        self.assertIn("进入恢复：{item.get('label') or 'A股事实'}", source)
+        self.assertIn("_apply_tool_recovery_navigation_state(item)", source)
+        self.assertIn("不会自动运行 Tushare、DeepSeek、回测或全市场扫描", source)
+
     def test_legacy_a_share_screen_routes_diagnostic_to_recovery_controls(self):
         source = Path("app.py").read_text(encoding="utf-8")
 

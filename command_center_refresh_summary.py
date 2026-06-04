@@ -452,6 +452,14 @@ def summarize_a_share_fact_recovery(recovery_summary: Any = None) -> dict:
                     "diagnostic_answer": _to_text(item.get("diagnostic_answer")) or "",
                     "source": _to_text(item.get("source")) or "",
                     "updated_at": _to_text(item.get("updated_at")) or "",
+                    "toolbox_entry": _to_text(item.get("toolbox_entry")) or "",
+                    "workspace_target": _to_text(item.get("workspace_target")) or "",
+                    "workspace_state_key": _to_text(item.get("workspace_state_key")) or "",
+                    "legacy_tab": _to_text(item.get("legacy_tab")) or "",
+                    "legacy_tab_state_key": _to_text(item.get("legacy_tab_state_key")) or "",
+                    "navigation_label": _to_text(item.get("navigation_label")) or "",
+                    "refresh_policy": _to_text(item.get("refresh_policy")) or "button_gated",
+                    "source_label": _to_text(item.get("source_label")) or "",
                 }
             )
 

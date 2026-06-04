@@ -251,6 +251,13 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
                     "status_label": "权限不足",
                     "diagnostic_answer": "limit_cpt_list 权限不足，不是没搜到行情。",
                     "next_action": "进入数据恢复中心手动检测。",
+                    "toolbox_entry": "高级工具箱 / 数据源体检",
+                    "workspace_target": "高级工具箱（旧版保留）",
+                    "workspace_state_key": "workspace_mode_v2",
+                    "legacy_tab": "数据源体检",
+                    "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                    "navigation_label": "主导航切到高级工具箱（旧版保留）→ 高级工具模块选择数据源体检。",
+                    "refresh_policy": "button_gated",
                 },
             ],
             "deepseek_called": False,
@@ -264,6 +271,9 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         self.assertEqual(payload["blocked_count"], 1)
         self.assertEqual(payload["items"][1]["label"], "涨跌停情绪")
         self.assertIn("权限不足", payload["items"][1]["diagnostic_answer"])
+        self.assertEqual(payload["items"][1]["legacy_tab"], "数据源体检")
+        self.assertEqual(payload["items"][1]["workspace_state_key"], "workspace_mode_v2")
+        self.assertEqual(payload["items"][1]["refresh_policy"], "button_gated")
         self.assertFalse(payload["deepseek_called"])
         json.dumps(payload, ensure_ascii=False)
 
