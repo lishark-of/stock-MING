@@ -4858,6 +4858,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     strategy_prerequisite_ledger = payload.get("strategy_prerequisite_recovery_ledger") or {}
     old_workspace_absence_ledger = payload.get("old_workspace_data_absence_ledger") or {}
     old_workspace_packet_bridge = payload.get("old_workspace_packet_bridge") or {}
+    old_workspace_capability_overview = payload.get("old_workspace_capability_overview") or {}
+    if not isinstance(old_workspace_capability_overview, dict):
+        old_workspace_capability_overview = {}
     legacy_a_share_gap = payload.get("legacy_a_share_gap_summary") or {}
     a_share_fact_summary_text = _home_text(a_share_fact_recovery.get("summary"), "A股事实：待验证")
     a_share_fact_tone = _home_text(a_share_fact_recovery.get("tone"), "missing")
@@ -5692,6 +5695,39 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {packet_bridge_item_html}
         </div>
         """
+    old_workspace_overview_item_html = ""
+    for item in (old_workspace_capability_overview.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        old_workspace_overview_item_html += (
+            f"<span class='cc-home-chip {escape(_home_text(item.get('tone'), 'missing'))}'>"
+            f"{escape(_home_text(item.get('label'), '旧能力'))}：{escape(_home_text(item.get('bridge_label'), '待回流'))}"
+            "</span>"
+        )
+    if not old_workspace_overview_item_html:
+        old_workspace_overview_item_html = "<span class='cc-home-chip missing'>旧能力：待回流</span>"
+    old_workspace_overview_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(old_workspace_capability_overview.get("title"), "旧能力回流总览"))}
+            <span class="cc-home-chip {escape(_home_text(old_workspace_capability_overview.get("tone"), "missing"))}">
+              {escape(_home_text(old_workspace_capability_overview.get("headline"), "旧能力回流待生成"))}
+            </span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(old_workspace_capability_overview.get("summary"), "已回流 0｜使用缓存 0｜仍阻断 0｜待回流 0"))}<br>
+            迁移：{escape(_home_text(old_workspace_capability_overview.get("migration_summary"), "迁移清单待生成"))}
+          </div>
+        </div>
+        <div>
+          <div class="cc-home-profile-pills">{old_workspace_overview_item_html}</div>
+          <div class="cc-home-profile-meta">决策链：{escape(_home_text(old_workspace_capability_overview.get("decision_chain_summary"), "旧能力决策链待验证"))}</div>
+          <div class="cc-home-profile-meta">{escape(_home_text(old_workspace_capability_overview.get("next_action"), "继续以综合推演中心为主入口。"))}</div>
+          <div class="cc-home-profile-meta">DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(old_workspace_capability_overview.get("external_call_policy"), "not_triggered"))}</div>
+        </div>
+      </div>
+    """
     latest_recovery_html = ""
     if latest_recovery_result:
         latest_manual_steps_text = " → ".join(
@@ -6396,6 +6432,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       {a_share_status_console_html}
       {evidence_loop_html}
       {execution_guardrail_html}
+      {old_workspace_overview_html}
       <div class="cc-home-grid">
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">当前持仓动作</div>

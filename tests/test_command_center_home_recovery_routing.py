@@ -153,6 +153,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("恢复优先级影响", source)
         self.assertIn("legacy_migration_map", source)
         self.assertIn("旧版能力迁移地图", source)
+        self.assertIn("old_workspace_capability_overview", source)
+        self.assertIn("旧能力回流总览", source)
         self.assertIn("valid_legacy_migration_actions", source)
         self.assertIn("迁移地图｜打开旧工具", source)
         self.assertIn("completion_checks", source)

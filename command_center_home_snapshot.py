@@ -422,6 +422,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_recovery_center": build_home_data_recovery_center(),
         "legacy_migration_map": legacy_migration_map_service.build_legacy_migration_map(),
         "old_workspace_packet_bridge": build_old_workspace_packet_bridge(),
+        "old_workspace_capability_overview": build_old_workspace_capability_overview(),
         "latest_recovery_result_notice": {},
         "recovery_result_status_strip": build_recovery_result_status_strip(),
         "command_center_recovery_result_timeline": build_recovery_result_timeline(),
@@ -574,6 +575,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
+    snapshot["old_workspace_capability_overview"] = build_old_workspace_capability_overview(snapshot)
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
     snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
@@ -3620,6 +3622,71 @@ def build_old_workspace_packet_bridge(snapshot: Any = None, limit: int = MAX_CAP
     }
 
 
+def build_old_workspace_capability_overview(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    bridge = _as_mapping(payload.get("old_workspace_packet_bridge")) or build_old_workspace_packet_bridge(payload)
+    checklist = _as_mapping(payload.get("legacy_packet_migration_checklist"))
+    decision_chain = _as_mapping(payload.get("legacy_decision_chain_summary"))
+    bridge_items = [_as_mapping(item) for item in _as_list(bridge.get("items")) if _as_mapping(item)]
+    checklist_items = [_as_mapping(item) for item in _as_list(checklist.get("items")) if _as_mapping(item)]
+    completed_checklist = [
+        item
+        for item in checklist_items
+        if _to_text(item.get("migration_state") or item.get("completion_status")) in {"packet_ready", "complete"}
+    ]
+    pending_checklist = [item for item in checklist_items if item not in completed_checklist]
+    blocked_items = [item for item in bridge_items if item.get("bridge_status") == "blocked"]
+    waiting_items = [item for item in bridge_items if item.get("bridge_status") == "waiting"]
+    cached_items = [item for item in bridge_items if item.get("bridge_status") == "cached"]
+    recovered_items = [item for item in bridge_items if item.get("bridge_status") == "recovered"]
+    if blocked_items:
+        status = "blocked"
+        tone = "failed"
+        headline = f"旧能力仍有 {len(blocked_items)} 项阻断首页闭环"
+        next_action = f"优先恢复 {blocked_items[0]['label']}；只打开高级工具箱，不自动运行旧工具。"
+    elif waiting_items:
+        status = "partial"
+        tone = "stale" if recovered_items or cached_items else "missing"
+        headline = f"旧能力已回流 {len(recovered_items)}｜待回流 {len(waiting_items)}"
+        next_action = "按旧能力回流队列手动恢复；页面打开不会自动请求外部接口。"
+    elif cached_items:
+        status = "cache_only"
+        tone = "stale"
+        headline = f"旧能力 {len(cached_items)} 项使用缓存"
+        next_action = "执行前复核旧能力缓存日期、来源和覆盖口径。"
+    elif recovered_items:
+        status = "ready"
+        tone = "ready"
+        headline = "旧能力已回流为综合中心 packet"
+        next_action = "旧版工作台继续作为高级工具箱；日常判断以综合中心为主入口。"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "旧能力回流总览待生成"
+        next_action = "继续生成迁移地图和 packet 桥；不会自动运行旧工具。"
+    priority_items = [*blocked_items, *waiting_items, *cached_items, *recovered_items][:MAX_CAPABILITY_ITEMS]
+    return {
+        "title": "旧能力回流总览",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": _to_text(bridge.get("summary"), "已回流 0｜使用缓存 0｜仍阻断 0｜待回流 0"),
+        "migration_summary": _to_text(checklist.get("summary"), "迁移清单待生成"),
+        "decision_chain_summary": _to_text(decision_chain.get("summary"), "旧能力决策链待验证"),
+        "recovered_count": len(recovered_items),
+        "cached_count": len(cached_items),
+        "blocked_count": len(blocked_items),
+        "waiting_count": len(waiting_items),
+        "checklist_done_count": len(completed_checklist),
+        "checklist_pending_count": len(pending_checklist),
+        "items": priority_items,
+        "next_action": next_action,
+        "safe_mode_text": "这里只读取旧版迁移地图、packet 桥和本地回流状态；不会自动调用 DeepSeek、回测、全市场扫描或重型数据接口。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def _legacy_packet_checklist_priority(item: Mapping[str, Any]) -> int:
     state = _to_text(item.get("migration_state")).lower()
     if state == "blocked":
@@ -5485,6 +5552,7 @@ def build_home_action_snapshot(
         empty["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(empty)
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
         empty["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(empty)
+        empty["old_workspace_capability_overview"] = build_old_workspace_capability_overview(empty)
         empty["recovery_result_status_strip"] = build_recovery_result_status_strip(
             empty,
             latest_notice=empty.get("latest_recovery_result_notice") or snapshot["latest_recovery_result_notice"],
@@ -5566,6 +5634,7 @@ def build_home_action_snapshot(
     snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
+    snapshot["old_workspace_capability_overview"] = build_old_workspace_capability_overview(snapshot)
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(
         snapshot,
         latest_notice=snapshot.get("latest_recovery_result_notice") or {},
