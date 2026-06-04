@@ -6742,6 +6742,27 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                     args=(item,),
                     width="stretch",
                 )
+    valid_home_data_issue_actions = [
+        item
+        for item in (home_data_issue_brief.get("items") or [])[:3]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_home_data_issue_actions:
+        st.caption("首页数据根因摘要｜打开恢复入口：这里只切换到高级工具箱；对应检测仍需手动点击。")
+        issue_cols = st.columns(min(3, len(valid_home_data_issue_actions)))
+        for index, item in enumerate(valid_home_data_issue_actions):
+            with issue_cols[index % len(issue_cols)]:
+                st.button(
+                    f"处理根因｜{_home_text(item.get('label'), '数据能力')}",
+                    key=f"btn_open_home_data_issue_{_home_text(item.get('key'), index)}",
+                    help=_home_text(
+                        item.get("navigation_label") or item.get("recovery_button_context"),
+                        "切换到高级工具箱对应模块；不自动执行旧工具。",
+                    ),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
     valid_data_health_visibility_actions = [
         item
         for item in (data_health_visibility.get("recovery_actions") or [])[:4]

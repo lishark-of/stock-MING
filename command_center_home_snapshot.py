@@ -4414,12 +4414,15 @@ def build_home_data_issue_brief(snapshot: Any = None, limit: int = 3) -> dict:
     for raw in [*visibility_items, *recovery_items]:
         label = _to_text(raw.get("label"), "数据能力")
         writes_packet = _to_text(raw.get("writes_packet"), "command_center_data_capability_packet")
+        legacy_tab = _to_text(raw.get("legacy_tab"), _recovery_legacy_tab(writes_packet, raw.get("key") or raw.get("api") or label))
+        toolbox_entry = _to_text(raw.get("toolbox_entry"), f"高级工具箱 / {legacy_tab}")
         dedupe_key = (label, writes_packet)
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
         items.append(
             {
+                "key": f"home_data_issue:{_to_text(raw.get('key') or raw.get('api') or label, 'data_capability')}:{writes_packet}",
                 "label": label,
                 "provider": _to_text(raw.get("provider"), "数据源"),
                 "api": _to_text(raw.get("api")),
@@ -4438,7 +4441,15 @@ def build_home_data_issue_brief(snapshot: Any = None, limit: int = 3) -> dict:
                     "仍需核对接口权限、交易日、数据发布时间和标的覆盖范围。",
                 ),
                 "action_label": _to_text(raw.get("action_label"), "手动检查"),
-                "toolbox_entry": _to_text(raw.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+                "toolbox_entry": toolbox_entry,
+                "workspace_target": _to_text(raw.get("workspace_target"), "高级工具箱（旧版保留）"),
+                "workspace_state_key": _to_text(raw.get("workspace_state_key"), "workspace_mode_v2"),
+                "legacy_tab_state_key": _to_text(raw.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
+                "legacy_tab": legacy_tab,
+                "navigation_label": _to_text(
+                    raw.get("navigation_label"),
+                    f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                ),
                 "writes_packet": writes_packet,
                 "refresh_policy": _to_text(raw.get("refresh_policy"), "button_gated"),
                 "decision_guardrail": _to_text(
