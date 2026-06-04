@@ -29,6 +29,7 @@ import command_center_a_share_capability_matrix as a_share_capability_matrix_ser
 import command_center_legacy_a_share_debug_summary as legacy_a_share_debug_summary_service
 import command_center_legacy_a_share_gate as legacy_a_share_gate_service
 import command_center_legacy_migration_map as legacy_migration_map_service
+import command_center_legacy_packet_checklist as legacy_packet_checklist_service
 import command_center_loop_status as loop_status_service
 import market_data_capability as data_capability_service
 
@@ -417,6 +418,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
     snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot = attach_decision_loop_status(snapshot)
     return snapshot
 
@@ -536,6 +538,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
+    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
     snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
@@ -4256,6 +4259,7 @@ def build_home_action_snapshot(
         )
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
         empty["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(empty)
+        empty["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(empty)
         empty["recovery_result_status_strip"] = build_recovery_result_status_strip(
             empty,
             latest_notice=empty.get("latest_recovery_result_notice") or snapshot["latest_recovery_result_notice"],
@@ -4324,6 +4328,7 @@ def build_home_action_snapshot(
     )
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
+    snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(
         snapshot,
         latest_notice=snapshot.get("latest_recovery_result_notice") or {},

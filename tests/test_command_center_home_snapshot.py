@@ -1947,12 +1947,22 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
             now=f"{today}T10:02:00",
         )
         bridge = payload["old_workspace_packet_bridge"]
+        checklist = payload["legacy_packet_migration_checklist"]
         loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
         dumped = json.dumps(bridge, ensure_ascii=False)
+        checklist_dumped = json.dumps(checklist, ensure_ascii=False)
 
         self.assertEqual(bridge["title"], "旧工具能力 → 综合中心 packet 桥")
         self.assertIn(bridge["status"], {"blocked", "partial", "ready"})
         self.assertTrue(bridge["items"])
+        self.assertEqual(checklist["title"], "旧工作台能力迁移清单")
+        self.assertTrue(checklist["items"])
+        self.assertIn("下一票雷达", checklist_dumped)
+        self.assertIn("command_center_radar_packet", checklist_dumped)
+        self.assertIn("融资融券", checklist_dumped)
+        self.assertFalse(checklist["deepseek_called"])
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in checklist["items"]))
+        self.assertTrue(all(item["deepseek_called"] is False for item in checklist["items"]))
         self.assertIn("old_workspace_packets", loop_items)
         self.assertIn(loop_items["old_workspace_packets"]["status"], {"blocked", "stale", "ready"})
         self.assertIn("下一票雷达", dumped)

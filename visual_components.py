@@ -4827,6 +4827,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not isinstance(data_health_timeline_recovery_actions, list):
         data_health_timeline_recovery_actions = []
     legacy_migration_map = payload.get("legacy_migration_map") or {}
+    legacy_packet_checklist = payload.get("legacy_packet_migration_checklist") or {}
     latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
     recovery_result_status = payload.get("recovery_result_status_strip") or {}
     recovery_result_timeline = (
@@ -5476,6 +5477,40 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {legacy_migration_lane_html}
           {legacy_migration_completion_html}
           {_home_list(legacy_migration_actions, "继续保持综合推演中心为主入口；旧工具只在按钮触发时运行。", limit=3)}
+        </div>
+        """
+    legacy_packet_checklist_item_html = ""
+    for item in (legacy_packet_checklist.get("items") or [])[:7]:
+        if not isinstance(item, dict):
+            continue
+        legacy_packet_checklist_item_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "旧工作台能力"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("migration_label"), "待迁移"))}</span>
+          </div>
+          <div class="cc-home-item-meta">目标 packet：{escape(_home_text(item.get("target_packet"), "command_center_packet"))} ｜ 首页位置：{escape(_home_text(item.get("home_surface"), "综合推演中心"))}</div>
+          <div class="cc-home-item-meta">旧入口：{escape(_home_text(item.get("legacy_entry"), "高级工具箱"))} ｜ 恢复：{escape(_home_text(item.get("recovery_action_label"), "手动恢复"))}</div>
+          <div class="cc-home-item-meta">决策链：{escape(_home_text(item.get("decision_chain_stage"), "数据能力状态 → 今日总决策"))}</div>
+          <div class="cc-home-item-meta">保护线：{escape(_home_text(item.get("decision_guardrail"), "缺数据时只能显示待验证。"))}</div>
+        </div>
+        """
+    if not legacy_packet_checklist_item_html:
+        legacy_packet_checklist_item_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>迁移清单待生成</div><div class='cc-home-item-meta'>旧工作台能力会逐步变成综合中心 packet；页面打开不会运行旧工具。</div></div>"
+    legacy_packet_checklist_actions = [
+        str(item).strip()
+        for item in (legacy_packet_checklist.get("next_actions") or [])[:3]
+        if str(item).strip()
+    ]
+    legacy_packet_checklist_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(legacy_packet_checklist.get("title"), "旧工作台能力迁移清单"))}
+            <span class="cc-home-chip {escape(_home_text(legacy_packet_checklist.get("tone"), "missing"))}">{escape(_home_text(legacy_packet_checklist.get("summary"), "待生成"))}</span>
+          </div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(legacy_packet_checklist.get("safe_mode_text"), "只读取本地 packet；不会自动请求外部接口。"))}</div>
+          {legacy_packet_checklist_item_html}
+          {_home_list(legacy_packet_checklist_actions, "继续把旧工具能力迁入综合中心 packet，旧页面只保留为高级工具箱。", limit=3)}
         </div>
         """
     packet_bridge_item_html = ""
@@ -6237,6 +6272,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {data_health_visibility_html}
           {data_recovery_center_html}
           {legacy_migration_html}
+          {legacy_packet_checklist_html}
           {old_workspace_packet_bridge_html}
           {diagnostic_details_html}
           <div class="cc-muted-note">{escape(str(safety_line))}</div>
