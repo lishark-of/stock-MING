@@ -921,6 +921,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         self.assertIn("本会话跳过", json.dumps(loaded["data_capability"], ensure_ascii=False))
         self.assertFalse(loaded["data_capability"]["deepseek_called"])
+        absence = loaded["old_workspace_data_absence_ledger"]
+        self.assertEqual(absence["title"], "旧工作台数据缺失原因总账")
+        self.assertIn("本会话跳过", json.dumps(absence, ensure_ascii=False))
+        self.assertFalse(absence["deepseek_called"])
 
     def test_home_snapshot_prefers_unified_data_capability_from_healthcheck(self):
         today = _dt.date.today().isoformat()
@@ -1021,6 +1025,80 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("近期无记录", dumped)
         self.assertIn("本会话跳过重复请求", dumped)
         self.assertFalse(explainer["deepseek_called"])
+
+    def test_old_workspace_data_absence_ledger_groups_root_causes(self):
+        ledger = snapshot.build_old_workspace_data_absence_ledger(
+            {
+                "data_issue_explainer": {
+                    "interface_diagnostic_items": [
+                        {
+                            "provider": "Tushare",
+                            "api": "margin_detail",
+                            "label": "融资融券",
+                            "state": "permission_denied",
+                            "cause_key": "permission_or_points",
+                            "cause_label": "权限/积分不足",
+                            "diagnostic_answer": "融资融券不是没搜到，而是权限不足。",
+                        },
+                        {
+                            "provider": "Tushare",
+                            "api": "limit_cpt_list",
+                            "label": "涨跌停/情绪",
+                            "state": "disabled_this_session",
+                            "cause_key": "session_skip",
+                            "cause_label": "本会话已跳过",
+                        },
+                        {
+                            "provider": "Tushare",
+                            "api": "top_list",
+                            "label": "龙虎榜",
+                            "state": "empty_recent",
+                            "cause_key": "no_recent_record",
+                            "cause_label": "近期无记录",
+                        },
+                        {
+                            "provider": "AkShare",
+                            "api": "akshare_manual_refresh",
+                            "label": "AkShare 重型刷新",
+                            "state": "requires_manual_refresh",
+                            "cause_key": "manual_gate",
+                            "cause_label": "需要手动触发",
+                        },
+                    ]
+                },
+                "legacy_a_share_gap_summary": {
+                    "items": [
+                        {
+                            "key": "chip_radar",
+                            "label": "筹码/胜率",
+                            "status_label": "使用缓存",
+                            "source": "Tushare cyq_perf/cyq_chips",
+                            "writes_packet": "command_center_chip_packet",
+                        }
+                    ]
+                },
+            }
+        )
+        dumped = json.dumps(ledger, ensure_ascii=False)
+
+        self.assertEqual(ledger["title"], "旧工作台数据缺失原因总账")
+        self.assertEqual(ledger["status"], "blocked")
+        self.assertEqual(ledger["permission_count"], 1)
+        self.assertEqual(ledger["session_skip_count"], 1)
+        self.assertEqual(ledger["no_recent_record_count"], 1)
+        self.assertEqual(ledger["cache_or_fallback_count"], 1)
+        self.assertEqual(ledger["manual_gate_count"], 1)
+        self.assertIn("Tushare 拉满基础连接", ledger["short_answer"])
+        self.assertIn("融资融券", dumped)
+        self.assertIn("涨跌停/情绪", dumped)
+        self.assertIn("龙虎榜", dumped)
+        self.assertIn("筹码/胜率", dumped)
+        self.assertIn("AkShare 重型刷新", dumped)
+        self.assertIn("不能把权限缺口当成行情不存在", dumped)
+        self.assertFalse(ledger["deepseek_called"])
+        self.assertEqual(ledger["external_call_policy"], "not_triggered")
+        self.assertIn("不会自动调用 Tushare", ledger["safe_mode_text"])
+        json.dumps(ledger, ensure_ascii=False)
 
     def test_home_snapshot_builds_data_capability_console(self):
         today = _dt.date.today().isoformat()

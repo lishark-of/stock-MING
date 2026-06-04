@@ -354,6 +354,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
+    snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
@@ -474,6 +475,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
+    snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
@@ -1193,6 +1195,246 @@ def build_strategy_prerequisite_recovery_ledger(snapshot: Any = None) -> dict:
         "total_count": len(items),
         "next_action": next_action,
         "safe_mode_text": "这里只读取本地 packet 和缓存；不会自动运行回测、DeepSeek、全市场扫描或重型数据接口。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+OLD_WORKSPACE_DATA_ABSENCE_CAUSES = {
+    "permission_or_points": {
+        "label": "权限/积分不足",
+        "tone": "failed",
+        "diagnostic_answer": (
+            "Tushare token 或基础行情可用，不代表每个旧工作台专业接口都已开通；"
+            "龙虎榜、融资融券、涨跌停情绪、筹码等接口可能仍需要单独权限或积分。"
+        ),
+        "next_action": "先确认具体接口权限/积分，再手动检测；不能把权限缺口当成行情不存在。",
+        "decision_guardrail": "未恢复前阻断加仓、追高、加融资和把风险写成已排除。",
+    },
+    "session_skip": {
+        "label": "本会话跳过",
+        "tone": "failed",
+        "diagnostic_answer": "某接口本会话已经被判定受限或失败，系统会跳过重复请求来防止页面卡顿。",
+        "next_action": "确认权限或网络恢复后，手动点击对应检测按钮重试。",
+        "decision_guardrail": "本会话跳过不是无风险；只能保持安全空态或缓存观察。",
+    },
+    "no_recent_record": {
+        "label": "近期无记录",
+        "tone": "missing",
+        "diagnostic_answer": "接口可读也可能搜不到：非交易日、数据尚未发布、标的未上榜、窗口期太短或接口不覆盖都会导致空结果。",
+        "next_action": "核对交易日、发布时间、标的覆盖和查询窗口，必要时手动刷新。",
+        "decision_guardrail": "近期无记录不能写成利好、无风险或可以加仓。",
+    },
+    "cache_or_fallback": {
+        "label": "缓存/替代口径",
+        "tone": "stale",
+        "diagnostic_answer": "缓存能防白屏，替代口径能保留观察，但它们都不是实时已验证事实。",
+        "next_action": "执行前复核缓存日期、来源和口径；需要实时证据时再手动刷新。",
+        "decision_guardrail": "缓存只辅助看盘，不能单独支撑交易动作。",
+    },
+    "manual_gate": {
+        "label": "必须手动触发",
+        "tone": "missing",
+        "diagnostic_answer": "重型刷新、批量扫描、回测和外部接口不会在页面打开时自动执行。",
+        "next_action": "需要时点击对应按钮，等待结果回流到综合中心 packet。",
+        "decision_guardrail": "未手动生成前，只能显示待验证状态。",
+    },
+    "config_or_network": {
+        "label": "配置/网络失败",
+        "tone": "failed",
+        "diagnostic_answer": "本地配置、网络或接口调用失败会让旧工作台能力不可用。",
+        "next_action": "检查 token、网络、依赖和接口状态；失败时保留缓存或安全空态。",
+        "decision_guardrail": "配置/网络失败时不能把缺失数据当作行情判断。",
+    },
+    "unverified": {
+        "label": "状态待验证",
+        "tone": "missing",
+        "diagnostic_answer": "当前只有不完整的本地状态，尚不能证明接口可用或不可用。",
+        "next_action": "按数据恢复中心手动检测并回流 packet。",
+        "decision_guardrail": "待验证数据不能作为加仓、追高或加融资依据。",
+    },
+}
+
+
+def _old_workspace_absence_cause_key(item: Mapping[str, Any]) -> str:
+    explicit = _to_text(item.get("cause_key") or item.get("interface_cause_key")).lower()
+    if explicit in OLD_WORKSPACE_DATA_ABSENCE_CAUSES:
+        return explicit
+    state_text = " ".join(
+        _to_text(item.get(key))
+        for key in (
+            "state",
+            "status",
+            "status_label",
+            "data_status",
+            "capability_state",
+            "recovery_state",
+            "reason",
+            "diagnostic_answer",
+            "interface_diagnostic_answer",
+            "meaning",
+            "message",
+        )
+    ).lower()
+    if any(token in state_text for token in ("permission", "permission_denied", "权限", "积分")):
+        return "permission_or_points"
+    if any(token in state_text for token in ("disabled_this_session", "本会话跳过", "跳过重复")):
+        return "session_skip"
+    if any(token in state_text for token in ("empty_recent", "近期无", "暂无数据", "无记录", "未上榜", "非交易日")):
+        return "no_recent_record"
+    if any(token in state_text for token in ("stale_cache", "fallback_used", "using_cache", "cached", "缓存", "替代口径")):
+        return "cache_or_fallback"
+    if any(token in state_text for token in ("requires_manual_refresh", "manual_required", "button_gated", "手动", "重型")):
+        return "manual_gate"
+    if any(token in state_text for token in ("not_configured", "network_failed", "network", "配置", "网络", "failed", "error", "失败")):
+        return "config_or_network"
+    return "unverified"
+
+
+def _old_workspace_absence_item(raw: Any = None, source_type: str = "") -> dict:
+    item = _as_mapping(raw)
+    if not item:
+        return {}
+    cause_key = _old_workspace_absence_cause_key(item)
+    cause = OLD_WORKSPACE_DATA_ABSENCE_CAUSES[cause_key]
+    label = _to_text(item.get("label") or item.get("module") or item.get("api") or item.get("key"), "旧工作台能力")
+    api = _to_text(item.get("api") or item.get("table"))
+    provider = _to_text(item.get("provider") or item.get("source"), "本地 packet")
+    return {
+        "key": _to_text(item.get("key") or api or label, "old_workspace_data"),
+        "label": label,
+        "provider": provider,
+        "api": api,
+        "cause_key": cause_key,
+        "cause_label": _to_text(item.get("cause_label") or item.get("interface_cause_label"), cause["label"]),
+        "tone": _to_text(item.get("tone"), cause["tone"]),
+        "status_label": _to_text(item.get("status_label") or item.get("status") or item.get("readable_state"), cause["label"]),
+        "diagnostic_answer": _to_text(
+            item.get("interface_diagnostic_answer")
+            or item.get("diagnostic_answer")
+            or item.get("why_not_found")
+            or item.get("meaning"),
+            cause["diagnostic_answer"],
+        ),
+        "next_action": _to_text(item.get("next_action") or item.get("action_hint"), cause["next_action"]),
+        "decision_guardrail": _to_text(item.get("decision_guardrail"), cause["decision_guardrail"]),
+        "writes_packet": _to_text(item.get("writes_packet"), "command_center_packet"),
+        "toolbox_entry": _to_text(item.get("toolbox_entry") or item.get("legacy_tab"), "高级工具箱"),
+        "source_type": _to_text(source_type, "local_status"),
+        "updated_at": _to_text(item.get("updated_at") or item.get("latest_date"), "暂无"),
+        "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+def _collect_old_workspace_absence_items(snapshot: Mapping[str, Any]) -> list[dict]:
+    candidates: list[dict] = []
+    data_issue_explainer = _as_mapping(snapshot.get("data_issue_explainer"))
+    for raw in _as_list(data_issue_explainer.get("interface_diagnostic_items")):
+        candidates.append(_old_workspace_absence_item(raw, source_type="data_issue_explainer"))
+    data_recovery_center = _as_mapping(snapshot.get("data_recovery_center"))
+    for raw in _as_list(data_recovery_center.get("actions")):
+        candidates.append(_old_workspace_absence_item(raw, source_type="data_recovery_center"))
+    for raw in _as_list(_as_mapping(snapshot.get("legacy_a_share_gap_summary")).get("items")):
+        candidates.append(_old_workspace_absence_item(raw, source_type="legacy_a_share_gap"))
+    for raw in _as_list(_as_mapping(snapshot.get("a_share_fact_recovery_summary")).get("items")):
+        candidates.append(_old_workspace_absence_item(raw, source_type="a_share_fact_recovery"))
+    deduped = []
+    seen = set()
+    for item in candidates:
+        if not item:
+            continue
+        key = (
+            _to_text(item.get("cause_key")),
+            _to_text(item.get("provider")).lower(),
+            _to_text(item.get("api")).lower(),
+            _to_text(item.get("label")).lower(),
+            _to_text(item.get("writes_packet")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped[:MAX_CAPABILITY_ITEMS]
+
+
+def build_old_workspace_data_absence_ledger(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    items = _collect_old_workspace_absence_items(payload)
+    cause_items = []
+    for cause_key, config in OLD_WORKSPACE_DATA_ABSENCE_CAUSES.items():
+        examples = [item for item in items if item["cause_key"] == cause_key]
+        if not examples and cause_key != "unverified":
+            continue
+        if not examples and items:
+            continue
+        cause_items.append(
+            {
+                "key": cause_key,
+                "label": config["label"],
+                "tone": config["tone"],
+                "count": len(examples),
+                "examples": examples[:4],
+                "example_labels": "、".join(_to_text(item.get("label"), "旧能力") for item in examples[:4]) or "暂无",
+                "diagnostic_answer": config["diagnostic_answer"],
+                "next_action": config["next_action"],
+                "decision_guardrail": config["decision_guardrail"],
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+        if not items:
+            break
+    counts = {key: len([item for item in items if item["cause_key"] == key]) for key in OLD_WORKSPACE_DATA_ABSENCE_CAUSES}
+    p0_count = counts["permission_or_points"] + counts["session_skip"] + counts["config_or_network"]
+    p1_count = counts["no_recent_record"] + counts["cache_or_fallback"] + counts["manual_gate"]
+    if p0_count:
+        status = "blocked"
+        tone = "failed"
+        headline = "旧工作台数据缺失存在 P0 阻断原因"
+        next_action = "优先处理权限/积分、本会话跳过、配置或网络失败；不要把缺口当成行情不存在。"
+    elif p1_count:
+        status = "partial"
+        tone = "stale"
+        headline = "旧工作台数据以缓存、近期无记录或手动门控为主"
+        next_action = "执行前复核交易日、缓存时间和接口覆盖范围；必要时手动刷新。"
+    elif items:
+        status = "ready"
+        tone = "ready"
+        headline = "旧工作台数据缺失原因已整理"
+        next_action = "继续按数据恢复中心维护 packet 回流。"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "旧工作台数据缺失原因待检测"
+        next_action = "先点击刷新或对应手动检测按钮；页面打开不会自动 ping 外部接口。"
+    summary = (
+        f"权限/积分 {counts['permission_or_points']}｜本会话跳过 {counts['session_skip']}｜"
+        f"近期无记录 {counts['no_recent_record']}｜缓存/替代 {counts['cache_or_fallback']}｜"
+        f"需手动 {counts['manual_gate']}"
+    )
+    return {
+        "title": "旧工作台数据缺失原因总账",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": summary,
+        "items": items,
+        "cause_items": cause_items,
+        "permission_count": counts["permission_or_points"],
+        "session_skip_count": counts["session_skip"],
+        "no_recent_record_count": counts["no_recent_record"],
+        "cache_or_fallback_count": counts["cache_or_fallback"],
+        "manual_gate_count": counts["manual_gate"],
+        "config_or_network_count": counts["config_or_network"],
+        "total_count": len(items),
+        "short_answer": (
+            "Tushare 拉满基础连接，不等于每个旧工作台专业接口都有当日可用证据；"
+            "现在按原因分账，避免把权限、缓存或无记录误读成交易信号。"
+        ),
+        "next_action": next_action,
+        "safe_mode_text": "这里只读取本地数据能力、恢复队列和旧工具 packet；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
     }
@@ -3580,6 +3822,7 @@ def build_home_action_snapshot(
         empty["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(empty)
         empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
+        empty["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(empty)
         empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
         empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
         empty = attach_decision_loop_status(
@@ -3596,6 +3839,7 @@ def build_home_action_snapshot(
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
+    snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)

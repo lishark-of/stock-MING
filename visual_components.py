@@ -4837,6 +4837,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
     a_share_evidence_ledger = payload.get("a_share_evidence_recovery_ledger") or {}
     strategy_prerequisite_ledger = payload.get("strategy_prerequisite_recovery_ledger") or {}
+    old_workspace_absence_ledger = payload.get("old_workspace_data_absence_ledger") or {}
     legacy_a_share_gap = payload.get("legacy_a_share_gap_summary") or {}
     a_share_fact_summary_text = _home_text(a_share_fact_recovery.get("summary"), "A股事实：待验证")
     a_share_fact_tone = _home_text(a_share_fact_recovery.get("tone"), "missing")
@@ -5150,6 +5151,37 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">{escape(_home_text(provider_gap_explainer.get("explanation"), "不同数据源失败原因不同；不会自动请求外部接口。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(provider_gap_explainer.get("next_action"), "按数据恢复中心手动处理。"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(provider_gap_explainer.get("external_call_policy"), "not_triggered"))}</div>
           {provider_gap_item_html}
+        </div>
+        """
+    old_absence_cause_html = ""
+    for item in (old_workspace_absence_ledger.get("cause_items") or [])[:5]:
+        if not isinstance(item, dict):
+            continue
+        old_absence_cause_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "缺失原因"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_number(item.get("count")))}</span>
+          </div>
+          <div class="cc-home-item-meta">涉及：{escape(_home_text(item.get("example_labels"), "暂无"))}</div>
+          <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口权限、日期和覆盖范围。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}</div>
+          <div class="cc-home-item-meta">决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失或未验证不能作为加仓依据。"))}</div>
+        </div>
+        """
+    if not old_absence_cause_html:
+        old_absence_cause_html = "<div class='cc-home-item-meta'>暂无旧工作台数据缺失原因；页面打开不会自动请求外部接口。</div>"
+    old_workspace_absence_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(old_workspace_absence_ledger.get("title"), "旧工作台数据缺失原因总账"))}
+            <span class="cc-home-chip {escape(_home_text(old_workspace_absence_ledger.get("tone"), "missing"))}">{escape(_home_text(old_workspace_absence_ledger.get("summary"), "权限/积分 0｜本会话跳过 0｜近期无记录 0｜缓存/替代 0｜需手动 0"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(old_workspace_absence_ledger.get("headline"), "旧工作台数据缺失原因待检测。"))}</div>
+          <div class="cc-home-item-meta">{escape(_home_text(old_workspace_absence_ledger.get("short_answer"), "Tushare 拉满基础连接，不等于每个专业接口都有当日可用证据。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(old_workspace_absence_ledger.get("next_action"), "按数据恢复中心手动处理。"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(old_workspace_absence_ledger.get("safe_mode_text"), "不会自动调用外部接口。"))} ｜ DeepSeek：未调用</div>
+          {old_absence_cause_html}
         </div>
         """
     console_queue_html = ""
@@ -6123,6 +6155,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
           {tushare_gap_explainer_html}
           {provider_gap_explainer_html}
+          {old_workspace_absence_html}
           {data_health_visibility_html}
           {data_recovery_center_html}
           {legacy_migration_html}
