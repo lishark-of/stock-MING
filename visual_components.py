@@ -4836,6 +4836,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
     a_share_evidence_ledger = payload.get("a_share_evidence_recovery_ledger") or {}
+    strategy_prerequisite_ledger = payload.get("strategy_prerequisite_recovery_ledger") or {}
     legacy_a_share_gap = payload.get("legacy_a_share_gap_summary") or {}
     a_share_fact_summary_text = _home_text(a_share_fact_recovery.get("summary"), "A股事实：待验证")
     a_share_fact_tone = _home_text(a_share_fact_recovery.get("tone"), "missing")
@@ -5907,6 +5908,35 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {a_share_evidence_ledger_items_html}
         </div>
         """
+    strategy_prerequisite_items_html = ""
+    for item in (strategy_prerequisite_ledger.get("items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        strategy_prerequisite_items_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "策略前置能力"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("ledger_label"), item.get("status_label") or "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">交易影响：{escape(_home_text(item.get("decision_impact"), "缺失时只能作为待验证条件，不能支撑放大仓位。"))}</div>
+          <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
+          <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地 packet"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无"))}</div>
+        </div>
+        """
+    if not strategy_prerequisite_items_html:
+        strategy_prerequisite_items_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>策略前置能力待生成</div><div class='cc-home-item-meta'>量化推演、交易纪律和回测会逐步回流为 packet；页面打开不会自动运行回测。</div></div>"
+    strategy_prerequisite_ledger_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(strategy_prerequisite_ledger.get("title"), "策略前置能力回流总账"))}
+            <span class="cc-home-chip {escape(_home_text(strategy_prerequisite_ledger.get("tone"), "missing"))}">{escape(_home_text(strategy_prerequisite_ledger.get("summary"), "已回流 0｜使用缓存 0｜仍受限 0｜待手动 2"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(strategy_prerequisite_ledger.get("headline"), "量化和纪律待验证。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(strategy_prerequisite_ledger.get("next_action"), "进入高级工具箱手动恢复。"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(strategy_prerequisite_ledger.get("safe_mode_text"), "不会自动运行回测或重型接口。"))} ｜ DeepSeek：未调用</div>
+          {strategy_prerequisite_items_html}
+        </div>
+        """
     legacy_gap_item_html = ""
     for item in (legacy_a_share_gap.get("items") or [])[:2]:
         if not isinstance(item, dict):
@@ -6071,6 +6101,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">已验证事实</div>
           {a_share_evidence_ledger_html}
+          {strategy_prerequisite_ledger_html}
           {legacy_gap_html}
           {a_share_fact_recovery_html}
           {quant_html}

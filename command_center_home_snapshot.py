@@ -352,6 +352,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     }
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
+    snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
@@ -471,6 +472,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
+    snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
@@ -1073,6 +1075,124 @@ def build_a_share_evidence_recovery_ledger(snapshot: Any = None) -> dict:
         "total_count": len(items),
         "next_action": next_action,
         "safe_mode_text": "这里只读取本地 packet 和恢复结果；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+STRATEGY_PREREQUISITE_RECOVERY_SOURCES = (
+    {
+        "packet_key": "quant_packet",
+        "key": "quant_projection",
+        "label": "量化推演",
+        "writes_packet": "command_center_quant_packet",
+        "toolbox_entry": "高级工具箱 / 量化推演",
+        "action_label": "手动生成量化推演",
+        "recovered_impact": "量化推演已回流，可辅助评分、趋势和执行节奏；仍不能替代仓位纪律。",
+        "cached_impact": "量化推演使用缓存，只能作为参考；执行前需确认交易日和行情状态。",
+        "blocked_impact": "量化推演仍失败或受限，策略执行只能保持低置信度/待验证，不能把评分当成事实。",
+        "waiting_impact": "量化推演待手动生成，策略执行不能假装已有评分或单票量化诊断。",
+        "next_action": "进入高级工具箱 / 量化推演手动生成，成功后回流 command_center_quant_packet。",
+    },
+    {
+        "packet_key": "discipline_packet",
+        "key": "discipline_backtest",
+        "label": "交易纪律/回测",
+        "writes_packet": "command_center_discipline_packet",
+        "toolbox_entry": "高级工具箱 / 交易纪律实验室",
+        "action_label": "手动运行回测或读取纪律缓存",
+        "recovered_impact": "纪律/回测证据已回流，可约束加仓、减仓和失效条件；不直接决定买卖。",
+        "cached_impact": "纪律/回测使用缓存，可作为风险约束；执行前需确认回测窗口和数据来源。",
+        "blocked_impact": "纪律/回测仍失败或受限，不能把策略建议当成已验证执行方案。",
+        "waiting_impact": "纪律/回测待手动运行，策略执行只能展示待验证条件，不能自动跑回测。",
+        "next_action": "进入高级工具箱 / 交易纪律实验室手动运行回测，成功后回流 command_center_discipline_packet。",
+    },
+)
+
+
+def _strategy_prerequisite_decision_impact(config: Mapping[str, Any], display_state: Mapping[str, Any]) -> str:
+    status = _to_text(display_state.get("status"), "waiting")
+    if status == "recovered":
+        return _to_text(config.get("recovered_impact"))
+    if status == "cached":
+        return _to_text(config.get("cached_impact"))
+    if status == "blocked":
+        return _to_text(config.get("blocked_impact"))
+    return _to_text(config.get("waiting_impact"))
+
+
+def build_strategy_prerequisite_recovery_ledger(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    items = []
+    for config in STRATEGY_PREREQUISITE_RECOVERY_SOURCES:
+        packet_key = _to_text(config.get("packet_key"))
+        writes_packet = _to_text(config.get("writes_packet"))
+        packet = _as_mapping(payload.get(packet_key) or payload.get(writes_packet))
+        display_state = _recovery_display_state(packet, writes_packet)
+        items.append(
+            {
+                "key": _to_text(config.get("key"), packet_key),
+                "label": _to_text(config.get("label"), "策略前置能力"),
+                "ledger_state": _to_text(display_state.get("status"), "waiting"),
+                "ledger_label": _to_text(display_state.get("label"), "待验证"),
+                "tone": _to_text(display_state.get("tone"), "missing"),
+                "status_label": _to_text(
+                    packet.get("status_label")
+                    or packet.get("backtest_status")
+                    or packet.get("data_status")
+                    or packet.get("status"),
+                    "待验证",
+                ),
+                "updated_at": _to_text(packet.get("updated_at") or packet.get("generated_at"), "暂无"),
+                "source": _to_text(packet.get("source"), "本地 packet"),
+                "writes_packet": writes_packet,
+                "toolbox_entry": _to_text(config.get("toolbox_entry"), "高级工具箱"),
+                "action_label": _to_text(config.get("action_label"), "手动恢复"),
+                "next_action": _to_text(config.get("next_action"), "进入高级工具箱手动恢复并回流 packet。"),
+                "decision_impact": _strategy_prerequisite_decision_impact(config, display_state),
+                "refresh_policy": "button_gated",
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    recovered_count = len([item for item in items if item["ledger_state"] == "recovered"])
+    cached_count = len([item for item in items if item["ledger_state"] == "cached"])
+    blocked_count = len([item for item in items if item["ledger_state"] == "blocked"])
+    waiting_count = len([item for item in items if item["ledger_state"] not in {"recovered", "cached", "blocked"}])
+    if blocked_count:
+        status = "blocked"
+        tone = "failed"
+        headline = f"策略前置能力仍有 {blocked_count} 项阻断"
+        next_action = "先处理失败或受限的前置能力；未恢复前不能把策略建议当成已验证执行方案。"
+    elif waiting_count:
+        status = "partial"
+        tone = "stale" if recovered_count or cached_count else "missing"
+        headline = f"策略前置能力待手动补齐 {waiting_count} 项"
+        next_action = "进入高级工具箱手动补齐量化或纪律能力；页面打开不会自动运行回测或扫描。"
+    elif cached_count:
+        status = "cached"
+        tone = "stale"
+        headline = "策略前置能力使用缓存"
+        next_action = "缓存可辅助判断；执行前复核交易日、数据来源和纪律边界。"
+    else:
+        status = "ready"
+        tone = "ready"
+        headline = "策略前置能力已回流"
+        next_action = "量化和纪律可进入策略执行闭环；仍需遵守仓位和风险预算。"
+    return {
+        "title": "策略前置能力回流总账",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": f"已回流 {recovered_count}｜使用缓存 {cached_count}｜仍受限 {blocked_count}｜待手动 {waiting_count}",
+        "items": items,
+        "recovered_count": recovered_count,
+        "cached_count": cached_count,
+        "blocked_count": blocked_count,
+        "waiting_count": waiting_count,
+        "total_count": len(items),
+        "next_action": next_action,
+        "safe_mode_text": "这里只读取本地 packet 和缓存；不会自动运行回测、DeepSeek、全市场扫描或重型数据接口。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
     }
@@ -3458,6 +3578,7 @@ def build_home_action_snapshot(
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(empty)
         empty["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(empty)
+        empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
         empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
@@ -3473,6 +3594,7 @@ def build_home_action_snapshot(
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
+    snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]

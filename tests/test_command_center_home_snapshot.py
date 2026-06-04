@@ -2603,6 +2603,44 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(ledger["external_call_policy"], "not_triggered")
         json.dumps(ledger, ensure_ascii=False)
 
+    def test_strategy_prerequisite_recovery_ledger_explains_quant_and_discipline_impact(self):
+        ledger = snapshot.build_strategy_prerequisite_recovery_ledger(
+            {
+                "quant_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "score": 68,
+                    "summary": "量化推演已回流。",
+                    "updated_at": "2026-06-04T10:00:00",
+                    "source": "本地量化缓存",
+                },
+                "discipline_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "backtest_status": "回测缓存不可用",
+                    "source": "本地回测缓存",
+                },
+            }
+        )
+        by_key = {item["key"]: item for item in ledger["items"]}
+
+        self.assertEqual(ledger["title"], "策略前置能力回流总账")
+        self.assertEqual(ledger["status"], "blocked")
+        self.assertEqual(ledger["recovered_count"], 1)
+        self.assertEqual(ledger["blocked_count"], 1)
+        self.assertIn("已回流 1", ledger["summary"])
+        self.assertIn("仍受限 1", ledger["summary"])
+        self.assertEqual(by_key["quant_projection"]["ledger_label"], "已回流")
+        self.assertIn("辅助评分", by_key["quant_projection"]["decision_impact"])
+        self.assertEqual(by_key["quant_projection"]["writes_packet"], "command_center_quant_packet")
+        self.assertIn("量化推演", by_key["quant_projection"]["toolbox_entry"])
+        self.assertIn("不能把策略建议当成已验证执行方案", by_key["discipline_backtest"]["decision_impact"])
+        self.assertEqual(by_key["discipline_backtest"]["refresh_policy"], "button_gated")
+        self.assertFalse(ledger["deepseek_called"])
+        self.assertEqual(ledger["external_call_policy"], "not_triggered")
+        self.assertIn("不会自动运行回测", ledger["safe_mode_text"])
+        json.dumps(ledger, ensure_ascii=False)
+
     def test_legacy_a_share_gap_summary_focuses_limit_and_chip(self):
         summary = snapshot.build_legacy_a_share_gap_summary(
             {
@@ -2700,6 +2738,13 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("融资融券", json.dumps(ledger, ensure_ascii=False))
         self.assertIn("阻断加仓", json.dumps(ledger, ensure_ascii=False))
         self.assertFalse(ledger["deepseek_called"])
+        strategy_ledger = payload["strategy_prerequisite_recovery_ledger"]
+        strategy_dumped = json.dumps(strategy_ledger, ensure_ascii=False)
+        self.assertEqual(strategy_ledger["title"], "策略前置能力回流总账")
+        self.assertIn("量化推演", strategy_dumped)
+        self.assertIn("交易纪律/回测", strategy_dumped)
+        self.assertIn("不会自动运行回测", strategy_ledger["safe_mode_text"])
+        self.assertFalse(strategy_ledger["deepseek_called"])
 
     def test_home_snapshot_persists_hard_risk_packet(self):
         today = _dt.date.today().isoformat()
