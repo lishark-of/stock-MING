@@ -36,6 +36,44 @@ MAX_CANDIDATES = 3
 MAX_ERRORS = 8
 MAX_CAPABILITY_ITEMS = 8
 
+A_SHARE_FACT_RECOVERY_SOURCES = (
+    {
+        "key": "moneyflow",
+        "label": "个股资金流",
+        "packet_key": "moneyflow_packet",
+        "writes_packet": "command_center_moneyflow_packet",
+        "source_fallback": "Tushare moneyflow",
+    },
+    {
+        "key": "dragon_tiger",
+        "label": "龙虎榜",
+        "packet_key": "dragon_tiger_packet",
+        "writes_packet": "command_center_dragon_tiger_packet",
+        "source_fallback": "Tushare top_list/top_inst",
+    },
+    {
+        "key": "margin",
+        "label": "融资融券",
+        "packet_key": "margin_packet",
+        "writes_packet": "command_center_margin_packet",
+        "source_fallback": "Tushare margin_detail",
+    },
+    {
+        "key": "limit_emotion",
+        "label": "涨跌停/情绪",
+        "packet_key": "limit_emotion_packet",
+        "writes_packet": "command_center_limit_emotion_packet",
+        "source_fallback": "Tushare stk_limit/limit_list_d/limit_cpt_list",
+    },
+    {
+        "key": "chip_radar",
+        "label": "筹码/胜率",
+        "packet_key": "chip_packet",
+        "writes_packet": "command_center_chip_packet",
+        "source_fallback": "Tushare cyq_perf/cyq_chips",
+    },
+)
+
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
@@ -159,7 +197,7 @@ def get_home_snapshot_path(base_dir: str | Path | None = None) -> Path:
 
 
 def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基础数据生成。") -> dict:
-    return {
+    snapshot = {
         "status": "empty",
         "is_empty": True,
         "timestamp": "",
@@ -236,6 +274,8 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "empty_message": reason,
         "deepseek_called": False,
     }
+    snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    return snapshot
 
 
 def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Path | None = None) -> dict:
@@ -322,6 +362,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
+    snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
@@ -531,6 +572,96 @@ def build_data_recovery_actions_snapshot(data_capability_console: Any = None, li
         if len(actions) >= max(1, int(limit or MAX_CAPABILITY_ITEMS)):
             break
     return actions
+
+
+def _a_share_fact_recovery_state(packet: Mapping[str, Any], writes_packet: str = "") -> str:
+    explicit = _to_text(packet.get("recovery_state")).lower()
+    if explicit in {"recovered", "blocked", "waiting"}:
+        return explicit
+    return _tool_packet_recovery_state(packet, writes_packet)
+
+
+def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) -> dict:
+    payload = _as_mapping(packet)
+    writes_packet = _to_text(config.get("writes_packet"), "command_center_packet")
+    recovery_state = _a_share_fact_recovery_state(payload, writes_packet)
+    status = _to_text(payload.get("status"), "waiting")
+    data_status = _to_text(payload.get("data_status") or payload.get("cache_state"), "missing")
+    capability_state = _to_text(payload.get("capability_state") or payload.get("state"), "requires_manual_refresh")
+    status_label = _to_text(payload.get("status_label") or payload.get("capability_label") or status, "待验证")
+    updated_at = _to_text(
+        payload.get("updated_at")
+        or payload.get("checked_at")
+        or payload.get("generated_at")
+        or payload.get("trade_date")
+        or payload.get("latest_date"),
+        "暂无",
+    )
+    source = _to_text(payload.get("source") or payload.get("source_key"), _to_text(config.get("source_fallback"), "本地 packet"))
+    if recovery_state == "recovered":
+        tone = "ready"
+        readable_state = "已回流"
+    elif recovery_state == "blocked":
+        tone = "failed"
+        readable_state = "仍受限"
+    else:
+        tone = "missing"
+        readable_state = "待验证"
+    return {
+        "key": _to_text(config.get("key")),
+        "label": _to_text(config.get("label"), "A股事实"),
+        "packet_key": _to_text(config.get("packet_key")),
+        "writes_packet": writes_packet,
+        "recovery_state": recovery_state,
+        "readable_state": readable_state,
+        "tone": tone,
+        "status": status,
+        "data_status": data_status,
+        "capability_state": capability_state,
+        "status_label": status_label,
+        "updated_at": updated_at,
+        "source": source,
+        "deepseek_called": False,
+    }
+
+
+def build_a_share_fact_recovery_summary(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    items = [
+        _a_share_fact_summary_item(config, payload.get(config["packet_key"]) or payload.get(config["writes_packet"]))
+        for config in A_SHARE_FACT_RECOVERY_SOURCES
+    ]
+    recovered = [item for item in items if item["recovery_state"] == "recovered"]
+    blocked = [item for item in items if item["recovery_state"] == "blocked"]
+    waiting = [item for item in items if item["recovery_state"] == "waiting"]
+    total = len(items)
+    if len(recovered) == total:
+        tone = "ready"
+        next_action = "五类 A股事实已回流；执行前仍需复核交易日、来源和风险纪律。"
+    elif blocked:
+        tone = "failed"
+        first = blocked[0]
+        next_action = f"优先处理 {first['label']}：检查权限、积分、交易日或进入数据恢复中心手动恢复。"
+    elif recovered:
+        tone = "stale"
+        next_action = "继续手动补齐待验证事实；不要把缺失数据当成无风险。"
+    else:
+        tone = "missing"
+        next_action = "点击刷新今日基础数据或进入数据恢复中心；页面打开不会自动请求 Tushare。"
+    summary = f"A股事实 {total} 项：已回流 {len(recovered)}｜仍受限 {len(blocked)}｜待验证 {len(waiting)}"
+    return {
+        "title": "A股事实回流",
+        "summary": summary,
+        "tone": tone,
+        "recovered_count": len(recovered),
+        "blocked_count": len(blocked),
+        "waiting_count": len(waiting),
+        "total_count": total,
+        "items": items,
+        "next_action": next_action,
+        "safe_mode_text": "这里只汇总本地 packet 状态；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+    }
 
 
 TOOL_RECOVERY_CONFIG = {
@@ -1493,6 +1624,7 @@ def build_home_action_snapshot(
         "margin_packet": margin_packet,
         "limit_emotion_packet": limit_emotion_packet,
         "hard_risk_packet": hard_risk_packet,
+        "a_share_fact_recovery_summary": {},
         "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
         "risk_alerts": risk_alerts,
         "data_coverage": coverage,
@@ -1551,8 +1683,10 @@ def build_home_action_snapshot(
         empty["margin_packet"] = snapshot["margin_packet"]
         empty["limit_emotion_packet"] = snapshot["limit_emotion_packet"]
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
+        empty["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(empty)
         empty["errors"] = errors
         return empty
+    snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)

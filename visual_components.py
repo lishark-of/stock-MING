@@ -4732,6 +4732,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_capability_console = payload.get("data_capability_console") or {}
     data_recovery_center = payload.get("data_recovery_center") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
+    a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
     a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
@@ -5138,6 +5139,32 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             """
     else:
         facts_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>暂无已验证事实包</div><div class='cc-home-item-meta'>旧工作台能力会逐步迁移为 packet；页面打开不会自动拉取重数据。</div></div>"
+    a_share_fact_recovery_items_html = ""
+    for item in (a_share_fact_recovery.get("items") or [])[:5]:
+        if not isinstance(item, dict):
+            continue
+        a_share_fact_recovery_items_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), "A股事实"))}：
+          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("readable_state"), item.get("status_label") or "待验证"))}</span>
+          {escape(_home_text(item.get("status_label"), "待验证"))}
+          ｜来源：{escape(_home_text(item.get("source"), "本地 packet"))}
+          ｜{escape(_home_text(item.get("updated_at"), "暂无"))}
+        </div>
+        """
+    if not a_share_fact_recovery_items_html:
+        a_share_fact_recovery_items_html = "<div class='cc-home-item-meta'>五类 A股事实尚未形成回流总账；页面打开不会自动请求 Tushare。</div>"
+    a_share_fact_recovery_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(a_share_fact_recovery.get("title"), "A股事实回流"))}
+            <span class="cc-home-chip {escape(_home_text(a_share_fact_recovery.get("tone"), "missing"))}">{escape(_home_text(a_share_fact_recovery.get("summary"), "A股事实 5 项：已回流 0｜仍受限 0｜待验证 5"))}</span>
+          </div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(a_share_fact_recovery.get("next_action"), "按数据恢复中心手动补齐。"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(a_share_fact_recovery.get("safe_mode_text"), "不会自动调用外部接口。"))} ｜ DeepSeek：未调用</div>
+          {a_share_fact_recovery_items_html}
+        </div>
+        """
     diagnostic_details_html = f"""
           <details class="cc-home-details">
             <summary>诊断详情：A股矩阵 / 数据能力控制台 / 原因解释</summary>
@@ -5232,6 +5259,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">已验证事实</div>
+          {a_share_fact_recovery_html}
           {discipline_html}
           <div class="cc-muted-note">{escape(_home_text(evidence_vm.get("title"), "A股证据雷达"))}：{escape(_home_text(evidence_vm.get("summary"), "暂无证据摘要。"))} ｜ {escape(_home_text(evidence_vm.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))}</div>
           <div class="cc-home-item-title">下一步证据补齐队列</div>

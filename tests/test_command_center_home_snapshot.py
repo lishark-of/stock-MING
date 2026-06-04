@@ -1406,6 +1406,80 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(payload["moneyflow_packet"]["deepseek_called"])
         self.assertFalse(payload["dragon_tiger_packet"]["deepseek_called"])
 
+    def test_a_share_fact_recovery_summary_counts_packet_states(self):
+        summary = snapshot.build_a_share_fact_recovery_summary(
+            {
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "recovery_state": "recovered",
+                    "status_label": "可用",
+                    "source": "Tushare moneyflow",
+                    "updated_at": "2026-06-04T10:00:00",
+                },
+                "dragon_tiger_packet": {
+                    "status": "failed",
+                    "capability_state": "permission_denied",
+                    "recovery_state": "blocked",
+                    "status_label": "权限不足",
+                    "source": "Tushare top_list",
+                },
+                "margin_packet": {
+                    "status": "waiting",
+                    "capability_state": "empty_recent",
+                    "recovery_state": "waiting",
+                    "status_label": "近期无数据",
+                },
+            }
+        )
+
+        self.assertEqual(summary["total_count"], 5)
+        self.assertEqual(summary["recovered_count"], 1)
+        self.assertEqual(summary["blocked_count"], 1)
+        self.assertEqual(summary["waiting_count"], 3)
+        self.assertIn("已回流 1", summary["summary"])
+        self.assertIn("仍受限 1", summary["summary"])
+        self.assertEqual(summary["tone"], "failed")
+        self.assertFalse(summary["deepseek_called"])
+        json.dumps(summary, ensure_ascii=False)
+
+    def test_home_snapshot_includes_a_share_fact_recovery_summary(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "recovery_state": "recovered",
+                    "status_label": "可用",
+                    "updated_at": f"{today}T10:01:00",
+                },
+                "command_center_margin_packet": {
+                    "status": "failed",
+                    "capability_state": "permission_denied",
+                    "recovery_state": "blocked",
+                    "status_label": "权限不足",
+                    "updated_at": f"{today}T10:01:00",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+
+        summary = payload["a_share_fact_recovery_summary"]
+        self.assertEqual(summary["recovered_count"], 1)
+        self.assertEqual(summary["blocked_count"], 1)
+        self.assertIn("A股事实 5 项", summary["summary"])
+        dumped = json.dumps(summary, ensure_ascii=False)
+        self.assertIn("个股资金流", dumped)
+        self.assertIn("融资融券", dumped)
+        self.assertFalse(summary["deepseek_called"])
+
     def test_home_snapshot_persists_hard_risk_packet(self):
         today = _dt.date.today().isoformat()
         state = {
