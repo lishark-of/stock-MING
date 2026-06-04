@@ -1260,6 +1260,68 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["external_call_policy"], "button_gated")
         self.assertFalse(notice["deepseek_called"])
 
+    def test_latest_recovery_result_notice_prefers_manual_detection_result(self):
+        notice = snapshot.build_latest_recovery_result_notice(
+            {
+                "command_center_last_a_share_diagnostic_recovery_result": {
+                    "label": "涨跌停/情绪",
+                    "writes_packet": "command_center_limit_emotion_packet",
+                    "capability_state": "permission_denied",
+                    "status_label": "权限不足",
+                    "message": "limit_cpt_list 权限不足。",
+                    "checked_at": "2026-06-03T10:05:00",
+                    "api_hint": "Tushare limit_cpt_list",
+                    "deepseek_called": False,
+                },
+                "command_center_last_tool_recovery_label": "下一票雷达",
+                "command_center_last_tool_recovery_writes_packet": "command_center_radar_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+            }
+        )
+
+        self.assertEqual(notice["source_type"], "a_share_diagnostic")
+        self.assertEqual(notice["status"], "blocked")
+        self.assertEqual(notice["tone"], "failed")
+        self.assertEqual(notice["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(notice["external_call_policy"], "button_gated")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_home_snapshot_includes_latest_recovery_result_notice(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_last_a_share_diagnostic_recovery_result": {
+                    "label": "个股资金流",
+                    "writes_packet": "command_center_moneyflow_packet",
+                    "capability_state": "available",
+                    "status_label": "可用",
+                    "message": "已读取到最近资金流数据。",
+                    "checked_at": f"{today}T10:05:00",
+                    "api_hint": "Tushare moneyflow",
+                    "deepseek_called": False,
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "summary": "资金流已回流",
+                    "updated_at": f"{today}T10:05:00",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:06:00",
+        )
+
+        notice = payload["latest_recovery_result_notice"]
+        self.assertEqual(notice["status"], "recovered")
+        self.assertEqual(notice["source_type"], "a_share_diagnostic")
+        self.assertEqual(notice["writes_packet"], "command_center_moneyflow_packet")
+        self.assertIn("Home Action Snapshot", notice["next_action"])
+        self.assertFalse(notice["deepseek_called"])
+
     def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(

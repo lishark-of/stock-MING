@@ -3759,6 +3759,16 @@ def _get_a_share_fact_recovery_summary_from_state():
     return home_snapshot.get("a_share_fact_recovery_summary") or {}
 
 
+def _get_latest_recovery_result_notice_from_state():
+    home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
+    if isinstance(home_snapshot, dict) and home_snapshot.get("latest_recovery_result_notice"):
+        return home_snapshot.get("latest_recovery_result_notice") or {}
+    return home_snapshot_service.build_latest_recovery_result_notice(
+        st.session_state,
+        selected_tab=st.session_state.get("legacy_workspace_selected_tab"),
+    )
+
+
 def _apply_tool_recovery_navigation_state(action):
     navigation_state = home_snapshot_service.build_tool_recovery_navigation_state(action)
     for nav_key, nav_value in navigation_state.items():
@@ -3784,6 +3794,7 @@ def build_command_center_view_model(live_packet=None):
             or cc_adapter.get_nested(live_packet, "generated_at")
         ),
         a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
+        latest_recovery_result_notice=_get_latest_recovery_result_notice_from_state(),
     )
     st.session_state["command_center_view_model"] = view_model
     return view_model
@@ -4579,6 +4590,11 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
                         "checked_at": item.get("checked_at") or item.get("updated_at"),
                         "deepseek_called": False,
                     }
+                    _persist_home_action_snapshot(
+                        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+                        target=ticker,
+                        position_profile=position_profile,
+                    )
         notice = home_snapshot_service.build_a_share_diagnostic_recovery_result_notice(st.session_state)
         if notice:
             if notice.get("status") == "recovered":
@@ -4813,6 +4829,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
                 generated_at=refresh_summary.get("finished_at"),
                 a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
+                latest_recovery_result_notice=_get_latest_recovery_result_notice_from_state(),
             )
             fact_summary_text = refresh_status_view.get("a_share_fact_recovery_summary")
             if fact_summary_text:
@@ -4900,6 +4917,13 @@ packet:
                 else:
                     for item in errors:
                         st.write(f"- {item}")
+        latest_recovery_result = refresh_summary_view.get("latest_recovery_result_notice") or {}
+        if latest_recovery_result:
+            st.caption(
+                f"最近恢复：{latest_recovery_result.get('title') or '恢复结果'} ｜ "
+                f"{latest_recovery_result.get('message') or '已更新本地恢复状态。'} ｜ "
+                f"{latest_recovery_result.get('next_action') or '返回综合推演中心查看快照。'}"
+            )
         a_share_fact_recovery = refresh_summary_view.get("a_share_fact_recovery") or {}
         a_share_fact_items = a_share_fact_recovery.get("items") or []
         if a_share_fact_recovery.get("summary") and (
@@ -10555,6 +10579,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                         "checked_at": recovery_item.get("checked_at") or recovery_item.get("updated_at"),
                         "deepseek_called": False,
                     }
+                    _persist_home_action_snapshot(
+                        live_packet=st.session_state.get("command_center_live_packet") or {},
+                        target=target,
+                        position_profile=position_profile_preview,
+                    )
         elif manual_check_hint:
             st.caption(manual_check_hint["message"])
         if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):

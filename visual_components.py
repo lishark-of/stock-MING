@@ -4735,6 +4735,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
     data_recovery_center = payload.get("data_recovery_center") or {}
+    latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
     a_share_fact_summary_text = _home_text(a_share_fact_recovery.get("summary"), "A股事实：待验证")
@@ -4925,6 +4926,19 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not data_recovery_center_action_html:
         data_recovery_center_action_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>恢复队列为空</div><div class='cc-home-item-meta'>当前没有需要恢复的数据源、A股诊断项或旧工具 packet。</div></div>"
+    latest_recovery_html = ""
+    if latest_recovery_result:
+        latest_recovery_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            最近恢复结果
+            <span class="cc-home-chip {escape(_home_text(latest_recovery_result.get("tone"), "missing"))}">{escape(_home_text(latest_recovery_result.get("status"), "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(latest_recovery_result.get("message"), "已更新本地恢复状态。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(latest_recovery_result.get("next_action"), "返回综合推演中心查看快照。"))}</div>
+          <div class="cc-home-item-meta">回流：{escape(_home_text(latest_recovery_result.get("writes_packet"), "command_center_packet"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(latest_recovery_result.get("external_call_policy"), "not_triggered"))}</div>
+        </div>
+        """
     data_recovery_center_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -4934,6 +4948,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">{escape(_home_text(data_recovery_center.get("summary"), "暂无恢复摘要。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(data_recovery_center.get("next_action"), "按队列手动恢复。"))}</div>
           <div class="cc-home-item-meta">安全边界：{escape(_home_text(data_recovery_center.get("safe_mode_text"), "页面打开不会自动请求外部接口。"))}</div>
+          {latest_recovery_html}
           {data_recovery_center_action_html}
         </div>
         """

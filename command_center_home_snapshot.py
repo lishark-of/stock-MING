@@ -269,6 +269,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "legacy_a_share_fact_recovery_actions": [],
         "tool_recovery_actions": [],
         "data_recovery_center": build_home_data_recovery_center(),
+        "latest_recovery_result_notice": {},
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
@@ -366,6 +367,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["risk_alerts"] = attach_hard_risk_risk_alerts(
         snapshot.get("risk_alerts") or {},
         snapshot.get("hard_risk_packet") or {},
@@ -1234,6 +1236,29 @@ def build_a_share_diagnostic_recovery_result_notice(state: Any = None) -> dict:
     }
 
 
+def _with_recovery_notice_source(notice: Mapping[str, Any], source_type: str) -> dict:
+    payload = dict(notice)
+    payload["source_type"] = source_type
+    payload.setdefault("tone", {
+        "recovered": "ready",
+        "blocked": "failed",
+        "waiting": "stale",
+    }.get(_to_text(payload.get("status")), "missing"))
+    payload.setdefault("deepseek_called", False)
+    payload.setdefault("external_call_policy", "not_triggered")
+    return payload
+
+
+def build_latest_recovery_result_notice(state: Any = None, selected_tab: Any = "") -> dict:
+    diagnostic_notice = build_a_share_diagnostic_recovery_result_notice(state)
+    if diagnostic_notice:
+        return _with_recovery_notice_source(diagnostic_notice, "a_share_diagnostic")
+    tool_notice = build_tool_recovery_result_notice(state, selected_tab=selected_tab)
+    if tool_notice:
+        return _with_recovery_notice_source(tool_notice, "tool_recovery")
+    return {}
+
+
 def resolve_data_capability_packet(state: Any = None) -> dict:
     state_map = _as_mapping(state)
     healthcheck = _as_mapping(state_map.get("last_data_source_healthcheck"))
@@ -1689,6 +1714,10 @@ def build_home_action_snapshot(
         ),
     )
     data_recovery_actions = build_data_recovery_actions_snapshot(data_capability_console)
+    latest_recovery_result_notice = build_latest_recovery_result_notice(
+        state_map,
+        selected_tab=state_map.get("legacy_workspace_selected_tab"),
+    )
     risk_alerts = attach_hard_risk_risk_alerts(
         attach_data_capability_risk_alerts(
             build_risk_alerts(decision, strategy, coverage, errors),
@@ -1751,6 +1780,7 @@ def build_home_action_snapshot(
         "legacy_a_share_fact_recovery_actions": [],
         "tool_recovery_actions": [],
         "data_recovery_center": {},
+        "latest_recovery_result_notice": latest_recovery_result_notice,
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
         "errors": errors,
@@ -1782,6 +1812,7 @@ def build_home_action_snapshot(
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
+        empty["latest_recovery_result_notice"] = snapshot["latest_recovery_result_notice"]
         empty["market_packet"] = snapshot["market_packet"]
         empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
         empty["radar_packet"] = snapshot["radar_packet"]

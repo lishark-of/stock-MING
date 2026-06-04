@@ -61,6 +61,14 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("data_recovery_center_actions[:6]", source)
         self.assertIn("恢复{_home_text(item.get('label'), '数据能力')}", source)
 
+    def test_home_snapshot_shows_latest_recovery_result(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("latest_recovery_result_notice", source)
+        self.assertIn("最近恢复结果", source)
+        self.assertIn("external_call_policy", source)
+        self.assertIn("DeepSeek：未调用", source)
+
     def test_home_snapshot_collapses_verbose_diagnostics(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 

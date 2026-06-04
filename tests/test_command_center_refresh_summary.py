@@ -306,6 +306,33 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         self.assertFalse(view_model["a_share_fact_recovery"]["deepseek_called"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_refresh_view_model_surfaces_latest_recovery_result_notice(self):
+        view_model = summary.build_refresh_summary_view_model(
+            refresh_result={"ok": True},
+            latest_recovery_result_notice={
+                "status": "recovered",
+                "tone": "ready",
+                "title": "A股数据恢复结果已回流",
+                "label": "个股资金流",
+                "message": "个股资金流：可用｜已读取到最近资金流数据。",
+                "next_action": "继续查看 Home Action Snapshot。",
+                "writes_packet": "command_center_moneyflow_packet",
+                "updated_at": "2026-06-03T10:05:00",
+                "source": "Tushare moneyflow",
+                "source_type": "a_share_diagnostic",
+                "external_call_policy": "button_gated",
+                "deepseek_called": False,
+            },
+        )
+
+        notice = view_model["latest_recovery_result_notice"]
+        self.assertTrue(view_model["has_latest_recovery_result"])
+        self.assertIn("A股数据恢复结果已回流", view_model["latest_recovery_result_summary"])
+        self.assertEqual(notice["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(notice["external_call_policy"], "button_gated")
+        self.assertFalse(notice["deepseek_called"])
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_a_share_fact_recovery_bad_counts_do_not_raise(self):
         payload = summary.summarize_a_share_fact_recovery(
             {

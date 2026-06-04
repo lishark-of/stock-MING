@@ -490,12 +490,33 @@ def summarize_a_share_fact_recovery(recovery_summary: Any = None) -> dict:
     }
 
 
+def summarize_recovery_result_notice(recovery_result_notice: Any = None) -> dict:
+    payload = as_mapping(recovery_result_notice)
+    if not payload:
+        return {}
+    return {
+        "status": _to_text(payload.get("status")) or "waiting",
+        "tone": _to_text(payload.get("tone")) or "missing",
+        "title": _to_text(payload.get("title")) or "最近恢复结果",
+        "label": _to_text(payload.get("label")) or "数据能力",
+        "message": _to_text(payload.get("message")) or "",
+        "next_action": _to_text(payload.get("next_action")) or "",
+        "writes_packet": _to_text(payload.get("writes_packet")) or "",
+        "updated_at": _to_text(payload.get("updated_at")) or "",
+        "source": _to_text(payload.get("source")) or "",
+        "source_type": _to_text(payload.get("source_type")) or "",
+        "external_call_policy": _to_text(payload.get("external_call_policy")) or "not_triggered",
+        "deepseek_called": bool(payload.get("deepseek_called")) if "deepseek_called" in payload else False,
+    }
+
+
 def build_refresh_summary_view_model(
     live_packet: Any = None,
     refresh_result: Any = None,
     refresh_level: Any = None,
     generated_at: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    latest_recovery_result_notice: Any = None,
 ) -> dict:
     live_payload = as_mapping(live_packet)
     level = normalize_refresh_level(
@@ -531,6 +552,7 @@ def build_refresh_summary_view_model(
         max_errors=MAX_ERRORS,
     )
     a_share_fact_recovery = summarize_a_share_fact_recovery(a_share_fact_recovery_summary)
+    latest_recovery_result = summarize_recovery_result_notice(latest_recovery_result_notice)
     view_model = {
         "refresh_level": level,
         "refresh_level_label": refresh_level_label(level),
@@ -554,5 +576,12 @@ def build_refresh_summary_view_model(
         "a_share_fact_recovery_items": a_share_fact_recovery.get("items") or [],
         "has_a_share_fact_blockers": bool(a_share_fact_recovery.get("blocked_count")),
         "has_a_share_fact_waiting": bool(a_share_fact_recovery.get("waiting_count")),
+        "latest_recovery_result_notice": latest_recovery_result,
+        "latest_recovery_result_summary": (
+            f"{latest_recovery_result.get('title')}｜{latest_recovery_result.get('message')}"
+            if latest_recovery_result
+            else ""
+        ),
+        "has_latest_recovery_result": bool(latest_recovery_result),
     }
     return clone_packet(view_model)
