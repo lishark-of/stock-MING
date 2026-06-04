@@ -981,6 +981,66 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("缓存", lane_by_key["p1"]["next_action"])
         self.assertIn("旧工作台", lane_by_key["p2"]["next_action"])
 
+    def test_recovery_priority_lanes_feed_home_risk_alerts(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "data_recovery_actions": [
+                    {
+                        "label": "融资融券",
+                        "status_label": "权限不足",
+                        "priority": 1,
+                        "action_label": "手动刷新融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+                "a_share_user_data_diagnostic": {
+                    "recovery_actions": [
+                        {
+                            "key": "chip_radar",
+                            "label": "筹码 / 胜率",
+                            "status_label": "暂无当日数据",
+                            "action_label": "检测筹码/胜率",
+                            "writes_packet": "command_center_chip_packet",
+                            "refresh_policy": "button_gated",
+                        }
+                    ]
+                },
+                "tool_recovery_actions": [
+                    {
+                        "key": "next_ticket_radar",
+                        "label": "下一票雷达",
+                        "status": "waiting",
+                        "data_status": "missing",
+                        "action_label": "手动运行下一票雷达",
+                        "writes_packet": "command_center_radar_packet",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+            }
+        )
+        alerts = snapshot.attach_recovery_priority_risk_alerts(
+            {
+                "must_not_do": ["不追高"],
+                "reduce_conditions": [],
+                "data_gaps": ["暂无显式数据缺口"],
+                "uses_cache": False,
+            },
+            center,
+        )
+        dumped = json.dumps(alerts, ensure_ascii=False)
+
+        self.assertEqual([item["key"] for item in alerts["recovery_priority_items"]], ["p0", "p1", "p2"])
+        self.assertIn("P0 数据能力未恢复前", alerts["must_not_do"][0])
+        self.assertTrue(alerts["uses_cache"])
+        self.assertFalse(alerts["deepseek_called"])
+        self.assertIn("P0 权限/本会话跳过", dumped)
+        self.assertIn("P1 缓存/近期无数据", dumped)
+        self.assertIn("P2 旧工具 packet 迁移", dumped)
+        self.assertIn("融资融券", dumped)
+        self.assertIn("筹码", dumped)
+        self.assertIn("下一票雷达", dumped)
+
     def test_home_data_recovery_center_accepts_legacy_a_share_fact_actions(self):
         center = snapshot.build_home_data_recovery_center(
             {

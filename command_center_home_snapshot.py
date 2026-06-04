@@ -368,9 +368,12 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
-    snapshot["risk_alerts"] = attach_hard_risk_risk_alerts(
-        snapshot.get("risk_alerts") or {},
-        snapshot.get("hard_risk_packet") or {},
+    snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
+        attach_hard_risk_risk_alerts(
+            snapshot.get("risk_alerts") or {},
+            snapshot.get("hard_risk_packet") or {},
+        ),
+        snapshot.get("data_recovery_center") or {},
     )
     existing_market_profile = _as_mapping(snapshot.get("market_profile_evidence"))
     normalized_market_profile = market_profile_summary_service.build_market_profile_evidence_strip(
@@ -1621,6 +1624,60 @@ def attach_data_capability_risk_alerts(risk_alerts: Any = None, data_capability_
     return alerts
 
 
+def attach_recovery_priority_risk_alerts(risk_alerts: Any = None, data_recovery_center: Any = None) -> dict:
+    alerts = _as_mapping(risk_alerts)
+    center = _as_mapping(data_recovery_center)
+    lanes = [_as_mapping(item) for item in _as_list(center.get("priority_lanes"))]
+    active_lanes = [item for item in lanes if _to_number(item.get("count"))]
+    if not active_lanes:
+        alerts.setdefault("recovery_priority_items", [])
+        alerts.setdefault("recovery_priority_summary", "暂无数据恢复优先级风险")
+        alerts.setdefault("deepseek_called", False)
+        return alerts
+
+    priority_items = []
+    for lane in active_lanes:
+        label = _to_text(lane.get("label"), "恢复优先级")
+        summary = _to_text(lane.get("summary"), "暂无")
+        next_action = _to_text(lane.get("next_action"), "按队列手动恢复。")
+        priority_items.append(
+            {
+                "key": _to_text(lane.get("key"), "p1"),
+                "label": label,
+                "tone": _to_text(lane.get("tone"), "missing"),
+                "count": int(_to_number(lane.get("count")) or 0),
+                "summary": summary,
+                "next_action": next_action,
+                "risk_text": f"{label}：{summary}。处理：{next_action}",
+            }
+        )
+
+    must_not_do = [_to_text(item) for item in _as_list(alerts.get("must_not_do"))]
+    reduce_conditions = [_to_text(item) for item in _as_list(alerts.get("reduce_conditions"))]
+    data_gaps = [
+        _to_text(item)
+        for item in _as_list(alerts.get("data_gaps"))
+        if _to_text(item) not in {"暂无", "暂无显式数据缺口"}
+    ]
+    lane_keys = {item["key"] for item in priority_items}
+    if "p0" in lane_keys:
+        must_not_do.insert(0, "P0 数据能力未恢复前，不放大仓位或把缺失当作无风险。")
+    if "p1" in lane_keys:
+        reduce_conditions.append("P1 缓存/近期无数据只能防白屏，不能当作实时事实。")
+        alerts["uses_cache"] = True
+    if "p2" in lane_keys:
+        reduce_conditions.append("P2 旧工具 packet 未回流前，只把相关模块当待验证。")
+
+    data_gaps.extend(item["risk_text"] for item in priority_items)
+    alerts["must_not_do"] = _dedupe_text_items(must_not_do, limit=6)
+    alerts["reduce_conditions"] = _dedupe_text_items(reduce_conditions, limit=MAX_CANDIDATES)
+    alerts["data_gaps"] = _dedupe_text_items(data_gaps, limit=MAX_ERRORS)
+    alerts["recovery_priority_items"] = priority_items[:3]
+    alerts["recovery_priority_summary"] = "｜".join(item["risk_text"] for item in priority_items[:3])
+    alerts["deepseek_called"] = False
+    return alerts
+
+
 def _hard_risk_item_text(item: Any) -> str:
     payload = _as_mapping(item)
     if not payload:
@@ -1914,6 +1971,10 @@ def build_home_action_snapshot(
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
+        empty["risk_alerts"] = attach_recovery_priority_risk_alerts(
+            empty.get("risk_alerts") or {},
+            empty.get("data_recovery_center") or {},
+        )
         empty["latest_recovery_result_notice"] = snapshot["latest_recovery_result_notice"]
         empty["market_packet"] = snapshot["market_packet"]
         empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
@@ -1934,6 +1995,10 @@ def build_home_action_snapshot(
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
+        snapshot.get("risk_alerts") or {},
+        snapshot.get("data_recovery_center") or {},
+    )
     return sanitize_snapshot_payload(snapshot)
 
 

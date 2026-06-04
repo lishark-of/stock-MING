@@ -74,6 +74,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
 
         self.assertIn("priority_lanes", source)
         self.assertIn("recovery_priority_html", source)
+        self.assertIn("recovery_priority_items", source)
+        self.assertIn("恢复优先级影响", source)
         self.assertIn("P0 权限/本会话跳过", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P1 缓存/近期无数据", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P2 旧工具 packet 迁移", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))

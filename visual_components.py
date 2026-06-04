@@ -4925,6 +4925,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">处理：{escape(_home_text(lane.get("next_action"), "按队列手动恢复。"))}</div>
         </div>
         """
+    risk_recovery_priority_items = [item for item in (risk_alerts.get("recovery_priority_items") or []) if isinstance(item, dict)]
+    risk_recovery_priority_html = ""
+    for item in risk_recovery_priority_items[:3]:
+        risk_recovery_priority_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "恢复优先级"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_number(item.get("count")))}</span>
+          </div>
+          <div class="cc-home-item-meta">影响：{escape(_home_text(item.get("summary"), "暂无"))}</div>
+          <div class="cc-home-item-meta">处理：{escape(_home_text(item.get("next_action"), "按队列手动恢复。"))}</div>
+        </div>
+        """
+    if risk_recovery_priority_html:
+        risk_recovery_priority_html = f"""
+        <div class="cc-home-item-title">恢复优先级影响</div>
+        {risk_recovery_priority_html}
+        """
     data_recovery_center_action_html = ""
     for item in data_recovery_center_actions[:6]:
         data_recovery_center_action_html += f"""
@@ -5298,6 +5316,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">风险警报</div>
           {_home_list(risk_alerts.get("must_not_do"), "不追高、不满仓、不在未刷新数据下加融资。")}
+          {risk_recovery_priority_html}
           <div class="cc-muted-note">必须降风险条件：{escape("；".join(risk_alerts.get("reduce_conditions") or ["暂无新增条件"]))}</div>
           <div class="cc-muted-note">数据缺口：{escape("、".join(risk_alerts.get("data_gaps") or ["暂无"]))}</div>
         </div>
