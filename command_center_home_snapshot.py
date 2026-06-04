@@ -3059,6 +3059,18 @@ def build_tool_recovery_navigation_state(action: Any = None) -> dict:
         "command_center_last_tool_recovery_label": _to_text(item.get("label"), legacy_tab),
         "command_center_last_tool_recovery_writes_packet": _to_text(item.get("writes_packet")),
         "command_center_last_tool_recovery_target_tab": legacy_tab,
+        "command_center_last_tool_recovery_source_type": _to_text(item.get("source_type"), "recovery"),
+        "command_center_last_tool_recovery_source_label": _to_text(item.get("source_label"), "首页恢复队列"),
+        "command_center_last_tool_recovery_priority_label": _to_text(item.get("priority_label")),
+        "command_center_last_tool_recovery_decision_mode": _to_text(item.get("decision_mode")),
+        "command_center_last_tool_recovery_decision_impact": _to_text(item.get("decision_guardrail") or item.get("decision_impact")),
+        "command_center_last_tool_recovery_recovery_mode": _to_text(item.get("recovery_mode")),
+        "command_center_last_tool_recovery_recovery_mode_label": _to_text(item.get("recovery_mode_label")),
+        "command_center_last_tool_recovery_recovery_steps": _as_list(item.get("recovery_steps")),
+        "command_center_last_tool_recovery_button_context": _to_text(
+            item.get("recovery_button_context") or item.get("button_context")
+        ),
+        "command_center_last_tool_recovery_navigation_label": _to_text(item.get("navigation_label")),
         "command_center_last_tool_recovery_policy": "navigation_only",
     }
 
@@ -3074,12 +3086,31 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         state_map.get("command_center_last_tool_recovery_target_tab"),
         _to_text(state_map.get("legacy_workspace_selected_tab"), selected),
     )
+    source_label = _to_text(state_map.get("command_center_last_tool_recovery_source_label"), "首页恢复队列")
+    priority_label = _to_text(state_map.get("command_center_last_tool_recovery_priority_label"))
+    decision_mode = _to_text(state_map.get("command_center_last_tool_recovery_decision_mode"))
+    decision_impact = _to_text(
+        state_map.get("command_center_last_tool_recovery_decision_impact"),
+        f"{label}未恢复前只能作为待验证，不能直接支撑交易动作。",
+    )
+    recovery_mode_label = _to_text(state_map.get("command_center_last_tool_recovery_recovery_mode_label"))
+    recovery_steps = _as_list(state_map.get("command_center_last_tool_recovery_recovery_steps"))
+    button_context = _to_text(
+        state_map.get("command_center_last_tool_recovery_button_context"),
+        f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
+    )
+    navigation_label = _to_text(
+        state_map.get("command_center_last_tool_recovery_navigation_label"),
+        f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{target_tab}；手动执行后回流 {writes_packet}。",
+    )
     is_target_tab = selected == target_tab
+    source_prefix = f"{source_label}｜" if source_label else ""
+    priority_prefix = f"{priority_label}｜" if priority_label else ""
     if is_target_tab:
-        message = f"你是从首页恢复队列进入“{target_tab}”；请在本模块手动点击对应按钮恢复 {writes_packet}。"
-        action_hint = "这里只是导航提示，不会自动运行扫描、回测、DeepSeek 或重型数据接口。"
+        message = f"你是从首页{source_prefix}{priority_prefix}进入“{target_tab}”；请在本模块手动点击对应按钮恢复 {writes_packet}。"
+        action_hint = f"{button_context}｜这里只是导航提示，不会自动运行扫描、回测、DeepSeek 或重型数据接口。"
     else:
-        message = f"首页恢复队列目标是“{target_tab}”，当前在“{selected}”；请先切回“{target_tab}”再恢复 {writes_packet}。"
+        message = f"首页{source_prefix}{priority_prefix}目标是“{target_tab}”，当前在“{selected}”；请先切回“{target_tab}”再恢复 {writes_packet}。"
         action_hint = "当前模块不会显示该恢复按钮；这仍然只是导航提示，不会自动运行任何重型任务。"
     return {
         "status": "ready",
@@ -3089,6 +3120,14 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         "target_tab": target_tab,
         "is_target_tab": is_target_tab,
         "writes_packet": writes_packet,
+        "source_label": source_label,
+        "priority_label": priority_label,
+        "decision_mode": decision_mode,
+        "decision_impact": decision_impact,
+        "recovery_mode_label": recovery_mode_label,
+        "recovery_steps": recovery_steps,
+        "button_context": button_context,
+        "navigation_label": navigation_label,
         "message": message,
         "action_hint": action_hint,
         "safety_text": "恢复成功后的结构化结果会回流到 Home Action Snapshot。",

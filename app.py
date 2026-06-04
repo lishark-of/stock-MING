@@ -10705,7 +10705,20 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     recovery_notice = home_snapshot_service.build_tool_recovery_context_notice(st.session_state, selected_tab=legacy_tab)
     if recovery_notice:
         st.info(recovery_notice["message"])
+        recovery_context_bits = [
+            recovery_notice.get("priority_label"),
+            recovery_notice.get("decision_mode"),
+            recovery_notice.get("recovery_mode_label"),
+        ]
+        recovery_context_text = "｜".join(str(item) for item in recovery_context_bits if item)
+        if recovery_context_text:
+            st.caption(f"恢复上下文：{recovery_context_text}")
         st.caption(f"{recovery_notice['action_hint']}｜{recovery_notice['safety_text']}")
+        if recovery_notice.get("decision_impact"):
+            st.caption(f"决策保护：{recovery_notice['decision_impact']}")
+        recovery_steps = recovery_notice.get("recovery_steps") or []
+        if recovery_steps:
+            st.caption("恢复步骤：" + " → ".join(str(step) for step in recovery_steps if step))
         recovery_result_notice = home_snapshot_service.build_tool_recovery_result_notice(st.session_state, selected_tab=legacy_tab)
         if recovery_result_notice.get("status") == "recovered":
             st.success(recovery_result_notice["message"])
@@ -10765,6 +10778,17 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "command_center_last_tool_recovery_key",
                 "command_center_last_tool_recovery_label",
                 "command_center_last_tool_recovery_writes_packet",
+                "command_center_last_tool_recovery_target_tab",
+                "command_center_last_tool_recovery_source_type",
+                "command_center_last_tool_recovery_source_label",
+                "command_center_last_tool_recovery_priority_label",
+                "command_center_last_tool_recovery_decision_mode",
+                "command_center_last_tool_recovery_decision_impact",
+                "command_center_last_tool_recovery_recovery_mode",
+                "command_center_last_tool_recovery_recovery_mode_label",
+                "command_center_last_tool_recovery_recovery_steps",
+                "command_center_last_tool_recovery_button_context",
+                "command_center_last_tool_recovery_navigation_label",
                 "command_center_last_tool_recovery_policy",
             ]:
                 st.session_state.pop(recovery_key, None)

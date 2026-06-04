@@ -2138,6 +2138,48 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["external_call_policy"], "not_triggered")
         self.assertFalse(notice["deepseek_called"])
 
+    def test_tool_recovery_navigation_state_preserves_priority_context(self):
+        action = {
+            "key": "p0:command_center_margin_packet",
+            "label": "融资融券",
+            "source_type": "legacy_packet_checklist",
+            "source_label": "旧能力迁移清单",
+            "priority_label": "P0 阻断交易判断",
+            "decision_mode": "阻断加仓",
+            "decision_guardrail": "缺少融资融券时，融资比例和风险预算必须保守。",
+            "recovery_mode": "manual_check",
+            "recovery_mode_label": "按清单手动恢复",
+            "recovery_steps": ["高级工具箱 / 融资 ETF", "手动检测融资融券", "确认结果写回 command_center_margin_packet"],
+            "recovery_button_context": "按钮只恢复融资融券并回流 command_center_margin_packet；不会自动调用 DeepSeek。",
+            "navigation_label": "主导航切到高级工具箱（旧版保留）→ 高级工具模块选择融资 ETF。",
+            "workspace_state_key": "workspace_mode_v2",
+            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+            "workspace_target": "高级工具箱（旧版保留）",
+            "legacy_tab": "融资 ETF",
+            "writes_packet": "command_center_margin_packet",
+            "deepseek_called": False,
+        }
+
+        navigation_state = snapshot.build_tool_recovery_navigation_state(action)
+        notice = snapshot.build_tool_recovery_context_notice(navigation_state, selected_tab="融资 ETF")
+
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_source_label"], "旧能力迁移清单")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_priority_label"], "P0 阻断交易判断")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_decision_mode"], "阻断加仓")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_recovery_mode_label"], "按清单手动恢复")
+        self.assertEqual(len(navigation_state["command_center_last_tool_recovery_recovery_steps"]), 3)
+        self.assertIn("旧能力迁移清单", notice["message"])
+        self.assertIn("P0 阻断交易判断", notice["message"])
+        self.assertEqual(notice["priority_label"], "P0 阻断交易判断")
+        self.assertEqual(notice["decision_mode"], "阻断加仓")
+        self.assertIn("融资比例", notice["decision_impact"])
+        self.assertIn("手动检测融资融券", " ".join(notice["recovery_steps"]))
+        self.assertEqual(notice["button_context"], action["recovery_button_context"])
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
     def test_tool_recovery_context_notice_warns_when_user_switches_wrong_tab(self):
         state = {
             "command_center_last_tool_recovery_label": "融资融券",
