@@ -335,6 +335,47 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["projection_confidence_summary"]["status"], "blocked")
         self.assertIn("乐观路径", view_model["projection_confidence_summary"]["guardrail"])
 
+    def test_evidence_chain_includes_next_ticket_and_etf_recovery_impact(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "只观察"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            next_ticket_candidates=[
+                {
+                    "ticker": "300750.SZ",
+                    "evidence_recovery_impact": {
+                        "status": "still_verify",
+                        "label": "仍等验证",
+                        "tone": "stale",
+                        "deepseek_called": False,
+                    },
+                }
+            ],
+            margin_etf_summary={
+                "recommended_etfs": [
+                    {
+                        "code": "560780.SH",
+                        "evidence_recovery_impact": {
+                            "status": "blocked",
+                            "label": "仍不可放大",
+                            "tone": "failed",
+                            "deepseek_called": False,
+                        },
+                    }
+                ]
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+        basis = view_model["execution_recovery_basis_item"]
+
+        self.assertIn("候选/ETF证据", joined)
+        self.assertIn("下一票:仍等验证", joined)
+        self.assertIn("ETF:仍不可放大", joined)
+        self.assertEqual(basis["tone"], "danger")
+        self.assertIn("不能把 Top3 或 ETF 清单当作可执行买入依据", basis["summary"])
+        self.assertFalse(basis["deepseek_called"])
+        self.assertEqual(basis["external_call_policy"], "not_triggered")
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_a_share_data_basis_marks_all_available_as_decision_ready(self):
         view_model = summary.build_decision_summary_view_model(
             {},

@@ -3989,6 +3989,16 @@ def render_command_center_decision_card(live_packet, target="", position_profile
         data_health_ledger=data_health_ledger,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
         latest_recovery_result_notice=latest_recovery_result_notice,
+        next_ticket_candidates=(
+            home_snapshot.get("next_ticket_candidates")
+            if isinstance(home_snapshot, dict)
+            else []
+        ),
+        margin_etf_summary=(
+            home_snapshot.get("margin_etf_summary")
+            if isinstance(home_snapshot, dict)
+            else {}
+        ),
     )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):

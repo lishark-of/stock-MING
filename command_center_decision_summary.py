@@ -507,6 +507,81 @@ def build_a_share_evidence_group_summary_text(evidence_radar_packet: Any = None)
     return f"{item['value']}｜{item['guardrail']}"
 
 
+def _impact_tone(statuses: list[str]) -> str:
+    if any(status in {"blocked", "仍不可执行", "仍不可放大"} for status in statuses):
+        return "danger"
+    if any(status in {"still_verify", "review", "waiting", "cached"} for status in statuses):
+        return "warning"
+    if any(status in {"recovered", "verified"} for status in statuses):
+        return "success"
+    return "muted"
+
+
+def _recovery_impact_label(item: Any = None) -> str:
+    payload = _as_mapping(item)
+    if not payload:
+        return "待验证"
+    return _to_text(payload.get("label") or payload.get("status_label") or payload.get("status")) or "待验证"
+
+
+def build_execution_recovery_basis_item(
+    next_ticket_candidates: Any = None,
+    margin_etf_summary: Any = None,
+) -> dict:
+    next_rows = [_as_mapping(item) for item in _as_list(next_ticket_candidates)]
+    next_rows = [item for item in next_rows if item]
+    etf_rows = [_as_mapping(item) for item in _as_list(_as_mapping(margin_etf_summary).get("recommended_etfs"))]
+    etf_rows = [item for item in etf_rows if item]
+    next_impacts = [_as_mapping(item.get("evidence_recovery_impact")) for item in next_rows]
+    next_impacts = [item for item in next_impacts if item]
+    etf_impacts = [_as_mapping(item.get("evidence_recovery_impact")) for item in etf_rows]
+    etf_impacts = [item for item in etf_impacts if item]
+    if not next_impacts and not etf_impacts:
+        return {}
+    next_label = _recovery_impact_label(next_impacts[0]) if next_impacts else "待验证"
+    etf_label = _recovery_impact_label(etf_impacts[0]) if etf_impacts else "待验证"
+    statuses = [
+        _to_text(item.get("status")) or _to_text(item.get("label"))
+        for item in next_impacts + etf_impacts
+    ]
+    blocked_count = len([item for item in next_impacts + etf_impacts if _to_text(item.get("status")) == "blocked"])
+    review_count = len(
+        [
+            item
+            for item in next_impacts + etf_impacts
+            if _to_text(item.get("status")) in {"still_verify", "review", "waiting"}
+        ]
+    )
+    recovered_count = len(
+        [
+            item
+            for item in next_impacts + etf_impacts
+            if _to_text(item.get("status")) in {"recovered", "verified"}
+        ]
+    )
+    if blocked_count:
+        guardrail = "候选或 ETF 仍有阻断证据，不能把 Top3 或 ETF 清单当作可执行买入依据。"
+    elif review_count:
+        guardrail = "候选或 ETF 证据仍需复核，执行前必须确认触发条件、流动性和风险预算。"
+    elif recovered_count:
+        guardrail = "候选/ETF 证据已回流；仍需策略纪律和仓位预算共同确认。"
+    else:
+        guardrail = "候选/ETF 证据待验证，不自动触发扫描或 DeepSeek。"
+    return {
+        "label": "候选/ETF证据",
+        "value": f"下一票:{next_label}｜ETF:{etf_label}",
+        "tone": _impact_tone(statuses),
+        "summary": guardrail,
+        "next_ticket_count": len(next_rows),
+        "etf_count": len(etf_rows),
+        "blocked_count": blocked_count,
+        "review_count": review_count,
+        "recovered_count": recovered_count,
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
@@ -515,6 +590,8 @@ def build_decision_evidence_chain_items(
     data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
+    next_ticket_candidates: Any = None,
+    margin_etf_summary: Any = None,
 ) -> list[dict]:
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
@@ -539,6 +616,12 @@ def build_decision_evidence_chain_items(
         items.append({"label": "已通过", "value": "暂无", "tone": "muted"})
     if pending:
         items.append({"label": "待验证", "value": "、".join(pending[:2]), "tone": "warning"})
+    execution_recovery_basis = build_execution_recovery_basis_item(
+        next_ticket_candidates=next_ticket_candidates,
+        margin_etf_summary=margin_etf_summary,
+    )
+    if execution_recovery_basis:
+        items.append(execution_recovery_basis)
     if not_applicable:
         not_applicable_item = {"label": "不适用", "value": "、".join(not_applicable[:2]), "tone": "muted"}
     else:
@@ -610,6 +693,8 @@ def build_decision_summary_view_model(
     data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
+    next_ticket_candidates: Any = None,
+    margin_etf_summary: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     analysis = _as_mapping(analysis_method_packet)
@@ -649,6 +734,8 @@ def build_decision_summary_view_model(
             data_health_ledger=data_health_ledger,
             a_share_fact_recovery_summary=a_share_fact_recovery_summary,
             latest_recovery_result_notice=latest_recovery_result_notice,
+            next_ticket_candidates=next_ticket_candidates,
+            margin_etf_summary=margin_etf_summary,
         ),
         "projection_confidence_summary": projection_confidence,
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market),
@@ -663,6 +750,7 @@ def build_decision_summary_view_model(
         "a_share_fact_recovery_summary_text": build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary),
         "latest_recovery_result_basis_item": build_latest_recovery_result_basis_item(latest_recovery_result_notice),
         "latest_recovery_result_summary_text": build_latest_recovery_result_summary_text(latest_recovery_result_notice),
+        "execution_recovery_basis_item": build_execution_recovery_basis_item(next_ticket_candidates, margin_etf_summary),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),
