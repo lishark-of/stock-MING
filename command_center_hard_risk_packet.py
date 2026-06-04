@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_ITEMS = 6
 MAX_RISK_NOTES = 8
@@ -368,7 +370,7 @@ def build_command_center_hard_risk_packet(
             if section.get("updated_at")
         ],
     )
-    return {
+    packet = {
         "status": status,
         "data_status": data_status,
         "source": source_text,
@@ -390,3 +392,14 @@ def build_command_center_hard_risk_packet(
         "manual_required_text": "硬风险来自本地缓存或旧工作台事实包；缺失时必须手动刷新/权限校验，不能视为无风险。",
         "deepseek_called": False,
     }
+    packet.update(
+        build_legacy_packet_decision_contract(
+            payload,
+            label="硬风险",
+            status=status,
+            data_status=data_status,
+            recovery_state=payload.get("recovery_state"),
+            capability_state=payload.get("capability_state"),
+        )
+    )
+    return packet

@@ -28,6 +28,8 @@ class CommandCenterQuantPacketTests(unittest.TestCase):
         self.assertIn("手动触发", packet["manual_required_text"])
         self.assertEqual(packet["decision_brief"]["action_mode"], "manual_quant_required")
         self.assertIn("不能假装已有评分", packet["decision_brief"]["guardrail_text"])
+        self.assertEqual(packet["decision_chain_state"], "waiting")
+        self.assertFalse(packet["can_enter_decision_chain"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -58,6 +60,9 @@ class CommandCenterQuantPacketTests(unittest.TestCase):
         self.assertIn("回测缓存", packet["backtest_reference"])
         self.assertIn(packet["decision_brief"]["action_mode"], {"usable_evidence", "verify_quant"})
         self.assertEqual(packet["decision_brief"]["quant_policy"], "button_gated")
+        self.assertEqual(packet["decision_chain_state"], "ready")
+        self.assertTrue(packet["can_enter_decision_chain"])
+        self.assertIn("量化推演", packet["decision_chain_effect"])
         self.assertFalse(packet["decision_brief"]["deepseek_called"])
         self.assertFalse(packet["deepseek_called"])
 
@@ -101,6 +106,8 @@ class CommandCenterQuantPacketTests(unittest.TestCase):
         self.assertEqual(packet["evidence_items"], ["证据 A"])
         self.assertEqual(packet["risk_notes"], ["风险 B"])
         self.assertEqual(packet["decision_brief"]["action_mode"], "verify_quant")
+        self.assertEqual(packet["decision_chain_state"], "ready")
+        self.assertTrue(packet["can_enter_decision_chain"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_quant_decision_brief_handles_cached_packet_without_external_calls(self):

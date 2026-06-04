@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_TOP_CANDIDATES = 3
 MAX_EVIDENCE_ITEMS = 5
@@ -471,11 +473,12 @@ def build_command_center_radar_packet(
             _with_candidate_decision_brief(item, rank=index + 1)
             for index, item in enumerate(as_list(existing.get("top_candidates"))[: int(limit or MAX_TOP_CANDIDATES)])
         ]
-        return {
+        data_status = _first_text(existing.get("data_status"), existing.get("cache_state"), default="ready")
+        packet = {
             **existing,
             "top_candidates": top_candidates,
             "display_count": len(top_candidates),
-            "cache_state": _first_text(existing.get("cache_state"), existing.get("data_status"), default="ready"),
+            "cache_state": data_status,
             "decision_summary": build_radar_decision_summary(top_candidates),
             "manual_required_text": _first_text(
                 existing.get("manual_required_text"),
@@ -483,6 +486,17 @@ def build_command_center_radar_packet(
             ),
             "deepseek_called": bool(existing.get("deepseek_called", False)),
         }
+        packet.update(
+            build_legacy_packet_decision_contract(
+                packet,
+                label="下一票雷达",
+                status=packet.get("status"),
+                data_status=data_status,
+                recovery_state=packet.get("recovery_state"),
+                capability_state=packet.get("capability_state"),
+            )
+        )
+        return packet
     scan_packet = as_mapping(state_map.get("radar_scan_results"))
     summary = as_mapping(state_map.get("radar_scan_summary") or scan_packet.get("summary"))
     rows = _first_list(
@@ -514,7 +528,8 @@ def build_command_center_radar_packet(
         default="",
     )
     total_count = len(rows)
-    return {
+    data_status = "ready" if top_candidates else "missing"
+    packet = {
         "status": status,
         "cache_state": "ready" if top_candidates else "missing",
         "source": _first_text(summary.get("source_mode"), scan_packet.get("source_mode"), live_section.get("source"), default="下一票雷达缓存"),
@@ -532,8 +547,19 @@ def build_command_center_radar_packet(
             ),
         ),
         "errors": [to_text(item) for item in errors if to_text(item)][:8],
-        "data_status": "ready" if top_candidates else "missing",
+        "data_status": data_status,
         "decision_summary": build_radar_decision_summary(top_candidates),
         "manual_required_text": "下一票雷达只读取本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
         "deepseek_called": bool(summary.get("deepseek_called", False)),
     }
+    packet.update(
+        build_legacy_packet_decision_contract(
+            packet,
+            label="下一票雷达",
+            status=status,
+            data_status=data_status,
+            recovery_state=summary.get("recovery_state"),
+            capability_state=summary.get("capability_state"),
+        )
+    )
+    return packet

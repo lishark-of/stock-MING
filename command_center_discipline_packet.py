@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_RULES = 5
 MAX_WARNINGS = 6
@@ -376,6 +378,16 @@ def build_command_center_discipline_packet(
             "deepseek_called": False,
         }
         packet["decision_brief"] = build_discipline_decision_brief(packet)
+        packet.update(
+            build_legacy_packet_decision_contract(
+                packet,
+                label="交易纪律/回测",
+                status=packet.get("status"),
+                data_status=data_status,
+                recovery_state=packet.get("recovery_state"),
+                capability_state=packet.get("capability_state"),
+            )
+        )
         return packet
     report = as_mapping(state_map.get("last_backtest_report"))
     if report and target and report.get("ticker") and _ticker_base(report.get("ticker")) != _ticker_base(target):
@@ -449,4 +461,14 @@ def build_command_center_discipline_packet(
         "deepseek_called": False,
     }
     packet["decision_brief"] = build_discipline_decision_brief(packet)
+    packet.update(
+        build_legacy_packet_decision_contract(
+            packet,
+            label="交易纪律/回测",
+            status=status,
+            data_status=data_status,
+            recovery_state=check.get("recovery_state"),
+            capability_state=check.get("capability_state"),
+        )
+    )
     return packet

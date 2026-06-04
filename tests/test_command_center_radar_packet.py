@@ -62,6 +62,9 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertFalse(any(item["deepseek_called"] for item in chain.values()))
         self.assertIn("不会自动全市场扫描", packet["top_candidates"][0]["manual_required_text"])
         self.assertIn("不会自动全市场扫描", packet["manual_required_text"])
+        self.assertEqual(packet["decision_chain_state"], "ready")
+        self.assertTrue(packet["can_enter_decision_chain"])
+        self.assertIn("下一票雷达", packet["decision_chain_effect"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -72,6 +75,8 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["top_candidates"], [])
         self.assertIn("不会自动全市场扫描", packet["summary"])
         self.assertEqual(packet["cache_state"], "missing")
+        self.assertEqual(packet["decision_chain_state"], "waiting")
+        self.assertFalse(packet["can_enter_decision_chain"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_builds_from_top_candidates_cache_shape(self):
@@ -115,6 +120,8 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["top_candidates"][0]["ticker"], "A")
         self.assertIn("decision_brief", packet["top_candidates"][0])
         self.assertIn("decision_summary", packet)
+        self.assertEqual(packet["decision_chain_state"], "ready")
+        self.assertTrue(packet["can_enter_decision_chain"])
         self.assertEqual(existing, state["command_center_radar_packet"])
 
     def test_candidate_decision_brief_modes_are_actionable(self):

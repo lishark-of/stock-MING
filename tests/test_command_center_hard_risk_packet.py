@@ -16,6 +16,9 @@ class CommandCenterHardRiskPacketTests(unittest.TestCase):
         self.assertEqual(packet["risk_state"], "待验证")
         self.assertIn("不会自动请求", packet["summary"])
         self.assertIn("不能视为无风险", packet["manual_required_text"])
+        self.assertEqual(packet["decision_chain_state"], "waiting")
+        self.assertFalse(packet["can_enter_decision_chain"])
+        self.assertIn("待验证", packet["decision_chain_label"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -57,6 +60,9 @@ class CommandCenterHardRiskPacketTests(unittest.TestCase):
         self.assertGreaterEqual(packet["risk_item_count"], 2)
         self.assertIn("减持", json.dumps(packet["announcement_items"], ensure_ascii=False))
         self.assertIn("质押", json.dumps(packet["pledge_items"], ensure_ascii=False))
+        self.assertEqual(packet["decision_chain_state"], "ready")
+        self.assertTrue(packet["can_enter_decision_chain"])
+        self.assertIn("硬风险", packet["decision_chain_effect"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_permission_denied_is_conservative(self):
@@ -76,6 +82,8 @@ class CommandCenterHardRiskPacketTests(unittest.TestCase):
         self.assertEqual(packet["status"], "failed")
         self.assertEqual(packet["data_status"], "missing")
         self.assertEqual(packet["risk_state"], "硬风险待排查")
+        self.assertEqual(packet["decision_chain_state"], "blocked")
+        self.assertFalse(packet["can_enter_decision_chain"])
         self.assertIn("不能把缺口写成无风险", "；".join(packet["risk_notes"]))
 
     def test_normalizes_tianyan_risk_fact_packet(self):

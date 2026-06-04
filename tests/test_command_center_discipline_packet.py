@@ -44,6 +44,8 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertIn("不会自动跑回测", packet["backtest_required_text"])
         self.assertEqual(packet["decision_brief"]["action_mode"], "manual_backtest_required")
         self.assertIn("不会自动跑回测", packet["decision_brief"]["next_action"])
+        self.assertEqual(packet["decision_chain_state"], "waiting")
+        self.assertFalse(packet["can_enter_decision_chain"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_cached_backtest_builds_ready_packet(self):
@@ -69,6 +71,9 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertEqual(packet["decision_brief"]["action_mode"], "usable_evidence")
         self.assertEqual(packet["decision_brief"]["backtest_policy"], "button_gated")
         self.assertIn("不直接决定买卖", packet["decision_brief"]["guardrail_text"])
+        self.assertEqual(packet["decision_chain_state"], "ready")
+        self.assertTrue(packet["can_enter_decision_chain"])
+        self.assertIn("交易纪律/回测", packet["decision_chain_effect"])
         self.assertTrue(packet["key_rules"])
         self.assertIn("高 beta 过热不追", packet["warnings"])
         self.assertFalse(packet["deepseek_called"])
@@ -121,6 +126,8 @@ class CommandCenterDisciplinePacketTests(unittest.TestCase):
         self.assertTrue(packet["metric_items"])
         self.assertTrue(packet["evidence_items"])
         self.assertEqual(packet["decision_brief"]["action_mode"], "usable_evidence")
+        self.assertEqual(packet["decision_chain_state"], "ready")
+        self.assertTrue(packet["can_enter_decision_chain"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_discipline_decision_brief_handles_cached_packet_without_external_calls(self):

@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_EVIDENCE = 6
 MAX_RISK_NOTES = 6
@@ -196,6 +198,16 @@ def _normalize_existing(existing: Mapping[str, Any]) -> dict:
         }
     )
     payload["decision_brief"] = build_quant_decision_brief(payload)
+    payload.update(
+        build_legacy_packet_decision_contract(
+            payload,
+            label="量化推演",
+            status=payload.get("status"),
+            data_status=payload.get("data_status"),
+            recovery_state=payload.get("recovery_state"),
+            capability_state=payload.get("capability_state"),
+        )
+    )
     return payload
 
 
@@ -314,4 +326,14 @@ def build_command_center_quant_packet(
         "deepseek_called": False,
     }
     packet["decision_brief"] = build_quant_decision_brief(packet)
+    packet.update(
+        build_legacy_packet_decision_contract(
+            packet,
+            label="量化推演",
+            status=status,
+            data_status=packet.get("data_status"),
+            recovery_state=payload.get("recovery_state"),
+            capability_state=payload.get("capability_state"),
+        )
+    )
     return packet
