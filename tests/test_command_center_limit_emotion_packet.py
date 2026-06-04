@@ -82,7 +82,70 @@ class CommandCenterLimitEmotionPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["status"], "failed")
         self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "permission_denied")
+        self.assertEqual(packet["status_label"], "权限不足")
+        self.assertEqual(packet["recovery_state"], "blocked")
         self.assertIn("不能把缺失数据当成无追高风险", " ".join(packet["risk_notes"]))
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_disabled_this_session_keeps_skip_state_and_checked_at(self):
+        packet = limit_packet.build_command_center_limit_emotion_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "limit_emotion",
+                            "label": "涨跌停/情绪",
+                            "state": "disabled_this_session",
+                            "status": "本会话跳过",
+                            "api": "limit_cpt_list",
+                            "message": "limit_cpt_list 当前权限不足，已在本会话跳过重复请求。",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "failed")
+        self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "disabled_this_session")
+        self.assertEqual(packet["status_label"], "本会话跳过")
+        self.assertEqual(packet["recovery_state"], "blocked")
+        self.assertEqual(packet["updated_at"], "2026-06-03T10:02:00")
+        self.assertEqual(packet["checked_at"], "2026-06-03T10:02:00")
+        self.assertIn("本会话跳过", packet["summary"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_available_capability_item_marks_recovered_without_fake_records(self):
+        packet = limit_packet.build_command_center_limit_emotion_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "limit_emotion",
+                            "label": "涨跌停/情绪",
+                            "state": "available",
+                            "status": "可用",
+                            "api": "limit_cpt_list",
+                            "rows": 5,
+                            "latest_date": "20260603",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["capability_state"], "available")
+        self.assertEqual(packet["status_label"], "可用")
+        self.assertEqual(packet["recovery_state"], "recovered")
+        self.assertEqual(packet["trade_date"], "20260603")
+        self.assertEqual(packet["limit_records"], [])
+        self.assertEqual(packet["concept_top5"], [])
+        self.assertIn("状态", packet["summary"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_existing_packet_is_preserved_without_mutating_input(self):

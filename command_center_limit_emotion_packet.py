@@ -130,6 +130,45 @@ def _data_status(status: str, payload: Mapping[str, Any]) -> str:
     return "missing"
 
 
+def _capability_state(payload: Mapping[str, Any], status: str) -> str:
+    state = _first_text(payload.get("capability_state"), payload.get("state")).lower()
+    if state:
+        return state
+    if status == "ready":
+        return "available"
+    if status == "failed":
+        return "failed"
+    if status == "partial":
+        return "empty_recent"
+    return "requires_manual_refresh"
+
+
+def _status_label(payload: Mapping[str, Any], capability_state: str, status: str) -> str:
+    explicit = _first_text(payload.get("status_label"), payload.get("capability_label"), payload.get("status"))
+    if explicit and explicit.lower() not in {"ready", "ok", "completed", "success", "failed", "error", "partial", "waiting"}:
+        return explicit
+    return {
+        "available": "可用",
+        "permission_denied": "权限不足",
+        "disabled_this_session": "本会话跳过",
+        "empty_recent": "近期无数据",
+        "stale_cache": "使用缓存",
+        "fallback_used": "使用替代口径",
+        "requires_manual_refresh": "需要手动刷新",
+        "network_failed": "网络失败",
+        "not_configured": "未配置",
+        "failed": "调用失败",
+    }.get(capability_state, {"ready": "可用", "failed": "调用失败", "partial": "待验证"}.get(status, "待刷新"))
+
+
+def _recovery_state(status: str, capability_state: str, data_status: str) -> str:
+    if status == "ready" or data_status in {"ready", "cached"}:
+        return "recovered"
+    if capability_state in {"permission_denied", "disabled_this_session", "network_failed", "not_configured", "failed"}:
+        return "blocked"
+    return "waiting"
+
+
 def _normalize_record(item: Any) -> dict:
     payload = as_mapping(item)
     if not payload:
@@ -249,6 +288,10 @@ def build_command_center_limit_emotion_packet(
         payload = {}
 
     status = _status_from(payload)
+    data_status = _data_status(status, payload)
+    capability_state = _capability_state(payload, status)
+    status_label = _status_label(payload, capability_state, status)
+    recovery_state = _recovery_state(status, capability_state, data_status)
     records = _normalize_records(payload.get("limit_records") or payload.get("recent_limit_records"))
     concepts = _normalize_concepts(payload.get("concept_top5") or payload.get("concept_strength_top"))
     flags = _flag_state(records, as_mapping(payload.get("flags")))
@@ -267,11 +310,15 @@ def build_command_center_limit_emotion_packet(
     )
     return {
         "status": status,
-        "data_status": _data_status(status, payload),
+        "data_status": data_status,
+        "capability_state": capability_state,
+        "status_label": status_label,
+        "recovery_state": recovery_state,
         "source": _first_text(payload.get("source"), default="Tushare 涨跌停/情绪缓存"),
         "source_key": to_text(source.get("source_key")),
         "api": _first_text(payload.get("api"), default="stk_limit / limit_list_d / limit_cpt_list"),
-        "updated_at": _first_text(payload.get("updated_at"), payload.get("latest_date"), payload.get("concept_date")),
+        "updated_at": _first_text(payload.get("updated_at"), payload.get("checked_at"), payload.get("latest_date"), payload.get("concept_date")),
+        "checked_at": _first_text(payload.get("checked_at"), payload.get("updated_at")),
         "trade_date": _first_text(payload.get("latest_date"), payload.get("concept_date"), payload.get("date"), payload.get("trade_date")),
         "target": _first_text(target, existing_target),
         "ticker": _first_text(payload.get("ticker"), payload.get("ts_code"), target),
