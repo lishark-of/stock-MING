@@ -230,6 +230,9 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("recovery_result_overview", source)
         self.assertIn("恢复结果总览", source)
         self.assertIn("可进入决策链：", source)
+        self.assertIn("result_groups", source)
+        self.assertIn("recovery_result_group_html", source)
+        self.assertIn("恢复分组", source)
 
     def test_home_snapshot_renders_data_health_ledger(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

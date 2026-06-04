@@ -3004,26 +3004,43 @@ def build_recovery_next_step_queue(decision_priority_queue: Any = None, limit: i
 def build_recovery_result_overview(actions: Any = None) -> dict:
     rows = [_as_mapping(item) for item in _as_list(actions)]
     rows = [item for item in rows if item]
-    counts = {"recovered": 0, "cached": 0, "blocked": 0, "waiting": 0}
-    ready_labels = []
-    blocked_labels = []
-    cache_labels = []
-    waiting_labels = []
+    group_configs = {
+        "recovered": {"label": "已回流", "tone": "ready", "empty_text": "暂无已回流项目"},
+        "cached": {"label": "使用缓存", "tone": "stale", "empty_text": "暂无缓存项目"},
+        "blocked": {"label": "仍受限", "tone": "failed", "empty_text": "暂无受限项目"},
+        "waiting": {"label": "待验证", "tone": "missing", "empty_text": "暂无待验证项目"},
+    }
+    grouped_items = {key: [] for key in group_configs}
     for item in rows:
         status = _to_text(item.get("recovery_result_status"), "waiting")
+        if status not in grouped_items:
+            status = "waiting"
         label = _to_text(item.get("label"), "恢复项")
-        if status == "recovered":
-            counts["recovered"] += 1
-            ready_labels.append(label)
-        elif status == "cached":
-            counts["cached"] += 1
-            cache_labels.append(label)
-        elif status == "blocked":
-            counts["blocked"] += 1
-            blocked_labels.append(label)
-        else:
-            counts["waiting"] += 1
-            waiting_labels.append(label)
+        grouped_items[status].append(
+            {
+                "label": label,
+                "status": status,
+                "status_label": _to_text(
+                    item.get("recovery_result_status_label"),
+                    group_configs[status]["label"],
+                ),
+                "tone": _to_text(item.get("recovery_result_tone"), group_configs[status]["tone"]),
+                "writes_packet": _to_text(item.get("writes_packet"), "command_center_packet"),
+                "message": _to_text(item.get("recovery_result_message"), "恢复结果待验证。"),
+                "confirmation_text": _to_text(item.get("recovery_result_confirmation_text"), "尚未确认写回综合中心 packet。"),
+                "decision_effect": _to_text(item.get("recovery_result_decision_effect"), "未验证前只能保留安全空态。"),
+                "updated_at": _to_text(item.get("recovery_result_updated_at"), "暂无"),
+                "source": _to_text(item.get("recovery_result_source"), "本地恢复状态"),
+                "can_enter_decision_chain": bool(item.get("recovery_result_can_enter_decision_chain")),
+                "external_call_policy": _to_text(item.get("recovery_result_external_call_policy"), "not_triggered"),
+                "deepseek_called": False,
+            }
+        )
+    counts = {key: len(value) for key, value in grouped_items.items()}
+    ready_labels = [item["label"] for item in grouped_items["recovered"]]
+    blocked_labels = [item["label"] for item in grouped_items["blocked"]]
+    cache_labels = [item["label"] for item in grouped_items["cached"]]
+    waiting_labels = [item["label"] for item in grouped_items["waiting"]]
     total = sum(counts.values())
     can_enter_count = len([item for item in rows if item.get("recovery_result_can_enter_decision_chain")])
     if counts["blocked"]:
@@ -3051,6 +3068,23 @@ def build_recovery_result_overview(actions: Any = None) -> dict:
         tone = "missing"
         headline = "恢复结果待验证"
         next_action = "按恢复队列手动处理；页面打开不会自动请求外部接口。"
+    result_groups = []
+    for key in ("recovered", "cached", "blocked", "waiting"):
+        config = group_configs[key]
+        items = grouped_items[key]
+        result_groups.append(
+            {
+                "key": key,
+                "label": config["label"],
+                "tone": config["tone"],
+                "count": len(items),
+                "items": items[:4],
+                "item_labels": "、".join(item["label"] for item in items[:4]) or config["empty_text"],
+                "summary": f"{config['label']} {len(items)}：{'、'.join(item['label'] for item in items[:4]) or config['empty_text']}",
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
     return {
         "title": "恢复结果总览",
         "status": status,
@@ -3066,6 +3100,8 @@ def build_recovery_result_overview(actions: Any = None) -> dict:
         "cached_labels": "、".join(cache_labels[:4]) or "无",
         "recovered_labels": "、".join(ready_labels[:4]) or "无",
         "waiting_labels": "、".join(waiting_labels[:4]) or "无",
+        "result_groups": result_groups,
+        "group_summary": "｜".join(group["summary"] for group in result_groups),
         "decision_chain_text": (
             f"可进入决策链 {can_enter_count}/{total}；"
             "仍阻断项不得支撑加仓、追高、加融资或把风险写成已排除。"

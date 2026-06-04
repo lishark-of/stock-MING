@@ -5515,6 +5515,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         recovery_result_overview = {}
     recovery_result_overview_html = ""
     if recovery_result_overview:
+        recovery_result_group_html = ""
+        for group in (recovery_result_overview.get("result_groups") or [])[:4]:
+            if not isinstance(group, dict):
+                continue
+            group_items = [item for item in (group.get("items") or []) if isinstance(item, dict)]
+            if group_items:
+                item_text = "；".join(
+                    f"{_home_text(item.get('label'), '恢复项')} → {_home_text(item.get('writes_packet'), 'command_center_packet')}：{_home_text(item.get('status_label'), group.get('label') or '待验证')}"
+                    for item in group_items[:3]
+                )
+            else:
+                item_text = _home_text(group.get("item_labels"), "暂无")
+            recovery_result_group_html += f"""
+            <div class="cc-home-item-meta">
+              <span class="cc-home-chip {escape(_home_text(group.get("tone"), "missing"))}">{escape(_home_text(group.get("label"), "恢复分组"))} {escape(_home_number(group.get("count")))}</span>
+              {escape(item_text)}
+            </div>
+            """
         recovery_result_overview_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -5525,6 +5543,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">可进入决策链：{escape(_home_text(recovery_result_overview.get("decision_chain_text"), "暂无恢复动作进入决策链。"))}</div>
           <div class="cc-home-item-meta">仍阻断：{escape(_home_text(recovery_result_overview.get("blocked_labels"), "无"))} ｜ 使用缓存：{escape(_home_text(recovery_result_overview.get("cached_labels"), "无"))}</div>
           <div class="cc-home-item-meta">已回流：{escape(_home_text(recovery_result_overview.get("recovered_labels"), "无"))} ｜ 待验证：{escape(_home_text(recovery_result_overview.get("waiting_labels"), "无"))}</div>
+          {recovery_result_group_html}
           <div class="cc-home-item-meta">下一步：{escape(_home_text(recovery_result_overview.get("next_action"), "按恢复队列手动处理。"))}</div>
         </div>
         """
