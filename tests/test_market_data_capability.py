@@ -52,6 +52,12 @@ class MarketDataCapabilityTests(unittest.TestCase):
         self.assertIn("token 可用不等于 融资融券 有权限", capability.meaning_for_capability_state(state, "Tushare", "融资融券"))
         self.assertIn("不能支撑加仓", capability.decision_impact_for_capability_state(state, "融资融券"))
         self.assertIn("接口接入成功不等于当前账户有权限", capability.next_action_for_capability_state(state, "融资融券"))
+        self.assertEqual(capability.root_cause_code_for_capability_state(state), "permission_scope")
+        self.assertEqual(capability.root_cause_label_for_capability_state(state), "接口权限/积分")
+        self.assertIn(
+            "单独权限/积分",
+            capability.why_previous_full_refresh_not_enough(state, "Tushare", "融资融券", "margin_detail"),
+        )
 
     def test_canonical_state_language_keeps_empty_recent_and_cache_distinct(self):
         empty_state = capability.normalize_capability_state_value("近30日未见龙虎榜上榜记录")
@@ -59,9 +65,12 @@ class MarketDataCapabilityTests(unittest.TestCase):
 
         self.assertEqual(empty_state, capability.STATE_EMPTY_RECENT)
         self.assertEqual(cache_state, capability.STATE_STALE_CACHE)
+        self.assertEqual(capability.root_cause_code_for_capability_state(empty_state), "publish_window")
+        self.assertEqual(capability.root_cause_code_for_capability_state(cache_state), "cache_guard")
         self.assertIn("标的未上榜", capability.meaning_for_capability_state(empty_state, "Tushare", "龙虎榜"))
         self.assertIn("不能写成利好或无风险", capability.decision_impact_for_capability_state(empty_state, "龙虎榜"))
         self.assertIn("不是实时数据", capability.meaning_for_capability_state(cache_state, "Tushare", "个股资金流"))
+        self.assertIn("防白屏", capability.why_previous_full_refresh_not_enough(cache_state, "Tushare", "个股资金流", "moneyflow"))
 
     def test_summarize_tushare_result_handles_dict_rows(self):
         result = {"ok": True, "rows": 5, "latest_date": "20260602", "source": "Tushare"}

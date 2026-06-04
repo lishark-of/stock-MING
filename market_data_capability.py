@@ -33,6 +33,18 @@ STATE_LABELS = {
     STATE_FAILED: "调用失败",
 }
 
+ROOT_CAUSE_LABELS = {
+    "available": "已有可用返回",
+    "permission_scope": "接口权限/积分",
+    "session_skip": "本会话跳过防卡顿",
+    "publish_window": "近期无记录/发布窗口",
+    "cache_guard": "使用缓存防白屏",
+    "fallback_proxy": "替代口径",
+    "manual_gate": "手动刷新门控",
+    "configuration": "配置/网络/调用失败",
+    "not_checked": "尚未检测",
+}
+
 PERMISSION_KEYWORDS = (
     "权限",
     "无接口访问权限",
@@ -373,6 +385,62 @@ def next_action_for_capability_state(state: str, label: Any = "数据能力") ->
     if normalized == STATE_NETWORK_FAILED:
         return f"网络恢复后手动重试 {label_text}。"
     return f"保留 {label_text} 的安全空态或上次成功结果。"
+
+
+def root_cause_code_for_capability_state(state: Any) -> str:
+    normalized = normalize_capability_state_value(state)
+    if normalized == STATE_AVAILABLE:
+        return "available"
+    if normalized == STATE_PERMISSION_DENIED:
+        return "permission_scope"
+    if normalized == STATE_DISABLED_THIS_SESSION:
+        return "session_skip"
+    if normalized == STATE_EMPTY_RECENT:
+        return "publish_window"
+    if normalized == STATE_STALE_CACHE:
+        return "cache_guard"
+    if normalized == STATE_FALLBACK_USED:
+        return "fallback_proxy"
+    if normalized == STATE_REQUIRES_MANUAL_REFRESH:
+        return "manual_gate"
+    if normalized in {STATE_NOT_CONFIGURED, STATE_NETWORK_FAILED, STATE_FAILED}:
+        return "configuration"
+    return "not_checked"
+
+
+def root_cause_label_for_capability_state(state: Any) -> str:
+    return ROOT_CAUSE_LABELS.get(root_cause_code_for_capability_state(state), ROOT_CAUSE_LABELS["not_checked"])
+
+
+def why_previous_full_refresh_not_enough(
+    state: Any,
+    provider: Any = "数据源",
+    label: Any = "数据能力",
+    api: Any = "",
+) -> str:
+    cause_code = root_cause_code_for_capability_state(state)
+    provider_text = str(provider or "数据源").strip() or "数据源"
+    label_text = str(label or "数据能力").strip() or "数据能力"
+    api_text = str(api or "专业接口").strip() or "专业接口"
+    if provider_text == SOURCE_TUSHARE and cause_code == "permission_scope":
+        return f"之前“拉满”多半覆盖基础行情或已授权接口；{label_text} 的 {api_text} 仍需要单独权限/积分。"
+    if cause_code == "permission_scope":
+        return f"{provider_text} 可用不等于 {label_text} 的 {api_text} 已授权。"
+    if cause_code == "session_skip":
+        return f"{label_text} 此前已被判定受限或失败，本会话为了防卡顿跳过重复请求；这不是数据被清空。"
+    if cause_code == "publish_window":
+        return f"{label_text} 可能接口可用但近窗口无记录；非交易日、尚未发布、标的未上榜都会让结果为空。"
+    if cause_code == "cache_guard":
+        return f"{label_text} 现在显示的是上次成功缓存；这是为了防白屏，不代表今天已经重新验证。"
+    if cause_code == "fallback_proxy":
+        return f"{label_text} 当前使用替代口径；能辅助观察，但不能当作原始 {api_text} 已恢复。"
+    if cause_code == "manual_gate":
+        return f"{label_text} 被设置为手动按钮触发；首页打开不会自动请求 {api_text}。"
+    if cause_code == "available":
+        return f"{label_text} 已有可用返回；仍要核对日期、标的和接口口径是否匹配当前决策。"
+    if cause_code == "configuration":
+        return f"{label_text} 当前更像配置、网络或接口调用失败；先修复环境，再手动验证。"
+    return f"{label_text} 尚未检测；不能用“之前拉过”证明当前这个接口已可用。"
 
 
 def action_hint_for_state(state: str) -> str:

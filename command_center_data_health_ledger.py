@@ -9,7 +9,10 @@ from market_data_capability import (
     meaning_for_capability_state,
     next_action_for_capability_state,
     normalize_capability_state_value,
+    root_cause_code_for_capability_state,
+    root_cause_label_for_capability_state,
     tone_for_capability_state,
+    why_previous_full_refresh_not_enough,
 )
 
 
@@ -294,6 +297,16 @@ def normalize_health_ledger_row(raw: Any = None, checked_at: Any = "") -> dict:
         payload.get("diagnostic_answer"),
         default=_interface_diagnostic_answer(state, provider, label, api),
     )
+    root_cause_code = _first_text(
+        payload.get("root_cause_code"),
+        payload.get("cause_code"),
+        default=root_cause_code_for_capability_state(state),
+    )
+    root_cause_label = _first_text(
+        payload.get("root_cause_label"),
+        payload.get("cause_label"),
+        default=root_cause_label_for_capability_state(state),
+    )
     return {
         "key": _first_text(payload.get("key"), payload.get("section"), payload.get("api"), payload.get("table"), default="data_capability"),
         "provider": provider,
@@ -307,6 +320,12 @@ def normalize_health_ledger_row(raw: Any = None, checked_at: Any = "") -> dict:
         "last_checked": last_checked,
         "last_success_text": latest_date or ("暂无" if state not in AVAILABLE_STATES else "已返回可用结果"),
         "error_text": _first_text(payload.get("error"), payload.get("last_error"), payload.get("reason")),
+        "root_cause_code": root_cause_code,
+        "root_cause_label": root_cause_label,
+        "why_previous_full_not_enough": _first_text(
+            payload.get("why_previous_full_not_enough"),
+            default=why_previous_full_refresh_not_enough(state, provider, label, api),
+        ),
         "meaning": meaning,
         "diagnostic_answer": diagnostic_answer,
         "decision_impact": decision_impact,
@@ -421,6 +440,40 @@ def _limited_labels(rows: list[dict], fallback: str = "无", limit: int = 3) -> 
         return fallback
     suffix = f" 等 {len(rows)} 项" if len(rows) > limit else ""
     return "、".join(labels) + suffix
+
+
+def _root_cause_groups(rows: list[dict]) -> list[dict]:
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        code = to_text(row.get("root_cause_code"), "not_checked")
+        grouped.setdefault(code, []).append(row)
+    order = (
+        "permission_scope",
+        "session_skip",
+        "configuration",
+        "manual_gate",
+        "cache_guard",
+        "fallback_proxy",
+        "publish_window",
+        "available",
+        "not_checked",
+    )
+    result = []
+    for code in order:
+        cause_rows = grouped.get(code) or []
+        if not cause_rows:
+            continue
+        result.append(
+            {
+                "code": code,
+                "label": to_text(cause_rows[0].get("root_cause_label"), "尚未检测"),
+                "count": len(cause_rows),
+                "labels": _limited_labels(cause_rows, fallback="无", limit=4),
+                "providers": sorted({to_text(row.get("provider"), "数据源") for row in cause_rows}),
+                "deepseek_called": False,
+            }
+        )
+    return result
 
 
 def _market_scoped_rows(rows: list[dict], market_type: Any = None) -> list[dict]:
@@ -563,6 +616,9 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
             "state": to_text(row.get("state"), "unknown"),
             "status_label": to_text(row.get("status_label"), STATE_LABELS.get(to_text(row.get("state")), "待验证")),
             "tone": to_text(row.get("tone"), "missing"),
+            "root_cause_code": to_text(row.get("root_cause_code"), "not_checked"),
+            "root_cause_label": to_text(row.get("root_cause_label"), "尚未检测"),
+            "why_previous_full_not_enough": to_text(row.get("why_previous_full_not_enough"), "仍需核对接口状态。"),
             "action_label": to_text(row.get("action_label"), f"手动检查{to_text(row.get('label'), '数据接口')}"),
             "toolbox_entry": to_text(row.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
             "workspace_target": "高级工具箱（旧版保留）",
@@ -598,9 +654,12 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
                         "manual_check_key",
                         "manual_check_label",
                         "manual_check_button_label",
+                        "root_cause_code",
+                        "root_cause_label",
                     )
                 },
                 "meaning": to_text(row.get("meaning"), "仍需核对接口状态。"),
+                "why_previous_full_not_enough": recovery_action["why_previous_full_not_enough"],
                 "diagnostic_answer": recovery_action["diagnostic_answer"],
                 "decision_guardrail": recovery_action["decision_guardrail"],
                 "recovery_button_context": recovery_action["recovery_button_context"],
@@ -631,6 +690,7 @@ def build_data_health_visibility_summary(data_health_ledger: Any = None, limit: 
         "empty_labels": _limited_labels(empty, fallback="无"),
         "manual_labels": _limited_labels(manual, fallback="无"),
         "recovery_actions": recovery_actions,
+        "root_cause_groups": _root_cause_groups(rows),
         "external_call_policy": "not_triggered",
         "deepseek_called": False,
     }
@@ -714,6 +774,9 @@ def _timeline_item(row: Mapping[str, Any]) -> dict:
         "state": to_text(row.get("state"), "unknown"),
         "status_label": _timeline_status_label(event_type, row),
         "tone": _timeline_tone(event_type, row),
+        "root_cause_code": to_text(row.get("root_cause_code"), "not_checked"),
+        "root_cause_label": to_text(row.get("root_cause_label"), "尚未检测"),
+        "why_previous_full_not_enough": to_text(row.get("why_previous_full_not_enough"), "仍需核对接口状态。"),
         "message": _timeline_message(event_type, row),
         "last_checked": last_checked or "暂无",
         "last_success": last_success or "暂无",
@@ -828,6 +891,7 @@ def build_data_health_ledger(
         "checked_at": _first_text(capability_checked_at, gap_checked_at),
         "rows": rows,
         "provider_groups": _provider_groups(rows),
+        "root_cause_groups": _root_cause_groups(rows),
         "available_count": len(available),
         "blocked_count": len(blocked),
         "manual_count": len(manual),
