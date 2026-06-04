@@ -110,6 +110,28 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         self.assertGreaterEqual(lane_counts["blocked"], 1)
         self.assertGreaterEqual(lane_counts["packet_ready"], 1)
 
+    def test_margin_etf_completion_requires_etf_and_margin_packets(self):
+        partial = migration.build_legacy_migration_map(
+            {
+                "command_center_etf_packet": {"status": "ready", "data_status": "ready"},
+            },
+            keys=["margin_etf"],
+        )["items"][0]
+        complete = migration.build_legacy_migration_map(
+            {
+                "command_center_etf_packet": {"status": "ready", "data_status": "ready"},
+                "command_center_margin_packet": {"status": "ready", "data_status": "cached"},
+            },
+            keys=["margin_etf"],
+        )["items"][0]
+
+        self.assertEqual(partial["completion_status"], "partial")
+        self.assertFalse(partial["is_complete"])
+        self.assertEqual([check["key"] for check in partial["completion_checks"]], ["command_center_etf_packet", "command_center_margin_packet"])
+        self.assertEqual(complete["completion_status"], "complete")
+        self.assertEqual(complete["migration_state"], "packet_ready")
+        self.assertTrue(complete["is_complete"])
+
     def test_waiting_packet_completion_names_missing_target(self):
         packet = migration.build_legacy_migration_map(keys=["next_ticket_radar"])
         item = packet["items"][0]

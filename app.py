@@ -3391,7 +3391,7 @@ def _cc_run_discipline_check(target="", market_type="", price=None, position_pro
 
 
 def _cc_refresh_margin_etf_config(target="", market_type="", price=None, position_profile=None):
-    del target, market_type, price, position_profile
+    del market_type, price, position_profile
     token = _cc_now()
     st.session_state["margin_etf_daily_refresh_token"] = token
     params, params_hash = _cc_build_margin_etf_daily_params(force_light=True)
@@ -3428,6 +3428,16 @@ def _cc_refresh_margin_etf_config(target="", market_type="", price=None, positio
                 "source": "融资 ETF 本地配置快照",
             }
         },
+    )
+    st.session_state["command_center_margin_packet"] = margin_packet_service.build_command_center_margin_packet(
+        st.session_state,
+        live_packet={
+            "margin": {
+                "updated_at": token,
+                "source": "融资 ETF 本地配置快照",
+            }
+        },
+        target=target,
     )
     _cc_mark_module("margin_etf", "已刷新", "融资 ETF 本地配置快照")
     return {

@@ -19,6 +19,8 @@ def _function_tokens(name):
             values.add(item.value)
         elif isinstance(item, ast.Name):
             values.add(item.id)
+        elif isinstance(item, ast.Attribute):
+            values.add(item.attr)
     return values
 
 
@@ -111,6 +113,15 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("进入恢复：{item.get('label') or 'A股事实'}", source)
         self.assertIn("_apply_tool_recovery_navigation_state(item)", source)
         self.assertIn("不会自动运行 Tushare、DeepSeek、回测或全市场扫描", source)
+
+    def test_margin_etf_refresh_writes_etf_and_margin_packets(self):
+        tokens = _function_tokens("_cc_refresh_margin_etf_config")
+
+        self.assertIn("command_center_etf_packet", tokens)
+        self.assertIn("command_center_margin_packet", tokens)
+        self.assertIn("sync_legacy_etf_packet", tokens)
+        self.assertIn("build_command_center_margin_packet", tokens)
+        _assert_token_contains(self, tokens, "融资 ETF 本地配置快照")
 
     def test_legacy_a_share_screen_routes_diagnostic_to_recovery_controls(self):
         source = Path("app.py").read_text(encoding="utf-8")
