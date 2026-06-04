@@ -246,6 +246,31 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(item["tone"], "success")
         self.assertIn("已回流 5", item["value"])
 
+    def test_evidence_chain_includes_latest_recovery_result(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "只观察"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "资金流", "status": "待验证"}]},
+            latest_recovery_result_notice={
+                "status": "blocked",
+                "tone": "failed",
+                "title": "A股数据恢复仍受限",
+                "label": "涨跌停/情绪",
+                "message": "涨跌停/情绪：权限不足｜limit_cpt_list 权限不足。",
+                "next_action": "保持安全空态或缓存观察。",
+                "writes_packet": "command_center_limit_emotion_packet",
+                "external_call_policy": "button_gated",
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("最近恢复", joined)
+        self.assertIn("涨跌停/情绪", joined)
+        self.assertEqual(view_model["latest_recovery_result_basis_item"]["tone"], "danger")
+        self.assertIn("权限不足", view_model["latest_recovery_result_summary_text"])
+        self.assertEqual(view_model["latest_recovery_result_basis_item"]["external_call_policy"], "button_gated")
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_evidence_chain_keeps_blockers_when_method_list_is_full(self):
         view_model = summary.build_decision_summary_view_model(
             {},

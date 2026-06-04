@@ -342,6 +342,58 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("仍需价格、纪律和仓位预算共振", dumped)
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_latest_recovery_result_supports_strategy_validation_when_recovered(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "只观察"},
+            analysis_method_packet={"market": "A股"},
+            latest_recovery_result_notice={
+                "status": "recovered",
+                "tone": "ready",
+                "title": "A股数据恢复结果已回流",
+                "label": "个股资金流",
+                "message": "个股资金流：可用｜已读取到最近资金流数据。",
+                "next_action": "继续查看 Home Action Snapshot。",
+                "writes_packet": "command_center_moneyflow_packet",
+                "external_call_policy": "button_gated",
+                "deepseek_called": False,
+            },
+        )
+        items = view_model["evidence_validation_items"]
+        dumped = json.dumps(items, ensure_ascii=False)
+
+        self.assertEqual(items[0]["key"], "latest_recovery_result")
+        self.assertEqual(items[0]["tone"], "success")
+        self.assertIn("刚刚回流", dumped)
+        self.assertIn("个股资金流", view_model["latest_recovery_validation_summary"])
+        self.assertFalse("DeepSeek" in dumped)
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_latest_recovery_result_blocks_strategy_validation_when_restricted(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            latest_recovery_result_notice={
+                "status": "blocked",
+                "tone": "failed",
+                "title": "A股数据恢复仍受限",
+                "label": "涨跌停/情绪",
+                "message": "涨跌停/情绪：权限不足｜limit_cpt_list 权限不足。",
+                "next_action": "保持安全空态或缓存观察。",
+                "writes_packet": "command_center_limit_emotion_packet",
+                "external_call_policy": "button_gated",
+                "deepseek_called": False,
+            },
+        )
+        items = view_model["evidence_validation_items"]
+        dumped = json.dumps(items, ensure_ascii=False)
+
+        self.assertEqual(items[0]["key"], "latest_recovery_result")
+        self.assertEqual(items[0]["tone"], "danger")
+        self.assertIn("恢复仍受限", dumped)
+        self.assertIn("策略只能降级", dumped)
+        self.assertIn("涨跌停/情绪", view_model["latest_recovery_validation_summary"])
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_missing_evidence_validation_is_safe(self):
         view_model = summary.build_strategy_summary_view_model({"status": "ready"}, evidence_radar_packet={})
 

@@ -305,11 +305,45 @@ def build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary: Any 
     return _to_text(item.get("summary"))
 
 
+def _latest_recovery_tone(status: str) -> str:
+    if status == "recovered":
+        return "success"
+    if status == "blocked":
+        return "danger"
+    if status == "waiting":
+        return "warning"
+    return "muted"
+
+
+def build_latest_recovery_result_basis_item(latest_recovery_result_notice: Any = None) -> dict:
+    notice = _as_mapping(latest_recovery_result_notice)
+    if not notice:
+        return {}
+    status = _to_text(notice.get("status")) or "waiting"
+    label = _to_text(notice.get("label")) or "数据恢复"
+    message = _to_text(notice.get("message")) or "已更新本地恢复状态。"
+    return {
+        "label": "最近恢复",
+        "value": f"{label}｜{message}",
+        "tone": _latest_recovery_tone(status),
+        "summary": message,
+        "next_action": _to_text(notice.get("next_action")),
+        "writes_packet": _to_text(notice.get("writes_packet")),
+        "external_call_policy": _to_text(notice.get("external_call_policy")) or "not_triggered",
+    }
+
+
+def build_latest_recovery_result_summary_text(latest_recovery_result_notice: Any = None) -> str:
+    item = build_latest_recovery_result_basis_item(latest_recovery_result_notice)
+    return _to_text(item.get("value"))
+
+
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    latest_recovery_result_notice: Any = None,
 ) -> list[dict]:
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
@@ -334,6 +368,9 @@ def build_decision_evidence_chain_items(
     fact_recovery_basis = build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary)
     if fact_recovery_basis:
         items.append(fact_recovery_basis)
+    latest_recovery_basis = build_latest_recovery_result_basis_item(latest_recovery_result_notice)
+    if latest_recovery_basis:
+        items.append(latest_recovery_basis)
     evidence = _as_mapping(evidence_radar_packet)
     if evidence:
         blockers = len(evidence.get("blocker_items") or [])
@@ -360,6 +397,7 @@ def build_decision_summary_view_model(
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    latest_recovery_result_notice: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     status = normalize_decision_status(payload)
@@ -393,12 +431,15 @@ def build_decision_summary_view_model(
             evidence_radar_packet=evidence_radar_packet,
             a_share_data_console=a_share_data_console,
             a_share_fact_recovery_summary=a_share_fact_recovery_summary,
+            latest_recovery_result_notice=latest_recovery_result_notice,
         ),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
         "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
         "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),
         "a_share_fact_recovery_basis_item": build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary),
         "a_share_fact_recovery_summary_text": build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary),
+        "latest_recovery_result_basis_item": build_latest_recovery_result_basis_item(latest_recovery_result_notice),
+        "latest_recovery_result_summary_text": build_latest_recovery_result_summary_text(latest_recovery_result_notice),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),

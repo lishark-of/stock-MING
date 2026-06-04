@@ -3930,12 +3930,18 @@ def render_command_center_decision_card(live_packet, target="", position_profile
         if isinstance(home_snapshot, dict)
         else {}
     ) or {}
+    latest_recovery_result_notice = (
+        home_snapshot.get("latest_recovery_result_notice")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or _get_latest_recovery_result_notice_from_state()
     decision_vm = build_decision_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_vm,
         a_share_data_console=a_share_data_console,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
+        latest_recovery_result_notice=latest_recovery_result_notice,
     )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):
@@ -3996,12 +4002,18 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
         if isinstance(home_snapshot, dict)
         else {}
     ) or {}
+    latest_recovery_result_notice = (
+        home_snapshot.get("latest_recovery_result_notice")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or _get_latest_recovery_result_notice_from_state()
     strategy_vm = build_strategy_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_packet,
         a_share_data_console=a_share_data_console,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
+        latest_recovery_result_notice=latest_recovery_result_notice,
     )
     render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
     return live_packet

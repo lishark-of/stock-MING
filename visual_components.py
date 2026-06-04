@@ -4510,11 +4510,14 @@ def render_strategy_execution_command_card(
     focus_html = "".join(f"<span>{escape(str(item))}</span>" for item in (guidance.get("focus_items") or [])[:5])
     a_share_data_validation_summary = str(vm.get("a_share_data_validation_summary") or "").strip()
     a_share_fact_recovery_validation_summary = str(vm.get("a_share_fact_recovery_validation_summary") or "").strip()
+    latest_recovery_validation_summary = str(vm.get("latest_recovery_validation_summary") or "").strip()
     validation_title = str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0")
     if a_share_data_validation_summary:
         validation_title = f"{validation_title} ｜ A股数据：{a_share_data_validation_summary}"
     if a_share_fact_recovery_validation_summary:
         validation_title = f"{validation_title} ｜ A股事实：{a_share_fact_recovery_validation_summary}"
+    if latest_recovery_validation_summary:
+        validation_title = f"{validation_title} ｜ 最近恢复：{latest_recovery_validation_summary}"
     guidance_html = f"""
       <div class="cc-strategy-guidance">
         <div class="cc-strategy-guidance-title">{escape(str(guidance.get("title") or "市场验证重点"))}</div>

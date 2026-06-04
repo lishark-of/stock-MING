@@ -528,14 +528,66 @@ def build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary: 
     )
 
 
+def _latest_recovery_evidence_state(status: str) -> str:
+    if status == "recovered":
+        return "support"
+    if status == "blocked":
+        return "blocked"
+    return "missing"
+
+
+def _latest_recovery_action(label: str, status: str) -> str:
+    if status == "recovered":
+        return f"{label}刚刚回流；可进入证据链，但仍需复核日期、来源和仓位纪律。"
+    if status == "blocked":
+        return f"{label}恢复仍受限；未解决前策略只能降级为观察或小额试探。"
+    return f"{label}恢复结果待验证；不要把缺失事实当作加仓依据。"
+
+
+def build_strategy_latest_recovery_validation_items(latest_recovery_result_notice: Any = None) -> list[dict]:
+    notice = _as_mapping(latest_recovery_result_notice)
+    if not notice:
+        return []
+    status = _to_text(notice.get("status")) or "waiting"
+    state = _latest_recovery_evidence_state(status)
+    label = _to_text(notice.get("label")) or "数据恢复"
+    message = _to_text(notice.get("message")) or "已更新本地恢复状态。"
+    return [
+        {
+            "key": "latest_recovery_result",
+            "label": "最近恢复结果",
+            "priority": 0,
+            "evidence_state": state,
+            "evidence_label": "恢复结果",
+            "tone": _evidence_validation_tone(state),
+            "check_text": f"{label}｜{message}",
+            "action_hint": _latest_recovery_action(label, status),
+            "writes_packet": _to_text(notice.get("writes_packet")),
+            "external_call_policy": _to_text(notice.get("external_call_policy")) or "not_triggered",
+        }
+    ]
+
+
+def build_strategy_latest_recovery_summary(latest_recovery_result_notice: Any = None) -> str:
+    notice = _as_mapping(latest_recovery_result_notice)
+    if not notice:
+        return ""
+    status = _to_text(notice.get("status")) or "waiting"
+    label = _to_text(notice.get("label")) or "数据恢复"
+    message = _to_text(notice.get("message")) or "已更新本地恢复状态。"
+    return f"{label}：{status}｜{message}"
+
+
 def build_strategy_evidence_validation_items(
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    latest_recovery_result_notice: Any = None,
 ) -> list[dict]:
     evidence = _as_mapping(evidence_radar_packet)
     items = build_strategy_a_share_data_validation_items(a_share_data_console)
     items.extend(build_strategy_a_share_fact_recovery_validation_items(a_share_fact_recovery_summary))
+    items.extend(build_strategy_latest_recovery_validation_items(latest_recovery_result_notice))
     queue = evidence.get("decision_evidence_queue") or []
     if not isinstance(queue, list):
         queue = []
@@ -633,6 +685,7 @@ def build_strategy_summary_view_model(
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    latest_recovery_result_notice: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     is_empty = not bool(payload)
@@ -644,9 +697,11 @@ def build_strategy_summary_view_model(
         evidence_radar_packet,
         a_share_data_console=a_share_data_console,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
+        latest_recovery_result_notice=latest_recovery_result_notice,
     )
     a_share_data_validation_summary = build_strategy_a_share_data_validation_summary(a_share_data_console)
     a_share_fact_recovery_validation_summary = build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary)
+    latest_recovery_validation_summary = build_strategy_latest_recovery_summary(latest_recovery_result_notice)
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -672,6 +727,7 @@ def build_strategy_summary_view_model(
         "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
         "a_share_data_validation_summary": a_share_data_validation_summary,
         "a_share_fact_recovery_validation_summary": a_share_fact_recovery_validation_summary,
+        "latest_recovery_validation_summary": latest_recovery_validation_summary,
         "risk_label": _to_text(_as_mapping(payload.get("risk_budget")).get("risk_level")) or "未知",
         "deepseek_text": "DeepSeek：已调用" if bool(payload.get("deepseek_called")) else "DeepSeek：未调用",
         "updated_text": _to_text(payload.get("updated_at")) or "暂无",
