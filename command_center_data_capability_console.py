@@ -251,6 +251,76 @@ def _provider_guardrail(item: Mapping[str, Any]) -> str:
     return f"{provider} {label}只作辅助证据，仍需价格、纪律和仓位共同确认。"
 
 
+def _recovery_mode(state: str) -> str:
+    if state == "permission_denied":
+        return "check_permission"
+    if state == "disabled_this_session":
+        return "manual_retry_after_skip"
+    if state == "not_configured":
+        return "configure_provider"
+    if state in {"network_failed", "failed"}:
+        return "retry_after_fix"
+    if state == "requires_manual_refresh":
+        return "manual_refresh"
+    if state == "empty_recent":
+        return "verify_window"
+    if state == "stale_cache":
+        return "verify_cache"
+    if state == "fallback_used":
+        return "verify_fallback"
+    return "manual_check"
+
+
+def _recovery_mode_label(mode: str) -> str:
+    return {
+        "check_permission": "先查权限/积分",
+        "manual_retry_after_skip": "确认恢复后手动重试",
+        "configure_provider": "先补本地配置",
+        "retry_after_fix": "修复后重试",
+        "manual_refresh": "手动刷新",
+        "verify_window": "核对交易日/覆盖范围",
+        "verify_cache": "复核缓存日期",
+        "verify_fallback": "复核替代口径",
+        "manual_check": "手动检查",
+    }.get(mode, "手动检查")
+
+
+def _recovery_button_context(item: Mapping[str, Any], action_label: str, writes_packet: str) -> str:
+    api = _to_text(item.get("api") or item.get("label"), "当前接口")
+    return (
+        f"{action_label}只处理 {api} 并回流 {writes_packet}；"
+        "不会自动调用 DeepSeek、回测、全市场扫描或外部重型刷新。"
+    )
+
+
+def _recovery_steps(item: Mapping[str, Any], action_label: str, writes_packet: str, toolbox_entry: str) -> list[str]:
+    label = _to_text(item.get("label"), "数据能力")
+    state = _to_text(item.get("state"))
+    if state == "permission_denied":
+        first = f"先确认 {label} 对应接口权限/积分是否开通。"
+    elif state == "disabled_this_session":
+        first = f"先确认 {label} 权限或接口状态已恢复，避免重复卡顿。"
+    elif state == "not_configured":
+        first = f"先补齐 {label} 的本地 token/secrets 或连接配置。"
+    elif state == "network_failed":
+        first = f"先确认网络恢复，再重试 {label}。"
+    elif state == "empty_recent":
+        first = f"先核对 {label} 的交易日、发布时间、标的覆盖和窗口期。"
+    elif state == "stale_cache":
+        first = f"先核对 {label} 的缓存日期、来源和是否匹配当前标的。"
+    elif state == "fallback_used":
+        first = f"先确认 {label} 当前是替代口径，不等同于原始接口事实。"
+    elif state == "requires_manual_refresh":
+        first = f"确认需要最新 {label} 后再手动触发。"
+    else:
+        first = f"先复核 {label} 的状态、来源和适用范围。"
+    return [
+        first,
+        f"进入 {toolbox_entry}，点击“{action_label}”。",
+        f"结果回流 {writes_packet} 后，再进入综合中心决策链。",
+    ]
+
+
 def _provider_gap_headline(status: str, blocked_count: int, manual_count: int, stale_count: int) -> str:
     if status == "blocked":
         return f"多数据源有 {blocked_count} 个阻断项"
@@ -294,6 +364,10 @@ def build_provider_gap_explainer(
     rows = []
     for action in actions + ready:
         state = _to_text(action.get("state"), "available" if action in ready else "unknown")
+        mode = _to_text(action.get("recovery_mode"), _recovery_mode(state))
+        action_label = _to_text(action.get("action_label"), "手动检查")
+        writes_packet = _to_text(action.get("writes_packet"), "command_center_data_capability_packet")
+        toolbox_entry = _to_text(action.get("toolbox_entry"), "高级工具箱 / 数据源体检")
         rows.append(
             {
                 "provider": _to_text(action.get("provider"), "数据源"),
@@ -304,10 +378,17 @@ def build_provider_gap_explainer(
                 "tone": _to_text(action.get("tone"), _tone(status)),
                 "why_unavailable": _to_text(action.get("diagnostic_answer") or action.get("reason"), _diagnostic_answer(action)),
                 "decision_guardrail": _provider_guardrail(action),
-                "action_label": _to_text(action.get("action_label"), "手动检查"),
-                "toolbox_entry": _to_text(action.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
-                "writes_packet": _to_text(action.get("writes_packet"), "command_center_data_capability_packet"),
+                "action_label": action_label,
+                "toolbox_entry": toolbox_entry,
+                "writes_packet": writes_packet,
                 "refresh_policy": _to_text(action.get("refresh_policy"), "button_gated"),
+                "recovery_mode": mode,
+                "recovery_mode_label": _to_text(action.get("recovery_mode_label"), _recovery_mode_label(mode)),
+                "recovery_steps": _as_list(action.get("recovery_steps")) or _recovery_steps(action, action_label, writes_packet, toolbox_entry),
+                "recovery_button_context": _to_text(
+                    action.get("recovery_button_context"),
+                    _recovery_button_context(action, action_label, writes_packet),
+                ),
                 "deepseek_called": False,
                 "external_call_policy": "not_triggered",
             }
@@ -352,6 +433,7 @@ def build_data_capability_recovery_actions(
         if not item.get("label"):
             continue
         action_label, writes_packet, toolbox_entry = _api_recovery_config(item)
+        mode = _recovery_mode(item["state"])
         candidates.append(
             {
                 "provider": item["provider"],
@@ -368,6 +450,12 @@ def build_data_capability_recovery_actions(
                 "toolbox_entry": toolbox_entry,
                 "writes_packet": writes_packet,
                 "refresh_policy": "button_gated" if item["state"] != "not_configured" else "manual_config",
+                "recovery_mode": mode,
+                "recovery_mode_label": _recovery_mode_label(mode),
+                "recovery_steps": _recovery_steps(item, action_label, writes_packet, toolbox_entry),
+                "recovery_button_context": _recovery_button_context(item, action_label, writes_packet),
+                "decision_guardrail": _provider_guardrail(item),
+                "external_call_policy": "not_triggered",
                 "deepseek_called": False,
             }
         )

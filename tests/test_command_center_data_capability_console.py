@@ -60,6 +60,13 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(packet["recovery_actions"][0]["action_label"], "手动刷新融资融券")
         self.assertEqual(packet["recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(packet["recovery_actions"][0]["refresh_policy"], "button_gated")
+        self.assertEqual(packet["recovery_actions"][0]["recovery_mode"], "check_permission")
+        self.assertEqual(packet["recovery_actions"][0]["recovery_mode_label"], "先查权限/积分")
+        self.assertIn("只处理 margin_detail", packet["recovery_actions"][0]["recovery_button_context"])
+        self.assertIn("回流 command_center_margin_packet", packet["recovery_actions"][0]["recovery_steps"][-1])
+        self.assertIn("不会自动调用 DeepSeek", packet["recovery_actions"][0]["recovery_button_context"])
+        self.assertIn("不能支撑加仓", packet["recovery_actions"][0]["decision_guardrail"])
+        self.assertEqual(packet["recovery_actions"][0]["external_call_policy"], "not_triggered")
         self.assertIn("不是“没搜到行情”", packet["recovery_actions"][0]["diagnostic_answer"])
         self.assertIn("token 可用", packet["recovery_actions"][0]["diagnostic_answer"])
         self.assertIn("融资融券", packet["recovery_summary"])
@@ -126,6 +133,9 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         action = packet["recovery_actions"][0]
 
         self.assertEqual(action["state"], "disabled_this_session")
+        self.assertEqual(action["recovery_mode"], "manual_retry_after_skip")
+        self.assertIn("手动重试", action["recovery_mode_label"])
+        self.assertIn("避免重复卡顿", action["recovery_steps"][0])
         self.assertIn("本会话跳过重复请求", action["diagnostic_answer"])
         self.assertIn("确认接口权限恢复", action["diagnostic_answer"])
         self.assertFalse(action["deepseek_called"])
@@ -150,6 +160,8 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(packet["status"], "blocked")
         self.assertEqual(action["provider"], "Supabase")
         self.assertEqual(action["refresh_policy"], "manual_config")
+        self.assertEqual(action["recovery_mode"], "configure_provider")
+        self.assertIn("本地 token", action["recovery_steps"][0])
         self.assertIn("检查 Supabase 本地配置", action["action_label"])
         self.assertEqual(packet["provider_gap_explainer"]["status"], "blocked")
         self.assertIn("Supabase", json.dumps(packet["provider_gap_explainer"], ensure_ascii=False))
@@ -175,7 +187,32 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertIn("yfinance", dumped)
         self.assertIn("按钮触发", dumped)
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in explainer["items"]))
+        self.assertTrue(all(item["external_call_policy"] == "not_triggered" for item in explainer["items"]))
         self.assertFalse(explainer["deepseek_called"])
+
+    def test_recovery_actions_normalize_pending_and_cache_modes(self):
+        packet = console.build_data_capability_console_packet(
+            data_capability_packet={
+                "items": [
+                    {"provider": "Tushare", "api": "top_list", "label": "龙虎榜", "capability_state": "empty_recent", "status": "近期无数据"},
+                    {"provider": "Tushare", "api": "cyq_perf", "label": "筹码/胜率", "capability_state": "stale_cache", "status": "使用缓存"},
+                    {"provider": "Tushare", "api": "cyq_chips", "label": "筹码明细", "capability_state": "fallback_used", "status": "替代口径"},
+                    {"provider": "AkShare", "api": "akshare_manual_refresh", "label": "AkShare 重型刷新", "capability_state": "requires_manual_refresh", "status": "需要手动刷新"},
+                ]
+            }
+        )
+        actions = {item["label"]: item for item in packet["recovery_actions"]}
+
+        self.assertEqual(actions["龙虎榜"]["recovery_mode"], "verify_window")
+        self.assertIn("交易日", actions["龙虎榜"]["recovery_steps"][0])
+        self.assertEqual(actions["筹码/胜率"]["recovery_mode"], "verify_cache")
+        self.assertIn("缓存日期", actions["筹码/胜率"]["recovery_steps"][0])
+        self.assertEqual(actions["筹码明细"]["recovery_mode"], "verify_fallback")
+        self.assertIn("替代口径", actions["筹码明细"]["recovery_steps"][0])
+        self.assertEqual(actions["AkShare 重型刷新"]["recovery_mode"], "manual_refresh")
+        self.assertTrue(all(item["deepseek_called"] is False for item in actions.values()))
+        self.assertTrue(all(item["external_call_policy"] == "not_triggered" for item in actions.values()))
+        json.dumps(packet, ensure_ascii=False)
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_data_capability_console.py").read_text(encoding="utf-8"))
