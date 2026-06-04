@@ -4738,6 +4738,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
     data_recovery_center = payload.get("data_recovery_center") or {}
+    legacy_migration_map = payload.get("legacy_migration_map") or {}
     latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
@@ -4960,6 +4961,33 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     if not data_recovery_center_action_html:
         data_recovery_center_action_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>恢复队列为空</div><div class='cc-home-item-meta'>当前没有需要恢复的数据源、A股诊断项或旧工具 packet。</div></div>"
+    legacy_migration_lane_html = ""
+    for lane in (legacy_migration_map.get("lanes") or [])[:5]:
+        if not isinstance(lane, dict):
+            continue
+        legacy_migration_lane_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(lane.get("label"), "迁移状态"))}
+            <span class="cc-home-chip {escape(_home_text(lane.get("tone"), "missing"))}">{escape(_home_number(lane.get("count")))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(lane.get("summary"), "暂无"))}</div>
+        </div>
+        """
+    if not legacy_migration_lane_html:
+        legacy_migration_lane_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>迁移地图待生成</div><div class='cc-home-item-meta'>尚未读取旧版能力迁移表；不会自动运行旧工具。</div></div>"
+    legacy_migration_actions = [str(item).strip() for item in (legacy_migration_map.get("next_actions") or [])[:3] if str(item).strip()]
+    legacy_migration_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(legacy_migration_map.get("title"), "旧版能力迁移地图"))}
+            <span class="cc-home-chip {escape(_home_text(legacy_migration_map.get("status"), "missing"))}">{escape(_home_text(legacy_migration_map.get("summary"), "待生成"))}</span>
+          </div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(legacy_migration_map.get("safe_mode_text"), "只读取本地 packet；不会自动请求外部接口。"))}</div>
+          {legacy_migration_lane_html}
+          {_home_list(legacy_migration_actions, "继续保持综合推演中心为主入口；旧工具只在按钮触发时运行。", limit=3)}
+        </div>
+        """
     latest_recovery_html = ""
     if latest_recovery_result:
         latest_recovery_html = f"""
@@ -5339,6 +5367,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
           {data_recovery_center_html}
+          {legacy_migration_html}
           {diagnostic_details_html}
           <div class="cc-muted-note">{escape(str(safety_line))}</div>
         </div>

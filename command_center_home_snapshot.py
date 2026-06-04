@@ -26,6 +26,7 @@ import command_center_data_capability_console as data_capability_console_service
 import command_center_a_share_capability_matrix as a_share_capability_matrix_service
 import command_center_legacy_a_share_debug_summary as legacy_a_share_debug_summary_service
 import command_center_legacy_a_share_gate as legacy_a_share_gate_service
+import command_center_legacy_migration_map as legacy_migration_map_service
 import market_data_capability as data_capability_service
 
 
@@ -269,6 +270,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "legacy_a_share_fact_recovery_actions": [],
         "tool_recovery_actions": [],
         "data_recovery_center": build_home_data_recovery_center(),
+        "legacy_migration_map": legacy_migration_map_service.build_legacy_migration_map(),
         "latest_recovery_result_notice": {},
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
@@ -367,6 +369,10 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
+        snapshot,
+        data_capability_packet=snapshot.get("data_capability") or {},
+    )
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
         attach_hard_risk_risk_alerts(
@@ -1971,6 +1977,10 @@ def build_home_action_snapshot(
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
+        empty["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
+            empty,
+            data_capability_packet=empty.get("data_capability") or {},
+        )
         empty["risk_alerts"] = attach_recovery_priority_risk_alerts(
             empty.get("risk_alerts") or {},
             empty.get("data_recovery_center") or {},
@@ -1995,6 +2005,10 @@ def build_home_action_snapshot(
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
+        snapshot,
+        data_capability_packet=snapshot.get("data_capability") or {},
+    )
     snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
         snapshot.get("risk_alerts") or {},
         snapshot.get("data_recovery_center") or {},

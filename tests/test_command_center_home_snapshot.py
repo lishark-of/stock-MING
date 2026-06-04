@@ -877,6 +877,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(loaded["data_recovery_center"]["actions"])
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in loaded["data_recovery_center"]["actions"]))
         self.assertFalse(loaded["data_recovery_center"]["deepseek_called"])
+        self.assertEqual(loaded["legacy_migration_map"]["title"], "旧版能力迁移地图")
+        self.assertFalse(loaded["legacy_migration_map"]["deepseek_called"])
 
     def test_home_data_recovery_center_merges_recovery_sources(self):
         center = snapshot.build_home_data_recovery_center(
