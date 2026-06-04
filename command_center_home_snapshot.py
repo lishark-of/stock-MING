@@ -468,11 +468,11 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
-    snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
         snapshot,
         data_capability_packet=snapshot.get("data_capability") or {},
     )
+    snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
     snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
@@ -1362,7 +1362,7 @@ def _recovery_action_lane_key(action: Mapping[str, Any]) -> str:
         )
     ):
         return "p1"
-    if action.get("source_type") in {"legacy_tool", "a_share_fact"}:
+    if action.get("source_type") in {"legacy_tool", "legacy_migration", "a_share_fact"}:
         return "p2"
     return "p1"
 
@@ -1603,6 +1603,80 @@ def attach_recovery_result_status_to_action(
     return item
 
 
+def build_legacy_migration_recovery_actions_snapshot(
+    legacy_migration_map: Any = None,
+    limit: int = MAX_CAPABILITY_ITEMS,
+) -> list[dict]:
+    migration = _as_mapping(legacy_migration_map)
+    actions = []
+    for raw in _as_list(migration.get("items")):
+        item = _as_mapping(raw)
+        if not item or item.get("is_complete") or _to_text(item.get("completion_status")) == "complete":
+            continue
+        progress = _as_mapping(item.get("completion_progress"))
+        missing_targets = [
+            _to_text(target)
+            for target in _as_list(progress.get("missing_targets"))
+            if _to_text(target)
+        ]
+        writes_packet = missing_targets[0] if missing_targets else _to_text(item.get("writes_packet"), "command_center_packet")
+        legacy_tab = _to_text(item.get("legacy_tab"), "高级工具")
+        label = _to_text(item.get("label"), "旧版能力")
+        migration_state = _to_text(item.get("migration_state"), "wired_waiting_data")
+        is_blocked = migration_state == "blocked" or _to_text(item.get("completion_status")) == "blocked"
+        status = "failed" if is_blocked else "waiting"
+        status_label = _to_text(item.get("completion_label") or item.get("migration_label"), "待回流")
+        missing_text = _to_text(progress.get("missing_target_text") or item.get("missing_target_text"), writes_packet)
+        target_text = _to_text(progress.get("target_packet_text") or item.get("target_packet_text"), writes_packet)
+        progress_label = _to_text(progress.get("progress_label"), "0/0")
+        reason = _to_text(
+            item.get("completion_summary"),
+            f"{label} 仍未完成迁移；目标 packet 待回流。",
+        )
+        actions.append(
+            {
+                "key": f"legacy_migration:{_to_text(item.get('key'), label)}:{writes_packet}",
+                "label": label,
+                "source_type": "legacy_migration",
+                "source_label": "旧版迁移地图",
+                "status": status,
+                "status_label": status_label,
+                "tone": _to_text(item.get("tone"), "failed" if is_blocked else "missing"),
+                "priority": 1 if is_blocked else 3,
+                "reason": f"{reason} 迁移进度 {progress_label}；待处理 {missing_text}。",
+                "diagnostic_answer": _to_text(
+                    item.get("current_blocker"),
+                    f"{label} 仍需要从旧工具箱手动回流 {missing_text}。",
+                ),
+                "interface_diagnostic_answer": _to_text(
+                    item.get("current_blocker"),
+                    f"{label} 仍需要从旧工具箱手动回流 {missing_text}。",
+                ),
+                "decision_guardrail": f"{label} 未完成迁移前，相关证据只能标记为待验证，不能单独作为交易依据。",
+                "action_label": _to_text(item.get("action_label"), f"打开{legacy_tab}"),
+                "toolbox_entry": _to_text(item.get("toolbox_entry"), f"高级工具箱 / {legacy_tab}"),
+                "workspace_target": _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）"),
+                "workspace_state_key": _to_text(item.get("workspace_state_key"), "workspace_mode_v2"),
+                "legacy_tab_state_key": _to_text(item.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
+                "legacy_tab": legacy_tab,
+                "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                "writes_packet": writes_packet,
+                "target_packet_text": target_text,
+                "missing_target_text": missing_text,
+                "completion_progress_label": progress_label,
+                "refresh_policy": "button_gated",
+                "recovery_button_context": (
+                    f"这里只打开旧版“{legacy_tab}”入口；对应检测仍需手动点击，结果回流 {writes_packet}。"
+                    "不会自动调用 DeepSeek、回测、全市场扫描或重型数据接口。"
+                ),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    actions = sorted(actions, key=lambda action: (action["priority"], action["label"], action["writes_packet"]))
+    return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+
+
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
@@ -1612,12 +1686,17 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     )
     legacy_fact_actions = _as_list(payload.get("legacy_a_share_fact_recovery_actions"))
     a_share_actions = _as_list(_as_mapping(payload.get("a_share_user_data_diagnostic")).get("recovery_actions"))
+    legacy_migration_actions = build_legacy_migration_recovery_actions_snapshot(
+        payload.get("legacy_migration_map"),
+        limit=limit,
+    )
     tool_actions = _as_list(payload.get("tool_recovery_actions"))
     action_sources = [
         ("data_source", "数据源能力", data_actions, 1),
         ("data_health_timeline", "接口健康时间线", timeline_actions, 1),
         ("a_share_fact", "旧版 A股事实卡", legacy_fact_actions, 2),
         ("a_share", "A股数据能力", a_share_actions, 3),
+        ("legacy_migration", "旧版迁移地图", legacy_migration_actions, 3),
         ("legacy_tool", "旧工具能力", tool_actions, 3),
     ]
     recovery_result_lookup = _recovery_result_lookup_from_state(payload)
@@ -2879,6 +2958,10 @@ def build_home_action_snapshot(
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+        empty["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
+            empty,
+            data_capability_packet=empty.get("data_capability") or {},
+        )
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
         empty["recovery_result_status_strip"] = build_recovery_result_status_strip(
             empty,
@@ -2891,10 +2974,6 @@ def build_home_action_snapshot(
             status_strip=empty.get("recovery_result_status_strip") or {},
         )
         empty["recovery_result_timeline"] = empty["command_center_recovery_result_timeline"]
-        empty["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
-            empty,
-            data_capability_packet=empty.get("data_capability") or {},
-        )
         empty["risk_alerts"] = attach_recovery_priority_risk_alerts(
             empty.get("risk_alerts") or {},
             empty.get("data_recovery_center") or {},
@@ -2924,6 +3003,10 @@ def build_home_action_snapshot(
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+    snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
+        snapshot,
+        data_capability_packet=snapshot.get("data_capability") or {},
+    )
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(
         snapshot,
@@ -2936,10 +3019,6 @@ def build_home_action_snapshot(
         status_strip=snapshot.get("recovery_result_status_strip") or {},
     )
     snapshot["recovery_result_timeline"] = snapshot["command_center_recovery_result_timeline"]
-    snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
-        snapshot,
-        data_capability_packet=snapshot.get("data_capability") or {},
-    )
     snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
         snapshot.get("risk_alerts") or {},
         snapshot.get("data_recovery_center") or {},

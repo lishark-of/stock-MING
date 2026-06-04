@@ -138,6 +138,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("迁移进度：", source)
         self.assertIn("目标 packet：", source)
         self.assertIn("待处理目标：", source)
+        self.assertIn("build_legacy_migration_recovery_actions_snapshot", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
+        self.assertIn("legacy_migration_actions", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P0 权限/本会话跳过", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P1 缓存/近期无数据", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P2 旧工具 packet 迁移", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))

@@ -1123,6 +1123,71 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["deepseek_called"] is False for item in decision_queue))
         self.assertFalse(center["deepseek_called"])
 
+    def test_legacy_migration_actions_enter_home_recovery_center(self):
+        legacy_migration_map = {
+            "items": [
+                {
+                    "key": "margin_etf",
+                    "label": "融资 ETF",
+                    "completion_status": "partial",
+                    "completion_label": "部分完成",
+                    "completion_summary": "1/2 项完成条件已满足。",
+                    "completion_progress": {
+                        "progress_label": "1/2",
+                        "target_packet_text": "command_center_etf_packet、command_center_margin_packet",
+                        "missing_targets": ["command_center_margin_packet"],
+                        "missing_target_text": "command_center_margin_packet",
+                    },
+                    "migration_state": "wired_waiting_data",
+                    "migration_label": "已接 packet，待数据",
+                    "tone": "missing",
+                    "current_blocker": "融资融券 packet 尚未回流。",
+                    "action_label": "打开融资 ETF",
+                    "toolbox_entry": "高级工具箱 / 融资 ETF",
+                    "workspace_target": "高级工具箱（旧版保留）",
+                    "workspace_state_key": "workspace_mode_v2",
+                    "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                    "legacy_tab": "融资 ETF",
+                    "writes_packet": "command_center_etf_packet",
+                    "refresh_policy": "button_gated",
+                    "deepseek_called": False,
+                },
+                {
+                    "key": "today_pool",
+                    "label": "今日关注池",
+                    "completion_status": "complete",
+                    "completion_label": "迁移完成",
+                    "is_complete": True,
+                    "writes_packet": "command_center_market_packet",
+                },
+            ],
+            "deepseek_called": False,
+        }
+
+        migration_actions = snapshot.build_legacy_migration_recovery_actions_snapshot(legacy_migration_map)
+        center = snapshot.build_home_data_recovery_center({"legacy_migration_map": legacy_migration_map})
+        migration_action = migration_actions[0]
+        center_action = center["actions"][0]
+        navigation_state = snapshot.build_tool_recovery_navigation_state(center_action)
+
+        self.assertEqual(len(migration_actions), 1)
+        self.assertEqual(migration_action["label"], "融资 ETF")
+        self.assertEqual(migration_action["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(migration_action["missing_target_text"], "command_center_margin_packet")
+        self.assertEqual(migration_action["source_type"], "legacy_migration")
+        self.assertEqual(migration_action["refresh_policy"], "button_gated")
+        self.assertEqual(center["groups"][4]["key"], "legacy_migration")
+        self.assertEqual(center["groups"][4]["count"], 1)
+        self.assertEqual(center_action["source_label"], "旧版迁移地图")
+        self.assertEqual(center_action["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(center["decision_priority_queue"][0]["lane_key"], "p2")
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_margin_packet")
+        self.assertTrue(all(item["deepseek_called"] is False for item in migration_actions))
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
     def test_home_data_recovery_center_attaches_current_recovery_result_statuses(self):
         center = snapshot.build_home_data_recovery_center(
             {
