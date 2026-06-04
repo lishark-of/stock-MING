@@ -1199,6 +1199,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
         self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "下一票雷达")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_policy"], "navigation_only")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_target_tab"], "下一票雷达")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_radar_packet")
 
     def test_tool_recovery_navigation_state_is_safe_for_empty_action(self):
@@ -1218,9 +1219,30 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["title"], "来自首页恢复队列")
         self.assertEqual(notice["label"], "下一票雷达")
         self.assertEqual(notice["selected_tab"], "下一票雷达")
+        self.assertEqual(notice["target_tab"], "下一票雷达")
+        self.assertTrue(notice["is_target_tab"])
         self.assertEqual(notice["writes_packet"], "command_center_radar_packet")
         self.assertIn("手动点击", notice["message"])
         self.assertIn("不会自动运行", notice["action_hint"])
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_tool_recovery_context_notice_warns_when_user_switches_wrong_tab(self):
+        state = {
+            "command_center_last_tool_recovery_label": "融资融券",
+            "command_center_last_tool_recovery_writes_packet": "command_center_margin_packet",
+            "command_center_last_tool_recovery_target_tab": "融资 ETF",
+            "command_center_last_tool_recovery_policy": "navigation_only",
+            "legacy_workspace_selected_tab": "下一票雷达",
+        }
+
+        notice = snapshot.build_tool_recovery_context_notice(state, selected_tab="下一票雷达")
+
+        self.assertEqual(notice["selected_tab"], "下一票雷达")
+        self.assertEqual(notice["target_tab"], "融资 ETF")
+        self.assertFalse(notice["is_target_tab"])
+        self.assertIn("请先切回", notice["message"])
+        self.assertIn("当前模块不会显示该恢复按钮", notice["action_hint"])
         self.assertEqual(notice["external_call_policy"], "not_triggered")
         self.assertFalse(notice["deepseek_called"])
 
@@ -1250,6 +1272,24 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(hint["writes_packet"], "command_center_margin_packet")
         self.assertEqual(hint["external_call_policy"], "button_gated")
         self.assertIn("不自动运行 DeepSeek", hint["help_text"])
+        self.assertFalse(hint["deepseek_called"])
+
+    def test_tool_recovery_manual_check_hint_waits_for_target_tab(self):
+        hint = snapshot.build_tool_recovery_manual_check_hint(
+            {
+                "command_center_last_tool_recovery_label": "融资融券",
+                "command_center_last_tool_recovery_writes_packet": "command_center_margin_packet",
+                "command_center_last_tool_recovery_target_tab": "融资 ETF",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "下一票雷达",
+            },
+            selected_tab="下一票雷达",
+        )
+
+        self.assertFalse(hint["available"])
+        self.assertEqual(hint["target_tab"], "融资 ETF")
+        self.assertIn("请先切回", hint["message"])
+        self.assertEqual(hint["external_call_policy"], "not_triggered")
         self.assertFalse(hint["deepseek_called"])
 
     def test_tool_recovery_manual_check_hint_keeps_unknown_packet_manual(self):
@@ -1282,6 +1322,26 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         self.assertEqual(notice["status"], "waiting")
         self.assertIn("尚未检测到", notice["message"])
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_tool_recovery_result_notice_waits_for_target_tab(self):
+        notice = snapshot.build_tool_recovery_result_notice(
+            {
+                "command_center_last_tool_recovery_label": "融资融券",
+                "command_center_last_tool_recovery_writes_packet": "command_center_margin_packet",
+                "command_center_last_tool_recovery_target_tab": "融资 ETF",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "下一票雷达",
+                "command_center_margin_packet": {"status": "ready", "summary": "已刷新融资融券"},
+            },
+            selected_tab="下一票雷达",
+        )
+
+        self.assertEqual(notice["status"], "waiting")
+        self.assertEqual(notice["title"], "恢复入口不在当前模块")
+        self.assertEqual(notice["target_tab"], "融资 ETF")
+        self.assertIn("请切回", notice["next_action"])
         self.assertEqual(notice["external_call_policy"], "not_triggered")
         self.assertFalse(notice["deepseek_called"])
 

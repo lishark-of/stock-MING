@@ -1185,6 +1185,7 @@ def build_tool_recovery_navigation_state(action: Any = None) -> dict:
         "command_center_last_tool_recovery_key": _to_text(item.get("key")),
         "command_center_last_tool_recovery_label": _to_text(item.get("label"), legacy_tab),
         "command_center_last_tool_recovery_writes_packet": _to_text(item.get("writes_packet")),
+        "command_center_last_tool_recovery_target_tab": legacy_tab,
         "command_center_last_tool_recovery_policy": "navigation_only",
     }
 
@@ -1195,15 +1196,28 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         return {}
     label = _to_text(state_map.get("command_center_last_tool_recovery_label"), "旧工具能力")
     writes_packet = _to_text(state_map.get("command_center_last_tool_recovery_writes_packet"), "command_center_packet")
-    tab = _to_text(selected_tab, _to_text(state_map.get("legacy_workspace_selected_tab"), "高级工具"))
+    selected = _to_text(selected_tab, _to_text(state_map.get("legacy_workspace_selected_tab"), "高级工具"))
+    target_tab = _to_text(
+        state_map.get("command_center_last_tool_recovery_target_tab"),
+        _to_text(state_map.get("legacy_workspace_selected_tab"), selected),
+    )
+    is_target_tab = selected == target_tab
+    if is_target_tab:
+        message = f"你是从首页恢复队列进入“{target_tab}”；请在本模块手动点击对应按钮恢复 {writes_packet}。"
+        action_hint = "这里只是导航提示，不会自动运行扫描、回测、DeepSeek 或重型数据接口。"
+    else:
+        message = f"首页恢复队列目标是“{target_tab}”，当前在“{selected}”；请先切回“{target_tab}”再恢复 {writes_packet}。"
+        action_hint = "当前模块不会显示该恢复按钮；这仍然只是导航提示，不会自动运行任何重型任务。"
     return {
         "status": "ready",
         "title": "来自首页恢复队列",
         "label": label,
-        "selected_tab": tab,
+        "selected_tab": selected,
+        "target_tab": target_tab,
+        "is_target_tab": is_target_tab,
         "writes_packet": writes_packet,
-        "message": f"你是从首页恢复队列进入“{tab}”；请在本模块手动点击对应按钮恢复 {writes_packet}。",
-        "action_hint": "这里只是导航提示，不会自动运行扫描、回测、DeepSeek 或重型数据接口。",
+        "message": message,
+        "action_hint": action_hint,
         "safety_text": "恢复成功后的结构化结果会回流到 Home Action Snapshot。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
@@ -1260,6 +1274,17 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
     context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
     if not context:
         return {}
+    if not context.get("is_target_tab", True):
+        return {
+            "available": False,
+            "label": context["label"],
+            "selected_tab": context["selected_tab"],
+            "target_tab": context["target_tab"],
+            "writes_packet": context["writes_packet"],
+            "message": f"当前在“{context['selected_tab']}”；请先切回“{context['target_tab']}”再手动恢复 {context['writes_packet']}。",
+            "external_call_policy": "not_triggered",
+            "deepseek_called": False,
+        }
     writes_packet = context["writes_packet"]
     config = TOOL_RECOVERY_MANUAL_CHECKS.get(writes_packet)
     if not config:
@@ -1342,6 +1367,21 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
     context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
     if not context:
         return {}
+    if not context.get("is_target_tab", True):
+        return {
+            "status": "waiting",
+            "title": "恢复入口不在当前模块",
+            "label": context["label"],
+            "selected_tab": context["selected_tab"],
+            "target_tab": context["target_tab"],
+            "writes_packet": context["writes_packet"],
+            "message": f"当前在“{context['selected_tab']}”，首页恢复队列目标是“{context['target_tab']}”。",
+            "next_action": f"请切回“{context['target_tab']}”后手动运行对应按钮；不会自动执行旧工具。",
+            "updated_at": "",
+            "source": "首页恢复队列",
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
     state_map = _as_mapping(state)
     writes_packet = context["writes_packet"]
     packet = _as_mapping(state_map.get(writes_packet))
