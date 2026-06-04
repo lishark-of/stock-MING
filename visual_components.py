@@ -4912,6 +4912,19 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
     data_recovery_center_actions = [item for item in (data_recovery_center.get("actions") or []) if isinstance(item, dict)]
+    recovery_priority_lanes = [item for item in (data_recovery_center.get("priority_lanes") or []) if isinstance(item, dict)]
+    recovery_priority_html = ""
+    for lane in recovery_priority_lanes:
+        recovery_priority_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(lane.get("label"), "恢复优先级"))}
+            <span class="cc-home-chip {escape(_home_text(lane.get("tone"), "missing"))}">{escape(_home_number(lane.get("count")))}</span>
+          </div>
+          <div class="cc-home-item-meta">项目：{escape(_home_text(lane.get("summary"), "暂无"))}</div>
+          <div class="cc-home-item-meta">处理：{escape(_home_text(lane.get("next_action"), "按队列手动恢复。"))}</div>
+        </div>
+        """
     data_recovery_center_action_html = ""
     for item in data_recovery_center_actions[:6]:
         data_recovery_center_action_html += f"""
@@ -4952,6 +4965,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">下一步：{escape(_home_text(data_recovery_center.get("next_action"), "按队列手动恢复。"))}</div>
           <div class="cc-home-item-meta">安全边界：{escape(_home_text(data_recovery_center.get("safe_mode_text"), "页面打开不会自动请求外部接口。"))}</div>
           {latest_recovery_html}
+          {recovery_priority_html}
           {data_recovery_center_action_html}
         </div>
         """

@@ -69,6 +69,15 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("external_call_policy", source)
         self.assertIn("DeepSeek：未调用", source)
 
+    def test_home_snapshot_renders_recovery_priority_lanes(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("priority_lanes", source)
+        self.assertIn("recovery_priority_html", source)
+        self.assertIn("P0 权限/本会话跳过", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
+        self.assertIn("P1 缓存/近期无数据", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
+        self.assertIn("P2 旧工具 packet 迁移", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
+
     def test_home_snapshot_collapses_verbose_diagnostics(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 

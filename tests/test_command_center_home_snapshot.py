@@ -927,6 +927,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         writes_packets = [item["writes_packet"] for item in center["actions"]]
         group_counts = {item["key"]: item["count"] for item in center["groups"]}
+        lane_counts = {item["key"]: item["count"] for item in center["priority_lanes"]}
+        lane_summaries = {item["key"]: item["summary"] for item in center["priority_lanes"]}
 
         self.assertEqual(center["title"], "数据恢复中心")
         self.assertEqual(center["action_count"], 3)
@@ -936,8 +938,48 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(group_counts["data_source"], 1)
         self.assertEqual(group_counts["a_share"], 1)
         self.assertEqual(group_counts["legacy_tool"], 1)
+        self.assertEqual(lane_counts["p0"], 1)
+        self.assertEqual(lane_counts["p1"], 1)
+        self.assertEqual(lane_counts["p2"], 1)
+        self.assertIn("融资融券", lane_summaries["p0"])
+        self.assertIn("筹码", lane_summaries["p1"])
+        self.assertIn("下一票雷达", lane_summaries["p2"])
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in center["actions"]))
         self.assertFalse(center["deepseek_called"])
+
+    def test_recovery_priority_lanes_classify_session_skip_cache_and_legacy(self):
+        lanes = snapshot.build_recovery_priority_lanes(
+            [
+                {
+                    "label": "涨跌停/情绪",
+                    "status": "disabled_this_session",
+                    "status_label": "本会话跳过",
+                    "source_type": "data_source",
+                    "refresh_policy": "button_gated",
+                },
+                {
+                    "label": "筹码/胜率",
+                    "status": "empty_recent",
+                    "status_label": "近期无数据",
+                    "source_type": "a_share",
+                    "refresh_policy": "button_gated",
+                },
+                {
+                    "label": "量化推演",
+                    "status": "waiting",
+                    "source_type": "legacy_tool",
+                    "refresh_policy": "button_gated",
+                },
+            ]
+        )
+        lane_by_key = {item["key"]: item for item in lanes}
+
+        self.assertEqual(lane_by_key["p0"]["count"], 1)
+        self.assertEqual(lane_by_key["p1"]["count"], 1)
+        self.assertEqual(lane_by_key["p2"]["count"], 1)
+        self.assertIn("权限", lane_by_key["p0"]["next_action"])
+        self.assertIn("缓存", lane_by_key["p1"]["next_action"])
+        self.assertIn("旧工作台", lane_by_key["p2"]["next_action"])
 
     def test_home_data_recovery_center_accepts_legacy_a_share_fact_actions(self):
         center = snapshot.build_home_data_recovery_center(

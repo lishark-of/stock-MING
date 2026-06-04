@@ -920,6 +920,106 @@ def _normalize_recovery_center_action(
     }
 
 
+RECOVERY_PRIORITY_LANES = (
+    {
+        "key": "p0",
+        "label": "P0 权限/本会话跳过",
+        "tone": "failed",
+        "next_action": "先确认 Tushare 权限、积分、网络或本会话跳过标记；不要把权限缺口当作行情不存在。",
+    },
+    {
+        "key": "p1",
+        "label": "P1 缓存/近期无数据",
+        "tone": "stale",
+        "next_action": "复核交易日、缓存日期和接口覆盖范围；缓存只能防白屏，不能当作实时事实。",
+    },
+    {
+        "key": "p2",
+        "label": "P2 旧工具 packet 迁移",
+        "tone": "missing",
+        "next_action": "把旧工作台能力手动恢复成 command_center packet，再回到综合中心验证。",
+    },
+)
+
+
+def _recovery_action_lane_key(action: Mapping[str, Any]) -> str:
+    status_text = " ".join(
+        _to_text(action.get(key))
+        for key in (
+            "status",
+            "status_label",
+            "reason",
+            "diagnostic_answer",
+            "source_type",
+            "source_label",
+            "writes_packet",
+        )
+    ).lower()
+    if any(
+        token in status_text
+        for token in (
+            "permission_denied",
+            "disabled_this_session",
+            "network_failed",
+            "not_configured",
+            "failed",
+            "error",
+            "权限不足",
+            "本会话跳过",
+            "受限",
+            "失败",
+        )
+    ):
+        return "p0"
+    if any(
+        token in status_text
+        for token in (
+            "empty_recent",
+            "stale_cache",
+            "fallback_used",
+            "using_cache",
+            "cached",
+            "缓存",
+            "近期无",
+            "暂无数据",
+            "暂无当日",
+            "替代口径",
+        )
+    ):
+        return "p1"
+    if action.get("source_type") in {"legacy_tool", "a_share_fact"}:
+        return "p2"
+    return "p1"
+
+
+def build_recovery_priority_lanes(actions: Any = None) -> list[dict]:
+    action_list = [_as_mapping(item) for item in _as_list(actions)]
+    action_list = [item for item in action_list if item]
+    lanes = []
+    for lane_config in RECOVERY_PRIORITY_LANES:
+        lane_items = [
+            item
+            for item in action_list
+            if _recovery_action_lane_key(item) == lane_config["key"]
+        ]
+        lanes.append(
+            {
+                "key": lane_config["key"],
+                "label": lane_config["label"],
+                "tone": lane_config["tone"],
+                "count": len(lane_items),
+                "items": lane_items[:3],
+                "summary": (
+                    "、".join(_to_text(item.get("label"), "恢复项") for item in lane_items[:3])
+                    if lane_items
+                    else "暂无"
+                ),
+                "next_action": lane_config["next_action"],
+            }
+        )
+    return lanes
+
+
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
@@ -957,6 +1057,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         )
     actions = sorted(actions, key=lambda item: (item["priority"], item["source_label"], item["label"]))
     actions = actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+    priority_lanes = build_recovery_priority_lanes(actions)
     if not actions:
         tone = "ready"
         headline = "恢复队列为空"
@@ -977,6 +1078,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         "next_action": next_action,
         "actions": actions,
         "groups": groups,
+        "priority_lanes": priority_lanes,
         "action_count": len(actions),
         "safe_mode_text": "这里只整理恢复队列；所有数据请求仍由按钮触发，DeepSeek 不参与恢复动作。",
         "deepseek_called": False,
