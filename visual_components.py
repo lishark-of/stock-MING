@@ -5505,6 +5505,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </div>
         """
     data_recovery_center_actions = [item for item in (data_recovery_center.get("actions") or []) if isinstance(item, dict)]
+    recovery_result_overview = data_recovery_center.get("recovery_result_overview") or {}
+    if not isinstance(recovery_result_overview, dict):
+        recovery_result_overview = {}
+    recovery_result_overview_html = ""
+    if recovery_result_overview:
+        recovery_result_overview_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(recovery_result_overview.get("title"), "恢复结果总览"))}
+            <span class="cc-home-chip {escape(_home_text(recovery_result_overview.get("tone"), "missing"))}">{escape(_home_text(recovery_result_overview.get("headline"), "恢复结果待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(recovery_result_overview.get("summary"), "已回流 0｜使用缓存 0｜仍阻断 0｜待验证 0"))}</div>
+          <div class="cc-home-item-meta">可进入决策链：{escape(_home_text(recovery_result_overview.get("decision_chain_text"), "暂无恢复动作进入决策链。"))}</div>
+          <div class="cc-home-item-meta">仍阻断：{escape(_home_text(recovery_result_overview.get("blocked_labels"), "无"))} ｜ 使用缓存：{escape(_home_text(recovery_result_overview.get("cached_labels"), "无"))}</div>
+          <div class="cc-home-item-meta">已回流：{escape(_home_text(recovery_result_overview.get("recovered_labels"), "无"))} ｜ 待验证：{escape(_home_text(recovery_result_overview.get("waiting_labels"), "无"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(recovery_result_overview.get("next_action"), "按恢复队列手动处理。"))}</div>
+        </div>
+        """
     recovery_priority_lanes = [item for item in (data_recovery_center.get("priority_lanes") or []) if isinstance(item, dict)]
     recovery_priority_html = ""
     for lane in recovery_priority_lanes:
@@ -5837,6 +5855,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">{escape(_home_text(data_recovery_center.get("summary"), "暂无恢复摘要。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(data_recovery_center.get("next_action"), "按队列手动恢复。"))}</div>
           <div class="cc-home-item-meta">安全边界：{escape(_home_text(data_recovery_center.get("safe_mode_text"), "页面打开不会自动请求外部接口。"))}</div>
+          {recovery_result_overview_html}
           {recovery_next_step_html}
           {recovery_result_status_html}
           {latest_recovery_html}

@@ -2928,6 +2928,84 @@ def build_recovery_next_step_queue(decision_priority_queue: Any = None, limit: i
     return steps
 
 
+def build_recovery_result_overview(actions: Any = None) -> dict:
+    rows = [_as_mapping(item) for item in _as_list(actions)]
+    rows = [item for item in rows if item]
+    counts = {"recovered": 0, "cached": 0, "blocked": 0, "waiting": 0}
+    ready_labels = []
+    blocked_labels = []
+    cache_labels = []
+    waiting_labels = []
+    for item in rows:
+        status = _to_text(item.get("recovery_result_status"), "waiting")
+        label = _to_text(item.get("label"), "恢复项")
+        if status == "recovered":
+            counts["recovered"] += 1
+            ready_labels.append(label)
+        elif status == "cached":
+            counts["cached"] += 1
+            cache_labels.append(label)
+        elif status == "blocked":
+            counts["blocked"] += 1
+            blocked_labels.append(label)
+        else:
+            counts["waiting"] += 1
+            waiting_labels.append(label)
+    total = sum(counts.values())
+    can_enter_count = len([item for item in rows if item.get("recovery_result_can_enter_decision_chain")])
+    if counts["blocked"]:
+        status = "blocked"
+        tone = "failed"
+        headline = f"恢复结果仍有 {counts['blocked']} 项阻断"
+        next_action = "先处理仍阻断项；未恢复前不能把缺失数据当成安全或利好。"
+    elif counts["waiting"]:
+        status = "waiting"
+        tone = "stale" if counts["recovered"] or counts["cached"] else "missing"
+        headline = f"恢复结果待确认 {counts['waiting']} 项"
+        next_action = "按下一步恢复队列手动处理；成功后回到首页确认是否写回 packet。"
+    elif counts["cached"]:
+        status = "cache_only"
+        tone = "stale"
+        headline = f"恢复结果使用缓存 {counts['cached']} 项"
+        next_action = "执行前复核缓存日期、来源和覆盖口径。"
+    elif counts["recovered"]:
+        status = "ready"
+        tone = "ready"
+        headline = f"恢复结果已回流 {counts['recovered']} 项"
+        next_action = "可进入交易闭环复核；仍需价格、纪律和仓位规则共同确认。"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "恢复结果待验证"
+        next_action = "按恢复队列手动处理；页面打开不会自动请求外部接口。"
+    return {
+        "title": "恢复结果总览",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": (
+            f"已回流 {counts['recovered']}｜使用缓存 {counts['cached']}｜"
+            f"仍阻断 {counts['blocked']}｜待验证 {counts['waiting']}"
+        ),
+        "total_count": total,
+        "can_enter_decision_chain_count": can_enter_count,
+        "blocked_labels": "、".join(blocked_labels[:4]) or "无",
+        "cached_labels": "、".join(cache_labels[:4]) or "无",
+        "recovered_labels": "、".join(ready_labels[:4]) or "无",
+        "waiting_labels": "、".join(waiting_labels[:4]) or "无",
+        "decision_chain_text": (
+            f"可进入决策链 {can_enter_count}/{total}；"
+            "仍阻断项不得支撑加仓、追高、加融资或把风险写成已排除。"
+        )
+        if total
+        else "暂无恢复动作进入决策链。",
+        "next_action": next_action,
+        "safe_mode_text": "这里只汇总本地恢复结果；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def _recovery_result_lookup_from_state(state: Any = None) -> dict[str, dict]:
     payload = _as_mapping(state)
     lookup = {}
@@ -4057,6 +4135,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     priority_lanes = build_recovery_priority_lanes(actions)
     decision_priority_queue = build_decision_priority_queue(actions)
     next_step_queue = build_recovery_next_step_queue(decision_priority_queue)
+    recovery_result_overview = build_recovery_result_overview(actions)
     if not actions:
         tone = "ready"
         headline = "恢复队列为空"
@@ -4080,6 +4159,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         "priority_lanes": priority_lanes,
         "decision_priority_queue": decision_priority_queue,
         "next_step_queue": next_step_queue,
+        "recovery_result_overview": recovery_result_overview,
         "next_step_summary": (
             f"下一步先处理：{next_step_queue[0]['title']}。"
             if next_step_queue
