@@ -2206,6 +2206,91 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(center["deepseek_called"])
         json.dumps(center, ensure_ascii=False)
 
+    def test_home_data_recovery_center_reads_legacy_a_share_professional_fact_packets(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "data_recovery_actions": [
+                    {
+                        "label": "个股资金流",
+                        "status_label": "待验证",
+                        "action_label": "手动检测资金流",
+                        "writes_packet": "command_center_moneyflow_packet",
+                        "refresh_policy": "button_gated",
+                    },
+                    {
+                        "label": "融资融券",
+                        "status_label": "待验证",
+                        "action_label": "手动检测融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "refresh_policy": "button_gated",
+                    },
+                    {
+                        "label": "涨跌停/情绪",
+                        "status_label": "待验证",
+                        "action_label": "手动检测涨跌停/情绪",
+                        "writes_packet": "command_center_limit_emotion_packet",
+                        "refresh_policy": "button_gated",
+                    },
+                    {
+                        "label": "筹码/胜率",
+                        "status_label": "待验证",
+                        "action_label": "手动检测筹码/胜率",
+                        "writes_packet": "command_center_chip_packet",
+                        "refresh_policy": "button_gated",
+                    },
+                ],
+                "a_share_professional_facts": {
+                    "moneyflow": {
+                        "status": "available",
+                        "summary": "主力净流入已回流",
+                        "updated_at": "2026-06-04T10:00:00",
+                        "source": "Tushare moneyflow",
+                    },
+                    "margin": {
+                        "status": "failed",
+                        "data_status": "permission_denied",
+                        "status_label": "权限不足",
+                        "updated_at": "2026-06-04T10:01:00",
+                        "source": "Tushare margin_detail",
+                    },
+                    "limit_emotion": {
+                        "data_status": "ready",
+                        "summary": "涨跌停边界已回流",
+                        "updated_at": "2026-06-04T10:02:00",
+                        "source": "Tushare stk_limit / limit_list_d",
+                    },
+                    "chip_radar": {
+                        "data_status": "cached",
+                        "summary": "筹码/胜率使用缓存",
+                        "updated_at": "2026-06-03T10:00:00",
+                        "source": "Tushare cyq_perf / cyq_chips",
+                    },
+                },
+            }
+        )
+        by_label = {item["label"]: item for item in center["actions"]}
+        overview = center["recovery_result_overview"]
+        dumped = json.dumps(center, ensure_ascii=False)
+
+        self.assertEqual(by_label["个股资金流"]["recovery_result_status"], "recovered")
+        self.assertEqual(by_label["个股资金流"]["recovery_result_packet_key"], "a_share_professional_facts.moneyflow")
+        self.assertEqual(by_label["涨跌停/情绪"]["recovery_result_status"], "recovered")
+        self.assertEqual(by_label["涨跌停/情绪"]["recovery_result_packet_key"], "a_share_professional_facts.limit_emotion")
+        self.assertEqual(by_label["筹码/胜率"]["recovery_result_status"], "cached")
+        self.assertEqual(by_label["筹码/胜率"]["recovery_result_packet_key"], "a_share_professional_facts.chip_radar")
+        self.assertEqual(by_label["融资融券"]["recovery_result_status"], "blocked")
+        self.assertEqual(by_label["融资融券"]["recovery_result_status_label"], "权限不足")
+        self.assertIn("当前读取来源为 a_share_professional_facts.moneyflow", dumped)
+        self.assertIn("当前读取来源为 a_share_professional_facts.limit_emotion", dumped)
+        self.assertIn("已回流 2", overview["summary"])
+        self.assertIn("使用缓存 1", overview["summary"])
+        self.assertIn("仍阻断 1", overview["summary"])
+        self.assertEqual(overview["can_enter_decision_chain_count"], 3)
+        self.assertEqual(overview["external_call_policy"], "not_triggered")
+        self.assertFalse(overview["deepseek_called"])
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
     def test_recovery_priority_lanes_classify_session_skip_cache_and_legacy(self):
         lanes = snapshot.build_recovery_priority_lanes(
             [

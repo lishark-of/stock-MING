@@ -178,6 +178,19 @@ RECOVERY_WRITES_PACKET_TO_SNAPSHOT_KEY = {
     "command_center_market_packet": "market_packet",
 }
 
+RECOVERY_WRITES_PACKET_TO_LEGACY_A_SHARE_FACT_KEY = {
+    "command_center_moneyflow_packet": ("moneyflow", "moneyflow_packet"),
+    "command_center_dragon_tiger_packet": ("dragon_tiger", "dragon_tiger_packet"),
+    "command_center_margin_packet": ("margin", "margin_packet"),
+    "command_center_limit_emotion_packet": ("limit_emotion", "limit_emotion_packet"),
+    "command_center_chip_packet": ("chip_radar", "chip_packet"),
+    "command_center_hard_risk_packet": (
+        "verified_hard_risks",
+        "hard_risk",
+        "hard_risk_packet",
+    ),
+}
+
 OLD_WORKSPACE_API_TO_WRITES_PACKET = {
     "moneyflow": "command_center_moneyflow_packet",
     "top_list": "command_center_dragon_tiger_packet",
@@ -5192,6 +5205,11 @@ def _resolve_recovery_packet(container: Any = None, writes_packet: str = "") -> 
     snapshot_packet = _as_mapping(payload.get(snapshot_key))
     if snapshot_packet:
         return snapshot_key, snapshot_packet
+    professional_facts = _as_mapping(payload.get("a_share_professional_facts"))
+    for fact_key in RECOVERY_WRITES_PACKET_TO_LEGACY_A_SHARE_FACT_KEY.get(_to_text(writes_packet), ()):
+        fact_packet = _as_mapping(professional_facts.get(fact_key))
+        if fact_packet:
+            return f"a_share_professional_facts.{fact_key}", fact_packet
     return snapshot_key or writes_packet, {}
 
 
