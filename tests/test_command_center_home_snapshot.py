@@ -1509,6 +1509,63 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["deepseek_called"] is False for item in decision_queue))
         self.assertFalse(center["deepseek_called"])
 
+    def test_data_health_visibility_actions_enter_decision_priority_queue(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "data_health_visibility_summary": {
+                    "recovery_actions": [
+                        {
+                            "key": "data_health_visibility:margin_detail",
+                            "label": "融资融券",
+                            "provider": "Tushare",
+                            "api": "margin_detail",
+                            "state": "permission_denied",
+                            "status_label": "权限不足",
+                            "tone": "failed",
+                            "root_cause_code": "permission_scope",
+                            "root_cause_label": "接口权限/积分",
+                            "why_previous_full_not_enough": "之前“拉满”不代表 margin_detail 已开通。",
+                            "action_label": "手动检测融资融券",
+                            "toolbox_entry": "高级工具箱 / 融资 ETF",
+                            "workspace_target": "高级工具箱（旧版保留）",
+                            "workspace_state_key": "workspace_mode_v2",
+                            "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                            "legacy_tab": "融资 ETF",
+                            "navigation_label": "主导航切到高级工具箱（旧版保留）→ 高级工具模块选择融资 ETF；手动执行后回流 command_center_margin_packet。",
+                            "writes_packet": "command_center_margin_packet",
+                            "refresh_policy": "button_gated",
+                            "diagnostic_answer": "margin_detail 权限不足，不是股票搜不到。",
+                            "decision_guardrail": "融资融券未恢复前不能支持加融资。",
+                            "recovery_button_context": "按钮只检测 margin_detail，不调用 DeepSeek。",
+                            "external_call_policy": "not_triggered",
+                            "deepseek_called": False,
+                        }
+                    ]
+                }
+            }
+        )
+
+        actions = center["actions"]
+        decision_queue = center["decision_priority_queue"]
+        group_counts = {item["key"]: item["count"] for item in center["groups"]}
+
+        self.assertEqual(group_counts["data_health_visibility"], 1)
+        self.assertEqual(actions[0]["source_type"], "data_health_visibility")
+        self.assertEqual(actions[0]["source_label"], "为什么搜不到")
+        self.assertEqual(actions[0]["root_cause_code"], "permission_scope")
+        self.assertEqual(actions[0]["root_cause_label"], "接口权限/积分")
+        self.assertIn("之前“拉满”", actions[0]["why_previous_full_not_enough"])
+        self.assertEqual(decision_queue[0]["lane_key"], "p0")
+        self.assertEqual(decision_queue[0]["root_cause_code"], "permission_scope")
+        self.assertEqual(decision_queue[0]["root_cause_label"], "接口权限/积分")
+        self.assertIn("不能支持加融资", decision_queue[0]["decision_impact"])
+        navigation = snapshot.build_tool_recovery_navigation_state(decision_queue[0])
+        self.assertEqual(navigation["legacy_workspace_selected_tab"], "融资 ETF")
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in actions))
+        self.assertTrue(all(item["deepseek_called"] is False for item in decision_queue))
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
     def test_a_share_capability_matrix_feeds_home_recovery_center(self):
         center = snapshot.build_home_data_recovery_center(
             {

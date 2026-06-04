@@ -2254,6 +2254,20 @@ def _normalize_recovery_center_action(
     writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
     status = _to_text(item.get("status") or item.get("state") or item.get("data_status"), "waiting")
     legacy_tab = _to_text(item.get("legacy_tab"), _recovery_legacy_tab(writes_packet, item.get("key") or item.get("api")))
+    root_cause_code = _to_text(
+        item.get("root_cause_code") or item.get("interface_cause_key") or item.get("cause_code")
+    )
+    root_cause_label = _to_text(
+        item.get("root_cause_label")
+        or item.get("interface_cause_label")
+        or item.get("cause_label")
+        or item.get("status_label"),
+        "待验证",
+    )
+    priority = int(
+        _to_number(item.get("priority"))
+        or _recovery_priority_from_root_cause(root_cause_code, status, default_priority)
+    )
     return {
         "key": _to_text(item.get("key") or item.get("api") or writes_packet or label),
         "label": label,
@@ -2261,12 +2275,14 @@ def _normalize_recovery_center_action(
         "source_label": _to_text(source_label, "恢复队列"),
         "status": status,
         "status_label": _to_text(item.get("status_label") or item.get("capability_label"), "待验证"),
-        "priority": int(_to_number(item.get("priority")) or default_priority),
+        "priority": priority,
         "reason": _to_text(item.get("reason") or item.get("action_hint"), f"{label}仍待验证。"),
         "diagnostic_answer": _to_text(item.get("diagnostic_answer") or item.get("meaning"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
         "interface_diagnostic_answer": _to_text(item.get("interface_diagnostic_answer") or item.get("diagnostic_answer") or item.get("meaning"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
-        "interface_cause_key": _to_text(item.get("interface_cause_key") or item.get("cause_code")),
-        "interface_cause_label": _to_text(item.get("interface_cause_label") or item.get("cause_label") or item.get("status_label"), "待验证"),
+        "interface_cause_key": root_cause_code,
+        "interface_cause_label": root_cause_label,
+        "root_cause_code": root_cause_code,
+        "root_cause_label": root_cause_label,
         "why_previous_full_not_enough": _to_text(item.get("why_previous_full_not_enough")),
         "decision_guardrail": _to_text(item.get("decision_guardrail"), f"{label}未恢复前不能作为加仓、追高或加融资依据。"),
         "action_label": _to_text(item.get("action_label"), f"手动恢复{label}"),
@@ -2291,6 +2307,18 @@ def _normalize_recovery_center_action(
         "external_call_policy": _to_text(item.get("external_call_policy"), "not_triggered"),
         "deepseek_called": False,
     }
+
+
+def _recovery_priority_from_root_cause(root_cause_code: Any = "", status: Any = "", default_priority: int = 3) -> int:
+    cause = _to_text(root_cause_code).lower()
+    state = _to_text(status).lower()
+    if cause in {"permission_scope", "session_skip", "configuration"}:
+        return 1
+    if cause in {"publish_window", "cache_guard", "fallback_proxy", "manual_gate"}:
+        return 2
+    if cause == "available" or state == "available":
+        return 3
+    return int(default_priority or 3)
 
 
 def build_a_share_capability_matrix_recovery_actions_snapshot(
@@ -2397,6 +2425,11 @@ def _recovery_action_lane_key(action: Mapping[str, Any]) -> str:
             "diagnostic_answer",
             "source_type",
             "source_label",
+            "interface_cause_key",
+            "interface_cause_label",
+            "root_cause_code",
+            "root_cause_label",
+            "why_previous_full_not_enough",
             "writes_packet",
         )
     ).lower()
@@ -2528,6 +2561,8 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "status_label": _to_text(action.get("status_label"), "待验证"),
                 "interface_cause_key": _to_text(action.get("interface_cause_key")),
                 "interface_cause_label": _to_text(action.get("interface_cause_label")),
+                "root_cause_code": _to_text(action.get("root_cause_code") or action.get("interface_cause_key")),
+                "root_cause_label": _to_text(action.get("root_cause_label") or action.get("interface_cause_label")),
                 "why_previous_full_not_enough": _to_text(action.get("why_previous_full_not_enough")),
                 "diagnostic_answer": diagnostic,
                 "decision_impact": _to_text(action.get("decision_guardrail") or action.get("decision_impact"), config["fallback_impact"]),
@@ -3231,6 +3266,11 @@ def build_legacy_packet_checklist_recovery_actions_snapshot(
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
+    visibility_summary = _as_mapping(
+        payload.get("command_center_data_health_visibility_summary")
+        or payload.get("data_health_visibility_summary")
+    )
+    visibility_actions = _as_list(visibility_summary.get("recovery_actions"))
     timeline_actions = _as_list(
         payload.get("command_center_data_health_timeline_recovery_actions")
         or payload.get("data_health_timeline_recovery_actions")
@@ -3252,6 +3292,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     tool_actions = _as_list(payload.get("tool_recovery_actions"))
     action_sources = [
         ("data_source", "数据源能力", data_actions, 1),
+        ("data_health_visibility", "为什么搜不到", visibility_actions, 1),
         ("data_health_timeline", "接口健康时间线", timeline_actions, 1),
         ("a_share_capability_matrix", "A股能力矩阵", a_share_matrix_actions, 2),
         ("a_share_fact", "旧版 A股事实卡", legacy_fact_actions, 2),
@@ -3263,6 +3304,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     ]
     recovery_result_lookup = _recovery_result_lookup_from_state(payload)
     seen = set()
+    action_by_dedupe_key = {}
     actions = []
     groups = []
     for source_type, source_label, source_actions, default_priority in action_sources:
@@ -3276,8 +3318,24 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
             if source_type == "next_ticket_evidence":
                 dedupe_key = f"{source_type}:{dedupe_key}"
             if dedupe_key in seen:
+                existing = action_by_dedupe_key.get(dedupe_key)
+                if existing:
+                    for field in (
+                        "interface_cause_key",
+                        "interface_cause_label",
+                        "root_cause_code",
+                        "root_cause_label",
+                        "why_previous_full_not_enough",
+                    ):
+                        current = _to_text(existing.get(field))
+                        incoming = _to_text(item.get(field))
+                        if incoming and current in {"", "待验证", "尚未检测", "not_checked"}:
+                            existing[field] = incoming
+                    if item.get("source_type") == "data_health_visibility":
+                        existing["root_cause_source_label"] = item["source_label"]
                 continue
             seen.add(dedupe_key)
+            action_by_dedupe_key[dedupe_key] = item
             group_items.append(item)
             actions.append(item)
         groups.append(
