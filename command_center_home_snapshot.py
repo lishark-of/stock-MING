@@ -2408,6 +2408,15 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                     action.get("recovery_result_message"),
                     "尚未检测到本项恢复结果回流。",
                 ),
+                "recovery_result_confirmation_text": _to_text(
+                    action.get("recovery_result_confirmation_text"),
+                    f"{label} 尚未确认写回 {writes_packet}。",
+                ),
+                "recovery_result_decision_effect": _to_text(
+                    action.get("recovery_result_decision_effect"),
+                    config["fallback_impact"],
+                ),
+                "recovery_result_can_enter_decision_chain": bool(action.get("recovery_result_can_enter_decision_chain")),
                 "recovery_result_updated_at": _to_text(action.get("recovery_result_updated_at"), "暂无"),
                 "recovery_result_source": _to_text(action.get("recovery_result_source"), "本地恢复状态"),
                 "deepseek_called": False,
@@ -2511,6 +2520,32 @@ def _fallback_recovery_result_item(action: Mapping[str, Any], state: Any = None)
     }
 
 
+def _recovery_result_confirmation_text(
+    label: str,
+    writes_packet: str,
+    status: str,
+    packet_key: str = "",
+) -> str:
+    packet_text = packet_key or writes_packet
+    if status == "recovered":
+        return f"{label} 已确认写回 {writes_packet}；当前读取来源为 {packet_text}。"
+    if status == "cached":
+        return f"{label} 已读到 {writes_packet} 的缓存结果；执行前要复核日期和来源。"
+    if status == "blocked":
+        return f"{label} 尚未写回可用 {writes_packet}；缺口仍会限制综合中心结论。"
+    return f"{label} 尚未确认写回 {writes_packet}；需要手动恢复后再回到综合中心确认。"
+
+
+def _recovery_result_decision_effect(label: str, status: str) -> str:
+    if status == "recovered":
+        return f"{label}可进入证据链，但仍需价格、纪律和仓位规则共同确认。"
+    if status == "cached":
+        return f"{label}只能作为缓存证据；不能当作今日实时验证。"
+    if status == "blocked":
+        return f"{label}仍阻断加仓、追高、加融资或把风险写成已排除。"
+    return f"{label}仍是待验证缺口；综合中心只能保留安全空态或上次成功结果。"
+
+
 def attach_recovery_result_status_to_action(
     action: Any = None,
     state: Any = None,
@@ -2522,15 +2557,21 @@ def attach_recovery_result_status_to_action(
     lookup = _as_mapping(result_lookup)
     writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
     result = _as_mapping(lookup.get(writes_packet)) or _fallback_recovery_result_item(item, state)
-    item["recovery_result_status"] = _to_text(result.get("status"), "waiting")
+    label = _to_text(item.get("label"), "恢复项")
+    status = _to_text(result.get("status"), "waiting")
+    packet_key = _to_text(result.get("packet_key"), writes_packet)
+    item["recovery_result_status"] = status
     item["recovery_result_status_label"] = _to_text(result.get("status_label"), "待验证")
     item["recovery_result_tone"] = _to_text(result.get("tone"), "missing")
     item["recovery_result_message"] = _to_text(result.get("message"), "尚未检测到本项恢复结果回流。")
     item["recovery_result_updated_at"] = _to_text(result.get("updated_at"), "暂无")
     item["recovery_result_source"] = _to_text(result.get("source"), "本地恢复状态")
-    item["recovery_result_packet_key"] = _to_text(result.get("packet_key"), writes_packet)
+    item["recovery_result_packet_key"] = packet_key
     item["recovery_result_next_action"] = _to_text(result.get("next_action"), "按恢复队列手动处理。")
     item["recovery_result_external_call_policy"] = _to_text(result.get("external_call_policy"), "not_triggered")
+    item["recovery_result_confirmation_text"] = _recovery_result_confirmation_text(label, writes_packet, status, packet_key)
+    item["recovery_result_decision_effect"] = _recovery_result_decision_effect(label, status)
+    item["recovery_result_can_enter_decision_chain"] = status in {"recovered", "cached"}
     item["deepseek_called"] = False
     return item
 

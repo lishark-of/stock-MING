@@ -5433,6 +5433,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("reason"), "仍需手动确认。"))}</div>
           <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
           <div class="cc-home-item-meta">恢复结果：{escape(_home_text(item.get("recovery_result_status_label"), "待验证"))} ｜ {escape(_home_text(item.get("recovery_result_message"), "尚未检测到本项恢复结果回流。"))}</div>
+          <div class="cc-home-item-meta">回流确认：{escape(_home_text(item.get("recovery_result_confirmation_text"), "尚未确认写回综合中心 packet。"))} ｜ 决策链影响：{escape(_home_text(item.get("recovery_result_decision_effect"), "未验证前只能保留安全空态。"))}</div>
           <div class="cc-home-item-meta">结果时间：{escape(_home_text(item.get("recovery_result_updated_at"), "暂无"))} ｜ 来源：{escape(_home_text(item.get("recovery_result_source"), "本地恢复状态"))}</div>
           <div class="cc-home-item-meta">按钮说明：{escape(_home_text(item.get("recovery_button_context"), "按钮只负责打开/触发对应手动恢复，不自动调用 DeepSeek。"))}</div>
           <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
