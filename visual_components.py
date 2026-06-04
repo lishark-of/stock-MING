@@ -4621,7 +4621,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         f"<span class='cc-decision-chain-pill {escape(str(item.get('tone') or 'muted'))}'>"
         f"{escape(str(item.get('label') or '依据'))}：{escape(str(item.get('value') or '待验证'))}"
         "</span>"
-        for item in (vm.get("evidence_chain_items") or [])[:5]
+        for item in (vm.get("evidence_chain_items") or [])[:6]
     )
     a_share_data_basis_items = vm.get("a_share_data_basis_items") or []
     a_share_data_basis_html = "".join(
@@ -4672,6 +4672,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         <br>{escape(str(vm.get("evidence_summary_text") or ""))}
         <br>A股证据雷达：{escape(str(vm.get("a_share_evidence_summary_text") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
         <br>A股数据能力：{escape(str(vm.get("a_share_data_basis_summary_text") or "待检测"))}
+        <br>A股事实回流：{escape(str(vm.get("a_share_fact_recovery_summary_text") or "待检测"))}
       </div>
     </section>
     """

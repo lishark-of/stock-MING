@@ -3899,11 +3899,17 @@ def render_command_center_decision_card(live_packet, target="", position_profile
         if isinstance(a_share_diagnostic, dict)
         else {}
     ) or {}
+    a_share_fact_recovery_summary = (
+        home_snapshot.get("a_share_fact_recovery_summary")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or {}
     decision_vm = build_decision_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_vm,
         a_share_data_console=a_share_data_console,
+        a_share_fact_recovery_summary=a_share_fact_recovery_summary,
     )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):

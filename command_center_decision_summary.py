@@ -265,10 +265,51 @@ def build_a_share_data_basis_summary_text(a_share_data_console: Any = None) -> s
     return f"{readiness}｜{summary}" if summary else readiness
 
 
+def _a_share_fact_recovery_tone(summary: Mapping[str, Any]) -> str:
+    blocked = _safe_int(summary.get("blocked_count"))
+    waiting = _safe_int(summary.get("waiting_count"))
+    recovered = _safe_int(summary.get("recovered_count"))
+    total = _safe_int(summary.get("total_count"))
+    if blocked:
+        return "danger"
+    if waiting:
+        return "warning"
+    if total and recovered >= total:
+        return "success"
+    return "muted"
+
+
+def build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary: Any = None) -> dict:
+    summary = _as_mapping(a_share_fact_recovery_summary)
+    if not summary:
+        return {}
+    text = _to_text(summary.get("summary"))
+    if not text:
+        total = _safe_int(summary.get("total_count")) or 5
+        text = (
+            f"A股事实 {total} 项：已回流 {_safe_int(summary.get('recovered_count'))}"
+            f"｜仍受限 {_safe_int(summary.get('blocked_count'))}"
+            f"｜待验证 {_safe_int(summary.get('waiting_count'))}"
+        )
+    return {
+        "label": "A股事实回流",
+        "value": text,
+        "tone": _a_share_fact_recovery_tone(summary),
+        "summary": text,
+        "next_action": _to_text(summary.get("next_action")),
+    }
+
+
+def build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary: Any = None) -> str:
+    item = build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary)
+    return _to_text(item.get("summary"))
+
+
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    a_share_fact_recovery_summary: Any = None,
 ) -> list[dict]:
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
@@ -290,6 +331,9 @@ def build_decision_evidence_chain_items(
     a_share_basis = build_a_share_data_basis_items(a_share_data_console)
     if a_share_basis:
         items.append(a_share_basis[0])
+    fact_recovery_basis = build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary)
+    if fact_recovery_basis:
+        items.append(fact_recovery_basis)
     evidence = _as_mapping(evidence_radar_packet)
     if evidence:
         blockers = len(evidence.get("blocker_items") or [])
@@ -307,7 +351,7 @@ def build_decision_evidence_chain_items(
     if len(items) < 5:
         source = _to_text(analysis.get("source")) or "rule-based market profile"
         items.append({"label": "来源", "value": source, "tone": "muted"})
-    return items[:5]
+    return items[:6]
 
 
 def build_decision_summary_view_model(
@@ -315,6 +359,7 @@ def build_decision_summary_view_model(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    a_share_fact_recovery_summary: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     status = normalize_decision_status(payload)
@@ -347,10 +392,13 @@ def build_decision_summary_view_model(
             analysis_method_packet,
             evidence_radar_packet=evidence_radar_packet,
             a_share_data_console=a_share_data_console,
+            a_share_fact_recovery_summary=a_share_fact_recovery_summary,
         ),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
         "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
         "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),
+        "a_share_fact_recovery_basis_item": build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary),
+        "a_share_fact_recovery_summary_text": build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),

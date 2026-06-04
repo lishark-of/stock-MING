@@ -211,6 +211,41 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(basis[0]["value"], "可进入证据链")
         self.assertIn("个股资金流", json.dumps(basis, ensure_ascii=False))
 
+    def test_evidence_chain_includes_a_share_fact_recovery_blockers(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "只观察"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            a_share_fact_recovery_summary={
+                "summary": "A股事实 5 项：已回流 2｜仍受限 1｜待验证 2",
+                "recovered_count": 2,
+                "blocked_count": 1,
+                "waiting_count": 2,
+                "total_count": 5,
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("A股事实回流", joined)
+        self.assertIn("仍受限 1", joined)
+        self.assertEqual(view_model["a_share_fact_recovery_basis_item"]["tone"], "danger")
+        self.assertIn("已回流 2", view_model["a_share_fact_recovery_summary_text"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_a_share_fact_recovery_marks_all_recovered_as_success(self):
+        item = summary.build_a_share_fact_recovery_basis_item(
+            {
+                "summary": "A股事实 5 项：已回流 5｜仍受限 0｜待验证 0",
+                "recovered_count": 5,
+                "blocked_count": 0,
+                "waiting_count": 0,
+                "total_count": 5,
+            }
+        )
+
+        self.assertEqual(item["tone"], "success")
+        self.assertIn("已回流 5", item["value"])
+
     def test_evidence_chain_keeps_blockers_when_method_list_is_full(self):
         view_model = summary.build_decision_summary_view_model(
             {},
