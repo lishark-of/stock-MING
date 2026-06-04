@@ -15,6 +15,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["is_empty"])
         self.assertEqual(payload["data_freshness"]["state"], "missing")
         self.assertIn("暂无可执行候选", payload["empty_message"])
+        self.assertIn("decision_loop_status", payload)
+        self.assertEqual(len(payload["decision_loop_status"]["items"]), 6)
+        self.assertFalse(payload["decision_loop_status"]["deepseek_called"])
 
     def test_save_and_load_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -35,6 +38,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(path.name, snapshot.SNAPSHOT_FILENAME)
         self.assertEqual(loaded["today_action"]["overall_action"], "只观察")
         self.assertFalse(loaded["deepseek_called"])
+        loop_items = {item["key"]: item for item in loaded["decision_loop_status"]["items"]}
+        self.assertEqual(loop_items["decision"]["status"], "ready")
+        self.assertEqual(loop_items["deepseek"]["status"], "manual")
 
     def test_snapshot_filters_secrets_and_prompts(self):
         payload = snapshot.build_home_action_snapshot(

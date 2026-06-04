@@ -5167,6 +5167,17 @@ packet:
         horizon_days=10,
     )
     st.session_state["command_center_projection_packet"] = projection_packet
+    home_snapshot = home_snapshot_service.attach_decision_loop_status(
+        home_snapshot,
+        analysis_method_packet=analysis_method_packet,
+        projection_packet=projection_packet,
+        strategy_packet=_get_strategy_execution_display_packet(),
+        decision_packet=_get_command_center_decision_display_packet(),
+        deepseek_summary=st.session_state.get(explanation_key),
+    )
+    st.session_state["command_center_home_snapshot"] = home_snapshot
+    with home_snapshot_slot.container():
+        render_home_action_snapshot(home_snapshot)
     with decision_hero_slot.container():
         live_packet = render_command_center_decision_card(
             live_packet,

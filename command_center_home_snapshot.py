@@ -29,6 +29,7 @@ import command_center_a_share_capability_matrix as a_share_capability_matrix_ser
 import command_center_legacy_a_share_debug_summary as legacy_a_share_debug_summary_service
 import command_center_legacy_a_share_gate as legacy_a_share_gate_service
 import command_center_legacy_migration_map as legacy_migration_map_service
+import command_center_loop_status as loop_status_service
 import market_data_capability as data_capability_service
 
 
@@ -365,6 +366,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     )
     snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot = attach_decision_loop_status(snapshot)
     return snapshot
 
 
@@ -504,7 +506,31 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         normalized_market_profile.update(existing_market_profile)
         normalized_market_profile["deepseek_called"] = False
     snapshot["market_profile_evidence"] = normalized_market_profile
+    snapshot = attach_decision_loop_status(snapshot)
     return snapshot
+
+
+def attach_decision_loop_status(
+    snapshot: Any = None,
+    *,
+    data_capability_console: Any = None,
+    analysis_method_packet: Any = None,
+    projection_packet: Any = None,
+    strategy_packet: Any = None,
+    decision_packet: Any = None,
+    deepseek_summary: Any = None,
+) -> dict:
+    payload = _as_mapping(snapshot)
+    payload["decision_loop_status"] = loop_status_service.build_command_center_loop_status_view_model(
+        data_capability_console=data_capability_console or payload.get("data_capability_console") or {},
+        analysis_method_packet=analysis_method_packet or payload.get("analysis_method_packet") or {},
+        market_profile_evidence=payload.get("market_profile_evidence") or {},
+        projection_packet=projection_packet or payload.get("projection_packet") or {},
+        strategy_packet=strategy_packet or payload.get("strategy_packet") or {},
+        decision_packet=decision_packet or payload.get("decision_packet") or {},
+        deepseek_summary=deepseek_summary or payload.get("deepseek_summary") or {},
+    )
+    return payload
 
 
 def save_home_action_snapshot(snapshot: Mapping[str, Any], path: str | Path | None = None, base_dir: str | Path | None = None) -> Path:
@@ -3203,6 +3229,11 @@ def build_home_action_snapshot(
         or state_map.get("analysis_method_packet")
         or {}
     )
+    projection_packet = (
+        state_map.get("command_center_projection_packet")
+        or state_map.get("projection_packet")
+        or {}
+    )
     position_map = _as_mapping(position_profile)
     market_profile_evidence = market_profile_summary_service.build_market_profile_evidence_strip(
         market_type=state_map.get("market_type") or position_map.get("market_type"),
@@ -3268,6 +3299,8 @@ def build_home_action_snapshot(
         "recovery_result_timeline": {},
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
+        "analysis_method_packet": analysis_method_packet,
+        "projection_packet": projection_packet,
         "errors": errors,
         "deepseek_called": deepseek_called,
         "safety_line": "本系统不自动交易，不保证收益；DeepSeek 只解释当前结构化结果。",
@@ -3330,6 +3363,8 @@ def build_home_action_snapshot(
         empty["latest_recovery_result_notice"] = snapshot["latest_recovery_result_notice"]
         empty["market_packet"] = snapshot["market_packet"]
         empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
+        empty["analysis_method_packet"] = snapshot["analysis_method_packet"]
+        empty["projection_packet"] = snapshot["projection_packet"]
         empty["radar_packet"] = snapshot["radar_packet"]
         empty["etf_packet"] = snapshot["etf_packet"]
         empty["discipline_packet"] = snapshot["discipline_packet"]
@@ -3344,6 +3379,14 @@ def build_home_action_snapshot(
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
         empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
+        empty = attach_decision_loop_status(
+            empty,
+            data_capability_console=empty.get("data_capability_console") or {},
+            analysis_method_packet=empty.get("analysis_method_packet") or {},
+            projection_packet=empty.get("projection_packet") or {},
+            strategy_packet=empty.get("strategy_packet") or {},
+            decision_packet=empty.get("decision_packet") or {},
+        )
         empty["errors"] = errors
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
@@ -3372,6 +3415,14 @@ def build_home_action_snapshot(
     snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
         snapshot.get("risk_alerts") or {},
         snapshot.get("data_recovery_center") or {},
+    )
+    snapshot = attach_decision_loop_status(
+        snapshot,
+        data_capability_console=snapshot.get("data_capability_console") or {},
+        analysis_method_packet=analysis_method_packet,
+        projection_packet=projection_packet,
+        strategy_packet=strategy,
+        decision_packet=decision,
     )
     return sanitize_snapshot_payload(snapshot)
 

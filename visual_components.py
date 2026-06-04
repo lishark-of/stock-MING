@@ -4853,6 +4853,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not evidence_vm:
         evidence_vm = build_a_share_evidence_radar_view_model(payload)
     evidence_loop_status = evidence_vm.get("loop_status") or {}
+    decision_loop_status = payload.get("decision_loop_status") or {}
+    if not isinstance(decision_loop_status, dict):
+        decision_loop_status = {}
 
     freshness_state = str(freshness.get("state") or "missing")
     freshness_label = freshness.get("label") or "待刷新"
@@ -4948,6 +4951,42 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div>
           <div class="cc-home-profile-meta">交易保护：{escape(_home_text(evidence_loop_status.get("decision_guardrail"), "证据未补齐前，不支撑放大仓位。"))}</div>
           <div class="cc-home-profile-meta">DeepSeek：未调用 ｜ 外部接口：{escape(evidence_external_policy)}</div>
+        </div>
+      </div>
+    """
+    loop_items_html = ""
+    for item in (decision_loop_status.get("items") or [])[:6]:
+        if not isinstance(item, dict):
+            continue
+        loop_items_html += (
+            f"<span class='cc-home-chip {escape(_home_text(item.get('tone'), 'missing'))}'>"
+            f"{escape(_home_text(item.get('label'), '闭环'))}：{escape(_home_text(item.get('status_label'), '待验证'))}"
+            "</span>"
+        )
+    if not loop_items_html:
+        loop_items_html = "<span class='cc-home-chip missing'>闭环：待验证</span>"
+    decision_loop_external_policy = _home_text(decision_loop_status.get("external_call_policy"), "not_triggered")
+    if decision_loop_external_policy == "not_triggered":
+        decision_loop_external_policy = "未触发"
+    decision_loop_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(decision_loop_status.get("title"), "决策闭环状态"))}
+            <span class="cc-home-chip {escape(_home_text(decision_loop_status.get("tone"), "missing"))}">
+              {escape(_home_text(decision_loop_status.get("headline"), "待验证"))}
+            </span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(decision_loop_status.get("summary"), "数据能力、分析方法、趋势推演、策略执行和总决策仍待串联验证。"))}
+          </div>
+        </div>
+        <div>
+          <div class="cc-home-profile-pills">{loop_items_html}</div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(decision_loop_status.get("safe_mode_text"), "页面打开只读取本地 packet；重型任务仍保持按钮触发。"))}
+            ｜外部接口：{escape(decision_loop_external_policy)}
+          </div>
         </div>
       </div>
     """
@@ -5939,6 +5978,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </aside>
       </div>
       {market_profile_html}
+      {decision_loop_html}
       {a_share_status_console_html}
       {evidence_loop_html}
       <div class="cc-home-grid">
