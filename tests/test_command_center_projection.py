@@ -230,6 +230,34 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("A股数据能力可进入证据链", packet["paths"][0]["trigger"])
         self.assertIn("个股资金流", joined)
 
+    def test_a_share_fact_recovery_enriches_projection_paths(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            a_share_fact_recovery_summary={
+                "summary": "A股事实 5 项：已回流 2｜仍受限 1｜待验证 2",
+                "tone": "failed",
+                "items": [
+                    {"label": "个股资金流", "recovery_state": "recovered", "status_label": "可用", "tone": "ready"},
+                    {"label": "龙虎榜", "recovery_state": "blocked", "status_label": "权限不足", "tone": "failed"},
+                    {"label": "筹码/胜率", "recovery_state": "waiting", "status_label": "近期无数据", "tone": "missing"},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertIn("A股事实回流", packet["path_basis"])
+        self.assertIn("仍受限 1", packet["path_fact_recovery_summary"])
+        self.assertEqual(packet["path_fact_recovery_tone"], "failed")
+        self.assertEqual(len(packet["path_fact_recovery_items"]), 3)
+        self.assertIn("乐观路径仍需受限事实恢复", packet["paths"][0]["trigger"])
+        self.assertIn("龙虎榜", packet["paths"][0]["trigger"])
+        self.assertIn("A股事实仍受限前", packet["paths"][0]["risk_note"])
+        self.assertIn("事实回流防守线", joined)
+        self.assertFalse(packet["deepseek_called"])
+
     def test_a_share_evidence_radar_does_not_pollute_us_projection(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
@@ -261,6 +289,23 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertEqual(packet["market_type"], "美股")
         self.assertEqual(packet["path_data_capability_summary"], "")
         self.assertNotIn("A股数据能力", joined)
+        self.assertNotIn("龙虎榜", joined)
+
+    def test_a_share_fact_recovery_does_not_pollute_us_projection(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "美股", "summary": "美股分析框架"},
+            a_share_fact_recovery_summary={
+                "summary": "A股事实 5 项：已回流 0｜仍受限 1｜待验证 4",
+                "items": [{"label": "龙虎榜", "recovery_state": "blocked", "status_label": "权限不足"}],
+            },
+        )
+        joined = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["market_type"], "美股")
+        self.assertEqual(packet["path_fact_recovery_summary"], "")
+        self.assertEqual(packet["path_fact_recovery_items"], [])
+        self.assertNotIn("A股事实回流", joined)
         self.assertNotIn("龙虎榜", joined)
 
     def test_build_from_state_can_read_evidence_radar_packet(self):
@@ -302,6 +347,29 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("A股数据能力", packet["path_basis"])
         self.assertIn("谨慎验证", packet["path_data_capability_summary"])
         self.assertIn("龙虎榜", packet["paths"][1]["trigger"])
+
+    def test_build_from_state_reads_home_snapshot_a_share_fact_recovery(self):
+        packet = projection.build_projection_packet_from_state(
+            {
+                "command_center_decision_packet": {"overall_action": "等待", "updated_at": "2026-06-01T10:00:00"},
+                "command_center_analysis_method_packet": {"market": "A股"},
+                "command_center_home_snapshot": {
+                    "a_share_fact_recovery_summary": {
+                        "summary": "A股事实 5 项：已回流 1｜仍受限 0｜待验证 4",
+                        "tone": "stale",
+                        "items": [
+                            {"label": "个股资金流", "recovery_state": "recovered", "status_label": "可用", "tone": "ready"},
+                            {"label": "龙虎榜", "recovery_state": "waiting", "status_label": "近期无数据", "tone": "missing"},
+                        ],
+                        "deepseek_called": False,
+                    }
+                },
+            }
+        )
+
+        self.assertIn("A股事实回流", packet["path_basis"])
+        self.assertIn("待验证 4", packet["path_fact_recovery_summary"])
+        self.assertIn("龙虎榜", packet["paths"][0]["trigger"])
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_projection.py").read_text())

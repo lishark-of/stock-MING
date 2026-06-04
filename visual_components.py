@@ -5565,6 +5565,53 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     updated_at = str(payload.get("updated_at") or "暂无")
     source = str(payload.get("source") or "command_center_projection")
     horizon = payload.get("horizon_days") or 10
+    data_capability_summary = str(payload.get("path_data_capability_summary") or "")
+    fact_recovery_items = [item for item in (payload.get("path_fact_recovery_items") or []) if isinstance(item, dict)]
+    fact_recovery_summary = str(payload.get("path_fact_recovery_summary") or "")
+    fact_tone = str(payload.get("path_fact_recovery_tone") or "missing")
+    fact_tone_class = {
+        "ready": "green",
+        "success": "green",
+        "stale": "blue",
+        "warning": "blue",
+        "failed": "orange",
+        "danger": "orange",
+        "missing": "gray",
+    }.get(fact_tone, "gray")
+    fact_pills_html = ""
+    for item in fact_recovery_items[:5]:
+        item_tone = str(item.get("tone") or "missing")
+        item_tone_class = {
+            "ready": "green",
+            "success": "green",
+            "stale": "blue",
+            "warning": "blue",
+            "failed": "orange",
+            "danger": "orange",
+            "missing": "gray",
+        }.get(item_tone, "gray")
+        fact_pills_html += (
+            f"<span class='projection-fact-pill {escape(item_tone_class)}'>"
+            f"{escape(str(item.get('label') or 'A股事实'))}：{escape(str(item.get('status_label') or item.get('recovery_state') or '待验证'))}"
+            "</span>"
+        )
+    if not fact_pills_html:
+        fact_pills_html = "<span class='projection-fact-pill gray'>A股事实：待验证</span>"
+    fact_strip_html = ""
+    capability_pill_html = (
+        f"<span class='projection-fact-summary blue'>数据能力：{escape(data_capability_summary)}</span>"
+        if data_capability_summary
+        else ""
+    )
+    if data_capability_summary or fact_recovery_summary or fact_recovery_items:
+        fact_strip_html = f"""
+        <div class="projection-fact-strip">
+          <span class="projection-fact-title">数据依据</span>
+          {capability_pill_html}
+          <span class="projection-fact-summary {escape(fact_tone_class)}">{escape(fact_recovery_summary or "A股事实回流待验证")}</span>
+          <div class="projection-fact-pills">{fact_pills_html}</div>
+        </div>
+        """
     packet_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     chart_html = f"""
     <!doctype html>
@@ -5592,6 +5639,33 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         }}
         .projection-title {{ color: #0f172a; font-weight: 820; font-size: 18px; letter-spacing: 0; }}
         .projection-subtitle {{ color: #64748b; font-size: 12px; line-height: 1.45; margin-top: 3px; }}
+        .projection-fact-strip {{
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          flex-wrap: wrap;
+          margin: 0 0 5px;
+          color: #475569;
+          font-size: 11px;
+        }}
+        .projection-fact-title {{ font-weight: 780; color: #334155; }}
+        .projection-fact-summary,
+        .projection-fact-pill {{
+          border-radius: 999px;
+          border: 1px solid rgba(148,163,184,0.18);
+          background: rgba(248,250,252,0.92);
+          padding: 4px 8px;
+          font-weight: 720;
+          white-space: nowrap;
+        }}
+        .projection-fact-summary.green,
+        .projection-fact-pill.green {{ color: #0f766e; background: rgba(20,184,166,0.10); border-color: rgba(20,184,166,0.18); }}
+        .projection-fact-summary.blue,
+        .projection-fact-pill.blue {{ color: #1d4ed8; background: rgba(37,99,235,0.09); border-color: rgba(37,99,235,0.15); }}
+        .projection-fact-summary.orange,
+        .projection-fact-pill.orange {{ color: #c2410c; background: rgba(249,115,22,0.10); border-color: rgba(249,115,22,0.18); }}
+        .projection-fact-summary.gray,
+        .projection-fact-pill.gray {{ color: #64748b; background: rgba(148,163,184,0.10); border-color: rgba(148,163,184,0.16); }}
         .projection-badge {{
           border-radius: 999px;
           background: rgba(37, 99, 235, 0.10);
@@ -5616,6 +5690,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           </div>
           <div class="projection-badge">{escape(status_label)} · {escape(str(horizon))}日</div>
         </div>
+        {fact_strip_html}
         <div id="projection-chart"></div>
       </section>
       <script>

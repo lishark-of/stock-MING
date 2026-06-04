@@ -440,6 +440,11 @@ def _status_console_from_snapshot(home_snapshot: Any) -> dict:
     return _as_mapping(diagnostic.get("status_console"))
 
 
+def _fact_recovery_from_snapshot(home_snapshot: Any) -> dict:
+    snapshot = _as_mapping(home_snapshot)
+    return _as_mapping(snapshot.get("a_share_fact_recovery_summary"))
+
+
 def _a_share_data_capability_guidance(a_share_data_console: Any) -> dict:
     console = _as_mapping(a_share_data_console)
     if not console:
@@ -544,6 +549,102 @@ def _merge_a_share_data_capability_guidance(
     return guided_paths, basis
 
 
+def _a_share_fact_recovery_guidance(a_share_fact_recovery_summary: Any) -> dict:
+    summary = _as_mapping(a_share_fact_recovery_summary)
+    if not summary:
+        return {}
+    items = []
+    for raw in _as_list(summary.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        items.append(
+            {
+                "key": _to_text(item.get("key")),
+                "label": _to_text(item.get("label"), "A股事实"),
+                "recovery_state": _to_text(item.get("recovery_state"), "waiting"),
+                "status_label": _to_text(item.get("status_label"), "待验证"),
+                "tone": _to_text(item.get("tone"), "missing"),
+                "source": _to_text(item.get("source"), "本地 packet"),
+                "updated_at": _to_text(item.get("updated_at"), "暂无"),
+                "deepseek_called": False,
+            }
+        )
+    recovered = [item["label"] for item in items if item["recovery_state"] == "recovered"]
+    blocked = [item["label"] for item in items if item["recovery_state"] == "blocked"]
+    waiting = [item["label"] for item in items if item["recovery_state"] == "waiting"]
+    text = _to_text(summary.get("summary"))
+    if not text:
+        total = _safe_int(summary.get("total_count")) or len(items) or 5
+        text = (
+            f"A股事实 {total} 项：已回流 {_safe_int(summary.get('recovered_count'))}"
+            f"｜仍受限 {_safe_int(summary.get('blocked_count'))}"
+            f"｜待验证 {_safe_int(summary.get('waiting_count'))}"
+        )
+    return {
+        "summary": text,
+        "tone": _to_text(summary.get("tone"), "missing"),
+        "items": items,
+        "recovered_text": _limited_join(recovered, "暂无已回流事实"),
+        "blocked_text": _limited_join(blocked, "暂无受限事实"),
+        "waiting_text": _limited_join(waiting, "暂无待验证事实"),
+        "has_recovered": bool(recovered),
+        "has_blocked": bool(blocked),
+        "has_waiting": bool(waiting),
+        "next_action": _to_text(summary.get("next_action")),
+    }
+
+
+def _merge_a_share_fact_recovery_guidance(
+    paths: list[dict],
+    a_share_fact_recovery_summary: Any,
+    market_type: str,
+) -> tuple[list[dict], str, list[dict], str]:
+    if market_type != "A股":
+        return paths, "", [], ""
+    recovery = _a_share_fact_recovery_guidance(a_share_fact_recovery_summary)
+    if not recovery:
+        return paths, "", [], ""
+
+    recovered_text = recovery["recovered_text"]
+    blocked_text = recovery["blocked_text"]
+    waiting_text = recovery["waiting_text"]
+    guided_paths = []
+    for index, path in enumerate(paths):
+        item = dict(path)
+        if index == 0:
+            if recovery["has_blocked"]:
+                note = f"乐观路径仍需受限事实恢复：{blocked_text}。"
+                risk = "A股事实仍受限前，不把乐观路径当作加仓依据。"
+            elif recovery["has_waiting"]:
+                note = f"乐观路径需补齐待验证事实：{waiting_text}。"
+                risk = "待验证事实未回流前，只能小额观察，不放大仓位。"
+            else:
+                note = f"乐观路径已有事实回流支撑：{recovered_text}。"
+                risk = "事实已回流也不等于无风险，仍需价格和纪律共振。"
+            item["fact_recovery_label"] = "事实回流乐观约束"
+        elif index == 1:
+            note = f"中性路径复核 A股事实回流：{recovery['summary']}。"
+            risk = "事实回流不完整时，以观察和等待触发条件为主。"
+            item["fact_recovery_label"] = "事实回流复核"
+        else:
+            if recovery["has_blocked"]:
+                note = f"受限事实触发谨慎路径：{blocked_text}。"
+            elif recovery["has_waiting"]:
+                note = f"待验证事实触发谨慎边界：{waiting_text}。"
+            else:
+                note = f"若已回流事实转弱，谨慎路径优先：{recovered_text}。"
+            risk = "A股事实受限或待验证时，优先保现金、降杠杆、收缩试探仓位。"
+            item["fact_recovery_label"] = "事实回流防守线"
+        item["trigger"] = _append_evidence_text(item.get("trigger"), note)
+        item["risk"] = _append_evidence_text(item.get("risk"), risk)
+        item["risk_note"] = item["risk"]
+        item["fact_recovery_note"] = note
+        guided_paths.append(item)
+
+    return guided_paths, f"A股事实回流：{recovery['summary']}", recovery["items"], recovery["tone"]
+
+
 def build_projection_packet(
     decision_packet: Any = None,
     strategy_packet: Any = None,
@@ -552,6 +653,7 @@ def build_projection_packet(
     analysis_method_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
+    a_share_fact_recovery_summary: Any = None,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     base_date: Any = None,
     now: Any = None,
@@ -587,6 +689,12 @@ def build_projection_packet(
     paths, evidence_basis = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
     data_console = _as_mapping(a_share_data_console) or _status_console_from_snapshot(snapshot)
     paths, data_capability_basis = _merge_a_share_data_capability_guidance(paths, data_console, market_type)
+    fact_recovery = _as_mapping(a_share_fact_recovery_summary) or _fact_recovery_from_snapshot(snapshot)
+    paths, fact_recovery_basis, fact_recovery_items, fact_recovery_tone = _merge_a_share_fact_recovery_guidance(
+        paths,
+        fact_recovery,
+        market_type,
+    )
     fallback = status == "waiting" or not _has_payload(decision, strategy, live, snapshot)
     note = "示例路径 / 待刷新" if fallback else "基于现有结构化 packet 的条件化路径推演"
     return {
@@ -596,9 +704,12 @@ def build_projection_packet(
         "historical": _historical_points(base, market_bias),
         "paths": paths,
         "market_type": market_type,
-        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis] if item]),
+        "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis, fact_recovery_basis] if item]),
         "path_evidence_summary": evidence_basis,
         "path_data_capability_summary": data_capability_basis,
+        "path_fact_recovery_summary": fact_recovery_basis,
+        "path_fact_recovery_items": fact_recovery_items,
+        "path_fact_recovery_tone": fact_recovery_tone,
         "market_method_summary": _to_text(_as_mapping(analysis_method_packet).get("summary"), "分析方法待验证"),
         "source": SOURCE_FALLBACK if fallback else SOURCE_READY,
         "updated_at": updated_at,
@@ -627,6 +738,7 @@ def build_projection_packet_from_state(
         analysis_method_packet=state_map.get("command_center_analysis_method_packet"),
         evidence_radar_packet=state_map.get("command_center_evidence_radar_packet"),
         a_share_data_console=state_map.get("command_center_a_share_data_console") or _status_console_from_snapshot(snapshot),
+        a_share_fact_recovery_summary=state_map.get("command_center_a_share_fact_recovery_summary") or _fact_recovery_from_snapshot(snapshot),
         horizon_days=horizon_days,
         now=now,
     )
