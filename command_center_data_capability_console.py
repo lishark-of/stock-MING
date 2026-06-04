@@ -337,6 +337,7 @@ def build_data_capability_console_packet(
             if recovery_actions
             else "暂无需要手动恢复的数据源动作。"
         ),
+        "provider_diagnostic_cards": _as_list(issue_packet.get("provider_diagnostic_cards"))[:MAX_QUEUE_ITEMS],
         "next_actions": _as_list(issue_packet.get("next_actions"))[:MAX_QUEUE_ITEMS],
         "available_count": len(ready_items),
         "blocked_count": len(blocked_items),

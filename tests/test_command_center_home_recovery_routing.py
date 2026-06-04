@@ -88,6 +88,14 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("P1 缓存/近期无数据", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P2 旧工具 packet 迁移", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
 
+    def test_home_snapshot_renders_provider_diagnostic_cards(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("provider_diagnostic_cards", source)
+        self.assertIn("provider_diagnostic_html", source)
+        self.assertIn("诊断结论", source)
+        self.assertIn("为什么搜不到", source)
+
     def test_home_snapshot_collapses_verbose_diagnostics(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 

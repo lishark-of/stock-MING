@@ -61,6 +61,11 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertIn("本会话跳过重复请求", dumped)
         self.assertTrue(any(item["key"] == "endpoint_permission" for item in packet["root_cause_items"]))
         self.assertTrue(any(item["key"] == "session_skip" for item in packet["root_cause_items"]))
+        self.assertEqual(packet["provider_diagnostic_cards"][0]["provider"], "Tushare")
+        self.assertEqual(packet["provider_diagnostic_cards"][0]["blocked_count"], 2)
+        self.assertIn("不是“没拉满”", packet["provider_diagnostic_cards"][0]["answer"])
+        self.assertIn("单独权限或积分", packet["provider_diagnostic_cards"][0]["answer"])
+        self.assertIn("防卡顿", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_empty_recent_is_explained_as_no_recent_record_not_positive_signal(self):
@@ -85,6 +90,9 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertEqual(packet["root_cause_items"][0]["key"], "empty_recent")
         self.assertIn("标的未上榜", item["meaning"])
         self.assertIn("无记录不能写成利好", item["decision_impact"])
+        self.assertEqual(packet["provider_diagnostic_cards"][0]["pending_count"], 1)
+        self.assertIn("非交易日", packet["provider_diagnostic_cards"][0]["answer"])
+        self.assertIn("标的未上榜", packet["provider_diagnostic_cards"][0]["answer"])
 
     def test_cache_and_fallback_are_marked_as_not_realtime(self):
         packet = explainer.build_data_issue_explainer_packet(

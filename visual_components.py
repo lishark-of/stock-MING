@@ -4912,6 +4912,28 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             console_queue_html += f"<div class='cc-home-item-meta'>{escape(queue_label)}：{escape(queue_text)}</div>"
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
+    provider_diagnostic_cards = [
+        item for item in (data_issue_explainer.get("provider_diagnostic_cards") or data_capability_console.get("provider_diagnostic_cards") or [])
+        if isinstance(item, dict)
+    ]
+    provider_diagnostic_html = ""
+    for item in provider_diagnostic_cards[:3]:
+        evidence_text = "；".join(
+            f"{_home_text(row.get('label'), '状态')} {row.get('count') or 0}：{', '.join(str(api) for api in (row.get('apis') or [])[:3])}"
+            for row in (item.get("evidence_items") or [])
+            if isinstance(row, dict)
+        ) or "暂无接口明细"
+        provider_diagnostic_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("provider"), "Tushare"))} 诊断结论
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("headline"), "状态待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(item.get("answer"), "尚未检测数据能力。"))}</div>
+          <div class="cc-home-item-meta">接口状态：{escape(evidence_text)}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}</div>
+        </div>
+        """
     data_recovery_center_actions = [item for item in (data_recovery_center.get("actions") or []) if isinstance(item, dict)]
     recovery_priority_lanes = [item for item in (data_recovery_center.get("priority_lanes") or []) if isinstance(item, dict)]
     recovery_priority_html = ""
@@ -5295,6 +5317,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               {console_queue_html}
             </div>
             <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
+            {provider_diagnostic_html}
             {a_share_diagnostic_html}
             {root_cause_html}
             {issue_html}

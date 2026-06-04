@@ -294,6 +294,78 @@ def _root_cause_items(items: list[dict]) -> list[dict]:
     return result[:MAX_ACTIONS]
 
 
+def _provider_diagnostic_cards(items: list[dict]) -> list[dict]:
+    tushare_items = [item for item in items if _to_text(item.get("provider")).lower() == "tushare"]
+    if not tushare_items:
+        return []
+    states = {item["state"] for item in tushare_items}
+    permission_items = [item for item in tushare_items if item["state"] == "permission_denied"]
+    skipped_items = [item for item in tushare_items if item["state"] == "disabled_this_session"]
+    empty_items = [item for item in tushare_items if item["state"] == "empty_recent"]
+    cache_items = [item for item in tushare_items if item["state"] in {"stale_cache", "fallback_used"}]
+    ready_items = [item for item in tushare_items if item["state"] in AVAILABLE_STATES]
+    blocked_count = len(permission_items) + len(skipped_items)
+    pending_count = len(empty_items) + len(cache_items)
+    if blocked_count:
+        tone = "failed"
+        headline = "Tushare 已接入，但部分专业接口受权限/会话限制"
+        answer = (
+            "这不是“没拉满”或“没搜到行情”的同一类问题：token 可用只说明 Tushare 基础连接存在，"
+            "龙虎榜、融资融券、涨跌停情绪、筹码等专业接口仍可能需要单独权限或积分；受限后本会话会跳过重复请求来防卡顿。"
+        )
+        next_action = "先看受限接口名称，再按数据恢复中心手动检测；不要把权限缺口写成利好、无风险或可加仓依据。"
+    elif pending_count:
+        tone = "stale"
+        headline = "Tushare 可读，但当前结果以无记录/缓存/替代口径为主"
+        answer = (
+            "接口可用也可能暂时没有记录：常见原因是非交易日、数据尚未发布、标的未上榜、窗口期太短，"
+            "或当前只保留上次成功缓存。"
+        )
+        next_action = "核对交易日、发布时间、标的覆盖范围和缓存时间；需要实时证据时再手动刷新。"
+    elif ready_items:
+        tone = "ready"
+        headline = "Tushare 当前有可用证据"
+        answer = "已有 Tushare 数据可进入证据链，但仍要核对交易日、来源、市场类型和是否匹配当前标的。"
+        next_action = "把可用接口作为辅助证据，和价格、纪律、仓位一起确认。"
+    else:
+        tone = "missing"
+        headline = "Tushare 状态待检测"
+        answer = "当前没有足够的 Tushare 本地检测结果；页面打开不会自动 ping 专业接口。"
+        next_action = "需要时点击对应检测或刷新按钮，再查看数据恢复中心。"
+    evidence = []
+    for label, rows in (
+        ("可用", ready_items),
+        ("权限不足", permission_items),
+        ("本会话跳过", skipped_items),
+        ("近期无数据", empty_items),
+        ("缓存/替代", cache_items),
+    ):
+        if not rows:
+            continue
+        evidence.append(
+            {
+                "label": label,
+                "count": len(rows),
+                "apis": [_first_text(item.get("api"), item.get("label"), default="Tushare 接口") for item in rows[:4]],
+            }
+        )
+    return [
+        {
+            "provider": "Tushare",
+            "tone": tone,
+            "headline": headline,
+            "answer": answer,
+            "next_action": next_action,
+            "states": sorted(states),
+            "available_count": len(ready_items),
+            "blocked_count": blocked_count,
+            "pending_count": pending_count,
+            "evidence_items": evidence[:MAX_ACTIONS],
+            "deepseek_called": False,
+        }
+    ]
+
+
 def build_data_issue_explainer_packet(
     data_capability_packet: Any = None,
     data_gap_report: Any = None,
@@ -320,6 +392,7 @@ def build_data_issue_explainer_packet(
         "pending_count": len(pending),
         "items": items,
         "root_cause_items": _root_cause_items(items),
+        "provider_diagnostic_cards": _provider_diagnostic_cards(items),
         "next_actions": actions,
         "source": "local data capability packet / gap report",
         "deepseek_called": False,
