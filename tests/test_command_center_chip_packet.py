@@ -15,6 +15,12 @@ class CommandCenterChipPacketTests(unittest.TestCase):
         self.assertEqual(packet["data_status"], "missing")
         self.assertIn("不会自动请求", packet["summary"])
         self.assertIn("手动刷新", packet["manual_required_text"])
+        self.assertEqual(packet["packet_role"], "A股筹码/胜率证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("待手动刷新", packet["evidence_summary"])
+        self.assertIn("手动刷新", packet["action_hint"])
+        self.assertIn("缺少筹码/胜率", packet["decision_guardrail"])
+        self.assertEqual(packet["evidence_items"][0]["status"], "待验证")
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -53,6 +59,15 @@ class CommandCenterChipPacketTests(unittest.TestCase):
         self.assertEqual(packet["weight_avg"], 23.4)
         self.assertEqual(packet["pressure_state"], "获利盘压力偏高")
         self.assertEqual(len(packet["chips_top_areas"]), 2)
+        self.assertEqual(packet["verification_status"], "已验证")
+        self.assertIn("筹码压力：获利盘压力偏高", packet["evidence_summary"])
+        self.assertIn("胜率 72.5%", packet["evidence_summary"])
+        self.assertIn("主要筹码区 2 个", packet["evidence_summary"])
+        self.assertIn("获利盘压力", packet["action_hint"])
+        self.assertIn("禁止把胜率写成加仓理由", packet["decision_guardrail"])
+        evidence_by_key = {item["key"]: item for item in packet["evidence_items"]}
+        self.assertEqual(evidence_by_key["winner_rate"]["value"], "72.5%")
+        self.assertEqual(evidence_by_key["chips_top_areas"]["status"], "已回流")
         self.assertIn("获利盘比例偏高", " ".join(packet["risk_notes"]))
         self.assertFalse(packet["deepseek_called"])
 
@@ -79,6 +94,9 @@ class CommandCenterChipPacketTests(unittest.TestCase):
         self.assertEqual(packet["capability_state"], "empty_recent")
         self.assertEqual(packet["status_label"], "近期无数据")
         self.assertEqual(packet["recovery_state"], "waiting")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("待手动刷新", packet["evidence_summary"])
+        self.assertIn("缺少筹码/胜率", packet["decision_guardrail"])
         self.assertIn("不能写筹码压力", " ".join(packet["risk_notes"]))
 
     def test_permission_denied_is_blocked_not_low_pressure(self):
@@ -107,6 +125,10 @@ class CommandCenterChipPacketTests(unittest.TestCase):
         self.assertEqual(packet["recovery_state"], "blocked")
         self.assertEqual(packet["updated_at"], "2026-06-03T10:02:00")
         self.assertEqual(packet["checked_at"], "2026-06-03T10:02:00")
+        self.assertEqual(packet["verification_status"], "阻断决策")
+        self.assertIn("权限不足", packet["evidence_summary"])
+        self.assertIn("cyq_perf/cyq_chips 权限", packet["action_hint"])
+        self.assertIn("缺少筹码/胜率", packet["decision_guardrail"])
         self.assertIn("不能写筹码压力", " ".join(packet["risk_notes"]))
         self.assertFalse(packet["deepseek_called"])
 
@@ -138,6 +160,8 @@ class CommandCenterChipPacketTests(unittest.TestCase):
         self.assertEqual(packet["winner_rate"], None)
         self.assertEqual(packet["trade_date"], "20260603")
         self.assertEqual(packet["chips_top_areas"], [])
+        self.assertIn("接口可用", packet["evidence_summary"])
+        self.assertIn("不能单独触发买入", packet["action_hint"])
         self.assertFalse(packet["deepseek_called"])
 
     def test_existing_packet_is_preserved_without_mutating_input(self):

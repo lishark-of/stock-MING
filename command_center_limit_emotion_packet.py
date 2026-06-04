@@ -276,6 +276,105 @@ def _build_risk_notes(payload: Mapping[str, Any], status: str, emotion_state: st
     return _dedupe_text(notes)
 
 
+def _verification_status(status: str, recovery_state: str) -> str:
+    if status == "ready":
+        return "已验证"
+    if recovery_state == "blocked":
+        return "阻断决策"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    status_label: str,
+    recovery_state: str,
+    emotion_state: str,
+    distance_to_up_pct: int | float | None,
+    records: list[dict],
+    concepts: list[dict],
+) -> str:
+    if status == "ready":
+        parts = [f"情绪：{emotion_state}"]
+        if distance_to_up_pct is not None:
+            parts.append(f"距涨停 {distance_to_up_pct}%")
+        if records:
+            parts.append(f"涨跌停/炸板记录 {len(records)} 条")
+        if concepts:
+            parts.append(f"概念热度 {len(concepts)} 项")
+        if len(parts) == 1:
+            parts.append("接口可用，个股明细待验证")
+        return "｜".join(parts)
+    if recovery_state == "blocked":
+        return f"{status_label}：涨跌停/情绪不能进入加仓依据。"
+    return "涨跌停/情绪待手动刷新；未回流前不能确认追高边界。"
+
+
+def _build_evidence_items(
+    status: str,
+    status_label: str,
+    verification_status: str,
+    emotion_state: str,
+    distance_to_up_pct: int | float | None,
+    records: list[dict],
+    concepts: list[dict],
+) -> list[dict]:
+    if status != "ready":
+        return [
+            {
+                "key": "limit_emotion",
+                "label": "涨跌停/情绪",
+                "value": status_label,
+                "status": verification_status,
+            }
+        ]
+
+    items = [
+        {
+            "key": "emotion_state",
+            "label": "情绪状态",
+            "value": emotion_state,
+            "status": verification_status,
+        },
+        {
+            "key": "limit_distance",
+            "label": "涨停距离",
+            "value": f"{distance_to_up_pct}%" if distance_to_up_pct is not None else "待验证",
+            "status": "已验证" if distance_to_up_pct is not None else "待验证",
+        },
+        {
+            "key": "limit_records",
+            "label": "涨跌停/炸板记录",
+            "value": f"{len(records)} 条" if records else "待验证",
+            "status": "已回流" if records else "待验证",
+        },
+        {
+            "key": "concept_strength",
+            "label": "概念热度",
+            "value": f"{len(concepts)} 项" if concepts else "待验证",
+            "status": "已回流" if concepts else "待验证",
+        },
+    ]
+    return items
+
+
+def _action_hint(status: str, capability_state: str, emotion_state: str) -> str:
+    if status == "ready" and emotion_state == "接近涨停/追高区":
+        return "先防追高；只有量价、资金流和纪律同时确认后，才可把情绪作为辅助证据。"
+    if status == "ready":
+        return "把涨跌停/概念热度作为题材温度和追高边界辅助，不能单独触发买入。"
+    if capability_state in {"permission_denied", "disabled_this_session", "network_failed", "not_configured", "failed"}:
+        return "先在数据恢复中心处理 Tushare 权限、积分、网络或接口状态；本会话不会自动重试。"
+    return "需要时手动刷新涨跌停/情绪能力；缺失时维持观察或降风险。"
+
+
+def _decision_guardrail(status: str, emotion_state: str) -> str:
+    if status != "ready":
+        return "缺少涨跌停/情绪时，不能确认涨跌停风险、题材热度或追高边界。"
+    if emotion_state == "接近涨停/追高区":
+        return "接近涨停时禁止把热度写成追高理由；加仓必须等待回踩或纪律条件。"
+    return "涨跌停/情绪只说明题材温度，不替代资金流、公告和仓位纪律。"
+
+
 def build_command_center_limit_emotion_packet(
     state: Any = None,
     live_packet: Any = None,
@@ -300,6 +399,7 @@ def build_command_center_limit_emotion_packet(
     distance_to_up_pct = to_number(payload.get("distance_to_up_pct") or payload.get("distance_to_limit_up"))
     distance_to_down_pct = to_number(payload.get("distance_to_down_pct") or payload.get("distance_to_limit_down"))
     emotion_state = _emotion_state(status, distance_to_up_pct, records, concepts, flags)
+    verification_status = _verification_status(status, recovery_state)
     summary = _first_text(
         payload.get("summary"),
         payload.get("evidence"),
@@ -338,6 +438,32 @@ def build_command_center_limit_emotion_packet(
         "flags": flags,
         "emotion_state": emotion_state,
         "summary": summary,
+        "packet_role": "A股涨跌停/情绪证据",
+        "verification_status": verification_status,
+        "evidence_summary": _first_text(
+            payload.get("evidence_summary"),
+            default=_build_evidence_summary(
+                status,
+                status_label,
+                recovery_state,
+                emotion_state,
+                distance_to_up_pct,
+                records,
+                concepts,
+            ),
+        ),
+        "evidence_items": as_list(payload.get("evidence_items"))
+        or _build_evidence_items(
+            status,
+            status_label,
+            verification_status,
+            emotion_state,
+            distance_to_up_pct,
+            records,
+            concepts,
+        ),
+        "action_hint": _first_text(payload.get("action_hint"), default=_action_hint(status, capability_state, emotion_state)),
+        "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, emotion_state)),
         "risk_notes": _build_risk_notes(payload, status, emotion_state, records),
         "manual_required_text": "涨跌停/情绪来自 Tushare stk_limit、limit_list_d、limit_cpt_list 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,

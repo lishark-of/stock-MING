@@ -15,6 +15,12 @@ class CommandCenterLimitEmotionPacketTests(unittest.TestCase):
         self.assertEqual(packet["data_status"], "missing")
         self.assertIn("不会自动请求", packet["summary"])
         self.assertIn("手动刷新", packet["manual_required_text"])
+        self.assertEqual(packet["packet_role"], "A股涨跌停/情绪证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("待手动刷新", packet["evidence_summary"])
+        self.assertIn("手动刷新", packet["action_hint"])
+        self.assertIn("缺少涨跌停/情绪", packet["decision_guardrail"])
+        self.assertEqual(packet["evidence_items"][0]["status"], "待验证")
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -59,6 +65,14 @@ class CommandCenterLimitEmotionPacketTests(unittest.TestCase):
         self.assertTrue(packet["flags"]["has_break_limit"])
         self.assertEqual(packet["limit_records"][0]["type"], "炸板")
         self.assertEqual(packet["concept_top5"][0]["name"], "机器人")
+        self.assertEqual(packet["verification_status"], "已验证")
+        self.assertIn("距涨停 2.41%", packet["evidence_summary"])
+        self.assertIn("概念热度 1 项", packet["evidence_summary"])
+        self.assertIn("防追高", packet["action_hint"])
+        self.assertIn("禁止把热度写成追高理由", packet["decision_guardrail"])
+        evidence_by_key = {item["key"]: item for item in packet["evidence_items"]}
+        self.assertEqual(evidence_by_key["limit_distance"]["value"], "2.41%")
+        self.assertEqual(evidence_by_key["concept_strength"]["status"], "已回流")
         self.assertIn("防追高", " ".join(packet["risk_notes"]))
         self.assertFalse(packet["deepseek_called"])
 
@@ -85,6 +99,10 @@ class CommandCenterLimitEmotionPacketTests(unittest.TestCase):
         self.assertEqual(packet["capability_state"], "permission_denied")
         self.assertEqual(packet["status_label"], "权限不足")
         self.assertEqual(packet["recovery_state"], "blocked")
+        self.assertEqual(packet["verification_status"], "阻断决策")
+        self.assertIn("权限不足", packet["evidence_summary"])
+        self.assertIn("Tushare 权限", packet["action_hint"])
+        self.assertIn("缺少涨跌停/情绪", packet["decision_guardrail"])
         self.assertIn("不能把缺失数据当成无追高风险", " ".join(packet["risk_notes"]))
         self.assertFalse(packet["deepseek_called"])
 
@@ -145,6 +163,8 @@ class CommandCenterLimitEmotionPacketTests(unittest.TestCase):
         self.assertEqual(packet["trade_date"], "20260603")
         self.assertEqual(packet["limit_records"], [])
         self.assertEqual(packet["concept_top5"], [])
+        self.assertIn("接口可用", packet["evidence_summary"])
+        self.assertIn("不能单独触发买入", packet["action_hint"])
         self.assertIn("状态", packet["summary"])
         self.assertFalse(packet["deepseek_called"])
 

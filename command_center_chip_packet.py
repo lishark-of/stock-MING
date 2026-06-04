@@ -220,6 +220,116 @@ def _build_risk_notes(payload: Mapping[str, Any], status: str, pressure_state: s
     return _dedupe_text(notes)
 
 
+def _verification_status(status: str, recovery_state: str) -> str:
+    if status == "ready":
+        return "已验证"
+    if recovery_state == "blocked":
+        return "阻断决策"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    status_label: str,
+    recovery_state: str,
+    pressure_state: str,
+    winner_rate: int | float | None,
+    weight_avg: int | float | None,
+    chip_band_width: int | float | None,
+    top_areas: list[dict],
+) -> str:
+    if status == "ready":
+        parts = [f"筹码压力：{pressure_state}"]
+        if winner_rate is not None:
+            parts.append(f"胜率 {winner_rate}%")
+        if weight_avg is not None:
+            parts.append(f"成本中枢 {weight_avg}")
+        if chip_band_width is not None:
+            parts.append(f"筹码带宽 {chip_band_width}%")
+        if top_areas:
+            parts.append(f"主要筹码区 {len(top_areas)} 个")
+        if len(parts) == 1:
+            parts.append("接口可用，筹码明细待验证")
+        return "｜".join(parts)
+    if recovery_state == "blocked":
+        return f"{status_label}：筹码/胜率不能进入加仓依据。"
+    return "筹码/胜率待手动刷新；未回流前不能确认获利盘或套牢盘压力。"
+
+
+def _build_evidence_items(
+    status: str,
+    status_label: str,
+    verification_status: str,
+    pressure_state: str,
+    winner_rate: int | float | None,
+    weight_avg: int | float | None,
+    chip_band_width: int | float | None,
+    top_areas: list[dict],
+) -> list[dict]:
+    if status != "ready":
+        return [
+            {
+                "key": "chip_radar",
+                "label": "筹码/胜率",
+                "value": status_label,
+                "status": verification_status,
+            }
+        ]
+
+    return [
+        {
+            "key": "pressure_state",
+            "label": "筹码压力",
+            "value": pressure_state,
+            "status": verification_status,
+        },
+        {
+            "key": "winner_rate",
+            "label": "胜率",
+            "value": f"{winner_rate}%" if winner_rate is not None else "待验证",
+            "status": "已验证" if winner_rate is not None else "待验证",
+        },
+        {
+            "key": "weight_avg",
+            "label": "成本中枢",
+            "value": weight_avg if weight_avg is not None else "待验证",
+            "status": "已验证" if weight_avg is not None else "待验证",
+        },
+        {
+            "key": "chip_band_width",
+            "label": "筹码带宽",
+            "value": f"{chip_band_width}%" if chip_band_width is not None else "待验证",
+            "status": "已验证" if chip_band_width is not None else "待验证",
+        },
+        {
+            "key": "chips_top_areas",
+            "label": "主要筹码区",
+            "value": f"{len(top_areas)} 个" if top_areas else "待验证",
+            "status": "已回流" if top_areas else "待验证",
+        },
+    ]
+
+
+def _action_hint(status: str, capability_state: str, pressure_state: str) -> str:
+    if status == "ready" and pressure_state == "获利盘压力偏高":
+        return "先把获利盘压力写入纪律约束；不要把高胜率直接解释成继续追高。"
+    if status == "ready":
+        return "把筹码/胜率作为压力位、成本中枢和纪律验证证据，不能单独触发买入。"
+    if capability_state in {"permission_denied", "disabled_this_session", "network_failed", "not_configured", "failed"}:
+        return "先在数据恢复中心处理 Tushare cyq_perf/cyq_chips 权限、积分、网络或接口状态。"
+    return "需要时手动刷新筹码/胜率能力；缺失时策略条件维持待验证。"
+
+
+def _decision_guardrail(status: str, pressure_state: str) -> str:
+    if status != "ready":
+        return "缺少筹码/胜率时，不能确认获利盘、套牢盘压力或成本中枢。"
+    if pressure_state == "获利盘压力偏高":
+        return "获利盘压力偏高时禁止把胜率写成加仓理由；先看量价和纪律条件。"
+    if pressure_state == "上方套牢盘压力":
+        return "上方套牢盘压力未化解前，突破需要成交量和趋势共同确认。"
+    return "筹码/胜率只辅助压力位和纪律判断，不替代交易触发条件。"
+
+
 def build_command_center_chip_packet(
     state: Any = None,
     live_packet: Any = None,
@@ -243,6 +353,8 @@ def build_command_center_chip_packet(
     current_vs_weight_avg_pct = to_number(payload.get("current_vs_weight_avg_pct"))
     chip_band_width = to_number(payload.get("chip_band_width"))
     pressure_state = _pressure_state(winner_rate, current_vs_weight_avg_pct, chip_band_width)
+    top_areas = _normalize_top_areas(payload.get("chips_top_areas"))
+    verification_status = _verification_status(status, recovery_state)
     summary = _first_text(
         payload.get("summary"),
         payload.get("chip_pressure_comment"),
@@ -278,8 +390,36 @@ def build_command_center_chip_packet(
         "pressure_state": pressure_state,
         "chip_pressure_comment": _first_text(payload.get("chip_pressure_comment"), default=pressure_state),
         "chip_structure_comment": _first_text(payload.get("chip_structure_comment"), default="筹码结构待验证。"),
-        "chips_top_areas": _normalize_top_areas(payload.get("chips_top_areas")),
+        "chips_top_areas": top_areas,
         "summary": summary,
+        "packet_role": "A股筹码/胜率证据",
+        "verification_status": verification_status,
+        "evidence_summary": _first_text(
+            payload.get("evidence_summary"),
+            default=_build_evidence_summary(
+                status,
+                status_label,
+                recovery_state,
+                pressure_state,
+                winner_rate,
+                weight_avg,
+                chip_band_width,
+                top_areas,
+            ),
+        ),
+        "evidence_items": as_list(payload.get("evidence_items"))
+        or _build_evidence_items(
+            status,
+            status_label,
+            verification_status,
+            pressure_state,
+            winner_rate,
+            weight_avg,
+            chip_band_width,
+            top_areas,
+        ),
+        "action_hint": _first_text(payload.get("action_hint"), default=_action_hint(status, capability_state, pressure_state)),
+        "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, pressure_state)),
         "risk_notes": _build_risk_notes(payload, status, pressure_state),
         "manual_required_text": "筹码/胜率来自 Tushare cyq_perf/cyq_chips 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,
