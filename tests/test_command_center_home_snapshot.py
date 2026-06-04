@@ -936,6 +936,61 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in center["actions"]))
         self.assertFalse(center["deepseek_called"])
 
+    def test_home_data_recovery_center_accepts_legacy_a_share_fact_actions(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "legacy_a_share_fact_recovery_actions": [
+                    {
+                        "key": "legacy_a_share_fact:dragon_tiger",
+                        "label": "龙虎榜",
+                        "state": "failed",
+                        "status_label": "受限/失败",
+                        "priority": 1,
+                        "reason": "龙虎榜受限/失败；需手动检查权限、积分或网络。",
+                        "action_label": "手动刷新龙虎榜",
+                        "toolbox_entry": "高级工具箱 / 下一票雷达 / 龙虎榜",
+                        "writes_packet": "command_center_dragon_tiger_packet",
+                        "refresh_policy": "button_gated",
+                        "deepseek_called": False,
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(center["action_count"], 1)
+        self.assertEqual(center["actions"][0]["source_type"], "a_share_fact")
+        self.assertEqual(center["actions"][0]["source_label"], "旧版 A股事实卡")
+        self.assertEqual(center["actions"][0]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertIn("手动刷新龙虎榜", center["summary"])
+        self.assertFalse(center["deepseek_called"])
+
+    def test_home_snapshot_routes_legacy_a_share_fact_actions_to_recovery_center(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                }
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+
+        fact_actions = payload["legacy_a_share_fact_recovery_actions"]
+        center = payload["data_recovery_center"]
+        group_counts = {item["key"]: item["count"] for item in center["groups"]}
+        dumped = json.dumps(center, ensure_ascii=False)
+
+        self.assertEqual(len(fact_actions), 5)
+        self.assertEqual(group_counts["a_share_fact"], 5)
+        self.assertIn("旧版 A股事实卡", dumped)
+        self.assertIn("command_center_dragon_tiger_packet", json.dumps(fact_actions, ensure_ascii=False))
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in fact_actions))
+        self.assertTrue(all(item["deepseek_called"] is False for item in fact_actions))
+        self.assertFalse(center["deepseek_called"])
+
     def test_home_snapshot_builds_tool_recovery_actions_for_missing_old_tools(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(

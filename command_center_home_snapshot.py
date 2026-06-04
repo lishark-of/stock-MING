@@ -25,6 +25,7 @@ import command_center_data_issue_explainer as data_issue_explainer_service
 import command_center_data_capability_console as data_capability_console_service
 import command_center_a_share_capability_matrix as a_share_capability_matrix_service
 import command_center_legacy_a_share_debug_summary as legacy_a_share_debug_summary_service
+import command_center_legacy_a_share_gate as legacy_a_share_gate_service
 import market_data_capability as data_capability_service
 
 
@@ -227,6 +228,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_capability_console": data_capability_console_service.build_data_capability_console_packet(),
         "a_share_user_data_diagnostic": legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(),
         "data_recovery_actions": [],
+        "legacy_a_share_fact_recovery_actions": [],
         "tool_recovery_actions": [],
         "data_recovery_center": build_home_data_recovery_center(),
         "market_packet": market_packet_service.build_command_center_market_packet({}),
@@ -320,6 +322,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["hard_risk_packet"] = hard_risk_packet_service.build_command_center_hard_risk_packet(
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
+    snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["risk_alerts"] = attach_hard_risk_risk_alerts(
@@ -625,6 +628,75 @@ def build_tool_recovery_actions_snapshot(snapshot: Any = None, limit: int = MAX_
     return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
+def _legacy_a_share_fact_priority(action: Mapping[str, Any]) -> int:
+    state = _to_text(action.get("state") or action.get("status"), "waiting")
+    if state in {"failed", "error", "permission_denied", "权限不足", "失败"}:
+        return 1
+    if state in {"cached", "stale", "partial", "using_cache", "使用缓存"}:
+        return 2
+    return 3
+
+
+def _legacy_a_share_fact_recovery_actions_from_view(view_model: Any = None) -> list[dict]:
+    payload = _as_mapping(view_model)
+    entries = _as_list(payload.get("cards")) + _as_list(payload.get("sections"))
+    actions = []
+    for entry in entries:
+        item = _as_mapping(entry)
+        action = _as_mapping(item.get("recovery_action"))
+        if not action or _to_text(action.get("refresh_policy")) == "not_needed":
+            continue
+        writes_packet = _to_text(action.get("writes_packet"), "command_center_packet")
+        toolbox_entry = _to_text(action.get("toolbox_entry"), "高级工具箱")
+        actions.append(
+            {
+                "key": f"legacy_a_share_fact:{_to_text(action.get('key') or item.get('key') or writes_packet)}",
+                "label": _to_text(action.get("label") or item.get("label") or item.get("title"), "A股事实卡"),
+                "status": _to_text(action.get("state") or item.get("status"), "waiting"),
+                "status_label": _to_text(action.get("status_label") or item.get("status"), "待验证"),
+                "priority": _legacy_a_share_fact_priority(action),
+                "reason": _to_text(action.get("reason") or item.get("message"), "旧版 A股事实卡仍待手动恢复。"),
+                "action_label": _to_text(action.get("action_label"), "手动刷新 A股事实卡"),
+                "toolbox_entry": toolbox_entry,
+                "navigation_label": f"从首页恢复队列进入 {toolbox_entry}；手动执行后回流 {writes_packet}。",
+                "writes_packet": writes_packet,
+                "refresh_policy": "button_gated",
+                "source_label": "旧版 A股事实卡",
+                "deepseek_called": False,
+            }
+        )
+    return actions
+
+
+def build_legacy_a_share_fact_recovery_actions_snapshot(
+    snapshot: Any = None,
+    limit: int = MAX_CAPABILITY_ITEMS,
+) -> list[dict]:
+    payload = _as_mapping(snapshot)
+    primary_view = legacy_a_share_gate_service.build_legacy_a_share_primary_fact_cards(
+        dragon_tiger_packet=payload.get("dragon_tiger_packet") or payload.get("command_center_dragon_tiger_packet"),
+        margin_packet=payload.get("margin_packet") or payload.get("command_center_margin_packet"),
+        moneyflow_packet=payload.get("moneyflow_packet") or payload.get("command_center_moneyflow_packet"),
+    )
+    secondary_view = legacy_a_share_gate_service.build_legacy_a_share_secondary_fact_sections(
+        limit_emotion_packet=payload.get("limit_emotion_packet") or payload.get("command_center_limit_emotion_packet"),
+        chip_packet=payload.get("chip_packet") or payload.get("command_center_chip_packet"),
+    )
+    actions = (
+        _legacy_a_share_fact_recovery_actions_from_view(primary_view)
+        + _legacy_a_share_fact_recovery_actions_from_view(secondary_view)
+    )
+    deduped = []
+    seen = set()
+    for action in sorted(actions, key=lambda item: (item["priority"], item["label"])):
+        writes_packet = action.get("writes_packet")
+        if writes_packet in seen:
+            continue
+        seen.add(writes_packet)
+        deduped.append(action)
+    return deduped[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+
+
 def _normalize_recovery_center_action(
     action: Any = None,
     source_type: str = "",
@@ -659,11 +731,13 @@ def _normalize_recovery_center_action(
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
+    legacy_fact_actions = _as_list(payload.get("legacy_a_share_fact_recovery_actions"))
     a_share_actions = _as_list(_as_mapping(payload.get("a_share_user_data_diagnostic")).get("recovery_actions"))
     tool_actions = _as_list(payload.get("tool_recovery_actions"))
     action_sources = [
         ("data_source", "数据源能力", data_actions, 1),
-        ("a_share", "A股数据能力", a_share_actions, 2),
+        ("a_share_fact", "旧版 A股事实卡", legacy_fact_actions, 2),
+        ("a_share", "A股数据能力", a_share_actions, 3),
         ("legacy_tool", "旧工具能力", tool_actions, 3),
     ]
     seen = set()
@@ -1373,6 +1447,7 @@ def build_home_action_snapshot(
         "data_capability_console": data_capability_console,
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
+        "legacy_a_share_fact_recovery_actions": [],
         "tool_recovery_actions": [],
         "data_recovery_center": {},
         "market_packet": market_packet,
@@ -1403,6 +1478,7 @@ def build_home_action_snapshot(
         empty["data_capability_console"] = snapshot["data_capability_console"]
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
+        empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
         empty["market_packet"] = snapshot["market_packet"]
@@ -1419,6 +1495,7 @@ def build_home_action_snapshot(
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["errors"] = errors
         return empty
+    snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     return sanitize_snapshot_payload(snapshot)
