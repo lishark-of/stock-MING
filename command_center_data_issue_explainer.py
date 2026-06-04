@@ -355,6 +355,20 @@ def _provider_diagnostic_cards(items: list[dict]) -> list[dict]:
             "tone": tone,
             "headline": headline,
             "answer": answer,
+            "full_refresh_answer": _tushare_full_refresh_answer(
+                permission_items=permission_items,
+                skipped_items=skipped_items,
+                empty_items=empty_items,
+                cache_items=cache_items,
+                ready_items=ready_items,
+            ),
+            "scope_checks": _tushare_scope_checks(
+                permission_items=permission_items,
+                skipped_items=skipped_items,
+                empty_items=empty_items,
+                cache_items=cache_items,
+                ready_items=ready_items,
+            ),
             "next_action": next_action,
             "states": sorted(states),
             "available_count": len(ready_items),
@@ -364,6 +378,110 @@ def _provider_diagnostic_cards(items: list[dict]) -> list[dict]:
             "deepseek_called": False,
         }
     ]
+
+
+def _labels_for_items(items: list[dict], default: str = "暂无") -> str:
+    labels = []
+    for item in items:
+        label = _first_text(item.get("label"), item.get("api"), default="")
+        api = _to_text(item.get("api"))
+        if label and api and api not in label:
+            label = f"{label}({api})"
+        if label:
+            labels.append(label)
+    labels = [label for label in labels if label]
+    return "、".join(labels[:4]) if labels else default
+
+
+def _tushare_full_refresh_answer(
+    permission_items: list[dict],
+    skipped_items: list[dict],
+    empty_items: list[dict],
+    cache_items: list[dict],
+    ready_items: list[dict],
+) -> str:
+    if permission_items or skipped_items:
+        blocked_labels = _labels_for_items([*permission_items, *skipped_items], "受限接口")
+        return (
+            f"“拉满 Tushare”只说明已经尝试连接和读取；{blocked_labels} 仍卡在专业接口权限、积分或本会话跳过，"
+            "所以不能把缺失结果理解成行情不存在。"
+        )
+    if empty_items:
+        empty_labels = _labels_for_items(empty_items, "近期无记录接口")
+        return (
+            f"Tushare 可读不等于每个接口当日都有记录；{empty_labels} 可能受交易日、发布时间、上榜条件或标的覆盖影响。"
+        )
+    if cache_items:
+        cache_labels = _labels_for_items(cache_items, "缓存/替代接口")
+        return f"{cache_labels} 当前依赖缓存或替代口径，能防白屏，但还不是当日实时验证。"
+    if ready_items:
+        return "Tushare 已有可用接口结果；仍要逐项核对接口口径、交易日、标的覆盖和是否能写入对应 packet。"
+    return "尚未形成 Tushare 接口级诊断；页面打开不会自动 ping 专业接口。"
+
+
+def _tushare_scope_checks(
+    permission_items: list[dict],
+    skipped_items: list[dict],
+    empty_items: list[dict],
+    cache_items: list[dict],
+    ready_items: list[dict],
+) -> list[dict]:
+    blocked_items = [*permission_items, *skipped_items]
+    checks = [
+        {
+            "key": "base_connection",
+            "label": "基础连接/token",
+            "status": "ready" if ready_items or blocked_items or empty_items or cache_items else "missing",
+            "tone": "ready" if ready_items or blocked_items or empty_items or cache_items else "missing",
+            "status_label": "已检测" if ready_items or blocked_items or empty_items or cache_items else "待检测",
+            "message": "已有本地 Tushare 能力结果；这只证明连接链路被检测过，不等于所有专业接口可用。",
+        },
+        {
+            "key": "interface_permission",
+            "label": "专业接口权限/积分",
+            "status": "blocked" if blocked_items else ("ready" if ready_items else "missing"),
+            "tone": "failed" if blocked_items else ("ready" if ready_items else "missing"),
+            "status_label": "受限" if blocked_items else ("未见受限" if ready_items else "待检测"),
+            "message": (
+                f"受限：{_labels_for_items(blocked_items)}；需要单独核对接口权限、积分或本会话跳过。"
+                if blocked_items
+                else "当前未见权限阻断项；仍需按接口核对。"
+            ),
+        },
+        {
+            "key": "publish_window",
+            "label": "交易日/发布窗口",
+            "status": "partial" if empty_items else ("ready" if ready_items else "missing"),
+            "tone": "stale" if empty_items else ("ready" if ready_items else "missing"),
+            "status_label": "待核对" if empty_items else ("可参考" if ready_items else "待检测"),
+            "message": (
+                f"近期无记录：{_labels_for_items(empty_items)}；可能不是接口坏，而是交易日、发布时间或上榜窗口问题。"
+                if empty_items
+                else "未见近期无记录项；执行前仍需核对日期。"
+            ),
+        },
+        {
+            "key": "symbol_coverage",
+            "label": "标的/接口覆盖",
+            "status": "partial" if empty_items or cache_items else ("ready" if ready_items else "missing"),
+            "tone": "stale" if empty_items or cache_items else ("ready" if ready_items else "missing"),
+            "status_label": "待验证" if empty_items or cache_items else ("可参考" if ready_items else "待检测"),
+            "message": "部分接口可能只覆盖上榜、特定市场或特定数据窗口；不能用一个接口缺失推导标的无风险。",
+        },
+        {
+            "key": "cache_session_guard",
+            "label": "缓存/会话保护",
+            "status": "blocked" if skipped_items else ("partial" if cache_items else "ready"),
+            "tone": "failed" if skipped_items else ("stale" if cache_items else "ready"),
+            "status_label": "本会话跳过" if skipped_items else ("使用缓存" if cache_items else "未触发"),
+            "message": (
+                "受限或失败后本会话会跳过重复请求，避免旧工作台反复卡顿；确认恢复后再手动检测。"
+                if skipped_items
+                else "缓存/替代口径只用于防白屏，不能当作实时事实。"
+            ),
+        },
+    ]
+    return checks
 
 
 def _interface_diagnostic_key(state: str) -> str:

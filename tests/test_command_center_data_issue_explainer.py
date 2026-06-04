@@ -66,6 +66,14 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertIn("不是“没拉满”", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("单独权限或积分", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("防卡顿", packet["provider_diagnostic_cards"][0]["answer"])
+        self.assertIn("拉满 Tushare", packet["provider_diagnostic_cards"][0]["full_refresh_answer"])
+        scope_by_key = {item["key"]: item for item in packet["provider_diagnostic_cards"][0]["scope_checks"]}
+        self.assertEqual(scope_by_key["base_connection"]["status_label"], "已检测")
+        self.assertEqual(scope_by_key["interface_permission"]["status"], "blocked")
+        self.assertIn("专业接口权限", scope_by_key["interface_permission"]["label"])
+        self.assertIn("margin_detail", scope_by_key["interface_permission"]["message"])
+        self.assertEqual(scope_by_key["cache_session_guard"]["status_label"], "本会话跳过")
+        self.assertFalse(packet["provider_diagnostic_cards"][0]["deepseek_called"])
         interface_rows = {item["api"]: item for item in packet["interface_diagnostic_items"]}
         self.assertEqual(interface_rows["margin_detail"]["cause_key"], "permission_or_points")
         self.assertIn("token 可用", interface_rows["margin_detail"]["diagnostic_answer"])
@@ -105,6 +113,10 @@ class CommandCenterDataIssueExplainerTests(unittest.TestCase):
         self.assertEqual(packet["provider_diagnostic_cards"][0]["pending_count"], 1)
         self.assertIn("非交易日", packet["provider_diagnostic_cards"][0]["answer"])
         self.assertIn("标的未上榜", packet["provider_diagnostic_cards"][0]["answer"])
+        scope_by_key = {item["key"]: item for item in packet["provider_diagnostic_cards"][0]["scope_checks"]}
+        self.assertEqual(scope_by_key["publish_window"]["status"], "partial")
+        self.assertIn("交易日", scope_by_key["publish_window"]["message"])
+        self.assertEqual(scope_by_key["symbol_coverage"]["status_label"], "待验证")
 
     def test_cache_and_fallback_are_marked_as_not_realtime(self):
         packet = explainer.build_data_issue_explainer_packet(

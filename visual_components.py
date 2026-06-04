@@ -5603,6 +5603,21 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     ]
     provider_diagnostic_html = ""
     for item in provider_diagnostic_cards[:3]:
+        scope_check_html = ""
+        for check in (item.get("scope_checks") or [])[:5]:
+            if not isinstance(check, dict):
+                continue
+            scope_check_html += f"""
+            <div class="cc-home-item-meta">
+              <span class="cc-home-chip {escape(_home_text(check.get("tone"), "missing"))}">{escape(_home_text(check.get("label"), "能力口径"))}：{escape(_home_text(check.get("status_label"), "待检测"))}</span>
+              {escape(_home_text(check.get("message"), "仍需按接口核对权限、日期和覆盖范围。"))}
+            </div>
+            """
+        if scope_check_html:
+            scope_check_html = f"""
+            <div class="cc-home-item-meta">拉满解释：{escape(_home_text(item.get("full_refresh_answer"), "拉满基础连接不等于每个专业接口都可用。"))}</div>
+            {scope_check_html}
+            """
         evidence_text = "；".join(
             f"{_home_text(row.get('label'), '状态')} {row.get('count') or 0}：{', '.join(str(api) for api in (row.get('apis') or [])[:3])}"
             for row in (item.get("evidence_items") or [])
@@ -5615,6 +5630,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("headline"), "状态待验证"))}</span>
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(item.get("answer"), "尚未检测数据能力。"))}</div>
+          {scope_check_html}
           <div class="cc-home-item-meta">接口状态：{escape(evidence_text)}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}</div>
         </div>
