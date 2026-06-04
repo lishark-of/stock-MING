@@ -111,6 +111,20 @@ def _to_text(value: Any) -> str:
     return str(value).strip()
 
 
+def _to_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, Number):
+        return int(value)
+    text = _to_text(value)
+    if not text:
+        return default
+    try:
+        return int(float(text))
+    except ValueError:
+        return default
+
+
 def _append_error(errors: list[str], seen: set[str], value: Any, max_errors: int) -> None:
     if len(errors) >= max_errors:
         return
@@ -415,11 +429,65 @@ def summarize_module_refresh_statuses(live_packet: Any = None) -> list[dict]:
     return statuses
 
 
+def summarize_a_share_fact_recovery(recovery_summary: Any = None) -> dict:
+    payload = as_mapping(recovery_summary)
+    raw_items = payload.get("items")
+    items: list[dict] = []
+    if isinstance(raw_items, (list, tuple)):
+        for raw_item in raw_items[:MAX_ERRORS]:
+            item = as_mapping(raw_item)
+            if not item:
+                continue
+            items.append(
+                {
+                    "key": _to_text(item.get("key")) or "",
+                    "label": _to_text(item.get("label")) or _to_text(item.get("key")) or "A股事实",
+                    "recovery_state": _to_text(item.get("recovery_state")) or "waiting",
+                    "status_label": _to_text(item.get("status_label")) or "待验证",
+                    "capability_state": _to_text(item.get("capability_state")) or "",
+                    "packet_status_text": _to_text(item.get("packet_status_text")) or "",
+                    "writes_packet": _to_text(item.get("writes_packet")) or "",
+                    "action_label": _to_text(item.get("action_label")) or "",
+                    "next_action": _to_text(item.get("next_action")) or "",
+                    "diagnostic_answer": _to_text(item.get("diagnostic_answer")) or "",
+                    "source": _to_text(item.get("source")) or "",
+                    "updated_at": _to_text(item.get("updated_at")) or "",
+                }
+            )
+
+    recovered_count = _to_int(payload.get("recovered_count"))
+    blocked_count = _to_int(payload.get("blocked_count"))
+    waiting_count = _to_int(payload.get("waiting_count"))
+    if items and not any((recovered_count, blocked_count, waiting_count)):
+        recovered_count = sum(1 for item in items if item.get("recovery_state") == "recovered")
+        blocked_count = sum(1 for item in items if item.get("recovery_state") == "blocked")
+        waiting_count = sum(1 for item in items if item.get("recovery_state") not in {"recovered", "blocked"})
+    total_count = _to_int(payload.get("total_count"), len(items) or 0)
+    summary_text = _to_text(payload.get("summary"))
+    if not summary_text and total_count:
+        summary_text = f"A股事实 {total_count} 项：已回流 {recovered_count}｜仍受限 {blocked_count}｜待验证 {waiting_count}"
+
+    return {
+        "title": _to_text(payload.get("title")) or "A股事实回流",
+        "summary": summary_text,
+        "tone": _to_text(payload.get("tone")) or ("failed" if blocked_count else "missing"),
+        "recovered_count": recovered_count,
+        "blocked_count": blocked_count,
+        "waiting_count": waiting_count,
+        "total_count": total_count,
+        "items": items,
+        "next_action": _to_text(payload.get("next_action")) or "",
+        "safe_mode_text": _to_text(payload.get("safe_mode_text")) or "这里只汇总本地 packet 状态；不会自动调用外部接口。",
+        "deepseek_called": bool(payload.get("deepseek_called")) if "deepseek_called" in payload else False,
+    }
+
+
 def build_refresh_summary_view_model(
     live_packet: Any = None,
     refresh_result: Any = None,
     refresh_level: Any = None,
     generated_at: Any = None,
+    a_share_fact_recovery_summary: Any = None,
 ) -> dict:
     live_payload = as_mapping(live_packet)
     level = normalize_refresh_level(
@@ -454,6 +522,7 @@ def build_refresh_summary_view_model(
         {"errors": module_errors},
         max_errors=MAX_ERRORS,
     )
+    a_share_fact_recovery = summarize_a_share_fact_recovery(a_share_fact_recovery_summary)
     view_model = {
         "refresh_level": level,
         "refresh_level_label": refresh_level_label(level),
@@ -471,5 +540,11 @@ def build_refresh_summary_view_model(
         "errors": errors,
         "has_errors": bool(errors),
         "has_stale": bool(summary.get("stale") or any(item.get("stale") for item in module_statuses)),
+        "a_share_fact_recovery": a_share_fact_recovery,
+        "a_share_fact_recovery_summary": a_share_fact_recovery.get("summary") or "",
+        "a_share_fact_recovery_tone": a_share_fact_recovery.get("tone") or "missing",
+        "a_share_fact_recovery_items": a_share_fact_recovery.get("items") or [],
+        "has_a_share_fact_blockers": bool(a_share_fact_recovery.get("blocked_count")),
+        "has_a_share_fact_waiting": bool(a_share_fact_recovery.get("waiting_count")),
     }
     return clone_packet(view_model)

@@ -226,6 +226,92 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         self.assertTrue(view_model["has_errors"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_a_share_fact_recovery_summary_is_json_friendly(self):
+        recovery_summary = {
+            "summary": "A股事实 5 项：已回流 2｜仍受限 1｜待验证 2",
+            "tone": "failed",
+            "recovered_count": "2",
+            "blocked_count": "1",
+            "waiting_count": "2",
+            "total_count": "5",
+            "next_action": "优先处理涨跌停情绪。",
+            "items": [
+                {
+                    "key": "moneyflow",
+                    "label": "个股资金流",
+                    "recovery_state": "recovered",
+                    "status_label": "可用",
+                    "packet_status_text": "已回流｜可用｜command_center_moneyflow_packet",
+                    "writes_packet": "command_center_moneyflow_packet",
+                },
+                {
+                    "key": "limit_emotion",
+                    "label": "涨跌停情绪",
+                    "recovery_state": "blocked",
+                    "status_label": "权限不足",
+                    "diagnostic_answer": "limit_cpt_list 权限不足，不是没搜到行情。",
+                    "next_action": "进入数据恢复中心手动检测。",
+                },
+            ],
+            "deepseek_called": False,
+        }
+        before = copy.deepcopy(recovery_summary)
+
+        payload = summary.summarize_a_share_fact_recovery(recovery_summary)
+
+        self.assertEqual(recovery_summary, before)
+        self.assertEqual(payload["summary"], "A股事实 5 项：已回流 2｜仍受限 1｜待验证 2")
+        self.assertEqual(payload["blocked_count"], 1)
+        self.assertEqual(payload["items"][1]["label"], "涨跌停情绪")
+        self.assertIn("权限不足", payload["items"][1]["diagnostic_answer"])
+        self.assertFalse(payload["deepseek_called"])
+        json.dumps(payload, ensure_ascii=False)
+
+    def test_refresh_view_model_surfaces_a_share_fact_recovery_status(self):
+        view_model = summary.build_refresh_summary_view_model(
+            live_packet={"market": {"status": "已刷新", "is_fresh": True}},
+            refresh_result={"ok": True, "results": [{"ok": True, "module": "市场环境"}]},
+            a_share_fact_recovery_summary={
+                "recovered_count": 1,
+                "blocked_count": 1,
+                "waiting_count": 3,
+                "total_count": 5,
+                "items": [
+                    {
+                        "key": "dragon_tiger",
+                        "label": "龙虎榜",
+                        "recovery_state": "blocked",
+                        "status_label": "本会话跳过",
+                    }
+                ],
+                "deepseek_called": False,
+            },
+        )
+
+        self.assertIn("A股事实 5 项", view_model["a_share_fact_recovery_summary"])
+        self.assertEqual(view_model["a_share_fact_recovery"]["blocked_count"], 1)
+        self.assertEqual(view_model["a_share_fact_recovery_items"][0]["label"], "龙虎榜")
+        self.assertTrue(view_model["has_a_share_fact_blockers"])
+        self.assertTrue(view_model["has_a_share_fact_waiting"])
+        self.assertFalse(view_model["a_share_fact_recovery"]["deepseek_called"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_a_share_fact_recovery_bad_counts_do_not_raise(self):
+        payload = summary.summarize_a_share_fact_recovery(
+            {
+                "recovered_count": "bad",
+                "blocked_count": object(),
+                "waiting_count": None,
+                "items": [{"label": "筹码", "recovery_state": "waiting"}],
+            }
+        )
+
+        self.assertEqual(payload["recovered_count"], 0)
+        self.assertEqual(payload["blocked_count"], 0)
+        self.assertEqual(payload["waiting_count"], 1)
+        self.assertIn("待验证 1", payload["summary"])
+        json.dumps(payload, ensure_ascii=False)
+
     def test_empty_none_and_non_mapping_inputs_do_not_raise(self):
         for value in (None, {}, object(), [], "bad packet"):
             self.assertIsInstance(summary.summarize_refresh_result(value), dict)

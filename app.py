@@ -3752,6 +3752,13 @@ def build_command_center_display_packet(live_packet, fallback_packet=None):
     return cc_service.build_display_packet(cc_adapter.as_mapping(live_packet), fallback_packet=fallback)
 
 
+def _get_a_share_fact_recovery_summary_from_state():
+    home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
+    if not isinstance(home_snapshot, dict):
+        return {}
+    return home_snapshot.get("a_share_fact_recovery_summary") or {}
+
+
 def build_command_center_view_model(live_packet=None):
     view_model = cc_state_adapter.build_command_center_view_model_from_state(
         st.session_state,
@@ -3769,6 +3776,7 @@ def build_command_center_view_model(live_packet=None):
             cc_adapter.get_nested(live_packet, "updated_at")
             or cc_adapter.get_nested(live_packet, "generated_at")
         ),
+        a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
     )
     st.session_state["command_center_view_model"] = view_model
     return view_model
@@ -4797,7 +4805,11 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 refresh_result=refresh_summary,
                 refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
                 generated_at=refresh_summary.get("finished_at"),
+                a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
             )
+            fact_summary_text = refresh_status_view.get("a_share_fact_recovery_summary")
+            if fact_summary_text:
+                status.write(f"A股事实回流：{fact_summary_text}")
             errors = refresh_status_view.get("error_items") or refresh_status_view.get("errors") or []
             if errors:
                 status.update(label=f"今日基础数据刷新完成，{len(errors)} 个模块失败", state="complete", expanded=False)
@@ -4869,7 +4881,9 @@ packet:
         st.caption(
             f"最近一次基础数据刷新：{refresh_summary_view.get('generated_at') or '暂无'} ｜ "
             f"已完成：{'、'.join(ok_modules) if ok_modules else '无'} ｜ "
-            f"失败：{len(error_items) if error_items else len(errors)} ｜ DeepSeek：未调用"
+            f"失败：{len(error_items) if error_items else len(errors)} ｜ "
+            f"A股事实：{refresh_summary_view.get('a_share_fact_recovery_summary') or '待验证'} ｜ "
+            "DeepSeek：未调用"
         )
         if error_items or errors:
             with st.expander("刷新失败明细", expanded=False):
@@ -4879,6 +4893,20 @@ packet:
                 else:
                     for item in errors:
                         st.write(f"- {item}")
+        a_share_fact_recovery = refresh_summary_view.get("a_share_fact_recovery") or {}
+        a_share_fact_items = a_share_fact_recovery.get("items") or []
+        if a_share_fact_recovery.get("summary") and (
+            refresh_summary_view.get("has_a_share_fact_blockers")
+            or refresh_summary_view.get("has_a_share_fact_waiting")
+        ):
+            with st.expander("A股事实回流状态", expanded=False):
+                st.write(a_share_fact_recovery.get("next_action") or "继续按数据恢复中心手动补齐。")
+                for item in a_share_fact_items[:5]:
+                    st.write(
+                        f"- {item.get('label') or 'A股事实'}："
+                        f"{item.get('packet_status_text') or item.get('status_label') or '待验证'}；"
+                        f"{item.get('diagnostic_answer') or item.get('next_action') or '需要复核来源、日期和权限。'}"
+                    )
 
     live_packet = command_center_view_model["live_packet"]
     live_errors = overview_vm.get("error_items") or []
