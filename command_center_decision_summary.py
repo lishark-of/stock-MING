@@ -382,6 +382,79 @@ def _fallback_evidence_status_groups(evidence_radar_packet: Mapping[str, Any]) -
     return result
 
 
+def _first_evidence_item(evidence: Mapping[str, Any], key: str) -> tuple[str, dict]:
+    state_sources = [
+        ("supporting", evidence.get("support_items")),
+        ("blocked", evidence.get("blocker_items")),
+        ("cached", evidence.get("cached_items")),
+        ("missing", evidence.get("missing_items")),
+    ]
+    for state, raw_items in state_sources:
+        for item in _as_list(raw_items):
+            payload = _as_mapping(item)
+            if _to_text(payload.get("key")) == key:
+                return state, payload
+    return "", {}
+
+
+def _legacy_evidence_state_label(state: str) -> str:
+    return {
+        "supporting": "已验证",
+        "blocked": "仍受限",
+        "cached": "使用缓存",
+        "missing": "待验证",
+    }.get(state, "待验证")
+
+
+def _legacy_evidence_tone(states: list[str]) -> str:
+    if any(state == "blocked" for state in states):
+        return "danger"
+    if any(state in {"cached", "missing"} for state in states):
+        return "warning"
+    if states:
+        return "success"
+    return "muted"
+
+
+def build_legacy_a_share_evidence_basis_item(evidence_radar_packet: Any = None) -> dict:
+    evidence = _as_mapping(evidence_radar_packet)
+    if not evidence:
+        return {}
+    configs = [
+        ("limit_emotion", "涨跌停/情绪", "追高/情绪边界"),
+        ("chip_radar", "筹码/胜率", "压力位/胜率口径"),
+    ]
+    parts = []
+    states = []
+    summaries = []
+    for key, label, role in configs:
+        state, item = _first_evidence_item(evidence, key)
+        if not state:
+            continue
+        state_label = _legacy_evidence_state_label(state)
+        headline = _to_text(item.get("headline") or item.get("status_label") or item.get("evidence_label") or item.get("metric"))
+        parts.append(f"{label}{state_label}")
+        states.append(state)
+        summaries.append(f"{label}用于验证{role}：{headline or state_label}")
+    if not parts:
+        return {}
+    if any(state == "blocked" for state in states):
+        guardrail = "旧能力仍受限时，今日总动作不能把情绪、筹码或胜率写成已验证依据。"
+    elif any(state in {"cached", "missing"} for state in states):
+        guardrail = "旧能力缓存/待验证时，今日总动作只能保留观察或谨慎试探。"
+    else:
+        guardrail = "旧能力已回流，可增强依据链；仍需价格纪律和仓位规则共同确认。"
+    return {
+        "label": "旧能力证据",
+        "value": "｜".join(parts),
+        "tone": _legacy_evidence_tone(states),
+        "summary": "；".join(summaries),
+        "guardrail": guardrail,
+        "states": states,
+        "deepseek_called": False,
+    }
+
+
 def build_a_share_evidence_group_basis_item(evidence_radar_packet: Any = None) -> dict:
     evidence = _as_mapping(evidence_radar_packet)
     if not evidence:
@@ -494,6 +567,9 @@ def build_decision_evidence_chain_items(
         items.append(latest_recovery_basis)
     evidence = _as_mapping(evidence_radar_packet)
     if evidence:
+        legacy_evidence_basis = build_legacy_a_share_evidence_basis_item(evidence)
+        if legacy_evidence_basis:
+            items.append(legacy_evidence_basis)
         radar_card = _as_mapping(evidence.get("radar_card"))
         if radar_card:
             items.append(
@@ -580,6 +656,7 @@ def build_decision_summary_view_model(
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
         "a_share_evidence_group_basis_item": build_a_share_evidence_group_basis_item(evidence_radar_packet),
         "a_share_evidence_group_summary_text": build_a_share_evidence_group_summary_text(evidence_radar_packet),
+        "legacy_a_share_evidence_basis_item": build_legacy_a_share_evidence_basis_item(evidence_radar_packet),
         "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
         "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),
         "a_share_fact_recovery_basis_item": build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary),

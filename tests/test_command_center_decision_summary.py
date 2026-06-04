@@ -187,6 +187,53 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("仍受限证据未恢复", view_model["a_share_evidence_group_summary_text"])
         self.assertFalse(view_model["a_share_evidence_group_basis_item"]["deepseek_called"])
 
+    def test_evidence_chain_surfaces_legacy_limit_and_chip_basis(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "小幅进攻"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            evidence_radar_packet={
+                "decision_summary": "支持 2｜阻断 0｜缓存 0｜缺失 0",
+                "support_items": [
+                    {"key": "limit_emotion", "label": "涨跌停/情绪", "headline": "接近涨停/追高区"},
+                    {"key": "chip_radar", "label": "筹码/胜率", "headline": "获利盘压力偏高"},
+                ],
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+        basis = view_model["legacy_a_share_evidence_basis_item"]
+
+        self.assertEqual(basis["tone"], "success")
+        self.assertIn("涨跌停/情绪已验证", basis["value"])
+        self.assertIn("筹码/胜率已验证", basis["value"])
+        self.assertIn("追高/情绪边界", basis["summary"])
+        self.assertIn("压力位/胜率口径", basis["summary"])
+        self.assertIn("旧能力证据", joined)
+        self.assertFalse(basis["deepseek_called"])
+
+    def test_evidence_chain_marks_legacy_limit_and_chip_gaps_as_guardrail(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "小幅进攻"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 1",
+                "blocker_items": [
+                    {"key": "limit_emotion", "label": "涨跌停/情绪", "status_label": "权限不足"},
+                ],
+                "missing_items": [
+                    {"key": "chip_radar", "label": "筹码/胜率", "status_label": "待验证"},
+                ],
+            },
+        )
+        basis = view_model["legacy_a_share_evidence_basis_item"]
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertEqual(basis["tone"], "danger")
+        self.assertIn("涨跌停/情绪仍受限", basis["value"])
+        self.assertIn("筹码/胜率待验证", basis["value"])
+        self.assertIn("不能把情绪、筹码或胜率写成已验证依据", basis["guardrail"])
+        self.assertIn("旧能力证据", joined)
+        self.assertFalse(basis["deepseek_called"])
+
     def test_evidence_chain_includes_a_share_evidence_radar_card_gate(self):
         view_model = summary.build_decision_summary_view_model(
             {"status": "ready", "overall_action": "小幅进攻"},
