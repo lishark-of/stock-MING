@@ -67,7 +67,11 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 
         self.assertIn("latest_recovery_result_notice", source)
+        self.assertIn("recovery_result_status_strip", source)
         self.assertIn("最近恢复结果", source)
+        self.assertIn("最近恢复状态", source)
+        self.assertIn("recovery_result_status_html", source)
+        self.assertIn("使用缓存", source)
         self.assertIn("最近恢复影响", source)
         self.assertIn("latest_evidence_impact", source)
         self.assertIn("external_call_policy", source)

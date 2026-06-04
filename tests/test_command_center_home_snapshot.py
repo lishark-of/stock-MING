@@ -1577,6 +1577,139 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("Home Action Snapshot", notice["next_action"])
         self.assertFalse(notice["deepseek_called"])
 
+    def test_recovery_result_status_strip_detects_recovered_packet(self):
+        strip = snapshot.build_recovery_result_status_strip(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "个股资金流",
+                    "writes_packet": "command_center_moneyflow_packet",
+                    "source": "Tushare moneyflow",
+                    "updated_at": "2026-06-03T10:00:00",
+                    "next_action": "返回综合中心复核。",
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "summary": "资金流已回流",
+                    "updated_at": "2026-06-03T10:00:00",
+                    "source": "Tushare moneyflow",
+                },
+            }
+        )
+
+        self.assertEqual(strip["status"], "recovered")
+        self.assertEqual(strip["tone"], "ready")
+        self.assertIn("已回流", strip["headline"])
+        self.assertEqual(strip["items"][0]["status_label"], "已回流")
+        self.assertEqual(strip["items"][0]["packet_key"], "command_center_moneyflow_packet")
+        self.assertFalse(strip["deepseek_called"])
+        json.dumps(strip, ensure_ascii=False)
+
+    def test_recovery_result_status_strip_detects_cached_snapshot_packet(self):
+        strip = snapshot.build_recovery_result_status_strip(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "下一票雷达",
+                    "writes_packet": "command_center_radar_packet",
+                },
+                "radar_packet": {
+                    "data_status": "cached",
+                    "top_candidates": [{"ticker": "002008.SZ"}],
+                    "updated_at": "2026-06-03T10:00:00",
+                },
+            }
+        )
+
+        self.assertEqual(strip["status"], "cached")
+        self.assertEqual(strip["tone"], "stale")
+        self.assertIn("使用缓存", strip["headline"])
+        self.assertEqual(strip["items"][0]["packet_key"], "radar_packet")
+        self.assertEqual(strip["items"][0]["status_label"], "使用缓存")
+        self.assertFalse(strip["items"][0]["deepseek_called"])
+
+    def test_recovery_result_status_strip_waits_when_notice_recovered_but_packet_missing(self):
+        strip = snapshot.build_recovery_result_status_strip(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "龙虎榜",
+                    "writes_packet": "command_center_dragon_tiger_packet",
+                    "message": "接口可用，但目标 packet 尚未写回。",
+                }
+            }
+        )
+
+        self.assertEqual(strip["status"], "waiting")
+        self.assertEqual(strip["tone"], "stale")
+        self.assertEqual(strip["items"][0]["status_label"], "待验证")
+        self.assertIn("尚未检测到可读回流", strip["summary"])
+        self.assertFalse(strip["deepseek_called"])
+
+    def test_recovery_result_status_strip_reports_permission_block(self):
+        strip = snapshot.build_recovery_result_status_strip(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "blocked",
+                    "label": "融资融券",
+                    "writes_packet": "command_center_margin_packet",
+                    "next_action": "检查权限后手动重试。",
+                },
+                "command_center_margin_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                    "source": "Tushare margin_detail",
+                    "updated_at": "2026-06-03T10:00:00",
+                },
+            }
+        )
+
+        self.assertEqual(strip["status"], "blocked")
+        self.assertEqual(strip["tone"], "failed")
+        self.assertEqual(strip["items"][0]["status_label"], "权限不足")
+        self.assertIn("不能把缺失数据当成安全信号", strip["summary"])
+        self.assertEqual(strip["items"][0]["external_call_policy"], "not_triggered")
+        self.assertFalse(strip["deepseek_called"])
+
+    def test_home_snapshot_includes_recovery_result_status_strip(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_last_a_share_diagnostic_recovery_result": {
+                    "label": "龙虎榜",
+                    "writes_packet": "command_center_dragon_tiger_packet",
+                    "capability_state": "permission_denied",
+                    "status_label": "权限不足",
+                    "message": "top_list 权限不足。",
+                    "checked_at": f"{today}T10:05:00",
+                    "api_hint": "Tushare top_list",
+                    "deepseek_called": False,
+                },
+                "command_center_dragon_tiger_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                    "updated_at": f"{today}T10:05:00",
+                    "source": "Tushare top_list",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:06:00",
+        )
+
+        strip = payload["recovery_result_status_strip"]
+        self.assertEqual(strip["title"], "最近恢复状态")
+        self.assertEqual(strip["status"], "blocked")
+        self.assertEqual(strip["items"][0]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertEqual(strip["items"][0]["status_label"], "权限不足")
+        self.assertFalse(strip["deepseek_called"])
+
     def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(

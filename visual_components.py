@@ -4806,6 +4806,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_health_ledger = payload.get("data_health_ledger") or data_capability_console.get("data_health_ledger") or {}
     legacy_migration_map = payload.get("legacy_migration_map") or {}
     latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
+    recovery_result_status = payload.get("recovery_result_status_strip") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
     legacy_a_share_gap = payload.get("legacy_a_share_gap_summary") or {}
@@ -5207,6 +5208,37 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">回流：{escape(_home_text(latest_recovery_result.get("writes_packet"), "command_center_packet"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(latest_recovery_result.get("external_call_policy"), "not_triggered"))}</div>
         </div>
         """
+    recovery_result_status_item_html = ""
+    for item in (recovery_result_status.get("items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        recovery_result_status_item_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "恢复项"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ packet：{escape(_home_text(item.get("packet_key"), item.get("writes_packet") or "command_center_packet"))}</div>
+          <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地恢复状态"))} ｜ 更新时间：{escape(_home_text(item.get("updated_at"), "暂无"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "返回综合推演中心查看快照。"))}</div>
+          <div class="cc-home-item-meta">DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(item.get("external_call_policy"), "not_triggered"))}</div>
+        </div>
+        """
+    if not recovery_result_status_item_html:
+        recovery_result_status_item_html = "<div class='cc-home-item-meta'>暂无旧工具或数据诊断回流记录；按恢复队列手动处理，不会自动请求外部接口。</div>"
+    recovery_result_status_html = ""
+    if recovery_result_status:
+        recovery_result_status_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(recovery_result_status.get("title"), "最近恢复状态"))}
+            <span class="cc-home-chip {escape(_home_text(recovery_result_status.get("tone"), "missing"))}">{escape(_home_text(recovery_result_status.get("headline"), "待验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(recovery_result_status.get("summary"), "恢复结果待验证。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(recovery_result_status.get("next_action"), "按决策优先队列手动恢复。"))}</div>
+          {recovery_result_status_item_html}
+        </div>
+        """
     data_recovery_center_html = f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -5216,6 +5248,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">{escape(_home_text(data_recovery_center.get("summary"), "暂无恢复摘要。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(data_recovery_center.get("next_action"), "按队列手动恢复。"))}</div>
           <div class="cc-home-item-meta">安全边界：{escape(_home_text(data_recovery_center.get("safe_mode_text"), "页面打开不会自动请求外部接口。"))}</div>
+          {recovery_result_status_html}
           {latest_recovery_html}
           {decision_priority_html}
           {recovery_priority_html}

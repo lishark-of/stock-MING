@@ -111,6 +111,20 @@ LEGACY_A_SHARE_GAP_WRITES_TO_KEY = {
     "command_center_chip_packet": "chip_radar",
 }
 
+RECOVERY_WRITES_PACKET_TO_SNAPSHOT_KEY = {
+    "command_center_radar_packet": "radar_packet",
+    "command_center_etf_packet": "etf_packet",
+    "command_center_discipline_packet": "discipline_packet",
+    "command_center_quant_packet": "quant_packet",
+    "command_center_chip_packet": "chip_packet",
+    "command_center_moneyflow_packet": "moneyflow_packet",
+    "command_center_dragon_tiger_packet": "dragon_tiger_packet",
+    "command_center_margin_packet": "margin_packet",
+    "command_center_limit_emotion_packet": "limit_emotion_packet",
+    "command_center_hard_risk_packet": "hard_risk_packet",
+    "command_center_market_packet": "market_packet",
+}
+
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
@@ -308,6 +322,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "data_recovery_center": build_home_data_recovery_center(),
         "legacy_migration_map": legacy_migration_map_service.build_legacy_migration_map(),
         "latest_recovery_result_notice": {},
+        "recovery_result_status_strip": build_recovery_result_status_strip(),
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
@@ -413,6 +428,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         data_capability_packet=snapshot.get("data_capability") or {},
     )
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
+    snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
     snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
         attach_hard_risk_risk_alerts(
             snapshot.get("risk_alerts") or {},
@@ -1595,6 +1611,123 @@ def _tool_packet_recovery_state(packet: Mapping[str, Any], writes_packet: str = 
     return "waiting"
 
 
+def _resolve_recovery_packet(container: Any = None, writes_packet: str = "") -> tuple[str, dict]:
+    payload = _as_mapping(container)
+    direct_packet = _as_mapping(payload.get(writes_packet))
+    if direct_packet:
+        return writes_packet, direct_packet
+    snapshot_key = RECOVERY_WRITES_PACKET_TO_SNAPSHOT_KEY.get(_to_text(writes_packet), "")
+    snapshot_packet = _as_mapping(payload.get(snapshot_key))
+    if snapshot_packet:
+        return snapshot_key, snapshot_packet
+    return snapshot_key or writes_packet, {}
+
+
+def _recovery_display_state(packet: Mapping[str, Any], writes_packet: str = "", fallback_status: str = "") -> dict:
+    packet_state = _tool_packet_recovery_state(packet, writes_packet)
+    status = _to_text(packet.get("status")).lower()
+    data_status = _to_text(packet.get("data_status") or packet.get("cache_state")).lower()
+    status_label = _to_text(packet.get("status_label") or packet.get("label"))
+    fallback = _to_text(fallback_status).lower()
+    if packet_state == "blocked" or fallback == "blocked":
+        label = "权限不足" if ("permission" in data_status or "权限" in status_label) else "仍失败"
+        return {"status": "blocked", "label": label, "tone": "failed"}
+    if packet_state == "recovered":
+        if data_status in {"cached", "using_cache", "stale_cache"} or status in {"cached", "using_cache"}:
+            return {"status": "cached", "label": "使用缓存", "tone": "stale"}
+        return {"status": "recovered", "label": "已回流", "tone": "ready"}
+    if fallback == "recovered":
+        return {"status": "waiting", "label": "待验证", "tone": "stale"}
+    if fallback == "waiting":
+        return {"status": "waiting", "label": "待验证", "tone": "stale"}
+    return {"status": "waiting", "label": "待验证", "tone": "missing"}
+
+
+def build_recovery_result_status_strip(
+    state: Any = None,
+    latest_notice: Any = None,
+    data_recovery_center: Any = None,
+) -> dict:
+    """Summarize whether the latest manual recovery actually wrote a usable packet."""
+    state_map = _as_mapping(state)
+    notice = _as_mapping(latest_notice) or _as_mapping(state_map.get("latest_recovery_result_notice"))
+    if not notice:
+        notice = build_latest_recovery_result_notice(
+            state_map,
+            selected_tab=state_map.get("legacy_workspace_selected_tab"),
+        )
+    center = _as_mapping(data_recovery_center) or _as_mapping(state_map.get("data_recovery_center"))
+    if not notice:
+        first_queue_item = {}
+        for item in _as_list(center.get("decision_priority_queue")) or _as_list(center.get("actions")):
+            if isinstance(item, Mapping):
+                first_queue_item = dict(item)
+                break
+        queue_hint = _to_text(first_queue_item.get("label"), "暂无恢复记录")
+        return {
+            "title": "最近恢复状态",
+            "status": "waiting",
+            "tone": "missing",
+            "headline": "尚未运行恢复",
+            "summary": f"还没有旧工具或数据诊断结果回流；优先项：{queue_hint}。",
+            "items": [],
+            "next_action": "按决策优先队列手动恢复；页面打开不会自动请求外部接口。",
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
+
+    writes_packet = _to_text(notice.get("writes_packet"), "command_center_packet")
+    packet_key, packet = _resolve_recovery_packet(state_map, writes_packet)
+    display_state = _recovery_display_state(packet, writes_packet, fallback_status=notice.get("status"))
+    updated_at = _to_text(
+        packet.get("updated_at")
+        or packet.get("generated_at")
+        or packet.get("checked_at")
+        or notice.get("updated_at"),
+        "暂无",
+    )
+    source = _to_text(packet.get("source") or notice.get("source"), "本地恢复状态")
+    label = _to_text(notice.get("label"), "恢复项")
+    status_label = display_state["label"]
+    if display_state["status"] == "recovered":
+        headline = "恢复结果已回流"
+        summary = f"{label} 已回流到 {writes_packet}；综合中心可以读取这项结构化结果。"
+    elif display_state["status"] == "cached":
+        headline = "恢复结果使用缓存"
+        summary = f"{label} 目前读取到缓存结果；执行前仍需复核日期、来源和覆盖口径。"
+    elif display_state["status"] == "blocked":
+        headline = "恢复结果仍失败"
+        summary = f"{label} 仍未形成可用回流；不能把缺失数据当成安全信号。"
+    else:
+        headline = "恢复结果待验证"
+        summary = f"{label} 尚未检测到可读回流；需要在对应旧工具里手动运行按钮。"
+    item = {
+        "label": label,
+        "writes_packet": writes_packet,
+        "packet_key": packet_key,
+        "status": display_state["status"],
+        "status_label": status_label,
+        "tone": display_state["tone"],
+        "message": _to_text(notice.get("message"), summary),
+        "updated_at": updated_at,
+        "source": source,
+        "next_action": _to_text(notice.get("next_action"), "返回综合推演中心查看快照。"),
+        "deepseek_called": False,
+        "external_call_policy": _to_text(notice.get("external_call_policy"), "not_triggered"),
+    }
+    return {
+        "title": "最近恢复状态",
+        "status": display_state["status"],
+        "tone": display_state["tone"],
+        "headline": headline,
+        "summary": summary,
+        "items": [item],
+        "next_action": item["next_action"],
+        "deepseek_called": False,
+        "external_call_policy": item["external_call_policy"],
+    }
+
+
 def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "") -> dict:
     context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
     if not context:
@@ -2303,6 +2436,7 @@ def build_home_action_snapshot(
         "tool_recovery_actions": [],
         "data_recovery_center": {},
         "latest_recovery_result_notice": latest_recovery_result_notice,
+        "recovery_result_status_strip": {},
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
         "errors": errors,
@@ -2335,6 +2469,11 @@ def build_home_action_snapshot(
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
+        empty["recovery_result_status_strip"] = build_recovery_result_status_strip(
+            empty,
+            latest_notice=empty.get("latest_recovery_result_notice") or snapshot["latest_recovery_result_notice"],
+            data_recovery_center=empty.get("data_recovery_center") or {},
+        )
         empty["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
             empty,
             data_capability_packet=empty.get("data_capability") or {},
@@ -2365,6 +2504,11 @@ def build_home_action_snapshot(
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(
+        snapshot,
+        latest_notice=snapshot.get("latest_recovery_result_notice") or {},
+        data_recovery_center=snapshot.get("data_recovery_center") or {},
+    )
     snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
         snapshot,
         data_capability_packet=snapshot.get("data_capability") or {},
