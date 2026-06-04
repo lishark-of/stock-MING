@@ -334,6 +334,87 @@ def _evidence_label_text(items: Any, fallback: str = "暂无") -> str:
     return "、".join(labels) if labels else fallback
 
 
+def _first_evidence_item(evidence: Mapping[str, Any], key: str) -> tuple[str, dict]:
+    state_sources = [
+        ("supporting", evidence.get("support_items")),
+        ("blocked", evidence.get("blocker_items")),
+        ("cached", evidence.get("cached_items")),
+        ("missing", evidence.get("missing_items")),
+    ]
+    for state, raw_items in state_sources:
+        for item in _as_list(raw_items):
+            payload = _as_mapping(item)
+            if _to_text(payload.get("key")) == key:
+                return state, payload
+    return "", {}
+
+
+def _evidence_item_brief(item: Mapping[str, Any], fallback: str) -> str:
+    return _to_text(
+        item.get("headline")
+        or item.get("metric")
+        or item.get("status_label")
+        or item.get("evidence_label")
+        or item.get("label"),
+        fallback,
+    )
+
+
+def _legacy_a_share_path_evidence_notes(evidence: Mapping[str, Any]) -> dict:
+    configs = {
+        "limit_emotion": {
+            "label": "涨跌停/情绪",
+            "supporting": "已回流，乐观路径仍需避开追高和涨跌停情绪边界",
+            "blocked": "仍受限，不能确认题材温度、追高边界或涨跌停风险",
+            "cached": "使用缓存，需复核交易日后再判断情绪边界",
+            "missing": "待验证，乐观路径不能假设情绪支持",
+            "risk": "涨跌停/情绪只验证短线热度和追高边界，不等于自动加仓。",
+        },
+        "chip_radar": {
+            "label": "筹码/胜率",
+            "supporting": "已回流，路径需同时复核压力位、获利盘和胜率口径",
+            "blocked": "仍受限，不能确认筹码压力、获利盘或历史胜率",
+            "cached": "使用缓存，需复核筹码区间和胜率更新时间",
+            "missing": "待验证，不能把压力位或胜率写成已验证依据",
+            "risk": "筹码/胜率只验证压力和纪律口径，不替代价格触发条件。",
+        },
+    }
+    support_notes = []
+    pending_notes = []
+    risk_notes = []
+    visible_items = []
+    for key, config in configs.items():
+        state, item = _first_evidence_item(evidence, key)
+        if not state:
+            continue
+        label = config["label"]
+        brief = _evidence_item_brief(item, label)
+        note = f"{label}{config.get(state, '待验证')}：{brief}"
+        visible_items.append(
+            {
+                "key": key,
+                "label": label,
+                "state": state,
+                "state_label": _to_text(item.get("evidence_label") or item.get("status_label"), "待验证"),
+                "summary": note,
+                "deepseek_called": False,
+            }
+        )
+        if state == "supporting":
+            support_notes.append(note)
+            risk_notes.append(config["risk"])
+        else:
+            pending_notes.append(note)
+            risk_notes.append(config["risk"])
+    return {
+        "support_text": "；".join(support_notes),
+        "pending_text": "；".join(pending_notes),
+        "risk_text": "；".join(risk_notes),
+        "items": visible_items,
+        "deepseek_called": False,
+    }
+
+
 def _safe_int(value: Any) -> int:
     try:
         return int(value or 0)
@@ -461,6 +542,7 @@ def _a_share_evidence_guidance(evidence_radar_packet: Any) -> dict:
     latest_state = _to_text(latest_impact.get("evidence_state"))
     latest_label = _to_text(latest_impact.get("label"), "最近恢复")
     latest_text = _to_text(latest_impact.get("impact_text"))
+    legacy_path_notes = _legacy_a_share_path_evidence_notes(evidence)
     return {
         "summary": _to_text(evidence.get("decision_summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"),
         "support_text": _evidence_label_text(support),
@@ -479,6 +561,7 @@ def _a_share_evidence_guidance(evidence_radar_packet: Any) -> dict:
         "has_latest_blocked": latest_state == "blocked",
         "has_latest_waiting": latest_state == "missing",
         "group_summary": _evidence_status_group_summary(evidence),
+        "legacy_path_notes": legacy_path_notes,
     }
 
 
@@ -561,6 +644,10 @@ def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: A
     if evidence["has_missing"]:
         verification_text.append(f"缺失证据：{missing_text}")
     verification_summary = "；".join(verification_text) or "关键证据已刷新"
+    legacy_notes = _as_mapping(evidence.get("legacy_path_notes"))
+    legacy_support_text = _to_text(legacy_notes.get("support_text"))
+    legacy_pending_text = _to_text(legacy_notes.get("pending_text"))
+    legacy_risk_text = _to_text(legacy_notes.get("risk_text"))
 
     guided_paths = []
     for index, path in enumerate(paths):
@@ -575,10 +662,18 @@ def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: A
                 if evidence["has_blockers"]
                 else f"{verification_summary}；执行前仍需复核。"
             )
+            if legacy_support_text:
+                note = _append_evidence_text(note, f"旧能力已验证：{legacy_support_text}")
+            if legacy_pending_text:
+                risk = _append_evidence_text(risk, f"旧能力待验证限制乐观路径：{legacy_pending_text}")
             item["evidence_label"] = "支持证据增强" if evidence["has_support"] else "待验证"
         elif index == 1:
             note = f"中性路径重点复核：{verification_summary}。"
             risk = "缓存或缺失证据未补齐前，维持观察，不扩大仓位。"
+            if legacy_support_text or legacy_pending_text:
+                note = _append_evidence_text(note, f"中性路径复核旧能力：{legacy_support_text or legacy_pending_text}")
+            if legacy_pending_text:
+                risk = _append_evidence_text(risk, f"旧能力未完全回流：{legacy_pending_text}")
             item["evidence_label"] = "缓存/缺失待复核" if verification_text else "证据中性"
         else:
             if evidence["has_blockers"]:
@@ -586,6 +681,12 @@ def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: A
             else:
                 note = f"若{verification_summary}迟迟无法确认，按谨慎边界管理。"
             risk = "阻断证据或数据缺口未排除前，优先保现金、降杠杆、收缩试探仓位。"
+            if legacy_pending_text:
+                note = _append_evidence_text(note, f"旧能力缺口触发谨慎边界：{legacy_pending_text}")
+            elif legacy_support_text:
+                note = _append_evidence_text(note, f"旧能力回流后的防守复核：{legacy_support_text}")
+            if legacy_risk_text:
+                risk = _append_evidence_text(risk, legacy_risk_text)
             item["evidence_label"] = "阻断证据优先" if evidence["has_blockers"] else "数据缺口防守"
         latest_note, latest_risk, latest_label = _latest_recovery_projection_note(evidence, index)
         if latest_note:
@@ -605,6 +706,9 @@ def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: A
         basis = f"{basis}｜证据分组：{group_summary['summary']}"
     if evidence["latest_text"]:
         basis = f"{basis}｜最近恢复：{evidence['latest_label']} {evidence['latest_state'] or 'waiting'}"
+    legacy_basis = "；".join(item for item in [legacy_support_text, legacy_pending_text] if item)
+    if legacy_basis:
+        basis = f"{basis}｜旧能力证据：{legacy_basis}"
     return guided_paths, basis, evidence["latest_impact"], group_summary
 
 

@@ -185,6 +185,55 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("阻断证据", joined)
         self.assertFalse(packet["deepseek_called"])
 
+    def test_recovered_limit_and_chip_evidence_surface_in_projection_path_notes(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 2｜阻断 0｜缓存 0｜缺失 0",
+                "support_items": [
+                    {"key": "limit_emotion", "label": "涨跌停/情绪", "headline": "接近涨停/追高区"},
+                    {"key": "chip_radar", "label": "筹码/胜率", "headline": "获利盘压力偏高"},
+                ],
+            },
+        )
+        dumped = json.dumps(packet, ensure_ascii=False)
+
+        self.assertIn("旧能力证据：涨跌停/情绪已回流", packet["path_basis"])
+        self.assertIn("筹码/胜率已回流", packet["path_basis"])
+        self.assertIn("旧能力已验证", packet["paths"][0]["trigger"])
+        self.assertIn("追高和涨跌停情绪边界", packet["paths"][0]["trigger"])
+        self.assertIn("压力位、获利盘和胜率口径", packet["paths"][1]["trigger"])
+        self.assertIn("涨跌停/情绪只验证短线热度", packet["paths"][2]["risk_note"])
+        self.assertIn("筹码/胜率只验证压力", packet["paths"][2]["risk_note"])
+        self.assertIn("接近涨停/追高区", dumped)
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_missing_limit_and_chip_evidence_keep_projection_defensive(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 1",
+                "blocker_items": [
+                    {"key": "limit_emotion", "label": "涨跌停/情绪", "status_label": "权限不足"},
+                ],
+                "missing_items": [
+                    {"key": "chip_radar", "label": "筹码/胜率", "status_label": "待验证"},
+                ],
+            },
+        )
+        dumped = json.dumps(packet, ensure_ascii=False)
+
+        self.assertIn("涨跌停/情绪仍受限", packet["path_basis"])
+        self.assertIn("筹码/胜率待验证", packet["path_basis"])
+        self.assertIn("旧能力待验证限制乐观路径", packet["paths"][0]["risk_note"])
+        self.assertIn("不能确认题材温度", packet["paths"][0]["risk_note"])
+        self.assertIn("旧能力缺口触发谨慎边界", packet["paths"][2]["trigger"])
+        self.assertIn("不能把压力位或胜率写成已验证依据", dumped)
+        self.assertFalse(packet["deepseek_called"])
+
     def test_a_share_evidence_status_groups_surface_on_projection_confidence(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
