@@ -6,6 +6,34 @@ from typing import Any
 
 REGISTRY_VERSION = "2026-06-command-center-packets-v1"
 
+AREA_LABELS = {
+    "home": "首页快照",
+    "command_loop": "决策闭环",
+    "analysis": "市场分析",
+    "a_share_evidence": "A股证据",
+    "legacy_workspace": "高级工具箱",
+    "data_governance": "数据治理",
+    "recovery": "恢复记录",
+}
+
+REFRESH_POLICY_LABELS = {
+    "read_through_cache": "读取缓存",
+    "manual_basic_or_auto_light": "手动基础刷新 / 轻量本地状态",
+    "derived_display": "展示派生",
+    "button_gated": "按钮触发",
+    "manual_recovery": "手动恢复",
+}
+
+EXTERNAL_POLICY_LABELS = {
+    "not_triggered": "不触发外部接口",
+    "button_gated": "按钮触发外部接口",
+}
+
+DEEPSEEK_POLICY_LABELS = {
+    "never": "不调用 DeepSeek",
+    "manual_only": "仅手动 DeepSeek",
+}
+
 
 PACKET_SPECS = [
     {
@@ -471,4 +499,83 @@ def packet_registry_summary() -> dict:
         "manual_or_button_gated_count": manual_or_button_gated,
         "deepseek_auto_count": sum(1 for spec in packets if spec["deepseek_policy"] == "auto"),
         "external_auto_count": sum(1 for spec in packets if spec["external_call_policy"] == "auto"),
+    }
+
+
+def _tone_for_policy(spec: dict) -> str:
+    if spec.get("external_call_policy") == "button_gated" or spec.get("refresh_policy") in {"button_gated", "manual_recovery"}:
+        return "manual"
+    if spec.get("refresh_policy") in {"derived_display", "read_through_cache"}:
+        return "safe"
+    return "neutral"
+
+
+def build_packet_registry_view_model(max_packets: int = 10) -> dict:
+    packets = list_command_center_packets()
+    summary = packet_registry_summary()
+    area_items = [
+        {
+            "area": area,
+            "label": AREA_LABELS.get(area, area),
+            "count": count,
+        }
+        for area, count in sorted(summary["area_counts"].items())
+    ]
+    packet_items = []
+    for spec in packets[: max(1, int(max_packets or 10))]:
+        packet_items.append(
+            {
+                "packet_key": spec["packet_key"],
+                "label": spec["label"],
+                "area": spec["area"],
+                "area_label": AREA_LABELS.get(spec["area"], spec["area"]),
+                "owner": spec["owner"],
+                "refresh_policy": spec["refresh_policy"],
+                "refresh_policy_label": REFRESH_POLICY_LABELS.get(spec["refresh_policy"], spec["refresh_policy"]),
+                "external_call_policy": spec["external_call_policy"],
+                "external_call_label": EXTERNAL_POLICY_LABELS.get(spec["external_call_policy"], spec["external_call_policy"]),
+                "deepseek_policy": spec["deepseek_policy"],
+                "deepseek_label": DEEPSEEK_POLICY_LABELS.get(spec["deepseek_policy"], spec["deepseek_policy"]),
+                "local_api_path": spec["local_api_path"],
+                "tone": _tone_for_policy(spec),
+            }
+        )
+    local_api_map = build_local_api_packet_map()
+    return {
+        "version": REGISTRY_VERSION,
+        "title": "综合中心能力地图",
+        "subtitle": "Packet Registry / Local API Readiness",
+        "summary": "把首页、决策闭环、旧版工具回流和数据治理统一成 packet 清单；这里只读展示，不触发刷新。",
+        "packet_count": summary["packet_count"],
+        "area_items": area_items,
+        "packet_items": packet_items,
+        "manual_or_button_gated_count": summary["manual_or_button_gated_count"],
+        "local_api_endpoint_count": len(local_api_map),
+        "deepseek_auto_count": summary["deepseek_auto_count"],
+        "external_auto_count": summary["external_auto_count"],
+        "safe_mode_items": [
+            {
+                "label": "DeepSeek",
+                "value": "0 个自动调用" if summary["deepseek_auto_count"] == 0 else f"{summary['deepseek_auto_count']} 个自动调用",
+                "tone": "safe" if summary["deepseek_auto_count"] == 0 else "danger",
+            },
+            {
+                "label": "外部接口",
+                "value": "0 个自动触发" if summary["external_auto_count"] == 0 else f"{summary['external_auto_count']} 个自动触发",
+                "tone": "safe" if summary["external_auto_count"] == 0 else "danger",
+            },
+            {
+                "label": "重型能力",
+                "value": f"{summary['manual_or_button_gated_count']} 个按钮/手动门控",
+                "tone": "manual",
+            },
+            {
+                "label": "Local API",
+                "value": f"{len(local_api_map)} 个规划端点",
+                "tone": "neutral",
+            },
+        ],
+        "local_api_hint": "未来 local API / Tauri / React 可直接按这些 path 暴露 packet，不需要把旧页面搬过去。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
     }

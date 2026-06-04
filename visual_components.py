@@ -5990,6 +5990,213 @@ def render_analysis_methods_card(packet: dict | None = None):
     _render_html(html)
 
 
+def _registry_tone_class(tone):
+    text = str(tone or "").strip()
+    if text == "safe":
+        return "safe"
+    if text == "manual":
+        return "manual"
+    if text == "danger":
+        return "danger"
+    return "neutral"
+
+
+def render_command_center_packet_registry_card(view_model: dict | None = None):
+    _inject_command_center_css()
+    payload = view_model or {}
+    safe_items = [item for item in (payload.get("safe_mode_items") or []) if isinstance(item, dict)]
+    area_items = [item for item in (payload.get("area_items") or []) if isinstance(item, dict)]
+    packet_items = [item for item in (payload.get("packet_items") or []) if isinstance(item, dict)]
+
+    safe_html = ""
+    for item in safe_items[:4]:
+        tone = _registry_tone_class(item.get("tone"))
+        safe_html += (
+            f"<div class='cc-registry-metric {tone}'>"
+            f"<div class='cc-registry-metric-label'>{escape(str(item.get('label') or '状态'))}</div>"
+            f"<div class='cc-registry-metric-value'>{escape(str(item.get('value') or '待验证'))}</div>"
+            "</div>"
+        )
+
+    area_html = ""
+    for item in area_items[:8]:
+        area_html += (
+            "<span class='cc-registry-pill'>"
+            f"{escape(str(item.get('label') or item.get('area') or '分区'))}"
+            f"<b>{escape(str(item.get('count') or 0))}</b>"
+            "</span>"
+        )
+
+    packet_html = ""
+    for item in packet_items[:10]:
+        tone = _registry_tone_class(item.get("tone"))
+        packet_html += (
+            f"<div class='cc-registry-row {tone}'>"
+            "<div>"
+            f"<div class='cc-registry-row-title'>{escape(str(item.get('label') or item.get('packet_key') or 'packet'))}</div>"
+            f"<div class='cc-registry-row-key'>{escape(str(item.get('packet_key') or ''))}</div>"
+            "</div>"
+            "<div>"
+            f"<span>{escape(str(item.get('area_label') or item.get('area') or ''))}</span>"
+            f"<span>{escape(str(item.get('refresh_policy_label') or item.get('refresh_policy') or ''))}</span>"
+            f"<span>{escape(str(item.get('external_call_label') or item.get('external_call_policy') or ''))}</span>"
+            "</div>"
+            "</div>"
+        )
+
+    html = f"""
+    <section class="cc-registry-card">
+      <div class="cc-registry-head">
+        <div>
+          <div class="cc-analysis-kicker">{escape(str(payload.get("subtitle") or "Packet Registry"))}</div>
+          <h2 class="cc-analysis-title">{escape(str(payload.get("title") or "综合中心能力地图"))}</h2>
+          <div class="cc-analysis-summary">{escape(str(payload.get("summary") or "只读展示 packet 边界，不触发刷新。"))}</div>
+        </div>
+        <div class="cc-registry-count">
+          <span>{escape(str(payload.get("packet_count") or 0))}</span>
+          <small>packets</small>
+        </div>
+      </div>
+      <div class="cc-registry-metrics">{safe_html}</div>
+      <div class="cc-registry-pills">{area_html}</div>
+      <div class="cc-registry-table">{packet_html}</div>
+      <div class="cc-analysis-foot">
+        {escape(str(payload.get("local_api_hint") or "未来 local API 可按 registry 暴露 packet。"))}
+        ｜ DeepSeek：未调用 ｜ 外部接口：未触发。
+      </div>
+      <style>
+        .cc-registry-card {{
+          background: #ffffff;
+          border: 1px solid rgba(15, 23, 42, 0.10);
+          border-radius: 18px;
+          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+          padding: 18px;
+          margin: 14px 0;
+        }}
+        .cc-registry-head {{
+          display: flex;
+          justify-content: space-between;
+          gap: 14px;
+          align-items: flex-start;
+        }}
+        .cc-registry-count {{
+          min-width: 92px;
+          border-radius: 16px;
+          background: rgba(37, 99, 235, 0.08);
+          border: 1px solid rgba(37, 99, 235, 0.14);
+          padding: 10px 12px;
+          text-align: center;
+          color: #1d4ed8;
+        }}
+        .cc-registry-count span {{
+          display: block;
+          font-size: 1.55rem;
+          font-weight: 800;
+          line-height: 1;
+        }}
+        .cc-registry-count small {{
+          font-size: 0.72rem;
+          color: #64748b;
+        }}
+        .cc-registry-metrics {{
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 10px;
+          margin: 14px 0 10px;
+        }}
+        .cc-registry-metric {{
+          border-radius: 14px;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          background: #f8fafc;
+          padding: 10px 11px;
+        }}
+        .cc-registry-metric.safe {{ background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.18); }}
+        .cc-registry-metric.manual {{ background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.18); }}
+        .cc-registry-metric.danger {{ background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.18); }}
+        .cc-registry-metric-label {{
+          font-size: 0.74rem;
+          color: #64748b;
+          margin-bottom: 4px;
+        }}
+        .cc-registry-metric-value {{
+          font-size: 0.93rem;
+          font-weight: 760;
+          color: #111827;
+        }}
+        .cc-registry-pills {{
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin: 8px 0 12px;
+        }}
+        .cc-registry-pill {{
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border-radius: 999px;
+          padding: 6px 10px;
+          background: #f1f5f9;
+          color: #334155;
+          font-size: 0.78rem;
+          font-weight: 650;
+        }}
+        .cc-registry-pill b {{
+          color: #0f172a;
+          font-size: 0.82rem;
+        }}
+        .cc-registry-table {{
+          display: grid;
+          gap: 8px;
+        }}
+        .cc-registry-row {{
+          display: grid;
+          grid-template-columns: minmax(190px, 1.2fr) 1fr;
+          gap: 10px;
+          border-radius: 14px;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: #ffffff;
+          padding: 10px 11px;
+        }}
+        .cc-registry-row.manual {{ border-left: 4px solid #f59e0b; }}
+        .cc-registry-row.safe {{ border-left: 4px solid #10b981; }}
+        .cc-registry-row.neutral {{ border-left: 4px solid #3b82f6; }}
+        .cc-registry-row.danger {{ border-left: 4px solid #ef4444; }}
+        .cc-registry-row-title {{
+          font-weight: 760;
+          color: #111827;
+          line-height: 1.3;
+        }}
+        .cc-registry-row-key {{
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 0.74rem;
+          word-break: break-word;
+        }}
+        .cc-registry-row span {{
+          display: inline-flex;
+          margin: 2px 4px 2px 0;
+          border-radius: 999px;
+          background: #f8fafc;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          padding: 4px 7px;
+          color: #475569;
+          font-size: 0.72rem;
+        }}
+        @media (max-width: 720px) {{
+          .cc-registry-head, .cc-registry-row {{
+            grid-template-columns: 1fr;
+            display: grid;
+          }}
+          .cc-registry-count {{
+            width: 100%;
+          }}
+        }}
+      </style>
+    </section>
+    """
+    _render_html(html)
+
+
 def _projection_static_frame(packet):
     payload = packet or {}
     rows = {}

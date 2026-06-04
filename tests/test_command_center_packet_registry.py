@@ -91,6 +91,34 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertGreaterEqual(summary["area_counts"]["command_loop"], 5)
         self.assertGreaterEqual(summary["area_counts"]["a_share_evidence"], 6)
 
+    def test_view_model_is_json_friendly_and_safe_mode_first(self):
+        view_model = registry.build_packet_registry_view_model(max_packets=6)
+        dumped = json.dumps(view_model, ensure_ascii=False)
+        safe_by_label = {item["label"]: item for item in view_model["safe_mode_items"]}
+
+        self.assertEqual(view_model["title"], "综合中心能力地图")
+        self.assertFalse(view_model["deepseek_called"])
+        self.assertEqual(view_model["external_call_policy"], "not_triggered")
+        self.assertEqual(safe_by_label["DeepSeek"]["value"], "0 个自动调用")
+        self.assertEqual(safe_by_label["外部接口"]["value"], "0 个自动触发")
+        self.assertIn("Local API", safe_by_label)
+        self.assertLessEqual(len(view_model["packet_items"]), 6)
+        self.assertIn("command_center_live_packet", dumped)
+        self.assertIn("按钮触发", dumped)
+
+    def test_view_model_packet_items_have_display_labels(self):
+        view_model = registry.build_packet_registry_view_model(max_packets=20)
+        item = next(
+            packet
+            for packet in view_model["packet_items"]
+            if packet["packet_key"] == "command_center_projection_packet"
+        )
+
+        self.assertEqual(item["area_label"], "决策闭环")
+        self.assertEqual(item["refresh_policy_label"], "展示派生")
+        self.assertEqual(item["external_call_label"], "不触发外部接口")
+        self.assertEqual(item["deepseek_label"], "不调用 DeepSeek")
+
     def test_registry_has_no_forbidden_imports(self):
         tree = ast.parse(Path("command_center_packet_registry.py").read_text(encoding="utf-8"))
         imports = []

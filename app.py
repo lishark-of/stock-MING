@@ -17,6 +17,7 @@ import numpy as np
 import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
+import command_center_packet_registry as packet_registry_service
 import command_center_analysis_methods as analysis_methods_service
 import command_center_facts_packet as facts_packet_service
 import command_center_discipline_packet as discipline_packet_service
@@ -56,6 +57,7 @@ try:
         render_command_center_decision_hero,
         render_command_center_projection_chart,
         render_analysis_methods_card,
+        render_command_center_packet_registry_card,
         render_command_center_shell,
         render_command_center_shell_end,
         render_etf_score_table,
@@ -104,6 +106,9 @@ except Exception as module_error:
 
     def render_analysis_methods_card(*args, **kwargs):
         _visual_component_unavailable("市场分析方法")
+
+    def render_command_center_packet_registry_card(*args, **kwargs):
+        _visual_component_unavailable("综合中心能力地图")
 
     def render_home_action_snapshot(*args, **kwargs):
         _visual_component_unavailable("首页交易快照")
@@ -5136,6 +5141,7 @@ packet:
     with projection_slot.container():
         render_command_center_projection_chart(projection_packet)
     render_analysis_methods_card(analysis_method_packet)
+    render_command_center_packet_registry_card(packet_registry_service.build_packet_registry_view_model())
     live_packet = render_strategy_execution_card(
         live_packet,
         target=target,
