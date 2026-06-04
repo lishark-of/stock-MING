@@ -879,6 +879,33 @@ def _tool_packet_has_payload(packet: Mapping[str, Any], writes_packet: str = "")
     return False
 
 
+def _tool_packet_recovery_state(packet: Mapping[str, Any], writes_packet: str = "") -> str:
+    if not packet:
+        return "waiting"
+    status = _to_text(packet.get("status")).lower()
+    data_status = _to_text(packet.get("data_status") or packet.get("cache_state")).lower()
+    blocked_states = {
+        "failed",
+        "error",
+        "failure",
+        "permission_denied",
+        "disabled_this_session",
+        "network_failed",
+        "not_configured",
+        "权限不足",
+        "本会话跳过",
+        "失败",
+    }
+    ready_states = {"ready", "completed", "ok", "success", "available", "cached", "using_cache", "今日已刷新", "使用缓存"}
+    if status in blocked_states or data_status in blocked_states:
+        return "blocked"
+    if status in ready_states or data_status in ready_states:
+        return "recovered"
+    if _tool_packet_has_payload(packet, writes_packet):
+        return "recovered"
+    return "waiting"
+
+
 def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "") -> dict:
     context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
     if not context:
@@ -886,17 +913,23 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
     state_map = _as_mapping(state)
     writes_packet = context["writes_packet"]
     packet = _as_mapping(state_map.get(writes_packet))
-    recovered = _tool_packet_has_payload(packet, writes_packet)
+    recovery_state = _tool_packet_recovery_state(packet, writes_packet)
     updated_at = _to_text(packet.get("updated_at") or packet.get("generated_at") or packet.get("checked_at"))
     source = _to_text(packet.get("source"), context["selected_tab"])
-    if recovered:
+    if recovery_state == "recovered":
         status = "recovered"
         title = "恢复结果已回流"
         message = f"{context['label']} 已写入 {writes_packet}；首页快照会读取该结构化结果。"
         next_action = "返回综合推演中心 2.0 后查看 Home Action Snapshot。"
+    elif recovery_state == "blocked":
+        status = "blocked"
+        title = "恢复结果仍受限"
+        reason = _to_text(packet.get("risk_note") or packet.get("message") or packet.get("summary"), "接口权限、积分、网络或交易日状态仍待处理。")
+        message = f"{context['label']} 仍未形成可用回流：{reason}"
+        next_action = "先检查权限/积分/交易日/网络；不要把缺失数据当作利好或安全信号。"
     else:
         status = "waiting"
-        title = "恢复结果待回流"
+        title = "恢复结果待验证"
         message = f"尚未检测到 {writes_packet} 的可读结果；请在“{context['selected_tab']}”中手动运行对应按钮。"
         next_action = "运行完成后不要刷新外部重接口，先确认本模块是否显示缓存/已刷新状态。"
     return {

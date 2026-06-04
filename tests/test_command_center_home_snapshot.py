@@ -1122,6 +1122,53 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["external_call_policy"], "not_triggered")
         self.assertFalse(notice["deepseek_called"])
 
+    def test_tool_recovery_result_notice_reports_blocked_packet(self):
+        notice = snapshot.build_tool_recovery_result_notice(
+            {
+                "command_center_last_tool_recovery_label": "龙虎榜",
+                "command_center_last_tool_recovery_writes_packet": "command_center_dragon_tiger_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "下一票雷达",
+                "command_center_dragon_tiger_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "summary": "Tushare top_list 当前权限不足。",
+                    "updated_at": "2026-06-03T10:00:00",
+                    "source": "Tushare top_list",
+                },
+            },
+            selected_tab="下一票雷达",
+        )
+
+        self.assertEqual(notice["status"], "blocked")
+        self.assertIn("仍未形成可用回流", notice["message"])
+        self.assertIn("权限不足", notice["message"])
+        self.assertIn("不要把缺失数据当作利好", notice["next_action"])
+        self.assertEqual(notice["source"], "Tushare top_list")
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_tool_recovery_result_notice_treats_cached_packet_as_recovered(self):
+        notice = snapshot.build_tool_recovery_result_notice(
+            {
+                "command_center_last_tool_recovery_label": "个股资金流",
+                "command_center_last_tool_recovery_writes_packet": "command_center_moneyflow_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "今日关注池",
+                "command_center_moneyflow_packet": {
+                    "data_status": "cached",
+                    "summary": "资金流缓存已读取。",
+                    "updated_at": "2026-06-03T10:00:00",
+                },
+            },
+            selected_tab="今日关注池",
+        )
+
+        self.assertEqual(notice["status"], "recovered")
+        self.assertIn("已写入 command_center_moneyflow_packet", notice["message"])
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
     def test_a_share_diagnostic_recovery_result_notice_detects_recovered_packet(self):
         notice = snapshot.build_a_share_diagnostic_recovery_result_notice(
             {
