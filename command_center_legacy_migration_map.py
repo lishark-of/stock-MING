@@ -172,9 +172,12 @@ def _packet_completion_check(state: Any, packet_key: str, label: str) -> dict:
         reason = to_text(packet.get("manual_required_text") or packet.get("summary"), f"{label} 已失败或受限。")
     elif status in READY_PACKET_STATUSES or data_status in READY_DATA_STATUSES:
         state_key = "complete"
-        state_label = "已完成"
+        state_label = "使用缓存" if data_status == "cached" else "已完成"
         passed = True
-        reason = f"{label} 已回流 {packet_key}，状态 {status or data_status}。"
+        if data_status == "cached":
+            reason = f"{label} 已回流 {packet_key}，当前使用缓存；执行前仍需复核日期、来源和覆盖口径。"
+        else:
+            reason = f"{label} 已回流 {packet_key}，状态 {status or data_status}。"
     else:
         state_key = "waiting"
         state_label = "待数据"
@@ -285,6 +288,43 @@ def _completion_status(checks: list[dict]) -> tuple[str, str, str, bool]:
     return "waiting", "待回流", "目标 packet / 能力状态仍待手动恢复。", False
 
 
+def _completion_progress(checks: list[dict]) -> dict:
+    rows = [as_mapping(item) for item in checks if as_mapping(item)]
+    total = len(rows)
+    complete = sum(1 for item in rows if item.get("passed"))
+    blocked = sum(1 for item in rows if item.get("current_state") == "blocked")
+    cached = sum(1 for item in rows if to_text(item.get("current_label")) == "使用缓存")
+    waiting = max(0, total - complete - blocked)
+    target_packets = [to_text(item.get("key")) for item in rows if item.get("kind") == "packet" and to_text(item.get("key"))]
+    missing_targets = [
+        to_text(item.get("key"))
+        for item in rows
+        if not item.get("passed") and to_text(item.get("key"))
+    ]
+    if total <= 0:
+        progress_ratio = 0.0
+        progress_label = "0/0"
+    else:
+        progress_ratio = complete / total
+        progress_label = f"{complete}/{total}"
+    return {
+        "total": total,
+        "complete": complete,
+        "blocked": blocked,
+        "cached": cached,
+        "waiting": waiting,
+        "progress_ratio": progress_ratio,
+        "progress_percent": round(progress_ratio * 100),
+        "progress_label": progress_label,
+        "target_packets": target_packets,
+        "target_packet_text": "、".join(target_packets) if target_packets else "暂无目标 packet",
+        "missing_targets": missing_targets,
+        "missing_target_text": "、".join(missing_targets) if missing_targets else "无",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def _migration_state(packet_wiring: str, data_status: str) -> str:
     if data_status in {"blocked", "failed"}:
         return "blocked"
@@ -334,6 +374,7 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
     packet_state = _packet_status_from_state(state, targets)
     checks = build_completion_checks(key, targets, state=state)
     completion_status, completion_label, completion_summary, is_complete = _completion_status(checks)
+    completion_progress = _completion_progress(checks)
     if packet_state == "packet_missing" and any(target.startswith("command_center_") for target in targets):
         packet_wiring = "packet_defined"
     elif packet_state == "packet_cached":
@@ -358,6 +399,9 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
         "completion_label": completion_label,
         "completion_summary": completion_summary,
         "completion_checks": checks,
+        "completion_progress": completion_progress,
+        "target_packet_text": completion_progress["target_packet_text"],
+        "missing_target_text": completion_progress["missing_target_text"],
         "is_complete": is_complete,
         "migration_state": migration_state,
         "migration_label": MIGRATION_STATE_LABELS.get(migration_state, "待迁移"),
@@ -425,12 +469,16 @@ def build_legacy_migration_map(
             data_capability_packet=data_capability_packet,
         )
         completion_status, completion_label, completion_summary, is_complete = _completion_status(checks)
+        completion_progress = _completion_progress(checks)
         item.update(
             {
                 "completion_status": completion_status,
                 "completion_label": completion_label,
                 "completion_summary": completion_summary,
                 "completion_checks": checks,
+                "completion_progress": completion_progress,
+                "target_packet_text": completion_progress["target_packet_text"],
+                "missing_target_text": completion_progress["missing_target_text"],
                 "is_complete": is_complete,
                 "migration_state": "packet_ready" if is_complete else item.get("migration_state", "wired_waiting_data"),
                 "migration_label": MIGRATION_STATE_LABELS.get(

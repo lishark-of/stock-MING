@@ -103,10 +103,15 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         self.assertEqual(by_key["today_pool"]["migration_state"], "packet_ready")
         self.assertEqual(by_key["today_pool"]["completion_status"], "complete")
         self.assertTrue(by_key["today_pool"]["completion_checks"][0]["passed"])
+        self.assertEqual(by_key["today_pool"]["completion_progress"]["progress_label"], "1/1")
+        self.assertEqual(by_key["today_pool"]["completion_progress"]["target_packet_text"], "command_center_market_packet")
         self.assertEqual(by_key["margin_etf"]["migration_state"], "blocked")
         self.assertEqual(by_key["margin_etf"]["completion_status"], "partial")
         self.assertFalse(by_key["margin_etf"]["is_complete"])
         self.assertEqual(by_key["margin_etf"]["data_status_label"], "权限不足")
+        self.assertEqual(by_key["margin_etf"]["completion_progress"]["progress_label"], "1/2")
+        self.assertEqual(by_key["margin_etf"]["completion_progress"]["cached"], 1)
+        self.assertIn("command_center_margin_packet", by_key["margin_etf"]["completion_progress"]["missing_target_text"])
         self.assertGreaterEqual(lane_counts["blocked"], 1)
         self.assertGreaterEqual(lane_counts["packet_ready"], 1)
 
@@ -131,6 +136,9 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         self.assertEqual(complete["completion_status"], "complete")
         self.assertEqual(complete["migration_state"], "packet_ready")
         self.assertTrue(complete["is_complete"])
+        self.assertEqual(complete["completion_progress"]["progress_label"], "2/2")
+        self.assertEqual(complete["completion_progress"]["cached"], 1)
+        self.assertEqual(complete["completion_checks"][1]["current_label"], "使用缓存")
 
     def test_waiting_packet_completion_names_missing_target(self):
         packet = migration.build_legacy_migration_map(keys=["next_ticket_radar"])
