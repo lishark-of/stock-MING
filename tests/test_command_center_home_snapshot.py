@@ -1552,6 +1552,74 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(center["deepseek_called"])
         json.dumps(center, ensure_ascii=False)
 
+    def test_old_workspace_packet_bridge_summarizes_packet_migration_state(self):
+        bridge = snapshot.build_old_workspace_packet_bridge(
+            {
+                "legacy_migration_map": {
+                    "items": [
+                        {
+                            "key": "margin_etf",
+                            "label": "融资 ETF",
+                            "legacy_tab": "融资 ETF",
+                            "home_surface": "ETF / 融资动作",
+                            "command_center_packets": ["command_center_etf_packet", "command_center_margin_packet"],
+                            "writes_packet": "command_center_margin_packet",
+                            "completion_status": "blocked",
+                            "completion_label": "迁移受阻",
+                            "completion_progress": {
+                                "progress_label": "1/2",
+                                "target_packet_text": "command_center_etf_packet、command_center_margin_packet",
+                                "missing_targets": ["command_center_margin_packet"],
+                                "missing_target_text": "command_center_margin_packet",
+                            },
+                            "action_label": "打开融资 ETF",
+                            "navigation_label": "主导航切到高级工具箱（旧版保留）→ 高级工具模块选择融资 ETF；手动执行后回流 command_center_margin_packet。",
+                        },
+                        {
+                            "key": "next_ticket_radar",
+                            "label": "下一票雷达",
+                            "legacy_tab": "下一票雷达",
+                            "home_surface": "下一票 Top3 / A股证据雷达",
+                            "command_center_packets": ["command_center_radar_packet"],
+                            "writes_packet": "command_center_radar_packet",
+                            "completion_status": "complete",
+                            "completion_label": "迁移完成",
+                            "completion_progress": {
+                                "progress_label": "1/1",
+                                "target_packet_text": "command_center_radar_packet",
+                                "missing_targets": [],
+                                "missing_target_text": "无",
+                            },
+                        },
+                    ]
+                },
+                "command_center_margin_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                },
+                "command_center_radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [{"ticker": "002008.SZ"}],
+                },
+            }
+        )
+        dumped = json.dumps(bridge, ensure_ascii=False)
+        by_label = {item["label"]: item for item in bridge["items"]}
+
+        self.assertEqual(bridge["title"], "旧工具能力 → 综合中心 packet 桥")
+        self.assertEqual(bridge["status"], "blocked")
+        self.assertIn("仍阻断 1", bridge["summary"])
+        self.assertEqual(by_label["融资 ETF"]["bridge_status"], "blocked")
+        self.assertEqual(by_label["融资 ETF"]["writes_packet"], "command_center_margin_packet")
+        self.assertIn("不能作为加仓", by_label["融资 ETF"]["decision_guardrail"])
+        self.assertEqual(by_label["下一票雷达"]["bridge_status"], "recovered")
+        self.assertIn("不会自动调用 DeepSeek", bridge["safe_mode_text"])
+        self.assertFalse(bridge["deepseek_called"])
+        self.assertEqual(bridge["external_call_policy"], "not_triggered")
+        self.assertIn("下一票 Top3", dumped)
+        json.dumps(bridge, ensure_ascii=False)
+
     def test_home_data_recovery_center_attaches_current_recovery_result_statuses(self):
         center = snapshot.build_home_data_recovery_center(
             {
@@ -1833,6 +1901,41 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(navigation_state["command_center_last_tool_recovery_policy"], "navigation_only")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_target_tab"], "下一票雷达")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_radar_packet")
+
+    def test_home_snapshot_includes_old_workspace_packet_bridge(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [{"ticker": "002008.SZ"}],
+                },
+                "command_center_margin_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+        bridge = payload["old_workspace_packet_bridge"]
+        dumped = json.dumps(bridge, ensure_ascii=False)
+
+        self.assertEqual(bridge["title"], "旧工具能力 → 综合中心 packet 桥")
+        self.assertIn(bridge["status"], {"blocked", "partial", "ready"})
+        self.assertTrue(bridge["items"])
+        self.assertIn("下一票雷达", dumped)
+        self.assertIn("融资 ETF", dumped)
+        self.assertIn("command_center_radar_packet", dumped)
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in bridge["items"]))
+        self.assertTrue(all(item["deepseek_called"] is False for item in bridge["items"]))
+        self.assertFalse(bridge["deepseek_called"])
 
     def test_tool_recovery_navigation_state_is_safe_for_empty_action(self):
         self.assertEqual(snapshot.build_tool_recovery_navigation_state({}), {})

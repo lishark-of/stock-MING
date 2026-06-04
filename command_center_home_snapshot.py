@@ -387,6 +387,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "next_ticket_evidence_recovery_actions": [],
         "data_recovery_center": build_home_data_recovery_center(),
         "legacy_migration_map": legacy_migration_map_service.build_legacy_migration_map(),
+        "old_workspace_packet_bridge": build_old_workspace_packet_bridge(),
         "latest_recovery_result_notice": {},
         "recovery_result_status_strip": build_recovery_result_status_strip(),
         "command_center_recovery_result_timeline": build_recovery_result_timeline(),
@@ -534,6 +535,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         data_capability_packet=snapshot.get("data_capability") or {},
     )
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
     snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
@@ -2751,6 +2753,104 @@ def build_legacy_migration_recovery_actions_snapshot(
     return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
+def build_old_workspace_packet_bridge(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
+    payload = _as_mapping(snapshot)
+    migration = _as_mapping(payload.get("legacy_migration_map"))
+    migration_items = [_as_mapping(item) for item in _as_list(migration.get("items")) if _as_mapping(item)]
+    bridge_items = []
+    counts = {"recovered": 0, "cached": 0, "blocked": 0, "waiting": 0}
+    for item in migration_items:
+        progress = _as_mapping(item.get("completion_progress"))
+        missing_targets = [_to_text(target) for target in _as_list(progress.get("missing_targets")) if _to_text(target)]
+        target_packets = [_to_text(target) for target in _as_list(item.get("command_center_packets")) if _to_text(target)]
+        writes_packet = _to_text(item.get("writes_packet") or (missing_targets[0] if missing_targets else ""), "")
+        if not writes_packet and target_packets:
+            writes_packet = target_packets[0]
+        packet_key, packet = _resolve_recovery_packet(payload, writes_packet)
+        fallback_status = _to_text(item.get("completion_status") or item.get("migration_state"))
+        display_state = _recovery_display_state(packet, writes_packet, fallback_status=fallback_status)
+        bridge_status = display_state["status"]
+        if bridge_status not in counts:
+            bridge_status = "waiting"
+        counts[bridge_status] += 1
+        label = _to_text(item.get("label"), "旧版能力")
+        manual_action = _as_mapping(item.get("manual_action"))
+        legacy_tab = _to_text(item.get("legacy_tab") or manual_action.get("legacy_tab"), label)
+        if bridge_status in {"blocked", "waiting"}:
+            decision_guardrail = f"{label} 未回流为可读 packet 前，只能标记为待验证，不能作为加仓、追高或加融资依据。"
+        elif bridge_status == "cached":
+            decision_guardrail = f"{label} 当前使用缓存；执行前需要复核日期、来源和覆盖口径。"
+        else:
+            decision_guardrail = f"{label} 已回流为综合中心 packet；仍需和价格、纪律、仓位规则共同复核。"
+        bridge_items.append(
+            {
+                "key": _to_text(item.get("key"), label),
+                "label": label,
+                "legacy_tab": legacy_tab,
+                "home_surface": _to_text(item.get("home_surface"), "综合推演中心"),
+                "target_packet_text": _to_text(item.get("target_packet_text") or progress.get("target_packet_text"), writes_packet),
+                "missing_target_text": _to_text(item.get("missing_target_text") or progress.get("missing_target_text"), "无"),
+                "writes_packet": writes_packet,
+                "packet_key": packet_key,
+                "bridge_status": bridge_status,
+                "bridge_label": display_state["label"],
+                "tone": display_state["tone"],
+                "completion_label": _to_text(item.get("completion_label"), display_state["label"]),
+                "completion_progress_label": _to_text(progress.get("progress_label"), "0/0"),
+                "action_label": _to_text(item.get("action_label") or manual_action.get("action_label"), f"打开{legacy_tab}"),
+                "toolbox_entry": _to_text(item.get("toolbox_entry") or manual_action.get("toolbox_entry"), f"高级工具箱 / {legacy_tab}"),
+                "navigation_label": _to_text(
+                    item.get("navigation_label") or manual_action.get("navigation_label"),
+                    f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                ),
+                "decision_guardrail": decision_guardrail,
+                "refresh_policy": "button_gated",
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    bridge_items = sorted(
+        bridge_items,
+        key=lambda row: (
+            {"blocked": 0, "waiting": 1, "cached": 2, "recovered": 3}.get(row["bridge_status"], 4),
+            row["label"],
+        ),
+    )[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+    if counts["blocked"]:
+        status = "blocked"
+        tone = "failed"
+        headline = f"旧能力有 {counts['blocked']} 项仍阻断 packet 回流"
+    elif counts["waiting"] or counts["cached"]:
+        status = "partial"
+        tone = "stale"
+        headline = f"旧能力待回流/缓存复核 {counts['waiting'] + counts['cached']} 项"
+    elif counts["recovered"]:
+        status = "ready"
+        tone = "ready"
+        headline = "旧能力已回流为综合中心 packet"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "旧能力 packet 桥待生成"
+    next_action = (
+        f"优先处理 {bridge_items[0]['label']}：{bridge_items[0]['action_label']}，回流 {bridge_items[0]['writes_packet']}。"
+        if bridge_items and bridge_items[0]["bridge_status"] != "recovered"
+        else "继续以综合推演中心为主入口；旧工具只作为手动恢复入口。"
+    )
+    return {
+        "title": "旧工具能力 → 综合中心 packet 桥",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": f"已回流 {counts['recovered']}｜使用缓存 {counts['cached']}｜仍阻断 {counts['blocked']}｜待回流 {counts['waiting']}",
+        "items": bridge_items,
+        "next_action": next_action,
+        "safe_mode_text": "这里只读取旧版迁移地图、本地 packet 和恢复状态；不会自动调用 DeepSeek、回测、全市场扫描或重型数据接口。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
@@ -4071,6 +4171,7 @@ def build_home_action_snapshot(
             data_capability_packet=empty.get("data_capability") or {},
         )
         empty["data_recovery_center"] = build_home_data_recovery_center(empty)
+        empty["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(empty)
         empty["recovery_result_status_strip"] = build_recovery_result_status_strip(
             empty,
             latest_notice=empty.get("latest_recovery_result_notice") or snapshot["latest_recovery_result_notice"],
@@ -4134,6 +4235,7 @@ def build_home_action_snapshot(
         data_capability_packet=snapshot.get("data_capability") or {},
     )
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(
         snapshot,
         latest_notice=snapshot.get("latest_recovery_result_notice") or {},

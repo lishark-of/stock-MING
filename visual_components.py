@@ -4839,6 +4839,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     a_share_evidence_ledger = payload.get("a_share_evidence_recovery_ledger") or {}
     strategy_prerequisite_ledger = payload.get("strategy_prerequisite_recovery_ledger") or {}
     old_workspace_absence_ledger = payload.get("old_workspace_data_absence_ledger") or {}
+    old_workspace_packet_bridge = payload.get("old_workspace_packet_bridge") or {}
     legacy_a_share_gap = payload.get("legacy_a_share_gap_summary") or {}
     a_share_fact_summary_text = _home_text(a_share_fact_recovery.get("summary"), "A股事实：待验证")
     a_share_fact_tone = _home_text(a_share_fact_recovery.get("tone"), "missing")
@@ -5464,6 +5465,37 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {legacy_migration_lane_html}
           {legacy_migration_completion_html}
           {_home_list(legacy_migration_actions, "继续保持综合推演中心为主入口；旧工具只在按钮触发时运行。", limit=3)}
+        </div>
+        """
+    packet_bridge_item_html = ""
+    for item in (old_workspace_packet_bridge.get("items") or [])[:5]:
+        if not isinstance(item, dict):
+            continue
+        packet_bridge_item_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "旧工具能力"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("bridge_label"), "待回流"))}</span>
+          </div>
+          <div class="cc-home-item-meta">首页位置：{escape(_home_text(item.get("home_surface"), "综合推演中心"))} ｜ 旧入口：{escape(_home_text(item.get("legacy_tab"), "高级工具"))}</div>
+          <div class="cc-home-item-meta">目标 packet：{escape(_home_text(item.get("target_packet_text"), "暂无"))} ｜ 当前回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
+          <div class="cc-home-item-meta">迁移进度：{escape(_home_text(item.get("completion_progress_label"), "0/0"))} ｜ 待处理：{escape(_home_text(item.get("missing_target_text"), "无"))}</div>
+          <div class="cc-home-item-meta">决策保护：{escape(_home_text(item.get("decision_guardrail"), "未回流前只能作为待验证。"))}</div>
+          <div class="cc-home-item-meta">恢复：{escape(_home_text(item.get("action_label"), "手动恢复"))} ｜ {escape(_home_text(item.get("navigation_label"), "进入高级工具箱手动恢复。"))}</div>
+        </div>
+        """
+    if not packet_bridge_item_html:
+        packet_bridge_item_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>旧工具 packet 桥待生成</div><div class='cc-home-item-meta'>旧工作台能力会逐步映射为综合中心 packet；页面打开不会运行旧工具。</div></div>"
+    old_workspace_packet_bridge_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(old_workspace_packet_bridge.get("title"), "旧工具能力 → 综合中心 packet 桥"))}
+            <span class="cc-home-chip {escape(_home_text(old_workspace_packet_bridge.get("tone"), "missing"))}">{escape(_home_text(old_workspace_packet_bridge.get("headline"), "待生成"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(old_workspace_packet_bridge.get("summary"), "已回流 0｜使用缓存 0｜仍阻断 0｜待回流 0"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(old_workspace_packet_bridge.get("next_action"), "以综合推演中心为主入口，按需手动恢复旧工具。"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(old_workspace_packet_bridge.get("safe_mode_text"), "不会自动调用外部接口。"))}</div>
+          {packet_bridge_item_html}
         </div>
         """
     latest_recovery_html = ""
@@ -6190,6 +6222,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {data_health_visibility_html}
           {data_recovery_center_html}
           {legacy_migration_html}
+          {old_workspace_packet_bridge_html}
           {diagnostic_details_html}
           <div class="cc-muted-note">{escape(str(safety_line))}</div>
         </div>
