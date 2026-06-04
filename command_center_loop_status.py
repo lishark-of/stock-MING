@@ -248,6 +248,52 @@ def _projection_item(projection_packet: Any = None) -> dict:
     return _status_item("projection", "趋势推演", status, summary, guardrail, "command_center_projection_packet")
 
 
+def _candidate_execution_evidence_item(candidate_execution_evidence_overview: Any = None) -> dict:
+    overview = _as_mapping(candidate_execution_evidence_overview)
+    if not overview:
+        return {}
+    tone = _to_text(overview.get("tone"), "missing")
+    if tone == "failed":
+        status = "blocked"
+    elif tone == "ready":
+        status = "ready"
+    elif tone == "stale":
+        status = "stale"
+    else:
+        status = "waiting"
+    summary = _to_text(
+        overview.get("summary") or overview.get("headline"),
+        "下一票/ETF 候选执行证据待验证。",
+    )
+    guardrail = _to_text(
+        overview.get("decision_guardrail"),
+        "候选票和 ETF 证据未验证前，不能作为买入、追高、加融资或放大仓位依据。",
+    )
+    item = _status_item(
+        "candidate_execution_evidence",
+        "候选执行证据",
+        status,
+        summary,
+        guardrail,
+        "candidate_execution_evidence_overview",
+    )
+    item["headline"] = _to_text(overview.get("headline"), _status_label(status))
+    item["stage_text"] = _to_text(
+        overview.get("stage_text"),
+        "下一票/ETF 证据 → 趋势推演 → 策略执行 → 今日总决策",
+    )
+    item["next_action"] = _to_text(
+        overview.get("next_action"),
+        "先补齐候选执行证据，再进入策略执行。",
+    )
+    item["safe_mode_text"] = _to_text(
+        overview.get("safe_mode_text"),
+        "这里只读取本地 radar_packet / etf_packet；不会自动扫描、全量发现、DeepSeek 或外部接口。",
+    )
+    item["source_item_count"] = len(_as_list(overview.get("items")))
+    return item
+
+
 def _strategy_item(strategy_packet: Any = None) -> dict:
     status = _packet_status(strategy_packet, ready_fields=("action", "summary", "position_advice"))
     packet = _as_mapping(strategy_packet)
@@ -289,6 +335,8 @@ def _recovery_loop_key(action: Mapping[str, Any]) -> str:
         return "data_capability"
     if "strategy" in writes_packet or "discipline" in writes_packet or "quant" in writes_packet:
         return "strategy_execution"
+    if "radar" in writes_packet or "etf" in writes_packet:
+        return "candidate_execution_evidence"
     if "decision" in writes_packet:
         return "decision"
     if source_type in {"next_ticket_evidence", "a_share_fact", "legacy_migration", "legacy_tool"}:
@@ -303,6 +351,7 @@ def _recovery_loop_label(loop_key: str) -> str:
         "old_workspace_packets": "旧能力回流",
         "analysis_methods": "分析方法",
         "projection": "趋势推演",
+        "candidate_execution_evidence": "候选执行证据",
         "strategy_execution": "策略执行",
         "decision": "今日总决策",
     }.get(loop_key, "数据能力")
@@ -393,6 +442,7 @@ def build_command_center_loop_status_view_model(
     analysis_method_packet: Any = None,
     market_profile_evidence: Any = None,
     projection_packet: Any = None,
+    candidate_execution_evidence_overview: Any = None,
     strategy_packet: Any = None,
     decision_packet: Any = None,
     deepseek_summary: Any = None,
@@ -411,6 +461,13 @@ def build_command_center_loop_status_view_model(
         [
             _analysis_methods_item(analysis_method_packet, market_profile_evidence),
             _projection_item(projection_packet),
+        ]
+    )
+    candidate_evidence_item = _candidate_execution_evidence_item(candidate_execution_evidence_overview)
+    if candidate_evidence_item:
+        items.append(candidate_evidence_item)
+    items.extend(
+        [
             _strategy_item(strategy_packet),
             _decision_item(decision_packet),
             _deepseek_item(deepseek_summary, strategy_packet, decision_packet, projection_packet, analysis_method_packet),

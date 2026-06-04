@@ -16,10 +16,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["data_freshness"]["state"], "missing")
         self.assertIn("暂无可执行候选", payload["empty_message"])
         self.assertIn("decision_loop_status", payload)
-        self.assertEqual(len(payload["decision_loop_status"]["items"]), 8)
+        self.assertEqual(len(payload["decision_loop_status"]["items"]), 9)
         loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
         self.assertIn("provider_data_capability", loop_items)
         self.assertIn("old_workspace_packets", loop_items)
+        self.assertIn("candidate_execution_evidence", loop_items)
+        self.assertIn("下一票/ETF", loop_items["candidate_execution_evidence"]["stage_text"])
         self.assertFalse(payload["decision_loop_status"]["deepseek_called"])
 
     def test_save_and_load_snapshot(self):
@@ -43,6 +45,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(loaded["deepseek_called"])
         loop_items = {item["key"]: item for item in loaded["decision_loop_status"]["items"]}
         self.assertEqual(loop_items["decision"]["status"], "ready")
+        self.assertIn("candidate_execution_evidence", loop_items)
         self.assertEqual(loop_items["deepseek"]["status"], "manual")
 
     def test_attach_decision_loop_status_keeps_recovery_navigation_action(self):
@@ -220,6 +223,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         overview = payload["candidate_execution_evidence_overview"]
         self.assertEqual(overview["title"], "候选执行证据总览")
         self.assertIn("下一票/ETF 证据", overview["stage_text"])
+        loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
+        self.assertIn("candidate_execution_evidence", loop_items)
+        self.assertIn("下一票/ETF", loop_items["candidate_execution_evidence"]["stage_text"])
         overview_items = {item["key"]: item for item in overview["items"]}
         self.assertIn("next_ticket_radar", overview_items)
         self.assertIn("下一票 Top", overview_items["next_ticket_radar"]["evidence_summary"])

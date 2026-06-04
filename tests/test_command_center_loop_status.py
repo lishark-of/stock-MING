@@ -153,6 +153,34 @@ class CommandCenterLoopStatusTests(unittest.TestCase):
         self.assertEqual(by_key["deepseek"]["status"], "manual")
         self.assertFalse(view_model["deepseek_called"])
 
+    def test_candidate_execution_evidence_enters_loop_before_strategy(self):
+        view_model = loop_status.build_command_center_loop_status_view_model(
+            candidate_execution_evidence_overview={
+                "headline": "候选执行证据需复核",
+                "tone": "stale",
+                "summary": "已验证 1｜需复核 1｜阻断 0｜待验证 0",
+                "stage_text": "下一票/ETF 证据 → 趋势推演 → 策略执行 → 今日总决策",
+                "decision_guardrail": "候选票和 ETF 证据未验证前不能作为交易依据。",
+                "items": [
+                    {"key": "next_ticket_radar", "verification_status": "待验证"},
+                    {"key": "margin_etf", "verification_status": "已验证"},
+                ],
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            },
+            strategy_packet={"status": "ready", "action": "只观察"},
+        )
+        keys = [item["key"] for item in view_model["items"]]
+        by_key = {item["key"]: item for item in view_model["items"]}
+
+        self.assertIn("candidate_execution_evidence", keys)
+        self.assertLess(keys.index("candidate_execution_evidence"), keys.index("strategy_execution"))
+        self.assertEqual(by_key["candidate_execution_evidence"]["status"], "stale")
+        self.assertIn("需复核", by_key["candidate_execution_evidence"]["summary"])
+        self.assertIn("下一票/ETF", by_key["candidate_execution_evidence"]["stage_text"])
+        self.assertEqual(by_key["candidate_execution_evidence"]["source_item_count"], 2)
+        self.assertFalse(view_model["deepseek_called"])
+
     def test_projection_recovery_blocker_blocks_projection_link(self):
         view_model = loop_status.build_command_center_loop_status_view_model(
             projection_packet={

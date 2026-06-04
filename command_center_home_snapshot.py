@@ -455,6 +455,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
     snapshot["provider_recovery_matrix"] = build_provider_recovery_matrix(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot = attach_candidate_execution_evidence_overview(snapshot)
     snapshot = attach_decision_loop_status(snapshot)
     return snapshot
 
@@ -622,6 +623,7 @@ def attach_decision_loop_status(
     old_workspace_packet_bridge: Any = None,
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
+    candidate_execution_evidence_overview: Any = None,
     strategy_packet: Any = None,
     decision_packet: Any = None,
     deepseek_summary: Any = None,
@@ -634,6 +636,11 @@ def attach_decision_loop_status(
         analysis_method_packet=analysis_method_packet or payload.get("analysis_method_packet") or {},
         market_profile_evidence=payload.get("market_profile_evidence") or {},
         projection_packet=projection_packet or payload.get("projection_packet") or {},
+        candidate_execution_evidence_overview=(
+            candidate_execution_evidence_overview
+            or payload.get("candidate_execution_evidence_overview")
+            or {}
+        ),
         strategy_packet=strategy_packet or payload.get("strategy_packet") or {},
         decision_packet=decision_packet or payload.get("decision_packet") or {},
         deepseek_summary=deepseek_summary or payload.get("deepseek_summary") or {},
