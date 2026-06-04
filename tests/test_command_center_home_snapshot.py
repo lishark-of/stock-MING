@@ -2227,6 +2227,79 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("不自动运行 DeepSeek", hint["help_text"])
         self.assertFalse(hint["deepseek_called"])
 
+    def test_tool_recovery_manual_check_hint_points_next_ticket_to_module_button(self):
+        hint = snapshot.build_tool_recovery_manual_check_hint(
+            {
+                "command_center_last_tool_recovery_label": "下一票雷达",
+                "command_center_last_tool_recovery_writes_packet": "command_center_radar_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "下一票雷达",
+            },
+            selected_tab="下一票雷达",
+        )
+
+        self.assertFalse(hint["available"])
+        self.assertTrue(hint["module_button_hint"])
+        self.assertEqual(hint["check_key"], "next_ticket_radar")
+        self.assertEqual(hint["writes_packet"], "command_center_radar_packet")
+        self.assertIn("生成规则雷达", hint["module_button_label"])
+        self.assertIn("重新扫描", hint["module_button_label"])
+        self.assertIn("成功后回流 command_center_radar_packet", hint["message"])
+        self.assertEqual(hint["external_call_policy"], "button_gated")
+        self.assertIn("不会在打开页面时自动全市场扫描", hint["help_text"])
+        self.assertFalse(hint["deepseek_called"])
+
+    def test_tool_recovery_manual_check_hint_points_discipline_to_backtest_button(self):
+        hint = snapshot.build_tool_recovery_manual_check_hint(
+            {
+                "command_center_last_tool_recovery_label": "交易纪律/回测",
+                "command_center_last_tool_recovery_writes_packet": "command_center_discipline_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "交易纪律实验室",
+            },
+            selected_tab="交易纪律实验室",
+        )
+
+        self.assertFalse(hint["available"])
+        self.assertTrue(hint["module_button_hint"])
+        self.assertEqual(hint["check_key"], "discipline_backtest")
+        self.assertEqual(hint["module_button_label"], "运行回测")
+        self.assertIn("command_center_discipline_packet", hint["message"])
+        self.assertIn("不会自动跑完整回测", hint["help_text"])
+        self.assertEqual(hint["external_call_policy"], "button_gated")
+        self.assertFalse(hint["deepseek_called"])
+
+    def test_tool_recovery_manual_check_hint_points_etf_and_quant_to_module_buttons(self):
+        etf_hint = snapshot.build_tool_recovery_manual_check_hint(
+            {
+                "command_center_last_tool_recovery_label": "融资 ETF",
+                "command_center_last_tool_recovery_writes_packet": "command_center_etf_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "融资 ETF",
+            },
+            selected_tab="融资 ETF",
+        )
+        quant_hint = snapshot.build_tool_recovery_manual_check_hint(
+            {
+                "command_center_last_tool_recovery_label": "量化推演",
+                "command_center_last_tool_recovery_writes_packet": "command_center_quant_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "量化推演",
+            },
+            selected_tab="量化推演",
+        )
+
+        self.assertFalse(etf_hint["available"])
+        self.assertTrue(etf_hint["module_button_hint"])
+        self.assertIn("刷新 Tushare ETF 日线数据", etf_hint["module_button_label"])
+        self.assertIn("不自动批量拉取 ETF 行情", etf_hint["help_text"])
+        self.assertFalse(etf_hint["deepseek_called"])
+        self.assertFalse(quant_hint["available"])
+        self.assertTrue(quant_hint["module_button_hint"])
+        self.assertIn("生成量化推演", quant_hint["module_button_label"])
+        self.assertIn("不会在导航时自动拉行情", quant_hint["help_text"])
+        self.assertFalse(quant_hint["deepseek_called"])
+
     def test_tool_recovery_manual_check_hint_waits_for_target_tab(self):
         hint = snapshot.build_tool_recovery_manual_check_hint(
             {

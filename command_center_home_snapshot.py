@@ -3179,6 +3179,38 @@ TOOL_RECOVERY_MANUAL_CHECKS = {
         "status_label": "正在手动检测公告/硬风险...",
         "result_label": "公告/硬风险",
     },
+    "command_center_radar_packet": {
+        "check_key": "next_ticket_radar",
+        "label": "下一票雷达",
+        "runner_type": "module_button",
+        "module_button_label": "生成规则雷达 / 重新扫描",
+        "module_button_key": "next_ticket_start_scan / next_ticket_rescan",
+        "help_text": "下一票雷达需要在本模块内手动触发规则扫描；不会在打开页面时自动全市场扫描或调用 DeepSeek。",
+    },
+    "command_center_etf_packet": {
+        "check_key": "margin_etf",
+        "label": "融资 ETF",
+        "runner_type": "module_button",
+        "module_button_label": "刷新 Tushare ETF 日线数据 / 刷新盘中 ETF 实时数据",
+        "module_button_key": "btn_margin_etf_refresh_daily / btn_margin_etf_refresh_intraday",
+        "help_text": "融资 ETF 深度数据需要在本模块内手动刷新；默认只读本地配置和缓存，不自动批量拉取 ETF 行情。",
+    },
+    "command_center_discipline_packet": {
+        "check_key": "discipline_backtest",
+        "label": "交易纪律/回测",
+        "runner_type": "module_button",
+        "module_button_label": "运行回测",
+        "module_button_key": "btn_run_backtest",
+        "help_text": "交易纪律回测必须在本模块内手动运行；不会自动跑完整回测或调用 DeepSeek。",
+    },
+    "command_center_quant_packet": {
+        "check_key": "quant_projection",
+        "label": "量化推演",
+        "runner_type": "module_button",
+        "module_button_label": "生成量化推演 / 运行相关量化按钮",
+        "module_button_key": "legacy_quant_manual_actions",
+        "help_text": "量化推演需要在本模块内手动生成；不会在导航时自动拉行情、回测或调用 DeepSeek。",
+    },
 }
 
 
@@ -3209,8 +3241,28 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
             "external_call_policy": "not_triggered",
             "deepseek_called": False,
         }
+    if config.get("runner_type") == "module_button":
+        module_button_label = _to_text(config.get("module_button_label"), "本模块内的手动按钮")
+        return {
+            "available": False,
+            "module_button_hint": True,
+            "label": config["label"],
+            "selected_tab": context["selected_tab"],
+            "writes_packet": writes_packet,
+            "check_key": config["check_key"],
+            "module_button_label": module_button_label,
+            "module_button_key": _to_text(config.get("module_button_key")),
+            "message": f"{config['label']}已定位到本模块恢复入口；请点击“{module_button_label}”，成功后回流 {writes_packet}。",
+            "help_text": _to_text(
+                config.get("help_text"),
+                f"{config['label']}需要使用模块内按钮手动恢复；不会自动运行 DeepSeek、回测、全市场扫描或批量刷新。",
+            ),
+            "external_call_policy": "button_gated",
+            "deepseek_called": False,
+        }
     return {
         "available": True,
+        "module_button_hint": False,
         "label": config["label"],
         "selected_tab": context["selected_tab"],
         "writes_packet": writes_packet,

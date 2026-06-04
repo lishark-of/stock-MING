@@ -10773,6 +10773,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     )
         elif manual_check_hint:
             st.caption(manual_check_hint["message"])
+            if manual_check_hint.get("module_button_hint"):
+                st.caption(manual_check_hint.get("help_text", ""))
         if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):
             for recovery_key in [
                 "command_center_last_tool_recovery_key",
