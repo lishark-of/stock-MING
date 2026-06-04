@@ -39,6 +39,22 @@ MAX_CANDIDATES = 3
 MAX_ERRORS = 8
 MAX_CAPABILITY_ITEMS = 8
 
+DATA_HEALTH_TIMELINE_RECOVERY_EVENTS = {
+    "last_failure",
+    "manual_required",
+    "cache_used",
+    "empty_recent",
+    "needs_check",
+}
+
+DATA_HEALTH_TIMELINE_RECOVERY_PRIORITY = {
+    "last_failure": 1,
+    "manual_required": 2,
+    "cache_used": 3,
+    "empty_recent": 3,
+    "needs_check": 4,
+}
+
 A_SHARE_FACT_RECOVERY_SOURCES = (
     {
         "key": "moneyflow",
@@ -343,6 +359,11 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["command_center_data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
     snapshot["data_health_timeline"] = data_health_ledger_service.build_data_health_timeline(snapshot["data_health_ledger"])
     snapshot["command_center_data_health_timeline"] = snapshot["data_health_timeline"]
+    snapshot["data_health_timeline_recovery_actions"] = build_data_health_timeline_recovery_actions(
+        snapshot["data_health_timeline"]
+    )
+    snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
+    snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     return snapshot
 
 
@@ -399,6 +420,10 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["command_center_data_health_visibility_summary"] = snapshot["data_health_visibility_summary"]
     snapshot["data_health_timeline"] = data_health_ledger_service.build_data_health_timeline(snapshot["data_health_ledger"])
     snapshot["command_center_data_health_timeline"] = snapshot["data_health_timeline"]
+    snapshot["data_health_timeline_recovery_actions"] = build_data_health_timeline_recovery_actions(
+        snapshot["data_health_timeline"]
+    )
+    snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
     snapshot["a_share_user_data_diagnostic"] = (
         _as_mapping(snapshot.get("a_share_user_data_diagnostic"))
         or legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model()
@@ -740,6 +765,83 @@ def build_data_recovery_actions_snapshot(
         if len(actions) >= max(1, int(limit or MAX_CAPABILITY_ITEMS)):
             break
     return actions
+
+
+def _timeline_recovery_action_context(item: Mapping[str, Any]) -> str:
+    label = _to_text(item.get("label"), "数据接口")
+    api = _to_text(item.get("api")) or label
+    writes_packet = _to_text(item.get("writes_packet"), "command_center_data_capability_packet")
+    event_type = _to_text(item.get("event_type"))
+    if event_type == "last_failure":
+        return f"最近失败项，只检测 {api} 并回流 {writes_packet}；不会自动调用 DeepSeek 或重型任务。"
+    if event_type == "manual_required":
+        return f"需要手动按钮触发，只处理 {api} 并回流 {writes_packet}；页面打开不会自动请求外部接口。"
+    if event_type == "cache_used":
+        return f"当前依赖缓存，手动复核 {api} 后回流 {writes_packet}；缓存不能当作实时事实。"
+    if event_type == "empty_recent":
+        return f"近期无数据项，手动复核交易日、标的覆盖和 {api}；结果回流 {writes_packet}。"
+    return f"手动核对 {api} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。"
+
+
+def build_data_health_timeline_recovery_actions(
+    data_health_timeline: Any = None,
+    limit: int = MAX_CAPABILITY_ITEMS,
+) -> list[dict]:
+    timeline = _as_mapping(data_health_timeline)
+    actions = []
+    seen = set()
+    for raw in _as_list(timeline.get("items")):
+        item = _as_mapping(raw)
+        event_type = _to_text(item.get("event_type"))
+        if event_type not in DATA_HEALTH_TIMELINE_RECOVERY_EVENTS:
+            continue
+        writes_packet = _to_text(item.get("writes_packet"), "command_center_data_capability_packet")
+        label = _to_text(item.get("label"), "数据接口")
+        api = _to_text(item.get("api"))
+        dedupe_key = writes_packet or f"{_to_text(item.get('provider'))}:{api or label}"
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        legacy_tab = _recovery_legacy_tab(writes_packet, item.get("key") or api)
+        action_label = _to_text(item.get("action_label"), f"手动检查{label}")
+        message = _to_text(item.get("message"), f"{label}仍需核对接口状态、日期和覆盖范围。")
+        status_label = _to_text(item.get("status_label"), "待验证")
+        actions.append(
+            {
+                "key": f"data_health_timeline:{api or label}:{event_type}",
+                "provider": _to_text(item.get("provider"), "数据源"),
+                "api": api,
+                "label": label,
+                "source_type": "data_health_timeline",
+                "source_label": "接口健康时间线",
+                "event_type": event_type,
+                "status": _to_text(item.get("state"), event_type),
+                "status_label": status_label,
+                "tone": _to_text(item.get("tone"), "missing"),
+                "priority": DATA_HEALTH_TIMELINE_RECOVERY_PRIORITY.get(event_type, 4),
+                "reason": message,
+                "diagnostic_answer": message,
+                "interface_diagnostic_answer": message,
+                "decision_guardrail": _to_text(
+                    item.get("decision_guardrail"),
+                    f"{label}未恢复前不能作为加仓、追高或加融资依据。",
+                ),
+                "action_label": action_label,
+                "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+                "workspace_target": "高级工具箱（旧版保留）",
+                "workspace_state_key": "workspace_mode_v2",
+                "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                "legacy_tab": legacy_tab,
+                "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                "writes_packet": writes_packet,
+                "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+                "recovery_button_context": _timeline_recovery_action_context(item),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    actions = sorted(actions, key=lambda action: (action["priority"], action["label"], action["writes_packet"]))
+    return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
 def _a_share_fact_recovery_state(packet: Mapping[str, Any], writes_packet: str = "") -> str:
@@ -1377,11 +1479,16 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
 def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
     payload = _as_mapping(snapshot)
     data_actions = _as_list(payload.get("data_recovery_actions"))
+    timeline_actions = _as_list(
+        payload.get("command_center_data_health_timeline_recovery_actions")
+        or payload.get("data_health_timeline_recovery_actions")
+    )
     legacy_fact_actions = _as_list(payload.get("legacy_a_share_fact_recovery_actions"))
     a_share_actions = _as_list(_as_mapping(payload.get("a_share_user_data_diagnostic")).get("recovery_actions"))
     tool_actions = _as_list(payload.get("tool_recovery_actions"))
     action_sources = [
         ("data_source", "数据源能力", data_actions, 1),
+        ("data_health_timeline", "接口健康时间线", timeline_actions, 1),
         ("a_share_fact", "旧版 A股事实卡", legacy_fact_actions, 2),
         ("a_share", "A股数据能力", a_share_actions, 3),
         ("legacy_tool", "旧工具能力", tool_actions, 3),
@@ -2487,6 +2594,7 @@ def build_home_action_snapshot(
     data_health_ledger = _as_mapping(data_capability_console.get("data_health_ledger"))
     data_health_visibility_summary = data_health_ledger_service.build_data_health_visibility_summary(data_health_ledger)
     data_health_timeline = data_health_ledger_service.build_data_health_timeline(data_health_ledger)
+    data_health_timeline_recovery_actions = build_data_health_timeline_recovery_actions(data_health_timeline)
     a_share_professional_facts = _as_mapping(state_map.get("a_share_professional_facts"))
     a_share_user_data_diagnostic = legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(
         verified_technical_facts=(
@@ -2594,6 +2702,8 @@ def build_home_action_snapshot(
         "command_center_data_health_visibility_summary": data_health_visibility_summary,
         "data_health_timeline": data_health_timeline,
         "command_center_data_health_timeline": data_health_timeline,
+        "data_health_timeline_recovery_actions": data_health_timeline_recovery_actions,
+        "command_center_data_health_timeline_recovery_actions": data_health_timeline_recovery_actions,
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
@@ -2634,6 +2744,8 @@ def build_home_action_snapshot(
         empty["command_center_data_health_visibility_summary"] = snapshot["command_center_data_health_visibility_summary"]
         empty["data_health_timeline"] = snapshot["data_health_timeline"]
         empty["command_center_data_health_timeline"] = snapshot["command_center_data_health_timeline"]
+        empty["data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
+        empty["command_center_data_health_timeline_recovery_actions"] = snapshot["command_center_data_health_timeline_recovery_actions"]
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)

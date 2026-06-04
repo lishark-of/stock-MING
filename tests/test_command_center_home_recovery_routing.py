@@ -179,6 +179,10 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("valid_data_health_visibility_actions", source)
         self.assertIn("btn_open_data_health_visibility_", source)
         self.assertIn("为什么搜不到｜打开恢复入口", source)
+        self.assertIn("data_health_timeline_recovery_actions", source)
+        self.assertIn("valid_data_health_timeline_actions", source)
+        self.assertIn("btn_open_data_health_timeline_", source)
+        self.assertIn("接口健康时间线｜最近失败/缓存恢复入口", source)
 
     def test_home_snapshot_renders_recovered_evidence_modules(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

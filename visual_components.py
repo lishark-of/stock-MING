@@ -4814,10 +4814,17 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         or payload.get("data_health_timeline")
         or {}
     )
+    data_health_timeline_recovery_actions = (
+        payload.get("command_center_data_health_timeline_recovery_actions")
+        or payload.get("data_health_timeline_recovery_actions")
+        or []
+    )
     if not isinstance(data_health_visibility, dict):
         data_health_visibility = {}
     if not isinstance(data_health_timeline, dict):
         data_health_timeline = {}
+    if not isinstance(data_health_timeline_recovery_actions, list):
+        data_health_timeline_recovery_actions = []
     legacy_migration_map = payload.get("legacy_migration_map") or {}
     latest_recovery_result = payload.get("latest_recovery_result_notice") or {}
     recovery_result_status = payload.get("recovery_result_status_strip") or {}
@@ -5895,6 +5902,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                         item.get("manual_check_instruction") or item.get("navigation_label"),
                         "切换到高级工具箱对应模块；不自动执行旧工具。",
                     ),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
+    valid_data_health_timeline_actions = [
+        item
+        for item in data_health_timeline_recovery_actions[:4]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_data_health_timeline_actions:
+        st.caption("接口健康时间线｜最近失败/缓存恢复入口：这里只切换到高级工具箱；对应检测仍需手动点击。")
+        timeline_cols = st.columns(min(4, len(valid_data_health_timeline_actions)))
+        for index, item in enumerate(valid_data_health_timeline_actions):
+            with timeline_cols[index % len(timeline_cols)]:
+                st.button(
+                    f"{_home_text(item.get('status_label'), '待验证')}｜{_home_text(item.get('label'), '数据接口')}",
+                    key=f"btn_open_data_health_timeline_{_home_text(item.get('key'), index)}",
+                    help=_home_text(item.get("recovery_button_context") or item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
                     on_click=_apply_tool_recovery_navigation,
                     args=(item,),
                     width="stretch",

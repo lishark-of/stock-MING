@@ -858,6 +858,18 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(health_timeline["items"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(health_timeline["items"][0]["external_call_policy"], "not_triggered")
         self.assertFalse(health_timeline["deepseek_called"])
+        timeline_actions = payload["command_center_data_health_timeline_recovery_actions"]
+        self.assertEqual(timeline_actions, payload["data_health_timeline_recovery_actions"])
+        self.assertEqual(timeline_actions[0]["label"], "融资融券")
+        self.assertEqual(timeline_actions[0]["event_type"], "last_failure")
+        self.assertEqual(timeline_actions[0]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(timeline_actions[0]["legacy_tab"], "融资 ETF")
+        self.assertEqual(timeline_actions[0]["external_call_policy"], "not_triggered")
+        self.assertFalse(timeline_actions[0]["deepseek_called"])
+        timeline_navigation = snapshot.build_tool_recovery_navigation_state(timeline_actions[0])
+        self.assertEqual(timeline_navigation["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(timeline_navigation["legacy_workspace_selected_tab"], "融资 ETF")
+        self.assertEqual(timeline_navigation["command_center_last_tool_recovery_policy"], "navigation_only")
         self.assertEqual(payload["data_recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(payload["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(payload["data_recovery_actions"][0]["refresh_policy"], "button_gated")
@@ -877,6 +889,59 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("AkShare 重型刷新", dumped)
         self.assertFalse(console["deepseek_called"])
         self.assertFalse(payload["data_recovery_actions"][0]["deepseek_called"])
+
+    def test_data_health_timeline_recovery_actions_are_navigation_only(self):
+        timeline = {
+            "items": [
+                {
+                    "event_type": "last_success",
+                    "label": "个股资金流",
+                    "api": "moneyflow",
+                    "writes_packet": "command_center_moneyflow_packet",
+                    "status_label": "最近成功",
+                },
+                {
+                    "event_type": "cache_used",
+                    "label": "筹码/胜率",
+                    "api": "cyq_perf",
+                    "writes_packet": "command_center_chip_packet",
+                    "status_label": "使用缓存",
+                    "message": "筹码/胜率当前依赖缓存。",
+                },
+                {
+                    "event_type": "last_failure",
+                    "label": "融资融券",
+                    "api": "margin_detail",
+                    "writes_packet": "command_center_margin_packet",
+                    "status_label": "最近失败",
+                    "message": "融资融券权限不足。",
+                },
+                {
+                    "event_type": "manual_required",
+                    "label": "AkShare 重型刷新",
+                    "api": "akshare_manual_refresh",
+                    "writes_packet": "command_center_data_capability_packet",
+                    "status_label": "需要手动刷新",
+                },
+            ],
+            "deepseek_called": False,
+        }
+        before = json.dumps(timeline, ensure_ascii=False, sort_keys=True)
+
+        actions = snapshot.build_data_health_timeline_recovery_actions(timeline)
+        after = json.dumps(timeline, ensure_ascii=False, sort_keys=True)
+        by_label = {item["label"]: item for item in actions}
+
+        self.assertEqual(before, after)
+        self.assertEqual(actions[0]["label"], "融资融券")
+        self.assertNotIn("个股资金流", by_label)
+        self.assertEqual(by_label["筹码/胜率"]["legacy_tab"], "量化推演")
+        self.assertEqual(by_label["AkShare 重型刷新"]["refresh_policy"], "button_gated")
+        self.assertTrue(all(item["external_call_policy"] == "not_triggered" for item in actions))
+        self.assertTrue(all(item["deepseek_called"] is False for item in actions))
+        navigation_state = snapshot.build_tool_recovery_navigation_state(by_label["筹码/胜率"])
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "量化推演")
+        json.dumps(actions, ensure_ascii=False)
 
     def test_home_recovery_action_promotes_session_skip_interface_diagnostic(self):
         today = _dt.date.today().isoformat()
@@ -997,6 +1062,25 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                         "refresh_policy": "button_gated",
                     }
                 ],
+                "data_health_timeline_recovery_actions": [
+                    {
+                        "key": "data_health_timeline:limit_cpt_list:empty_recent",
+                        "label": "涨跌停/情绪",
+                        "status": "empty_recent",
+                        "status_label": "近期无数据",
+                        "source_type": "data_health_timeline",
+                        "source_label": "接口健康时间线",
+                        "diagnostic_answer": "limit_cpt_list 近期无数据。",
+                        "action_label": "手动检测涨跌停/情绪",
+                        "workspace_target": "高级工具箱（旧版保留）",
+                        "workspace_state_key": "workspace_mode_v2",
+                        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                        "legacy_tab": "数据源体检",
+                        "writes_packet": "command_center_limit_emotion_packet",
+                        "refresh_policy": "button_gated",
+                        "deepseek_called": False,
+                    }
+                ],
             }
         )
 
@@ -1007,20 +1091,22 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         decision_queue = center["decision_priority_queue"]
 
         self.assertEqual(center["title"], "数据恢复中心")
-        self.assertEqual(center["action_count"], 3)
+        self.assertEqual(center["action_count"], 4)
         self.assertEqual(writes_packets.count("command_center_margin_packet"), 1)
         self.assertIn("command_center_chip_packet", writes_packets)
         self.assertIn("command_center_radar_packet", writes_packets)
+        self.assertIn("command_center_limit_emotion_packet", writes_packets)
         self.assertEqual(group_counts["data_source"], 1)
+        self.assertEqual(group_counts["data_health_timeline"], 1)
         self.assertEqual(group_counts["a_share"], 1)
         self.assertEqual(group_counts["legacy_tool"], 1)
         self.assertEqual(lane_counts["p0"], 1)
-        self.assertEqual(lane_counts["p1"], 1)
+        self.assertEqual(lane_counts["p1"], 2)
         self.assertEqual(lane_counts["p2"], 1)
         self.assertIn("融资融券", lane_summaries["p0"])
         self.assertIn("筹码", lane_summaries["p1"])
         self.assertIn("下一票雷达", lane_summaries["p2"])
-        self.assertEqual([item["lane_key"] for item in decision_queue], ["p0", "p1", "p2"])
+        self.assertEqual([item["lane_key"] for item in decision_queue], ["p0", "p1", "p1", "p2"])
         self.assertEqual(decision_queue[0]["decision_mode"], "阻断加仓")
         self.assertEqual(decision_queue[0]["writes_packet"], "command_center_margin_packet")
         self.assertIn("不能支持加融资", decision_queue[0]["decision_impact"])
