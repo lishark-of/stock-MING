@@ -5566,7 +5566,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(latest_recovery_result.get("tone"), "missing"))}">{escape(_home_text(latest_recovery_result.get("status"), "待验证"))}</span>
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(latest_recovery_result.get("message"), "已更新本地恢复状态。"))}</div>
+          <div class="cc-home-item-meta">确认：{escape(_home_text(latest_recovery_result.get("confirmation_text"), "恢复结果待验证；确认后会回流到综合中心 packet。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(latest_recovery_result.get("next_action"), "返回综合推演中心查看快照。"))}</div>
+          <div class="cc-home-item-meta">手动按钮：{escape(_home_text(latest_recovery_result.get("manual_button_label"), "对应手动按钮"))} ｜ 回首页：{escape(_home_text(latest_recovery_result.get("return_home_action"), "返回综合推演中心 2.0 查看 Home Action Snapshot。"))}</div>
           {latest_recovery_context_html}
           <div class="cc-home-item-meta">回流：{escape(_home_text(latest_recovery_result.get("writes_packet"), "command_center_packet"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(latest_recovery_result.get("external_call_policy"), "not_triggered"))}</div>
         </div>

@@ -2368,6 +2368,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["title"], "恢复入口不在当前模块")
         self.assertEqual(notice["target_tab"], "融资 ETF")
         self.assertIn("请切回", notice["next_action"])
+        self.assertEqual(notice["manual_button_label"], "手动检测融资融券")
+        self.assertIn("融资 ETF", notice["recovery_route"])
+        self.assertIn("command_center_margin_packet", notice["confirmation_text"])
+        self.assertIn("返回综合推演中心 2.0", notice["return_home_action"])
         self.assertEqual(notice["external_call_policy"], "not_triggered")
         self.assertFalse(notice["deepseek_called"])
 
@@ -2390,6 +2394,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         self.assertEqual(notice["status"], "recovered")
         self.assertIn("已写入 command_center_radar_packet", notice["message"])
+        self.assertEqual(notice["recovery_state_label"], "已回流")
+        self.assertEqual(notice["packet_status_label"], "已回流")
+        self.assertIn("下一票雷达 → command_center_radar_packet", notice["confirmation_text"])
+        self.assertIn("生成规则雷达", notice["manual_button_label"])
+        self.assertIn("下一票雷达", notice["recovery_route"])
+        self.assertIn("Home Action Snapshot", notice["return_home_action"])
         self.assertEqual(notice["source"], "下一票雷达本地缓存")
         self.assertEqual(notice["updated_at"], "2026-06-03T10:00:00")
         self.assertEqual(notice["external_call_policy"], "not_triggered")
@@ -2416,6 +2426,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(notice["status"], "blocked")
         self.assertIn("仍未形成可用回流", notice["message"])
         self.assertIn("权限不足", notice["message"])
+        self.assertEqual(notice["packet_status_label"], "权限不足")
+        self.assertIn("缺口仍会限制综合中心结论", notice["confirmation_text"])
+        self.assertEqual(notice["manual_button_label"], "手动检测龙虎榜")
         self.assertIn("不要把缺失数据当作利好", notice["next_action"])
         self.assertEqual(notice["source"], "Tushare top_list")
         self.assertEqual(notice["external_call_policy"], "not_triggered")
@@ -2439,6 +2452,28 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         self.assertEqual(notice["status"], "recovered")
         self.assertIn("已写入 command_center_moneyflow_packet", notice["message"])
+        self.assertEqual(notice["packet_status_label"], "使用缓存")
+        self.assertIn("使用缓存", notice["confirmation_text"])
+        self.assertEqual(notice["manual_button_label"], "手动检测个股资金流")
+        self.assertEqual(notice["external_call_policy"], "not_triggered")
+        self.assertFalse(notice["deepseek_called"])
+
+    def test_tool_recovery_result_notice_names_module_button_while_waiting(self):
+        notice = snapshot.build_tool_recovery_result_notice(
+            {
+                "command_center_last_tool_recovery_label": "交易纪律/回测",
+                "command_center_last_tool_recovery_writes_packet": "command_center_discipline_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "交易纪律实验室",
+            },
+            selected_tab="交易纪律实验室",
+        )
+
+        self.assertEqual(notice["status"], "waiting")
+        self.assertEqual(notice["manual_button_label"], "运行回测")
+        self.assertIn("运行回测", notice["confirmation_text"])
+        self.assertIn("command_center_discipline_packet", notice["recovery_route"])
+        self.assertIn("返回综合推演中心 2.0", notice["return_home_action"])
         self.assertEqual(notice["external_call_policy"], "not_triggered")
         self.assertFalse(notice["deepseek_called"])
 

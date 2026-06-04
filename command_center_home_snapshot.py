@@ -3569,6 +3569,14 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
     context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
     if not context:
         return {}
+    writes_packet = context["writes_packet"]
+    config = TOOL_RECOVERY_MANUAL_CHECKS.get(writes_packet, {})
+    manual_button_label = _to_text(
+        config.get("module_button_label") or config.get("button_label"),
+        "对应手动按钮",
+    )
+    manual_button_key = _to_text(config.get("module_button_key") or config.get("check_key"))
+    recovery_route = f"{context['target_tab']} → {manual_button_label} → {writes_packet} → 综合推演中心"
     if not context.get("is_target_tab", True):
         return {
             "status": "waiting",
@@ -3579,15 +3587,22 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
             "writes_packet": context["writes_packet"],
             "message": f"当前在“{context['selected_tab']}”，首页恢复队列目标是“{context['target_tab']}”。",
             "next_action": f"请切回“{context['target_tab']}”后手动运行对应按钮；不会自动执行旧工具。",
+            "confirmation_text": f"尚未进入目标模块；恢复路径：{recovery_route}。",
+            "recovery_state_label": "待验证",
+            "packet_status_label": "待验证",
+            "manual_button_label": manual_button_label,
+            "manual_button_key": manual_button_key,
+            "recovery_route": recovery_route,
+            "return_home_action": "恢复完成后返回综合推演中心 2.0 查看 Home Action Snapshot。",
             "updated_at": "",
             "source": "首页恢复队列",
             "deepseek_called": False,
             "external_call_policy": "not_triggered",
         }
     state_map = _as_mapping(state)
-    writes_packet = context["writes_packet"]
     packet = _as_mapping(state_map.get(writes_packet))
     recovery_state = _tool_packet_recovery_state(packet, writes_packet)
+    display_state = _recovery_display_state(packet, writes_packet, fallback_status=recovery_state)
     updated_at = _to_text(packet.get("updated_at") or packet.get("generated_at") or packet.get("checked_at"))
     source = _to_text(packet.get("source"), context["selected_tab"])
     if recovery_state == "recovered":
@@ -3595,17 +3610,23 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
         title = "恢复结果已回流"
         message = f"{context['label']} 已写入 {writes_packet}；首页快照会读取该结构化结果。"
         next_action = "返回综合推演中心 2.0 后查看 Home Action Snapshot。"
+        confirmation_text = f"{context['label']} → {writes_packet}：{display_state['label']}；综合中心可读取这项结构化结果。"
+        return_home_action = "返回综合推演中心 2.0，复核 Home Action Snapshot、今日总决策和证据链。"
     elif recovery_state == "blocked":
         status = "blocked"
         title = "恢复结果仍受限"
         reason = _to_text(packet.get("risk_note") or packet.get("message") or packet.get("summary"), "接口权限、积分、网络或交易日状态仍待处理。")
         message = f"{context['label']} 仍未形成可用回流：{reason}"
         next_action = "先检查权限/积分/交易日/网络；不要把缺失数据当作利好或安全信号。"
+        confirmation_text = f"{context['label']} → {writes_packet}：{display_state['label']}；缺口仍会限制综合中心结论。"
+        return_home_action = "回综合推演中心时继续按待验证处理，不要把该项视作已恢复。"
     else:
         status = "waiting"
         title = "恢复结果待验证"
         message = f"尚未检测到 {writes_packet} 的可读结果；请在“{context['selected_tab']}”中手动运行对应按钮。"
         next_action = "运行完成后不要刷新外部重接口，先确认本模块是否显示缓存/已刷新状态。"
+        confirmation_text = f"{context['label']} → {writes_packet}：待验证；请点击“{manual_button_label}”后确认是否写回。"
+        return_home_action = "按钮运行完成后返回综合推演中心 2.0 查看是否回流。"
     return {
         "status": status,
         "title": title,
@@ -3614,6 +3635,13 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
         "writes_packet": writes_packet,
         "message": message,
         "next_action": next_action,
+        "confirmation_text": confirmation_text,
+        "recovery_state_label": display_state["label"],
+        "packet_status_label": display_state["label"],
+        "manual_button_label": manual_button_label,
+        "manual_button_key": manual_button_key,
+        "recovery_route": recovery_route,
+        "return_home_action": return_home_action,
         "updated_at": updated_at,
         "source": source,
         "deepseek_called": False,
