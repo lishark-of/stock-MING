@@ -76,6 +76,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("a_share_fact_recovery_summary", source)
         self.assertIn("A股事实回流", source)
         self.assertIn("A股事实 5 项：已回流 0｜仍受限 0｜待验证 5", source)
+        self.assertIn("a_share_fact_summary_text", source)
+        self.assertIn("A股事实：{escape(a_share_fact_summary_text)}", source)
 
     def test_legacy_a_share_screen_routes_diagnostic_to_recovery_controls(self):
         source = Path("app.py").read_text(encoding="utf-8")

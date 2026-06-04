@@ -4737,6 +4737,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_recovery_center = payload.get("data_recovery_center") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_fact_recovery = payload.get("a_share_fact_recovery_summary") or {}
+    a_share_fact_summary_text = _home_text(a_share_fact_recovery.get("summary"), "A股事实：待验证")
+    a_share_fact_tone = _home_text(a_share_fact_recovery.get("tone"), "missing")
     a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
     facts_packet = payload.get("facts_packet") or {}
     discipline_packet = payload.get("discipline_packet") or {}
@@ -5221,6 +5223,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip">已刷新 {coverage_ready}</span>
             <span class="cc-home-chip stale">缓存 {coverage_cached}</span>
             <span class="cc-home-chip missing">待刷新 {coverage_missing}</span>
+            <span class="cc-home-chip {escape(a_share_fact_tone)}">A股事实：{escape(a_share_fact_summary_text)}</span>
             <span class="cc-home-chip">DeepSeek：{'已调用' if payload.get('deepseek_called') else '未调用'}</span>
           </div>
         </div>
