@@ -3134,6 +3134,154 @@ def attach_margin_etf_evidence_recovery_results(snapshot: Any = None) -> dict:
     return payload
 
 
+A_SHARE_EVIDENCE_MODULE_ALIASES = {
+    "moneyflow": "moneyflow",
+    "fund_flow": "moneyflow",
+    "command_center_moneyflow_packet": "moneyflow",
+    "dragon_tiger": "dragon_tiger",
+    "top_list": "dragon_tiger",
+    "top_inst": "dragon_tiger",
+    "command_center_dragon_tiger_packet": "dragon_tiger",
+    "margin": "margin",
+    "margin_cash": "margin",
+    "margin_detail": "margin",
+    "command_center_margin_packet": "margin",
+    "limit_emotion": "limit_emotion",
+    "stk_limit": "limit_emotion",
+    "limit_cpt_list": "limit_emotion",
+    "command_center_limit_emotion_packet": "limit_emotion",
+    "chip": "chip_radar",
+    "chip_radar": "chip_radar",
+    "cyq_perf": "chip_radar",
+    "command_center_chip_packet": "chip_radar",
+}
+
+
+def _a_share_evidence_module_lookup(panel: Any = None) -> dict[str, dict]:
+    lookup = {}
+    for raw in _as_list(_as_mapping(panel).get("modules")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        key = _to_text(item.get("key"))
+        writes_packet = _to_text(item.get("writes_packet"))
+        if key:
+            lookup[key] = item
+        if writes_packet:
+            lookup[writes_packet] = item
+            alias = A_SHARE_EVIDENCE_MODULE_ALIASES.get(writes_packet)
+            if alias:
+                lookup[alias] = item
+    return lookup
+
+
+def _a_share_evidence_module_dependencies(panel: Any = None, evidence_chain: Any = None) -> list[dict]:
+    lookup = _a_share_evidence_module_lookup(panel)
+    dependencies = []
+    seen = set()
+    for raw in _as_list(evidence_chain):
+        evidence = _as_mapping(raw)
+        if not evidence:
+            continue
+        keys = [
+            _to_text(evidence.get("key")),
+            _to_text(evidence.get("writes_packet")),
+            _to_text(evidence.get("api")),
+        ]
+        for raw_key in keys:
+            normalized_key = A_SHARE_EVIDENCE_MODULE_ALIASES.get(raw_key, raw_key)
+            item = _as_mapping(lookup.get(normalized_key) or lookup.get(raw_key))
+            module_key = _to_text(item.get("key"))
+            if not item or module_key in seen:
+                continue
+            seen.add(module_key)
+            dependencies.append(
+                {
+                    "key": module_key,
+                    "label": _to_text(item.get("label"), _to_text(evidence.get("label"), "A股证据")),
+                    "status": _to_text(item.get("module_status"), "waiting"),
+                    "status_label": _to_text(item.get("module_status_label"), "待验证"),
+                    "tone": _to_text(item.get("tone"), "missing"),
+                    "writes_packet": _to_text(item.get("writes_packet"), _to_text(evidence.get("writes_packet"), "command_center_packet")),
+                    "decision_guardrail": _to_text(item.get("decision_guardrail"), "缺失时不能作为买入、追高或放大仓位依据。"),
+                    "target_text": _to_text(item.get("target_text") or item.get("toolbox_entry"), "高级工具箱"),
+                    "deepseek_called": False,
+                    "external_call_policy": "not_triggered",
+                }
+            )
+            break
+    return dependencies
+
+
+def _a_share_evidence_module_dependency_summary(dependencies: Any = None) -> dict:
+    rows = [_as_mapping(item) for item in _as_list(dependencies)]
+    rows = [item for item in rows if item]
+    recovered = [item for item in rows if item.get("status") == "recovered"]
+    blocked = [item for item in rows if item.get("status") == "blocked"]
+    waiting = [item for item in rows if item.get("status") not in {"recovered", "blocked"}]
+    if blocked:
+        label = "仍有阻断证据"
+        tone = "failed"
+        impact = "依赖证据仍受限，不能升级为可执行买入、追高或加融资动作。"
+    elif waiting:
+        label = "仍待验证"
+        tone = "stale" if recovered else "missing"
+        impact = "依赖证据尚未完全回流，只能保持观察或等待触发条件。"
+    elif recovered:
+        label = "依赖证据已回流"
+        tone = "ready"
+        impact = "依赖证据已回流；仍需结合价格纪律、仓位预算和失效条件。"
+    else:
+        label = "依赖待确认"
+        tone = "missing"
+        impact = "尚未绑定 A股证据模块依赖；不能把候选或 ETF 当成已验证结论。"
+    return {
+        "label": label,
+        "tone": tone,
+        "summary": f"已回流 {len(recovered)}｜仍受限 {len(blocked)}｜待验证 {len(waiting)}",
+        "recovered_labels": [_to_text(item.get("label"), "证据") for item in recovered],
+        "blocked_labels": [_to_text(item.get("label"), "证据") for item in blocked],
+        "waiting_labels": [_to_text(item.get("label"), "证据") for item in waiting],
+        "impact_text": impact,
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+def attach_a_share_evidence_module_dependencies(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    panel = _as_mapping(payload.get("a_share_evidence_module_panel"))
+    next_candidates = []
+    for raw_candidate in _as_list(payload.get("next_ticket_candidates")):
+        candidate = _as_mapping(raw_candidate)
+        if not candidate:
+            continue
+        dependencies = _a_share_evidence_module_dependencies(panel, candidate.get("evidence_chain"))
+        candidate["evidence_module_dependencies"] = dependencies
+        candidate["evidence_module_dependency_summary"] = _a_share_evidence_module_dependency_summary(dependencies)
+        next_candidates.append(candidate)
+    payload["next_ticket_candidates"] = next_candidates
+
+    margin_summary = _as_mapping(payload.get("margin_etf_summary"))
+    etf_candidates = []
+    for raw_etf in _as_list(margin_summary.get("recommended_etfs")):
+        etf = _as_mapping(raw_etf)
+        if not etf:
+            continue
+        dependencies = _a_share_evidence_module_dependencies(panel, etf.get("evidence_chain"))
+        etf["evidence_module_dependencies"] = dependencies
+        etf["evidence_module_dependency_summary"] = _a_share_evidence_module_dependency_summary(dependencies)
+        etf_candidates.append(etf)
+    if margin_summary:
+        margin_summary["recommended_etfs"] = etf_candidates
+        payload["margin_etf_summary"] = margin_summary
+    etf_packet = _as_mapping(payload.get("etf_packet"))
+    if etf_packet and etf_candidates:
+        etf_packet["recommended_etfs"] = etf_candidates
+        payload["etf_packet"] = etf_packet
+    return payload
+
+
 def build_legacy_migration_recovery_actions_snapshot(
     legacy_migration_map: Any = None,
     limit: int = MAX_CAPABILITY_ITEMS,
@@ -5208,6 +5356,7 @@ def build_home_action_snapshot(
         empty["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(empty)
         empty["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(empty)
         empty["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(empty)
+        empty = attach_a_share_evidence_module_dependencies(empty)
         empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(empty)
@@ -5233,6 +5382,7 @@ def build_home_action_snapshot(
     snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(snapshot)
+    snapshot = attach_a_share_evidence_module_dependencies(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)
