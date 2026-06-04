@@ -171,6 +171,45 @@ def _data_status(status: str, payload: Mapping[str, Any]) -> str:
     return "missing"
 
 
+def _capability_state(payload: Mapping[str, Any], status: str) -> str:
+    state = _first_text(payload.get("capability_state"), payload.get("state")).lower()
+    if state:
+        return state
+    if status == "ready":
+        return "available"
+    if status == "failed":
+        return "failed"
+    if status == "partial":
+        return "empty_recent"
+    return "requires_manual_refresh"
+
+
+def _status_label(payload: Mapping[str, Any], capability_state: str, status: str) -> str:
+    explicit = _first_text(payload.get("status_label"), payload.get("capability_label"), payload.get("status"))
+    if explicit and explicit.lower() not in {"ready", "ok", "completed", "success", "failed", "error", "partial", "waiting"}:
+        return explicit
+    return {
+        "available": "可用",
+        "permission_denied": "权限不足",
+        "disabled_this_session": "本会话跳过",
+        "empty_recent": "近期无数据",
+        "stale_cache": "使用缓存",
+        "fallback_used": "使用替代口径",
+        "requires_manual_refresh": "需要手动刷新",
+        "network_failed": "网络失败",
+        "not_configured": "未配置",
+        "failed": "调用失败",
+    }.get(capability_state, {"ready": "可用", "failed": "调用失败", "partial": "待验证"}.get(status, "待刷新"))
+
+
+def _recovery_state(status: str, capability_state: str, data_status: str) -> str:
+    if status == "ready" or data_status in {"ready", "cached"}:
+        return "recovered"
+    if capability_state in RESTRICTED_STATES:
+        return "blocked"
+    return "waiting"
+
+
 def _normalize_row(item: Any, *, risk_type: str, source: str, updated_at: str = "") -> dict:
     payload = as_mapping(item)
     if not payload:
@@ -316,6 +355,91 @@ def _build_risk_notes(payload: Mapping[str, Any], status: str, risk_items: list[
     return _dedupe_text(notes, limit=MAX_RISK_NOTES)
 
 
+def _verification_status(status: str, recovery_state: str) -> str:
+    if status == "ready":
+        return "已验证"
+    if recovery_state == "blocked":
+        return "阻断决策"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    status_label: str,
+    recovery_state: str,
+    risk_state: str,
+    risk_level: str,
+    risk_items: list[dict],
+) -> str:
+    if status == "ready":
+        parts = [f"硬风险状态：{risk_state}", f"风险等级：{risk_level}"]
+        if risk_items:
+            parts.append(f"风险线索 {len(risk_items)} 条")
+        else:
+            parts.append("未见结构化硬风险线索")
+        return "｜".join(parts)
+    if recovery_state == "blocked":
+        return f"{status_label}：公告/硬风险不能进入风险排除依据。"
+    return "公告/硬风险待手动刷新；未回流前不能把缺口写成无风险。"
+
+
+def _build_evidence_items(
+    status: str,
+    status_label: str,
+    verification_status: str,
+    risk_state: str,
+    risk_level: str,
+    risk_items: list[dict],
+) -> list[dict]:
+    if status != "ready":
+        return [
+            {
+                "key": "hard_risk",
+                "label": "公告/硬风险",
+                "value": status_label,
+                "status": verification_status,
+            }
+        ]
+    return [
+        {
+            "key": "risk_state",
+            "label": "硬风险状态",
+            "value": risk_state,
+            "status": verification_status,
+        },
+        {
+            "key": "risk_level",
+            "label": "风险等级",
+            "value": risk_level,
+            "status": verification_status,
+        },
+        {
+            "key": "risk_items",
+            "label": "风险线索",
+            "value": f"{len(risk_items)} 条" if risk_items else "未见结构化线索",
+            "status": "已回流" if risk_items else "待人工复核",
+        },
+    ]
+
+
+def _action_hint(status: str, capability_state: str, risk_state: str, risk_level: str) -> str:
+    if status == "ready" and risk_state == "风险线索存在":
+        return "先复核公告、减持、质押或停牌线索；硬风险未排除前不加仓、不追高。"
+    if status == "ready":
+        return "把硬风险 packet 作为风险排查结果；无记录仍需人工复核公告正文。"
+    if capability_state in RESTRICTED_STATES:
+        return "先在数据恢复中心处理公告、减持、质押或停牌接口权限、网络或覆盖范围。"
+    return "需要时手动刷新公告/硬风险能力；缺失时不能把风险缺口写成安全。"
+
+
+def _decision_guardrail(status: str, risk_state: str, risk_level: str) -> str:
+    if status != "ready":
+        return "缺少公告/硬风险时，不能把数据缺口写成无风险，也不能支持加仓。"
+    if risk_state == "风险线索存在" or risk_level in {"high", "medium"}:
+        return "硬风险线索未排除前不能加仓、追高或提高融资比例。"
+    return "未见结构化硬风险不等于绝对安全；仍需人工复核公告正文和监管事实。"
+
+
 def build_command_center_hard_risk_packet(
     state: Any = None,
     live_packet: Any = None,
@@ -344,7 +468,12 @@ def build_command_center_hard_risk_packet(
         source_text,
     )
     data_status = _data_status(status, payload)
+    capability_state = _capability_state(payload, status)
+    status_label = _status_label(payload, capability_state, status)
+    recovery_state = _recovery_state(status, capability_state, data_status)
     risk_state = _risk_state(status, risk_items)
+    risk_level = _risk_level(status, risk_items)
+    verification_status = _verification_status(status, recovery_state)
     summary = _first_text(
         payload.get("summary"),
         default=(
@@ -373,6 +502,9 @@ def build_command_center_hard_risk_packet(
     packet = {
         "status": status,
         "data_status": data_status,
+        "capability_state": capability_state,
+        "status_label": status_label,
+        "recovery_state": recovery_state,
         "source": source_text,
         "source_key": to_text(source.get("source_key")),
         "api": api,
@@ -381,13 +513,37 @@ def build_command_center_hard_risk_packet(
         "target": _first_text(target, existing_target),
         "ticker": _first_text(payload.get("ticker"), payload.get("ts_code"), target),
         "risk_state": risk_state,
-        "risk_level": _risk_level(status, risk_items),
+        "risk_level": risk_level,
         "risk_item_count": len(risk_items),
         "risk_items": risk_items,
         "announcement_items": announcement_items[:MAX_ITEMS],
         "pledge_items": pledge_items[:MAX_ITEMS],
         "suspend_items": suspend_items[:MAX_ITEMS],
         "summary": summary,
+        "packet_role": "A股公告/硬风险证据",
+        "verification_status": verification_status,
+        "evidence_summary": _first_text(
+            payload.get("evidence_summary"),
+            default=_build_evidence_summary(
+                status,
+                status_label,
+                recovery_state,
+                risk_state,
+                risk_level,
+                risk_items,
+            ),
+        ),
+        "evidence_items": as_list(payload.get("evidence_items"))
+        or _build_evidence_items(
+            status,
+            status_label,
+            verification_status,
+            risk_state,
+            risk_level,
+            risk_items,
+        ),
+        "action_hint": _first_text(payload.get("action_hint"), default=_action_hint(status, capability_state, risk_state, risk_level)),
+        "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, risk_state, risk_level)),
         "risk_notes": _build_risk_notes(payload, status, risk_items),
         "manual_required_text": "硬风险来自本地缓存或旧工作台事实包；缺失时必须手动刷新/权限校验，不能视为无风险。",
         "deepseek_called": False,
@@ -398,8 +554,8 @@ def build_command_center_hard_risk_packet(
             label="硬风险",
             status=status,
             data_status=data_status,
-            recovery_state=payload.get("recovery_state"),
-            capability_state=payload.get("capability_state"),
+            recovery_state=recovery_state,
+            capability_state=capability_state,
         )
     )
     return packet

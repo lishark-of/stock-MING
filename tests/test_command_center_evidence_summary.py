@@ -529,6 +529,43 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertIn("不能单独构成买入", brief_items["dragon_tiger"]["guardrail_text"])
         self.assertIn("不能单独支持加融资", core["margin"]["decision_signal"])
 
+    def test_moneyflow_and_hard_risk_guardrails_flow_into_radar(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "flow_state": "主力净流入",
+                    "five_day_main_net_yi": 3.45,
+                    "evidence_summary": "资金状态：主力净流入｜近5日主力净额 3.45 亿",
+                    "action_hint": "把资金净流入作为验证线索。",
+                    "decision_guardrail": "资金净流入只作确认线索；不能单独构成买入、加仓或追高理由。",
+                    "evidence_items": [{"key": "five_day_main_net", "label": "近5日主力净额", "value": "3.45 亿", "status": "已验证"}],
+                },
+                "hard_risk_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "risk_state": "风险线索存在",
+                    "risk_item_count": 2,
+                    "evidence_summary": "硬风险状态：风险线索存在｜风险等级：high｜风险线索 2 条",
+                    "action_hint": "硬风险未排除前不加仓、不追高。",
+                    "decision_guardrail": "硬风险线索未排除前不能加仓、追高或提高融资比例。",
+                    "evidence_items": [{"key": "risk_items", "label": "风险线索", "value": "2 条", "status": "已回流"}],
+                },
+            }
+        )
+        by_key = {item["key"]: item for item in vm["items"]}
+        card = vm["radar_card"]
+        dumped = json.dumps(vm, ensure_ascii=False)
+
+        self.assertIn("近5日主力净额 3.45 亿", by_key["moneyflow"]["evidence_summary"])
+        self.assertIn("不能单独构成买入", by_key["moneyflow"]["decision_signal"])
+        self.assertEqual(by_key["moneyflow"]["evidence_items"][0]["key"], "five_day_main_net")
+        self.assertIn("硬风险状态：风险线索存在", by_key["hard_risk"]["evidence_summary"])
+        self.assertIn("未排除前不能加仓", by_key["hard_risk"]["decision_signal"])
+        self.assertEqual(by_key["hard_risk"]["evidence_items"][0]["key"], "risk_items")
+        self.assertIn("硬风险", card["support_text"] + card["blocker_text"] + dumped)
+
     def test_hard_risk_packet_headline_and_count_are_visible(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {

@@ -15,6 +15,12 @@ class CommandCenterMoneyflowPacketTests(unittest.TestCase):
         self.assertEqual(packet["data_status"], "missing")
         self.assertIn("不会自动请求", packet["summary"])
         self.assertIn("手动刷新", packet["manual_required_text"])
+        self.assertEqual(packet["packet_role"], "A股个股资金流证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("待手动刷新", packet["evidence_summary"])
+        self.assertIn("手动刷新", packet["action_hint"])
+        self.assertIn("缺少个股资金流", packet["decision_guardrail"])
+        self.assertEqual(packet["evidence_items"][0]["status"], "待验证")
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -45,6 +51,15 @@ class CommandCenterMoneyflowPacketTests(unittest.TestCase):
         self.assertEqual(packet["main_net_yi"], 1.23)
         self.assertEqual(packet["five_day_main_net_yi"], 3.45)
         self.assertEqual(packet["flow_state"], "主力净流入")
+        self.assertEqual(packet["verification_status"], "已验证")
+        self.assertIn("资金状态：主力净流入", packet["evidence_summary"])
+        self.assertIn("近5日主力净额 3.45 亿", packet["evidence_summary"])
+        self.assertIn("当日主力净额 1.23 亿", packet["evidence_summary"])
+        self.assertIn("验证线索", packet["action_hint"])
+        self.assertIn("不能单独构成买入", packet["decision_guardrail"])
+        evidence_by_key = {item["key"]: item for item in packet["evidence_items"]}
+        self.assertEqual(evidence_by_key["five_day_main_net"]["value"], "3.45 亿")
+        self.assertEqual(evidence_by_key["main_net"]["status"], "已验证")
         self.assertIn("不单独构成买入理由", " ".join(packet["risk_notes"]))
         self.assertFalse(packet["deepseek_called"])
 
@@ -71,6 +86,9 @@ class CommandCenterMoneyflowPacketTests(unittest.TestCase):
         self.assertEqual(packet["capability_state"], "empty_recent")
         self.assertEqual(packet["status_label"], "近期无数据")
         self.assertEqual(packet["recovery_state"], "waiting")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("待手动刷新", packet["evidence_summary"])
+        self.assertIn("缺少个股资金流", packet["decision_guardrail"])
         self.assertIn("不能把缺失数据当成无资金风险", " ".join(packet["risk_notes"]))
 
     def test_permission_denied_is_blocked_not_neutral(self):
@@ -99,6 +117,10 @@ class CommandCenterMoneyflowPacketTests(unittest.TestCase):
         self.assertEqual(packet["recovery_state"], "blocked")
         self.assertEqual(packet["updated_at"], "2026-06-03T10:02:00")
         self.assertEqual(packet["checked_at"], "2026-06-03T10:02:00")
+        self.assertEqual(packet["verification_status"], "阻断决策")
+        self.assertIn("权限不足", packet["evidence_summary"])
+        self.assertIn("moneyflow 权限", packet["action_hint"])
+        self.assertIn("缺少个股资金流", packet["decision_guardrail"])
         self.assertIn("不能把缺失数据当成无资金风险", " ".join(packet["risk_notes"]))
         self.assertFalse(packet["deepseek_called"])
 
@@ -129,6 +151,8 @@ class CommandCenterMoneyflowPacketTests(unittest.TestCase):
         self.assertEqual(packet["recovery_state"], "recovered")
         self.assertEqual(packet["main_net_yi"], None)
         self.assertEqual(packet["trade_date"], "20260603")
+        self.assertIn("接口可用", packet["evidence_summary"])
+        self.assertIn("不能单独触发买入", packet["action_hint"])
         self.assertIn("状态", packet["summary"])
         self.assertFalse(packet["deepseek_called"])
 

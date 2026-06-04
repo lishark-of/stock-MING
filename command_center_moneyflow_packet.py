@@ -14,6 +14,14 @@ def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def as_list(value: Any) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
 def to_text(value: Any, default: str = "") -> str:
     if value is None:
         return default
@@ -188,6 +196,97 @@ def _build_risk_notes(payload: Mapping[str, Any], status: str, flow_state: str) 
     return _dedupe_text(notes)
 
 
+def _verification_status(status: str, recovery_state: str) -> str:
+    if status == "ready":
+        return "已验证"
+    if recovery_state == "blocked":
+        return "阻断决策"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    status_label: str,
+    recovery_state: str,
+    flow_state: str,
+    main_net_yi: int | float | None,
+    five_day_main_net_yi: int | float | None,
+) -> str:
+    if status == "ready":
+        parts = [f"资金状态：{flow_state}"]
+        if five_day_main_net_yi is not None:
+            parts.append(f"近5日主力净额 {five_day_main_net_yi} 亿")
+        if main_net_yi is not None:
+            parts.append(f"当日主力净额 {main_net_yi} 亿")
+        if len(parts) == 1:
+            parts.append("接口可用，资金流明细待验证")
+        return "｜".join(parts)
+    if recovery_state == "blocked":
+        return f"{status_label}：个股资金流不能进入资金确认依据。"
+    return "个股资金流待手动刷新；未回流前不能确认主力资金是否支持当前动作。"
+
+
+def _build_evidence_items(
+    status: str,
+    status_label: str,
+    verification_status: str,
+    flow_state: str,
+    main_net_yi: int | float | None,
+    five_day_main_net_yi: int | float | None,
+) -> list[dict]:
+    if status != "ready":
+        return [
+            {
+                "key": "moneyflow",
+                "label": "个股资金流",
+                "value": status_label,
+                "status": verification_status,
+            }
+        ]
+    return [
+        {
+            "key": "flow_state",
+            "label": "资金状态",
+            "value": flow_state,
+            "status": verification_status,
+        },
+        {
+            "key": "five_day_main_net",
+            "label": "近5日主力净额",
+            "value": f"{five_day_main_net_yi} 亿" if five_day_main_net_yi is not None else "待验证",
+            "status": "已验证" if five_day_main_net_yi is not None else "待验证",
+        },
+        {
+            "key": "main_net",
+            "label": "当日主力净额",
+            "value": f"{main_net_yi} 亿" if main_net_yi is not None else "待验证",
+            "status": "已验证" if main_net_yi is not None else "待验证",
+        },
+    ]
+
+
+def _action_hint(status: str, capability_state: str, flow_state: str) -> str:
+    if status == "ready" and flow_state == "主力净流入":
+        return "把资金净流入作为验证线索；仍需趋势、风险和仓位纪律共同确认。"
+    if status == "ready" and flow_state == "主力净流出":
+        return "主力净流出时先复核减仓条件和价格纪律，不把反弹写成确定性机会。"
+    if status == "ready":
+        return "把资金流作为当前动作的确认或否定证据；不能单独触发买入。"
+    if capability_state in {"permission_denied", "disabled_this_session", "network_failed", "not_configured", "failed"}:
+        return "先在数据恢复中心处理 Tushare moneyflow 权限、积分、网络或接口状态。"
+    return "需要时手动刷新个股资金流；缺失时不能确认资金是否支持当前动作。"
+
+
+def _decision_guardrail(status: str, flow_state: str) -> str:
+    if status != "ready":
+        return "缺少个股资金流时，不能确认主力资金是否支持当前动作。"
+    if flow_state == "主力净流入":
+        return "资金净流入只作确认线索；不能单独构成买入、加仓或追高理由。"
+    if flow_state == "主力净流出":
+        return "主力净流出时必须优先复核减仓、失效条件和风险预算。"
+    return "资金流只验证资金方向，不替代趋势、公告风险和纪律条件。"
+
+
 def build_command_center_moneyflow_packet(
     state: Any = None,
     live_packet: Any = None,
@@ -209,6 +308,7 @@ def build_command_center_moneyflow_packet(
     main_net_yi = to_number(payload.get("main_net_yi") or payload.get("main_net_inflow_yi") or payload.get("net_mf_amount"))
     five_day_main_net_yi = to_number(payload.get("five_day_main_net_yi") or payload.get("five_day_main_net_inflow_yi"))
     flow_state = _flow_state(main_net_yi, five_day_main_net_yi, status)
+    verification_status = _verification_status(status, recovery_state)
     summary = _first_text(
         payload.get("summary"),
         payload.get("evidence"),
@@ -241,6 +341,30 @@ def build_command_center_moneyflow_packet(
         "direction": _first_text(payload.get("direction"), default=flow_state),
         "flow_state": flow_state,
         "summary": summary,
+        "packet_role": "A股个股资金流证据",
+        "verification_status": verification_status,
+        "evidence_summary": _first_text(
+            payload.get("evidence_summary"),
+            default=_build_evidence_summary(
+                status,
+                status_label,
+                recovery_state,
+                flow_state,
+                main_net_yi,
+                five_day_main_net_yi,
+            ),
+        ),
+        "evidence_items": as_list(payload.get("evidence_items"))
+        or _build_evidence_items(
+            status,
+            status_label,
+            verification_status,
+            flow_state,
+            main_net_yi,
+            five_day_main_net_yi,
+        ),
+        "action_hint": _first_text(payload.get("action_hint"), default=_action_hint(status, capability_state, flow_state)),
+        "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, flow_state)),
         "risk_notes": _build_risk_notes(payload, status, flow_state),
         "manual_required_text": "个股资金流来自 Tushare moneyflow 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,
