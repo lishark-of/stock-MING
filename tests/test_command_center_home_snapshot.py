@@ -834,7 +834,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["data_recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(payload["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(payload["data_recovery_actions"][0]["refresh_policy"], "button_gated")
-        self.assertIn("不是“没搜到行情”", payload["data_recovery_actions"][0]["diagnostic_answer"])
+        self.assertEqual(payload["data_recovery_actions"][0]["interface_cause_key"], "permission_or_points")
+        self.assertEqual(payload["data_recovery_actions"][0]["interface_cause_label"], "权限/积分不足")
+        self.assertIn("专业接口已开通", payload["data_recovery_actions"][0]["interface_diagnostic_answer"])
+        self.assertIn("只检测 margin_detail", payload["data_recovery_actions"][0]["recovery_button_context"])
+        self.assertEqual(payload["data_recovery_actions"][0]["legacy_tab"], "融资 ETF")
+        self.assertIn("手动执行后回流 command_center_margin_packet", payload["data_recovery_actions"][0]["navigation_label"])
+        self.assertIn("不是“没搜到”", payload["data_recovery_actions"][0]["diagnostic_answer"])
+        self.assertIn("权限/积分不足", payload["data_recovery_actions"][0]["diagnostic_answer"])
         self.assertIn("只允许观察、降风险", payload["risk_alerts"]["reduce_conditions"][0])
         self.assertTrue(any("融资融券" in item for item in payload["risk_alerts"]["data_gaps"]))
         self.assertTrue(any("AkShare 重型刷新" in item for item in payload["risk_alerts"]["data_gaps"]))
@@ -843,6 +850,38 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("AkShare 重型刷新", dumped)
         self.assertFalse(console["deepseek_called"])
         self.assertFalse(payload["data_recovery_actions"][0]["deepseek_called"])
+
+    def test_home_recovery_action_promotes_session_skip_interface_diagnostic(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "last_data_source_healthcheck": {
+                "data_capability": {
+                    "source": "Unified data capability",
+                    "checked_at": f"{today}T10:01:00",
+                    "items": [
+                        {
+                            "provider": "Tushare",
+                            "api": "limit_cpt_list",
+                            "label": "涨跌停/情绪",
+                            "capability_state": "disabled_this_session",
+                            "status": "本会话跳过",
+                        }
+                    ],
+                    "deepseek_called": False,
+                }
+            },
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+        action = payload["data_recovery_actions"][0]
+
+        self.assertEqual(action["label"], "涨跌停/情绪")
+        self.assertEqual(action["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(action["interface_cause_key"], "session_skip")
+        self.assertIn("本会话跳过重复请求", action["interface_diagnostic_answer"])
+        self.assertIn("只检测 limit_cpt_list", action["recovery_button_context"])
+        self.assertEqual(action["legacy_tab"], "数据源体检")
+        self.assertFalse(action["deepseek_called"])
 
     def test_loaded_home_snapshot_keeps_data_recovery_actions(self):
         today = _dt.date.today().isoformat()

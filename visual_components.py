@@ -5023,8 +5023,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape('failed' if item.get('priority') == 1 else 'stale')}">{escape(_home_text(item.get("source_label"), "恢复队列"))}</span>
           </div>
           <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("status_label"), item.get("status") or "待验证"))} ｜ 动作：{escape(_home_text(item.get("action_label"), "手动恢复"))}</div>
+          <div class="cc-home-item-meta">接口原因：{escape(_home_text(item.get("interface_cause_label"), item.get("status_label") or "待验证"))} ｜ {escape(_home_text(item.get("interface_diagnostic_answer"), item.get("diagnostic_answer") or "仍需核对接口状态。"))}</div>
           <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("reason"), "仍需手动确认。"))}</div>
           <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
+          <div class="cc-home-item-meta">按钮说明：{escape(_home_text(item.get("recovery_button_context"), "按钮只负责打开/触发对应手动恢复，不自动调用 DeepSeek。"))}</div>
           <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
           <div class="cc-home-item-meta">触发：手动按钮 ｜ DeepSeek：未调用</div>
         </div>

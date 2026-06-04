@@ -557,28 +557,102 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
     }
 
 
-def build_data_recovery_actions_snapshot(data_capability_console: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> list[dict]:
+def _interface_diagnostic_key(item: Mapping[str, Any]) -> tuple[str, str, str]:
+    return (
+        _to_text(item.get("provider")).lower(),
+        _to_text(item.get("api")).lower(),
+        _to_text(item.get("label")).lower(),
+    )
+
+
+def _interface_diagnostic_lookup(data_issue_explainer: Any = None) -> dict[tuple[str, str, str], dict]:
+    payload = _as_mapping(data_issue_explainer)
+    lookup = {}
+    for raw in _as_list(payload.get("interface_diagnostic_items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        key = _interface_diagnostic_key(item)
+        lookup[key] = item
+        provider, api, label = key
+        if api:
+            lookup[(provider, api, "")] = item
+        if label:
+            lookup[(provider, "", label)] = item
+    return lookup
+
+
+def _find_interface_diagnostic(item: Mapping[str, Any], lookup: Mapping[tuple[str, str, str], dict]) -> dict:
+    provider, api, label = _interface_diagnostic_key(item)
+    candidates = [
+        (provider, api, label),
+        (provider, api, ""),
+        (provider, "", label),
+        ("", api, label),
+        ("", api, ""),
+        ("", "", label),
+    ]
+    for key in candidates:
+        match = _as_mapping(lookup.get(key))
+        if match:
+            return match
+    return {}
+
+
+def _recovery_legacy_tab(writes_packet: Any = "", key: Any = "") -> str:
+    text = _to_text(writes_packet) or _to_text(key)
+    if text in {"hard_risk", "command_center_hard_risk_packet"}:
+        return "天眼风控"
+    return _legacy_a_share_fact_legacy_tab(text, text)
+
+
+def build_data_recovery_actions_snapshot(
+    data_capability_console: Any = None,
+    data_issue_explainer: Any = None,
+    limit: int = MAX_CAPABILITY_ITEMS,
+) -> list[dict]:
     console = _as_mapping(data_capability_console)
+    diagnostic_lookup = _interface_diagnostic_lookup(data_issue_explainer)
     actions = []
     for raw in _as_list(console.get("recovery_actions")):
         item = _as_mapping(raw)
         if not item:
             continue
         label = _to_text(item.get("label"), "数据能力")
+        diagnostic = _find_interface_diagnostic(item, diagnostic_lookup)
+        writes_packet = _to_text(item.get("writes_packet"), "command_center_data_capability_packet")
+        action_label = _to_text(item.get("action_label"), f"手动检查{label}")
+        legacy_tab = _recovery_legacy_tab(writes_packet, item.get("key") or item.get("api"))
+        api = _to_text(item.get("api"))
+        diagnostic_answer = _to_text(
+            diagnostic.get("diagnostic_answer") or item.get("diagnostic_answer") or item.get("meaning"),
+            f"{label}仍需核对接口状态、日期和覆盖范围。",
+        )
         actions.append(
             {
                 "provider": _to_text(item.get("provider"), "数据源"),
                 "label": label,
-                "api": _to_text(item.get("api")),
+                "api": api,
                 "state": _to_text(item.get("state"), "unknown"),
                 "status_label": _to_text(item.get("status_label"), "待验证"),
                 "priority": int(_to_number(item.get("priority")) or 3),
                 "reason": _to_text(item.get("reason") or item.get("action_hint"), f"{label}仍待验证。"),
-                "diagnostic_answer": _to_text(item.get("diagnostic_answer") or item.get("meaning"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
-                "action_label": _to_text(item.get("action_label"), f"手动检查{label}"),
+                "diagnostic_answer": diagnostic_answer,
+                "interface_cause_key": _to_text(diagnostic.get("cause_key")),
+                "interface_cause_label": _to_text(diagnostic.get("cause_label"), _to_text(item.get("status_label"), "待验证")),
+                "interface_diagnostic_answer": diagnostic_answer,
+                "action_label": action_label,
                 "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
-                "writes_packet": _to_text(item.get("writes_packet"), "command_center_data_capability_packet"),
+                "workspace_target": "高级工具箱（旧版保留）",
+                "workspace_state_key": "workspace_mode_v2",
+                "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                "legacy_tab": legacy_tab,
+                "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                "writes_packet": writes_packet,
                 "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+                "recovery_button_context": (
+                    f"点击“{action_label}”只检测 {api or label}，结果回流 {writes_packet}；DeepSeek 未调用。"
+                ),
                 "deepseek_called": False,
             }
         )
@@ -826,6 +900,8 @@ def _legacy_a_share_fact_legacy_tab(key: Any = "", writes_packet: Any = "") -> s
         "command_center_limit_emotion_packet": "数据源体检",
         "chip_radar": "量化推演",
         "command_center_chip_packet": "量化推演",
+        "hard_risk": "天眼风控",
+        "command_center_hard_risk_packet": "天眼风控",
     }.get(text, "今日关注池")
 
 
@@ -1880,7 +1956,7 @@ def build_home_action_snapshot(
             or hard_risk_packet
         ),
     )
-    data_recovery_actions = build_data_recovery_actions_snapshot(data_capability_console)
+    data_recovery_actions = build_data_recovery_actions_snapshot(data_capability_console, data_issue_explainer)
     latest_recovery_result_notice = build_latest_recovery_result_notice(
         state_map,
         selected_tab=state_map.get("legacy_workspace_selected_tab"),
