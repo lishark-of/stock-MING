@@ -8,6 +8,37 @@ from typing import Any
 MAX_TOP_CANDIDATES = 3
 MAX_EVIDENCE_ITEMS = 5
 
+RADAR_EVIDENCE_LINKS = (
+    {
+        "key": "moneyflow",
+        "label": "资金流",
+        "score_key": "money_score",
+        "writes_packet": "command_center_moneyflow_packet",
+        "guardrail": "资金流未验证前，候选不能升级为加仓理由。",
+    },
+    {
+        "key": "dragon_tiger",
+        "label": "龙虎榜",
+        "score_key": "",
+        "writes_packet": "command_center_dragon_tiger_packet",
+        "guardrail": "龙虎榜缺失或无上榜不等于机构支持。",
+    },
+    {
+        "key": "limit_emotion",
+        "label": "涨跌停/情绪",
+        "score_key": "",
+        "writes_packet": "command_center_limit_emotion_packet",
+        "guardrail": "涨跌停/情绪未验证前，不能确认追高边界。",
+    },
+    {
+        "key": "hard_risk",
+        "label": "硬风险",
+        "score_key": "risk_score",
+        "writes_packet": "command_center_hard_risk_packet",
+        "guardrail": "硬风险未排除前，候选只能观察。",
+    },
+)
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -139,6 +170,69 @@ def _evidence_items(
     return items[:MAX_EVIDENCE_ITEMS]
 
 
+def _score_status(value: int | float | None) -> dict:
+    if value is None:
+        return {"status": "missing", "status_label": "待验证", "tone": "missing", "value": "待验证"}
+    if value >= 70:
+        return {"status": "ready", "status_label": "可参考", "tone": "ready", "value": str(value)}
+    if value >= 50:
+        return {"status": "cached", "status_label": "需复核", "tone": "stale", "value": str(value)}
+    return {"status": "blocked", "status_label": "偏弱", "tone": "failed", "value": str(value)}
+
+
+def _gap_mentions(gaps: list[str], *keywords: str) -> bool:
+    text = "；".join(to_text(item) for item in gaps)
+    return any(keyword and keyword in text for keyword in keywords)
+
+
+def _candidate_evidence_chain(score: Mapping[str, Any], data_gaps: list[str]) -> list[dict]:
+    result = []
+    for link in RADAR_EVIDENCE_LINKS:
+        score_key = to_text(link.get("score_key"))
+        value = to_number(score.get(score_key)) if score_key else None
+        status = _score_status(value)
+        key = to_text(link.get("key"))
+        if key == "moneyflow" and _gap_mentions(data_gaps, "资金", "moneyflow"):
+            status = {"status": "missing", "status_label": "待补证", "tone": "missing", "value": "缺口"}
+        elif key == "dragon_tiger" and _gap_mentions(data_gaps, "龙虎", "top_list", "top_inst"):
+            status = {"status": "missing", "status_label": "待补证", "tone": "missing", "value": "缺口"}
+        elif key == "limit_emotion" and _gap_mentions(data_gaps, "涨跌停", "情绪", "limit"):
+            status = {"status": "missing", "status_label": "待补证", "tone": "missing", "value": "缺口"}
+        elif key == "hard_risk" and _gap_mentions(data_gaps, "公告", "硬风险", "减持", "质押"):
+            status = {"status": "missing", "status_label": "待补证", "tone": "missing", "value": "缺口"}
+        result.append(
+            {
+                "key": key,
+                "label": to_text(link.get("label"), "证据"),
+                "status": status["status"],
+                "status_label": status["status_label"],
+                "tone": status["tone"],
+                "value": status["value"],
+                "detail": (
+                    f"{to_text(link.get('label'), '证据')}评分 {status['value']}。"
+                    if value is not None
+                    else f"{to_text(link.get('label'), '证据')}待从对应 packet 补证。"
+                ),
+                "writes_packet": to_text(link.get("writes_packet")),
+                "guardrail": to_text(link.get("guardrail"), "缺失时不能作为交易依据。"),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    return result
+
+
+def _candidate_evidence_chain_summary(chain: Any = None) -> str:
+    rows = [as_mapping(item) for item in as_list(chain)]
+    if not rows:
+        return "证据链待验证"
+    ready = [item for item in rows if item.get("status") == "ready"]
+    missing = [item for item in rows if item.get("status") == "missing"]
+    blocked = [item for item in rows if item.get("status") == "blocked"]
+    stale = [item for item in rows if item.get("status") == "cached"]
+    return f"可参考 {len(ready)}｜待补证 {len(missing)}｜偏弱 {len(blocked)}｜需复核 {len(stale)}"
+
+
 def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_section: Any = None, rank: int = 0) -> dict:
     row_map = as_mapping(row)
     scan = as_mapping(scan_packet)
@@ -183,6 +277,7 @@ def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_sec
     score_value = to_number(score.get("total_score") or score.get("score") or row_map.get("score"))
     reason = _first_text(score.get("battle_state_reason"), row_map.get("reason"), score.get("one_sentence_conclusion"), default="规则雷达缓存候选。")
     gap_items = [to_text(item) for item in data_gaps if to_text(item)][:5]
+    evidence_chain = _candidate_evidence_chain(score, gap_items)
     return {
         "rank": rank,
         "ticker": ticker,
@@ -204,6 +299,9 @@ def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_sec
             invalidation_text=invalidation_text,
             data_gaps=gap_items,
         ),
+        "evidence_chain": evidence_chain,
+        "evidence_chain_summary": _candidate_evidence_chain_summary(evidence_chain),
+        "action_guardrail": "下一票候选不是买入指令；只有触发条件成立、核心证据不阻断且当前持仓纪律允许时，才进入作战准备。",
         "data_gaps": gap_items,
         "source": _first_text(row_map.get("source"), row_map.get("scan_source"), context.get("scan_source"), scan.get("source"), live.get("source"), default="下一票雷达缓存"),
         "updated_at": _first_text(row_map.get("updated_at"), row_map.get("generated_at"), scan.get("generated_at"), live.get("updated_at"), default="暂无"),

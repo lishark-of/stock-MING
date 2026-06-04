@@ -146,6 +146,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["radar_packet"]["top_candidates"][0]["ticker"], "300750.SZ")
         self.assertEqual(payload["next_ticket_candidates"][0]["trigger_condition"], "放量站稳 MA20")
         self.assertTrue(payload["next_ticket_candidates"][0]["evidence_items"])
+        self.assertTrue(payload["next_ticket_candidates"][0]["evidence_chain"])
+        self.assertEqual(payload["next_ticket_candidates"][0]["evidence_chain"][0]["writes_packet"], "command_center_moneyflow_packet")
+        self.assertIn("候选不是买入指令", payload["next_ticket_candidates"][0]["action_guardrail"])
         self.assertIn("不会自动全市场扫描", payload["next_ticket_candidates"][0]["manual_required_text"])
         self.assertFalse(payload["radar_packet"]["deepseek_called"])
 

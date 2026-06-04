@@ -4940,11 +4940,19 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if candidates:
         candidate_html = ""
         for item in candidates[:3]:
+            evidence_chain = [evidence for evidence in (item.get("evidence_chain") or []) if isinstance(evidence, dict)]
             evidence_text = "；".join(
+                f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('status_label'), evidence.get('value') or '待验证')}"
+                for evidence in evidence_chain[:4]
+            ) or "；".join(
                 f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('value'), '待验证')}"
                 for evidence in (item.get("evidence_items") or [])[:3]
                 if isinstance(evidence, dict)
             ) or _home_text(item.get("reason"), "规则雷达缓存候选。")
+            evidence_guardrail = "；".join(
+                f"{_home_text(evidence.get('label'), '证据')}→{_home_text(evidence.get('writes_packet'), 'packet')}"
+                for evidence in evidence_chain[:3]
+            ) or "资金流/龙虎榜/涨跌停情绪等证据将逐步回流为 packet。"
             data_gap_text = "；".join(str(gap).strip() for gap in (item.get("data_gaps") or [])[:3] if str(gap).strip()) or "暂无显式数据缺口"
             candidate_html += f"""
             <div class="cc-home-candidate">
@@ -4953,8 +4961,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), item.get("action_state") or "只观察"))}</span>
               </div>
               <div class="cc-home-item-meta">综合分：{escape(_home_number(item.get("score")))} ｜ 入选依据：{escape(evidence_text)}</div>
+              <div class="cc-home-item-meta">证据链：{escape(_home_text(item.get("evidence_chain_summary"), "证据链待验证"))} ｜ {escape(evidence_guardrail)}</div>
               <div class="cc-home-item-meta">触发：{escape(_home_text(item.get("trigger_condition"), "等待触发条件确认。"))}</div>
               <div class="cc-home-item-meta">失效：{escape(_home_text(item.get("invalidation_condition"), "条件失效或风险转弱。"))}</div>
+              <div class="cc-home-item-meta">执行保护：{escape(_home_text(item.get("action_guardrail"), "候选不是买入指令；需要证据链和纪律共同确认。"))}</div>
               <div class="cc-home-item-meta">数据缺口：{escape(data_gap_text)}</div>
               <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "下一票雷达缓存"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无时间"))}</div>
             </div>
