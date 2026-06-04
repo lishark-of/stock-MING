@@ -123,6 +123,15 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("build_command_center_margin_packet", tokens)
         _assert_token_contains(self, tokens, "融资 ETF 本地配置快照")
 
+    def test_next_ticket_refresh_reads_legacy_radar_rows_and_writes_packet(self):
+        tokens = _function_tokens("_cc_run_next_ticket_radar")
+
+        self.assertIn("extract_legacy_radar_rows", tokens)
+        self.assertIn("command_center_radar_packet", tokens)
+        self.assertIn("sync_legacy_radar_packet", tokens)
+        _assert_token_contains(self, tokens, "下一票雷达本地缓存快照")
+        _assert_token_contains(self, tokens, "不触发全市场扫描")
+
     def test_legacy_a_share_screen_routes_diagnostic_to_recovery_controls(self):
         source = Path("app.py").read_text(encoding="utf-8")
 

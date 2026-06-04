@@ -249,6 +249,9 @@ def build_command_center_radar_packet(
         live_section.get("top_candidates"),
         scan_packet.get("rule_rows"),
         scan_packet.get("results"),
+        scan_packet.get("top_candidates"),
+        scan_packet.get("candidates"),
+        scan_packet.get("candidate_rows"),
     )
     errors = _first_list(state_map.get("radar_scan_errors"), summary.get("errors"), scan_packet.get("errors"))
     status_raw = to_text(state_map.get("radar_scan_status") or scan_packet.get("status"))

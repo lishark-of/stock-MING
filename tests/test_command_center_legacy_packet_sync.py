@@ -154,6 +154,64 @@ class CommandCenterLegacyPacketSyncTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
+    def test_extract_legacy_radar_rows_accepts_common_cache_shapes_without_mutation(self):
+        state = {
+            "radar_scan_results": {
+                "generated_at": "2026-06-03T10:00:00",
+                "top_candidates": [
+                    {"ticker": "300750.SZ", "name": "宁德时代", "action_state": "等验证"},
+                    {"ticker": "512480.SH", "name": "半导体 ETF", "action_state": "只观察"},
+                ],
+            },
+            "radar_scan_summary": {
+                "candidates": [{"ticker": "OLD", "name": "旧候选"}],
+            },
+            "command_center_radar_packet": {
+                "top_candidates": [{"ticker": "PKT", "name": "旧 packet"}],
+            },
+        }
+        before = json.dumps(state, ensure_ascii=False, sort_keys=True)
+
+        rows = sync.extract_legacy_radar_rows(state)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["ticker"], "300750.SZ")
+        self.assertEqual(rows[1]["ticker"], "512480.SH")
+        self.assertEqual(json.dumps(state, ensure_ascii=False, sort_keys=True), before)
+
+    def test_radar_sync_accepts_top_candidates_cache_shape(self):
+        packet = sync.sync_legacy_radar_packet(
+            {
+                "radar_scan_results": {
+                    "generated_at": "2026-06-03T10:00:00",
+                    "status": "completed",
+                    "top_candidates": [
+                        {
+                            "ticker": "300750.SZ",
+                            "name": "宁德时代",
+                            "score": 82,
+                            "action_state": "等验证",
+                            "trigger_condition": "放量站稳 MA20",
+                            "invalidation_condition": "跌破 MA20",
+                        },
+                    ],
+                },
+                "radar_scan_summary": {
+                    "source_mode": "下一票雷达本地缓存",
+                    "deepseek_called": False,
+                },
+            },
+            live_packet={"next_ticket": {"updated_at": "2026-06-03T10:00:00"}},
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["top_candidates"][0]["ticker"], "300750.SZ")
+        self.assertEqual(packet["top_candidates"][0]["status_label"], "等验证")
+        self.assertEqual(packet["top_candidates"][0]["trigger_condition"], "放量站稳 MA20")
+        self.assertEqual(packet["data_status"], "ready")
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
     def test_sync_helpers_do_not_mutate_input_state(self):
         state = {
             "command_center_quant_packet": {"status": "ready", "score": 10},

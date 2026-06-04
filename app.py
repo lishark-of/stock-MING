@@ -3451,8 +3451,7 @@ def _cc_refresh_margin_etf_config(target="", market_type="", price=None, positio
 def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_profile=None):
     del market_type, price, position_profile
     token = _cc_now()
-    previous_scan = st.session_state.get("radar_scan_results") or {}
-    previous_rows = previous_scan.get("rule_rows") or previous_scan.get("results") or []
+    previous_rows = legacy_packet_sync_service.extract_legacy_radar_rows(st.session_state)
     summary = {
         "source_mode": "综合中心 manual_basic 本地快照",
         "deepseek_called": False,

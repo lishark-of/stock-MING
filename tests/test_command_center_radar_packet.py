@@ -56,6 +56,33 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertEqual(packet["cache_state"], "missing")
         self.assertFalse(packet["deepseek_called"])
 
+    def test_builds_from_top_candidates_cache_shape(self):
+        packet = radar.build_command_center_radar_packet(
+            {
+                "radar_scan_results": {
+                    "generated_at": "2026-06-03T10:00:00",
+                    "top_candidates": [
+                        {
+                            "ticker": "300750.SZ",
+                            "name": "宁德时代",
+                            "score": 82,
+                            "action_state": "等验证",
+                            "trigger_condition": "放量站稳 MA20",
+                            "invalidation_condition": "跌破 MA20",
+                        }
+                    ],
+                    "summary": {"source_mode": "下一票雷达本地缓存", "deepseek_called": False},
+                },
+            }
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["display_count"], 1)
+        self.assertEqual(packet["top_candidates"][0]["ticker"], "300750.SZ")
+        self.assertEqual(packet["top_candidates"][0]["status_label"], "等验证")
+        self.assertFalse(packet["deepseek_called"])
+        json.dumps(packet, ensure_ascii=False)
+
     def test_existing_packet_is_preserved_without_mutation(self):
         existing = {
             "status": "ready",
