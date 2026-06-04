@@ -497,6 +497,67 @@ def _recovery_actions_from_old_workspace_bridge(old_workspace_packet_bridge: Any
     return actions
 
 
+def _build_recovery_queue(recovery_actions: Any = None, limit: int = 5) -> dict:
+    actions = [_as_mapping(action) for action in _as_list(recovery_actions) if _as_mapping(action)]
+    items = []
+    for index, action in enumerate(actions[: max(1, int(limit or 5))], start=1):
+        items.append(
+            {
+                "rank": index,
+                "key": _to_text(action.get("key"), f"recovery:{index}"),
+                "label": _to_text(action.get("label"), "恢复项"),
+                "loop_label": _to_text(action.get("loop_label"), "闭环"),
+                "priority_label": _to_text(action.get("priority_label"), "P1 执行前验证"),
+                "status_label": _to_text(action.get("status_label"), "待验证"),
+                "tone": _to_text(action.get("tone"), "missing"),
+                "action_label": _to_text(action.get("action_label"), "手动恢复"),
+                "toolbox_entry": _to_text(action.get("toolbox_entry"), "高级工具箱"),
+                "navigation_label": _to_text(action.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
+                "writes_packet": _to_text(action.get("writes_packet"), "command_center_packet"),
+                "decision_impact": _to_text(
+                    action.get("decision_impact"),
+                    "未恢复前不能作为加仓、追高或加融资依据。",
+                ),
+                "recovery_button_context": _to_text(
+                    action.get("recovery_button_context"),
+                    "按钮只打开恢复入口；不会自动调用 DeepSeek、回测或全市场扫描。",
+                ),
+                "refresh_policy": _to_text(action.get("refresh_policy"), "button_gated"),
+                "external_call_policy": _to_text(action.get("external_call_policy"), "navigation_only"),
+                "deepseek_called": False,
+            }
+        )
+    if items:
+        first = items[0]
+        tone = "failed" if any(item["tone"] == "failed" for item in items) else "stale"
+        headline = f"待处理 {len(items)} 项闭环缺口"
+        summary = (
+            f"优先处理 {first['loop_label']} / {first['label']}，"
+            f"进入 {first['toolbox_entry']} 后手动恢复，回流 {first['writes_packet']}。"
+        )
+        next_action = f"{first['action_label']}；只切换入口，不自动请求外部接口。"
+        external_call_policy = "navigation_only"
+    else:
+        tone = "ready"
+        headline = "闭环恢复队列为空"
+        summary = "当前没有需要从高级工具箱手动恢复的闭环缺口。"
+        next_action = "继续查看交易快照；如需更新，使用刷新今日基础数据按钮。"
+        external_call_policy = "not_triggered"
+    return {
+        "title": "决策闭环恢复队列",
+        "tone": tone,
+        "headline": headline,
+        "summary": summary,
+        "next_action": next_action,
+        "items": items,
+        "action_count": len(actions),
+        "visible_count": len(items),
+        "safe_mode_text": "恢复队列只负责导航到高级工具箱；检测、回测、扫描、DeepSeek 和外部接口仍必须由用户手动按钮触发。",
+        "external_call_policy": external_call_policy,
+        "deepseek_called": False,
+    }
+
+
 def build_command_center_loop_status_view_model(
     data_capability_console: Any = None,
     provider_data_capability_cockpit: Any = None,
@@ -572,6 +633,7 @@ def build_command_center_loop_status_view_model(
         tone = "ready"
         headline = f"闭环已就绪 {ready_count}｜DeepSeek 手动 {manual_count}"
         summary = "结构化链路可用于复核今日动作；仍不是自动交易指令。"
+    recovery_queue = _build_recovery_queue(recovery_actions)
     return {
         "title": "决策闭环状态",
         "status": "blocked" if blocked_count else ("partial" if waiting_count or stale_count else "ready"),
@@ -586,6 +648,7 @@ def build_command_center_loop_status_view_model(
         "manual_count": manual_count,
         "recovery_actions": recovery_actions,
         "recovery_action_count": len(recovery_actions),
+        "recovery_queue": recovery_queue,
         "recovery_summary": (
             f"优先恢复 {recovery_actions[0]['loop_label']}：{recovery_actions[0]['label']}，回流 {recovery_actions[0]['writes_packet']}。"
             if recovery_actions

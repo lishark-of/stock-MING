@@ -2384,6 +2384,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         loop_recovery_actions = [
             item for item in loop_status["recovery_actions"] if item["loop_key"] == "old_workspace_packets"
         ]
+        recovery_queue = loop_status["recovery_queue"]
         dumped = json.dumps(bridge, ensure_ascii=False)
         overview_dumped = json.dumps(overview, ensure_ascii=False)
         checklist_dumped = json.dumps(checklist, ensure_ascii=False)
@@ -2409,6 +2410,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("old_workspace_packets", loop_items)
         self.assertIn(loop_items["old_workspace_packets"]["status"], {"blocked", "stale", "ready"})
         self.assertTrue(loop_recovery_actions)
+        self.assertEqual(recovery_queue["title"], "决策闭环恢复队列")
+        self.assertTrue(recovery_queue["items"])
+        self.assertIn("高级工具箱", json.dumps(recovery_queue["items"], ensure_ascii=False))
+        self.assertTrue(all(item["external_call_policy"] == "navigation_only" for item in recovery_queue["items"]))
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in recovery_queue["items"]))
+        self.assertTrue(all(item["deepseek_called"] is False for item in recovery_queue["items"]))
         self.assertTrue(all(item["external_call_policy"] == "navigation_only" for item in loop_recovery_actions))
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in loop_recovery_actions))
         self.assertTrue(all(item["deepseek_called"] is False for item in loop_recovery_actions))

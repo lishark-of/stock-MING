@@ -5106,19 +5106,39 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         item for item in (decision_loop_status.get("recovery_actions") or [])
         if isinstance(item, dict)
     ]
+    loop_recovery_queue = decision_loop_status.get("recovery_queue") or {}
+    if not isinstance(loop_recovery_queue, dict):
+        loop_recovery_queue = {}
+    loop_recovery_queue_items = [
+        item for item in (loop_recovery_queue.get("items") or loop_recovery_actions[:3])
+        if isinstance(item, dict)
+    ]
     loop_recovery_html = ""
-    for item in loop_recovery_actions[:3]:
-        loop_recovery_html += (
-            "<div class='cc-home-item-meta'>"
-            f"恢复：{escape(_home_text(item.get('loop_label'), '闭环'))} / {escape(_home_text(item.get('label'), '恢复项'))}"
-            f" ｜ 入口：{escape(_home_text(item.get('toolbox_entry'), '高级工具箱'))}"
-            f" ｜ 回流：{escape(_home_text(item.get('writes_packet'), 'command_center_packet'))}"
-            "</div>"
-        )
-    if not loop_recovery_html:
-        loop_recovery_html = (
-            "<div class='cc-home-item-meta'>恢复：暂无闭环恢复入口；继续查看快照或使用刷新今日基础数据。</div>"
-        )
+    for item in loop_recovery_queue_items[:3]:
+        loop_recovery_html += f"""
+          <div class="cc-home-candidate">
+            <div class="cc-home-item-title">
+              {escape(_home_text(item.get("rank"), ""))}. {escape(_home_text(item.get("loop_label"), "闭环"))} / {escape(_home_text(item.get("label"), "恢复项"))}
+              <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("priority_label"), "P1 执行前验证"))}</span>
+            </div>
+            <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("status_label"), "待验证"))} ｜ 动作：{escape(_home_text(item.get("action_label"), "手动恢复"))}</div>
+            <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
+            <div class="cc-home-item-meta">影响：{escape(_home_text(item.get("decision_impact"), "未恢复前不能作为加仓、追高或加融资依据。"))}</div>
+            <div class="cc-home-item-meta">安全：{escape(_home_text(item.get("recovery_button_context"), "只打开恢复入口；不会自动调用 DeepSeek 或重型任务。"))}</div>
+          </div>
+        """
+    if loop_recovery_html:
+        loop_recovery_html = f"""
+          <div class="cc-home-item-title">
+            {escape(_home_text(loop_recovery_queue.get("title"), "决策闭环恢复队列"))}
+            <span class="cc-home-chip {escape(_home_text(loop_recovery_queue.get("tone"), "missing"))}">{escape(_home_text(loop_recovery_queue.get("headline"), "待处理闭环缺口"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(loop_recovery_queue.get("summary"), decision_loop_status.get("recovery_summary") or "按队列手动恢复。"))}</div>
+          {loop_recovery_html}
+          <div class="cc-home-item-meta">队列边界：{escape(_home_text(loop_recovery_queue.get("safe_mode_text"), "恢复队列只负责导航；所有检测仍需手动按钮触发。"))}</div>
+        """
+    else:
+        loop_recovery_html = "<div class='cc-home-item-meta'>恢复：暂无闭环恢复入口；继续查看快照或使用刷新今日基础数据。</div>"
     decision_loop_html = f"""
       <div class="cc-home-profile-strip">
         <div>
