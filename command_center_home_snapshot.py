@@ -455,6 +455,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
     snapshot["provider_recovery_matrix"] = build_provider_recovery_matrix(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
+    snapshot["home_data_issue_brief"] = build_home_data_issue_brief(snapshot)
     snapshot = attach_candidate_execution_evidence_overview(snapshot)
     snapshot = attach_decision_loop_status(snapshot)
     return snapshot
@@ -579,6 +580,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["old_workspace_packet_bridge"] = build_old_workspace_packet_bridge(snapshot)
     snapshot["old_workspace_capability_overview"] = build_old_workspace_capability_overview(snapshot)
+    snapshot["home_data_issue_brief"] = build_home_data_issue_brief(snapshot)
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
     snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
@@ -4396,6 +4398,115 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     }
 
 
+def build_home_data_issue_brief(snapshot: Any = None, limit: int = 3) -> dict:
+    payload = _as_mapping(snapshot)
+    visibility = _as_mapping(
+        payload.get("command_center_data_health_visibility_summary")
+        or payload.get("data_health_visibility_summary")
+    )
+    recovery_center = _as_mapping(payload.get("data_recovery_center"))
+    absence_ledger = _as_mapping(payload.get("old_workspace_data_absence_ledger"))
+    provider_matrix = _as_mapping(payload.get("provider_recovery_matrix"))
+    visibility_items = [_as_mapping(item) for item in _as_list(visibility.get("items")) if _as_mapping(item)]
+    recovery_items = [_as_mapping(item) for item in _as_list(recovery_center.get("decision_priority_queue")) if _as_mapping(item)]
+    items = []
+    seen = set()
+    for raw in [*visibility_items, *recovery_items]:
+        label = _to_text(raw.get("label"), "数据能力")
+        writes_packet = _to_text(raw.get("writes_packet"), "command_center_data_capability_packet")
+        dedupe_key = (label, writes_packet)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        items.append(
+            {
+                "label": label,
+                "provider": _to_text(raw.get("provider"), "数据源"),
+                "api": _to_text(raw.get("api")),
+                "status_label": _to_text(raw.get("status_label"), "待验证"),
+                "tone": _to_text(raw.get("tone"), "missing"),
+                "root_cause_label": _to_text(
+                    raw.get("root_cause_label") or raw.get("interface_cause_label"),
+                    "尚未检测",
+                ),
+                "why_previous_full_not_enough": _to_text(
+                    raw.get("why_previous_full_not_enough"),
+                    "之前拉满基础连接，不代表当前专业接口、日期窗口或标的覆盖已验证。",
+                ),
+                "diagnostic_answer": _to_text(
+                    raw.get("diagnostic_answer") or raw.get("interface_diagnostic_answer"),
+                    "仍需核对接口权限、交易日、数据发布时间和标的覆盖范围。",
+                ),
+                "action_label": _to_text(raw.get("action_label"), "手动检查"),
+                "toolbox_entry": _to_text(raw.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
+                "writes_packet": writes_packet,
+                "refresh_policy": _to_text(raw.get("refresh_policy"), "button_gated"),
+                "decision_guardrail": _to_text(
+                    raw.get("decision_guardrail") or raw.get("decision_impact"),
+                    "未恢复前不能把缺失数据当成可加仓依据。",
+                ),
+                "recovery_button_context": _to_text(
+                    raw.get("recovery_button_context"),
+                    "这里只打开恢复入口；检测仍需手动按钮触发。",
+                ),
+                "deepseek_called": False,
+            }
+        )
+        if len(items) >= max(1, int(limit or 3)):
+            break
+    visibility_status = _to_text(visibility.get("status"), "missing")
+    recovery_count = int(_to_number(recovery_center.get("action_count")) or 0)
+    absence_status = _to_text(absence_ledger.get("status"), "missing")
+    provider_status = _to_text(provider_matrix.get("status"), "missing")
+    if visibility_status == "blocked" or absence_status == "blocked" or recovery_count:
+        status = "blocked"
+        tone = "failed"
+    elif visibility_status in {"partial", "stale"} or provider_status in {"partial", "stale"}:
+        status = "partial"
+        tone = "stale"
+    elif visibility_status == "ready":
+        status = "ready"
+        tone = "ready"
+    else:
+        status = "missing"
+        tone = "missing"
+    headline = _to_text(
+        visibility.get("headline") or absence_ledger.get("headline") or provider_matrix.get("headline"),
+        "数据根因待检测",
+    )
+    summary = _to_text(
+        visibility.get("summary") or absence_ledger.get("summary") or provider_matrix.get("summary"),
+        "暂无接口级健康账本；页面打开不会自动请求外部接口。",
+    )
+    short_answer = _to_text(
+        visibility.get("explanation") or absence_ledger.get("short_answer") or provider_matrix.get("short_answer"),
+        "Tushare 拉满基础连接，不等于每个专业接口都有权限、当日数据或当前标的覆盖。",
+    )
+    next_action = _to_text(
+        recovery_center.get("next_step_summary") or recovery_center.get("summary") or visibility.get("explanation"),
+        "按恢复队列手动处理；页面不会自动请求 DeepSeek、回测、扫描或重型数据接口。",
+    )
+    return {
+        "title": "首页数据根因摘要",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": summary,
+        "short_answer": short_answer,
+        "permission_labels": _to_text(visibility.get("permission_labels"), "无"),
+        "skipped_labels": _to_text(visibility.get("skipped_labels"), "无"),
+        "cache_labels": _to_text(visibility.get("cache_labels"), "无"),
+        "empty_labels": _to_text(visibility.get("empty_labels"), "无"),
+        "manual_labels": _to_text(visibility.get("manual_labels"), "无"),
+        "items": items,
+        "next_action": next_action,
+        "decision_guardrail": "数据根因未恢复前，今日总动作必须保守；不能把权限、缓存或近期无记录写成可买入信号。",
+        "safe_mode_text": "这里只读取本地数据能力账本；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_tool_recovery_navigation_state(action: Any = None) -> dict:
     item = _as_mapping(action)
     workspace_state_key = _to_text(item.get("workspace_state_key"), "workspace_mode_v2")
@@ -6060,6 +6171,7 @@ def build_home_action_snapshot(
         "command_center_data_health_timeline_recovery_actions": data_health_timeline_recovery_actions,
         "provider_data_capability_cockpit": provider_data_capability_cockpit,
         "provider_recovery_matrix": build_provider_recovery_matrix({"provider_data_capability_cockpit": provider_data_capability_cockpit}),
+        "home_data_issue_brief": {},
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
@@ -6166,6 +6278,7 @@ def build_home_action_snapshot(
         empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(empty)
+        empty["home_data_issue_brief"] = build_home_data_issue_brief(empty)
         empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
         empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
         empty["risk_alerts"] = attach_legacy_decision_chain_risk_alerts(
@@ -6194,6 +6307,7 @@ def build_home_action_snapshot(
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)
+    snapshot["home_data_issue_brief"] = build_home_data_issue_brief(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)

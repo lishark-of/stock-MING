@@ -22,6 +22,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("old_workspace_packets", loop_items)
         self.assertIn("candidate_execution_evidence", loop_items)
         self.assertIn("下一票/ETF", loop_items["candidate_execution_evidence"]["stage_text"])
+        self.assertEqual(payload["home_data_issue_brief"]["title"], "首页数据根因摘要")
+        self.assertEqual(payload["home_data_issue_brief"]["status"], "blocked")
+        self.assertTrue(payload["home_data_issue_brief"]["items"])
+        self.assertEqual(payload["home_data_issue_brief"]["external_call_policy"], "not_triggered")
         self.assertFalse(payload["decision_loop_status"]["deepseek_called"])
 
     def test_save_and_load_snapshot(self):
@@ -1365,6 +1369,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         health_ledger = payload["data_health_ledger"]
         visibility = payload["command_center_data_health_visibility_summary"]
         health_timeline = payload["command_center_data_health_timeline"]
+        issue_brief = payload["home_data_issue_brief"]
         dumped = json.dumps(console, ensure_ascii=False)
 
         self.assertEqual(console["status"], "blocked")
@@ -1389,6 +1394,16 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(visibility["recovery_actions"][0]["legacy_workspace_route"]["legacy_tab"], "融资 ETF")
         self.assertEqual(visibility["items"][0]["manual_check_key"], "margin")
         self.assertFalse(visibility["deepseek_called"])
+        self.assertEqual(issue_brief["title"], "首页数据根因摘要")
+        self.assertEqual(issue_brief["status"], "blocked")
+        self.assertIn("Tushare 拉满", issue_brief["headline"])
+        self.assertIn("融资融券", issue_brief["permission_labels"])
+        self.assertTrue(issue_brief["items"])
+        self.assertEqual(issue_brief["items"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertIn("单独权限/积分", issue_brief["items"][0]["why_previous_full_not_enough"])
+        self.assertEqual(issue_brief["items"][0]["refresh_policy"], "button_gated")
+        self.assertEqual(issue_brief["external_call_policy"], "not_triggered")
+        self.assertFalse(issue_brief["deepseek_called"])
         self.assertEqual(health_timeline, payload["data_health_timeline"])
         self.assertEqual(health_timeline["title"], "接口健康时间线")
         self.assertEqual(health_timeline["status"], "blocked")

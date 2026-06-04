@@ -4833,6 +4833,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     provider_recovery_matrix = payload.get("provider_recovery_matrix") or {}
     if not isinstance(provider_recovery_matrix, dict):
         provider_recovery_matrix = {}
+    home_data_issue_brief = payload.get("home_data_issue_brief") or {}
+    if not isinstance(home_data_issue_brief, dict):
+        home_data_issue_brief = {}
     data_health_timeline_recovery_actions = (
         payload.get("command_center_data_health_timeline_recovery_actions")
         or payload.get("data_health_timeline_recovery_actions")
@@ -4987,6 +4990,49 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div>
           {provider_matrix_item_html}
           <div class="cc-home-profile-meta">安全边界：{escape(_home_text(provider_recovery_matrix.get("safe_mode_text"), "不会自动调用外部接口。"))}</div>
+        </div>
+      </div>
+    """
+    home_data_issue_item_html = ""
+    for item in (home_data_issue_brief.get("items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        home_data_issue_item_html += f"""
+          <div class="cc-home-candidate">
+            <div class="cc-home-item-title">
+              {escape(_home_text(item.get("label"), "数据能力"))}
+              <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+            </div>
+            <div class="cc-home-item-meta">根因：{escape(_home_text(item.get("root_cause_label"), "尚未检测"))} ｜ {escape(_home_text(item.get("why_previous_full_not_enough"), "之前拉满不代表当前专业接口已验证。"))}</div>
+            <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口权限、日期和覆盖范围。"))}</div>
+            <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))}</div>
+            <div class="cc-home-item-meta">决策保护：{escape(_home_text(item.get("decision_guardrail"), "未恢复前不能把缺失数据当成可加仓依据。"))}</div>
+          </div>
+        """
+    if not home_data_issue_item_html:
+        home_data_issue_item_html = "<div class='cc-home-item-meta'>暂无明确数据根因；刷新今日基础数据或进入数据源体检后会生成账本。</div>"
+    home_data_issue_brief_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(home_data_issue_brief.get("title"), "首页数据根因摘要"))}
+            <span class="cc-home-chip {escape(_home_text(home_data_issue_brief.get("tone"), "missing"))}">{escape(_home_text(home_data_issue_brief.get("headline"), "数据根因待检测"))}</span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(home_data_issue_brief.get("summary"), "暂无接口级健康账本"))}<br>
+            {escape(_home_text(home_data_issue_brief.get("short_answer"), "Tushare 拉满基础连接，不等于每个专业接口都有权限、当日数据或当前标的覆盖。"))}
+          </div>
+          <div class="cc-home-profile-meta">
+            权限不足：{escape(_home_text(home_data_issue_brief.get("permission_labels"), "无"))} ｜ 本会话跳过：{escape(_home_text(home_data_issue_brief.get("skipped_labels"), "无"))}
+          </div>
+          <div class="cc-home-profile-meta">
+            缓存：{escape(_home_text(home_data_issue_brief.get("cache_labels"), "无"))} ｜ 近期无数据：{escape(_home_text(home_data_issue_brief.get("empty_labels"), "无"))} ｜ 手动刷新：{escape(_home_text(home_data_issue_brief.get("manual_labels"), "无"))}
+          </div>
+        </div>
+        <div>
+          {home_data_issue_item_html}
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(home_data_issue_brief.get("next_action"), "按恢复队列手动处理。"))}</div>
+          <div class="cc-home-item-meta">安全边界：{escape(_home_text(home_data_issue_brief.get("safe_mode_text"), "只读取本地账本；不会自动请求外部接口。"))}</div>
         </div>
       </div>
     """
@@ -6573,6 +6619,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       </div>
       {market_profile_html}
       {provider_recovery_matrix_html}
+      {home_data_issue_brief_html}
       {decision_loop_html}
       {a_share_status_console_html}
       {evidence_loop_html}
