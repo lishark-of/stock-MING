@@ -5436,6 +5436,37 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not provider_html:
         provider_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>数据源尚未检测</div><div class='cc-home-item-meta'>页面打开不会自动 ping Tushare、AkShare、yfinance 或 Supabase。</div></div>"
     matrix_items = [item for item in (a_share_matrix.get("items") or []) if isinstance(item, dict)]
+    tushare_gap_explainer = a_share_matrix.get("tushare_gap_explainer") if isinstance(a_share_matrix.get("tushare_gap_explainer"), dict) else {}
+    tushare_gap_item_html = ""
+    for item in (tushare_gap_explainer.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        tushare_gap_item_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), "A股专业接口"))}：
+          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
+          {escape(_home_text(item.get("why_not_found"), "仍需核对接口权限、日期和覆盖范围。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          决策保护：{escape(_home_text(item.get("decision_guardrail"), "缺失数据不能作为加仓依据。"))}
+          ｜恢复：{escape(_home_text(item.get("manual_button_label"), "手动检测"))}
+          ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_facts_packet"))}
+        </div>
+        """
+    if not tushare_gap_item_html:
+        tushare_gap_item_html = "<div class='cc-home-item-meta'>尚未检测 A股专业接口；页面打开不会自动请求 Tushare。</div>"
+    tushare_gap_explainer_html = f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(tushare_gap_explainer.get("title"), "Tushare 专业接口为什么搜不到"))}
+            <span class="cc-home-chip {escape(_home_text(tushare_gap_explainer.get("tone"), "missing"))}">{escape(_home_text(tushare_gap_explainer.get("headline"), "尚未检测 A股专业接口"))}</span>
+          </div>
+          <div class="cc-home-item-meta">{escape(_home_text(tushare_gap_explainer.get("summary"), "页面打开不会自动请求 Tushare。"))}</div>
+          <div class="cc-home-item-meta">{escape(_home_text(tushare_gap_explainer.get("explanation"), "基础行情可用不代表所有专业接口已验证。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(tushare_gap_explainer.get("next_action"), "按数据恢复中心手动处理。"))} ｜ DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(tushare_gap_explainer.get("external_call_policy"), "not_triggered"))}</div>
+          {tushare_gap_item_html}
+        </div>
+        """
     matrix_html = ""
     for item in matrix_items[:6]:
         manual_action = item.get("manual_action") or {}
@@ -5763,6 +5794,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               </div>
               <div class="cc-home-item-meta">{escape(_home_text(a_share_matrix.get("manual_note"), "只读取本地 packet，不自动请求外部接口。"))}</div>
             </div>
+            {tushare_gap_explainer_html}
             {matrix_html}
             <div class="cc-home-candidate">
               <div class="cc-home-item-title">
@@ -5882,6 +5914,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
+          {tushare_gap_explainer_html}
           {data_health_visibility_html}
           {data_recovery_center_html}
           {legacy_migration_html}

@@ -264,6 +264,149 @@ def _manual_action(capability: Mapping[str, Any], state: str, status_label: str)
     }
 
 
+def _gap_reason_for_state(item: Mapping[str, Any]) -> str:
+    label = to_text(item.get("label"), "A股数据")
+    state = normalize_state(item.get("state"))
+    if state == "available":
+        return f"{label}已有可用返回，但仍需核对交易日和当前标的。"
+    if state == "permission_denied":
+        return f"{label}不是没搜到，而是 Tushare 专业接口权限/积分不足。"
+    if state == "disabled_this_session":
+        return f"{label}此前已被判定受限或失败，本会话跳过重复请求以避免卡顿。"
+    if state == "empty_recent":
+        return f"{label}近期无记录，可能是非交易日、尚未发布、标的未上榜或接口不覆盖。"
+    if state == "stale_cache":
+        return f"{label}正在使用缓存；这是防白屏结果，不是实时已验证事实。"
+    if state == "fallback_used":
+        return f"{label}使用替代口径；不能等同于原始 Tushare 专业事实。"
+    if state == "requires_manual_refresh":
+        return f"{label}需要按钮触发；页面打开不会自动请求 Tushare。"
+    if state in {"not_configured", "network_failed", "failed"}:
+        return f"{label}当前不可用；先保留安全空态或上次成功结果。"
+    return f"{label}尚未检测；不能把缺失写成无风险。"
+
+
+def _gap_guardrail_for_state(item: Mapping[str, Any]) -> str:
+    label = to_text(item.get("label"), "A股数据")
+    state = normalize_state(item.get("state"))
+    if state == "available":
+        return f"{label}可辅助验证，但不单独决定买卖。"
+    if state in {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}:
+        return f"{label}未恢复前阻断加仓、追高和加融资。"
+    if state in {"empty_recent", "stale_cache", "fallback_used", "requires_manual_refresh"}:
+        return f"{label}执行前必须复核来源、日期和覆盖口径。"
+    return f"{label}待验证时只观察，不放大仓位。"
+
+
+def _gap_action_mode(state: str) -> str:
+    normalized = normalize_state(state)
+    if normalized == "available":
+        return "usable"
+    if normalized in BLOCKED_STATES:
+        return "blocked"
+    if normalized in {"stale_cache", "fallback_used"}:
+        return "verify_cache"
+    if normalized == "empty_recent":
+        return "verify_window"
+    if normalized == "requires_manual_refresh":
+        return "manual_required"
+    return "missing"
+
+
+def _count_by_state(items: list[dict], states: set[str]) -> int:
+    return len([item for item in items if normalize_state(item.get("state")) in states])
+
+
+def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
+    packet = as_mapping(matrix_packet)
+    raw_items = packet.get("items") if packet else matrix_packet
+    rows = [as_mapping(item) for item in as_list(raw_items) if as_mapping(item)]
+    if not rows:
+        return {
+            "title": "Tushare 专业接口为什么搜不到",
+            "status": "missing",
+            "tone": "missing",
+            "headline": "尚未检测 A股专业接口",
+            "summary": "页面打开不会自动请求 Tushare；需要手动刷新或读取上次快照。",
+            "explanation": "Tushare token 可用不代表龙虎榜、融资融券、涨跌停/情绪、筹码等专业接口都已验证。",
+            "items": [],
+            "next_action": "先刷新今日基础数据，或在数据源体检里手动检测对应接口。",
+            "deepseek_called": False,
+            "external_call_policy": "not_triggered",
+        }
+
+    blocked = [item for item in rows if normalize_state(item.get("state")) in BLOCKED_STATES]
+    manual = [item for item in rows if normalize_state(item.get("state")) in MANUAL_STATES]
+    stale = [item for item in rows if normalize_state(item.get("state")) in STALE_STATES]
+    available = [item for item in rows if normalize_state(item.get("state")) in AVAILABLE_STATES]
+    if blocked:
+        status = "blocked"
+        tone = "failed"
+        headline = "拉满基础数据 ≠ 专业接口全可用"
+        next_action = "先处理权限不足、本会话跳过或失败项；未恢复前不要把缺失写成利好。"
+    elif manual or stale:
+        status = "partial"
+        tone = "stale"
+        headline = "部分接口是缓存、近期无记录或待手动刷新"
+        next_action = "执行前复核交易日、来源和覆盖口径；需要最新数据时再点手动检测。"
+    elif available:
+        status = "ready"
+        tone = "ready"
+        headline = "A股专业接口当前可辅助验证"
+        next_action = "继续把可用接口回流到综合中心 packet，并结合价格纪律与仓位规则。"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "A股专业接口仍待验证"
+        next_action = "保留安全空态或上次成功结果；不要自动请求重接口。"
+    ordered = blocked + manual + stale + available
+    seen = set()
+    items = []
+    for raw in ordered:
+        key = to_text(raw.get("key"), raw.get("label") or "a_share_capability")
+        if key in seen:
+            continue
+        seen.add(key)
+        manual_action = as_mapping(raw.get("manual_action"))
+        state = normalize_state(raw.get("state"))
+        items.append(
+            {
+                "key": key,
+                "label": to_text(raw.get("label"), "A股数据"),
+                "api_hint": to_text(raw.get("api_hint"), "Tushare 专业接口"),
+                "state": state,
+                "status_label": to_text(raw.get("status_label"), STATE_LABELS.get(state, "待验证")),
+                "tone": tone_for_state(state),
+                "action_mode": _gap_action_mode(state),
+                "why_not_found": _gap_reason_for_state(raw),
+                "decision_guardrail": _gap_guardrail_for_state(raw),
+                "next_action": to_text(raw.get("next_action"), next_action),
+                "manual_button_label": to_text(manual_action.get("button_label"), "手动检测"),
+                "writes_packet": to_text(manual_action.get("writes_packet"), "command_center_facts_packet"),
+                "toolbox_entry": to_text(manual_action.get("toolbox_entry"), "高级工具箱入口 / 数据源体检"),
+                "refresh_policy": to_text(manual_action.get("refresh_policy"), "button_gated"),
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    summary = (
+        f"可用 {_count_by_state(rows, AVAILABLE_STATES)}｜受限 {_count_by_state(rows, BLOCKED_STATES)}｜"
+        f"手动 {_count_by_state(rows, MANUAL_STATES)}｜缓存/近期无数据 {_count_by_state(rows, STALE_STATES)}"
+    )
+    return {
+        "title": "Tushare 专业接口为什么搜不到",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": summary,
+        "explanation": "基础行情或 token 正常，不代表每个 A股专业接口都有权限、当日数据或当前标的覆盖。",
+        "items": items[:6],
+        "next_action": next_action,
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def build_a_share_capability_matrix(
     data_capability_packet: Any = None,
     facts_packet: Any = None,
@@ -326,12 +469,14 @@ def build_a_share_capability_matrix(
         for item in sorted(items, key=lambda row: (row["migration_priority"], row["label"]))
         if item["state"] not in AVAILABLE_STATES
     ]
+    tushare_gap_explainer = build_tushare_gap_explainer({"items": items})
     return {
         "status": status,
         "tone": tone,
         "title": "A股数据能力矩阵",
         "summary": summary,
         "items": items,
+        "tushare_gap_explainer": tushare_gap_explainer,
         "manual_action_queue": manual_action_queue,
         "migration_queue": migration_queue,
         "available_count": len(available),

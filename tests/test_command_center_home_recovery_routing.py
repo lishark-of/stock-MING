@@ -123,6 +123,9 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("core_evidence_action_brief", source)
         self.assertIn("A股核心证据执行摘要", source)
         self.assertIn("core_evidence_action_html", source)
+        self.assertIn("tushare_gap_explainer", source)
+        self.assertIn("Tushare 专业接口为什么搜不到", source)
+        self.assertIn("决策保护：", source)
 
     def test_home_snapshot_renders_recovery_priority_lanes(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

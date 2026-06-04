@@ -51,6 +51,7 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
     def test_matrix_distinguishes_core_a_share_states(self):
         packet = matrix.build_a_share_capability_matrix(sample_capability_packet())
         by_key = {item["key"]: item for item in packet["items"]}
+        explainer = packet["tushare_gap_explainer"]
         dumped = json.dumps(packet, ensure_ascii=False)
 
         self.assertEqual(packet["tone"], "failed")
@@ -71,7 +72,32 @@ class CommandCenterAShareCapabilityMatrixTests(unittest.TestCase):
         self.assertIn("融资融券", dumped)
         self.assertIn("涨跌停", dumped)
         self.assertIn("筹码", dumped)
+        self.assertEqual(explainer["status"], "blocked")
+        self.assertIn("拉满基础数据", explainer["headline"])
+        self.assertIn("基础行情或 token 正常", explainer["explanation"])
+        self.assertEqual(explainer["external_call_policy"], "not_triggered")
+        self.assertFalse(explainer["deepseek_called"])
         self.assertFalse(packet["deepseek_called"])
+
+    def test_tushare_gap_explainer_turns_search_failures_into_user_reasons(self):
+        packet = matrix.build_a_share_capability_matrix(sample_capability_packet())
+        explainer = packet["tushare_gap_explainer"]
+        by_key = {item["key"]: item for item in explainer["items"]}
+
+        self.assertEqual(by_key["margin"]["action_mode"], "blocked")
+        self.assertIn("权限", by_key["margin"]["why_not_found"])
+        self.assertIn("阻断加仓", by_key["margin"]["decision_guardrail"])
+        self.assertEqual(by_key["limit_emotion"]["action_mode"], "blocked")
+        self.assertIn("本会话跳过", by_key["limit_emotion"]["why_not_found"])
+        self.assertEqual(by_key["dragon_tiger"]["action_mode"], "verify_window")
+        self.assertIn("近期无记录", by_key["dragon_tiger"]["why_not_found"])
+        self.assertEqual(by_key["chip_radar"]["action_mode"], "verify_cache")
+        self.assertIn("防白屏", by_key["chip_radar"]["why_not_found"])
+        self.assertEqual(by_key["moneyflow"]["action_mode"], "usable")
+        self.assertIn("command_center_margin_packet", by_key["margin"]["writes_packet"])
+        self.assertEqual(by_key["margin"]["refresh_policy"], "button_gated")
+        self.assertFalse(any(item["deepseek_called"] for item in by_key.values()))
+        json.dumps(explainer, ensure_ascii=False)
 
     def test_summary_text_counts_available_blocked_and_pending_items(self):
         packet = matrix.build_a_share_capability_matrix(sample_capability_packet())

@@ -478,6 +478,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(matrix_by_key["moneyflow"]["state"], "available")
         self.assertEqual(matrix_by_key["margin"]["state"], "permission_denied")
         self.assertEqual(matrix_by_key["dragon_tiger"]["state"], "empty_recent")
+        self.assertIn("拉满基础数据", matrix["tushare_gap_explainer"]["headline"])
+        self.assertIn("融资融券", json.dumps(matrix["tushare_gap_explainer"], ensure_ascii=False))
         self.assertFalse(matrix["deepseek_called"])
         self.assertFalse(capability["deepseek_called"])
 
