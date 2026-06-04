@@ -90,6 +90,36 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertIn("可用 1", strip["summary"])
         self.assertIn("受限/失败 1", strip["summary"])
 
+    def test_completion_notice_does_not_call_restricted_data_complete(self):
+        strip = {
+            "status_label": "部分接口受限",
+            "tone": "failed",
+            "summary": "可用 1｜受限/失败 2｜待验证 1｜手动刷新 1",
+        }
+
+        notice = gate.build_a_share_status_completion_notice(strip)
+
+        self.assertTrue(notice["label"].startswith("部分受限："))
+        self.assertNotIn("完成：", notice["label"])
+        self.assertIn("不能把缺失数据当成无风险", notice["decision_guardrail"])
+        self.assertIn("不代表所有 Tushare 专业接口均可用", notice["manual_note"])
+        self.assertFalse(notice["deepseek_called"])
+        json.dumps(notice, ensure_ascii=False)
+
+    def test_completion_notice_separates_manual_gate_from_success(self):
+        strip = {
+            "status_label": "待手动刷新",
+            "tone": "missing",
+            "summary": "暂无 A股专业事实缓存；页面打开不会自动请求 Tushare。",
+        }
+
+        notice = gate.build_a_share_status_completion_notice(strip)
+
+        self.assertTrue(notice["label"].startswith("待手动刷新："))
+        self.assertNotIn("完成：", notice["label"])
+        self.assertIn("不自动请求 Tushare", notice["decision_guardrail"])
+        self.assertFalse(notice["deepseek_called"])
+
     def test_packet_summary_counts_ready_cached_waiting_and_failed(self):
         summary = gate.build_legacy_a_share_packet_summary(
             dragon_tiger_packet={

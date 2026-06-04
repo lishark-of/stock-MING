@@ -9959,8 +9959,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             cn_progress.progress(100)
             cn_status.write("待手动刷新：未自动请求 Tushare 专业接口")
             st.info(legacy_a_share_gate_service.empty_notice())
-        cn_status.update(label="完成：A股盘口与情绪状态整理", state="complete")
-
         a_share_fact_payload = {
             "stock_code": stock_code,
             "dragon_tiger": dragon_data or {},
@@ -9971,6 +9969,19 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         }
         a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(a_share_fact_payload)
+        current_status_strip = legacy_a_share_gate_service.build_a_share_status_strip(
+            a_share_fact_payload,
+            a_share_capability_packet,
+        )
+        status_completion_notice = legacy_a_share_gate_service.build_a_share_status_completion_notice(
+            current_status_strip,
+            task_label="A股盘口与情绪状态整理",
+        )
+        cn_status.write(status_completion_notice.get("decision_guardrail"))
+        cn_status.update(
+            label=status_completion_notice.get("label") or "已整理：A股盘口与情绪状态整理",
+            state=status_completion_notice.get("state") or "complete",
+        )
         st.session_state["a_share_professional_data_capability"] = a_share_capability_packet
         st.session_state["command_center_facts_packet"] = facts_packet_service.build_a_share_facts_packet(
             a_share_fact_payload,
@@ -10004,10 +10015,6 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         capability_items = a_share_capability_packet.get("items") or []
         if capability_items:
-            current_status_strip = legacy_a_share_gate_service.build_a_share_status_strip(
-                a_share_fact_payload,
-                a_share_capability_packet,
-            )
             st.caption(
                 f"A股专业数据能力状态：{current_status_strip.get('status_label')}｜"
                 f"{current_status_strip.get('summary')}｜来源：{current_status_strip.get('source')}"

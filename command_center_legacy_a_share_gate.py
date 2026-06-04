@@ -180,6 +180,41 @@ def build_a_share_status_strip(professional_facts: Any = None, capability_packet
     }
 
 
+def build_a_share_status_completion_notice(status_strip: Any = None, task_label: str = "A股盘口与情绪状态整理") -> dict:
+    """Separate UI step completion from whether the underlying data is usable."""
+    strip = as_mapping(status_strip)
+    status_label = _first_text(strip.get("status_label"), default="待检测")
+    tone = _first_text(strip.get("tone"), default="missing")
+    summary = _first_text(strip.get("summary"), default="暂无 A股专业事实缓存；页面打开不会自动请求 Tushare。")
+    if tone == "failed" or "受限" in status_label or "失败" in status_label:
+        prefix = "部分受限"
+        state = "complete"
+        decision_guardrail = "受限接口未恢复前，不能把缺失数据当成无风险，也不能支持加仓、追高或加融资。"
+    elif tone == "stale" or "缓存" in status_label:
+        prefix = "使用缓存"
+        state = "complete"
+        decision_guardrail = "缓存能防白屏，但执行前必须复核交易日、来源和更新时间。"
+    elif "手动" in status_label or status_label in {"待检测", "待刷新"}:
+        prefix = "待手动刷新"
+        state = "complete"
+        decision_guardrail = "未手动检测前，只展示安全空态或上次结果，不自动请求 Tushare。"
+    else:
+        prefix = "已整理"
+        state = "complete"
+        decision_guardrail = "数据状态已整理；交易动作仍需价格、纪律和仓位共同确认。"
+    return {
+        "label": f"{prefix}：{task_label}｜{summary}",
+        "state": state,
+        "prefix": prefix,
+        "status_label": status_label,
+        "tone": tone,
+        "summary": summary,
+        "decision_guardrail": decision_guardrail,
+        "manual_note": "这里表示状态整理已结束，不代表所有 Tushare 专业接口均可用。",
+        "deepseek_called": False,
+    }
+
+
 def _packet_state(packet: Mapping[str, Any]) -> str:
     raw_values = [
         packet.get("status"),
