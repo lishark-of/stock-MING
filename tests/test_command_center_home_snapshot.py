@@ -1764,6 +1764,43 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(summary["deepseek_called"])
         json.dumps(summary, ensure_ascii=False)
 
+    def test_legacy_a_share_gap_summary_focuses_limit_and_chip(self):
+        summary = snapshot.build_legacy_a_share_gap_summary(
+            {
+                "limit_emotion_packet": {
+                    "status": "failed",
+                    "capability_state": "permission_denied",
+                    "recovery_state": "blocked",
+                    "status_label": "权限不足",
+                    "source": "Tushare limit_cpt_list",
+                },
+                "chip_packet": {
+                    "status": "waiting",
+                    "capability_state": "empty_recent",
+                    "recovery_state": "waiting",
+                    "status_label": "近期无数据",
+                    "source": "Tushare cyq_perf/cyq_chips",
+                },
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "recovery_state": "recovered",
+                    "status_label": "可用",
+                },
+            }
+        )
+        dumped = json.dumps(summary, ensure_ascii=False)
+
+        self.assertEqual(summary["title"], "旧能力缺口：涨跌停/情绪 · 筹码/胜率")
+        self.assertEqual(summary["tone"], "failed")
+        self.assertEqual(summary["summary"], "已回流 0｜仍受限 1｜待验证 1")
+        self.assertEqual([item["key"] for item in summary["items"]], ["limit_emotion", "chip_radar"])
+        self.assertIn("不能把缺失数据当成无风险", dumped)
+        self.assertIn("页面打开不会自动请求 Tushare", dumped)
+        self.assertIn("command_center_limit_emotion_packet", dumped)
+        self.assertIn("command_center_chip_packet", dumped)
+        self.assertFalse(summary["deepseek_called"])
+
     def test_home_snapshot_includes_a_share_fact_recovery_summary(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(
@@ -1802,6 +1839,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("command_center_margin_packet", dumped)
         self.assertIn("点击“手动检测融资融券”", dumped)
         self.assertFalse(summary["deepseek_called"])
+        legacy_gap = payload["legacy_a_share_gap_summary"]
+        self.assertIn("涨跌停/情绪", json.dumps(legacy_gap, ensure_ascii=False))
+        self.assertIn("筹码/胜率", json.dumps(legacy_gap, ensure_ascii=False))
+        self.assertFalse(legacy_gap["deepseek_called"])
 
     def test_home_snapshot_persists_hard_risk_packet(self):
         today = _dt.date.today().isoformat()

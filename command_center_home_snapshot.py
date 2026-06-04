@@ -75,6 +75,8 @@ A_SHARE_FACT_RECOVERY_SOURCES = (
     },
 )
 
+LEGACY_A_SHARE_GAP_KEYS = {"limit_emotion", "chip_radar"}
+
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
@@ -278,6 +280,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "deepseek_called": False,
     }
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
     return snapshot
 
@@ -367,6 +370,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
@@ -779,6 +783,59 @@ def build_a_share_fact_recovery_summary(snapshot: Any = None) -> dict:
         "items": items,
         "next_action": next_action,
         "safe_mode_text": "这里只汇总本地 packet 状态；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+    }
+
+
+def _legacy_gap_item_message(item: Mapping[str, Any]) -> str:
+    label = _to_text(item.get("label"), "旧版 A股能力")
+    recovery_state = _to_text(item.get("recovery_state"), "waiting")
+    status_label = _to_text(item.get("status_label"), "待验证")
+    if recovery_state == "recovered":
+        return f"{label}已回流，可进入综合中心证据链；仍需复核交易日、来源和风险纪律。"
+    if recovery_state == "blocked":
+        return f"{label}当前为{status_label}，不能把缺失数据当成无风险。"
+    return f"{label}待验证；保持安全空态或缓存观察，需要时手动检测。"
+
+
+def build_legacy_a_share_gap_summary(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    recovery_summary = _as_mapping(payload.get("a_share_fact_recovery_summary"))
+    if not recovery_summary:
+        recovery_summary = build_a_share_fact_recovery_summary(payload)
+    items = [
+        _as_mapping(item)
+        for item in _as_list(recovery_summary.get("items"))
+        if _as_mapping(item).get("key") in LEGACY_A_SHARE_GAP_KEYS
+    ]
+    for item in items:
+        item["message"] = _legacy_gap_item_message(item)
+        item["is_recovered"] = item.get("recovery_state") == "recovered"
+        item["requires_manual"] = item.get("refresh_policy") == "button_gated"
+        item["deepseek_called"] = False
+    recovered = [item for item in items if item.get("recovery_state") == "recovered"]
+    blocked = [item for item in items if item.get("recovery_state") == "blocked"]
+    waiting = [item for item in items if item.get("recovery_state") == "waiting"]
+    if blocked:
+        tone = "failed"
+        headline = f"旧能力缺口：仍受限 {len(blocked)} 项"
+        next_action = f"优先处理 {blocked[0]['label']}；只切换到高级工具箱，不自动请求 Tushare。"
+    elif waiting:
+        tone = "missing" if not recovered else "stale"
+        headline = f"旧能力缺口：待验证 {len(waiting)} 项"
+        next_action = f"需要时手动检测 {waiting[0]['label']}；页面打开不会自动请求 Tushare。"
+    else:
+        tone = "ready"
+        headline = "旧能力缺口已回流"
+        next_action = "涨跌停/情绪、筹码/胜率已形成 packet；执行前仍需复核交易日和来源。"
+    return {
+        "title": "旧能力缺口：涨跌停/情绪 · 筹码/胜率",
+        "tone": tone,
+        "headline": headline,
+        "summary": f"已回流 {len(recovered)}｜仍受限 {len(blocked)}｜待验证 {len(waiting)}",
+        "items": items,
+        "next_action": next_action,
+        "safe_mode_text": "这里只读取本地 packet 和恢复总账；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
     }
 
@@ -2048,6 +2105,7 @@ def build_home_action_snapshot(
         "limit_emotion_packet": limit_emotion_packet,
         "hard_risk_packet": hard_risk_packet,
         "a_share_fact_recovery_summary": {},
+        "legacy_a_share_gap_summary": {},
         "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
         "risk_alerts": risk_alerts,
         "data_coverage": coverage,
@@ -2119,9 +2177,11 @@ def build_home_action_snapshot(
         empty["limit_emotion_packet"] = snapshot["limit_emotion_packet"]
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(empty)
+        empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["errors"] = errors
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)

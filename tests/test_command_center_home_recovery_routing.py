@@ -166,6 +166,11 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("A股事实 5 项：已回流 0｜仍受限 0｜待验证 5", source)
         self.assertIn("a_share_fact_summary_text", source)
         self.assertIn("A股事实：{escape(a_share_fact_summary_text)}", source)
+        self.assertIn("legacy_a_share_gap_summary", source)
+        self.assertIn("legacy_gap_html", source)
+        self.assertIn("legacy_gap_item_html", source)
+        self.assertIn("旧能力缺口待生成", source)
+        self.assertIn("涨跌停/情绪、筹码/胜率", source)
 
     def test_refresh_summary_routes_a_share_fact_recovery_to_navigation_only(self):
         source = Path("app.py").read_text(encoding="utf-8")
