@@ -331,6 +331,8 @@ def _recovery_loop_key(action: Mapping[str, Any]) -> str:
         return "provider_data_capability"
     source_type = _to_text(action.get("source_type"))
     writes_packet = _to_text(action.get("writes_packet"))
+    if source_type == "old_workspace_packet_bridge":
+        return "old_workspace_packets"
     if source_type in {"data_source", "data_health_timeline", "a_share"}:
         return "data_capability"
     if "strategy" in writes_packet or "discipline" in writes_packet or "quant" in writes_packet:
@@ -435,6 +437,66 @@ def _recovery_actions_from_provider_cockpit(provider_data_capability_cockpit: An
     return actions
 
 
+def _recovery_actions_from_old_workspace_bridge(old_workspace_packet_bridge: Any = None, limit: int = 4) -> list[dict]:
+    bridge = _as_mapping(old_workspace_packet_bridge)
+    candidates = [_as_mapping(item) for item in _as_list(bridge.get("items")) if _as_mapping(item)]
+    actions = []
+    seen = set()
+    for item in candidates:
+        bridge_status = _to_text(item.get("bridge_status"), "waiting")
+        if bridge_status == "recovered":
+            continue
+        label = _to_text(item.get("label"), "旧版能力")
+        writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
+        status = "blocked" if bridge_status == "blocked" else ("cached" if bridge_status == "cached" else "waiting")
+        status_label = _to_text(
+            item.get("bridge_label") or item.get("completion_label"),
+            "阻断" if bridge_status == "blocked" else ("使用缓存" if bridge_status == "cached" else "待回流"),
+        )
+        action = _normalize_recovery_action(
+            {
+                "key": f"old_workspace_packet_bridge:{_to_text(item.get('key'), label)}:{writes_packet}",
+                "source_type": "old_workspace_packet_bridge",
+                "source_label": "旧能力 packet 桥",
+                "label": label,
+                "priority_label": "P0 阻断交易判断" if bridge_status == "blocked" else "P1 执行前验证",
+                "tone": _to_text(item.get("tone"), "failed" if bridge_status == "blocked" else "missing"),
+                "status": status,
+                "status_label": status_label,
+                "action_label": _to_text(item.get("action_label"), f"打开{_to_text(item.get('legacy_tab'), label)}"),
+                "navigation_label": _to_text(
+                    item.get("navigation_label"),
+                    f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{_to_text(item.get('legacy_tab'), label)}；手动执行后回流 {writes_packet}。",
+                ),
+                "toolbox_entry": _to_text(item.get("toolbox_entry"), f"高级工具箱 / {_to_text(item.get('legacy_tab'), label)}"),
+                "workspace_target": _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）"),
+                "workspace_state_key": _to_text(item.get("workspace_state_key"), "workspace_mode_v2"),
+                "legacy_tab_state_key": _to_text(item.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
+                "legacy_tab": _to_text(item.get("legacy_tab"), label),
+                "writes_packet": writes_packet,
+                "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+                "decision_guardrail": _to_text(
+                    item.get("decision_guardrail"),
+                    f"{label} 未回流前只能标记待验证，不能单独支持交易动作。",
+                ),
+                "recovery_button_context": _to_text(
+                    item.get("recovery_button_context"),
+                    f"这里只打开旧版“{_to_text(item.get('legacy_tab'), label)}”入口；对应检测仍需手动点击，结果回流 {writes_packet}。",
+                ),
+            }
+        )
+        if not action:
+            continue
+        dedupe_key = (action["loop_key"], action["writes_packet"], action["label"])
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        actions.append(action)
+        if len(actions) >= max(1, int(limit or 4)):
+            break
+    return actions
+
+
 def build_command_center_loop_status_view_model(
     data_capability_console: Any = None,
     provider_data_capability_cockpit: Any = None,
@@ -474,10 +536,11 @@ def build_command_center_loop_status_view_model(
         ]
     )
     provider_recovery_actions = _recovery_actions_from_provider_cockpit(provider_data_capability_cockpit)
+    old_workspace_recovery_actions = _recovery_actions_from_old_workspace_bridge(old_workspace_packet_bridge)
     center_recovery_actions = _recovery_actions_from_center(data_recovery_center)
     recovery_actions = []
     seen_recovery = set()
-    for action in [*provider_recovery_actions, *center_recovery_actions]:
+    for action in [*provider_recovery_actions, *old_workspace_recovery_actions, *center_recovery_actions]:
         dedupe_key = (action["loop_key"], action.get("provider"), action["writes_packet"], action["label"])
         if dedupe_key in seen_recovery:
             continue

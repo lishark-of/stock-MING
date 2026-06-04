@@ -104,7 +104,13 @@ class CommandCenterLoopStatusTests(unittest.TestCase):
                     {
                         "label": "融资 ETF",
                         "bridge_status": "blocked",
+                        "bridge_label": "权限不足",
+                        "action_label": "打开融资 ETF",
+                        "toolbox_entry": "高级工具箱 / 融资 ETF",
+                        "navigation_label": "主导航切到高级工具箱（旧版保留）→ 高级工具模块选择融资 ETF；手动执行后回流 command_center_margin_packet。",
+                        "legacy_tab": "融资 ETF",
                         "writes_packet": "command_center_margin_packet",
+                        "decision_guardrail": "融资融券未恢复前不能支持加融资。",
                     },
                     {
                         "label": "下一票雷达",
@@ -114,12 +120,17 @@ class CommandCenterLoopStatusTests(unittest.TestCase):
                     {
                         "label": "量化推演",
                         "bridge_status": "waiting",
+                        "bridge_label": "待回流",
+                        "action_label": "打开量化推演",
+                        "toolbox_entry": "高级工具箱 / 量化推演",
+                        "legacy_tab": "量化推演",
                         "writes_packet": "command_center_quant_packet",
                     },
                 ],
             }
         )
         by_key = {item["key"]: item for item in view_model["items"]}
+        actions_by_packet = {item["writes_packet"]: item for item in view_model["recovery_actions"]}
 
         self.assertEqual(view_model["status"], "blocked")
         self.assertEqual(by_key["old_workspace_packets"]["status"], "blocked")
@@ -127,8 +138,22 @@ class CommandCenterLoopStatusTests(unittest.TestCase):
         self.assertEqual(by_key["old_workspace_packets"]["blocked_bridge_count"], 1)
         self.assertEqual(by_key["old_workspace_packets"]["waiting_bridge_count"], 1)
         self.assertEqual(by_key["old_workspace_packets"]["recovered_bridge_count"], 1)
+        self.assertEqual(by_key["old_workspace_packets"]["recovery_action_count"], 2)
+        self.assertEqual(view_model["recovery_action_count"], 2)
+        self.assertIn("command_center_margin_packet", actions_by_packet)
+        self.assertIn("command_center_quant_packet", actions_by_packet)
+        self.assertNotIn("command_center_radar_packet", actions_by_packet)
+        self.assertEqual(actions_by_packet["command_center_margin_packet"]["loop_key"], "old_workspace_packets")
+        self.assertEqual(actions_by_packet["command_center_margin_packet"]["loop_label"], "旧能力回流")
+        self.assertEqual(actions_by_packet["command_center_margin_packet"]["toolbox_entry"], "高级工具箱 / 融资 ETF")
+        self.assertIn("高级工具箱", actions_by_packet["command_center_margin_packet"]["navigation_label"])
+        self.assertIn("不能支持加融资", actions_by_packet["command_center_margin_packet"]["decision_impact"])
+        self.assertEqual(actions_by_packet["command_center_margin_packet"]["external_call_policy"], "navigation_only")
+        self.assertEqual(actions_by_packet["command_center_margin_packet"]["refresh_policy"], "button_gated")
         self.assertIn("旧工具能力", by_key["old_workspace_packets"]["decision_guardrail"])
+        self.assertIn("旧能力回流", view_model["recovery_summary"])
         self.assertFalse(view_model["deepseek_called"])
+        self.assertTrue(all(item["deepseek_called"] is False for item in view_model["recovery_actions"]))
         json.dumps(view_model, ensure_ascii=False)
 
     def test_ready_chain_keeps_deepseek_manual(self):

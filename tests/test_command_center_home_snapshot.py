@@ -2379,7 +2379,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         bridge = payload["old_workspace_packet_bridge"]
         overview = payload["old_workspace_capability_overview"]
         checklist = payload["legacy_packet_migration_checklist"]
+        loop_status = payload["decision_loop_status"]
         loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
+        loop_recovery_actions = [
+            item for item in loop_status["recovery_actions"] if item["loop_key"] == "old_workspace_packets"
+        ]
         dumped = json.dumps(bridge, ensure_ascii=False)
         overview_dumped = json.dumps(overview, ensure_ascii=False)
         checklist_dumped = json.dumps(checklist, ensure_ascii=False)
@@ -2404,6 +2408,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(all(item["deepseek_called"] is False for item in checklist["items"]))
         self.assertIn("old_workspace_packets", loop_items)
         self.assertIn(loop_items["old_workspace_packets"]["status"], {"blocked", "stale", "ready"})
+        self.assertTrue(loop_recovery_actions)
+        self.assertTrue(all(item["external_call_policy"] == "navigation_only" for item in loop_recovery_actions))
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in loop_recovery_actions))
+        self.assertTrue(all(item["deepseek_called"] is False for item in loop_recovery_actions))
+        self.assertIn("高级工具箱", json.dumps(loop_recovery_actions, ensure_ascii=False))
         self.assertIn("下一票雷达", dumped)
         self.assertIn("融资 ETF", dumped)
         self.assertIn("command_center_radar_packet", dumped)
