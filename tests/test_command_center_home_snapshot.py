@@ -16,7 +16,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["data_freshness"]["state"], "missing")
         self.assertIn("暂无可执行候选", payload["empty_message"])
         self.assertIn("decision_loop_status", payload)
-        self.assertEqual(len(payload["decision_loop_status"]["items"]), 6)
+        self.assertEqual(len(payload["decision_loop_status"]["items"]), 7)
+        loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
+        self.assertIn("provider_data_capability", loop_items)
         self.assertFalse(payload["decision_loop_status"]["deepseek_called"])
 
     def test_save_and_load_snapshot(self):
@@ -964,11 +966,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("需要手动刷新", dumped)
         self.assertIn("provider_gap_explainer", json.dumps(payload["data_capability_console"], ensure_ascii=False))
         cockpit = payload["provider_data_capability_cockpit"]
+        loop_items = {item["key"]: item for item in payload["decision_loop_status"]["items"]}
         cockpit_dumped = json.dumps(cockpit, ensure_ascii=False)
         self.assertIn("Tushare", cockpit_dumped)
         self.assertIn("AkShare", cockpit_dumped)
         self.assertIn("Supabase", cockpit_dumped)
         self.assertIn("yfinance", cockpit_dumped)
+        self.assertEqual(loop_items["provider_data_capability"]["status"], "blocked")
+        self.assertIn("Tushare / AkShare / yfinance / Supabase", loop_items["provider_data_capability"]["summary"])
         self.assertTrue(cockpit["recovery_actions"])
         self.assertFalse(cockpit["deepseek_called"])
         self.assertFalse(capability["deepseek_called"])

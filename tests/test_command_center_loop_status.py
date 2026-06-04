@@ -51,6 +51,49 @@ class CommandCenterLoopStatusTests(unittest.TestCase):
         self.assertIn("阻断", view_model["headline"])
         self.assertFalse(view_model["deepseek_called"])
 
+    def test_provider_cockpit_blocks_loop_and_preserves_navigation_recovery(self):
+        view_model = loop_status.build_command_center_loop_status_view_model(
+            provider_data_capability_cockpit={
+                "status": "blocked",
+                "summary": "Tushare / AkShare / yfinance / Supabase｜可用 1｜受限 2｜需手动 1｜缓存/待验证 1",
+                "safe_mode_text": "这里只读取本地数据能力 packet；不会自动调用外部接口。",
+                "providers": [
+                    {"provider": "Tushare", "status": "blocked"},
+                    {"provider": "AkShare", "status": "partial"},
+                    {"provider": "yfinance", "status": "partial"},
+                    {"provider": "Supabase", "status": "blocked"},
+                ],
+                "recovery_actions": [
+                    {
+                        "key": "provider_cockpit:Tushare",
+                        "provider": "Tushare",
+                        "api": "margin_detail",
+                        "label": "Tushare",
+                        "status": "blocked",
+                        "status_label": "受限",
+                        "action_label": "手动检测 Tushare 专业接口",
+                        "legacy_tab": "数据源体检",
+                        "writes_packet": "command_center_data_capability_packet",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+            }
+        )
+        by_key = {item["key"]: item for item in view_model["items"]}
+        action = view_model["recovery_actions"][0]
+
+        self.assertEqual(view_model["status"], "blocked")
+        self.assertEqual(by_key["provider_data_capability"]["status"], "blocked")
+        self.assertEqual(by_key["provider_data_capability"]["provider_count"], 4)
+        self.assertIn("Tushare / AkShare / yfinance / Supabase", by_key["provider_data_capability"]["summary"])
+        self.assertEqual(action["loop_key"], "provider_data_capability")
+        self.assertEqual(action["loop_label"], "数据源能力")
+        self.assertEqual(action["provider"], "Tushare")
+        self.assertEqual(action["external_call_policy"], "navigation_only")
+        self.assertFalse(action["deepseek_called"])
+        self.assertIn("数据源能力", view_model["recovery_summary"])
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_ready_chain_keeps_deepseek_manual(self):
         view_model = loop_status.build_command_center_loop_status_view_model(
             data_capability_console={"ready_count": 3, "headline": "数据能力已读取，3 个接口可进入证据链。"},

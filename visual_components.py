@@ -4959,7 +4959,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       </div>
     """
     loop_items_html = ""
-    for item in (decision_loop_status.get("items") or [])[:6]:
+    for item in (decision_loop_status.get("items") or [])[:7]:
         if not isinstance(item, dict):
             continue
         loop_items_html += (

@@ -132,6 +132,40 @@ def _data_capability_item(data_capability_console: Any = None) -> dict:
     return _status_item("data_capability", "数据能力", status, summary, guardrail, "command_center_data_capability_console")
 
 
+def _provider_data_capability_item(provider_data_capability_cockpit: Any = None) -> dict:
+    cockpit = _as_mapping(provider_data_capability_cockpit)
+    if not cockpit:
+        return {}
+    status_text = _to_text(cockpit.get("status"), "missing")
+    if status_text in {"blocked", "failed", "error"}:
+        status = "blocked"
+        guardrail = "Provider 数据源存在阻断项时，今日总动作必须降级复核；不能把权限、缓存或缺口当成可加仓依据。"
+    elif status_text in {"partial", "stale", "cached"}:
+        status = "stale"
+        guardrail = "Provider 数据源仍有待手动/待复核项；执行前需要确认缓存、新鲜度和覆盖范围。"
+    elif status_text in {"ready", "ok", "available"}:
+        status = "ready"
+        guardrail = "Provider 数据源可辅助验证；仍需和策略纪律、仓位预算共同复核。"
+    else:
+        status = "waiting"
+        guardrail = "Provider 数据源尚未检测；页面只读取本地能力账本，不会自动请求外部接口。"
+    summary = _to_text(cockpit.get("summary") or cockpit.get("headline"), "Tushare / AkShare / yfinance / Supabase 数据源能力待检测。")
+    item = _status_item(
+        "provider_data_capability",
+        "数据源能力",
+        status,
+        summary,
+        _to_text(cockpit.get("safe_mode_text"), guardrail) if status != "ready" else guardrail,
+        "provider_data_capability_cockpit",
+    )
+    providers = [_as_mapping(provider) for provider in _as_list(cockpit.get("providers")) if _as_mapping(provider)]
+    item["provider_count"] = len(providers)
+    item["blocked_provider_count"] = len([provider for provider in providers if _to_text(provider.get("status")) == "blocked"])
+    item["manual_provider_count"] = len([provider for provider in providers if _to_text(provider.get("status")) == "partial"])
+    item["decision_guardrail"] = guardrail
+    return item
+
+
 def _analysis_methods_item(analysis_method_packet: Any = None, market_profile_evidence: Any = None) -> dict:
     packet = _as_mapping(analysis_method_packet)
     profile = _as_mapping(market_profile_evidence)
@@ -203,6 +237,9 @@ def _deepseek_item(*packets: Any) -> dict:
 
 
 def _recovery_loop_key(action: Mapping[str, Any]) -> str:
+    key = _to_text(action.get("key"))
+    if _to_text(action.get("provider")) or key.startswith("provider_cockpit:"):
+        return "provider_data_capability"
     source_type = _to_text(action.get("source_type"))
     writes_packet = _to_text(action.get("writes_packet"))
     if source_type in {"data_source", "data_health_timeline", "a_share"}:
@@ -219,6 +256,7 @@ def _recovery_loop_key(action: Mapping[str, Any]) -> str:
 def _recovery_loop_label(loop_key: str) -> str:
     return {
         "data_capability": "数据能力",
+        "provider_data_capability": "数据源能力",
         "analysis_methods": "分析方法",
         "projection": "趋势推演",
         "strategy_execution": "策略执行",
@@ -237,6 +275,8 @@ def _normalize_recovery_action(action: Any) -> dict:
         "key": _to_text(item.get("key"), writes_packet or label),
         "loop_key": loop_key,
         "loop_label": _recovery_loop_label(loop_key),
+        "provider": _to_text(item.get("provider")),
+        "api": _to_text(item.get("api")),
         "label": label,
         "priority_label": _to_text(item.get("priority_label"), "P1 执行前验证"),
         "tone": _to_text(item.get("tone") or item.get("recovery_result_tone"), "missing"),
@@ -283,8 +323,28 @@ def _recovery_actions_from_center(data_recovery_center: Any = None, limit: int =
     return actions
 
 
+def _recovery_actions_from_provider_cockpit(provider_data_capability_cockpit: Any = None, limit: int = 4) -> list[dict]:
+    cockpit = _as_mapping(provider_data_capability_cockpit)
+    candidates = _as_list(cockpit.get("recovery_actions"))
+    actions = []
+    seen = set()
+    for raw in candidates:
+        action = _normalize_recovery_action(raw)
+        if not action:
+            continue
+        dedupe_key = (action["loop_key"], action.get("provider"), action["writes_packet"], action["label"])
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        actions.append(action)
+        if len(actions) >= max(1, int(limit or 4)):
+            break
+    return actions
+
+
 def build_command_center_loop_status_view_model(
     data_capability_console: Any = None,
+    provider_data_capability_cockpit: Any = None,
     analysis_method_packet: Any = None,
     market_profile_evidence: Any = None,
     projection_packet: Any = None,
@@ -295,13 +355,29 @@ def build_command_center_loop_status_view_model(
 ) -> dict:
     items = [
         _data_capability_item(data_capability_console),
-        _analysis_methods_item(analysis_method_packet, market_profile_evidence),
-        _projection_item(projection_packet),
-        _strategy_item(strategy_packet),
-        _decision_item(decision_packet),
-        _deepseek_item(deepseek_summary, strategy_packet, decision_packet, projection_packet, analysis_method_packet),
     ]
-    recovery_actions = _recovery_actions_from_center(data_recovery_center)
+    provider_item = _provider_data_capability_item(provider_data_capability_cockpit)
+    if provider_item:
+        items.append(provider_item)
+    items.extend(
+        [
+            _analysis_methods_item(analysis_method_packet, market_profile_evidence),
+            _projection_item(projection_packet),
+            _strategy_item(strategy_packet),
+            _decision_item(decision_packet),
+            _deepseek_item(deepseek_summary, strategy_packet, decision_packet, projection_packet, analysis_method_packet),
+        ]
+    )
+    provider_recovery_actions = _recovery_actions_from_provider_cockpit(provider_data_capability_cockpit)
+    center_recovery_actions = _recovery_actions_from_center(data_recovery_center)
+    recovery_actions = []
+    seen_recovery = set()
+    for action in [*provider_recovery_actions, *center_recovery_actions]:
+        dedupe_key = (action["loop_key"], action.get("provider"), action["writes_packet"], action["label"])
+        if dedupe_key in seen_recovery:
+            continue
+        seen_recovery.add(dedupe_key)
+        recovery_actions.append(action)
     if recovery_actions:
         actions_by_loop: dict[str, list[dict]] = {}
         for action in recovery_actions:
