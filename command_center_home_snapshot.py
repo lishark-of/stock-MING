@@ -3282,6 +3282,129 @@ def attach_a_share_evidence_module_dependencies(snapshot: Any = None) -> dict:
     return payload
 
 
+EXECUTION_GUARDRAIL_DEPENDENCY_SOURCES = (
+    {
+        "key": "hard_risk",
+        "label": "公告/硬风险",
+        "packet_key": "hard_risk_packet",
+        "writes_packet": "command_center_hard_risk_packet",
+        "role": "排除公告、减持、监管、质押等硬风险，避免把风险缺口写成安全信号。",
+        "decision_guardrail": "硬风险未排除前，候选票和 ETF 只能观察或降风险，不能升级为加仓依据。",
+        "target_text": "高级工具箱 / 天眼风控",
+    },
+    {
+        "key": "discipline_backtest",
+        "label": "交易纪律/回测",
+        "packet_key": "discipline_packet",
+        "writes_packet": "command_center_discipline_packet",
+        "role": "验证价格纪律、回测缓存、胜率和回撤边界，约束加仓、减仓和失效条件。",
+        "decision_guardrail": "纪律/回测未回流前，策略建议不能标记为纪律已验证执行方案。",
+        "target_text": "高级工具箱 / 交易纪律实验室",
+    },
+)
+
+
+def _execution_guardrail_dependencies(snapshot: Any = None) -> list[dict]:
+    payload = _as_mapping(snapshot)
+    dependencies = []
+    for config in EXECUTION_GUARDRAIL_DEPENDENCY_SOURCES:
+        recovery = _fallback_recovery_result_item(config, payload)
+        dependencies.append(
+            {
+                "key": _to_text(config.get("key"), "execution_guardrail"),
+                "label": _to_text(config.get("label"), "执行护栏"),
+                "status": _to_text(recovery.get("status"), "waiting"),
+                "status_label": _to_text(recovery.get("status_label"), "待验证"),
+                "tone": _to_text(recovery.get("tone"), "missing"),
+                "writes_packet": _to_text(config.get("writes_packet"), "command_center_packet"),
+                "packet_key": _to_text(recovery.get("packet_key"), _to_text(config.get("packet_key"), "")),
+                "role": _to_text(config.get("role"), "验证执行前必须复核的风险和纪律约束。"),
+                "decision_guardrail": _to_text(config.get("decision_guardrail"), "护栏未验证前不能升级为可执行交易动作。"),
+                "target_text": _to_text(config.get("target_text"), "高级工具箱"),
+                "message": _to_text(recovery.get("message"), "执行护栏待验证。"),
+                "updated_at": _to_text(recovery.get("updated_at"), "暂无"),
+                "source": _to_text(recovery.get("source"), "本地 packet"),
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    return dependencies
+
+
+def _execution_guardrail_dependency_summary(dependencies: Any = None) -> dict:
+    rows = [_as_mapping(item) for item in _as_list(dependencies)]
+    rows = [item for item in rows if item]
+    recovered = [item for item in rows if item.get("status") == "recovered"]
+    cached = [item for item in rows if item.get("status") == "cached"]
+    blocked = [item for item in rows if item.get("status") == "blocked"]
+    waiting = [item for item in rows if item.get("status") not in {"recovered", "cached", "blocked"}]
+    if blocked:
+        label = "执行护栏仍阻断"
+        tone = "failed"
+        impact = "硬风险或纪律证据仍未排除，不能把候选票或 ETF 升级为可加仓动作。"
+    elif waiting:
+        label = "执行护栏待验证"
+        tone = "stale" if (recovered or cached) else "missing"
+        impact = "硬风险和交易纪律尚未完全回流，只能保持观察、轻仓或等待触发条件。"
+    elif cached:
+        label = "执行护栏使用缓存"
+        tone = "stale"
+        impact = "执行护栏读取到缓存；执行前需复核日期、来源和回测窗口。"
+    elif recovered:
+        label = "执行护栏已回流"
+        tone = "ready"
+        impact = "公告/硬风险和交易纪律已回流；仍需结合价格、仓位和失效条件。"
+    else:
+        label = "执行护栏待绑定"
+        tone = "missing"
+        impact = "尚未绑定公告/硬风险与交易纪律依赖；不能把当前清单当成已验证交易指令。"
+    return {
+        "label": label,
+        "tone": tone,
+        "summary": f"已回流 {len(recovered)}｜缓存 {len(cached)}｜仍阻断 {len(blocked)}｜待验证 {len(waiting)}",
+        "recovered_labels": [_to_text(item.get("label"), "护栏") for item in recovered],
+        "cached_labels": [_to_text(item.get("label"), "护栏") for item in cached],
+        "blocked_labels": [_to_text(item.get("label"), "护栏") for item in blocked],
+        "waiting_labels": [_to_text(item.get("label"), "护栏") for item in waiting],
+        "impact_text": impact,
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+def attach_execution_guardrail_dependencies(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    dependencies = _execution_guardrail_dependencies(payload)
+    summary = _execution_guardrail_dependency_summary(dependencies)
+    next_candidates = []
+    for raw_candidate in _as_list(payload.get("next_ticket_candidates")):
+        candidate = _as_mapping(raw_candidate)
+        if not candidate:
+            continue
+        candidate["execution_guardrail_dependencies"] = [dict(item) for item in dependencies]
+        candidate["execution_guardrail_dependency_summary"] = dict(summary)
+        next_candidates.append(candidate)
+    payload["next_ticket_candidates"] = next_candidates
+
+    margin_summary = _as_mapping(payload.get("margin_etf_summary"))
+    etf_candidates = []
+    for raw_etf in _as_list(margin_summary.get("recommended_etfs")):
+        etf = _as_mapping(raw_etf)
+        if not etf:
+            continue
+        etf["execution_guardrail_dependencies"] = [dict(item) for item in dependencies]
+        etf["execution_guardrail_dependency_summary"] = dict(summary)
+        etf_candidates.append(etf)
+    if margin_summary:
+        margin_summary["recommended_etfs"] = etf_candidates
+        payload["margin_etf_summary"] = margin_summary
+    etf_packet = _as_mapping(payload.get("etf_packet"))
+    if etf_packet and etf_candidates:
+        etf_packet["recommended_etfs"] = etf_candidates
+        payload["etf_packet"] = etf_packet
+    return payload
+
+
 def build_legacy_migration_recovery_actions_snapshot(
     legacy_migration_map: Any = None,
     limit: int = MAX_CAPABILITY_ITEMS,
@@ -5357,6 +5480,7 @@ def build_home_action_snapshot(
         empty["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(empty)
         empty["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(empty)
         empty = attach_a_share_evidence_module_dependencies(empty)
+        empty = attach_execution_guardrail_dependencies(empty)
         empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(empty)
@@ -5383,6 +5507,7 @@ def build_home_action_snapshot(
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(snapshot)
     snapshot = attach_a_share_evidence_module_dependencies(snapshot)
+    snapshot = attach_execution_guardrail_dependencies(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)

@@ -206,6 +206,15 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("个股资金流", payload["next_ticket_candidates"][0]["evidence_module_dependency_summary"]["waiting_labels"])
         self.assertIn("龙虎榜", payload["next_ticket_candidates"][0]["evidence_module_dependency_summary"]["waiting_labels"])
         self.assertIn("待验证", payload["next_ticket_candidates"][0]["evidence_module_dependency_summary"]["summary"])
+        self.assertTrue(payload["next_ticket_candidates"][0]["execution_guardrail_dependencies"])
+        guardrail_labels = [
+            item["label"]
+            for item in payload["next_ticket_candidates"][0]["execution_guardrail_dependencies"]
+        ]
+        self.assertIn("公告/硬风险", guardrail_labels)
+        self.assertIn("交易纪律/回测", guardrail_labels)
+        self.assertIn("待验证", payload["next_ticket_candidates"][0]["execution_guardrail_dependency_summary"]["summary"])
+        self.assertFalse(payload["next_ticket_candidates"][0]["execution_guardrail_dependency_summary"]["deepseek_called"])
         self.assertIn("候选不是买入指令", payload["next_ticket_candidates"][0]["action_guardrail"])
         self.assertIn("不会自动全市场扫描", payload["next_ticket_candidates"][0]["manual_required_text"])
         self.assertFalse(payload["radar_packet"]["deepseek_called"])
@@ -347,6 +356,15 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_module_dependencies"])
         self.assertIn("融资融券", payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_module_dependency_summary"]["waiting_labels"])
         self.assertIn("待验证", payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_module_dependency_summary"]["summary"])
+        self.assertTrue(payload["margin_etf_summary"]["recommended_etfs"][0]["execution_guardrail_dependencies"])
+        etf_guardrail_labels = [
+            item["label"]
+            for item in payload["margin_etf_summary"]["recommended_etfs"][0]["execution_guardrail_dependencies"]
+        ]
+        self.assertIn("公告/硬风险", etf_guardrail_labels)
+        self.assertIn("交易纪律/回测", etf_guardrail_labels)
+        self.assertIn("待验证", payload["margin_etf_summary"]["recommended_etfs"][0]["execution_guardrail_dependency_summary"]["summary"])
+        self.assertFalse(payload["margin_etf_summary"]["recommended_etfs"][0]["execution_guardrail_dependency_summary"]["deepseek_called"])
         self.assertIn("不能放大仓位", payload["margin_etf_summary"]["recommended_etfs"][0]["action_guardrail"])
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])

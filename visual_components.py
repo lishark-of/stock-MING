@@ -5060,6 +5060,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             decision_brief = item.get("decision_brief") if isinstance(item.get("decision_brief"), dict) else {}
             recovery_impact = item.get("evidence_recovery_impact") if isinstance(item.get("evidence_recovery_impact"), dict) else {}
             module_dependency = item.get("evidence_module_dependency_summary") if isinstance(item.get("evidence_module_dependency_summary"), dict) else {}
+            guardrail_dependency = item.get("execution_guardrail_dependency_summary") if isinstance(item.get("execution_guardrail_dependency_summary"), dict) else {}
             evidence_chain = [evidence for evidence in (item.get("evidence_chain") or []) if isinstance(evidence, dict)]
             evidence_text = "；".join(
                 f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('status_label'), evidence.get('value') or '待验证')}"
@@ -5089,6 +5090,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 for row in (item.get("evidence_module_dependencies") or [])[:4]
                 if isinstance(row, dict)
             ) or "A股证据模块依赖待确认"
+            guardrail_dependency_text = "；".join(
+                f"{_home_text(row.get('label'), '执行护栏')}:{_home_text(row.get('status_label'), '待验证')}"
+                for row in (item.get("execution_guardrail_dependencies") or [])[:3]
+                if isinstance(row, dict)
+            ) or "公告/硬风险与交易纪律待验证"
             candidate_html += f"""
             <div class="cc-home-candidate">
               <div class="cc-home-item-title">
@@ -5100,6 +5106,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               <div class="cc-home-item-meta">综合分：{escape(_home_number(item.get("score")))} ｜ 入选依据：{escape(evidence_text)}</div>
               <div class="cc-home-item-meta">证据链：{escape(_home_text(item.get("evidence_chain_summary"), "证据链待验证"))} ｜ {escape(evidence_guardrail)}</div>
               <div class="cc-home-item-meta">A股证据模块：<span class="cc-home-chip {escape(_home_text(module_dependency.get("tone"), "missing"))}">{escape(_home_text(module_dependency.get("label"), "依赖待确认"))}</span> {escape(_home_text(module_dependency.get("summary"), "已回流 0｜仍受限 0｜待验证 0"))} ｜ {escape(module_dependency_text)}</div>
+              <div class="cc-home-item-meta">执行护栏：<span class="cc-home-chip {escape(_home_text(guardrail_dependency.get("tone"), "missing"))}">{escape(_home_text(guardrail_dependency.get("label"), "护栏待验证"))}</span> {escape(_home_text(guardrail_dependency.get("summary"), "已回流 0｜缓存 0｜仍阻断 0｜待验证 0"))} ｜ {escape(guardrail_dependency_text)}</div>
               <div class="cc-home-item-meta">恢复影响：<span class="cc-home-chip {escape(_home_text(recovery_impact.get("tone"), decision_brief.get("recovery_impact_tone") or "missing"))}">{escape(_home_text(recovery_impact.get("label"), decision_brief.get("recovery_impact_label") or "待验证"))}</span> {escape(_home_text(recovery_impact.get("summary"), item.get("evidence_recovery_summary") or "证据恢复结果待验证"))} ｜ {escape(_home_text(recovery_impact.get("impact_text"), decision_brief.get("recovery_impact_text") or "恢复结果不会自动改变候选状态。"))}</div>
               <div class="cc-home-item-meta">恢复结果：{escape(recovery_items_text)}</div>
               <div class="cc-home-item-meta">待补证：{escape(missing_evidence_text)} ｜ 恢复路径：{escape(_home_text(decision_brief.get("recovery_route"), "高级工具箱 → 下一票雷达"))}</div>
@@ -5118,6 +5125,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         for item in etfs[:3]:
             etf_recovery_impact = item.get("evidence_recovery_impact") if isinstance(item.get("evidence_recovery_impact"), dict) else {}
             etf_module_dependency = item.get("evidence_module_dependency_summary") if isinstance(item.get("evidence_module_dependency_summary"), dict) else {}
+            etf_guardrail_dependency = item.get("execution_guardrail_dependency_summary") if isinstance(item.get("execution_guardrail_dependency_summary"), dict) else {}
             etf_chain = [evidence for evidence in (item.get("evidence_chain") or []) if isinstance(evidence, dict)]
             etf_evidence = "；".join(
                 f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('status_label'), evidence.get('value') or '待验证')}"
@@ -5142,6 +5150,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 for row in (item.get("evidence_module_dependencies") or [])[:3]
                 if isinstance(row, dict)
             ) or "A股证据模块依赖待确认"
+            etf_guardrail_dependency_text = "；".join(
+                f"{_home_text(row.get('label'), '执行护栏')}:{_home_text(row.get('status_label'), '待验证')}"
+                for row in (item.get("execution_guardrail_dependencies") or [])[:3]
+                if isinstance(row, dict)
+            ) or "公告/硬风险与交易纪律待验证"
             etf_html += f"""
             <div class="cc-home-etf">
               <div class="cc-home-item-title">
@@ -5152,6 +5165,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               <div class="cc-home-item-meta">证据：{escape(etf_evidence)}</div>
               <div class="cc-home-item-meta">证据链：{escape(_home_text(item.get("evidence_chain_summary"), "证据链待验证"))} ｜ {escape(etf_guardrail)}</div>
               <div class="cc-home-item-meta">A股证据模块：<span class="cc-home-chip {escape(_home_text(etf_module_dependency.get("tone"), "missing"))}">{escape(_home_text(etf_module_dependency.get("label"), "依赖待确认"))}</span> {escape(_home_text(etf_module_dependency.get("summary"), "已回流 0｜仍受限 0｜待验证 0"))} ｜ {escape(etf_module_dependency_text)}</div>
+              <div class="cc-home-item-meta">执行护栏：<span class="cc-home-chip {escape(_home_text(etf_guardrail_dependency.get("tone"), "missing"))}">{escape(_home_text(etf_guardrail_dependency.get("label"), "护栏待验证"))}</span> {escape(_home_text(etf_guardrail_dependency.get("summary"), "已回流 0｜缓存 0｜仍阻断 0｜待验证 0"))} ｜ {escape(etf_guardrail_dependency_text)}</div>
               <div class="cc-home-item-meta">恢复影响：<span class="cc-home-chip {escape(_home_text(etf_recovery_impact.get("tone"), "missing"))}">{escape(_home_text(etf_recovery_impact.get("label"), "待验证"))}</span> {escape(_home_text(etf_recovery_impact.get("summary"), item.get("evidence_recovery_summary") or "ETF 证据恢复结果待验证"))} ｜ {escape(_home_text(etf_recovery_impact.get("impact_text"), "ETF 证据不会自动改变仓位动作。"))}</div>
               <div class="cc-home-item-meta">恢复结果：{escape(etf_recovery_text)}</div>
               <div class="cc-home-item-meta">触发：{escape(_home_text(item.get("trigger_condition"), "等待回踩、量能和风险线确认。"))}</div>
