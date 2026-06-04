@@ -286,6 +286,64 @@ def recovered_evidence_summary_text(support_items: Any = None) -> str:
     return "已回流：" + "、".join(labels[:4])
 
 
+def _evidence_group_items(items: Any = None, limit: int = 4) -> list[dict]:
+    result = []
+    for raw in as_list(items):
+        item = as_mapping(raw)
+        if not item:
+            continue
+        manual_action = as_mapping(item.get("manual_action"))
+        result.append(
+            {
+                "key": to_text(item.get("key"), "a_share_evidence"),
+                "label": to_text(item.get("label"), "A股证据"),
+                "status_label": to_text(item.get("status_label"), "待验证"),
+                "evidence_label": to_text(item.get("evidence_label"), "待验证证据"),
+                "headline": to_text(item.get("headline"), "待验证"),
+                "metric": to_text(item.get("metric"), "暂无数值"),
+                "source": to_text(item.get("source"), "本地 packet"),
+                "updated_at": to_text(item.get("updated_at"), "暂无时间"),
+                "next_action": to_text(item.get("next_action"), "按数据恢复中心手动处理。"),
+                "writes_packet": to_text(manual_action.get("writes_packet")),
+                "refresh_policy": to_text(manual_action.get("refresh_policy"), "button_gated"),
+                "deepseek_called": False,
+            }
+        )
+        if len(result) >= max(1, int(limit or 4)):
+            break
+    return result
+
+
+def build_evidence_status_groups(
+    support_items: Any = None,
+    blocker_items: Any = None,
+    cached_items: Any = None,
+    missing_items: Any = None,
+) -> list[dict]:
+    groups = [
+        ("recovered", "已回流", "ready", "可进入证据链，但仍需复核日期、来源和仓位纪律。", support_items),
+        ("blocked", "仍受限", "failed", "权限、接口、网络或本会话跳过仍未恢复；不能把缺失写成利好。", blocker_items),
+        ("cached", "使用缓存", "stale", "缓存只能防白屏，执行前必须复核交易日和更新时间。", cached_items),
+        ("manual", "待手动", "missing", "尚未形成可验证 packet；需要时从高级工具箱手动补齐。", missing_items),
+    ]
+    result = []
+    for key, label, tone, summary, raw_items in groups:
+        items = _evidence_group_items(raw_items)
+        result.append(
+            {
+                "key": key,
+                "label": label,
+                "tone": tone,
+                "count": len(as_list(raw_items)),
+                "summary": summary,
+                "items": items,
+                "labels_text": _join_labels(raw_items, fallback="无", limit=4),
+                "deepseek_called": False,
+            }
+        )
+    return result
+
+
 def build_latest_recovery_evidence_impact(latest_recovery_result_notice: Any = None) -> dict:
     notice = as_mapping(latest_recovery_result_notice)
     if not notice:
@@ -563,6 +621,12 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
     )
     latest_recovery_impact = build_latest_recovery_evidence_impact(payload.get("latest_recovery_result_notice"))
     recovered_modules = build_recovered_evidence_modules(support_items)
+    evidence_status_groups = build_evidence_status_groups(
+        support_items=support_items,
+        blocker_items=blocker_items,
+        cached_items=cached_items,
+        missing_items=missing_items,
+    )
     radar_card = build_evidence_radar_card_view_model(
         support_items=support_items,
         blocker_items=blocker_items,
@@ -578,6 +642,7 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         "latest_recovery_impact": latest_recovery_impact,
         "recovered_evidence_modules": recovered_modules,
         "recovered_evidence_summary": recovered_evidence_summary_text(support_items),
+        "evidence_status_groups": evidence_status_groups,
         "items": items,
         "support_items": support_items,
         "blocker_items": blocker_items,

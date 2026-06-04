@@ -65,6 +65,14 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(vm["radar_card"]["status_label"], "阻断加仓")
         self.assertIn("低置信度", vm["radar_card"]["confidence_gate"])
         self.assertIn("不能把缺失数据写成利好", vm["radar_card"]["execution_guardrail"])
+        groups = {item["key"]: item for item in vm["evidence_status_groups"]}
+        self.assertEqual(groups["recovered"]["count"], 1)
+        self.assertEqual(groups["blocked"]["count"], 1)
+        self.assertEqual(groups["cached"]["count"], 1)
+        self.assertEqual(groups["manual"]["count"], 3)
+        self.assertEqual(groups["recovered"]["items"][0]["writes_packet"], "command_center_moneyflow_packet")
+        self.assertIn("缓存只能防白屏", groups["cached"]["summary"])
+        self.assertFalse(any(item["deepseek_called"] for item in groups.values()))
 
     def test_radar_card_marks_cached_or_missing_as_cautious_validation(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(

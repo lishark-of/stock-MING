@@ -140,6 +140,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("recovered_evidence_modules", source)
         self.assertIn("已回流模块", source)
         self.assertIn("暂无已回流证据模块", source)
+        self.assertIn("evidence_status_groups", source)
+        self.assertIn("evidence_status_group_html", source)
 
     def test_home_snapshot_collapses_verbose_diagnostics(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

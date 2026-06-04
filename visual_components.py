@@ -5317,6 +5317,25 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     evidence_card = evidence_vm.get("radar_card") or {}
     recovered_evidence_modules = [item for item in (evidence_vm.get("recovered_evidence_modules") or []) if isinstance(item, dict)]
     recovered_evidence_summary = _home_text(evidence_vm.get("recovered_evidence_summary"), "暂无已回流 A股证据模块")
+    evidence_status_groups = [item for item in (evidence_vm.get("evidence_status_groups") or []) if isinstance(item, dict)]
+    evidence_status_group_html = ""
+    for group in evidence_status_groups:
+        group_items = [item for item in (group.get("items") or []) if isinstance(item, dict)]
+        group_item_text = "；".join(
+            f"{_home_text(item.get('label'), 'A股证据')}→{_home_text(item.get('writes_packet'), 'packet')}"
+            for item in group_items[:3]
+        ) or _home_text(group.get("labels_text"), "无")
+        evidence_status_group_html += f"""
+        <div class="cc-home-item-meta">
+          <span class="cc-home-chip {escape(_home_text(group.get("tone"), "missing"))}">
+            {escape(_home_text(group.get("label"), "证据分组"))} {escape(_home_number(group.get("count")))}
+          </span>
+          {escape(_home_text(group.get("summary"), "待验证。"))}
+          ｜{escape(group_item_text)}
+        </div>
+        """
+    if not evidence_status_group_html:
+        evidence_status_group_html = "<div class='cc-home-item-meta'>A股证据分组待生成；页面打开不会自动请求 Tushare。</div>"
     recovered_evidence_html = ""
     for item in recovered_evidence_modules[:4]:
         recovered_evidence_html += f"""
@@ -5349,6 +5368,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">摘要：{escape(_home_text(evidence_card.get("summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))} ｜ 支持：{escape(_home_text(evidence_card.get("support_text"), "暂无支持证据"))}</div>
           <div class="cc-home-item-meta">已回流模块：{escape(recovered_evidence_summary)}</div>
           {recovered_evidence_html}
+          {evidence_status_group_html}
           <div class="cc-home-item-meta">待处理：{escape(_home_text(evidence_card.get("recovery_text"), "暂无待补证据"))} ｜ DeepSeek：未调用</div>
           {latest_evidence_impact_html}
         </div>
