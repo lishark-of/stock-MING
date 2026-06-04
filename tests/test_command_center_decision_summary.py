@@ -165,6 +165,28 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("支持证据", joined)
         self.assertEqual(view_model["a_share_evidence_summary_text"], "支持 1｜阻断 1｜缓存 1｜缺失 3")
 
+    def test_evidence_chain_includes_a_share_evidence_status_groups(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "只观察"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            evidence_radar_packet={
+                "decision_summary": "支持 2｜阻断 1｜缓存 1｜缺失 2",
+                "evidence_status_groups": [
+                    {"key": "recovered", "label": "已回流", "count": 2, "tone": "ready", "labels_text": "个股资金流、公告/硬风险"},
+                    {"key": "blocked", "label": "仍受限", "count": 1, "tone": "failed", "labels_text": "龙虎榜"},
+                    {"key": "cached", "label": "使用缓存", "count": 1, "tone": "stale", "labels_text": "融资融券"},
+                    {"key": "manual", "label": "待手动", "count": 2, "tone": "missing", "labels_text": "筹码/胜率、涨跌停/情绪"},
+                ],
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("A股证据分组", joined)
+        self.assertIn("已回流 2｜仍受限 1｜缓存 1｜待手动 2", joined)
+        self.assertEqual(view_model["a_share_evidence_group_basis_item"]["tone"], "danger")
+        self.assertIn("仍受限证据未恢复", view_model["a_share_evidence_group_summary_text"])
+        self.assertFalse(view_model["a_share_evidence_group_basis_item"]["deepseek_called"])
+
     def test_evidence_chain_includes_a_share_evidence_radar_card_gate(self):
         view_model = summary.build_decision_summary_view_model(
             {"status": "ready", "overall_action": "小幅进攻"},

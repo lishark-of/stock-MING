@@ -4667,6 +4667,17 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
     )
     if a_share_data_basis_html:
         a_share_data_basis_html = f"<div class='cc-decision-chain'>{a_share_data_basis_html}</div>"
+    a_share_evidence_group = vm.get("a_share_evidence_group_basis_item") or {}
+    a_share_evidence_group_html = ""
+    if a_share_evidence_group:
+        a_share_evidence_group_html = (
+            "<div class='cc-decision-chain'>"
+            f"<span class='cc-decision-chain-pill {escape(str(a_share_evidence_group.get('tone') or 'muted'))}'>"
+            f"{escape(str(a_share_evidence_group.get('label') or 'A股证据分组'))}：{escape(str(a_share_evidence_group.get('value') or '待验证'))}"
+            "</span>"
+            f"<span class='cc-decision-chain-pill muted'>{escape(str(a_share_evidence_group.get('guardrail') or '证据分组待验证。'))}</span>"
+            "</div>"
+        )
     html = f"""
     <section class="cc-decision-hero">
       <div class="cc-decision-top">
@@ -4683,6 +4694,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
           </div>
           <div class="cc-decision-chain">{evidence_chain_html}</div>
           {a_share_data_basis_html}
+          {a_share_evidence_group_html}
         </div>
         <aside class="cc-decision-risk">
           <div class="cc-decision-risk-label">风险等级</div>
@@ -4707,6 +4719,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
         <br>{escape(str(vm.get("evidence_summary_text") or ""))}
         <br>A股证据雷达：{escape(str(vm.get("a_share_evidence_summary_text") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
+        <br>A股证据分组：{escape(str(vm.get("a_share_evidence_group_summary_text") or "A股证据分组待生成"))}
         <br>A股数据能力：{escape(str(vm.get("a_share_data_basis_summary_text") or "待检测"))}
         <br>A股事实回流：{escape(str(vm.get("a_share_fact_recovery_summary_text") or "待检测"))}
         <br>趋势推演：{escape(str(projection_confidence.get("summary") or "路径待生成"))}

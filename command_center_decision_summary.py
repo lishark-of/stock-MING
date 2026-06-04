@@ -33,6 +33,14 @@ def _as_mapping(value: Any) -> dict:
     return {}
 
 
+def _as_list(value: Any) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
 def _to_text(value: Any) -> str:
     if value is None:
         return ""
@@ -341,6 +349,91 @@ def build_latest_recovery_result_summary_text(latest_recovery_result_notice: Any
     return _to_text(item.get("value"))
 
 
+def _group_count(group: Mapping[str, Any]) -> int:
+    raw_count = group.get("count")
+    try:
+        return max(0, int(float(raw_count)))
+    except Exception:
+        return len(_as_list(group.get("items")))
+
+
+def _fallback_evidence_status_groups(evidence_radar_packet: Mapping[str, Any]) -> list[dict]:
+    group_configs = [
+        ("recovered", "已回流", "ready", evidence_radar_packet.get("support_items")),
+        ("blocked", "仍受限", "failed", evidence_radar_packet.get("blocker_items")),
+        ("cached", "使用缓存", "stale", evidence_radar_packet.get("cached_items")),
+        ("manual", "待手动", "missing", evidence_radar_packet.get("missing_items")),
+    ]
+    result = []
+    for key, label, tone, raw_items in group_configs:
+        items = [_as_mapping(item) for item in _as_list(raw_items) if _as_mapping(item)]
+        labels = [_to_text(item.get("label")) for item in items]
+        result.append(
+            {
+                "key": key,
+                "label": label,
+                "tone": tone,
+                "count": len(items),
+                "labels_text": "、".join([label for label in labels if label][:4]) or "无",
+                "items": items,
+                "deepseek_called": False,
+            }
+        )
+    return result
+
+
+def build_a_share_evidence_group_basis_item(evidence_radar_packet: Any = None) -> dict:
+    evidence = _as_mapping(evidence_radar_packet)
+    if not evidence:
+        return {}
+    groups = [_as_mapping(item) for item in _as_list(evidence.get("evidence_status_groups")) if _as_mapping(item)]
+    if not groups:
+        groups = _fallback_evidence_status_groups(evidence)
+    counts = {group.get("key"): _group_count(group) for group in groups}
+    if not any(counts.values()):
+        return {}
+    recovered = counts.get("recovered", 0)
+    blocked = counts.get("blocked", 0)
+    cached = counts.get("cached", 0)
+    manual = counts.get("manual", 0)
+    tone = "danger" if blocked else "warning" if cached or manual else "success" if recovered else "muted"
+    summary_parts = []
+    for group in groups:
+        count = _group_count(group)
+        if not count:
+            continue
+        label = _to_text(group.get("label")) or "证据分组"
+        labels_text = _to_text(group.get("labels_text")) or "、".join(
+            _to_text(_as_mapping(item).get("label"))
+            for item in _as_list(group.get("items"))[:3]
+            if _as_mapping(item)
+        )
+        summary_parts.append(f"{label}：{labels_text or f'{count} 项'}")
+    value = f"已回流 {recovered}｜仍受限 {blocked}｜缓存 {cached}｜待手动 {manual}"
+    if blocked:
+        guardrail = "仍受限证据未恢复前，不支持加仓、追高或加融资。"
+    elif cached or manual:
+        guardrail = "缓存和待手动证据只能辅助观察，执行前必须复核日期、来源和回流 packet。"
+    else:
+        guardrail = "已回流证据可进入证据链，但仍需价格纪律和仓位规则共同确认。"
+    return {
+        "label": "A股证据分组",
+        "value": value,
+        "tone": tone,
+        "summary": "；".join(summary_parts) or value,
+        "guardrail": guardrail,
+        "groups": groups,
+        "deepseek_called": False,
+    }
+
+
+def build_a_share_evidence_group_summary_text(evidence_radar_packet: Any = None) -> str:
+    item = build_a_share_evidence_group_basis_item(evidence_radar_packet)
+    if not item:
+        return "A股证据分组待生成"
+    return f"{item['value']}｜{item['guardrail']}"
+
+
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
@@ -411,6 +504,9 @@ def build_decision_evidence_chain_items(
                     "summary": _to_text(radar_card.get("decision_guardrail")),
                 }
             )
+        evidence_group_basis = build_a_share_evidence_group_basis_item(evidence)
+        if evidence_group_basis:
+            items.append(evidence_group_basis)
         blockers = len(evidence.get("blocker_items") or [])
         support = len(evidence.get("support_items") or [])
         cached = len(evidence.get("cached_items") or [])
@@ -482,6 +578,8 @@ def build_decision_summary_view_model(
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market),
         "a_share_evidence_radar_card": _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card")),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),
+        "a_share_evidence_group_basis_item": build_a_share_evidence_group_basis_item(evidence_radar_packet),
+        "a_share_evidence_group_summary_text": build_a_share_evidence_group_summary_text(evidence_radar_packet),
         "a_share_data_basis_items": build_a_share_data_basis_items(a_share_data_console),
         "a_share_data_basis_summary_text": build_a_share_data_basis_summary_text(a_share_data_console),
         "a_share_fact_recovery_basis_item": build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary),
