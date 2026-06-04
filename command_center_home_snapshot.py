@@ -21,6 +21,7 @@ import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
 import command_center_market_profile_summary as market_profile_summary_service
+import command_center_evidence_summary as evidence_summary_service
 import command_center_data_issue_explainer as data_issue_explainer_service
 import command_center_data_capability_console as data_capability_console_service
 import command_center_a_share_capability_matrix as a_share_capability_matrix_service
@@ -330,6 +331,8 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     }
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
+    snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
+    snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
     return snapshot
 
@@ -420,6 +423,8 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
+    snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
+    snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
@@ -2507,10 +2512,14 @@ def build_home_action_snapshot(
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
+        empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
+        empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
         empty["errors"] = errors
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
+    snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
+    snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)

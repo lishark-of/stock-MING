@@ -1929,6 +1929,49 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(payload["moneyflow_packet"]["deepseek_called"])
         self.assertFalse(payload["dragon_tiger_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_a_share_evidence_packet(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "summary": "资金流可用",
+                    "flow_state": "主力净流入",
+                    "updated_at": f"{today}T10:01:00",
+                },
+                "command_center_margin_packet": {
+                    "status": "partial",
+                    "data_status": "cached",
+                    "summary": "融资缓存",
+                    "updated_at": f"{today}T10:01:00",
+                },
+                "command_center_hard_risk_packet": {
+                    "status": "failed",
+                    "data_status": "missing",
+                    "summary": "公告权限不足",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+
+        evidence = payload["a_share_evidence_packet"]
+        self.assertEqual(evidence, payload["command_center_evidence_radar_packet"])
+        self.assertEqual(evidence["title"], "A股证据雷达")
+        self.assertEqual(evidence["ready_count"], 1)
+        self.assertEqual(evidence["cached_count"], 0)
+        self.assertEqual(evidence["failed_count"], 1)
+        self.assertEqual(evidence["decision_summary"], "支持 1｜阻断 1｜缓存 0｜缺失 4")
+        self.assertIn("command_center_moneyflow_packet", json.dumps(evidence, ensure_ascii=False))
+        self.assertFalse(evidence["deepseek_called"])
+        json.dumps(payload, ensure_ascii=False)
+
     def test_a_share_fact_recovery_summary_counts_packet_states(self):
         summary = snapshot.build_a_share_fact_recovery_summary(
             {

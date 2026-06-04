@@ -29,6 +29,13 @@ def sample_state():
         "command_center_home_snapshot": {
             "status": "ready",
             "timestamp": "2026-06-04T09:30:00",
+            "a_share_evidence_packet": {
+                "status": "partial",
+                "title": "A股证据雷达",
+                "decision_summary": "支持 1｜阻断 0｜缓存 1｜缺失 4",
+                "items": [{"key": "moneyflow", "label": "个股资金流"}],
+                "deepseek_called": False,
+            },
             "latest_recovery_result_notice": {
                 "status": "ready",
                 "writes_packet": "command_center_moneyflow_packet",
@@ -128,6 +135,19 @@ class CommandCenterLocalApiPreviewTests(unittest.TestCase):
         self.assertEqual(response["packet_key"], "latest_recovery_result_notice")
         self.assertTrue(response["meta"]["available"])
         self.assertEqual(response["payload"]["writes_packet"], "command_center_moneyflow_packet")
+
+    def test_evidence_radar_packet_can_be_read_from_home_snapshot_alias(self):
+        bundle = preview.build_local_api_preview_bundle(
+            sample_state(),
+            packet_keys=["command_center_evidence_radar_packet"],
+        )
+        response = bundle["responses"][0]
+
+        self.assertEqual(response["packet_key"], "command_center_evidence_radar_packet")
+        self.assertTrue(response["meta"]["available"])
+        self.assertEqual(response["payload"]["title"], "A股证据雷达")
+        self.assertIn("支持 1", response["payload"]["decision_summary"])
+        self.assertFalse(response["payload"]["deepseek_called"])
 
     def test_decision_priority_queue_can_be_read_from_home_snapshot(self):
         response = preview.get_preview_response_for_path(
