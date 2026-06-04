@@ -3413,6 +3413,11 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
 def _tool_packet_has_payload(packet: Mapping[str, Any], writes_packet: str = "") -> bool:
     if not packet:
         return False
+    decision_state = _tool_packet_decision_chain_state(packet)
+    if decision_state in {"blocked", "waiting"}:
+        return False
+    if decision_state in {"ready", "cache_only"}:
+        return True
     status = _to_text(packet.get("status")).lower()
     data_status = _to_text(packet.get("data_status") or packet.get("cache_state")).lower()
     if status in {"ready", "completed", "ok", "success"} or data_status in {"ready", "cached"}:
@@ -3434,9 +3439,62 @@ def _tool_packet_has_payload(packet: Mapping[str, Any], writes_packet: str = "")
     return False
 
 
+def _tool_packet_decision_chain_state(packet: Mapping[str, Any]) -> str:
+    if not packet:
+        return ""
+    states = []
+    top_state = _to_text(packet.get("decision_chain_state")).lower()
+    if top_state:
+        states.append(top_state)
+    if packet.get("can_enter_decision_chain") is False and not top_state:
+        states.append("blocked")
+    for raw in _as_list(packet.get("items")):
+        item = _as_mapping(raw)
+        state = _to_text(item.get("decision_chain_state")).lower()
+        if state:
+            states.append(state)
+        elif item.get("can_enter_decision_chain") is False:
+            states.append("blocked")
+    if "ready" in states:
+        return "ready"
+    if "cache_only" in states:
+        return "cache_only"
+    if "blocked" in states:
+        return "blocked"
+    if "waiting" in states:
+        return "waiting"
+    return ""
+
+
+def _tool_packet_status_label(packet: Mapping[str, Any]) -> str:
+    if not packet:
+        return ""
+    label = _to_text(packet.get("status_label") or packet.get("label"))
+    if label:
+        return label
+    for raw in _as_list(packet.get("items")):
+        item = _as_mapping(raw)
+        label = _to_text(item.get("status_label") or item.get("capability_label") or item.get("status"))
+        if label:
+            return label
+    return ""
+
+
 def _tool_packet_recovery_state(packet: Mapping[str, Any], writes_packet: str = "") -> str:
     if not packet:
         return "waiting"
+    decision_state = _tool_packet_decision_chain_state(packet)
+    if decision_state == "ready":
+        return "recovered"
+    if decision_state == "cache_only":
+        return "cached"
+    if decision_state == "blocked":
+        return "blocked"
+    if decision_state == "waiting":
+        return "waiting"
+    explicit_recovery_state = _to_text(packet.get("recovery_state")).lower()
+    if explicit_recovery_state in {"recovered", "cached", "blocked", "waiting"}:
+        return explicit_recovery_state
     status = _to_text(packet.get("status")).lower()
     data_status = _to_text(packet.get("data_status") or packet.get("cache_state")).lower()
     blocked_states = {
@@ -3477,11 +3535,13 @@ def _recovery_display_state(packet: Mapping[str, Any], writes_packet: str = "", 
     packet_state = _tool_packet_recovery_state(packet, writes_packet)
     status = _to_text(packet.get("status")).lower()
     data_status = _to_text(packet.get("data_status") or packet.get("cache_state")).lower()
-    status_label = _to_text(packet.get("status_label") or packet.get("label"))
+    status_label = _tool_packet_status_label(packet)
     fallback = _to_text(fallback_status).lower()
     if packet_state == "blocked" or fallback == "blocked":
         label = "权限不足" if ("permission" in data_status or "权限" in status_label) else "仍失败"
         return {"status": "blocked", "label": label, "tone": "failed"}
+    if packet_state == "cached":
+        return {"status": "cached", "label": "使用缓存", "tone": "stale"}
     if packet_state == "recovered":
         if data_status in {"cached", "using_cache", "stale_cache"} or status in {"cached", "using_cache"}:
             return {"status": "cached", "label": "使用缓存", "tone": "stale"}
@@ -3917,13 +3977,19 @@ def build_a_share_diagnostic_recovery_result_notice(state: Any = None) -> dict:
     message = _to_text(result.get("message") or result.get("action_hint") or result.get("error"), "已完成手动检测。")
     updated_at = _to_text(result.get("checked_at") or result.get("updated_at"))
     packet = _as_mapping(state_map.get(writes_packet))
-    has_packet_payload = _tool_packet_has_payload(packet, writes_packet)
-    if capability_state == "available" or has_packet_payload:
+    packet_recovery_state = _tool_packet_recovery_state(packet, writes_packet)
+    result_decision_state = _to_text(result.get("decision_chain_state")).lower()
+    if result_decision_state == "cache_only" or packet_recovery_state == "cached":
+        status = "cached"
+        tone = "stale"
+        title = "A股数据恢复结果使用缓存"
+        next_action = "缓存可作辅助证据；执行前仍需复核日期、来源和覆盖口径。"
+    elif result_decision_state == "ready" or capability_state == "available" or packet_recovery_state == "recovered":
         status = "recovered"
         tone = "ready"
         title = "A股数据恢复结果已回流"
         next_action = "继续查看 Home Action Snapshot；执行前仍需复核日期、来源和仓位纪律。"
-    elif capability_state in {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}:
+    elif result_decision_state == "blocked" or packet_recovery_state == "blocked" or capability_state in {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}:
         status = "blocked"
         tone = "failed"
         title = "A股数据恢复仍受限"

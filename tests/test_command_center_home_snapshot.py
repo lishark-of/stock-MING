@@ -2842,6 +2842,121 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(strip["items"][0]["external_call_policy"], "not_triggered")
         self.assertFalse(strip["deepseek_called"])
 
+    def test_recovery_result_status_strip_trusts_blocked_decision_chain_items(self):
+        strip = snapshot.build_recovery_result_status_strip(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "融资融券",
+                    "writes_packet": "command_center_margin_packet",
+                    "message": "手动检测已完成。",
+                },
+                "command_center_margin_packet": {
+                    "items": [
+                        {
+                            "label": "融资融券",
+                            "status_label": "权限不足",
+                            "decision_chain_state": "blocked",
+                            "can_enter_decision_chain": False,
+                            "updated_at": "2026-06-04T10:00:00",
+                        }
+                    ],
+                    "updated_at": "2026-06-04T10:00:00",
+                    "source": "Tushare margin_detail",
+                },
+            }
+        )
+
+        self.assertEqual(strip["status"], "blocked")
+        self.assertEqual(strip["tone"], "failed")
+        self.assertEqual(strip["items"][0]["status_label"], "权限不足")
+        self.assertIn("不能把缺失数据当成安全信号", strip["summary"])
+        self.assertFalse(strip["deepseek_called"])
+
+    def test_recovery_result_status_strip_trusts_cache_only_decision_chain_items(self):
+        strip = snapshot.build_recovery_result_status_strip(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "龙虎榜",
+                    "writes_packet": "command_center_dragon_tiger_packet",
+                },
+                "command_center_dragon_tiger_packet": {
+                    "items": [
+                        {
+                            "label": "龙虎榜",
+                            "status_label": "使用替代口径",
+                            "decision_chain_state": "cache_only",
+                            "can_enter_decision_chain": True,
+                            "updated_at": "2026-06-04T10:00:00",
+                        }
+                    ],
+                    "updated_at": "2026-06-04T10:00:00",
+                    "source": "Tushare top_list/top_inst",
+                },
+            }
+        )
+
+        self.assertEqual(strip["status"], "cached")
+        self.assertEqual(strip["tone"], "stale")
+        self.assertEqual(strip["items"][0]["status_label"], "使用缓存")
+        self.assertIn("使用缓存", strip["headline"])
+        self.assertFalse(strip["deepseek_called"])
+
+    def test_home_data_recovery_center_uses_manual_packet_decision_chain_contract(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "data_recovery_actions": [
+                    {
+                        "label": "融资融券",
+                        "status_label": "待验证",
+                        "action_label": "手动刷新融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "refresh_policy": "button_gated",
+                    },
+                    {
+                        "label": "龙虎榜",
+                        "status_label": "待验证",
+                        "action_label": "手动刷新龙虎榜",
+                        "writes_packet": "command_center_dragon_tiger_packet",
+                        "refresh_policy": "button_gated",
+                    },
+                ],
+                "command_center_margin_packet": {
+                    "items": [
+                        {
+                            "label": "融资融券",
+                            "decision_chain_state": "blocked",
+                            "can_enter_decision_chain": False,
+                            "status_label": "权限不足",
+                        }
+                    ],
+                    "updated_at": "2026-06-04T10:00:00",
+                },
+                "command_center_dragon_tiger_packet": {
+                    "items": [
+                        {
+                            "label": "龙虎榜",
+                            "decision_chain_state": "cache_only",
+                            "can_enter_decision_chain": True,
+                            "status_label": "使用替代口径",
+                        }
+                    ],
+                    "updated_at": "2026-06-04T10:01:00",
+                },
+            }
+        )
+        by_label = {item["label"]: item for item in center["actions"]}
+
+        self.assertEqual(by_label["融资融券"]["recovery_result_status"], "blocked")
+        self.assertFalse(by_label["融资融券"]["recovery_result_can_enter_decision_chain"])
+        self.assertIn("仍阻断加仓", by_label["融资融券"]["recovery_result_decision_effect"])
+        self.assertEqual(by_label["龙虎榜"]["recovery_result_status"], "cached")
+        self.assertTrue(by_label["龙虎榜"]["recovery_result_can_enter_decision_chain"])
+        self.assertIn("缓存证据", by_label["龙虎榜"]["recovery_result_decision_effect"])
+        self.assertFalse(center["deepseek_called"])
+        json.dumps(center, ensure_ascii=False)
+
     def test_recovery_result_timeline_keeps_recent_manual_outcomes(self):
         timeline = snapshot.build_recovery_result_timeline(
             {
