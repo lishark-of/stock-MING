@@ -56,8 +56,10 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
     def test_home_snapshot_tool_navigation_uses_recovery_center_language(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 
-        self.assertIn("数据恢复中心｜高级工具导航", source)
-        self.assertIn("恢复{_home_text(item.get('label'), '高级工具')}", source)
+        self.assertIn("数据恢复中心｜手动恢复导航", source)
+        self.assertIn("valid_recovery_navigation_actions", source)
+        self.assertIn("data_recovery_center_actions[:6]", source)
+        self.assertIn("恢复{_home_text(item.get('label'), '数据能力')}", source)
 
     def test_home_snapshot_collapses_verbose_diagnostics(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

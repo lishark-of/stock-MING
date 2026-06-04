@@ -637,6 +637,22 @@ def _legacy_a_share_fact_priority(action: Mapping[str, Any]) -> int:
     return 3
 
 
+def _legacy_a_share_fact_legacy_tab(key: Any = "", writes_packet: Any = "") -> str:
+    text = _to_text(key) or _to_text(writes_packet)
+    return {
+        "dragon_tiger": "下一票雷达",
+        "command_center_dragon_tiger_packet": "下一票雷达",
+        "margin": "融资 ETF",
+        "command_center_margin_packet": "融资 ETF",
+        "moneyflow": "今日关注池",
+        "command_center_moneyflow_packet": "今日关注池",
+        "limit_emotion": "数据源体检",
+        "command_center_limit_emotion_packet": "数据源体检",
+        "chip_radar": "量化推演",
+        "command_center_chip_packet": "量化推演",
+    }.get(text, "今日关注池")
+
+
 def _legacy_a_share_fact_recovery_actions_from_view(view_model: Any = None) -> list[dict]:
     payload = _as_mapping(view_model)
     entries = _as_list(payload.get("cards")) + _as_list(payload.get("sections"))
@@ -646,11 +662,13 @@ def _legacy_a_share_fact_recovery_actions_from_view(view_model: Any = None) -> l
         action = _as_mapping(item.get("recovery_action"))
         if not action or _to_text(action.get("refresh_policy")) == "not_needed":
             continue
+        key = _to_text(action.get("key") or item.get("key"))
         writes_packet = _to_text(action.get("writes_packet"), "command_center_packet")
         toolbox_entry = _to_text(action.get("toolbox_entry"), "高级工具箱")
+        legacy_tab = _legacy_a_share_fact_legacy_tab(key, writes_packet)
         actions.append(
             {
-                "key": f"legacy_a_share_fact:{_to_text(action.get('key') or item.get('key') or writes_packet)}",
+                "key": f"legacy_a_share_fact:{key or writes_packet}",
                 "label": _to_text(action.get("label") or item.get("label") or item.get("title"), "A股事实卡"),
                 "status": _to_text(action.get("state") or item.get("status"), "waiting"),
                 "status_label": _to_text(action.get("status_label") or item.get("status"), "待验证"),
@@ -658,7 +676,11 @@ def _legacy_a_share_fact_recovery_actions_from_view(view_model: Any = None) -> l
                 "reason": _to_text(action.get("reason") or item.get("message"), "旧版 A股事实卡仍待手动恢复。"),
                 "action_label": _to_text(action.get("action_label"), "手动刷新 A股事实卡"),
                 "toolbox_entry": toolbox_entry,
-                "navigation_label": f"从首页恢复队列进入 {toolbox_entry}；手动执行后回流 {writes_packet}。",
+                "workspace_target": "高级工具箱（旧版保留）",
+                "workspace_state_key": "workspace_mode_v2",
+                "legacy_tab": legacy_tab,
+                "legacy_tab_state_key": "legacy_workspace_selected_tab",
+                "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
                 "writes_packet": writes_packet,
                 "refresh_policy": "button_gated",
                 "source_label": "旧版 A股事实卡",
@@ -720,6 +742,9 @@ def _normalize_recovery_center_action(
         "reason": _to_text(item.get("reason") or item.get("action_hint"), f"{label}仍待验证。"),
         "action_label": _to_text(item.get("action_label"), f"手动恢复{label}"),
         "toolbox_entry": _to_text(item.get("toolbox_entry") or item.get("advanced_entry"), "高级工具箱"),
+        "workspace_target": _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）"),
+        "workspace_state_key": _to_text(item.get("workspace_state_key"), "workspace_mode_v2"),
+        "legacy_tab_state_key": _to_text(item.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
         "navigation_label": _to_text(item.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
         "legacy_tab": _to_text(item.get("legacy_tab")),
         "writes_packet": writes_packet,

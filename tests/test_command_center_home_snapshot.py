@@ -949,6 +949,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                         "reason": "龙虎榜受限/失败；需手动检查权限、积分或网络。",
                         "action_label": "手动刷新龙虎榜",
                         "toolbox_entry": "高级工具箱 / 下一票雷达 / 龙虎榜",
+                        "legacy_tab": "下一票雷达",
                         "writes_packet": "command_center_dragon_tiger_packet",
                         "refresh_policy": "button_gated",
                         "deepseek_called": False,
@@ -960,8 +961,13 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(center["action_count"], 1)
         self.assertEqual(center["actions"][0]["source_type"], "a_share_fact")
         self.assertEqual(center["actions"][0]["source_label"], "旧版 A股事实卡")
+        self.assertEqual(center["actions"][0]["legacy_tab"], "下一票雷达")
         self.assertEqual(center["actions"][0]["writes_packet"], "command_center_dragon_tiger_packet")
         self.assertIn("手动刷新龙虎榜", center["summary"])
+        navigation_state = snapshot.build_tool_recovery_navigation_state(center["actions"][0])
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "下一票雷达")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_dragon_tiger_packet")
         self.assertFalse(center["deepseek_called"])
 
     def test_home_snapshot_routes_legacy_a_share_fact_actions_to_recovery_center(self):
@@ -987,6 +993,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(group_counts["a_share_fact"], 5)
         self.assertIn("旧版 A股事实卡", dumped)
         self.assertIn("command_center_dragon_tiger_packet", json.dumps(fact_actions, ensure_ascii=False))
+        self.assertIn("legacy_workspace_selected_tab", json.dumps(fact_actions, ensure_ascii=False))
+        self.assertIn("下一票雷达", {item["legacy_tab"] for item in fact_actions})
+        self.assertIn("融资 ETF", {item["legacy_tab"] for item in fact_actions})
+        self.assertIn("数据源体检", {item["legacy_tab"] for item in fact_actions})
+        first_fact_action = next(item for item in center["actions"] if item["source_type"] == "a_share_fact")
+        navigation_state = snapshot.build_tool_recovery_navigation_state(first_fact_action)
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertTrue(navigation_state["legacy_workspace_selected_tab"])
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in fact_actions))
         self.assertTrue(all(item["deepseek_called"] is False for item in fact_actions))
         self.assertFalse(center["deepseek_called"])

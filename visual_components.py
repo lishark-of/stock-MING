@@ -4730,7 +4730,6 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
-    tool_recovery_actions = payload.get("tool_recovery_actions") or []
     data_recovery_center = payload.get("data_recovery_center") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
     a_share_user_diagnostic = payload.get("a_share_user_data_diagnostic") or {}
@@ -5257,15 +5256,19 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     </section>
     """
     st.html(html)
-    valid_tool_recovery_actions = [item for item in tool_recovery_actions[:4] if isinstance(item, dict)]
-    if valid_tool_recovery_actions:
-        st.caption("数据恢复中心｜高级工具导航：这里只切换到高级工具箱；不会自动运行扫描、回测、DeepSeek 或重型数据接口。")
-        nav_cols = st.columns(min(4, len(valid_tool_recovery_actions)))
-        for index, item in enumerate(valid_tool_recovery_actions):
+    valid_recovery_navigation_actions = [
+        item
+        for item in data_recovery_center_actions[:6]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_recovery_navigation_actions:
+        st.caption("数据恢复中心｜手动恢复导航：这里只切换到高级工具箱；不会自动运行扫描、回测、DeepSeek 或重型数据接口。")
+        nav_cols = st.columns(min(4, len(valid_recovery_navigation_actions)))
+        for index, item in enumerate(valid_recovery_navigation_actions):
             with nav_cols[index % len(nav_cols)]:
                 st.button(
-                    f"恢复{_home_text(item.get('label'), '高级工具')}",
-                    key=f"btn_open_tool_recovery_{_home_text(item.get('key'), index)}",
+                    f"恢复{_home_text(item.get('label'), '数据能力')}",
+                    key=f"btn_open_recovery_center_{_home_text(item.get('source_type'), 'source')}_{_home_text(item.get('key'), index)}",
                     help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
                     on_click=_apply_tool_recovery_navigation,
                     args=(item,),
