@@ -5473,6 +5473,27 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     evidence_card = evidence_vm.get("radar_card") or {}
     recovered_evidence_modules = [item for item in (evidence_vm.get("recovered_evidence_modules") or []) if isinstance(item, dict)]
     recovered_evidence_summary = _home_text(evidence_vm.get("recovered_evidence_summary"), "暂无已回流 A股证据模块")
+    core_evidence_items = [item for item in (evidence_vm.get("core_evidence_items") or []) if isinstance(item, dict)]
+    core_evidence_summary = _home_text(evidence_vm.get("core_evidence_summary"), "核心证据待验证")
+    core_evidence_html = ""
+    for item in core_evidence_items[:3]:
+        core_evidence_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("label"), "A股核心证据"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">
+              {escape(_home_text(item.get("status_label"), "待验证"))}
+            </span>
+          </div>
+          <div class="cc-home-item-meta">证据用途：{escape(_home_text(item.get("decision_role"), "辅助验证交易动作。"))}</div>
+          <div class="cc-home-item-meta">当前线索：{escape(_home_text(item.get("headline"), "待验证"))} ｜ 指标：{escape(_home_text(item.get("metric"), "暂无数值"))}</div>
+          <div class="cc-home-item-meta">决策保护：{escape(_home_text(item.get("guardrail"), "缺失时不能作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地 packet"))} ｜ 更新时间：{escape(_home_text(item.get("updated_at"), "暂无时间"))}</div>
+          <div class="cc-home-item-meta">恢复入口：{escape(_home_text(item.get("button_label"), "手动刷新"))} → {escape(_home_text(item.get("legacy_tab"), "高级工具箱"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
+        </div>
+        """
+    if not core_evidence_html:
+        core_evidence_html = "<div class='cc-home-item-meta'>龙虎榜、融资融券、涨跌停/情绪待验证；页面打开不会自动请求 Tushare。</div>"
     evidence_status_groups = [item for item in (evidence_vm.get("evidence_status_groups") or []) if isinstance(item, dict)]
     evidence_status_group_html = ""
     for group in evidence_status_groups:
@@ -5522,6 +5543,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">结论：{escape(_home_text(evidence_card.get("execution_guardrail"), "证据未补齐前，不支撑放大仓位。"))}</div>
           <div class="cc-home-item-meta">摘要：{escape(_home_text(evidence_card.get("summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))} ｜ 支持：{escape(_home_text(evidence_card.get("support_text"), "暂无支持证据"))}</div>
+          <div class="cc-home-item-meta">核心证据：{escape(core_evidence_summary)} ｜ {escape(_home_text(evidence_vm.get("core_evidence_manual_note"), "补证和接口请求必须手动触发。"))}</div>
+          {core_evidence_html}
           <div class="cc-home-item-meta">已回流模块：{escape(recovered_evidence_summary)}</div>
           {recovered_evidence_html}
           {evidence_status_group_html}

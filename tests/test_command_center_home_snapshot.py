@@ -2037,6 +2037,13 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(evidence["loop_status"]["tone"], "failed")
         self.assertEqual(evidence["loop_status"]["summary"], "支持 1｜阻断 1｜缓存 0｜缺失 4")
         self.assertFalse(evidence["loop_status"]["deepseek_called"])
+        core = {item["key"]: item for item in evidence["core_evidence_items"]}
+        self.assertEqual(list(core), ["dragon_tiger", "margin", "limit_emotion"])
+        self.assertEqual(core["margin"]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(core["dragon_tiger"]["legacy_tab"], "下一票雷达")
+        self.assertEqual(core["limit_emotion"]["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertIn("龙虎榜", json.dumps(evidence["core_evidence_items"], ensure_ascii=False))
+        self.assertIn("已刷新", evidence["core_evidence_summary"])
         self.assertIn("command_center_moneyflow_packet", json.dumps(evidence, ensure_ascii=False))
         self.assertFalse(evidence["deepseek_called"])
         json.dumps(payload, ensure_ascii=False)

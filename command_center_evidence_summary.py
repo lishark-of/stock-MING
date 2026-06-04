@@ -115,6 +115,14 @@ WRITES_PACKET_TO_EVIDENCE_KEY = {
     if config.get("writes_packet")
 }
 
+CORE_EVIDENCE_KEYS = ("dragon_tiger", "margin", "limit_emotion")
+
+CORE_EVIDENCE_GUARDRAILS = {
+    "dragon_tiger": "龙虎榜只验证席位行为；无上榜或受限不能写成机构支持。",
+    "margin": "融资融券只验证杠杆变化；缺失时不能假设融资资金改善或允许加融资。",
+    "limit_emotion": "涨跌停/情绪只验证追高边界；缺失时不能确认题材温度或涨跌停风险。",
+}
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -294,6 +302,56 @@ def recovered_evidence_summary_text(support_items: Any = None, promoted_key: str
         return "暂无已回流 A股证据模块"
     labels = [item["label"] for item in modules if item.get("label")]
     return "已回流：" + "、".join(labels[:4])
+
+
+def build_core_evidence_items(items: Any = None) -> list[dict]:
+    by_key = {to_text(as_mapping(item).get("key")): as_mapping(item) for item in as_list(items)}
+    result = []
+    for key in CORE_EVIDENCE_KEYS:
+        item = by_key.get(key, {})
+        manual_action = as_mapping(item.get("manual_action"))
+        label = to_text(item.get("label"), EVIDENCE_ACTIONS.get(key, {}).get("button_label", key)).replace("手动刷新", "")
+        evidence_state = to_text(item.get("evidence_state"), "missing")
+        result.append(
+            {
+                "key": key,
+                "label": label,
+                "status_label": to_text(item.get("status_label"), "待验证"),
+                "tone": to_text(item.get("tone"), "missing"),
+                "evidence_state": evidence_state,
+                "evidence_label": to_text(item.get("evidence_label"), "待验证证据"),
+                "headline": to_text(item.get("headline"), "待验证"),
+                "metric": to_text(item.get("metric"), "暂无数值"),
+                "decision_role": to_text(item.get("decision_role"), "A股交易证据。"),
+                "decision_signal": to_text(item.get("decision_signal"), f"{label}待验证，当前不进入核心决策依据。"),
+                "guardrail": CORE_EVIDENCE_GUARDRAILS.get(key, "缺失时不能作为交易依据。"),
+                "next_action": to_text(item.get("next_action"), f"手动补齐{label}后再回到综合中心复核。"),
+                "source": to_text(item.get("source"), "本地 packet"),
+                "updated_at": to_text(item.get("updated_at"), "暂无时间"),
+                "button_label": to_text(manual_action.get("button_label"), f"手动刷新{label}"),
+                "workspace_target": to_text(manual_action.get("workspace_target"), "高级工具箱（旧版保留）"),
+                "workspace_state_key": to_text(manual_action.get("workspace_state_key"), "workspace_mode_v2"),
+                "legacy_tab": to_text(manual_action.get("legacy_tab"), "数据源体检"),
+                "legacy_tab_state_key": to_text(manual_action.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
+                "navigation_label": to_text(manual_action.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                "writes_packet": to_text(manual_action.get("writes_packet")),
+                "refresh_policy": to_text(manual_action.get("refresh_policy"), "button_gated"),
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    return result
+
+
+def core_evidence_summary_text(core_items: Any = None) -> str:
+    rows = [as_mapping(item) for item in as_list(core_items) if as_mapping(item)]
+    if not rows:
+        return "核心证据待验证"
+    ready = [item for item in rows if item.get("evidence_state") == "supporting"]
+    blocked = [item for item in rows if item.get("evidence_state") == "blocked"]
+    cached = [item for item in rows if item.get("evidence_state") == "cached"]
+    missing = [item for item in rows if item.get("evidence_state") == "missing"]
+    return f"已刷新 {len(ready)}｜受限 {len(blocked)}｜缓存 {len(cached)}｜待验证 {len(missing)}"
 
 
 def _evidence_group_items(items: Any = None, limit: int = 4) -> list[dict]:
@@ -677,6 +735,7 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
     latest_recovery_impact = build_latest_recovery_evidence_impact(payload.get("latest_recovery_result_notice"))
     promoted_evidence_key = to_text(latest_recovery_impact.get("evidence_key")) if latest_recovery_impact.get("evidence_state") == "supporting" else ""
     recovered_modules = build_recovered_evidence_modules(support_items, promoted_key=promoted_evidence_key)
+    core_evidence_items = build_core_evidence_items(items)
     evidence_status_groups = build_evidence_status_groups(
         support_items=support_items,
         blocker_items=blocker_items,
@@ -706,6 +765,9 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         "latest_recovery_impact": latest_recovery_impact,
         "recovered_evidence_modules": recovered_modules,
         "recovered_evidence_summary": recovered_evidence_summary_text(support_items, promoted_key=promoted_evidence_key),
+        "core_evidence_items": core_evidence_items,
+        "core_evidence_summary": core_evidence_summary_text(core_evidence_items),
+        "core_evidence_manual_note": "龙虎榜、融资融券、涨跌停/情绪只读取本地 packet；补证和接口请求必须手动触发。",
         "evidence_status_groups": evidence_status_groups,
         "items": items,
         "support_items": support_items,
