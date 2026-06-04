@@ -73,31 +73,37 @@ EVIDENCE_ACTIONS = {
     "moneyflow": {
         "button_label": "手动刷新个股资金流",
         "toolbox_entry": "高级工具箱 / A股专业实盘 / 个股资金流",
+        "legacy_tab": "今日关注池",
         "writes_packet": "command_center_moneyflow_packet",
     },
     "hard_risk": {
         "button_label": "检测公告/硬风险",
         "toolbox_entry": "高级工具箱 / 天眼风控 / A股公告风险",
+        "legacy_tab": "天眼风控",
         "writes_packet": "command_center_hard_risk_packet",
     },
     "margin": {
         "button_label": "手动刷新融资融券",
         "toolbox_entry": "高级工具箱 / 融资 ETF / 融资融券",
+        "legacy_tab": "融资 ETF",
         "writes_packet": "command_center_margin_packet",
     },
     "limit_emotion": {
         "button_label": "手动刷新涨跌停/情绪",
         "toolbox_entry": "高级工具箱 / 数据源体检 / 涨跌停情绪",
+        "legacy_tab": "数据源体检",
         "writes_packet": "command_center_limit_emotion_packet",
     },
     "dragon_tiger": {
         "button_label": "手动刷新龙虎榜",
         "toolbox_entry": "高级工具箱 / 下一票雷达 / 龙虎榜",
+        "legacy_tab": "下一票雷达",
         "writes_packet": "command_center_dragon_tiger_packet",
     },
     "chip_radar": {
         "button_label": "手动刷新筹码/胜率",
         "toolbox_entry": "高级工具箱 / 量化推演 / 筹码胜率",
+        "legacy_tab": "量化推演",
         "writes_packet": "command_center_chip_packet",
     },
 }
@@ -304,12 +310,20 @@ def build_evidence_radar_card_view_model(
 
 def _manual_action(key: str, label: str, evidence_state: str) -> dict:
     config = EVIDENCE_ACTIONS.get(key, {})
+    writes_packet = to_text(config.get("writes_packet"), f"command_center_{key}_packet")
+    legacy_tab = to_text(config.get("legacy_tab"), "数据源体检")
     return {
         "button_label": to_text(config.get("button_label"), f"手动刷新{label}"),
         "toolbox_entry": to_text(config.get("toolbox_entry"), "高级工具箱 / 数据源体检"),
-        "writes_packet": to_text(config.get("writes_packet"), f"command_center_{key}_packet"),
+        "workspace_target": "高级工具箱（旧版保留）",
+        "workspace_state_key": "workspace_mode_v2",
+        "legacy_tab": legacy_tab,
+        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+        "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+        "writes_packet": writes_packet,
         "refresh_policy": "button_gated",
         "reason": _evidence_action_hint(label, evidence_state),
+        "source_label": "A股证据雷达",
         "deepseek_called": False,
     }
 
@@ -424,6 +438,16 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
             "tone": item["tone"],
             "action_hint": item["next_action"],
             "manual_action": item["manual_action"],
+            "action_label": item["manual_action"]["button_label"],
+            "toolbox_entry": item["manual_action"]["toolbox_entry"],
+            "workspace_target": item["manual_action"]["workspace_target"],
+            "workspace_state_key": item["manual_action"]["workspace_state_key"],
+            "legacy_tab": item["manual_action"]["legacy_tab"],
+            "legacy_tab_state_key": item["manual_action"]["legacy_tab_state_key"],
+            "navigation_label": item["manual_action"]["navigation_label"],
+            "writes_packet": item["manual_action"]["writes_packet"],
+            "refresh_policy": item["manual_action"]["refresh_policy"],
+            "source_label": "A股证据雷达",
             "decision_role": item["decision_role"],
             "deepseek_called": False,
         }

@@ -133,8 +133,15 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertIn("高级工具箱", dumped)
         self.assertIn("command_center_hard_risk_packet", dumped)
         self.assertIn("command_center_margin_packet", dumped)
+        self.assertIn("workspace_mode_v2", dumped)
+        self.assertIn("legacy_workspace_selected_tab", dumped)
+        self.assertIn("天眼风控", dumped)
         for item in actions:
             self.assertEqual(item["manual_action"]["refresh_policy"], "button_gated")
+            self.assertEqual(item["refresh_policy"], "button_gated")
+            self.assertEqual(item["workspace_target"], "高级工具箱（旧版保留）")
+            self.assertTrue(item["legacy_tab"])
+            self.assertIn("主导航切到高级工具箱", item["navigation_label"])
             self.assertFalse(item["manual_action"]["deepseek_called"])
             self.assertFalse(item["deepseek_called"])
 
@@ -175,6 +182,9 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(actions[0]["key"], "hard_risk")
         self.assertIn("检测公告/硬风险", actions[0]["manual_action"]["button_label"])
         self.assertEqual(actions[0]["manual_action"]["writes_packet"], "command_center_hard_risk_packet")
+        self.assertEqual(actions[0]["legacy_tab"], "天眼风控")
+        self.assertEqual(actions[0]["legacy_tab_state_key"], "legacy_workspace_selected_tab")
+        self.assertEqual(actions[0]["writes_packet"], "command_center_hard_risk_packet")
         self.assertEqual(actions[0]["manual_action"]["refresh_policy"], "button_gated")
         self.assertFalse(actions[0]["deepseek_called"])
 

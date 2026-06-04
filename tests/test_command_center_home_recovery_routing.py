@@ -131,6 +131,15 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("_apply_tool_recovery_navigation_state(item)", source)
         self.assertIn("不会自动运行 Tushare、DeepSeek、回测或全市场扫描", source)
 
+    def test_home_snapshot_renders_a_share_evidence_navigation_only_buttons(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("A股证据雷达｜打开恢复入口", source)
+        self.assertIn("valid_evidence_navigation_actions", source)
+        self.assertIn("btn_open_evidence_recovery_", source)
+        self.assertIn("_apply_tool_recovery_navigation", source)
+        self.assertIn("对应检测仍需在旧模块里手动点击", source)
+
     def test_margin_etf_refresh_writes_etf_and_margin_packets(self):
         tokens = _function_tokens("_cc_refresh_margin_etf_config")
 

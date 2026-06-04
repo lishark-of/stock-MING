@@ -5492,6 +5492,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                     args=(item,),
                     width="stretch",
                 )
+    valid_evidence_navigation_actions = [
+        item
+        for item in evidence_action_items[:4]
+        if isinstance(item, dict) and build_tool_recovery_navigation_state(item)
+    ]
+    if valid_evidence_navigation_actions:
+        st.caption("A股证据雷达｜打开恢复入口：这里只切换到高级工具箱；对应检测仍需在旧模块里手动点击。")
+        evidence_nav_cols = st.columns(min(4, len(valid_evidence_navigation_actions)))
+        for index, item in enumerate(valid_evidence_navigation_actions):
+            with evidence_nav_cols[index % len(evidence_nav_cols)]:
+                st.button(
+                    f"打开{_home_text(item.get('label'), '证据')}入口",
+                    key=f"btn_open_evidence_recovery_{_home_text(item.get('key'), index)}",
+                    help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
+                    on_click=_apply_tool_recovery_navigation,
+                    args=(item,),
+                    width="stretch",
+                )
     valid_legacy_migration_actions = [
         item
         for item in (legacy_migration_map.get("items") or [])[:6]
