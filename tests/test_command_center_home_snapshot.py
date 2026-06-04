@@ -1866,8 +1866,19 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                         "progress_label": "1/2",
                         "target_packet_text": "command_center_etf_packet、command_center_margin_packet",
                         "missing_targets": ["command_center_margin_packet"],
-                        "missing_target_text": "command_center_margin_packet",
+                    "missing_target_text": "command_center_margin_packet",
                     },
+                    "provider_dependency_summary": "Tushare:权限不足",
+                    "provider_dependencies": [
+                        {
+                            "provider": "Tushare",
+                            "status": "permission_denied",
+                            "status_label": "权限不足",
+                            "tone": "failed",
+                            "interfaces": ["融资融券(margin_detail)"],
+                        }
+                    ],
+                    "packet_route_summary": "融资 ETF → command_center_etf_packet、command_center_margin_packet → ETF / 融资动作 → Home Action Snapshot",
                     "migration_state": "wired_waiting_data",
                     "migration_label": "已接 packet，待数据",
                     "tone": "missing",
@@ -1910,7 +1921,15 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(group_counts["legacy_migration"], 1)
         self.assertEqual(center_action["source_label"], "旧版迁移地图")
         self.assertEqual(center_action["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(center_action["provider_dependency_summary"], "Tushare:权限不足")
+        self.assertIn("ETF / 融资动作", center_action["packet_route_summary"])
+        self.assertIn("Tushare:权限不足", center_action["provider_decision_impact"])
         self.assertEqual(center["decision_priority_queue"][0]["lane_key"], "p2")
+        self.assertEqual(center["decision_priority_queue"][0]["provider_dependency_summary"], "Tushare:权限不足")
+        self.assertIn("ETF / 融资动作", center["decision_priority_queue"][0]["packet_route_summary"])
+        self.assertEqual(center["next_step_queue"][0]["provider_dependency_text"], "Tushare:权限不足")
+        self.assertIn("command_center_margin_packet", center["next_step_queue"][0]["packet_route_text"])
+        self.assertIn("Tushare:权限不足", center["next_step_queue"][0]["provider_decision_impact_text"])
         self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
         self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_margin_packet")

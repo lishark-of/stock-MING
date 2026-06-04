@@ -2632,6 +2632,10 @@ def _normalize_recovery_center_action(
         "label": label,
         "provider": _to_text(item.get("provider")),
         "api": _to_text(item.get("api")),
+        "provider_dependencies": _as_list(item.get("provider_dependencies")),
+        "provider_dependency_summary": _to_text(item.get("provider_dependency_summary")),
+        "packet_route_summary": _to_text(item.get("packet_route_summary")),
+        "provider_decision_impact": _to_text(item.get("provider_decision_impact")),
         "source_type": _to_text(source_type, "recovery"),
         "source_label": _to_text(source_label, "恢复队列"),
         "status": status,
@@ -2922,6 +2926,10 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "status_label": _to_text(action.get("status_label"), "待验证"),
                 "source_type": _to_text(action.get("source_type"), "recovery"),
                 "source_label": _to_text(action.get("source_label"), "恢复队列"),
+                "provider_dependencies": _as_list(action.get("provider_dependencies")),
+                "provider_dependency_summary": _to_text(action.get("provider_dependency_summary")),
+                "packet_route_summary": _to_text(action.get("packet_route_summary")),
+                "provider_decision_impact": _to_text(action.get("provider_decision_impact")),
                 "interface_cause_key": _to_text(action.get("interface_cause_key")),
                 "interface_cause_label": _to_text(action.get("interface_cause_label")),
                 "root_cause_code": _to_text(action.get("root_cause_code") or action.get("interface_cause_key")),
@@ -2998,6 +3006,15 @@ def build_recovery_next_step_queue(decision_priority_queue: Any = None, limit: i
                 "why_now": _to_text(item.get("why_first"), "先恢复会影响交易判断的数据缺口。"),
                 "root_cause_text": root_cause_label,
                 "diagnostic_text": _to_text(item.get("diagnostic_answer"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
+                "provider_dependency_text": _to_text(item.get("provider_dependency_summary"), "provider 依赖待确认"),
+                "packet_route_text": _to_text(
+                    item.get("packet_route_summary"),
+                    f"{label} → {writes_packet} → 综合推演中心",
+                ),
+                "provider_decision_impact_text": _to_text(
+                    item.get("provider_decision_impact"),
+                    f"{label} 的 provider 依赖未恢复前，相关证据只能标记为待验证。",
+                ),
                 "recovery_action_text": action_label,
                 "target_text": f"高级工具箱 → {legacy_tab}",
                 "manual_only_text": "这里只打开入口；检测仍需手动按钮触发，不自动调用 DeepSeek、回测或重型数据接口。",
@@ -3977,12 +3994,25 @@ def build_legacy_migration_recovery_actions_snapshot(
             item.get("completion_summary"),
             f"{label} 仍未完成迁移；目标 packet 待回流。",
         )
+        provider_dependency_summary = _to_text(item.get("provider_dependency_summary"), "provider 依赖待确认")
+        packet_route_summary = _to_text(
+            item.get("packet_route_summary"),
+            f"{label} → {target_text} → 综合推演中心",
+        )
+        provider_decision_impact = (
+            f"{provider_dependency_summary} 会影响 {item.get('home_surface') or '综合中心'}；"
+            f"未恢复前 {label} 只能作为待验证证据。"
+        )
         actions.append(
             {
                 "key": f"legacy_migration:{_to_text(item.get('key'), label)}:{writes_packet}",
                 "label": label,
                 "source_type": "legacy_migration",
                 "source_label": "旧版迁移地图",
+                "provider_dependencies": _as_list(item.get("provider_dependencies")),
+                "provider_dependency_summary": provider_dependency_summary,
+                "packet_route_summary": packet_route_summary,
+                "provider_decision_impact": provider_decision_impact,
                 "status": status,
                 "status_label": status_label,
                 "tone": _to_text(item.get("tone"), "failed" if is_blocked else "missing"),
@@ -3996,7 +4026,7 @@ def build_legacy_migration_recovery_actions_snapshot(
                     item.get("current_blocker"),
                     f"{label} 仍需要从旧工具箱手动回流 {missing_text}。",
                 ),
-                "decision_guardrail": f"{label} 未完成迁移前，相关证据只能标记为待验证，不能单独作为交易依据。",
+                "decision_guardrail": f"{provider_decision_impact} 不能单独作为交易依据。",
                 "action_label": _to_text(item.get("action_label"), f"打开{legacy_tab}"),
                 "toolbox_entry": _to_text(item.get("toolbox_entry"), f"高级工具箱 / {legacy_tab}"),
                 "workspace_target": _to_text(item.get("workspace_target"), "高级工具箱（旧版保留）"),

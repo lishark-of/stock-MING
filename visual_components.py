@@ -5716,6 +5716,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">动作：{escape(_home_text(item.get("recovery_action_text"), item.get("action_label") or "手动恢复"))} ｜ 入口：{escape(_home_text(item.get("target_text"), "高级工具箱"))}</div>
           <div class="cc-home-item-meta">根因：{escape(_home_text(item.get("root_cause_text"), item.get("root_cause_label") or "待验证"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
+          <div class="cc-home-item-meta">provider 依赖：{escape(_home_text(item.get("provider_dependency_text"), item.get("provider_dependency_summary") or "provider 依赖待确认"))}</div>
+          <div class="cc-home-item-meta">packet 路由：{escape(_home_text(item.get("packet_route_text"), item.get("packet_route_summary") or "旧能力 → command_center_packet → 综合推演中心"))}</div>
+          <div class="cc-home-item-meta">provider 影响：{escape(_home_text(item.get("provider_decision_impact_text"), item.get("provider_decision_impact") or "provider 未恢复前，相关证据只能标记为待验证。"))}</div>
           <div class="cc-home-item-meta">为什么现在处理：{escape(_home_text(item.get("why_now"), "先恢复会影响交易判断的数据缺口。"))}</div>
           <div class="cc-home-item-meta">交易边界：{escape(_home_text(item.get("decision_guardrail_text"), "未恢复前不能单独作为交易依据。"))}</div>
           <div class="cc-home-item-meta">安全：{escape(_home_text(item.get("manual_only_text"), "这里只打开入口；检测仍需手动按钮触发。"))}</div>
@@ -5736,8 +5739,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("priority_label"), "P1 执行前验证"))}</span>
           </div>
           <div class="cc-home-item-meta">决策模式：{escape(_home_text(item.get("decision_mode"), "谨慎验证"))} ｜ 状态：{escape(_home_text(item.get("status_label"), item.get("status") or "待验证"))}</div>
+          <div class="cc-home-item-meta">provider 依赖：{escape(_home_text(item.get("provider_dependency_summary"), "provider 依赖待确认"))}</div>
+          <div class="cc-home-item-meta">packet 路由：{escape(_home_text(item.get("packet_route_summary"), "旧能力 → command_center_packet → 综合推演中心"))}</div>
           <div class="cc-home-item-meta">为什么优先：{escape(_home_text(item.get("why_first"), "先恢复会影响交易判断的数据缺口。"))}</div>
           <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>
+          <div class="cc-home-item-meta">provider 影响：{escape(_home_text(item.get("provider_decision_impact"), "provider 未恢复前，相关证据只能标记为待验证。"))}</div>
           <div class="cc-home-item-meta">决策影响：{escape(_home_text(item.get("decision_impact"), "不能单独作为交易依据。"))}</div>
           <div class="cc-home-item-meta">恢复结果：{escape(_home_text(item.get("recovery_result_status_label"), "待验证"))} ｜ {escape(_home_text(item.get("recovery_result_message"), "尚未检测到本项恢复结果回流。"))}</div>
           <div class="cc-home-item-meta">结果时间：{escape(_home_text(item.get("recovery_result_updated_at"), "暂无"))} ｜ 来源：{escape(_home_text(item.get("recovery_result_source"), "本地恢复状态"))}</div>
