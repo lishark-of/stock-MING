@@ -870,6 +870,71 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("AkShare 重型刷新", dumped)
         self.assertEqual(loaded["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertFalse(loaded["data_recovery_actions"][0]["deepseek_called"])
+        self.assertEqual(loaded["data_recovery_center"]["title"], "数据恢复中心")
+        self.assertTrue(loaded["data_recovery_center"]["actions"])
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in loaded["data_recovery_center"]["actions"]))
+        self.assertFalse(loaded["data_recovery_center"]["deepseek_called"])
+
+    def test_home_data_recovery_center_merges_recovery_sources(self):
+        center = snapshot.build_home_data_recovery_center(
+            {
+                "data_recovery_actions": [
+                    {
+                        "label": "融资融券",
+                        "status_label": "权限不足",
+                        "priority": 1,
+                        "action_label": "手动刷新融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+                "a_share_user_data_diagnostic": {
+                    "recovery_actions": [
+                        {
+                            "key": "margin",
+                            "label": "融资融券",
+                            "status_label": "权限不足",
+                            "action_label": "检测融资融券",
+                            "writes_packet": "command_center_margin_packet",
+                            "refresh_policy": "button_gated",
+                        },
+                        {
+                            "key": "chip_radar",
+                            "label": "筹码 / 胜率",
+                            "status_label": "暂无当日数据",
+                            "action_label": "检测筹码/胜率",
+                            "writes_packet": "command_center_chip_packet",
+                            "refresh_policy": "button_gated",
+                        },
+                    ]
+                },
+                "tool_recovery_actions": [
+                    {
+                        "key": "next_ticket_radar",
+                        "label": "下一票雷达",
+                        "status": "waiting",
+                        "data_status": "missing",
+                        "action_label": "手动运行下一票雷达",
+                        "writes_packet": "command_center_radar_packet",
+                        "refresh_policy": "button_gated",
+                    }
+                ],
+            }
+        )
+
+        writes_packets = [item["writes_packet"] for item in center["actions"]]
+        group_counts = {item["key"]: item["count"] for item in center["groups"]}
+
+        self.assertEqual(center["title"], "数据恢复中心")
+        self.assertEqual(center["action_count"], 3)
+        self.assertEqual(writes_packets.count("command_center_margin_packet"), 1)
+        self.assertIn("command_center_chip_packet", writes_packets)
+        self.assertIn("command_center_radar_packet", writes_packets)
+        self.assertEqual(group_counts["data_source"], 1)
+        self.assertEqual(group_counts["a_share"], 1)
+        self.assertEqual(group_counts["legacy_tool"], 1)
+        self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in center["actions"]))
+        self.assertFalse(center["deepseek_called"])
 
     def test_home_snapshot_builds_tool_recovery_actions_for_missing_old_tools(self):
         today = _dt.date.today().isoformat()

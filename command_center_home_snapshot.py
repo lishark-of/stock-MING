@@ -228,6 +228,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "a_share_user_data_diagnostic": legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model(),
         "data_recovery_actions": [],
         "tool_recovery_actions": [],
+        "data_recovery_center": build_home_data_recovery_center(),
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
@@ -320,6 +321,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         {"command_center_hard_risk_packet": snapshot.get("hard_risk_packet") or {}}
     )
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+    snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot["risk_alerts"] = attach_hard_risk_risk_alerts(
         snapshot.get("risk_alerts") or {},
         snapshot.get("hard_risk_packet") or {},
@@ -621,6 +623,98 @@ def build_tool_recovery_actions_snapshot(snapshot: Any = None, limit: int = MAX_
         )
     actions = sorted(actions, key=lambda item: (item["priority"], item["label"]))
     return actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+
+
+def _normalize_recovery_center_action(
+    action: Any = None,
+    source_type: str = "",
+    source_label: str = "",
+    default_priority: int = 3,
+) -> dict:
+    item = _as_mapping(action)
+    if not item:
+        return {}
+    label = _to_text(item.get("label"), "数据能力")
+    writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
+    status = _to_text(item.get("status") or item.get("state") or item.get("data_status"), "waiting")
+    return {
+        "key": _to_text(item.get("key") or item.get("api") or writes_packet or label),
+        "label": label,
+        "source_type": _to_text(source_type, "recovery"),
+        "source_label": _to_text(source_label, "恢复队列"),
+        "status": status,
+        "status_label": _to_text(item.get("status_label") or item.get("capability_label"), "待验证"),
+        "priority": int(_to_number(item.get("priority")) or default_priority),
+        "reason": _to_text(item.get("reason") or item.get("action_hint"), f"{label}仍待验证。"),
+        "action_label": _to_text(item.get("action_label"), f"手动恢复{label}"),
+        "toolbox_entry": _to_text(item.get("toolbox_entry") or item.get("advanced_entry"), "高级工具箱"),
+        "navigation_label": _to_text(item.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
+        "legacy_tab": _to_text(item.get("legacy_tab")),
+        "writes_packet": writes_packet,
+        "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+        "deepseek_called": False,
+    }
+
+
+def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPABILITY_ITEMS) -> dict:
+    payload = _as_mapping(snapshot)
+    data_actions = _as_list(payload.get("data_recovery_actions"))
+    a_share_actions = _as_list(_as_mapping(payload.get("a_share_user_data_diagnostic")).get("recovery_actions"))
+    tool_actions = _as_list(payload.get("tool_recovery_actions"))
+    action_sources = [
+        ("data_source", "数据源能力", data_actions, 1),
+        ("a_share", "A股数据能力", a_share_actions, 2),
+        ("legacy_tool", "旧工具能力", tool_actions, 3),
+    ]
+    seen = set()
+    actions = []
+    groups = []
+    for source_type, source_label, source_actions, default_priority in action_sources:
+        group_items = []
+        for raw in source_actions:
+            item = _normalize_recovery_center_action(raw, source_type, source_label, default_priority)
+            if not item or item.get("refresh_policy") == "not_needed":
+                continue
+            dedupe_key = item.get("writes_packet") or f"{source_type}:{item.get('key')}"
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            group_items.append(item)
+            actions.append(item)
+        groups.append(
+            {
+                "key": source_type,
+                "label": source_label,
+                "count": len(group_items),
+                "items": group_items,
+            }
+        )
+    actions = sorted(actions, key=lambda item: (item["priority"], item["source_label"], item["label"]))
+    actions = actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
+    if not actions:
+        tone = "ready"
+        headline = "恢复队列为空"
+        summary = "当前没有需要恢复的数据源、A股诊断项或旧工具 packet。"
+        next_action = "继续查看交易快照；如需更新，使用刷新今日基础数据按钮。"
+    else:
+        has_blocker = any(str(item.get("status") or "") in {"permission_denied", "failed", "error"} for item in actions)
+        tone = "failed" if has_blocker else "stale"
+        headline = f"待恢复 {len(actions)} 项数据/工具能力"
+        first = actions[0]
+        summary = f"优先处理 {first['label']}：{first['action_label']}，回流 {first['writes_packet']}。"
+        next_action = "按队列手动恢复；页面打开不会自动请求 DeepSeek、回测、全市场扫描或批量数据接口。"
+    return {
+        "title": "数据恢复中心",
+        "tone": tone,
+        "headline": headline,
+        "summary": summary,
+        "next_action": next_action,
+        "actions": actions,
+        "groups": groups,
+        "action_count": len(actions),
+        "safe_mode_text": "这里只整理恢复队列；所有数据请求仍由按钮触发，DeepSeek 不参与恢复动作。",
+        "deepseek_called": False,
+    }
 
 
 def build_tool_recovery_navigation_state(action: Any = None) -> dict:
@@ -1280,6 +1374,7 @@ def build_home_action_snapshot(
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "tool_recovery_actions": [],
+        "data_recovery_center": {},
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
         "errors": errors,
@@ -1309,6 +1404,7 @@ def build_home_action_snapshot(
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+        empty["data_recovery_center"] = build_home_data_recovery_center(empty)
         empty["market_packet"] = snapshot["market_packet"]
         empty["market_profile_evidence"] = snapshot["market_profile_evidence"]
         empty["radar_packet"] = snapshot["radar_packet"]
@@ -1324,6 +1420,7 @@ def build_home_action_snapshot(
         empty["errors"] = errors
         return empty
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
+    snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     return sanitize_snapshot_payload(snapshot)
 
 
