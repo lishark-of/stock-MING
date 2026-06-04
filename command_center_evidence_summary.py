@@ -253,9 +253,19 @@ def _short_decision_signals(items: Any, limit: int = 3) -> list[str]:
     return signals
 
 
-def build_recovered_evidence_modules(support_items: Any = None, limit: int = 4) -> list[dict]:
+def _prioritize_evidence_items(items: Any = None, promoted_key: str = "") -> list[dict]:
+    rows = [as_mapping(item) for item in as_list(items) if as_mapping(item)]
+    key = to_text(promoted_key)
+    if not key:
+        return rows
+    promoted = [item for item in rows if to_text(item.get("key")) == key]
+    rest = [item for item in rows if to_text(item.get("key")) != key]
+    return promoted + rest
+
+
+def build_recovered_evidence_modules(support_items: Any = None, limit: int = 4, promoted_key: str = "") -> list[dict]:
     modules = []
-    for raw in as_list(support_items):
+    for raw in _prioritize_evidence_items(support_items, promoted_key):
         item = as_mapping(raw)
         if not item:
             continue
@@ -278,8 +288,8 @@ def build_recovered_evidence_modules(support_items: Any = None, limit: int = 4) 
     return modules
 
 
-def recovered_evidence_summary_text(support_items: Any = None) -> str:
-    modules = build_recovered_evidence_modules(support_items)
+def recovered_evidence_summary_text(support_items: Any = None, promoted_key: str = "") -> str:
+    modules = build_recovered_evidence_modules(support_items, promoted_key=promoted_key)
     if not modules:
         return "暂无已回流 A股证据模块"
     labels = [item["label"] for item in modules if item.get("label")]
@@ -403,6 +413,7 @@ def build_evidence_radar_card_view_model(
     missing_count = len(missing)
     latest_impact = as_mapping(latest_recovery_impact)
     latest_state = to_text(latest_impact.get("evidence_state"))
+    promoted_key = to_text(latest_impact.get("evidence_key")) if latest_state == "supporting" else ""
     if latest_state == "blocked" and not blocker_count:
         blocker_count = 1
     if latest_state == "supporting" and not support_count:
@@ -452,7 +463,7 @@ def build_evidence_radar_card_view_model(
         "tone": tone,
         "confidence_gate": confidence_gate,
         "summary": f"支持 {support_count}｜阻断 {blocker_count}｜缓存 {cached_count}｜缺失 {missing_count}",
-        "top_supports": [as_mapping(item) for item in support[:3]],
+        "top_supports": [as_mapping(item) for item in _prioritize_evidence_items(support, promoted_key)[:3]],
         "primary_blockers": [as_mapping(item) for item in blockers[:3]],
         "required_recovery": [as_mapping(item) for item in (blockers + cached + missing)[:4]],
         "support_text": _join_labels(support_text_items, fallback="暂无支持证据"),
@@ -620,7 +631,8 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         f"支持 {len(support_items)}｜阻断 {len(blocker_items)}｜缓存 {len(cached_items)}｜缺失 {len(missing_items)}"
     )
     latest_recovery_impact = build_latest_recovery_evidence_impact(payload.get("latest_recovery_result_notice"))
-    recovered_modules = build_recovered_evidence_modules(support_items)
+    promoted_evidence_key = to_text(latest_recovery_impact.get("evidence_key")) if latest_recovery_impact.get("evidence_state") == "supporting" else ""
+    recovered_modules = build_recovered_evidence_modules(support_items, promoted_key=promoted_evidence_key)
     evidence_status_groups = build_evidence_status_groups(
         support_items=support_items,
         blocker_items=blocker_items,
@@ -641,7 +653,7 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         "radar_card": radar_card,
         "latest_recovery_impact": latest_recovery_impact,
         "recovered_evidence_modules": recovered_modules,
-        "recovered_evidence_summary": recovered_evidence_summary_text(support_items),
+        "recovered_evidence_summary": recovered_evidence_summary_text(support_items, promoted_key=promoted_evidence_key),
         "evidence_status_groups": evidence_status_groups,
         "items": items,
         "support_items": support_items,

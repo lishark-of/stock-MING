@@ -123,6 +123,37 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(vm["recovered_evidence_modules"], [])
         self.assertIn("暂无已回流", vm["recovered_evidence_summary"])
 
+    def test_latest_chip_recovery_promotes_chip_into_visible_evidence_modules(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "hard_risk_packet": {"status": "ready", "data_status": "ready", "risk_state": "暂无硬风险"},
+                "moneyflow_packet": {"status": "ready", "data_status": "ready", "summary": "资金可用"},
+                "margin_packet": {"status": "ready", "data_status": "ready", "summary": "融资可用"},
+                "dragon_tiger_packet": {"status": "ready", "data_status": "ready", "summary": "龙虎榜可用"},
+                "limit_emotion_packet": {"status": "ready", "data_status": "ready", "summary": "情绪可用"},
+                "chip_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "pressure_state": "获利盘压力偏高",
+                    "winner_rate": 72,
+                },
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "筹码/胜率",
+                    "writes_packet": "command_center_chip_packet",
+                    "external_call_policy": "button_gated",
+                    "deepseek_called": False,
+                },
+            }
+        )
+
+        self.assertEqual(vm["latest_recovery_impact"]["evidence_key"], "chip_radar")
+        self.assertEqual(vm["recovered_evidence_modules"][0]["key"], "chip_radar")
+        self.assertEqual(vm["recovered_evidence_modules"][0]["label"], "筹码/胜率")
+        self.assertEqual(vm["radar_card"]["top_supports"][0]["key"], "chip_radar")
+        self.assertIn("已回流：筹码/胜率", vm["recovered_evidence_summary"])
+        self.assertFalse(vm["recovered_evidence_modules"][0]["deepseek_called"])
+
     def test_latest_recovery_result_promotes_recovered_packet_into_radar_card(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {
