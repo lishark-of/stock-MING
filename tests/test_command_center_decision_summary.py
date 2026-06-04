@@ -511,6 +511,46 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["latest_recovery_result_basis_item"]["external_call_policy"], "button_gated")
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_evidence_chain_includes_recovery_timeline_impact(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "等待"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "资金流", "status": "待验证"}]},
+            recovery_result_timeline={
+                "status": "blocked",
+                "decision_impact_summary": "仍阻断加仓 1｜只影响置信度 1",
+                "items": [
+                    {
+                        "label": "融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "status": "blocked",
+                        "decision_impact_level": "blocks_position_increase",
+                        "decision_impact_label": "仍阻断加仓",
+                        "decision_impact_tone": "failed",
+                        "decision_impact_text": "融资融券未恢复前不能加融资。",
+                    },
+                    {
+                        "label": "量化推演",
+                        "writes_packet": "command_center_quant_packet",
+                        "status": "waiting",
+                        "decision_impact_level": "confidence_only",
+                        "decision_impact_label": "只影响置信度",
+                        "decision_impact_tone": "stale",
+                        "decision_impact_text": "量化推演未回流时只能降置信度。",
+                    },
+                ],
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("旧工具恢复影响", joined)
+        self.assertIn("仍阻断加仓 1", joined)
+        self.assertEqual(view_model["recovery_timeline_basis_item"]["tone"], "danger")
+        self.assertIn("今日总动作不能支持加仓", view_model["recovery_timeline_summary_text"])
+        self.assertFalse(view_model["recovery_timeline_basis_item"]["deepseek_called"])
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_evidence_chain_keeps_blockers_when_method_list_is_full(self):
         view_model = summary.build_decision_summary_view_model(
             {},

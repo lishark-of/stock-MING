@@ -349,6 +349,76 @@ def build_latest_recovery_result_summary_text(latest_recovery_result_notice: Any
     return _to_text(item.get("value"))
 
 
+def _recovery_impact_basis_tone(levels: list[str], timeline_status: str = "") -> str:
+    if any(level in {"blocks_position_increase", "blocks_candidate_execution", "blocks_strategy_validation"} for level in levels):
+        return "danger"
+    if any(level in {"requires_review", "confidence_only"} for level in levels):
+        return "warning"
+    if levels and all(level == "restored" for level in levels):
+        return "success"
+    if timeline_status == "blocked":
+        return "danger"
+    if timeline_status in {"cached", "waiting"}:
+        return "warning"
+    return "muted"
+
+
+def build_recovery_timeline_basis_item(recovery_result_timeline: Any = None) -> dict:
+    timeline = _as_mapping(recovery_result_timeline)
+    if not timeline:
+        return {}
+    items = [_as_mapping(item) for item in _as_list(timeline.get("items")) if _as_mapping(item)]
+    counts = _as_mapping(timeline.get("decision_impact_counts"))
+    if not items and not counts:
+        return {}
+    levels = [_to_text(item.get("decision_impact_level")) for item in items]
+    levels = [level for level in levels if level]
+    blocked_items = [
+        item
+        for item in items
+        if _to_text(item.get("decision_impact_level")) in {
+            "blocks_position_increase",
+            "blocks_candidate_execution",
+            "blocks_strategy_validation",
+        }
+    ]
+    review_items = [
+        item
+        for item in items
+        if _to_text(item.get("decision_impact_level")) in {"requires_review", "confidence_only"}
+    ]
+    impact_summary = _to_text(timeline.get("decision_impact_summary"))
+    if blocked_items:
+        focus_text = "、".join((_to_text(item.get("label")) or "恢复项") for item in blocked_items[:2])
+        guardrail = "阻断项未恢复前，今日总动作不能支持加仓、追高、加融资或把风险写成已排除。"
+    elif review_items:
+        focus_text = "、".join((_to_text(item.get("label")) or "恢复项") for item in review_items[:2])
+        guardrail = "缓存/置信度项需要复核，今日总动作只能保持谨慎验证，不自动放大仓位。"
+    else:
+        focus_text = "、".join((_to_text(item.get("label")) or "恢复项") for item in items[:2])
+        guardrail = "旧工具恢复结果已进入证据链；仍需价格、纪律和仓位规则共同确认。"
+    value = impact_summary or _to_text(timeline.get("summary")) or "恢复影响待验证"
+    return {
+        "label": "旧工具恢复影响",
+        "value": value,
+        "tone": _recovery_impact_basis_tone(levels, _to_text(timeline.get("status"))),
+        "summary": f"{focus_text}｜{guardrail}" if focus_text else guardrail,
+        "guardrail": guardrail,
+        "focus_text": focus_text,
+        "impact_counts": counts,
+        "items": items,
+        "external_call_policy": _to_text(timeline.get("external_call_policy")) or "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def build_recovery_timeline_summary_text(recovery_result_timeline: Any = None) -> str:
+    item = build_recovery_timeline_basis_item(recovery_result_timeline)
+    if not item:
+        return ""
+    return f"{item['value']}｜{item['guardrail']}"
+
+
 def _group_count(group: Mapping[str, Any]) -> int:
     raw_count = group.get("count")
     try:
@@ -638,6 +708,7 @@ def build_decision_evidence_chain_items(
     data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
+    recovery_result_timeline: Any = None,
     next_ticket_candidates: Any = None,
     margin_etf_summary: Any = None,
     old_workspace_packet_bridge: Any = None,
@@ -697,6 +768,9 @@ def build_decision_evidence_chain_items(
     fact_recovery_basis = build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary)
     if fact_recovery_basis:
         items.append(fact_recovery_basis)
+    recovery_timeline_basis = build_recovery_timeline_basis_item(recovery_result_timeline)
+    if recovery_timeline_basis:
+        items.append(recovery_timeline_basis)
     latest_recovery_basis = build_latest_recovery_result_basis_item(latest_recovery_result_notice)
     if latest_recovery_basis:
         items.append(latest_recovery_basis)
@@ -745,6 +819,7 @@ def build_decision_summary_view_model(
     data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
+    recovery_result_timeline: Any = None,
     next_ticket_candidates: Any = None,
     margin_etf_summary: Any = None,
     old_workspace_packet_bridge: Any = None,
@@ -787,6 +862,7 @@ def build_decision_summary_view_model(
             data_health_ledger=data_health_ledger,
             a_share_fact_recovery_summary=a_share_fact_recovery_summary,
             latest_recovery_result_notice=latest_recovery_result_notice,
+            recovery_result_timeline=recovery_result_timeline,
             next_ticket_candidates=next_ticket_candidates,
             margin_etf_summary=margin_etf_summary,
             old_workspace_packet_bridge=old_workspace_packet_bridge,
@@ -804,6 +880,8 @@ def build_decision_summary_view_model(
         "a_share_fact_recovery_summary_text": build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary),
         "latest_recovery_result_basis_item": build_latest_recovery_result_basis_item(latest_recovery_result_notice),
         "latest_recovery_result_summary_text": build_latest_recovery_result_summary_text(latest_recovery_result_notice),
+        "recovery_timeline_basis_item": build_recovery_timeline_basis_item(recovery_result_timeline),
+        "recovery_timeline_summary_text": build_recovery_timeline_summary_text(recovery_result_timeline),
         "execution_recovery_basis_item": build_execution_recovery_basis_item(next_ticket_candidates, margin_etf_summary),
         "old_workspace_packet_bridge_basis_item": build_old_workspace_packet_bridge_basis_item(old_workspace_packet_bridge),
         "stale_note": stale_note,

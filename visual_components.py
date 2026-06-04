@@ -4699,6 +4699,17 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             f"<span class='cc-decision-chain-pill muted'>{escape(str(a_share_evidence_group.get('guardrail') or '证据分组待验证。'))}</span>"
             "</div>"
         )
+    recovery_timeline_basis = vm.get("recovery_timeline_basis_item") or {}
+    recovery_timeline_basis_html = ""
+    if recovery_timeline_basis:
+        recovery_timeline_basis_html = (
+            "<div class='cc-decision-chain'>"
+            f"<span class='cc-decision-chain-pill {escape(str(recovery_timeline_basis.get('tone') or 'muted'))}'>"
+            f"{escape(str(recovery_timeline_basis.get('label') or '旧工具恢复影响'))}：{escape(str(recovery_timeline_basis.get('value') or '待验证'))}"
+            "</span>"
+            f"<span class='cc-decision-chain-pill muted'>{escape(str(recovery_timeline_basis.get('guardrail') or '未恢复项不能作为已验证依据。'))}</span>"
+            "</div>"
+        )
     html = f"""
     <section class="cc-decision-hero">
       <div class="cc-decision-top">
@@ -4716,6 +4727,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
           <div class="cc-decision-chain">{evidence_chain_html}</div>
           {a_share_data_basis_html}
           {a_share_evidence_group_html}
+          {recovery_timeline_basis_html}
         </div>
         <aside class="cc-decision-risk">
           <div class="cc-decision-risk-label">风险等级</div>
