@@ -1471,6 +1471,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         lane_counts = {item["key"]: item["count"] for item in center["priority_lanes"]}
         lane_summaries = {item["key"]: item["summary"] for item in center["priority_lanes"]}
         decision_queue = center["decision_priority_queue"]
+        next_steps = center["next_step_queue"]
 
         self.assertEqual(center["title"], "数据恢复中心")
         self.assertEqual(center["action_count"], 4)
@@ -1500,6 +1501,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(decision_queue[0]["workspace_state_key"], "workspace_mode_v2")
         self.assertEqual(decision_queue[0]["legacy_tab_state_key"], "legacy_workspace_selected_tab")
         self.assertEqual(decision_queue[0]["legacy_tab"], "融资 ETF")
+        self.assertEqual(next_steps[0]["step_label"], "第 1 步")
+        self.assertEqual(next_steps[0]["step_action"], "先修阻断项")
+        self.assertEqual(next_steps[0]["target_text"], "高级工具箱 → 融资 ETF")
+        self.assertIn("只打开入口", next_steps[0]["manual_only_text"])
+        self.assertIn("下一步先处理", center["next_step_summary"])
         priority_navigation = snapshot.build_tool_recovery_navigation_state(decision_queue[0])
         self.assertEqual(priority_navigation["workspace_mode_v2"], "高级工具箱（旧版保留）")
         self.assertEqual(priority_navigation["legacy_workspace_selected_tab"], "融资 ETF")
@@ -1559,6 +1565,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(decision_queue[0]["root_cause_code"], "permission_scope")
         self.assertEqual(decision_queue[0]["root_cause_label"], "接口权限/积分")
         self.assertIn("不能支持加融资", decision_queue[0]["decision_impact"])
+        self.assertEqual(center["next_step_queue"][0]["root_cause_text"], "接口权限/积分")
+        self.assertEqual(center["next_step_queue"][0]["recovery_action_text"], "手动检测融资融券")
+        self.assertEqual(center["next_step_queue"][0]["target_text"], "高级工具箱 → 融资 ETF")
+        self.assertIn("回流 command_center_margin_packet", center["next_step_queue"][0]["summary"])
         navigation = snapshot.build_tool_recovery_navigation_state(decision_queue[0])
         self.assertEqual(navigation["legacy_workspace_selected_tab"], "融资 ETF")
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in actions))

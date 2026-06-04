@@ -5432,6 +5432,28 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         {risk_recovery_priority_html}
         """
     decision_priority_items = [item for item in (data_recovery_center.get("decision_priority_queue") or []) if isinstance(item, dict)]
+    recovery_next_step_items = [item for item in (data_recovery_center.get("next_step_queue") or []) if isinstance(item, dict)]
+    recovery_next_step_html = ""
+    for item in recovery_next_step_items[:3]:
+        recovery_next_step_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">
+            {escape(_home_text(item.get("step_label"), "下一步"))} · {escape(_home_text(item.get("label"), "恢复项"))}
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("priority_label"), "P1 执行前验证"))}</span>
+          </div>
+          <div class="cc-home-item-meta">动作：{escape(_home_text(item.get("recovery_action_text"), item.get("action_label") or "手动恢复"))} ｜ 入口：{escape(_home_text(item.get("target_text"), "高级工具箱"))}</div>
+          <div class="cc-home-item-meta">根因：{escape(_home_text(item.get("root_cause_text"), item.get("root_cause_label") or "待验证"))} ｜ 回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}</div>
+          <div class="cc-home-item-meta">为什么现在处理：{escape(_home_text(item.get("why_now"), "先恢复会影响交易判断的数据缺口。"))}</div>
+          <div class="cc-home-item-meta">交易边界：{escape(_home_text(item.get("decision_guardrail_text"), "未恢复前不能单独作为交易依据。"))}</div>
+          <div class="cc-home-item-meta">安全：{escape(_home_text(item.get("manual_only_text"), "这里只打开入口；检测仍需手动按钮触发。"))}</div>
+        </div>
+        """
+    if recovery_next_step_html:
+        recovery_next_step_html = f"""
+        <div class="cc-home-item-title">下一步恢复队列</div>
+        <div class="cc-home-item-meta">{escape(_home_text(data_recovery_center.get("next_step_summary"), "按 P0/P1/P2 顺序恢复关键数据。"))}</div>
+        {recovery_next_step_html}
+        """
     decision_priority_html = ""
     for item in decision_priority_items[:5]:
         decision_priority_html += f"""
@@ -5677,6 +5699,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-item-meta">{escape(_home_text(data_recovery_center.get("summary"), "暂无恢复摘要。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(data_recovery_center.get("next_action"), "按队列手动恢复。"))}</div>
           <div class="cc-home-item-meta">安全边界：{escape(_home_text(data_recovery_center.get("safe_mode_text"), "页面打开不会自动请求外部接口。"))}</div>
+          {recovery_next_step_html}
           {recovery_result_status_html}
           {latest_recovery_html}
           {decision_priority_html}

@@ -2608,6 +2608,45 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
     return rows[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
 
 
+def build_recovery_next_step_queue(decision_priority_queue: Any = None, limit: int = 3) -> list[dict]:
+    queue = [_as_mapping(item) for item in _as_list(decision_priority_queue)]
+    queue = [item for item in queue if item]
+    steps = []
+    for index, item in enumerate(queue[: max(1, int(limit or 3))], start=1):
+        label = _to_text(item.get("label"), "恢复项")
+        priority_label = _to_text(item.get("priority_label"), "P1 执行前验证")
+        action_label = _to_text(item.get("action_label"), f"手动恢复{label}")
+        root_cause_label = _to_text(item.get("root_cause_label") or item.get("interface_cause_label"), "待验证")
+        legacy_tab = _to_text(item.get("legacy_tab"), "高级工具箱")
+        writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
+        step_action = {
+            "p0": "先修阻断项",
+            "p1": "再复核执行前证据",
+            "p2": "最后补强旧工具能力",
+        }.get(_to_text(item.get("lane_key"), "p1"), "按队列恢复")
+        steps.append(
+            {
+                **item,
+                "step_index": index,
+                "step_label": f"第 {index} 步",
+                "step_action": step_action,
+                "title": f"{step_action}：{label}",
+                "summary": f"{priority_label}｜{root_cause_label}｜回流 {writes_packet}",
+                "why_now": _to_text(item.get("why_first"), "先恢复会影响交易判断的数据缺口。"),
+                "root_cause_text": root_cause_label,
+                "diagnostic_text": _to_text(item.get("diagnostic_answer"), f"{label}仍需核对接口状态、日期和覆盖范围。"),
+                "recovery_action_text": action_label,
+                "target_text": f"高级工具箱 → {legacy_tab}",
+                "manual_only_text": "这里只打开入口；检测仍需手动按钮触发，不自动调用 DeepSeek、回测或重型数据接口。",
+                "decision_guardrail_text": _to_text(
+                    item.get("decision_impact"),
+                    "未恢复前不能单独作为交易依据。",
+                ),
+            }
+        )
+    return steps
+
+
 def _recovery_result_lookup_from_state(state: Any = None) -> dict[str, dict]:
     payload = _as_mapping(state)
     lookup = {}
@@ -3350,6 +3389,7 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
     actions = actions[: max(1, int(limit or MAX_CAPABILITY_ITEMS))]
     priority_lanes = build_recovery_priority_lanes(actions)
     decision_priority_queue = build_decision_priority_queue(actions)
+    next_step_queue = build_recovery_next_step_queue(decision_priority_queue)
     if not actions:
         tone = "ready"
         headline = "恢复队列为空"
@@ -3372,6 +3412,12 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
         "groups": groups,
         "priority_lanes": priority_lanes,
         "decision_priority_queue": decision_priority_queue,
+        "next_step_queue": next_step_queue,
+        "next_step_summary": (
+            f"下一步先处理：{next_step_queue[0]['title']}。"
+            if next_step_queue
+            else "暂无需要手动恢复的下一步动作。"
+        ),
         "decision_priority_summary": (
             f"先处理 {decision_priority_queue[0]['priority_label']}：{decision_priority_queue[0]['label']}。"
             if decision_priority_queue
