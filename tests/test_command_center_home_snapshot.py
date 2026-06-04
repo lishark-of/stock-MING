@@ -1045,6 +1045,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("AkShare", cockpit_dumped)
         self.assertIn("Supabase", cockpit_dumped)
         self.assertIn("yfinance", cockpit_dumped)
+        matrix = payload["provider_recovery_matrix"]
+        self.assertIn("Tushare / AkShare / yfinance / Supabase", matrix["summary"])
+        self.assertIn("之前拉满基础连接", matrix["short_answer"])
+        self.assertFalse(matrix["deepseek_called"])
+        self.assertEqual(matrix["external_call_policy"], "not_triggered")
         self.assertEqual(loop_items["provider_data_capability"]["status"], "blocked")
         self.assertIn("Tushare / AkShare / yfinance / Supabase", loop_items["provider_data_capability"]["summary"])
         self.assertTrue(cockpit["recovery_actions"])
@@ -1088,6 +1093,21 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(cockpit["deepseek_called"])
         self.assertEqual(cockpit["external_call_policy"], "not_triggered")
         json.dumps(cockpit, ensure_ascii=False)
+
+        matrix = snapshot.build_provider_recovery_matrix({"provider_data_capability_cockpit": cockpit})
+        matrix_providers = {item["provider"]: item for item in matrix["providers"]}
+
+        self.assertEqual(matrix["title"], "数据源恢复矩阵")
+        self.assertEqual(matrix["status"], "blocked")
+        self.assertEqual(set(matrix_providers), {"Tushare", "AkShare", "yfinance", "Supabase"})
+        self.assertIn("之前拉满基础连接", matrix["short_answer"])
+        self.assertIn("基础连接可用", matrix_providers["Tushare"]["why_not_available"])
+        self.assertEqual(matrix_providers["AkShare"]["recovery_state"], "需要手动刷新")
+        self.assertIn("不能用 A股口径替代", matrix_providers["yfinance"]["why_not_available"])
+        self.assertIn("云端外脑", matrix_providers["Supabase"]["why_not_available"])
+        self.assertFalse(matrix["deepseek_called"])
+        self.assertEqual(matrix["external_call_policy"], "not_triggered")
+        json.dumps(matrix, ensure_ascii=False)
 
     def test_home_snapshot_builds_data_gap_report(self):
         today = _dt.date.today().isoformat()

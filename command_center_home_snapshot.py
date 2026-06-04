@@ -453,6 +453,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
     snapshot["legacy_packet_migration_checklist"] = legacy_packet_checklist_service.build_legacy_packet_migration_checklist(snapshot)
     snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
+    snapshot["provider_recovery_matrix"] = build_provider_recovery_matrix(snapshot)
     snapshot["data_recovery_center"] = build_home_data_recovery_center(snapshot)
     snapshot = attach_decision_loop_status(snapshot)
     return snapshot
@@ -516,6 +517,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["command_center_data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
     snapshot["provider_data_capability_cockpit"] = build_provider_data_capability_cockpit(snapshot)
+    snapshot["provider_recovery_matrix"] = build_provider_recovery_matrix(snapshot)
     snapshot["a_share_user_data_diagnostic"] = (
         _as_mapping(snapshot.get("a_share_user_data_diagnostic"))
         or legacy_a_share_debug_summary_service.build_user_data_diagnostic_view_model()
@@ -1967,6 +1969,105 @@ def build_provider_data_capability_cockpit(snapshot: Any = None) -> dict:
         "safe_mode_text": "这里只读取本地数据能力 packet 和健康账本；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
+    }
+
+
+PROVIDER_RECOVERY_WHY_TEXT = {
+    "Tushare": "Tushare token 或基础连接可用，不代表每个专业接口都有权限、积分、当日发布数据或近期覆盖。",
+    "AkShare": "AkShare 可作为补充数据源，但重型刷新必须手动触发，避免页面打开时卡顿或批量请求。",
+    "yfinance": "yfinance 主要服务美股/全球行情；缺失时不能用 A股口径替代美股财报、RS 和宏观验证。",
+    "Supabase": "Supabase 是云端外脑/记忆能力；未配置或连接失败不应阻断本地结构化 packet 决策链。",
+}
+
+
+def build_provider_recovery_matrix(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    cockpit = _as_mapping(payload.get("provider_data_capability_cockpit")) or build_provider_data_capability_cockpit(payload)
+    provider_items = []
+    for raw in _as_list(cockpit.get("providers")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        provider = _provider_cockpit_name(item.get("provider"))
+        blocked_count = int(item.get("blocked_count") or 0)
+        manual_count = int(item.get("manual_count") or 0)
+        stale_count = int(item.get("stale_count") or 0)
+        available_count = int(item.get("available_count") or 0)
+        status = _to_text(item.get("status"), "missing")
+        if blocked_count:
+            recovery_state = "权限/配置阻断"
+        elif manual_count:
+            recovery_state = "需要手动刷新"
+        elif stale_count:
+            recovery_state = "使用缓存/待复核"
+        elif available_count:
+            recovery_state = "可用"
+        else:
+            recovery_state = "待检测"
+        provider_items.append(
+            {
+                "provider": provider,
+                "label": _to_text(item.get("label"), provider),
+                "role": _to_text(item.get("role"), "数据源"),
+                "status": status,
+                "tone": _to_text(item.get("tone"), "missing"),
+                "status_label": _to_text(item.get("status_label"), recovery_state),
+                "recovery_state": recovery_state,
+                "summary": _to_text(item.get("summary"), "可用 0｜受限 0｜需手动 0｜缓存/待验证 0"),
+                "available_count": available_count,
+                "blocked_count": blocked_count,
+                "manual_count": manual_count,
+                "stale_count": stale_count,
+                "last_success": _to_text(item.get("last_success"), "暂无"),
+                "last_failure": _to_text(item.get("last_failure"), "无"),
+                "why_not_available": PROVIDER_RECOVERY_WHY_TEXT.get(provider, "不同数据源失败原因不同；需要按 provider 分开诊断。"),
+                "next_action": _to_text(item.get("next_action"), "按数据恢复中心手动处理。"),
+                "decision_guardrail": _to_text(item.get("decision_guardrail"), "缺失或未验证不能作为加仓、追高或加融资依据。"),
+                "recovery_action": _as_mapping(item.get("recovery_action")),
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    blocked_count = sum(item["blocked_count"] for item in provider_items)
+    manual_count = sum(item["manual_count"] for item in provider_items)
+    stale_count = sum(item["stale_count"] for item in provider_items)
+    available_count = sum(item["available_count"] for item in provider_items)
+    if blocked_count:
+        status = "blocked"
+        tone = "failed"
+        headline = f"数据源恢复矩阵：{blocked_count} 个能力仍受限"
+    elif manual_count:
+        status = "manual_required"
+        tone = "stale"
+        headline = f"数据源恢复矩阵：{manual_count} 个能力需手动刷新"
+    elif stale_count:
+        status = "cache_only"
+        tone = "stale"
+        headline = f"数据源恢复矩阵：{stale_count} 个能力使用缓存/待复核"
+    elif available_count:
+        status = "ready"
+        tone = "ready"
+        headline = "数据源恢复矩阵：核心数据源可辅助验证"
+    else:
+        status = "missing"
+        tone = "missing"
+        headline = "数据源恢复矩阵待检测"
+    return {
+        "title": "数据源恢复矩阵",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": f"Tushare / AkShare / yfinance / Supabase｜可用 {available_count}｜受限 {blocked_count}｜需手动 {manual_count}｜缓存/待验证 {stale_count}",
+        "short_answer": "之前拉满基础连接不等于现在每个接口都可用；权限、积分、交易日发布、近期无数据、缓存和本会话跳过需要分开看。",
+        "providers": provider_items,
+        "recovery_actions": [
+            item["recovery_action"]
+            for item in provider_items
+            if item["status"] != "ready" and item.get("recovery_action")
+        ],
+        "safe_mode_text": "这里只读取本地 provider 能力矩阵；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
     }
 
 
@@ -5491,6 +5592,7 @@ def build_home_action_snapshot(
         "data_health_timeline_recovery_actions": data_health_timeline_recovery_actions,
         "command_center_data_health_timeline_recovery_actions": data_health_timeline_recovery_actions,
         "provider_data_capability_cockpit": provider_data_capability_cockpit,
+        "provider_recovery_matrix": build_provider_recovery_matrix({"provider_data_capability_cockpit": provider_data_capability_cockpit}),
         "a_share_user_data_diagnostic": a_share_user_data_diagnostic,
         "data_recovery_actions": data_recovery_actions,
         "legacy_a_share_fact_recovery_actions": [],
@@ -5540,6 +5642,7 @@ def build_home_action_snapshot(
         empty["data_health_timeline_recovery_actions"] = snapshot["data_health_timeline_recovery_actions"]
         empty["command_center_data_health_timeline_recovery_actions"] = snapshot["command_center_data_health_timeline_recovery_actions"]
         empty["provider_data_capability_cockpit"] = snapshot["provider_data_capability_cockpit"]
+        empty["provider_recovery_matrix"] = snapshot["provider_recovery_matrix"]
         empty["a_share_user_data_diagnostic"] = snapshot["a_share_user_data_diagnostic"]
         empty["data_recovery_actions"] = snapshot["data_recovery_actions"]
         empty["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)

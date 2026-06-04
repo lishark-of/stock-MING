@@ -4830,6 +4830,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         or {}
     )
     provider_data_cockpit = payload.get("provider_data_capability_cockpit") or {}
+    provider_recovery_matrix = payload.get("provider_recovery_matrix") or {}
+    if not isinstance(provider_recovery_matrix, dict):
+        provider_recovery_matrix = {}
     data_health_timeline_recovery_actions = (
         payload.get("command_center_data_health_timeline_recovery_actions")
         or payload.get("data_health_timeline_recovery_actions")
@@ -4944,6 +4947,40 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-profile-meta">关注口径：{escape(market_profile_focus)}</div>
           <div class="cc-home-profile-meta">风险边界：{escape(market_profile_risks)} ｜ {escape(_home_text(market_profile.get("data_gap_text"), "待验证"))}</div>
           <div class="cc-home-profile-pills">{market_profile_method_html}</div>
+        </div>
+      </div>
+    """
+    provider_matrix_item_html = ""
+    for item in (provider_recovery_matrix.get("providers") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        provider_matrix_item_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), item.get("provider") or "数据源"))}：
+          <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("recovery_state"), item.get("status_label") or "待检测"))}</span>
+          {escape(_home_text(item.get("summary"), "可用 0｜受限 0｜需手动 0｜缓存/待验证 0"))}
+        </div>
+        <div class="cc-home-item-meta">为什么可能搜不到：{escape(_home_text(item.get("why_not_available"), "需要按 provider 分开诊断。"))}</div>
+        """
+    if not provider_matrix_item_html:
+        provider_matrix_item_html = "<div class='cc-home-item-meta'>Tushare / AkShare / yfinance / Supabase：待检测；页面打开不会自动请求外部接口。</div>"
+    provider_recovery_matrix_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(provider_recovery_matrix.get("title"), "数据源恢复矩阵"))}
+            <span class="cc-home-chip {escape(_home_text(provider_recovery_matrix.get("tone"), "missing"))}">
+              {escape(_home_text(provider_recovery_matrix.get("headline"), "数据源恢复矩阵待检测"))}
+            </span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(provider_recovery_matrix.get("summary"), "Tushare / AkShare / yfinance / Supabase｜可用 0｜受限 0｜需手动 0｜缓存/待验证 0"))}<br>
+            {escape(_home_text(provider_recovery_matrix.get("short_answer"), "之前拉满基础连接不等于现在每个接口都可用。"))}
+          </div>
+        </div>
+        <div>
+          {provider_matrix_item_html}
+          <div class="cc-home-profile-meta">安全边界：{escape(_home_text(provider_recovery_matrix.get("safe_mode_text"), "不会自动调用外部接口。"))}</div>
         </div>
       </div>
     """
@@ -6428,6 +6465,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </aside>
       </div>
       {market_profile_html}
+      {provider_recovery_matrix_html}
       {decision_loop_html}
       {a_share_status_console_html}
       {evidence_loop_html}

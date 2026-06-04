@@ -174,6 +174,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
 
         self.assertIn("provider_diagnostic_cards", source)
         self.assertIn("provider_diagnostic_html", source)
+        self.assertIn("provider_recovery_matrix", source)
+        self.assertIn("数据源恢复矩阵", source)
         self.assertIn("诊断结论", source)
         self.assertIn("interface_diagnostic_items", source)
         self.assertIn("interface_diagnostic_html", source)
