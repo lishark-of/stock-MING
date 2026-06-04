@@ -265,6 +265,114 @@ def state_label(state: str) -> str:
     return STATE_LABELS.get(str(state or ""), STATE_LABELS[STATE_FAILED])
 
 
+def normalize_capability_state_value(value: Any) -> str:
+    text = str(value or "").strip()
+    lower = text.lower()
+    if lower in set(STATE_LABELS):
+        return lower
+    if is_session_skip_error(text):
+        return STATE_DISABLED_THIS_SESSION
+    if is_permission_error(text):
+        return STATE_PERMISSION_DENIED
+    if is_not_configured_error(text):
+        return STATE_NOT_CONFIGURED
+    if is_network_error(text):
+        return STATE_NETWORK_FAILED
+    if "手动" in text or "manual" in lower:
+        return STATE_REQUIRES_MANUAL_REFRESH
+    if "缓存" in text or "cache" in lower:
+        return STATE_STALE_CACHE
+    if "替代" in text or "fallback" in lower:
+        return STATE_FALLBACK_USED
+    if is_empty_recent_message(text):
+        return STATE_EMPTY_RECENT
+    if "失败" in text or "error" in lower:
+        return STATE_FAILED
+    if "可用" in text or "通过" in text or lower in {"ready", "ok", "success"}:
+        return STATE_AVAILABLE
+    return "unknown"
+
+
+def tone_for_capability_state(state: str) -> str:
+    normalized = normalize_capability_state_value(state)
+    if normalized == STATE_AVAILABLE:
+        return "ready"
+    if normalized in {STATE_PERMISSION_DENIED, STATE_DISABLED_THIS_SESSION, STATE_NOT_CONFIGURED, STATE_NETWORK_FAILED, STATE_FAILED}:
+        return "failed"
+    if normalized in {STATE_STALE_CACHE, STATE_FALLBACK_USED}:
+        return "stale"
+    return "missing"
+
+
+def meaning_for_capability_state(state: str, provider: Any = "数据源", label: Any = "数据能力") -> str:
+    normalized = normalize_capability_state_value(state)
+    provider_text = str(provider or "数据源").strip() or "数据源"
+    label_text = str(label or "数据能力").strip() or "数据能力"
+    if normalized == STATE_AVAILABLE:
+        return f"{label_text}已有可用返回，可作为辅助证据。"
+    if normalized == STATE_PERMISSION_DENIED:
+        return f"{provider_text} token 可用不等于 {label_text} 有权限；这是接口权限/积分问题，不是行情不存在。"
+    if normalized == STATE_DISABLED_THIS_SESSION:
+        return f"{label_text}此前已判定不可用，本会话跳过重复请求，避免页面反复卡住。"
+    if normalized == STATE_EMPTY_RECENT:
+        return f"{label_text}近期无记录，常见原因是非交易日、数据尚未发布、标的未上榜或接口暂不覆盖。"
+    if normalized == STATE_STALE_CACHE:
+        return f"{label_text}正在展示上次成功结果；这是缓存，不是实时数据。"
+    if normalized == STATE_FALLBACK_USED:
+        return f"{label_text}使用替代口径，不能等同于原始接口事实。"
+    if normalized == STATE_REQUIRES_MANUAL_REFRESH:
+        return f"{label_text}属于手动刷新能力；页面打开不会自动请求。"
+    if normalized == STATE_NOT_CONFIGURED:
+        return f"{provider_text} 未配置或本地 token/secrets 不可用。"
+    if normalized == STATE_NETWORK_FAILED:
+        return f"{label_text}网络请求失败；保留缓存或安全空态。"
+    if normalized == STATE_FAILED:
+        return f"{label_text}调用失败；当前不能作为交易依据。"
+    return f"{label_text}状态待验证；当前只能作为数据缺口记录。"
+
+
+def decision_impact_for_capability_state(state: str, label: Any = "数据能力") -> str:
+    normalized = normalize_capability_state_value(state)
+    label_text = str(label or "数据能力").strip() or "数据能力"
+    if normalized == STATE_AVAILABLE:
+        return f"{label_text}可进入证据链，但仍需和价格、纪律、仓位一起验证。"
+    if normalized == STATE_EMPTY_RECENT:
+        return f"{label_text}近期无记录不能写成利好或无风险，只能说明缺少可验证事件。"
+    if normalized == STATE_PERMISSION_DENIED:
+        return f"{label_text}权限不足，不能把缺失数据当成利好，也不能支撑加仓、追高或放大仓位。"
+    if normalized in {STATE_DISABLED_THIS_SESSION, STATE_NOT_CONFIGURED, STATE_NETWORK_FAILED, STATE_FAILED}:
+        return f"{label_text}不可用，不能支撑加仓、追高或放大仓位。"
+    if normalized in {STATE_STALE_CACHE, STATE_FALLBACK_USED}:
+        return f"{label_text}只能作为缓存/替代证据，执行前要复核交易日、来源和更新时间。"
+    if normalized == STATE_REQUIRES_MANUAL_REFRESH:
+        return f"{label_text}需要手动刷新后才能进入当日判断。"
+    return f"{label_text}待验证，不能作为核心依据。"
+
+
+def next_action_for_capability_state(state: str, label: Any = "数据能力") -> str:
+    normalized = normalize_capability_state_value(state)
+    label_text = str(label or "数据能力").strip() or "数据能力"
+    if normalized == STATE_AVAILABLE:
+        return f"继续核对 {label_text} 的交易日、来源和是否匹配当前标的。"
+    if normalized == STATE_PERMISSION_DENIED:
+        return f"检查 {label_text} 对应接口权限/积分；接口接入成功不等于当前账户有权限。"
+    if normalized == STATE_DISABLED_THIS_SESSION:
+        return f"如权限已恢复，手动重试并重新检测 {label_text}。"
+    if normalized == STATE_EMPTY_RECENT:
+        return f"确认是否交易日、是否已发布、标的是否属于 {label_text} 覆盖范围。"
+    if normalized == STATE_STALE_CACHE:
+        return f"需要最新口径时手动刷新 {label_text}；否则按缓存标注使用。"
+    if normalized == STATE_FALLBACK_USED:
+        return f"把 {label_text} 标记为替代口径，并等待原始接口恢复。"
+    if normalized == STATE_REQUIRES_MANUAL_REFRESH:
+        return f"点击对应按钮后再请求 {label_text}。"
+    if normalized == STATE_NOT_CONFIGURED:
+        return f"检查 {label_text} 的本地 token/secrets 配置。"
+    if normalized == STATE_NETWORK_FAILED:
+        return f"网络恢复后手动重试 {label_text}。"
+    return f"保留 {label_text} 的安全空态或上次成功结果。"
+
+
 def action_hint_for_state(state: str) -> str:
     if state == STATE_AVAILABLE:
         return "可作为已验证数据使用。"

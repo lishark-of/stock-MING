@@ -45,6 +45,24 @@ class MarketDataCapabilityTests(unittest.TestCase):
         self.assertEqual(item["status"], "需要手动刷新")
         self.assertIn("页面打开不自动调用", item["action_hint"])
 
+    def test_canonical_state_language_explains_tushare_search_misses(self):
+        state = capability.normalize_capability_state_value("抱歉，您没有访问该接口的权限")
+
+        self.assertEqual(state, capability.STATE_PERMISSION_DENIED)
+        self.assertIn("token 可用不等于 融资融券 有权限", capability.meaning_for_capability_state(state, "Tushare", "融资融券"))
+        self.assertIn("不能支撑加仓", capability.decision_impact_for_capability_state(state, "融资融券"))
+        self.assertIn("接口接入成功不等于当前账户有权限", capability.next_action_for_capability_state(state, "融资融券"))
+
+    def test_canonical_state_language_keeps_empty_recent_and_cache_distinct(self):
+        empty_state = capability.normalize_capability_state_value("近30日未见龙虎榜上榜记录")
+        cache_state = capability.normalize_capability_state_value("使用缓存")
+
+        self.assertEqual(empty_state, capability.STATE_EMPTY_RECENT)
+        self.assertEqual(cache_state, capability.STATE_STALE_CACHE)
+        self.assertIn("标的未上榜", capability.meaning_for_capability_state(empty_state, "Tushare", "龙虎榜"))
+        self.assertIn("不能写成利好或无风险", capability.decision_impact_for_capability_state(empty_state, "龙虎榜"))
+        self.assertIn("不是实时数据", capability.meaning_for_capability_state(cache_state, "Tushare", "个股资金流"))
+
     def test_summarize_tushare_result_handles_dict_rows(self):
         result = {"ok": True, "rows": 5, "latest_date": "20260602", "source": "Tushare"}
         item = capability.summarize_tushare_result("moneyflow", result=result, latency_ms=23)

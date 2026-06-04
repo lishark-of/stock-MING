@@ -4,6 +4,14 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from market_data_capability import (
+    decision_impact_for_capability_state,
+    meaning_for_capability_state,
+    next_action_for_capability_state,
+    normalize_capability_state_value,
+    tone_for_capability_state,
+)
+
 
 MAX_ITEMS = 8
 MAX_ACTIONS = 6
@@ -72,98 +80,23 @@ def _dedupe(values: Any, limit: int = MAX_ACTIONS) -> list[str]:
 
 
 def normalize_data_issue_state(value: Any) -> str:
-    text = _to_text(value).lower()
-    if text in AVAILABLE_STATES | RESTRICTED_STATES | PENDING_STATES:
-        return text
-    if "权限" in text or "permission" in text or "denied" in text or "unauthorized" in text:
-        return "permission_denied"
-    if "跳过" in text or "skip" in text:
-        return "disabled_this_session"
-    if "缓存" in text:
-        return "stale_cache"
-    if "手动" in text:
-        return "requires_manual_refresh"
-    if "无数据" in text or "近期无" in text or "未取得" in text or "暂无" in text:
-        return "empty_recent"
-    if "未配置" in text or "token" in text or "api key" in text:
-        return "not_configured"
-    if "网络" in text or "timeout" in text or "connection" in text:
-        return "network_failed"
-    if "失败" in text or "error" in text:
-        return "failed"
-    if "可用" in text or "通过" in text:
-        return "available"
-    return "unknown"
+    return normalize_capability_state_value(value)
 
 
 def _tone(state: str) -> str:
-    if state in AVAILABLE_STATES:
-        return "ready"
-    if state in {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}:
-        return "failed"
-    if state in {"stale_cache", "fallback_used"}:
-        return "stale"
-    return "missing"
+    return tone_for_capability_state(state)
 
 
 def _meaning_for_state(state: str, provider: str, label: str) -> str:
-    if state == "available":
-        return f"{label}接口已有可用返回，可作为辅助证据。"
-    if state == "permission_denied":
-        return f"{provider} 已接入不等于 {label} 有权限；这是接口权限/积分问题，不是行情不存在。"
-    if state == "disabled_this_session":
-        return f"{label}此前已判定不可用，本会话跳过重复请求，避免页面反复卡住。"
-    if state == "empty_recent":
-        return f"{label}近期无记录，常见原因是非交易日、数据尚未发布、标的未上榜或接口暂不覆盖。"
-    if state == "stale_cache":
-        return f"{label}正在展示上次成功结果；这不是实时数据。"
-    if state == "fallback_used":
-        return f"{label}使用替代口径，不能等同于原始接口事实。"
-    if state == "requires_manual_refresh":
-        return f"{label}属于手动刷新能力；页面打开不会自动请求。"
-    if state == "not_configured":
-        return f"{provider} 未配置或本地密钥不可用。"
-    if state == "network_failed":
-        return f"{label}网络请求失败；保留缓存或安全空态。"
-    if state == "failed":
-        return f"{label}调用失败；当前不能作为交易依据。"
-    return f"{label}状态待验证；当前只能作为数据缺口记录。"
+    return meaning_for_capability_state(state, provider, label)
 
 
 def _decision_impact_for_state(state: str, label: str) -> str:
-    if state == "available":
-        return f"{label}可进入证据链，但仍需和价格、纪律、仓位一起验证。"
-    if state == "empty_recent":
-        return f"{label}无记录不能写成利好，只能说明缺少可验证事件。"
-    if state in {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}:
-        return f"{label}不可用，不能支撑加仓或放大仓位。"
-    if state in {"stale_cache", "fallback_used"}:
-        return f"{label}只能作为缓存/替代证据，执行前要复核日期。"
-    if state == "requires_manual_refresh":
-        return f"{label}需要手动刷新后才能进入当日判断。"
-    return f"{label}待验证，不能作为核心依据。"
+    return decision_impact_for_capability_state(state, label)
 
 
 def _next_action_for_state(state: str, label: str) -> str:
-    if state == "available":
-        return f"继续核对 {label} 的日期、口径和是否匹配当前标的。"
-    if state == "permission_denied":
-        return f"检查 {label} 对应接口权限/积分；不要在页面打开时重复自动请求。"
-    if state == "disabled_this_session":
-        return f"如权限已恢复，手动重新检测 {label}。"
-    if state == "empty_recent":
-        return f"确认是否交易日、是否已发布、标的是否属于该接口覆盖范围。"
-    if state == "stale_cache":
-        return f"需要最新口径时手动刷新 {label}；否则按缓存标注使用。"
-    if state == "fallback_used":
-        return f"把 {label} 标记为替代口径，并等待原始接口恢复。"
-    if state == "requires_manual_refresh":
-        return f"点击对应刷新按钮后再请求 {label}。"
-    if state == "not_configured":
-        return f"检查 {label} 的本地 token/secrets 配置。"
-    if state == "network_failed":
-        return f"网络恢复后手动重试 {label}。"
-    return f"保留 {label} 的安全空态或上次成功结果。"
+    return next_action_for_capability_state(state, label)
 
 
 def explain_data_issue_item(raw: Any, provider_default: str = "数据源") -> dict:

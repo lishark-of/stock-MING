@@ -4,6 +4,13 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from market_data_capability import (
+    decision_impact_for_capability_state,
+    next_action_for_capability_state,
+    normalize_capability_state_value,
+    tone_for_capability_state,
+)
+
 
 AVAILABLE_STATES = {"available", "ready", "ok", "success"}
 BLOCKED_STATES = {"permission_denied", "disabled_this_session", "not_configured", "network_failed", "failed"}
@@ -171,38 +178,11 @@ def to_text(value: Any, default: str = "") -> str:
 
 
 def normalize_state(value: Any) -> str:
-    text = to_text(value).lower()
-    if text in AVAILABLE_STATES | BLOCKED_STATES | MANUAL_STATES | STALE_STATES:
-        return text
-    if "权限" in text or "denied" in text or "unauthorized" in text:
-        return "permission_denied"
-    if "跳过" in text or "skip" in text:
-        return "disabled_this_session"
-    if "缓存" in text:
-        return "stale_cache"
-    if "手动" in text:
-        return "requires_manual_refresh"
-    if "无数据" in text or "近期无" in text or "暂无" in text or "未取得" in text:
-        return "empty_recent"
-    if "未配置" in text:
-        return "not_configured"
-    if "网络" in text or "timeout" in text:
-        return "network_failed"
-    if "失败" in text or "error" in text:
-        return "failed"
-    if "可用" in text or "通过" in text:
-        return "available"
-    return "unknown"
+    return normalize_capability_state_value(value)
 
 
 def tone_for_state(state: str) -> str:
-    if state in AVAILABLE_STATES:
-        return "ready"
-    if state in BLOCKED_STATES:
-        return "failed"
-    if state in {"stale_cache", "fallback_used"}:
-        return "stale"
-    return "missing"
+    return tone_for_capability_state(state)
 
 
 def _capability_rows(data_capability_packet: Any = None, facts_packet: Any = None) -> list[dict]:
@@ -263,37 +243,11 @@ def _aggregate_state(rows: list[dict]) -> tuple[str, str]:
 
 
 def _decision_impact(state: str, label: str) -> str:
-    if state == "available":
-        return f"{label}可进入证据链，但仍需结合价格、纪律和仓位。"
-    if state == "permission_denied":
-        return f"{label}权限不足，不能把缺失数据当成利好或加仓依据。"
-    if state == "disabled_this_session":
-        return f"{label}本会话已跳过，避免旧页面重复卡顿；如权限恢复需手动检测。"
-    if state == "requires_manual_refresh":
-        return f"{label}需要手动刷新，页面打开不会自动触发。"
-    if state == "stale_cache":
-        return f"{label}正在使用缓存，执行前必须复核交易日和更新时间。"
-    if state == "empty_recent":
-        return f"{label}近期无记录或待验证，不能推导为无风险。"
-    if state in {"failed", "not_configured", "network_failed"}:
-        return f"{label}不可用，只能展示上次成功或安全空态。"
-    return f"{label}待验证，当前不能作为核心依据。"
+    return decision_impact_for_capability_state(state, label)
 
 
 def _next_action(state: str, label: str) -> str:
-    if state == "available":
-        return f"核对 {label} 日期和标的口径，再进入决策链。"
-    if state == "permission_denied":
-        return f"检查 {label} 对应 Tushare 接口权限/积分。"
-    if state == "disabled_this_session":
-        return f"如权限已恢复，手动重新检测 {label}。"
-    if state == "requires_manual_refresh":
-        return f"点击对应按钮后再刷新 {label}。"
-    if state == "stale_cache":
-        return f"需要最新口径时手动刷新 {label}。"
-    if state == "empty_recent":
-        return f"确认是否交易日、是否已发布、标的是否覆盖 {label}。"
-    return f"保留 {label} 安全空态或上次成功结果。"
+    return next_action_for_capability_state(state, label)
 
 
 def _manual_action(capability: Mapping[str, Any], state: str, status_label: str) -> dict:

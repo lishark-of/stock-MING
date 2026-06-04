@@ -4,6 +4,13 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from market_data_capability import (
+    decision_impact_for_capability_state,
+    next_action_for_capability_state,
+    normalize_capability_state_value,
+    tone_for_capability_state,
+)
+
 
 MAX_PROVIDER_ITEMS = 4
 MAX_MANUAL_ACTIONS = 6
@@ -61,36 +68,11 @@ def _first_text(*values: Any, default: str = "") -> str:
 
 
 def normalize_capability_state(value: Any) -> str:
-    text = to_text(value).lower()
-    if text in AVAILABLE_STATES | RESTRICTED_STATES | PENDING_STATES:
-        return text
-    if "权限" in text or "denied" in text or "unauthorized" in text:
-        return "permission_denied"
-    if "跳过" in text:
-        return "disabled_this_session"
-    if "缓存" in text:
-        return "stale_cache"
-    if "手动" in text:
-        return "requires_manual_refresh"
-    if "无数据" in text or "近期无" in text:
-        return "empty_recent"
-    if "未配置" in text:
-        return "not_configured"
-    if "失败" in text or "error" in text:
-        return "failed"
-    if "可用" in text or "通过" in text:
-        return "available"
-    return "unknown"
+    return normalize_capability_state_value(value)
 
 
 def _tone_for_state(state: str) -> str:
-    if state in AVAILABLE_STATES:
-        return "ready"
-    if state in RESTRICTED_STATES:
-        return "failed"
-    if state in {"stale_cache", "fallback_used"}:
-        return "stale"
-    return "missing"
+    return tone_for_capability_state(state)
 
 
 def _provider_name(item: Mapping[str, Any], fallback: str = "数据源") -> str:
@@ -108,22 +90,8 @@ def _provider_name(item: Mapping[str, Any], fallback: str = "数据源") -> str:
 
 def _decision_text(state: str, label: str) -> str:
     if state in AVAILABLE_STATES:
-        return f"{label}可作为辅助验证。"
-    if state == "permission_denied":
-        return f"{label}权限不足；不能把缺失数据当成利好。"
-    if state == "disabled_this_session":
-        return f"{label}本会话跳过重复请求；如权限恢复需手动重试。"
-    if state == "requires_manual_refresh":
-        return f"{label}需要手动刷新；页面打开不会自动请求。"
-    if state == "stale_cache":
-        return f"{label}正在使用缓存；需要复核交易日和更新时间。"
-    if state == "empty_recent":
-        return f"{label}近期无数据；可能是非交易日、未发布或标的不覆盖。"
-    if state == "not_configured":
-        return f"{label}未配置；需检查本地 token/secrets。"
-    if state in {"failed", "network_failed"}:
-        return f"{label}不可用；保留上次成功或安全空态。"
-    return f"{label}待验证；当前不能作为核心依据。"
+        return decision_impact_for_capability_state(state, label)
+    return next_action_for_capability_state(state, label)
 
 
 def normalize_capability_item(item: Any) -> dict:
