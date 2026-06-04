@@ -32,6 +32,18 @@ STATE_LABELS = {
     "missing": "待刷新",
 }
 
+GAP_CAUSE_LABELS = {
+    "available": "已有可用返回",
+    "permission_scope": "接口权限/积分",
+    "session_skip": "本会话跳过",
+    "publish_window": "交易日/标的覆盖",
+    "cache_guard": "缓存防白屏",
+    "fallback_proxy": "替代口径",
+    "manual_gate": "按钮触发",
+    "configuration": "配置或网络",
+    "not_checked": "尚未检测",
+}
+
 MANUAL_ACTIONS = {
     "moneyflow": {
         "action_key": "manual_check_moneyflow",
@@ -286,6 +298,78 @@ def _gap_reason_for_state(item: Mapping[str, Any]) -> str:
     return f"{label}尚未检测；不能把缺失写成无风险。"
 
 
+def _gap_cause_code_for_state(item: Mapping[str, Any]) -> str:
+    state = normalize_state(item.get("state"))
+    if state == "available":
+        return "available"
+    if state == "permission_denied":
+        return "permission_scope"
+    if state == "disabled_this_session":
+        return "session_skip"
+    if state == "empty_recent":
+        return "publish_window"
+    if state == "stale_cache":
+        return "cache_guard"
+    if state == "fallback_used":
+        return "fallback_proxy"
+    if state == "requires_manual_refresh":
+        return "manual_gate"
+    if state in {"not_configured", "network_failed", "failed"}:
+        return "configuration"
+    return "not_checked"
+
+
+def _gap_cause_label(item: Mapping[str, Any]) -> str:
+    return GAP_CAUSE_LABELS.get(_gap_cause_code_for_state(item), "尚未检测")
+
+
+def _why_previous_full_not_enough(item: Mapping[str, Any]) -> str:
+    label = to_text(item.get("label"), "A股数据")
+    api_hint = to_text(item.get("api_hint") or item.get("api"), "Tushare 专业接口")
+    cause_code = _gap_cause_code_for_state(item)
+    if cause_code == "permission_scope":
+        return f"之前“拉满”多半覆盖基础行情或已授权接口；{label} 的 {api_hint} 仍需要单独权限/积分。"
+    if cause_code == "session_skip":
+        return f"{label}此前已被判定受限或失败，本会话为了防卡顿跳过重复请求；这不是数据被清空。"
+    if cause_code == "publish_window":
+        return f"{label}可能接口可用但近窗口无记录；非交易日、尚未发布、标的未上榜都会让结果为空。"
+    if cause_code == "cache_guard":
+        return f"{label}现在显示的是上次成功缓存；这是为了防白屏，不代表今天已经重新验证。"
+    if cause_code == "fallback_proxy":
+        return f"{label}当前使用替代口径；能辅助观察，但不能当作原始 {api_hint} 已恢复。"
+    if cause_code == "manual_gate":
+        return f"{label}被设置为手动按钮触发；首页打开不会自动请求 {api_hint}。"
+    if cause_code == "available":
+        return f"{label}已有可用返回；仍要核对日期、标的和接口口径是否匹配当前决策。"
+    if cause_code == "configuration":
+        return f"{label}当前更像配置、网络或接口调用失败；先修复环境，再手动验证。"
+    return f"{label}尚未检测；不能用“之前拉过”证明当前这个专业接口已可用。"
+
+
+def _safe_recovery_steps(item: Mapping[str, Any]) -> list[str]:
+    label = to_text(item.get("label"), "A股数据")
+    manual_action = as_mapping(item.get("manual_action"))
+    button_label = to_text(manual_action.get("button_label"), f"手动检测{label}")
+    writes_packet = to_text(manual_action.get("writes_packet"), "command_center_facts_packet")
+    toolbox_entry = to_text(manual_action.get("toolbox_entry"), "高级工具箱入口 / 数据源体检")
+    cause_code = _gap_cause_code_for_state(item)
+    first_step = {
+        "permission_scope": f"先确认 {label} 对应 Tushare 专业接口权限/积分。",
+        "session_skip": f"先确认 {label} 权限或接口状态已恢复，再解除本会话跳过的影响。",
+        "publish_window": f"先核对 {label} 的交易日、发布时间、窗口期和标的覆盖。",
+        "cache_guard": f"先核对 {label} 的缓存日期、来源和是否匹配当前标的。",
+        "fallback_proxy": f"先确认 {label} 当前是替代口径，不是原始接口事实。",
+        "manual_gate": f"确认确实需要最新 {label} 后再手动触发。",
+        "configuration": f"先检查 {label} 的 token、网络或接口错误。",
+        "available": f"先核对 {label} 的日期、来源和当前标的。",
+    }.get(cause_code, f"先复核 {label} 的状态、来源和适用范围。")
+    return [
+        first_step,
+        f"进入 {toolbox_entry}，点击“{button_label}”。",
+        f"结果回流 {writes_packet} 后，再进入综合中心决策链。",
+    ]
+
+
 def _gap_guardrail_for_state(item: Mapping[str, Any]) -> str:
     label = to_text(item.get("label"), "A股数据")
     state = normalize_state(item.get("state"))
@@ -347,6 +431,16 @@ def _count_by_state(items: list[dict], states: set[str]) -> int:
     return len([item for item in items if normalize_state(item.get("state")) in states])
 
 
+def _cause_summary(items: list[dict]) -> str:
+    if not items:
+        return "原因分类：暂无"
+    counts = {}
+    for item in items:
+        label = GAP_CAUSE_LABELS.get(to_text(item.get("cause_code")), "尚未检测")
+        counts[label] = counts.get(label, 0) + 1
+    return "原因分类：" + "｜".join(f"{label} {count}" for label, count in counts.items())
+
+
 def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
     packet = as_mapping(matrix_packet)
     raw_items = packet.get("items") if packet else matrix_packet
@@ -358,6 +452,7 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
             "tone": "missing",
             "headline": "尚未检测 A股专业接口",
             "summary": "页面打开不会自动请求 Tushare；需要手动刷新或读取上次快照。",
+            "cause_summary": "原因分类：暂无",
             "plain_answer": "还没有本地检测结果；页面打开不会自动拉取 Tushare 专业接口，以避免白屏和卡顿。",
             "explanation": "Tushare token 可用不代表龙虎榜、融资融券、涨跌停/情绪、筹码等专业接口都已验证。",
             "items": [],
@@ -410,6 +505,7 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
         seen.add(key)
         manual_action = as_mapping(raw.get("manual_action"))
         state = normalize_state(raw.get("state"))
+        cause_code = _gap_cause_code_for_state(raw)
         items.append(
             {
                 "key": key,
@@ -418,10 +514,14 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
                 "state": state,
                 "status_label": to_text(raw.get("status_label"), STATE_LABELS.get(state, "待验证")),
                 "tone": tone_for_state(state),
+                "cause_code": cause_code,
+                "cause_label": GAP_CAUSE_LABELS.get(cause_code, "尚未检测"),
                 "action_mode": _gap_action_mode(state),
                 "why_not_found": _gap_reason_for_state(raw),
+                "why_previous_full_not_enough": _why_previous_full_not_enough(raw),
                 "diagnostic_answer": _diagnostic_answer_for_state(raw),
                 "decision_guardrail": _gap_guardrail_for_state(raw),
+                "safe_recovery_steps": _safe_recovery_steps(raw),
                 "next_action": to_text(raw.get("next_action"), next_action),
                 "manual_button_label": to_text(manual_action.get("button_label"), "手动检测"),
                 "writes_packet": to_text(manual_action.get("writes_packet"), "command_center_facts_packet"),
@@ -441,6 +541,7 @@ def build_tushare_gap_explainer(matrix_packet: Any = None) -> dict:
         "tone": tone,
         "headline": headline,
         "summary": summary,
+        "cause_summary": _cause_summary(items),
         "plain_answer": plain_answer,
         "explanation": "基础行情或 token 正常，不代表每个 A股专业接口都有权限、当日数据或当前标的覆盖。",
         "items": items[:6],
