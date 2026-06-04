@@ -335,6 +335,68 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["projection_confidence_summary"]["status"], "blocked")
         self.assertIn("乐观路径", view_model["projection_confidence_summary"]["guardrail"])
 
+    def test_evidence_chain_includes_legacy_decision_chain_from_projection(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "小幅进攻"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            projection_packet={
+                "status": "ready",
+                "path_basis": "路径依据已生成",
+                "path_legacy_decision_chain_status": "blocked",
+                "path_legacy_decision_chain_label": "旧能力仍有阻断项",
+                "path_legacy_decision_chain_summary": "已验证 3｜缓存辅助 2｜阻断决策 1｜待验证 3",
+                "path_legacy_decision_chain_items": [
+                    {"label": "硬风险/公告", "decision_chain_state": "blocked", "can_enter_decision_chain": False},
+                    {"label": "融资融券", "decision_chain_state": "cache_only", "can_enter_decision_chain": True},
+                    {"label": "下一票雷达", "decision_chain_state": "ready", "can_enter_decision_chain": True},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+        basis = view_model["legacy_decision_chain_basis_item"]
+
+        self.assertIn("旧能力链", joined)
+        self.assertIn("阻断决策 1", joined)
+        self.assertEqual(basis["tone"], "danger")
+        self.assertEqual(basis["blocked_count"], 1)
+        self.assertEqual(basis["cache_count"], 1)
+        self.assertIn("不能支持加仓", basis["guardrail"])
+        self.assertEqual(view_model["action_label"], "小幅进攻")
+        self.assertFalse(basis["deepseek_called"])
+        self.assertEqual(basis["external_call_policy"], "not_triggered")
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_legacy_decision_chain_basis_marks_cache_and_ready_states(self):
+        cache_item = summary.build_legacy_decision_chain_basis_item(
+            {
+                "path_legacy_decision_chain_status": "cache_only",
+                "path_legacy_decision_chain_summary": "已验证 4｜缓存辅助 2｜阻断决策 0｜待验证 1",
+                "path_legacy_decision_chain_items": [
+                    {"label": "龙虎榜", "decision_chain_state": "cache_only"},
+                    {"label": "筹码/胜率", "decision_chain_state": "waiting"},
+                ],
+            }
+        )
+        ready_item = summary.build_legacy_decision_chain_basis_item(
+            {
+                "path_legacy_decision_chain_status": "ready",
+                "path_legacy_decision_chain_summary": "已验证 9｜缓存辅助 0｜阻断决策 0｜待验证 0",
+                "path_legacy_decision_chain_items": [
+                    {"label": "资金流", "decision_chain_state": "ready"},
+                    {"label": "下一票雷达", "decision_chain_state": "ready"},
+                ],
+            }
+        )
+
+        self.assertEqual(cache_item["tone"], "warning")
+        self.assertIn("复核日期", cache_item["guardrail"])
+        self.assertEqual(cache_item["waiting_count"], 1)
+        self.assertEqual(ready_item["tone"], "success")
+        self.assertIn("价格、纪律、仓位", ready_item["guardrail"])
+        self.assertFalse(cache_item["deepseek_called"])
+        self.assertFalse(ready_item["deepseek_called"])
+
     def test_evidence_chain_includes_next_ticket_and_etf_recovery_impact(self):
         view_model = summary.build_decision_summary_view_model(
             {"status": "ready", "overall_action": "只观察"},

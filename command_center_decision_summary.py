@@ -700,6 +700,78 @@ def build_old_workspace_packet_bridge_basis_item(old_workspace_packet_bridge: An
     }
 
 
+def build_legacy_decision_chain_basis_item(projection_packet: Any = None) -> dict:
+    packet = _as_mapping(projection_packet)
+    if not packet:
+        return {}
+
+    status = _to_text(packet.get("path_legacy_decision_chain_status")).lower()
+    label = _to_text(packet.get("path_legacy_decision_chain_label")) or "旧能力决策链"
+    summary = _to_text(packet.get("path_legacy_decision_chain_summary"))
+    raw_items = packet.get("path_legacy_decision_chain_items")
+    items = [_as_mapping(item) for item in _as_list(raw_items) if _as_mapping(item)]
+    if not status and not summary and not items:
+        return {}
+
+    counts = {"blocked": 0, "cache_only": 0, "waiting": 0, "ready": 0}
+    for item in items:
+        state = _to_text(item.get("decision_chain_state")).lower()
+        if state in counts:
+            counts[state] += 1
+        elif item.get("can_enter_decision_chain") is False:
+            counts["blocked"] += 1
+
+    if not status:
+        if counts["blocked"]:
+            status = "blocked"
+        elif counts["cache_only"] or counts["waiting"]:
+            status = "partial"
+        elif counts["ready"]:
+            status = "ready"
+        else:
+            status = "waiting"
+
+    focus_items = [
+        item
+        for item in items
+        if _to_text(item.get("decision_chain_state")).lower() in {"blocked", "cache_only", "waiting"}
+    ] or items[:3]
+    focus_text = "、".join(_to_text(item.get("label")) for item in focus_items[:3] if _to_text(item.get("label")))
+
+    if status == "blocked":
+        tone = "danger"
+        value = summary or "仍有阻断项"
+        guardrail = "旧能力链有阻断项时，今日总动作不能支持加仓、追高或加融资。"
+    elif status in {"cache_only", "partial"}:
+        tone = "warning"
+        value = summary or "缓存/待验证"
+        guardrail = "旧能力链未完全回流时，执行前必须复核日期、来源和覆盖口径。"
+    elif status == "ready":
+        tone = "success"
+        value = summary or "旧能力链已验证"
+        guardrail = "旧能力链可进入依据链，但仍需价格、纪律、仓位和失效条件共同确认。"
+    else:
+        tone = "muted"
+        value = summary or "旧能力链待验证"
+        guardrail = "旧能力链待验证时，今日总动作只能保留安全空态或低置信度解释。"
+
+    return {
+        "label": "旧能力链",
+        "value": value,
+        "tone": tone,
+        "summary": f"{focus_text}｜{guardrail}" if focus_text else guardrail,
+        "guardrail": guardrail,
+        "status": status,
+        "source_label": label,
+        "blocked_count": counts["blocked"],
+        "cache_count": counts["cache_only"],
+        "waiting_count": counts["waiting"],
+        "ready_count": counts["ready"],
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
@@ -726,6 +798,9 @@ def build_decision_evidence_chain_items(
                 "summary": projection_confidence["guardrail"],
             }
         )
+    legacy_chain_basis = build_legacy_decision_chain_basis_item(projection_packet)
+    if legacy_chain_basis:
+        items.append(legacy_chain_basis)
     methods = [_as_mapping(item) for item in (analysis.get("methods") or []) if _as_mapping(item)]
     passed = [item.get("name") for item in methods if item.get("status") == "通过"]
     pending = [item.get("name") for item in methods if item.get("status") == "待验证"]
@@ -884,6 +959,7 @@ def build_decision_summary_view_model(
         "recovery_timeline_summary_text": build_recovery_timeline_summary_text(recovery_result_timeline),
         "execution_recovery_basis_item": build_execution_recovery_basis_item(next_ticket_candidates, margin_etf_summary),
         "old_workspace_packet_bridge_basis_item": build_old_workspace_packet_bridge_basis_item(old_workspace_packet_bridge),
+        "legacy_decision_chain_basis_item": build_legacy_decision_chain_basis_item(projection_packet),
         "stale_note": stale_note,
         "must_not_do_items": _list_text(payload.get("must_not_do"), "暂无新增禁止动作，但仍需遵守交易纪律。"),
         "validation_items": _list_text(payload.get("next_validation_conditions"), "等待基础数据刷新后再生成验证条件。"),
