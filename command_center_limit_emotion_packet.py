@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_RECORDS = 5
 MAX_CONCEPTS = 5
@@ -308,7 +310,7 @@ def build_command_center_limit_emotion_packet(
             else f"涨跌停/情绪状态：{emotion_state}。"
         ),
     )
-    return {
+    packet = {
         "status": status,
         "data_status": data_status,
         "capability_state": capability_state,
@@ -340,3 +342,14 @@ def build_command_center_limit_emotion_packet(
         "manual_required_text": "涨跌停/情绪来自 Tushare stk_limit、limit_list_d、limit_cpt_list 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,
     }
+    packet.update(
+        build_legacy_packet_decision_contract(
+            payload,
+            label="涨跌停/情绪",
+            status=status,
+            data_status=data_status,
+            recovery_state=recovery_state,
+            capability_state=capability_state,
+        )
+    )
+    return packet

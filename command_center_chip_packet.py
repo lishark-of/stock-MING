@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_AREAS = 5
 MAX_RISK_NOTES = 6
@@ -252,7 +254,7 @@ def build_command_center_chip_packet(
             else "筹码/胜率只能作为压力位和纪律验证。"
         ),
     )
-    return {
+    packet = {
         "status": status,
         "data_status": data_status,
         "capability_state": capability_state,
@@ -282,3 +284,14 @@ def build_command_center_chip_packet(
         "manual_required_text": "筹码/胜率来自 Tushare cyq_perf/cyq_chips 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,
     }
+    packet.update(
+        build_legacy_packet_decision_contract(
+            payload,
+            label="筹码/胜率",
+            status=status,
+            data_status=data_status,
+            recovery_state=recovery_state,
+            capability_state=capability_state,
+        )
+    )
+    return packet

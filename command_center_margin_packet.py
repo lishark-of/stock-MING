@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_RISK_NOTES = 6
 
@@ -225,7 +227,7 @@ def build_command_center_margin_packet(
             else f"融资融券状态：{leverage_state}。"
         ),
     )
-    return {
+    packet = {
         "status": status,
         "data_status": data_status,
         "capability_state": capability_state,
@@ -249,3 +251,14 @@ def build_command_center_margin_packet(
         "manual_required_text": "融资融券来自 Tushare margin_detail 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,
     }
+    packet.update(
+        build_legacy_packet_decision_contract(
+            payload,
+            label="融资融券",
+            status=status,
+            data_status=data_status,
+            recovery_state=recovery_state,
+            capability_state=capability_state,
+        )
+    )
+    return packet

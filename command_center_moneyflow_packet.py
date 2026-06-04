@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from command_center_legacy_packet_contract import build_legacy_packet_decision_contract
+
 
 MAX_RISK_NOTES = 6
 
@@ -217,7 +219,7 @@ def build_command_center_moneyflow_packet(
             else f"资金流状态：{flow_state}。"
         ),
     )
-    return {
+    packet = {
         "status": status,
         "data_status": data_status,
         "capability_state": capability_state,
@@ -243,3 +245,14 @@ def build_command_center_moneyflow_packet(
         "manual_required_text": "个股资金流来自 Tushare moneyflow 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,
     }
+    packet.update(
+        build_legacy_packet_decision_contract(
+            payload,
+            label="个股资金流",
+            status=status,
+            data_status=data_status,
+            recovery_state=recovery_state,
+            capability_state=capability_state,
+        )
+    )
+    return packet
