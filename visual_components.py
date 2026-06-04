@@ -4558,6 +4558,26 @@ def render_strategy_execution_command_card(
             {condition_rows}
           </div>
         """
+    a_share_fact_recovery_condition_guidance = vm.get("a_share_fact_recovery_condition_guidance") or {}
+    a_share_fact_recovery_condition_html = ""
+    if a_share_fact_recovery_condition_guidance:
+        group_highlight_html = "".join(
+            f"<span>{escape(str(item.get('label') or 'A股事实'))} {escape(str(item.get('count') or 0))}：{escape(str(item.get('value') or '待验证'))}</span>"
+            for item in (a_share_fact_recovery_condition_guidance.get("group_highlights") or [])[:3]
+            if isinstance(item, dict)
+        )
+        condition_rows = "".join(
+            f"<div class='cc-strategy-guidance-row'><span>{escape(str(item.get('label') or '门槛'))}</span><b>{escape(str(item.get('text') or '待验证。'))}</b></div>"
+            for item in (a_share_fact_recovery_condition_guidance.get("condition_items") or [])[:3]
+            if isinstance(item, dict)
+        )
+        a_share_fact_recovery_condition_html = f"""
+          <div class="cc-strategy-guidance">
+            <div class="cc-strategy-guidance-title">A股事实条件门槛 · {escape(str(a_share_fact_recovery_condition_guidance.get("summary") or "事实回流待验证"))}</div>
+            <div class="cc-strategy-focus">{group_highlight_html}</div>
+            {condition_rows}
+          </div>
+        """
     evidence_validation_html = "".join(
         f"<div class='cc-strategy-condition {_tone_to_strategy_class(item.get('tone'))}'>"
         f"<div class='cc-strategy-label'>P{escape(str(item.get('priority') or 3))} · {escape(str(item.get('label') or '证据'))}</div>"
@@ -4616,6 +4636,7 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-condition-grid">{condition_html}</div>
       {guidance_html}
       {a_share_evidence_group_guidance_html}
+      {a_share_fact_recovery_condition_html}
       <div class="cc-strategy-section-title">证据验证重点 · {escape(validation_title)}</div>
       {projection_confidence_html}
       {evidence_gate_html}

@@ -740,6 +740,120 @@ def build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary: 
     )
 
 
+def _fact_recovery_condition_tone(state: str) -> str:
+    if state == "blocked":
+        return "danger"
+    if state == "partial":
+        return "warning"
+    if state == "ready":
+        return "success"
+    return "muted"
+
+
+def _fact_recovery_group_highlights(fact_items: list[dict], summary: Mapping[str, Any]) -> list[dict]:
+    specs = [
+        ("blocked", "受限事实", "danger", _safe_int(summary.get("blocked_count"))),
+        ("waiting", "待验证事实", "warning", _safe_int(summary.get("waiting_count"))),
+        ("recovered", "已回流事实", "success", _safe_int(summary.get("recovered_count"))),
+    ]
+    highlights = []
+    for state, label, tone, count_hint in specs:
+        rows = [item for item in fact_items if item.get("recovery_state") == state]
+        labels = [_to_text(item.get("label")) for item in rows if _to_text(item.get("label"))]
+        root_causes = [_to_text(item.get("root_cause_label")) for item in rows if _to_text(item.get("root_cause_label"))]
+        count = len(rows) or count_hint
+        if count <= 0:
+            continue
+        value = _limited_text_join(labels, fallback="五类事实", limit=3)
+        if root_causes and state != "recovered":
+            value = f"{value}｜{_limited_text_join(root_causes, fallback='原因待确认', limit=2)}"
+        highlights.append(
+            {
+                "key": f"a_share_fact_{state}",
+                "label": label,
+                "count": count,
+                "value": value,
+                "tone": tone,
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    return highlights
+
+
+def build_strategy_a_share_fact_recovery_condition_guidance(
+    a_share_fact_recovery_summary: Any = None,
+    market_type: Any = None,
+) -> dict:
+    if _to_text(market_type) != "A股":
+        return {}
+    summary = _as_mapping(a_share_fact_recovery_summary)
+    if not summary:
+        return {}
+
+    fact_items = []
+    for raw in summary.get("items") or []:
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        fact_items.append(
+            {
+                "label": _to_text(item.get("label")) or "A股事实",
+                "recovery_state": _to_text(item.get("recovery_state")) or "waiting",
+                "status_label": _to_text(item.get("status_label")) or "待验证",
+                "root_cause_label": _to_text(item.get("root_cause_label")),
+            }
+        )
+    highlights = _fact_recovery_group_highlights(fact_items, summary)
+    blocked = next((item for item in highlights if item.get("key") == "a_share_fact_blocked"), {})
+    waiting = next((item for item in highlights if item.get("key") == "a_share_fact_waiting"), {})
+    recovered = next((item for item in highlights if item.get("key") == "a_share_fact_recovered"), {})
+    blocked_text = _to_text(blocked.get("value")) or ("五类事实" if _safe_int(summary.get("blocked_count")) else "")
+    waiting_text = _to_text(waiting.get("value")) or ("五类事实" if _safe_int(summary.get("waiting_count")) else "")
+    recovered_text = _to_text(recovered.get("value")) or ("五类事实" if _safe_int(summary.get("recovered_count")) else "")
+    summary_text = build_strategy_a_share_fact_recovery_summary(summary)
+
+    if blocked_text:
+        status = "blocked"
+        add_guardrail = f"受限事实未恢复前，加仓门槛不得升级；先恢复 {blocked_text}，禁止追高、加融资或把缺口当作利好。"
+        reduce_guardrail = f"若价格走弱且 {blocked_text} 无法排除，减仓/降风险优先于加仓。"
+        invalidation_guardrail = f"{blocked_text} 持续受限时，本轮进攻假设失效，策略只能降级为观察或小额试探。"
+    elif waiting_text:
+        status = "partial"
+        add_guardrail = f"待验证事实未回流前，加仓只能保持低置信度；先补齐 {waiting_text}。"
+        reduce_guardrail = f"{waiting_text} 待验证时，如价格或纪律转弱，先减暴露、保现金。"
+        invalidation_guardrail = f"{waiting_text} 无法回流或继续缺失时，本轮乐观执行条件不完整。"
+    elif recovered_text:
+        status = "ready"
+        add_guardrail = f"已回流事实 {recovered_text} 可作为加仓辅助，但仍需 MA/量能/纪律和仓位预算共振。"
+        reduce_guardrail = f"已回流事实若转弱或与价格纪律冲突，按纪律线减仓。"
+        invalidation_guardrail = f"{recovered_text} 从支持转为分歧或失败时，本轮策略建议失效并重新生成。"
+    else:
+        status = "missing"
+        add_guardrail = "A股事实回流总账待生成；加仓门槛保持待验证。"
+        reduce_guardrail = "事实总账缺失且价格转弱时，先减暴露、保现金。"
+        invalidation_guardrail = "A股事实总账无法确认时，本轮策略只保留观察。"
+
+    tone = _fact_recovery_condition_tone(status)
+    condition_items = [
+        {"key": "add", "label": "加仓事实门槛", "text": add_guardrail, "tone": tone if status != "ready" else "success"},
+        {"key": "reduce", "label": "减仓/降风险事实门槛", "text": reduce_guardrail, "tone": "danger" if status == "blocked" else "warning"},
+        {"key": "invalidation", "label": "失效事实门槛", "text": invalidation_guardrail, "tone": "danger" if status != "ready" else "warning"},
+    ]
+    return {
+        "status": status,
+        "tone": tone,
+        "summary": summary_text,
+        "group_highlights": highlights,
+        "add_condition_guardrail": add_guardrail,
+        "reduce_condition_guardrail": reduce_guardrail,
+        "invalidation_guardrail": invalidation_guardrail,
+        "condition_items": condition_items,
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def _latest_recovery_evidence_state(status: str) -> str:
     if status == "recovered":
         return "support"
@@ -1030,6 +1144,10 @@ def build_strategy_summary_view_model(
     evidence_radar_card = _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card"))
     projection_confidence = build_projection_confidence_summary(projection_packet)
     evidence_group_guidance = build_strategy_a_share_evidence_group_guidance(evidence_radar_packet)
+    fact_recovery_condition_guidance = build_strategy_a_share_fact_recovery_condition_guidance(
+        a_share_fact_recovery_summary,
+        market_type=market_type,
+    )
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -1057,6 +1175,7 @@ def build_strategy_summary_view_model(
         "evidence_execution_guardrail": _to_text(evidence_radar_card.get("execution_guardrail")),
         "evidence_validation_items": evidence_validation_items,
         "a_share_evidence_group_guidance": evidence_group_guidance,
+        "a_share_fact_recovery_condition_guidance": fact_recovery_condition_guidance,
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market_type),
         "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
         "a_share_data_validation_summary": a_share_data_validation_summary,

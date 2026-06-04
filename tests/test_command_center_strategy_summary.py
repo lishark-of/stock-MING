@@ -485,6 +485,8 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         )
         items = view_model["evidence_validation_items"]
         dumped = json.dumps(items, ensure_ascii=False)
+        fact_guidance = view_model["a_share_fact_recovery_condition_guidance"]
+        guidance_dumped = json.dumps(fact_guidance, ensure_ascii=False)
 
         self.assertEqual(items[0]["key"], "a_share_fact_recovery")
         self.assertEqual(items[0]["tone"], "danger")
@@ -492,7 +494,15 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("龙虎榜", dumped)
         self.assertIn("未恢复前策略只能降级", dumped)
         self.assertIn("筹码/胜率", dumped)
+        self.assertEqual(fact_guidance["status"], "blocked")
+        self.assertEqual(fact_guidance["tone"], "danger")
+        self.assertIn("受限事实未恢复前", fact_guidance["add_condition_guardrail"])
+        self.assertIn("龙虎榜", fact_guidance["add_condition_guardrail"])
+        self.assertIn("减仓/降风险优先", fact_guidance["reduce_condition_guardrail"])
+        self.assertIn("进攻假设失效", fact_guidance["invalidation_guardrail"])
+        self.assertIn("待验证事实", guidance_dumped)
         self.assertFalse("DeepSeek" in dumped)
+        self.assertFalse(fact_guidance["deepseek_called"])
         json.dumps(view_model, ensure_ascii=False)
 
     def test_a_share_fact_recovery_counts_block_even_without_item_details(self):
@@ -509,10 +519,13 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
             },
         )
         item = view_model["evidence_validation_items"][0]
+        fact_guidance = view_model["a_share_fact_recovery_condition_guidance"]
 
         self.assertEqual(item["key"], "a_share_fact_recovery")
         self.assertEqual(item["tone"], "danger")
         self.assertIn("五类事实", item["action_hint"])
+        self.assertEqual(fact_guidance["status"], "blocked")
+        self.assertIn("五类事实", fact_guidance["add_condition_guardrail"])
         json.dumps(view_model, ensure_ascii=False)
 
     def test_a_share_fact_recovery_all_recovered_supports_strategy_validation(self):
@@ -534,11 +547,37 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
             },
         )
         dumped = json.dumps(view_model["evidence_validation_items"], ensure_ascii=False)
+        fact_guidance = view_model["a_share_fact_recovery_condition_guidance"]
+        guidance_dumped = json.dumps(fact_guidance, ensure_ascii=False)
 
         self.assertEqual(view_model["evidence_validation_items"][0]["tone"], "success")
         self.assertIn("已回流 5", view_model["a_share_fact_recovery_validation_summary"])
         self.assertIn("仍需价格、纪律和仓位预算共振", dumped)
+        self.assertEqual(fact_guidance["status"], "ready")
+        self.assertIn("已回流事实", guidance_dumped)
+        self.assertIn("可作为加仓辅助", fact_guidance["add_condition_guardrail"])
+        self.assertIn("MA/量能/纪律", fact_guidance["add_condition_guardrail"])
+        self.assertFalse(fact_guidance["deepseek_called"])
         json.dumps(view_model, ensure_ascii=False)
+
+    def test_a_share_fact_recovery_condition_guidance_does_not_pollute_us_strategy(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "只观察"},
+            analysis_method_packet={"market": "美股"},
+            a_share_fact_recovery_summary={
+                "summary": "A股事实 5 项：已回流 0｜仍受限 1｜待验证 4",
+                "blocked_count": 1,
+                "waiting_count": 4,
+                "items": [
+                    {"label": "龙虎榜", "recovery_state": "blocked", "status_label": "权限不足"},
+                ],
+                "deepseek_called": False,
+            },
+        )
+        dumped = json.dumps(view_model, ensure_ascii=False)
+
+        self.assertEqual(view_model["a_share_fact_recovery_condition_guidance"], {})
+        self.assertNotIn("A股事实条件门槛", dumped)
 
     def test_latest_recovery_result_supports_strategy_validation_when_recovered(self):
         view_model = summary.build_strategy_summary_view_model(
