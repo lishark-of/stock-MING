@@ -5279,6 +5279,18 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_health_ledger_rows = [item for item in (data_health_ledger.get("rows") or []) if isinstance(item, dict)]
     if not data_health_visibility:
         data_health_visibility = build_data_health_visibility_summary(data_health_ledger)
+    data_health_root_cause_html = ""
+    for group in (data_health_visibility.get("root_cause_groups") or data_health_ledger.get("root_cause_groups") or [])[:5]:
+        if not isinstance(group, dict):
+            continue
+        data_health_root_cause_html += (
+            f"<span class='cc-home-chip {escape(_home_text(group.get('tone'), 'missing'))}'>"
+            f"{escape(_home_text(group.get('label'), '原因待确认'))}："
+            f"{escape(_home_number(group.get('count')))}｜{escape(_home_text(group.get('labels'), '无'))}"
+            "</span>"
+        )
+    if not data_health_root_cause_html:
+        data_health_root_cause_html = "<span class='cc-home-chip missing'>根因分组：待检测</span>"
     data_health_visibility_item_html = ""
     for item in (data_health_visibility.get("items") or [])[:4]:
         if not isinstance(item, dict):
@@ -5288,6 +5300,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {escape(_home_text(item.get("label"), "数据接口"))}：
           <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "待验证"))}</span>
           {escape(_home_text(item.get("meaning"), "仍需核对接口状态。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          根因：{escape(_home_text(item.get("root_cause_label"), "尚未检测"))}
+          ｜之前拉满为何不够：{escape(_home_text(item.get("why_previous_full_not_enough"), "仍需核对接口权限、日期和覆盖范围。"))}
         </div>
         <div class="cc-home-item-meta">
           下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}
@@ -5319,6 +5335,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           ｜恢复入口 {escape(_home_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"))}
         </div>
         <div class="cc-home-item-meta">
+          根因：{escape(_home_text(item.get("root_cause_label"), "尚未检测"))}
+          ｜之前拉满为何不够：{escape(_home_text(item.get("why_previous_full_not_enough"), "仍需核对接口状态。"))}
+        </div>
+        <div class="cc-home-item-meta">
           时间线说明：{escape(_home_text(item.get("message"), "仍需核对接口状态。"))}
         </div>
         """
@@ -5332,6 +5352,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(data_health_visibility.get("summary"), "暂无接口级健康账本"))}</div>
           <div class="cc-home-item-meta">{escape(_home_text(data_health_visibility.get("explanation"), "不会自动请求外部接口。"))}</div>
+          <div class="cc-home-profile-pills">根因分组：{data_health_root_cause_html}</div>
           <div class="cc-home-item-meta">权限不足：{escape(_home_text(data_health_visibility.get("permission_labels"), "无"))} ｜ 本会话跳过：{escape(_home_text(data_health_visibility.get("skipped_labels"), "无"))}</div>
           <div class="cc-home-item-meta">缓存：{escape(_home_text(data_health_visibility.get("cache_labels"), "无"))} ｜ 近期无数据：{escape(_home_text(data_health_visibility.get("empty_labels"), "无"))} ｜ DeepSeek：未调用</div>
           {data_health_visibility_item_html}
@@ -5348,6 +5369,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), item.get("state") or "待验证"))}</span>
           </div>
           <div class="cc-home-item-meta">接口：{escape(_home_text(item.get("provider"), "数据源"))} {escape(_home_text(item.get("api"), ""))} ｜ 最近检查：{escape(_home_text(item.get("last_checked"), "暂无"))} ｜ 最近成功：{escape(_home_text(item.get("last_success_text"), "暂无"))}</div>
+          <div class="cc-home-item-meta">根因：{escape(_home_text(item.get("root_cause_label"), "尚未检测"))} ｜ 之前拉满为何不够：{escape(_home_text(item.get("why_previous_full_not_enough"), "仍需核对接口状态。"))}</div>
           <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("meaning"), "仍需核对接口状态。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "按数据恢复中心手动处理。"))}</div>
           <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))} ｜ 触发：{escape(_home_text(item.get("refresh_policy"), "button_gated"))}</div>

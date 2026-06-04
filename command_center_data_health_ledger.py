@@ -467,6 +467,7 @@ def _root_cause_groups(rows: list[dict]) -> list[dict]:
             {
                 "code": code,
                 "label": to_text(cause_rows[0].get("root_cause_label"), "尚未检测"),
+                "tone": _root_cause_group_tone(code),
                 "count": len(cause_rows),
                 "labels": _limited_labels(cause_rows, fallback="无", limit=4),
                 "providers": sorted({to_text(row.get("provider"), "数据源") for row in cause_rows}),
@@ -474,6 +475,16 @@ def _root_cause_groups(rows: list[dict]) -> list[dict]:
             }
         )
     return result
+
+
+def _root_cause_group_tone(code: str) -> str:
+    if code in {"permission_scope", "session_skip", "configuration"}:
+        return "failed"
+    if code in {"manual_gate", "cache_guard", "fallback_proxy", "publish_window"}:
+        return "stale"
+    if code == "available":
+        return "ready"
+    return "missing"
 
 
 def _market_scoped_rows(rows: list[dict], market_type: Any = None) -> list[dict]:

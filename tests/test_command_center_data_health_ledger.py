@@ -187,9 +187,13 @@ class CommandCenterDataHealthLedgerTests(unittest.TestCase):
         self.assertIn("单独权限/积分", summary["items"][0]["why_previous_full_not_enough"])
         cause_groups = {item["code"]: item for item in summary["root_cause_groups"]}
         self.assertEqual(cause_groups["permission_scope"]["count"], 1)
+        self.assertEqual(cause_groups["permission_scope"]["tone"], "failed")
         self.assertEqual(cause_groups["session_skip"]["count"], 1)
+        self.assertEqual(cause_groups["session_skip"]["tone"], "failed")
         self.assertEqual(cause_groups["publish_window"]["count"], 1)
+        self.assertEqual(cause_groups["publish_window"]["tone"], "stale")
         self.assertEqual(cause_groups["cache_guard"]["count"], 1)
+        self.assertEqual(cause_groups["cache_guard"]["tone"], "stale")
         self.assertIn("手动执行后回流 command_center_margin_packet", summary["recovery_actions"][0]["navigation_label"])
         self.assertEqual(summary["external_call_policy"], "not_triggered")
         self.assertFalse(summary["deepseek_called"])
