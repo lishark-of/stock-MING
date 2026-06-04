@@ -6044,10 +6044,12 @@ def render_command_center_packet_registry_card(view_model: dict | None = None, r
     readiness_surface_html = ""
     for item in readiness_surfaces[:9]:
         tone = _registry_tone_class(item.get("tone"))
+        source_label = str(item.get("source_label") or "")
         readiness_surface_html += (
             f"<span class='cc-readiness-surface {tone}'>"
             f"{escape(str(item.get('label') or item.get('key') or '首屏模块'))}"
             f"<b>{escape(str(item.get('status_label') or item.get('status') or '待验证'))}</b>"
+            f"<em>{escape(source_label)}</em>"
             "</span>"
         )
 
@@ -6057,10 +6059,14 @@ def render_command_center_packet_registry_card(view_model: dict | None = None, r
         errors = item.get("error_packets") or []
         details = missing or errors
         detail_text = "、".join(str(value) for value in details[:3]) if details else "等待 packet 回流"
+        source_text = str(item.get("source_label") or "")
+        source_detail = str(item.get("source_detail") or "")
         readiness_blocker_html += (
             "<div class='cc-readiness-blocker'>"
             f"<div class='cc-readiness-blocker-title'>{escape(str(item.get('label') or item.get('surface') or '首屏模块'))}</div>"
-            f"<div class='cc-readiness-blocker-detail'>{escape(detail_text)}</div>"
+            f"<div class='cc-readiness-blocker-detail'>{escape(detail_text)}"
+            f"{' ｜ ' + escape(source_text) if source_text else ''}"
+            f"{'：' + escape(source_detail) if source_detail else ''}</div>"
             f"<div class='cc-readiness-blocker-action'>{escape(str(item.get('next_action') or '保持按钮触发，等待数据回流。'))}</div>"
             "</div>"
         )
@@ -6278,6 +6284,11 @@ def render_command_center_packet_registry_card(view_model: dict | None = None, r
         .cc-readiness-surface.danger {{ background: rgba(239, 68, 68, 0.08); color: #b91c1c; }}
         .cc-readiness-surface b {{
           font-weight: 760;
+        }}
+        .cc-readiness-surface em {{
+          font-style: normal;
+          color: #64748b;
+          font-weight: 650;
         }}
         .cc-readiness-blockers {{
           display: grid;

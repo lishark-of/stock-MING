@@ -53,11 +53,14 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
 
     def test_mostly_ready_state_reports_ready(self):
         packet = readiness.build_desktop_frontend_readiness(mostly_ready_state())
+        surfaces = {item["key"]: item for item in packet["surfaces"]}
 
         self.assertEqual(packet["readiness_status"], "ready")
         self.assertEqual(packet["readiness_score"], 100)
         self.assertEqual(packet["ready_surface_count"], packet["surface_count"])
         self.assertFalse(packet["blockers"])
+        self.assertEqual(surfaces["decision_hero"]["source_label"], "最新 packet")
+        self.assertIn("command_center_decision_packet", surfaces["decision_hero"]["source_packets"])
 
     def test_missing_legacy_surfaces_become_actionable_blockers(self):
         state = {
@@ -75,6 +78,9 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
         self.assertIn("next_ticket_candidates", blockers)
         self.assertIn("etf_margin_action", blockers)
         self.assertIn("risk_alerts", blockers)
+        self.assertEqual(blockers["next_ticket_candidates"]["source_label"], "待手动恢复")
+        self.assertEqual(blockers["etf_margin_action"]["source_label"], "待手动恢复")
+        self.assertEqual(blockers["risk_alerts"]["source_label"], "待手动恢复")
         self.assertIn("command_center_radar_packet", blockers["next_ticket_candidates"]["missing_required_packets"])
         self.assertIn("command_center_etf_packet", blockers["etf_margin_action"]["missing_required_packets"])
         self.assertIn("command_center_hard_risk_packet", blockers["risk_alerts"]["missing_required_packets"])
@@ -125,12 +131,17 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
 
         self.assertEqual(surfaces["data_freshness"]["status"], "ready")
         self.assertIn("command_center_refresh_summary", surfaces["data_freshness"]["available_required_packets"])
+        self.assertEqual(surfaces["data_freshness"]["source_label"], "本地快照")
         self.assertEqual(surfaces["next_ticket_candidates"]["status"], "ready")
         self.assertIn("command_center_radar_packet", surfaces["next_ticket_candidates"]["available_required_packets"])
+        self.assertEqual(surfaces["next_ticket_candidates"]["source_label"], "本地快照")
         self.assertEqual(surfaces["etf_margin_action"]["status"], "ready")
         self.assertIn("command_center_etf_packet", surfaces["etf_margin_action"]["available_required_packets"])
+        self.assertEqual(surfaces["etf_margin_action"]["source_label"], "本地快照")
         self.assertEqual(surfaces["risk_alerts"]["status"], "ready")
         self.assertIn("command_center_hard_risk_packet", surfaces["risk_alerts"]["available_required_packets"])
+        self.assertEqual(surfaces["risk_alerts"]["source_label"], "本地快照")
+        self.assertEqual(surfaces["risk_alerts"]["source_detail"], "Home Action Snapshot 已含可展示结构")
 
     def test_empty_home_snapshot_does_not_satisfy_nested_surfaces(self):
         state = {
@@ -152,6 +163,7 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
         self.assertEqual(surfaces["next_ticket_candidates"]["status"], "missing")
         self.assertEqual(surfaces["etf_margin_action"]["status"], "missing")
         self.assertEqual(surfaces["risk_alerts"]["status"], "missing")
+        self.assertEqual(surfaces["risk_alerts"]["source_label"], "待手动恢复")
 
     def test_error_packet_marks_surface_blocked(self):
         state = {
@@ -161,6 +173,7 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
         risk = next(item for item in packet["surfaces"] if item["key"] == "risk_alerts")
 
         self.assertEqual(risk["status"], "blocked")
+        self.assertEqual(risk["source_label"], "错误阻断")
         self.assertIn("command_center_hard_risk_packet", risk["error_packets"])
         self.assertEqual(packet["readiness_status"], "blocked")
 

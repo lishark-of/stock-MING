@@ -270,6 +270,69 @@ def _status_label(status: str) -> str:
     }.get(status, "待验证")
 
 
+def _available_response_keys(keys: list[str], responses: list[dict]) -> list[str]:
+    return [key for key, response in zip(keys, responses) if _is_available(response)]
+
+
+def _is_snapshot_response(response: Mapping[str, Any]) -> bool:
+    meta = _as_mapping(response.get("meta"))
+    return _to_text(meta.get("preview_source")) == "command_center_home_snapshot"
+
+
+def _source_summary(
+    required_keys: list[str],
+    required_responses: list[dict],
+    support_keys: list[str],
+    support_responses: list[dict],
+    status: str,
+) -> dict:
+    all_keys = required_keys + support_keys
+    all_responses = required_responses + support_responses
+    available_required = _available_response_keys(required_keys, required_responses)
+    available_support = _available_response_keys(support_keys, support_responses)
+    error_packets = [key for key, response in zip(all_keys, all_responses) if _is_error(response)]
+    if error_packets:
+        return {
+            "source_state": "blocked",
+            "source_label": "错误阻断",
+            "source_detail": "、".join(error_packets[:3]),
+            "source_packets": error_packets,
+        }
+    if not available_required:
+        return {
+            "source_state": "missing",
+            "source_label": "待手动恢复",
+            "source_detail": "、".join(required_keys[:3]),
+            "source_packets": [],
+        }
+    source_packets = available_required + available_support
+    required_available_responses = [
+        response
+        for key, response in zip(required_keys, required_responses)
+        if key in available_required
+    ]
+    if any(_is_snapshot_response(response) for response in required_available_responses):
+        return {
+            "source_state": "home_snapshot",
+            "source_label": "本地快照",
+            "source_detail": "Home Action Snapshot 已含可展示结构",
+            "source_packets": source_packets,
+        }
+    if status == "partial":
+        return {
+            "source_state": "mixed",
+            "source_label": "部分 packet",
+            "source_detail": "、".join(source_packets[:3]),
+            "source_packets": source_packets,
+        }
+    return {
+        "source_state": "current_packet",
+        "source_label": "最新 packet",
+        "source_detail": "、".join(source_packets[:3]),
+        "source_packets": source_packets,
+    }
+
+
 def _surface_item(spec: Mapping[str, Any], responses: Mapping[str, dict]) -> dict:
     required_keys = list(spec.get("required_any") or [])
     support_keys = list(spec.get("supporting_packets") or [])
@@ -290,6 +353,7 @@ def _surface_item(spec: Mapping[str, Any], responses: Mapping[str, dict]) -> dic
         if response
     ]
     api_paths = [path for path in api_paths if path]
+    source = _source_summary(required_keys, required_responses, support_keys, support_responses, status)
     return {
         "key": spec.get("key"),
         "label": spec.get("label"),
@@ -297,6 +361,10 @@ def _surface_item(spec: Mapping[str, Any], responses: Mapping[str, dict]) -> dic
         "status": status,
         "status_label": _status_label(status),
         "tone": _surface_tone(status),
+        "source_state": source["source_state"],
+        "source_label": source["source_label"],
+        "source_detail": source["source_detail"],
+        "source_packets": source["source_packets"],
         "required_any": required_keys,
         "supporting_packets": support_keys,
         "available_required_packets": available_required,
@@ -341,6 +409,8 @@ def build_desktop_frontend_readiness(
             "surface": item["key"],
             "label": item["label"],
             "status": item["status"],
+            "source_label": item["source_label"],
+            "source_detail": item["source_detail"],
             "missing_required_packets": item["missing_required_packets"],
             "error_packets": item["error_packets"],
             "next_action": item["next_action"],
