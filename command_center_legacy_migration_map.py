@@ -34,6 +34,17 @@ HOME_SURFACES = {
     "cloud_brain": "可选 DeepSeek 解释上下文",
 }
 
+LEGACY_TOOL_ROUTES = {
+    "today_pool": ("今日关注池", "高级工具箱 / 今日关注池"),
+    "tianyan_risk": ("天眼风控", "高级工具箱 / 天眼风控"),
+    "discipline_lab": ("交易纪律实验室", "高级工具箱 / 交易纪律实验室"),
+    "quant_projection": ("量化推演", "高级工具箱 / 量化推演"),
+    "margin_etf": ("融资 ETF", "高级工具箱 / 融资 ETF"),
+    "data_healthcheck": ("数据源体检", "高级工具箱 / 数据源体检"),
+    "next_ticket_radar": ("下一票雷达", "高级工具箱 / 下一票雷达"),
+    "cloud_brain": ("云端外脑", "高级工具箱 / 云端外脑"),
+}
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -122,6 +133,33 @@ def _migration_state(packet_wiring: str, data_status: str) -> str:
     return "legacy_only"
 
 
+def _primary_write_packet(targets: list[str]) -> str:
+    for target in targets:
+        if target.startswith("command_center_"):
+            return target
+    return targets[0] if targets else "command_center_packet"
+
+
+def _manual_action_for_item(key: str, label: str, payload: Mapping[str, Any], targets: list[str]) -> dict:
+    legacy_tab, toolbox_entry = LEGACY_TOOL_ROUTES.get(key, (label, f"高级工具箱 / {label}"))
+    writes_packet = _primary_write_packet(targets)
+    action_label = to_text(payload.get("gate"), f"手动打开{legacy_tab}")
+    return {
+        "key": f"legacy_migration:{key}",
+        "label": label,
+        "action_label": action_label,
+        "toolbox_entry": toolbox_entry,
+        "workspace_target": "高级工具箱（旧版保留）",
+        "workspace_state_key": "workspace_mode_v2",
+        "legacy_tab": legacy_tab,
+        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+        "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+        "writes_packet": writes_packet,
+        "refresh_policy": "button_gated",
+        "deepseek_called": False,
+    }
+
+
 def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
     payload = as_mapping(item)
     label = to_text(payload.get("label"), "旧版工具")
@@ -139,6 +177,7 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
     else:
         packet_wiring = "legacy_only"
     migration_state = _migration_state(packet_wiring, status_key)
+    manual_action = _manual_action_for_item(key, label, payload, targets)
     return {
         "key": key,
         "label": label,
@@ -161,7 +200,20 @@ def build_legacy_migration_item(item: Any, state: Any = None) -> dict:
         "data_dependencies": _text_items(payload.get("data_dependencies"), limit=6),
         "why_missing": _text_items(payload.get("common_missing_reasons"), limit=4),
         "current_blocker": to_text(status.get("summary"), "尚未读取到匹配的数据能力检测结果。"),
-        "next_action": to_text(status.get("next_action"), payload.get("gate") or "按钮手动触发"),
+        "next_action": (
+            f"{manual_action['toolbox_entry']} → {manual_action['action_label']}；"
+            f"回流 {manual_action['writes_packet']}。"
+        ),
+        "manual_action": manual_action,
+        "action_label": manual_action["action_label"],
+        "toolbox_entry": manual_action["toolbox_entry"],
+        "workspace_target": manual_action["workspace_target"],
+        "workspace_state_key": manual_action["workspace_state_key"],
+        "legacy_tab": manual_action["legacy_tab"],
+        "legacy_tab_state_key": manual_action["legacy_tab_state_key"],
+        "navigation_label": manual_action["navigation_label"],
+        "writes_packet": manual_action["writes_packet"],
+        "refresh_policy": "button_gated",
         "deepseek_called": False,
     }
 

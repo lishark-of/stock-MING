@@ -78,6 +78,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("恢复优先级影响", source)
         self.assertIn("legacy_migration_map", source)
         self.assertIn("旧版能力迁移地图", source)
+        self.assertIn("valid_legacy_migration_actions", source)
+        self.assertIn("迁移地图｜打开旧工具", source)
         self.assertIn("P0 权限/本会话跳过", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P1 缓存/近期无数据", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))
         self.assertIn("P2 旧工具 packet 迁移", Path("command_center_home_snapshot.py").read_text(encoding="utf-8"))

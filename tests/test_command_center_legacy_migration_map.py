@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import command_center_legacy_migration_map as migration
+from command_center_home_snapshot import build_tool_recovery_navigation_state
 
 
 FORBIDDEN_IMPORTS = {
@@ -113,7 +114,24 @@ class CommandCenterLegacyMigrationMapTests(unittest.TestCase):
         self.assertIn("command_center_radar_packet", item["command_center_packets"])
         self.assertEqual(item["trigger_policy"], "button_gated")
         self.assertEqual(item["deepseek_policy"], "manual_only")
+        self.assertEqual(item["legacy_tab"], "下一票雷达")
+        self.assertEqual(item["workspace_state_key"], "workspace_mode_v2")
+        self.assertEqual(item["legacy_tab_state_key"], "legacy_workspace_selected_tab")
+        self.assertEqual(item["writes_packet"], "command_center_radar_packet")
+        self.assertIn("高级工具箱", item["navigation_label"])
         self.assertFalse(item["deepseek_called"])
+
+    def test_migration_item_reuses_navigation_state_contract(self):
+        packet = migration.build_legacy_migration_map(keys=["margin_etf"])
+        item = packet["items"][0]
+        navigation_state = build_tool_recovery_navigation_state(item)
+
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_policy"], "navigation_only")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_etf_packet")
+        self.assertIn("融资 ETF", item["next_action"])
+        self.assertIn("回流 command_center_etf_packet", item["next_action"])
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_legacy_migration_map.py").read_text(encoding="utf-8"))
