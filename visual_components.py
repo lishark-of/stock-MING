@@ -5273,12 +5273,12 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     st.markdown(html, unsafe_allow_html=True)
     valid_tool_recovery_actions = [item for item in tool_recovery_actions[:4] if isinstance(item, dict)]
     if valid_tool_recovery_actions:
-        st.caption("旧工具恢复入口只负责切换到高级工具箱；不会自动运行扫描、回测、DeepSeek 或重型数据接口。")
+        st.caption("数据恢复中心｜高级工具导航：这里只切换到高级工具箱；不会自动运行扫描、回测、DeepSeek 或重型数据接口。")
         nav_cols = st.columns(min(4, len(valid_tool_recovery_actions)))
         for index, item in enumerate(valid_tool_recovery_actions):
             with nav_cols[index % len(nav_cols)]:
                 st.button(
-                    f"打开{_home_text(item.get('label'), '高级工具')}",
+                    f"恢复{_home_text(item.get('label'), '高级工具')}",
                     key=f"btn_open_tool_recovery_{_home_text(item.get('key'), index)}",
                     help=_home_text(item.get("navigation_label"), "切换到高级工具箱对应模块；不自动执行旧工具。"),
                     on_click=_apply_tool_recovery_navigation,

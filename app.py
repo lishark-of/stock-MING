@@ -4517,9 +4517,9 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
     if not runnable_actions:
         return
     with st.container(border=True):
-        st.markdown("#### A股数据缺口恢复")
+        st.markdown("#### 数据恢复中心｜A股接口检测")
         st.caption(
-            "这些按钮只检测当前标的对应的单项 Tushare 能力；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。"
+            "这些按钮来自首页数据恢复中心，只检测当前标的对应的单项 Tushare 能力；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。"
         )
         cols = st.columns(min(3, len(runnable_actions)))
         for index, action in enumerate(runnable_actions):
@@ -4590,10 +4590,10 @@ def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", ma
     if not actions:
         return
     with st.container(border=True):
-        st.markdown(f"#### {recovery_summary.get('title') or '补齐关键 A股证据'}")
+        st.markdown(f"#### 数据恢复中心｜{recovery_summary.get('title') or '补齐关键 A股证据'}")
         st.caption(
             recovery_summary.get("summary")
-            or "只在点击按钮后检测对应 Tushare 数据；用于修复证据缺口，不调用 DeepSeek，不自动刷新全市场。"
+            or "只在点击按钮后检测对应 Tushare 数据；用于修复数据恢复中心里的证据缺口，不调用 DeepSeek，不自动刷新全市场。"
         )
         cols = st.columns(len(actions))
         for col, action in zip(cols, actions):
