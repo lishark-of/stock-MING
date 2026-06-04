@@ -3455,6 +3455,102 @@ def _recovery_timeline_event_type(status: Any = "") -> str:
     return "packet_waiting"
 
 
+RECOVERY_TIMELINE_DECISION_IMPACT = {
+    "command_center_margin_packet": {
+        "level": "blocks_position_increase",
+        "label": "仍阻断加仓",
+        "tone": "failed",
+        "text": "融资融券未恢复前，融资比例和风险预算必须保守，不能支持加融资或放大仓位。",
+    },
+    "command_center_etf_packet": {
+        "level": "blocks_position_increase",
+        "label": "仍阻断加仓",
+        "tone": "failed",
+        "text": "融资 ETF 未回流前，不能把 ETF 配置、赛道强弱或融资动作写成已验证。",
+    },
+    "command_center_moneyflow_packet": {
+        "level": "blocks_position_increase",
+        "label": "仍阻断加仓",
+        "tone": "failed",
+        "text": "资金流未恢复前，不能把放量、流入或承接写成已验证加仓依据。",
+    },
+    "command_center_dragon_tiger_packet": {
+        "level": "blocks_position_increase",
+        "label": "仍阻断加仓",
+        "tone": "failed",
+        "text": "龙虎榜未恢复前，不能确认游资/机构席位证据，不能支撑追高或加仓。",
+    },
+    "command_center_limit_emotion_packet": {
+        "level": "blocks_position_increase",
+        "label": "仍阻断加仓",
+        "tone": "failed",
+        "text": "涨跌停/情绪未恢复前，不能确认题材温度、追高边界或涨跌停风险。",
+    },
+    "command_center_chip_packet": {
+        "level": "confidence_only",
+        "label": "只影响置信度",
+        "tone": "stale",
+        "text": "筹码/胜率未恢复时，压力位和历史胜率只能降置信度，不能单独决定交易动作。",
+    },
+    "command_center_hard_risk_packet": {
+        "level": "blocks_position_increase",
+        "label": "仍阻断加仓",
+        "tone": "failed",
+        "text": "公告/硬风险未恢复前，不能把风险写成已排除，禁止放大仓位。",
+    },
+    "command_center_radar_packet": {
+        "level": "blocks_candidate_execution",
+        "label": "仍阻断候选执行",
+        "tone": "failed",
+        "text": "下一票雷达未回流前，候选池只能待验证，不能升级为可执行清单。",
+    },
+    "command_center_discipline_packet": {
+        "level": "blocks_strategy_validation",
+        "label": "仍阻断策略确认",
+        "tone": "failed",
+        "text": "交易纪律/回测未恢复前，策略建议不能标记为纪律已验证。",
+    },
+    "command_center_quant_packet": {
+        "level": "confidence_only",
+        "label": "只影响置信度",
+        "tone": "stale",
+        "text": "量化推演未回流时，评分和趋势节奏只能降置信度，不能单独改变仓位。",
+    },
+}
+
+
+def _recovery_timeline_decision_impact(raw: Mapping[str, Any], status: str, writes_packet: str, label: str) -> dict:
+    manual_text = _to_text(raw.get("decision_impact") or raw.get("decision_guardrail"))
+    if status == "recovered":
+        return {
+            "level": "restored",
+            "label": "已恢复",
+            "tone": "ready",
+            "text": manual_text or f"{label}已回流为结构化 packet；仍需和价格、纪律、仓位规则共同复核。",
+        }
+    if status == "cached":
+        return {
+            "level": "requires_review",
+            "label": "缓存待复核",
+            "tone": "stale",
+            "text": manual_text or f"{label}当前使用缓存；执行前需要复核日期、来源和覆盖口径。",
+        }
+    config = RECOVERY_TIMELINE_DECISION_IMPACT.get(writes_packet)
+    if config:
+        return {
+            "level": config["level"],
+            "label": config["label"],
+            "tone": config["tone"],
+            "text": manual_text or config["text"],
+        }
+    return {
+        "level": "can_follow_up_later",
+        "label": "可稍后补",
+        "tone": "missing",
+        "text": manual_text or f"{label}暂未回流；不阻断看盘，但不能把缺失项当作已验证依据。",
+    }
+
+
 def _recovery_timeline_item(raw: Any = None, source_type: Any = "") -> dict:
     item = _as_mapping(raw)
     if not item:
@@ -3466,6 +3562,7 @@ def _recovery_timeline_item(raw: Any = None, source_type: Any = "") -> dict:
     packet_key = _to_text(item.get("packet_key"), writes_packet)
     source = _to_text(item.get("source"), "本地恢复状态")
     event_type = _recovery_timeline_event_type(status)
+    decision_impact = _recovery_timeline_decision_impact(item, status, writes_packet, label)
     return {
         "key": _to_text(
             item.get("key"),
@@ -3483,6 +3580,10 @@ def _recovery_timeline_item(raw: Any = None, source_type: Any = "") -> dict:
         "updated_at": updated_at,
         "source": source,
         "next_action": _to_text(item.get("next_action"), "返回综合推演中心查看快照。"),
+        "decision_impact_level": decision_impact["level"],
+        "decision_impact_label": decision_impact["label"],
+        "decision_impact_tone": decision_impact["tone"],
+        "decision_impact_text": decision_impact["text"],
         "external_call_policy": _to_text(item.get("external_call_policy"), "not_triggered"),
         "deepseek_called": False,
     }
@@ -3551,6 +3652,24 @@ def build_recovery_result_timeline(
         "blocked": len([item for item in items if item["status"] == "blocked"]),
         "waiting": len([item for item in items if item["status"] == "waiting"]),
     }
+    decision_impact_counts = {}
+    for item in items:
+        level = _to_text(item.get("decision_impact_level"), "can_follow_up_later")
+        decision_impact_counts[level] = decision_impact_counts.get(level, 0) + 1
+    impact_label_by_level = {
+        "restored": "已恢复",
+        "requires_review": "缓存待复核",
+        "blocks_position_increase": "仍阻断加仓",
+        "blocks_candidate_execution": "仍阻断候选执行",
+        "blocks_strategy_validation": "仍阻断策略确认",
+        "confidence_only": "只影响置信度",
+        "can_follow_up_later": "可稍后补",
+    }
+    decision_impact_summary = "｜".join(
+        f"{impact_label_by_level.get(level, level)} {count}"
+        for level, count in decision_impact_counts.items()
+        if count
+    ) or "暂无恢复影响分类"
     return {
         "title": "恢复结果时间线",
         "status": status,
@@ -3559,6 +3678,8 @@ def build_recovery_result_timeline(
         "summary": summary,
         "items": items,
         "status_counts": status_counts,
+        "decision_impact_counts": decision_impact_counts,
+        "decision_impact_summary": decision_impact_summary,
         "next_action": next_action,
         "external_call_policy": "not_triggered",
         "deepseek_called": False,

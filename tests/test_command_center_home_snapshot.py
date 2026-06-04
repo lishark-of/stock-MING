@@ -2789,9 +2789,15 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(timeline["status"], "blocked")
         self.assertEqual(timeline["items"][0]["event_type"], "packet_blocked")
         self.assertEqual(timeline["items"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(timeline["items"][0]["decision_impact_level"], "blocks_position_increase")
+        self.assertEqual(timeline["items"][0]["decision_impact_label"], "仍阻断加仓")
         self.assertEqual(timeline["items"][1]["event_type"], "packet_recovered")
+        self.assertEqual(timeline["items"][1]["decision_impact_level"], "restored")
         self.assertEqual(timeline["status_counts"]["blocked"], 1)
         self.assertEqual(timeline["status_counts"]["recovered"], 1)
+        self.assertEqual(timeline["decision_impact_counts"]["blocks_position_increase"], 1)
+        self.assertEqual(timeline["decision_impact_counts"]["restored"], 1)
+        self.assertIn("仍阻断加仓 1", timeline["decision_impact_summary"])
         self.assertEqual(timeline["external_call_policy"], "not_triggered")
         self.assertFalse(timeline["deepseek_called"])
         json.dumps(timeline, ensure_ascii=False)
@@ -2854,9 +2860,55 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(len(timeline["items"]), 2)
         self.assertEqual(timeline["items"][0]["writes_packet"], "command_center_radar_packet")
         self.assertEqual(timeline["items"][1]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(timeline["items"][0]["decision_impact_label"], "已恢复")
+        self.assertEqual(timeline["items"][1]["decision_impact_label"], "仍阻断加仓")
         self.assertEqual(timeline["status_counts"]["recovered"], 1)
         self.assertEqual(timeline["status_counts"]["blocked"], 1)
         self.assertEqual(timeline["external_call_policy"], "not_triggered")
+        self.assertFalse(timeline["deepseek_called"])
+        json.dumps(timeline, ensure_ascii=False)
+
+    def test_recovery_result_timeline_classifies_strategy_and_quant_impact(self):
+        timeline = snapshot.build_recovery_result_timeline(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "waiting",
+                    "label": "交易纪律/回测",
+                    "writes_packet": "command_center_discipline_packet",
+                    "updated_at": "2026-06-03T10:12:00",
+                },
+                "command_center_recovery_result_timeline": {
+                    "items": [
+                        {
+                            "status": "waiting",
+                            "label": "量化推演",
+                            "writes_packet": "command_center_quant_packet",
+                            "updated_at": "2026-06-03T10:08:00",
+                        },
+                        {
+                            "status": "waiting",
+                            "label": "未知旧工具",
+                            "writes_packet": "command_center_unknown_packet",
+                            "updated_at": "2026-06-03T10:06:00",
+                        },
+                    ]
+                },
+            },
+            limit=3,
+        )
+
+        by_packet = {item["writes_packet"]: item for item in timeline["items"]}
+        self.assertEqual(by_packet["command_center_discipline_packet"]["decision_impact_level"], "blocks_strategy_validation")
+        self.assertEqual(by_packet["command_center_discipline_packet"]["decision_impact_label"], "仍阻断策略确认")
+        self.assertIn("策略建议不能标记为纪律已验证", by_packet["command_center_discipline_packet"]["decision_impact_text"])
+        self.assertEqual(by_packet["command_center_quant_packet"]["decision_impact_level"], "confidence_only")
+        self.assertEqual(by_packet["command_center_quant_packet"]["decision_impact_label"], "只影响置信度")
+        self.assertEqual(by_packet["command_center_unknown_packet"]["decision_impact_level"], "can_follow_up_later")
+        self.assertEqual(by_packet["command_center_unknown_packet"]["decision_impact_label"], "可稍后补")
+        self.assertEqual(timeline["decision_impact_counts"]["blocks_strategy_validation"], 1)
+        self.assertEqual(timeline["decision_impact_counts"]["confidence_only"], 1)
+        self.assertEqual(timeline["decision_impact_counts"]["can_follow_up_later"], 1)
+        self.assertIn("只影响置信度 1", timeline["decision_impact_summary"])
         self.assertFalse(timeline["deepseek_called"])
         json.dumps(timeline, ensure_ascii=False)
 

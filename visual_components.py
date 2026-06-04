@@ -5586,6 +5586,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ packet：{escape(_home_text(item.get("packet_key"), item.get("writes_packet") or "command_center_packet"))}</div>
           <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "本地恢复状态"))} ｜ 更新时间：{escape(_home_text(item.get("updated_at"), "暂无"))}</div>
+          <div class="cc-home-item-meta">决策影响：<span class="cc-home-chip {escape(_home_text(item.get("decision_impact_tone"), "missing"))}">{escape(_home_text(item.get("decision_impact_label"), "可稍后补"))}</span> {escape(_home_text(item.get("decision_impact_text"), "不能把缺失项当作已验证依据。"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(item.get("next_action"), "返回综合推演中心查看快照。"))}</div>
           <div class="cc-home-item-meta">DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(item.get("external_call_policy"), "not_triggered"))}</div>
         </div>
@@ -5601,6 +5602,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape(_home_text(recovery_result_panel.get("tone"), "missing"))}">{escape(_home_text(recovery_result_panel.get("headline"), "待验证"))}</span>
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(recovery_result_panel.get("summary"), "恢复结果待验证。"))}</div>
+          <div class="cc-home-item-meta">影响分类：{escape(_home_text(recovery_result_panel.get("decision_impact_summary"), "暂无恢复影响分类"))}</div>
           <div class="cc-home-item-meta">下一步：{escape(_home_text(recovery_result_panel.get("next_action"), "按决策优先队列手动恢复。"))}</div>
           {recovery_result_status_item_html}
         </div>
