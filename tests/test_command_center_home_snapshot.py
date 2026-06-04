@@ -557,6 +557,50 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(payload["hard_risk_packet"]["deepseek_called"])
         self.assertFalse(payload["deepseek_called"])
 
+    def test_execution_guardrail_overview_summarizes_hard_risk_and_discipline(self):
+        today = _dt.date.today().isoformat()
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "只观察",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_hard_risk_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "risk_state": "暂无硬风险",
+                    "updated_at": f"{today}T10:01:00",
+                    "source": "Tushare hard risk cache",
+                    "deepseek_called": False,
+                },
+                "last_backtest_report": {
+                    "ticker": "002008.SZ",
+                    "summary": "纪律回测缓存可参考。",
+                    "metrics": {
+                        "round_trip_win_rate": 62,
+                        "max_drawdown_pct": -9,
+                        "trade_count": 12,
+                    },
+                    "date_range": {"end": today},
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:05:00",
+        )
+
+        overview = payload["execution_guardrail_overview"]
+        dumped = json.dumps(overview, ensure_ascii=False)
+
+        self.assertEqual(overview["title"], "执行护栏总览")
+        self.assertEqual(overview["label"], "执行护栏已回流")
+        self.assertIn("已回流 2", overview["summary"])
+        self.assertIn("公告/硬风险", dumped)
+        self.assertIn("交易纪律/回测", dumped)
+        self.assertIn("不会自动调用 DeepSeek", overview["safe_mode_text"])
+        self.assertFalse(overview["deepseek_called"])
+        self.assertEqual(overview["external_call_policy"], "not_triggered")
+
     def test_loaded_snapshot_keeps_hard_risk_alerts(self):
         today = _dt.date.today().isoformat()
         with tempfile.TemporaryDirectory() as tmp:

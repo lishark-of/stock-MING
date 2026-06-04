@@ -4900,6 +4900,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     decision_loop_status = payload.get("decision_loop_status") or {}
     if not isinstance(decision_loop_status, dict):
         decision_loop_status = {}
+    execution_guardrail_overview = payload.get("execution_guardrail_overview") or {}
+    if not isinstance(execution_guardrail_overview, dict):
+        execution_guardrail_overview = {}
 
     freshness_state = str(freshness.get("state") or "missing")
     freshness_label = freshness.get("label") or "待刷新"
@@ -5050,6 +5053,39 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             {escape(_home_text(decision_loop_status.get("safe_mode_text"), "页面打开只读取本地 packet；重型任务仍保持按钮触发。"))}
             ｜外部接口：{escape(decision_loop_external_policy)}
           </div>
+        </div>
+      </div>
+    """
+    execution_guardrail_item_html = ""
+    for item in (execution_guardrail_overview.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        execution_guardrail_item_html += (
+            f"<span class='cc-home-chip {escape(_home_text(item.get('tone'), 'missing'))}'>"
+            f"{escape(_home_text(item.get('label'), '执行护栏'))}：{escape(_home_text(item.get('status_label'), '待验证'))}"
+            "</span>"
+        )
+    if not execution_guardrail_item_html:
+        execution_guardrail_item_html = "<span class='cc-home-chip missing'>公告/硬风险：待验证</span><span class='cc-home-chip missing'>交易纪律/回测：待验证</span>"
+    execution_guardrail_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(execution_guardrail_overview.get("title"), "执行护栏总览"))}
+            <span class="cc-home-chip {escape(_home_text(execution_guardrail_overview.get("tone"), "missing"))}">
+              {escape(_home_text(execution_guardrail_overview.get("label"), "执行护栏待验证"))}
+            </span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(execution_guardrail_overview.get("headline"), "执行前仍需复核公告/硬风险和交易纪律。"))}<br>
+            {escape(_home_text(execution_guardrail_overview.get("summary"), "已回流 0｜缓存 0｜仍阻断 0｜待验证 0"))}
+          </div>
+        </div>
+        <div>
+          <div class="cc-home-profile-pills">{execution_guardrail_item_html}</div>
+          <div class="cc-home-profile-meta">执行保护：{escape(_home_text(execution_guardrail_overview.get("impact_text"), "护栏未验证前不能升级为可执行交易动作。"))}</div>
+          <div class="cc-home-profile-meta">{escape(_home_text(execution_guardrail_overview.get("next_action"), "先补齐硬风险和纪律检查。"))}</div>
+          <div class="cc-home-profile-meta">DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(execution_guardrail_overview.get("external_call_policy"), "not_triggered"))}</div>
         </div>
       </div>
     """
@@ -6359,6 +6395,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       {decision_loop_html}
       {a_share_status_console_html}
       {evidence_loop_html}
+      {execution_guardrail_html}
       <div class="cc-home-grid">
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">当前持仓动作</div>

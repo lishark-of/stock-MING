@@ -126,6 +126,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("execution_guardrail_dependencies", source)
         self.assertIn("执行护栏：", source)
         self.assertIn("execution_guardrail_dependency_summary", source)
+        self.assertIn("execution_guardrail_overview", source)
+        self.assertIn("执行护栏总览", source)
         self.assertIn("A股证据条件门槛", source)
         self.assertIn("path_evidence_group_summary", source)
         self.assertIn("path_evidence_group_items", source)

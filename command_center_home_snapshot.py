@@ -3372,10 +3372,53 @@ def _execution_guardrail_dependency_summary(dependencies: Any = None) -> dict:
     }
 
 
+def build_execution_guardrail_overview(snapshot: Any = None) -> dict:
+    dependencies = _execution_guardrail_dependencies(snapshot)
+    summary = _execution_guardrail_dependency_summary(dependencies)
+    rows = [_as_mapping(item) for item in dependencies if _as_mapping(item)]
+    blocked = [item for item in rows if item.get("status") == "blocked"]
+    waiting = [item for item in rows if item.get("status") not in {"recovered", "cached", "blocked"}]
+    cached = [item for item in rows if item.get("status") == "cached"]
+    recovered = [item for item in rows if item.get("status") == "recovered"]
+    if blocked:
+        headline = "执行前仍有硬风险或纪律阻断"
+        next_action = "先进入高级工具箱手动复核公告/硬风险和交易纪律；阻断未解除前不放大仓位。"
+    elif waiting:
+        headline = "执行护栏仍待验证"
+        next_action = "先完成硬风险和纪律/回测手动检查，再把候选或 ETF 升级为可执行动作。"
+    elif cached:
+        headline = "执行护栏使用缓存"
+        next_action = "执行前复核缓存日期、来源和回测窗口；不要把旧缓存当成今日确认。"
+    elif recovered:
+        headline = "执行护栏已回流"
+        next_action = "可进入价格、仓位和失效条件复核；DeepSeek 仍只解释结构化结果。"
+    else:
+        headline = "执行护栏待绑定"
+        next_action = "尚未读取到公告/硬风险和交易纪律状态；保持观察。"
+    return {
+        "title": "执行护栏总览",
+        "headline": headline,
+        "label": summary["label"],
+        "tone": summary["tone"],
+        "summary": summary["summary"],
+        "impact_text": summary["impact_text"],
+        "next_action": next_action,
+        "items": rows,
+        "recovered_count": len(recovered),
+        "cached_count": len(cached),
+        "blocked_count": len(blocked),
+        "waiting_count": len(waiting),
+        "safe_mode_text": "这里只读取本地公告/硬风险 packet 和交易纪律/回测 packet；不会自动调用 DeepSeek、回测或外部数据接口。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
 def attach_execution_guardrail_dependencies(snapshot: Any = None) -> dict:
     payload = _as_mapping(snapshot)
     dependencies = _execution_guardrail_dependencies(payload)
     summary = _execution_guardrail_dependency_summary(dependencies)
+    payload["execution_guardrail_overview"] = build_execution_guardrail_overview(payload)
     next_candidates = []
     for raw_candidate in _as_list(payload.get("next_ticket_candidates")):
         candidate = _as_mapping(raw_candidate)
