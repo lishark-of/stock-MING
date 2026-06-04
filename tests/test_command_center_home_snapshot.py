@@ -1086,6 +1086,42 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
             {},
         )
 
+    def test_tool_recovery_manual_check_hint_maps_a_share_packets(self):
+        hint = snapshot.build_tool_recovery_manual_check_hint(
+            {
+                "command_center_last_tool_recovery_label": "融资融券",
+                "command_center_last_tool_recovery_writes_packet": "command_center_margin_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "融资 ETF",
+            },
+            selected_tab="融资 ETF",
+        )
+
+        self.assertTrue(hint["available"])
+        self.assertEqual(hint["check_key"], "margin")
+        self.assertEqual(hint["button_label"], "手动检测融资融券")
+        self.assertEqual(hint["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(hint["external_call_policy"], "button_gated")
+        self.assertIn("不自动运行 DeepSeek", hint["help_text"])
+        self.assertFalse(hint["deepseek_called"])
+
+    def test_tool_recovery_manual_check_hint_keeps_unknown_packet_manual(self):
+        hint = snapshot.build_tool_recovery_manual_check_hint(
+            {
+                "command_center_last_tool_recovery_label": "旧工具",
+                "command_center_last_tool_recovery_writes_packet": "command_center_unknown_packet",
+                "command_center_last_tool_recovery_policy": "navigation_only",
+                "legacy_workspace_selected_tab": "今日关注池",
+            },
+            selected_tab="今日关注池",
+        )
+
+        self.assertFalse(hint["available"])
+        self.assertEqual(hint["writes_packet"], "command_center_unknown_packet")
+        self.assertEqual(hint["external_call_policy"], "not_triggered")
+        self.assertIn("还没有绑定单项检测按钮", hint["message"])
+        self.assertFalse(hint["deepseek_called"])
+
     def test_tool_recovery_result_notice_waits_for_packet(self):
         notice = snapshot.build_tool_recovery_result_notice(
             {

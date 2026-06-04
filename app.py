@@ -10465,6 +10465,44 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         elif recovery_result_notice:
             st.warning(recovery_result_notice["message"])
             st.caption(recovery_result_notice["next_action"])
+        manual_check_hint = home_snapshot_service.build_tool_recovery_manual_check_hint(st.session_state, selected_tab=legacy_tab)
+        if manual_check_hint.get("available"):
+            st.caption(manual_check_hint["help_text"])
+            recovery_runner_map = {
+                "moneyflow": _run_manual_moneyflow_capability_check,
+                "dragon_tiger": _run_manual_dragon_tiger_capability_check,
+                "margin": _run_manual_margin_detail_capability_check,
+                "limit_emotion": _run_manual_limit_cpt_capability_check,
+                "chip_radar": _run_manual_chip_radar_capability_check,
+                "hard_risk": _run_manual_hard_risk_capability_check,
+            }
+            recovery_runner = recovery_runner_map.get(manual_check_hint.get("check_key"))
+            if recovery_runner:
+                recovery_result = _render_manual_capability_check_button(
+                    manual_check_hint["button_label"],
+                    f"btn_legacy_tool_recovery_manual_check_{manual_check_hint['check_key']}",
+                    manual_check_hint["status_label"],
+                    manual_check_hint["result_label"],
+                    recovery_runner,
+                    target=target,
+                    position_profile=position_profile_preview,
+                    live_packet=st.session_state.get("command_center_live_packet") or {},
+                )
+                if recovery_result:
+                    recovery_item = recovery_result.get("item") or {}
+                    st.session_state["command_center_last_a_share_diagnostic_recovery_result"] = {
+                        "key": manual_check_hint["check_key"],
+                        "label": manual_check_hint["label"],
+                        "writes_packet": manual_check_hint["writes_packet"],
+                        "api_hint": recovery_item.get("api"),
+                        "capability_state": recovery_item.get("capability_state") or recovery_item.get("state"),
+                        "status_label": recovery_item.get("status") or recovery_item.get("capability_label") or recovery_item.get("capability_state") or "待验证",
+                        "message": recovery_item.get("action_hint") or recovery_item.get("error") or recovery_item.get("message") or "已更新本地数据能力状态。",
+                        "checked_at": recovery_item.get("checked_at") or recovery_item.get("updated_at"),
+                        "deepseek_called": False,
+                    }
+        elif manual_check_hint:
+            st.caption(manual_check_hint["message"])
         if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):
             for recovery_key in [
                 "command_center_last_tool_recovery_key",

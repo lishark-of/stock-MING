@@ -988,6 +988,83 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
     }
 
 
+TOOL_RECOVERY_MANUAL_CHECKS = {
+    "command_center_moneyflow_packet": {
+        "check_key": "moneyflow",
+        "label": "个股资金流",
+        "button_label": "手动检测个股资金流",
+        "status_label": "正在手动检测个股资金流...",
+        "result_label": "资金流",
+    },
+    "command_center_dragon_tiger_packet": {
+        "check_key": "dragon_tiger",
+        "label": "龙虎榜",
+        "button_label": "手动检测龙虎榜",
+        "status_label": "正在手动检测龙虎榜...",
+        "result_label": "龙虎榜",
+    },
+    "command_center_margin_packet": {
+        "check_key": "margin",
+        "label": "融资融券",
+        "button_label": "手动检测融资融券",
+        "status_label": "正在手动检测融资融券权限...",
+        "result_label": "融资融券",
+    },
+    "command_center_limit_emotion_packet": {
+        "check_key": "limit_emotion",
+        "label": "涨跌停/情绪",
+        "button_label": "手动检测涨跌停/情绪",
+        "status_label": "正在手动检测涨跌停/情绪权限...",
+        "result_label": "涨跌停/情绪",
+    },
+    "command_center_chip_packet": {
+        "check_key": "chip_radar",
+        "label": "筹码/胜率",
+        "button_label": "手动检测筹码/胜率",
+        "status_label": "正在手动检测筹码/胜率...",
+        "result_label": "筹码/胜率",
+    },
+    "command_center_hard_risk_packet": {
+        "check_key": "hard_risk",
+        "label": "公告/硬风险",
+        "button_label": "手动检测公告/硬风险",
+        "status_label": "正在手动检测公告/硬风险...",
+        "result_label": "公告/硬风险",
+    },
+}
+
+
+def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any = "") -> dict:
+    context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
+    if not context:
+        return {}
+    writes_packet = context["writes_packet"]
+    config = TOOL_RECOVERY_MANUAL_CHECKS.get(writes_packet)
+    if not config:
+        return {
+            "available": False,
+            "label": context["label"],
+            "selected_tab": context["selected_tab"],
+            "writes_packet": writes_packet,
+            "message": f"{writes_packet} 还没有绑定单项检测按钮；请在当前高级工具模块手动查找对应刷新入口。",
+            "external_call_policy": "not_triggered",
+            "deepseek_called": False,
+        }
+    return {
+        "available": True,
+        "label": config["label"],
+        "selected_tab": context["selected_tab"],
+        "writes_packet": writes_packet,
+        "check_key": config["check_key"],
+        "button_label": config["button_label"],
+        "status_label": config["status_label"],
+        "result_label": config["result_label"],
+        "help_text": f"只检测 {config['label']} 并回流 {writes_packet}；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。",
+        "external_call_policy": "button_gated",
+        "deepseek_called": False,
+    }
+
+
 def _tool_packet_has_payload(packet: Mapping[str, Any], writes_packet: str = "") -> bool:
     if not packet:
         return False
