@@ -4100,6 +4100,12 @@ def render_strategy_execution_card(
         if isinstance(home_snapshot, dict)
         else {}
     ) or _get_latest_recovery_result_notice_from_state()
+    recovery_result_timeline = (
+        home_snapshot.get("command_center_recovery_result_timeline")
+        or home_snapshot.get("recovery_result_timeline")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or {}
     strategy_vm = build_strategy_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
@@ -4109,6 +4115,7 @@ def render_strategy_execution_card(
         data_health_ledger=data_health_ledger,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
         latest_recovery_result_notice=latest_recovery_result_notice,
+        recovery_result_timeline=recovery_result_timeline,
     )
     render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
     return live_packet

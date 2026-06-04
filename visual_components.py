@@ -4512,6 +4512,7 @@ def render_strategy_execution_command_card(
     a_share_data_validation_summary = str(vm.get("a_share_data_validation_summary") or "").strip()
     a_share_fact_recovery_validation_summary = str(vm.get("a_share_fact_recovery_validation_summary") or "").strip()
     latest_recovery_validation_summary = str(vm.get("latest_recovery_validation_summary") or "").strip()
+    recovery_timeline_validation_summary = str(vm.get("recovery_timeline_validation_summary") or "").strip()
     evidence_card = vm.get("evidence_radar_card") or {}
     evidence_gate = str(vm.get("evidence_confidence_gate") or evidence_card.get("confidence_gate") or "不可验证")
     projection_confidence = vm.get("projection_confidence_summary") or {}
@@ -4526,6 +4527,8 @@ def render_strategy_execution_command_card(
         validation_title = f"{validation_title} ｜ A股事实：{a_share_fact_recovery_validation_summary}"
     if latest_recovery_validation_summary:
         validation_title = f"{validation_title} ｜ 最近恢复：{latest_recovery_validation_summary}"
+    if recovery_timeline_validation_summary:
+        validation_title = f"{validation_title} ｜ 旧恢复影响：{recovery_timeline_validation_summary}"
     guidance_html = f"""
       <div class="cc-strategy-guidance">
         <div class="cc-strategy-guidance-title">{escape(str(guidance.get("title") or "市场验证重点"))}</div>

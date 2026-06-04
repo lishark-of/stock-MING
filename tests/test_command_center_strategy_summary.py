@@ -572,6 +572,55 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("涨跌停/情绪", view_model["latest_recovery_validation_summary"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_recovery_timeline_impact_blocks_strategy_validation(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            analysis_method_packet={"market": "A股"},
+            recovery_result_timeline={
+                "status": "partial",
+                "decision_impact_summary": "仍阻断加仓 1｜只影响置信度 1",
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+                "items": [
+                    {
+                        "label": "融资融券",
+                        "writes_packet": "command_center_margin_packet",
+                        "status": "blocked",
+                        "decision_impact_level": "blocks_position_increase",
+                        "decision_impact_label": "仍阻断加仓",
+                        "decision_impact_tone": "failed",
+                        "decision_impact_text": "融资融券未恢复前不能加融资。",
+                        "external_call_policy": "not_triggered",
+                    },
+                    {
+                        "label": "量化推演",
+                        "writes_packet": "command_center_quant_packet",
+                        "status": "waiting",
+                        "decision_impact_level": "confidence_only",
+                        "decision_impact_label": "只影响置信度",
+                        "decision_impact_tone": "stale",
+                        "decision_impact_text": "量化推演未回流时只能降置信度。",
+                        "external_call_policy": "not_triggered",
+                    },
+                ],
+            },
+        )
+        items = view_model["evidence_validation_items"]
+        dumped = json.dumps(items, ensure_ascii=False)
+
+        self.assertTrue(any(item["key"].startswith("recovery_timeline:") for item in items))
+        margin_item = next(item for item in items if item.get("writes_packet") == "command_center_margin_packet")
+        quant_item = next(item for item in items if item.get("writes_packet") == "command_center_quant_packet")
+        self.assertEqual(margin_item["tone"], "danger")
+        self.assertEqual(margin_item["evidence_state"], "blocked")
+        self.assertIn("未恢复前策略条件不能升级", margin_item["action_hint"])
+        self.assertEqual(quant_item["tone"], "warning")
+        self.assertEqual(quant_item["evidence_state"], "cached")
+        self.assertIn("仍阻断加仓 1", view_model["recovery_timeline_validation_summary"])
+        self.assertIn("融资融券", view_model["recovery_timeline_validation_summary"])
+        self.assertFalse("DeepSeek" in dumped)
+        json.dumps(view_model, ensure_ascii=False)
+
     def test_missing_evidence_validation_is_safe(self):
         view_model = summary.build_strategy_summary_view_model({"status": "ready"}, evidence_radar_packet={})
 

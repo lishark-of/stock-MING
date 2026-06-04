@@ -790,6 +790,93 @@ def build_strategy_latest_recovery_summary(latest_recovery_result_notice: Any = 
     return f"{label}：{status}｜{message}"
 
 
+def _recovery_timeline_evidence_state(level: str, status: str = "") -> str:
+    if level == "restored" or status == "recovered":
+        return "support"
+    if level in {"blocks_position_increase", "blocks_candidate_execution", "blocks_strategy_validation"} or status == "blocked":
+        return "blocked"
+    if level in {"requires_review", "confidence_only"} or status == "cached":
+        return "cached"
+    return "missing"
+
+
+def _recovery_timeline_action(label: str, state: str, impact_label: str = "") -> str:
+    if state == "blocked":
+        return f"先处理 {label} 的{impact_label or '阻断影响'}；未恢复前策略条件不能升级为已验证。"
+    if state == "cached":
+        return f"复核 {label} 的缓存/置信度影响；执行前确认日期、来源和回流 packet。"
+    if state == "support":
+        return f"{label}已回流；可进入证据链，但仍需价格、纪律和仓位规则共同确认。"
+    return f"{label}恢复影响待验证；不要把缺失旧工具能力当作策略已确认。"
+
+
+def build_strategy_recovery_timeline_validation_items(recovery_result_timeline: Any = None) -> list[dict]:
+    timeline = _as_mapping(recovery_result_timeline)
+    if not timeline:
+        return []
+    items = [_as_mapping(item) for item in _as_list(timeline.get("items")) if _as_mapping(item)]
+    result = []
+    for raw in items[:3]:
+        label = _to_text(raw.get("label")) or "旧工具恢复"
+        level = _to_text(raw.get("decision_impact_level"))
+        impact_label = _to_text(raw.get("decision_impact_label")) or "恢复影响"
+        state = _recovery_timeline_evidence_state(level, _to_text(raw.get("status")))
+        result.append(
+            {
+                "key": f"recovery_timeline:{_to_text(raw.get('writes_packet')) or label}",
+                "label": f"旧恢复影响：{label}",
+                "priority": 0,
+                "evidence_state": state,
+                "evidence_label": impact_label,
+                "tone": _evidence_validation_tone(state),
+                "check_text": _to_text(raw.get("decision_impact_text")) or _to_text(raw.get("message")) or "恢复影响待验证。",
+                "action_hint": _recovery_timeline_action(label, state, impact_label),
+                "writes_packet": _to_text(raw.get("writes_packet")),
+                "decision_impact_level": level,
+                "external_call_policy": _to_text(raw.get("external_call_policy")) or "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    if not result and _to_text(timeline.get("decision_impact_summary")):
+        result.append(
+            {
+                "key": "recovery_timeline_summary",
+                "label": "旧工具恢复影响",
+                "priority": 0,
+                "evidence_state": _recovery_timeline_evidence_state("", _to_text(timeline.get("status"))),
+                "evidence_label": _to_text(timeline.get("headline")) or "恢复影响",
+                "tone": _evidence_validation_tone(_recovery_timeline_evidence_state("", _to_text(timeline.get("status")))),
+                "check_text": _to_text(timeline.get("decision_impact_summary")),
+                "action_hint": _to_text(timeline.get("next_action")) or "按恢复队列手动处理旧工具能力。",
+                "external_call_policy": _to_text(timeline.get("external_call_policy")) or "not_triggered",
+                "deepseek_called": False,
+            }
+        )
+    return result
+
+
+def build_strategy_recovery_timeline_summary(recovery_result_timeline: Any = None) -> str:
+    timeline = _as_mapping(recovery_result_timeline)
+    if not timeline:
+        return ""
+    summary = _to_text(timeline.get("decision_impact_summary")) or _to_text(timeline.get("summary"))
+    if not summary:
+        return ""
+    items = [_as_mapping(item) for item in _as_list(timeline.get("items")) if _as_mapping(item)]
+    blockers = [
+        _to_text(item.get("label"))
+        for item in items
+        if _to_text(item.get("decision_impact_level")) in {
+            "blocks_position_increase",
+            "blocks_candidate_execution",
+            "blocks_strategy_validation",
+        }
+    ]
+    if blockers:
+        return f"{summary}｜阻断：{'、'.join([item for item in blockers if item][:2])}"
+    return summary
+
+
 def build_strategy_evidence_validation_items(
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
@@ -797,6 +884,7 @@ def build_strategy_evidence_validation_items(
     market_type: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
+    recovery_result_timeline: Any = None,
 ) -> list[dict]:
     evidence = _as_mapping(evidence_radar_packet)
     items = build_strategy_a_share_data_validation_items(a_share_data_console)
@@ -816,6 +904,7 @@ def build_strategy_evidence_validation_items(
         )
     items.extend(build_strategy_a_share_fact_recovery_validation_items(a_share_fact_recovery_summary))
     items.extend(build_strategy_latest_recovery_validation_items(latest_recovery_result_notice))
+    items.extend(build_strategy_recovery_timeline_validation_items(recovery_result_timeline))
     queue = evidence.get("decision_evidence_queue") or []
     if not isinstance(queue, list):
         queue = []
@@ -916,6 +1005,7 @@ def build_strategy_summary_view_model(
     data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
+    recovery_result_timeline: Any = None,
 ) -> dict:
     payload = _as_mapping(packet)
     is_empty = not bool(payload)
@@ -931,10 +1021,12 @@ def build_strategy_summary_view_model(
         market_type=market_type,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
         latest_recovery_result_notice=latest_recovery_result_notice,
+        recovery_result_timeline=recovery_result_timeline,
     )
     a_share_data_validation_summary = build_strategy_a_share_data_validation_summary(a_share_data_console)
     a_share_fact_recovery_validation_summary = build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary)
     latest_recovery_validation_summary = build_strategy_latest_recovery_summary(latest_recovery_result_notice)
+    recovery_timeline_validation_summary = build_strategy_recovery_timeline_summary(recovery_result_timeline)
     evidence_radar_card = _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card"))
     projection_confidence = build_projection_confidence_summary(projection_packet)
     evidence_group_guidance = build_strategy_a_share_evidence_group_guidance(evidence_radar_packet)
@@ -970,6 +1062,7 @@ def build_strategy_summary_view_model(
         "a_share_data_validation_summary": a_share_data_validation_summary,
         "a_share_fact_recovery_validation_summary": a_share_fact_recovery_validation_summary,
         "latest_recovery_validation_summary": latest_recovery_validation_summary,
+        "recovery_timeline_validation_summary": recovery_timeline_validation_summary,
         "risk_label": _to_text(_as_mapping(payload.get("risk_budget")).get("risk_level")) or "未知",
         "deepseek_text": "DeepSeek：已调用" if bool(payload.get("deepseek_called")) else "DeepSeek：未调用",
         "updated_text": _to_text(payload.get("updated_at")) or "暂无",
