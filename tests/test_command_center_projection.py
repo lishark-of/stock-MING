@@ -235,6 +235,50 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertEqual(packet["paths"][2]["latest_recovery_label"], "最近恢复阻断")
         self.assertFalse(packet["deepseek_called"])
 
+    def test_projection_confidence_summary_marks_blockers_and_guardrail(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 5",
+                "latest_recovery_impact": {
+                    "status": "blocked",
+                    "evidence_state": "blocked",
+                    "label": "涨跌停/情绪",
+                    "impact_text": "涨跌停/情绪恢复仍受限。",
+                    "external_call_policy": "button_gated",
+                    "deepseek_called": False,
+                },
+            },
+        )
+        summary = projection.build_projection_confidence_summary(packet)
+
+        self.assertEqual(summary["status"], "blocked")
+        self.assertEqual(summary["label"], "路径受限")
+        self.assertEqual(summary["tone"], "danger")
+        self.assertIn("不能把乐观路径当作加仓依据", summary["guardrail"])
+        self.assertIn("涨跌停/情绪", json.dumps(summary["blocker_items"], ensure_ascii=False))
+        self.assertFalse(summary["deepseek_called"])
+
+    def test_projection_confidence_summary_marks_partial_when_recovery_is_pending(self):
+        summary = projection.build_projection_confidence_summary(
+            {
+                "status": "ready",
+                "path_basis": "A股证据雷达：支持 0｜阻断 0｜缓存 0｜缺失 6",
+                "path_recovery_impact": {
+                    "evidence_state": "missing",
+                    "label": "龙虎榜",
+                    "impact_text": "龙虎榜恢复结果待验证。",
+                    "deepseek_called": False,
+                },
+                "deepseek_called": False,
+            }
+        )
+
+        self.assertEqual(summary["status"], "partial")
+        self.assertEqual(summary["label"], "路径待验证")
+        self.assertIn("龙虎榜", json.dumps(summary["pending_items"], ensure_ascii=False))
+
     def test_a_share_data_capability_enriches_projection_paths(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},

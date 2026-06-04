@@ -5,6 +5,7 @@ from numbers import Number
 from typing import Any
 
 from command_center_data_health_ledger import build_data_health_impact_summary
+from command_center_projection import build_projection_confidence_summary
 
 
 DATA_STATUS_LABELS = {
@@ -700,6 +701,7 @@ def _warning_items(packet: Mapping[str, Any]) -> list[str]:
 def build_strategy_summary_view_model(
     packet: Any,
     analysis_method_packet: Any = None,
+    projection_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     data_health_ledger: Any = None,
@@ -725,6 +727,7 @@ def build_strategy_summary_view_model(
     a_share_fact_recovery_validation_summary = build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary)
     latest_recovery_validation_summary = build_strategy_latest_recovery_summary(latest_recovery_result_notice)
     evidence_radar_card = _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card"))
+    projection_confidence = build_projection_confidence_summary(projection_packet)
     return {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
@@ -746,6 +749,7 @@ def build_strategy_summary_view_model(
         "data_status_items": build_strategy_data_status_items(payload),
         "warning_items": _warning_items(payload),
         "market_method_guidance": market_guidance,
+        "projection_confidence_summary": projection_confidence,
         "evidence_radar_card": evidence_radar_card,
         "evidence_confidence_gate": _to_text(evidence_radar_card.get("confidence_gate")) or "不可验证",
         "evidence_execution_guardrail": _to_text(evidence_radar_card.get("execution_guardrail")),

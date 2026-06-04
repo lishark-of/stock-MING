@@ -4513,7 +4513,10 @@ def render_strategy_execution_command_card(
     latest_recovery_validation_summary = str(vm.get("latest_recovery_validation_summary") or "").strip()
     evidence_card = vm.get("evidence_radar_card") or {}
     evidence_gate = str(vm.get("evidence_confidence_gate") or evidence_card.get("confidence_gate") or "不可验证")
+    projection_confidence = vm.get("projection_confidence_summary") or {}
     validation_title = str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0")
+    if projection_confidence.get("status") and projection_confidence.get("status") != "missing":
+        validation_title = f"{validation_title} ｜ 路径：{projection_confidence.get('label') or '待验证'}"
     if evidence_card:
         validation_title = f"{validation_title} ｜ 证据门槛：{evidence_card.get('status_label') or '待验证'}"
     if a_share_data_validation_summary:
@@ -4549,6 +4552,15 @@ def render_strategy_execution_command_card(
             <div class="cc-strategy-check">✓ {escape(str(evidence_card.get('summary') or validation_title))}</div>
           </div>
         """
+    projection_confidence_html = ""
+    if projection_confidence and projection_confidence.get("status") != "missing":
+        projection_confidence_html = f"""
+          <div class="cc-strategy-condition {_tone_to_strategy_class(projection_confidence.get('tone'))}">
+            <div class="cc-strategy-label">趋势推演门槛 · {escape(str(projection_confidence.get('label') or '路径待验证'))}</div>
+            <div class="cc-strategy-text">{escape(str(projection_confidence.get('summary') or '趋势推演暂无可读依据。'))}</div>
+            <div class="cc-strategy-check">✓ {escape(str(projection_confidence.get('guardrail') or '路径只做条件化推演，不直接决定仓位。'))}</div>
+          </div>
+        """
     pill_items = [
         (f"状态：{vm.get('status_label') or '待生成'}", vm.get("status_tone")),
         (f"风险：{risk_level}", risk_level),
@@ -4580,6 +4592,7 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-condition-grid">{condition_html}</div>
       {guidance_html}
       <div class="cc-strategy-section-title">证据验证重点 · {escape(validation_title)}</div>
+      {projection_confidence_html}
       {evidence_gate_html}
       <div class="cc-strategy-condition-grid">{evidence_validation_html}</div>
       <div class="cc-strategy-section-title">未来 5-10 日路径</div>
@@ -4612,6 +4625,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
     payload = packet or {}
     vm = decision_view_model or build_decision_summary_view_model(payload)
     status = str(vm.get("status") or "waiting")
+    projection_confidence = vm.get("projection_confidence_summary") or {}
     tiles = [
         ("主账户动作", vm.get("position_text") or "空仓等待"),
         ("融资账户动作", vm.get("margin_text") or "不使用融资"),
@@ -4663,6 +4677,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
           <div class="cc-decision-badges">
             <span class="cc-decision-badge {escape(status)}">{escape(str(vm.get("status_label") or "待刷新判断"))}</span>
             <span class="cc-decision-badge">市场：{escape(str(vm.get("market_text") or "未刷新"))}</span>
+            <span class="cc-decision-badge">路径：{escape(str(projection_confidence.get("label") or "路径待生成"))}</span>
             <span class="cc-decision-badge">{escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}</span>
           </div>
           <div class="cc-decision-chain">{evidence_chain_html}</div>
@@ -4693,6 +4708,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         <br>A股证据雷达：{escape(str(vm.get("a_share_evidence_summary_text") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
         <br>A股数据能力：{escape(str(vm.get("a_share_data_basis_summary_text") or "待检测"))}
         <br>A股事实回流：{escape(str(vm.get("a_share_fact_recovery_summary_text") or "待检测"))}
+        <br>趋势推演：{escape(str(projection_confidence.get("summary") or "路径待生成"))}
       </div>
     </section>
     """

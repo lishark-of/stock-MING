@@ -762,6 +762,108 @@ def _merge_a_share_fact_recovery_guidance(
     return guided_paths, f"A股事实回流：{recovery['summary']}", recovery["items"], recovery["tone"]
 
 
+def build_projection_confidence_summary(projection_packet: Any = None) -> dict:
+    packet = _as_mapping(projection_packet)
+    if not packet:
+        return {
+            "status": "missing",
+            "label": "路径待生成",
+            "tone": "muted",
+            "confidence_label": "不可验证",
+            "summary": "趋势推演尚未生成；不能作为今日动作依据。",
+            "guardrail": "先生成或读取趋势推演 packet，再进入策略执行和今日总决策。",
+            "blocker_items": [],
+            "pending_items": [],
+            "support_items": [],
+            "deepseek_called": False,
+        }
+
+    blocker_items = []
+    pending_items = []
+    support_items = []
+    projection_status = _to_text(packet.get("status"), "waiting")
+    path_basis = _to_text(packet.get("path_basis"))
+    if projection_status == "waiting":
+        pending_items.append("趋势推演待刷新")
+    elif path_basis:
+        support_items.append("路径依据已生成")
+
+    recovery = _as_mapping(packet.get("path_recovery_impact"))
+    recovery_state = _to_text(recovery.get("evidence_state"))
+    recovery_label = _to_text(recovery.get("label"), "最近恢复")
+    if recovery_state == "blocked":
+        blocker_items.append(f"{recovery_label}仍受限")
+    elif recovery_state == "missing":
+        pending_items.append(f"{recovery_label}待验证")
+    elif recovery_state == "supporting":
+        support_items.append(f"{recovery_label}刚回流")
+
+    health = _as_mapping(packet.get("path_data_health_impact"))
+    health_status = _to_text(health.get("status"))
+    if health_status == "blocked":
+        blocker_items.append(_to_text(health.get("summary"), "接口健康阻断"))
+    elif health_status == "partial":
+        pending_items.append(_to_text(health.get("summary"), "接口健康待复核"))
+    elif health_status == "ready":
+        support_items.append(_to_text(health.get("summary"), "接口健康可用"))
+
+    fact_tone = _to_text(packet.get("path_fact_recovery_tone"))
+    fact_summary = _to_text(packet.get("path_fact_recovery_summary"))
+    if fact_tone == "failed":
+        blocker_items.append(fact_summary or "A股事实回流仍受限")
+    elif fact_tone in {"stale", "missing", "warning"}:
+        pending_items.append(fact_summary or "A股事实回流待验证")
+    elif fact_summary:
+        support_items.append(fact_summary)
+
+    if blocker_items:
+        status = "blocked"
+        label = "路径受限"
+        tone = "danger"
+        confidence_label = "低置信度"
+        guardrail = "路径存在阻断项；不能把乐观路径当作加仓依据。"
+    elif pending_items:
+        status = "partial"
+        label = "路径待验证"
+        tone = "warning"
+        confidence_label = "中低置信度"
+        guardrail = "路径仍有待验证项；保持观察、小额试探或等待触发条件。"
+    elif support_items:
+        status = "ready"
+        label = "路径可验证"
+        tone = "success"
+        confidence_label = "可验证"
+        guardrail = "路径依据已形成，但仍需价格纪律、仓位预算和失效条件共同确认。"
+    else:
+        status = "missing"
+        label = "路径待生成"
+        tone = "muted"
+        confidence_label = "不可验证"
+        guardrail = "趋势推演没有可读依据，不进入交易动作判断。"
+
+    summary_parts = []
+    if blocker_items:
+        summary_parts.append(f"阻断：{_limited_join(blocker_items, limit=2)}")
+    if pending_items:
+        summary_parts.append(f"待验证：{_limited_join(pending_items, limit=2)}")
+    if support_items:
+        summary_parts.append(f"支持：{_limited_join(support_items, limit=2)}")
+    return {
+        "status": status,
+        "label": label,
+        "tone": tone,
+        "confidence_label": confidence_label,
+        "summary": "｜".join(summary_parts) or "趋势推演暂无可读依据。",
+        "guardrail": guardrail,
+        "path_basis": path_basis,
+        "recovery_impact_summary": _to_text(packet.get("path_recovery_impact_summary")),
+        "blocker_items": blocker_items[:5],
+        "pending_items": pending_items[:5],
+        "support_items": support_items[:5],
+        "deepseek_called": bool(packet.get("deepseek_called")) is True,
+    }
+
+
 def build_projection_packet(
     decision_packet: Any = None,
     strategy_packet: Any = None,

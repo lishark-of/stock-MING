@@ -5,6 +5,7 @@ from numbers import Number
 from typing import Any
 
 from command_center_data_health_ledger import build_data_health_impact_summary
+from command_center_projection import build_projection_confidence_summary
 
 
 COVERAGE_LABELS = {
@@ -342,6 +343,7 @@ def build_latest_recovery_result_summary_text(latest_recovery_result_notice: Any
 
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
+    projection_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     data_health_ledger: Any = None,
@@ -351,6 +353,16 @@ def build_decision_evidence_chain_items(
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
     items = [{"label": "市场类型", "value": market, "tone": "success" if market in {"A股", "美股", "ETF"} else "muted"}]
+    projection_confidence = build_projection_confidence_summary(projection_packet)
+    if projection_confidence.get("status") != "missing":
+        items.append(
+            {
+                "label": "趋势推演",
+                "value": f"{projection_confidence['label']}｜{projection_confidence['confidence_label']}",
+                "tone": projection_confidence["tone"],
+                "summary": projection_confidence["guardrail"],
+            }
+        )
     methods = [_as_mapping(item) for item in (analysis.get("methods") or []) if _as_mapping(item)]
     passed = [item.get("name") for item in methods if item.get("status") == "通过"]
     pending = [item.get("name") for item in methods if item.get("status") == "待验证"]
@@ -420,6 +432,7 @@ def build_decision_evidence_chain_items(
 def build_decision_summary_view_model(
     packet: Any,
     analysis_method_packet: Any = None,
+    projection_packet: Any = None,
     evidence_radar_packet: Any = None,
     a_share_data_console: Any = None,
     data_health_ledger: Any = None,
@@ -438,6 +451,7 @@ def build_decision_summary_view_model(
         if status in {"waiting", "partial", "failed"}
         else "当前为综合推演结论，仍需按纪律验证执行。"
     )
+    projection_confidence = build_projection_confidence_summary(projection_packet)
     return {
         "status": status,
         "status_label": decision_status_label(payload),
@@ -457,12 +471,14 @@ def build_decision_summary_view_model(
         "evidence_summary_text": decision_evidence_summary_text(payload),
         "evidence_chain_items": build_decision_evidence_chain_items(
             analysis_method_packet,
+            projection_packet=projection_packet,
             evidence_radar_packet=evidence_radar_packet,
             a_share_data_console=a_share_data_console,
             data_health_ledger=data_health_ledger,
             a_share_fact_recovery_summary=a_share_fact_recovery_summary,
             latest_recovery_result_notice=latest_recovery_result_notice,
         ),
+        "projection_confidence_summary": projection_confidence,
         "data_health_impact": build_data_health_impact_summary(data_health_ledger, market_type=market),
         "a_share_evidence_radar_card": _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card")),
         "a_share_evidence_summary_text": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")),

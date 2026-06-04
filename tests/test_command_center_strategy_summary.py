@@ -302,6 +302,28 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("观察/小额试探", dumped)
         self.assertEqual(view_model["data_health_impact"]["status"], "blocked")
 
+    def test_projection_confidence_summary_is_visible_to_strategy_view_model(self):
+        view_model = summary.build_strategy_summary_view_model(
+            {"status": "ready", "action": "小幅进攻"},
+            projection_packet={
+                "status": "ready",
+                "path_basis": "A股证据雷达：支持 0｜阻断 0｜缓存 0｜缺失 6",
+                "path_recovery_impact": {
+                    "evidence_state": "missing",
+                    "label": "龙虎榜",
+                    "impact_text": "龙虎榜恢复结果待验证。",
+                    "deepseek_called": False,
+                },
+                "deepseek_called": False,
+            },
+        )
+        projection_summary = view_model["projection_confidence_summary"]
+
+        self.assertEqual(projection_summary["status"], "partial")
+        self.assertEqual(projection_summary["label"], "路径待验证")
+        self.assertIn("龙虎榜", json.dumps(projection_summary, ensure_ascii=False))
+        self.assertFalse(projection_summary["deepseek_called"])
+
     def test_a_share_data_capability_all_available_enters_evidence_chain(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "只观察"},

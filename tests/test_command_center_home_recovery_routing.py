@@ -73,6 +73,14 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("external_call_policy", source)
         self.assertIn("DeepSeek：未调用", source)
 
+    def test_decision_and_strategy_cards_surface_projection_confidence(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("projection_confidence_summary", source)
+        self.assertIn("路径：{escape(str(projection_confidence.get(\"label\") or \"路径待生成\"))}", source)
+        self.assertIn("趋势推演门槛", source)
+        self.assertIn("路径只做条件化推演，不直接决定仓位", source)
+
     def test_home_snapshot_renders_recovery_priority_lanes(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 

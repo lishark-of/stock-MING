@@ -243,6 +243,29 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertIn("融资融券", view_model["data_health_impact"]["summary"])
         self.assertIn("不能把缺失数据当成利好", view_model["data_health_impact"]["decision_impact"])
 
+    def test_evidence_chain_includes_projection_confidence(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"status": "ready", "overall_action": "只观察"},
+            analysis_method_packet={"market": "A股", "methods": [{"name": "趋势跟踪", "status": "通过"}]},
+            projection_packet={
+                "status": "ready",
+                "path_basis": "A股证据雷达：支持 0｜阻断 1｜缓存 0｜缺失 5",
+                "path_recovery_impact": {
+                    "evidence_state": "blocked",
+                    "label": "涨跌停/情绪",
+                    "impact_text": "涨跌停/情绪恢复仍受限。",
+                    "deepseek_called": False,
+                },
+                "deepseek_called": False,
+            },
+        )
+        joined = json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
+
+        self.assertIn("趋势推演", joined)
+        self.assertIn("路径受限", joined)
+        self.assertEqual(view_model["projection_confidence_summary"]["status"], "blocked")
+        self.assertIn("乐观路径", view_model["projection_confidence_summary"]["guardrail"])
+
     def test_a_share_data_basis_marks_all_available_as_decision_ready(self):
         view_model = summary.build_decision_summary_view_model(
             {},

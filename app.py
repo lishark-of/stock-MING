@@ -3910,7 +3910,7 @@ def _generate_command_center_decision(live_packet, refresh_summary=None):
     return decision_packet, live_packet
 
 
-def render_command_center_decision_card(live_packet, target="", position_profile=None, analysis_method_packet=None):
+def render_command_center_decision_card(live_packet, target="", position_profile=None, analysis_method_packet=None, projection_packet=None):
     live_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(live_packet))
     packet = _get_command_center_decision_display_packet()
     notice = st.session_state.pop("command_center_decision_notice", "")
@@ -3952,6 +3952,7 @@ def render_command_center_decision_card(live_packet, target="", position_profile
     decision_vm = build_decision_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
+        projection_packet=projection_packet,
         evidence_radar_packet=evidence_radar_vm,
         a_share_data_console=a_share_data_console,
         data_health_ledger=data_health_ledger,
@@ -3983,7 +3984,14 @@ def render_command_center_decision_card(live_packet, target="", position_profile
     return live_packet
 
 
-def render_strategy_execution_card(live_packet, target="", position_profile=None, analysis_method_packet=None, evidence_radar_packet=None):
+def render_strategy_execution_card(
+    live_packet,
+    target="",
+    position_profile=None,
+    analysis_method_packet=None,
+    evidence_radar_packet=None,
+    projection_packet=None,
+):
     live_packet = _attach_strategy_execution_packet(live_packet)
     packet = _get_strategy_execution_display_packet()
     st.caption("路径：刷新今日基础数据 → 生成策略执行建议 → 查看今日总决策 → 可选 DeepSeek 综合解释")
@@ -4030,6 +4038,7 @@ def render_strategy_execution_card(live_packet, target="", position_profile=None
     strategy_vm = build_strategy_summary_view_model(
         packet,
         analysis_method_packet=analysis_method_packet,
+        projection_packet=projection_packet,
         evidence_radar_packet=evidence_radar_packet,
         a_share_data_console=a_share_data_console,
         data_health_ledger=data_health_ledger,
@@ -5057,13 +5066,6 @@ packet:
         home_snapshot=home_snapshot,
     )
     st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
-    with decision_hero_slot.container():
-        live_packet = render_command_center_decision_card(
-            live_packet,
-            target=target,
-            position_profile=position_profile,
-            analysis_method_packet=analysis_method_packet,
-        )
     projection_packet = projection_service.build_projection_packet(
         decision_packet=_get_command_center_decision_display_packet(),
         strategy_packet=_get_strategy_execution_display_packet(),
@@ -5075,6 +5077,14 @@ packet:
         horizon_days=10,
     )
     st.session_state["command_center_projection_packet"] = projection_packet
+    with decision_hero_slot.container():
+        live_packet = render_command_center_decision_card(
+            live_packet,
+            target=target,
+            position_profile=position_profile,
+            analysis_method_packet=analysis_method_packet,
+            projection_packet=projection_packet,
+        )
     with projection_slot.container():
         render_command_center_projection_chart(projection_packet)
     render_analysis_methods_card(analysis_method_packet)
@@ -5084,6 +5094,7 @@ packet:
         position_profile=position_profile,
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_vm,
+        projection_packet=projection_packet,
     )
     render_command_center_live_cards(
         live_packet,
