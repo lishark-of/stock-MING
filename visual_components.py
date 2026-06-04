@@ -4005,6 +4005,23 @@ def _inject_command_center_css():
             font-size: 11px;
             line-height: 1.45;
         }
+        .cc-home-details {
+            margin-top: 10px;
+            border-radius: 16px;
+            border: 1px solid rgba(148,163,184,0.16);
+            background: rgba(255,255,255,0.58);
+            padding: 10px;
+        }
+        .cc-home-details summary {
+            cursor: pointer;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 850;
+            list-style-position: inside;
+        }
+        .cc-home-details[open] summary {
+            margin-bottom: 8px;
+        }
         .cc-home-bottom {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
@@ -4713,7 +4730,6 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
-    data_recovery_actions = payload.get("data_recovery_actions") or data_capability_console.get("recovery_actions") or []
     tool_recovery_actions = payload.get("tool_recovery_actions") or []
     data_recovery_center = payload.get("data_recovery_center") or {}
     a_share_matrix = payload.get("a_share_capability_matrix") or {}
@@ -4767,20 +4783,15 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       </div>
     """
     a_share_status_console = a_share_user_diagnostic.get("status_console") or {}
-    a_share_status_group_html = ""
+    a_share_status_groups = []
     for group in (a_share_status_console.get("groups") or [])[:4]:
         if not isinstance(group, dict):
             continue
-        a_share_status_group_html += f"""
-          <div class="cc-home-item-meta">
-            <span class="cc-home-chip {escape(_home_text(group.get("tone"), "missing"))}">
-              {escape(_home_text(group.get("label"), "待检测"))} {escape(_home_number(group.get("count")))}
-            </span>
-            {escape(_home_text(group.get("summary"), "暂无明细"))}
-          </div>
-        """
-    if not a_share_status_group_html:
-        a_share_status_group_html = "<div class='cc-home-item-meta'>A股数据能力尚未检测；页面打开不会自动请求 Tushare。</div>"
+        a_share_status_groups.append(
+            f"{_home_text(group.get('label'), '待检测')} {_home_number(group.get('count'))}："
+            f"{_home_text(group.get('summary'), '暂无明细')}"
+        )
+    a_share_status_group_text = " ｜ ".join(a_share_status_groups) or "A股数据能力尚未检测；页面打开不会自动请求 Tushare。"
     a_share_status_console_tone = "missing"
     if a_share_user_diagnostic.get("tone") == "success":
         a_share_status_console_tone = "ready"
@@ -4801,7 +4812,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
         </div>
         <div>
-          {a_share_status_group_html}
+          <div class="cc-home-item-meta">{escape(a_share_status_group_text)}</div>
           <div class="cc-home-profile-meta">{escape(_home_text(a_share_status_console.get("safe_mode_text"), "只读取本地诊断结果；不会自动请求外部接口。"))}</div>
         </div>
       </div>
@@ -4890,38 +4901,6 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             console_queue_html += f"<div class='cc-home-item-meta'>{escape(queue_label)}：{escape(queue_text)}</div>"
     if not console_queue_html:
         console_queue_html = "<div class='cc-home-item-meta'>尚未检测数据能力；页面打开不会自动请求外部接口。</div>"
-    recovery_action_html = ""
-    for item in data_recovery_actions[:3]:
-        if not isinstance(item, dict):
-            continue
-        recovery_action_html += f"""
-        <div class="cc-home-item-meta">
-          恢复：{escape(_home_text(item.get("label"), "数据能力"))}
-          ｜{escape(_home_text(item.get("action_label"), "手动检查"))}
-          ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))}
-          ｜入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱 / 数据源体检"))}
-        </div>
-        """
-    if not recovery_action_html:
-        recovery_action_html = "<div class='cc-home-item-meta'>恢复动作：暂无需要手动恢复的数据源动作。</div>"
-    tool_recovery_html = ""
-    for item in tool_recovery_actions[:4]:
-        if not isinstance(item, dict):
-            continue
-        tool_recovery_html += f"""
-        <div class="cc-home-candidate">
-          <div class="cc-home-item-title">
-            {escape(_home_text(item.get("label"), "旧工具能力"))}
-            <span class="cc-home-chip {escape('failed' if item.get('priority') == 1 else 'stale')}">{escape(_home_text(item.get("data_status"), item.get("status") or "待恢复"))}</span>
-          </div>
-          <div class="cc-home-item-meta">为什么：{escape(_home_text(item.get("reason"), "需要手动恢复旧工具能力。"))}</div>
-          <div class="cc-home-item-meta">入口：{escape(_home_text(item.get("toolbox_entry"), "高级工具箱"))} ｜ 动作：{escape(_home_text(item.get("action_label"), "手动刷新"))}</div>
-          <div class="cc-home-item-meta">定位：{escape(_home_text(item.get("navigation_label"), "主导航切到高级工具箱（旧版保留）后选择对应模块"))}</div>
-          <div class="cc-home-item-meta">回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))} ｜ 触发：手动按钮 ｜ DeepSeek：未调用</div>
-        </div>
-        """
-    if not tool_recovery_html:
-        tool_recovery_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>旧工具恢复队列为空</div><div class='cc-home-item-meta'>下一票雷达、融资 ETF、纪律/回测、量化推演已有可读 packet 或暂不需要恢复。</div></div>"
     data_recovery_center_actions = [item for item in (data_recovery_center.get("actions") or []) if isinstance(item, dict)]
     data_recovery_center_action_html = ""
     for item in data_recovery_center_actions[:6]:
@@ -5160,6 +5139,37 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             """
     else:
         facts_html = "<div class='cc-home-candidate'><div class='cc-home-item-title'>暂无已验证事实包</div><div class='cc-home-item-meta'>旧工作台能力会逐步迁移为 packet；页面打开不会自动拉取重数据。</div></div>"
+    diagnostic_details_html = f"""
+          <details class="cc-home-details">
+            <summary>诊断详情：A股矩阵 / 数据能力控制台 / 原因解释</summary>
+            <div class="cc-home-candidate">
+              <div class="cc-home-item-title">
+                {escape(_home_text(a_share_matrix.get("title"), "A股数据能力矩阵"))}
+                <span class="cc-home-chip {escape(_home_text(a_share_matrix.get("tone"), "missing"))}">{escape(_home_text(a_share_matrix.get("summary"), "尚未检测 A股专业数据能力。"))}</span>
+              </div>
+              <div class="cc-home-item-meta">{escape(_home_text(a_share_matrix.get("manual_note"), "只读取本地 packet，不自动请求外部接口。"))}</div>
+            </div>
+            {matrix_html}
+            <div class="cc-home-candidate">
+              <div class="cc-home-item-title">
+                数据能力控制台
+                <span class="cc-home-chip {escape(console_tone)}">{escape(_home_text(data_capability_console.get("headline"), "尚未检测数据能力"))}</span>
+              </div>
+              <div class="cc-home-item-meta">可用 {escape(_home_number(console_ready))}｜阻断 {escape(_home_number(console_blocked))}｜手动 {escape(_home_number(console_manual))}｜缓存/待验证 {escape(_home_number(console_stale))}</div>
+              <div class="cc-home-item-meta">决策模式：{escape(console_readiness)}｜{escape(console_safe_mode)}</div>
+              {console_queue_html}
+            </div>
+            <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
+            {a_share_diagnostic_html}
+            {root_cause_html}
+            {issue_html}
+            <div class="cc-muted-note">数据能力诊断：{escape(_home_text(capability_dashboard.get("summary"), "尚未检测数据能力。"))}</div>
+            {provider_html}
+            {_home_list(governance_checks, "暂无下一步检查建议。", limit=4)}
+            <div class="cc-muted-note">{escape(capability_text)}</div>
+            <div class="cc-home-row"><span>DeepSeek</span><strong>{'已调用' if payload.get('deepseek_called') else '未调用'}</strong></div>
+          </details>
+    """
     html = f"""
     <section class="cc-home-snapshot">
       <div class="cc-home-head">
@@ -5239,38 +5249,14 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
           <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
           {data_recovery_center_html}
-          <div class="cc-home-candidate">
-            <div class="cc-home-item-title">
-              {escape(_home_text(a_share_matrix.get("title"), "A股数据能力矩阵"))}
-              <span class="cc-home-chip {escape(_home_text(a_share_matrix.get("tone"), "missing"))}">{escape(_home_text(a_share_matrix.get("summary"), "尚未检测 A股专业数据能力。"))}</span>
-            </div>
-            <div class="cc-home-item-meta">{escape(_home_text(a_share_matrix.get("manual_note"), "只读取本地 packet，不自动请求外部接口。"))}</div>
-          </div>
-          {matrix_html}
-          <div class="cc-home-candidate">
-            <div class="cc-home-item-title">
-              数据能力控制台
-              <span class="cc-home-chip {escape(console_tone)}">{escape(_home_text(data_capability_console.get("headline"), "尚未检测数据能力"))}</span>
-            </div>
-            <div class="cc-home-item-meta">可用 {escape(_home_number(console_ready))}｜阻断 {escape(_home_number(console_blocked))}｜手动 {escape(_home_number(console_manual))}｜缓存/待验证 {escape(_home_number(console_stale))}</div>
-            <div class="cc-home-item-meta">决策模式：{escape(console_readiness)}｜{escape(console_safe_mode)}</div>
-            {console_queue_html}
-          </div>
-          <div class="cc-muted-note">为什么搜不到：{escape(_home_text(data_issue_explainer.get("short_answer"), "尚未检测数据能力；不会自动 ping 外部接口。"))}</div>
-          {root_cause_html}
-          {issue_html}
-          <div class="cc-muted-note">数据能力诊断：{escape(_home_text(capability_dashboard.get("summary"), "尚未检测数据能力。"))}</div>
-          {provider_html}
-          {_home_list(governance_checks, "暂无下一步检查建议。", limit=4)}
-          <div class="cc-muted-note">{escape(capability_text)}</div>
-          <div class="cc-home-row"><span>DeepSeek</span><strong>{'已调用' if payload.get('deepseek_called') else '未调用'}</strong></div>
+          {diagnostic_details_html}
           <div class="cc-muted-note">{escape(str(safety_line))}</div>
         </div>
       </div>
       <div class="cc-home-foot">快照只读取本地结构化结果；页面打开不会自动调用 DeepSeek、回测、全市场扫描或重型行情接口。</div>
     </section>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    st.html(html)
     valid_tool_recovery_actions = [item for item in tool_recovery_actions[:4] if isinstance(item, dict)]
     if valid_tool_recovery_actions:
         st.caption("数据恢复中心｜高级工具导航：这里只切换到高级工具箱；不会自动运行扫描、回测、DeepSeek 或重型数据接口。")

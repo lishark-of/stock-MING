@@ -59,6 +59,15 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("数据恢复中心｜高级工具导航", source)
         self.assertIn("恢复{_home_text(item.get('label'), '高级工具')}", source)
 
+    def test_home_snapshot_collapses_verbose_diagnostics(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn('class="cc-home-details"', source)
+        self.assertIn("st.html(html)", source)
+        self.assertIn("诊断详情：A股矩阵 / 数据能力控制台 / 原因解释", source)
+        self.assertNotIn("旧工具恢复队列", source)
+        self.assertNotIn("恢复动作：暂无需要手动恢复的数据源动作", source)
+
 
 if __name__ == "__main__":
     unittest.main()
