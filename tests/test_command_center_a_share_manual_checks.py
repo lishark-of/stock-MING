@@ -413,6 +413,113 @@ class CommandCenterAShareManualChecksTests(unittest.TestCase):
         self.assertFalse(merged["deepseek_called"])
         json.dumps(merged, ensure_ascii=False)
 
+    def test_normalize_manual_result_item_adds_decision_contract(self):
+        item = checks.normalize_manual_result_item(
+            {
+                "section": "moneyflow",
+                "label": "个股资金流",
+                "api": "moneyflow",
+                "capability_state": capability.STATE_AVAILABLE,
+                "rows": 3,
+                "latest_date": "20260603",
+            },
+            checked_at="2026-06-03T10:00:00",
+        )
+
+        self.assertEqual(item["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(item["data_status"], "ready")
+        self.assertEqual(item["recovery_state"], "recovered")
+        self.assertEqual(item["decision_chain_state"], "ready")
+        self.assertTrue(item["can_enter_decision_chain"])
+        self.assertEqual(item["refresh_policy"], "button_gated")
+        self.assertEqual(item["external_call_policy"], "button_gated")
+        self.assertFalse(item["auto_run"])
+        self.assertFalse(item["deepseek_called"])
+        self.assertIn("数据能力状态", item["decision_chain_stage"])
+        json.dumps(item, ensure_ascii=False)
+
+    def test_normalize_manual_result_item_blocks_permission_gap(self):
+        item = checks.normalize_manual_result_item(
+            {
+                "section": "margin",
+                "label": "融资融券",
+                "api": "margin_detail",
+                "capability_state": capability.STATE_PERMISSION_DENIED,
+                "error": "抱歉，您没有访问该接口的权限",
+            },
+            checked_at="2026-06-03T10:00:00",
+        )
+
+        self.assertEqual(item["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(item["data_status"], "blocked")
+        self.assertEqual(item["recovery_state"], "blocked")
+        self.assertEqual(item["decision_chain_state"], "blocked")
+        self.assertFalse(item["can_enter_decision_chain"])
+        self.assertIn("权限不足", item["decision_chain_effect"])
+        self.assertIn("不能把缺失数据当成利好", item["decision_chain_effect"])
+
+    def test_normalize_manual_result_item_keeps_fallback_cache_only(self):
+        item = checks.normalize_manual_result_item(
+            {
+                "section": "dragon_tiger",
+                "label": "龙虎榜",
+                "api": "top_list/top_inst",
+                "capability_state": capability.STATE_FALLBACK_USED,
+                "error": "已取得龙虎榜上榜事实，但席位明细仍待验证。",
+            },
+            checked_at="2026-06-03T10:00:00",
+        )
+
+        self.assertEqual(item["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertEqual(item["data_status"], "fallback")
+        self.assertEqual(item["recovery_state"], "cached")
+        self.assertEqual(item["decision_chain_state"], "cache_only")
+        self.assertTrue(item["can_enter_decision_chain"])
+        self.assertIn("缓存/替代证据", item["decision_chain_effect"])
+
+    def test_normalize_manual_result_item_does_not_treat_empty_recent_as_recovered(self):
+        item = checks.normalize_manual_result_item(
+            {
+                "section": "limit_emotion",
+                "label": "涨跌停/情绪",
+                "api": "limit_cpt_list",
+                "capability_state": capability.STATE_EMPTY_RECENT,
+                "status": "近期无数据",
+            },
+            checked_at="2026-06-03T10:00:00",
+        )
+
+        self.assertEqual(item["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(item["data_status"], "no_recent_data")
+        self.assertEqual(item["recovery_state"], "waiting")
+        self.assertEqual(item["decision_chain_state"], "waiting")
+        self.assertFalse(item["can_enter_decision_chain"])
+        self.assertIn("不能写成利好", item["decision_chain_effect"])
+
+    def test_merge_normalizes_existing_and_new_manual_items(self):
+        packet = {
+            "source": "Tushare A股专业事实",
+            "items": [
+                {"section": "moneyflow", "label": "个股资金流", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                {"section": "margin", "label": "融资融券", "api": "margin_detail", "capability_state": "permission_denied", "status": "权限不足"},
+            ],
+        }
+        new_item = checks.build_chip_radar_capability_item(
+            {"ok": True, "rows": 2, "latest_date": "20260603"},
+            {"ok": True, "rows": 0, "latest_date": ""},
+        )
+        merged = checks.merge_a_share_capability_item(packet, new_item, checked_at="2026-06-03T10:00:00")
+
+        by_section = {item["section"]: item for item in merged["items"]}
+        self.assertEqual(by_section["moneyflow"]["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(by_section["moneyflow"]["decision_chain_state"], "ready")
+        self.assertEqual(by_section["margin"]["recovery_state"], "blocked")
+        self.assertEqual(by_section["chip_radar"]["recovery_state"], "cached")
+        self.assertEqual(by_section["chip_radar"]["decision_chain_state"], "cache_only")
+        self.assertTrue(all(item["external_call_policy"] == "button_gated" for item in merged["items"]))
+        self.assertTrue(all(item["deepseek_called"] is False for item in merged["items"]))
+        json.dumps(merged, ensure_ascii=False)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_a_share_manual_checks.py").read_text(encoding="utf-8"))
         imports = []

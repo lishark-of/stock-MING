@@ -38,6 +38,37 @@ HARD_RISK_APIS = (
     "pledge_detail",
 )
 
+SECTION_WRITES_PACKET = {
+    MONEYFLOW_SECTION: "command_center_moneyflow_packet",
+    DRAGON_SECTION: "command_center_dragon_tiger_packet",
+    MARGIN_SECTION: "command_center_margin_packet",
+    LIMIT_CPT_SECTION: "command_center_limit_emotion_packet",
+    CHIP_SECTION: "command_center_chip_packet",
+    HARD_RISK_SECTION: "command_center_hard_risk_packet",
+}
+
+API_SECTION = {
+    MONEYFLOW_API: MONEYFLOW_SECTION,
+    TOP_LIST_API: DRAGON_SECTION,
+    TOP_INST_API: DRAGON_SECTION,
+    DRAGON_API: DRAGON_SECTION,
+    MARGIN_API: MARGIN_SECTION,
+    LIMIT_CPT_API: LIMIT_CPT_SECTION,
+    CYQ_PERF_API: CHIP_SECTION,
+    CYQ_CHIPS_API: CHIP_SECTION,
+    CHIP_API: CHIP_SECTION,
+    HARD_RISK_API: HARD_RISK_SECTION,
+}
+
+SECTION_LABELS = {
+    MONEYFLOW_SECTION: MONEYFLOW_LABEL,
+    DRAGON_SECTION: DRAGON_LABEL,
+    MARGIN_SECTION: MARGIN_LABEL,
+    LIMIT_CPT_SECTION: LIMIT_CPT_LABEL,
+    CHIP_SECTION: CHIP_LABEL,
+    HARD_RISK_SECTION: HARD_RISK_LABEL,
+}
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -257,6 +288,125 @@ def _combine_errors(items: list[dict]) -> str:
         if error:
             parts.append(f"{api}: {error}" if api else error)
     return "；".join(parts)
+
+
+def _manual_section_from_item(item: Mapping[str, Any]) -> str:
+    section = str(item.get("section") or "").strip()
+    if section:
+        return section
+    api = str(item.get("api") or "").strip()
+    return API_SECTION.get(api, "")
+
+
+def _manual_writes_packet(section: str) -> str:
+    return SECTION_WRITES_PACKET.get(str(section or ""), "command_center_facts_packet")
+
+
+def _manual_recovery_state(state: str) -> str:
+    normalized = data_capability.normalize_capability_state_value(state)
+    if normalized == data_capability.STATE_AVAILABLE:
+        return "recovered"
+    if normalized in {data_capability.STATE_STALE_CACHE, data_capability.STATE_FALLBACK_USED}:
+        return "cached"
+    if normalized in {
+        data_capability.STATE_PERMISSION_DENIED,
+        data_capability.STATE_DISABLED_THIS_SESSION,
+        data_capability.STATE_NOT_CONFIGURED,
+        data_capability.STATE_NETWORK_FAILED,
+        data_capability.STATE_FAILED,
+    }:
+        return "blocked"
+    return "waiting"
+
+
+def _manual_data_status(state: str) -> str:
+    normalized = data_capability.normalize_capability_state_value(state)
+    if normalized == data_capability.STATE_AVAILABLE:
+        return "ready"
+    if normalized == data_capability.STATE_STALE_CACHE:
+        return "cached"
+    if normalized == data_capability.STATE_FALLBACK_USED:
+        return "fallback"
+    if normalized == data_capability.STATE_EMPTY_RECENT:
+        return "no_recent_data"
+    if normalized == data_capability.STATE_REQUIRES_MANUAL_REFRESH:
+        return "manual_required"
+    if normalized in {
+        data_capability.STATE_PERMISSION_DENIED,
+        data_capability.STATE_DISABLED_THIS_SESSION,
+        data_capability.STATE_NOT_CONFIGURED,
+        data_capability.STATE_NETWORK_FAILED,
+        data_capability.STATE_FAILED,
+    }:
+        return "blocked"
+    return "waiting"
+
+
+def _manual_decision_chain_state(state: str) -> str:
+    normalized = data_capability.normalize_capability_state_value(state)
+    if normalized == data_capability.STATE_AVAILABLE:
+        return "ready"
+    if normalized in {data_capability.STATE_STALE_CACHE, data_capability.STATE_FALLBACK_USED}:
+        return "cache_only"
+    if normalized in {
+        data_capability.STATE_PERMISSION_DENIED,
+        data_capability.STATE_DISABLED_THIS_SESSION,
+        data_capability.STATE_NOT_CONFIGURED,
+        data_capability.STATE_NETWORK_FAILED,
+        data_capability.STATE_FAILED,
+    }:
+        return "blocked"
+    return "waiting"
+
+
+def _manual_can_enter_decision_chain(state: str) -> bool:
+    return _manual_decision_chain_state(state) in {"ready", "cache_only"}
+
+
+def normalize_manual_result_item(item: Any = None, *, checked_at: Any = "", writes_packet: Any = "") -> dict:
+    """Attach the standard command-center contract to one button-gated A-share check result."""
+    payload = as_mapping(item)
+    if not payload:
+        return {}
+    section = _manual_section_from_item(payload)
+    label = str(payload.get("label") or SECTION_LABELS.get(section) or payload.get("api") or "A股数据能力")
+    state = data_capability.normalize_capability_state_value(
+        payload.get("capability_state") or payload.get("state") or payload.get("status") or ""
+    )
+    if state == "unknown":
+        state = data_capability.STATE_FAILED if payload.get("error") else data_capability.STATE_EMPTY_RECENT
+    status_label = data_capability.state_label(state)
+    updated_at = str(checked_at or payload.get("checked_at") or payload.get("updated_at") or payload.get("latest_date") or "")
+    normalized = dict(payload)
+    normalized.update(
+        {
+            "section": section,
+            "label": label,
+            "manual_check": True,
+            "manual_check_key": section,
+            "manual_check_label": label,
+            "writes_packet": str(writes_packet or payload.get("writes_packet") or _manual_writes_packet(section)),
+            "capability_state": state,
+            "status": status_label,
+            "status_label": status_label,
+            "capability_label": status_label,
+            "data_status": _manual_data_status(state),
+            "recovery_state": _manual_recovery_state(state),
+            "decision_chain_state": _manual_decision_chain_state(state),
+            "can_enter_decision_chain": _manual_can_enter_decision_chain(state),
+            "decision_chain_stage": "数据能力状态 → 市场分析方法 → 趋势推演 → 策略执行 → 今日总决策",
+            "decision_chain_effect": data_capability.decision_impact_for_capability_state(state, label),
+            "meaning": data_capability.meaning_for_capability_state(state, "Tushare", label),
+            "next_action": data_capability.next_action_for_capability_state(state, label),
+            "refresh_policy": "button_gated",
+            "external_call_policy": "button_gated",
+            "auto_run": False,
+            "deepseek_called": False,
+            "checked_at": updated_at,
+            "updated_at": updated_at,
+        }
+    )
+    return normalized
 
 
 def build_chip_radar_capability_item(
@@ -704,13 +854,13 @@ def build_hard_risk_exception_item(exc: Any, latency_ms: int | float | None = 0)
 
 def merge_a_share_capability_item(packet: Any = None, item: Any = None, checked_at: Any = "") -> dict:
     existing = dict(packet) if isinstance(packet, Mapping) else {}
-    new_item = dict(item) if isinstance(item, Mapping) else {}
+    new_item = normalize_manual_result_item(item, checked_at=checked_at)
     merged_items = []
     replaced = False
     section = str(new_item.get("section") or "")
     api = str(new_item.get("api") or "")
     for raw in existing.get("items") or []:
-        payload = dict(raw) if isinstance(raw, Mapping) else {}
+        payload = normalize_manual_result_item(raw, checked_at=raw.get("checked_at") if isinstance(raw, Mapping) else "")
         if not payload:
             continue
         same_section = section and str(payload.get("section") or "") == section
