@@ -458,6 +458,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["home_data_issue_brief"] = build_home_data_issue_brief(snapshot)
     snapshot = attach_candidate_execution_evidence_overview(snapshot)
     snapshot = attach_decision_loop_status(snapshot)
+    snapshot["data_capability_brief"] = build_home_data_capability_brief(snapshot)
     return snapshot
 
 
@@ -614,6 +615,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         normalized_market_profile["deepseek_called"] = False
     snapshot["market_profile_evidence"] = normalized_market_profile
     snapshot = attach_decision_loop_status(snapshot)
+    snapshot["data_capability_brief"] = build_home_data_capability_brief(snapshot)
     return snapshot
 
 
@@ -812,6 +814,126 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
         "restricted_count": len(restricted),
         "pending_count": len(pending),
         "items": items,
+        "deepseek_called": False,
+    }
+
+
+def _brief_tone_from_status(status: str) -> str:
+    return {
+        "blocked": "failed",
+        "partial": "stale",
+        "ready": "ready",
+        "missing": "missing",
+    }.get(status, "missing")
+
+
+def _brief_int(value: Any) -> int:
+    return int(_to_number(value) or 0)
+
+
+def build_home_data_capability_brief(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    freshness = _as_mapping(payload.get("data_freshness"))
+    capability = _as_mapping(payload.get("data_capability"))
+    provider_cockpit = _as_mapping(payload.get("provider_data_capability_cockpit"))
+    fact_recovery = _as_mapping(payload.get("a_share_fact_recovery_summary"))
+    legacy_chain = _as_mapping(payload.get("legacy_decision_chain_summary"))
+    health_visibility = _as_mapping(
+        payload.get("command_center_data_health_visibility_summary")
+        or payload.get("data_health_visibility_summary")
+    )
+
+    restricted_count = _brief_int(capability.get("restricted_count"))
+    pending_count = _brief_int(capability.get("pending_count"))
+    available_count = _brief_int(capability.get("available_count"))
+    provider_blocked = _brief_int(provider_cockpit.get("blocked_count") or provider_cockpit.get("restricted_count"))
+    provider_manual = _brief_int(provider_cockpit.get("manual_count"))
+    fact_blocked = _brief_int(fact_recovery.get("blocked_count"))
+    fact_waiting = _brief_int(fact_recovery.get("waiting_count"))
+    fact_recovered = _brief_int(fact_recovery.get("recovered_count"))
+    legacy_blocked = _brief_int(legacy_chain.get("blocked_count"))
+    legacy_cache = _brief_int(legacy_chain.get("cache_only_count"))
+    legacy_waiting = _brief_int(legacy_chain.get("waiting_count"))
+    health_status = _to_text(health_visibility.get("status"))
+
+    if restricted_count or provider_blocked or fact_blocked or legacy_blocked or health_status == "blocked":
+        status = "blocked"
+        headline = "数据能力存在阻断"
+        trust_label = "低置信度 / 禁止放大仓位"
+        guardrail = "受限接口或旧能力未恢复前，不加仓、不追高、不加融资，不把数据缺口写成利好。"
+    elif pending_count or provider_manual or fact_waiting or legacy_cache or legacy_waiting or freshness.get("state") in {"missing", "stale", "partial_failed"}:
+        status = "partial"
+        headline = "数据能力待验证"
+        trust_label = "可看快照 / 执行前复核"
+        guardrail = "缓存、待手动和近期无数据只能辅助观察；执行前必须复核交易日、来源和覆盖范围。"
+    elif available_count or fact_recovered or legacy_chain:
+        status = "ready"
+        headline = "数据能力可进入闭环"
+        trust_label = "可验证 / 仍需纪律确认"
+        guardrail = "数据能力可进入证据链，但仍需市场方法、趋势推演、策略条件和仓位纪律共同确认。"
+    else:
+        status = "missing"
+        headline = "数据能力待检测"
+        trust_label = "待刷新 / 安全空态"
+        guardrail = "尚未检测数据能力；页面打开不会自动请求 Tushare、AkShare、yfinance、Supabase 或 DeepSeek。"
+
+    items = [
+        {
+            "key": "freshness",
+            "label": "新鲜度",
+            "value": _to_text(freshness.get("label"), "待刷新"),
+            "tone": _brief_tone_from_status("ready" if freshness.get("state") == "today" else "partial" if freshness.get("state") in {"stale", "partial_failed"} else "missing"),
+        },
+        {
+            "key": "provider",
+            "label": "Provider",
+            "value": (
+                f"可用 {available_count}｜受限 {restricted_count + provider_blocked}｜待验证 {pending_count + provider_manual}"
+                if (available_count or restricted_count or pending_count or provider_blocked or provider_manual)
+                else "Tushare / AkShare / yfinance / Supabase 待检测"
+            ),
+            "tone": _brief_tone_from_status("blocked" if restricted_count or provider_blocked else "partial" if pending_count or provider_manual else "ready" if available_count else "missing"),
+        },
+        {
+            "key": "a_share_fact",
+            "label": "A股事实",
+            "value": _to_text(
+                fact_recovery.get("summary"),
+                f"已回流 {fact_recovered}｜仍受限 {fact_blocked}｜待验证 {fact_waiting}",
+            ),
+            "tone": _to_text(fact_recovery.get("tone"), _brief_tone_from_status("blocked" if fact_blocked else "partial" if fact_waiting else "ready" if fact_recovered else "missing")),
+        },
+        {
+            "key": "legacy_chain",
+            "label": "旧能力链",
+            "value": _to_text(
+                legacy_chain.get("summary"),
+                f"阻断 {legacy_blocked}｜缓存 {legacy_cache}｜待验证 {legacy_waiting}",
+            ),
+            "tone": _to_text(legacy_chain.get("tone"), _brief_tone_from_status("blocked" if legacy_blocked else "partial" if legacy_cache or legacy_waiting else "ready" if legacy_chain else "missing")),
+        },
+    ]
+    next_action = _to_text(
+        provider_cockpit.get("next_action")
+        or fact_recovery.get("next_action")
+        or legacy_chain.get("next_action"),
+        "优先处理受限或待验证的数据能力；所有恢复动作必须手动按钮触发。",
+    )
+    summary = (
+        f"Provider 可用 {available_count}｜受限 {restricted_count + provider_blocked}｜待验证 {pending_count + provider_manual}"
+        f"；A股事实 已回流 {fact_recovered}｜仍受限 {fact_blocked}｜待验证 {fact_waiting}"
+        f"；旧能力 阻断 {legacy_blocked}｜缓存 {legacy_cache}｜待验证 {legacy_waiting}"
+    )
+    return {
+        "status": status,
+        "tone": _brief_tone_from_status(status),
+        "headline": headline,
+        "summary": summary,
+        "trust_label": trust_label,
+        "guardrail": guardrail,
+        "next_action": next_action,
+        "items": items,
+        "external_call_policy": "not_triggered",
         "deepseek_called": False,
     }
 
@@ -6444,6 +6566,7 @@ def build_home_action_snapshot(
             strategy_packet=empty.get("strategy_packet") or {},
             decision_packet=empty.get("decision_packet") or {},
         )
+        empty["data_capability_brief"] = build_home_data_capability_brief(empty)
         empty["errors"] = errors
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
@@ -6499,6 +6622,7 @@ def build_home_action_snapshot(
         strategy_packet=strategy,
         decision_packet=decision,
     )
+    snapshot["data_capability_brief"] = build_home_data_capability_brief(snapshot)
     return sanitize_snapshot_payload(snapshot)
 
 

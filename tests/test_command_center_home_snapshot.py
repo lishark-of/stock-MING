@@ -26,6 +26,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["home_data_issue_brief"]["status"], "blocked")
         self.assertTrue(payload["home_data_issue_brief"]["items"])
         self.assertEqual(payload["home_data_issue_brief"]["external_call_policy"], "not_triggered")
+        self.assertIn("data_capability_brief", payload)
+        self.assertIn(payload["data_capability_brief"]["status"], {"partial", "missing", "blocked"})
+        self.assertIn("A股事实", json.dumps(payload["data_capability_brief"], ensure_ascii=False))
+        self.assertEqual(payload["data_capability_brief"]["external_call_policy"], "not_triggered")
+        self.assertFalse(payload["data_capability_brief"]["deepseek_called"])
         self.assertFalse(payload["decision_loop_status"]["deepseek_called"])
 
     def test_save_and_load_snapshot(self):
@@ -47,6 +52,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(path.name, snapshot.SNAPSHOT_FILENAME)
         self.assertEqual(loaded["today_action"]["overall_action"], "只观察")
         self.assertFalse(loaded["deepseek_called"])
+        self.assertIn("data_capability_brief", loaded)
+        self.assertFalse(loaded["data_capability_brief"]["deepseek_called"])
         loop_items = {item["key"]: item for item in loaded["decision_loop_status"]["items"]}
         self.assertEqual(loop_items["decision"]["status"], "ready")
         self.assertIn("candidate_execution_evidence", loop_items)
@@ -778,6 +785,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T09:40:00")
         capability = payload["data_capability"]
+        brief = payload["data_capability_brief"]
         matrix = payload["a_share_capability_matrix"]
         matrix_by_key = {item["key"]: item for item in matrix["items"]}
 
@@ -793,6 +801,15 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(matrix_by_key["dragon_tiger"]["state"], "empty_recent")
         self.assertIn("拉满基础数据", matrix["tushare_gap_explainer"]["headline"])
         self.assertIn("融资融券", json.dumps(matrix["tushare_gap_explainer"], ensure_ascii=False))
+        self.assertEqual(brief["status"], "blocked")
+        self.assertEqual(brief["tone"], "failed")
+        self.assertIn("数据能力存在阻断", brief["headline"])
+        self.assertIn("Provider 可用 1", brief["summary"])
+        self.assertIn("受限", brief["summary"])
+        self.assertIn("不加仓", brief["guardrail"])
+        self.assertIn("Provider", json.dumps(brief["items"], ensure_ascii=False))
+        self.assertEqual(brief["external_call_policy"], "not_triggered")
+        self.assertFalse(brief["deepseek_called"])
         self.assertFalse(matrix["deepseek_called"])
         self.assertFalse(capability["deepseek_called"])
 

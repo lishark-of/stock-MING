@@ -4848,6 +4848,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     margin_etf = payload.get("margin_etf_summary") or {}
     risk_alerts = payload.get("risk_alerts") or {}
     freshness = payload.get("data_freshness") or {}
+    data_capability_brief = payload.get("data_capability_brief") or {}
+    if not isinstance(data_capability_brief, dict):
+        data_capability_brief = {}
     data_capability = payload.get("data_capability") or {}
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
@@ -4910,6 +4913,38 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         risk_alerts.get("legacy_decision_chain_summary") or "旧能力：待验证",
     )
     legacy_decision_chain_tone = _home_text(legacy_decision_chain.get("tone"), "missing")
+    data_capability_brief_items_html = ""
+    for item in (data_capability_brief.get("items") or [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        data_capability_brief_items_html += f"""
+        <div class="cc-home-row">
+          <span>{escape(_home_text(item.get("label"), "数据状态"))}</span>
+          <strong><span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("value"), "待验证"))}</span></strong>
+        </div>
+        """
+    if not data_capability_brief_items_html:
+        data_capability_brief_items_html = """
+        <div class="cc-home-row">
+          <span>数据能力</span>
+          <strong><span class="cc-home-chip missing">待检测</span></strong>
+        </div>
+        """
+    data_capability_brief_html = f"""
+      <div class="cc-home-panel">
+        <div class="cc-home-panel-title">
+          数据能力总状态
+          <span class="cc-home-chip {escape(_home_text(data_capability_brief.get("tone"), "missing"))}">
+            {escape(_home_text(data_capability_brief.get("headline"), "数据能力待检测"))}
+          </span>
+        </div>
+        <div class="cc-muted-note">{escape(_home_text(data_capability_brief.get("summary"), "Provider / A股事实 / 旧能力链待检测。"))}</div>
+        <div class="cc-home-row"><span>可信度</span><strong>{escape(_home_text(data_capability_brief.get("trust_label"), "待刷新 / 安全空态"))}</strong></div>
+        {data_capability_brief_items_html}
+        <div class="cc-muted-note">护栏：{escape(_home_text(data_capability_brief.get("guardrail"), "页面打开不会自动请求外部接口。"))}</div>
+        <div class="cc-muted-note">下一步：{escape(_home_text(data_capability_brief.get("next_action"), "需要时手动刷新或进入高级工具箱。"))}</div>
+      </div>
+    """
     legacy_decision_priority_html = ""
     for item in (legacy_decision_chain.get("priority_items") or [])[:3]:
         if not isinstance(item, dict):
@@ -6686,6 +6721,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         </aside>
       </div>
       {market_profile_html}
+      {data_capability_brief_html}
       {provider_recovery_matrix_html}
       {home_data_issue_brief_html}
       {decision_loop_html}
