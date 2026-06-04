@@ -4909,6 +4909,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     execution_guardrail_overview = payload.get("execution_guardrail_overview") or {}
     if not isinstance(execution_guardrail_overview, dict):
         execution_guardrail_overview = {}
+    candidate_execution_evidence = payload.get("candidate_execution_evidence_overview") or {}
+    if not isinstance(candidate_execution_evidence, dict):
+        candidate_execution_evidence = {}
 
     freshness_state = str(freshness.get("state") or "missing")
     freshness_label = freshness.get("label") or "待刷新"
@@ -5041,6 +5044,47 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         <div>
           <div class="cc-home-profile-meta">交易保护：{escape(_home_text(evidence_loop_status.get("decision_guardrail"), "证据未补齐前，不支撑放大仓位。"))}</div>
           <div class="cc-home-profile-meta">DeepSeek：未调用 ｜ 外部接口：{escape(evidence_external_policy)}</div>
+        </div>
+      </div>
+    """
+    candidate_execution_item_html = ""
+    for item in (candidate_execution_evidence.get("items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        candidate_execution_item_html += f"""
+          <div class="cc-home-item-meta">
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">
+              {escape(_home_text(item.get("label"), "候选证据"))}：{escape(_home_text(item.get("verification_status"), "待验证"))}
+            </span>
+            {escape(_home_text(item.get("evidence_summary"), "证据摘要待验证。"))}
+          </div>
+          <div class="cc-home-item-meta">
+            下一步：{escape(_home_text(item.get("action_hint"), "先补齐证据，再进入执行判断。"))}
+            ｜来源：{escape(_home_text(item.get("source"), "本地 packet"))}
+            ｜{escape(_home_text(item.get("updated_at"), "暂无"))}
+          </div>
+        """
+    if not candidate_execution_item_html:
+        candidate_execution_item_html = "<div class='cc-home-item-meta'>下一票 / ETF 候选证据待验证；页面打开不会自动扫描或全量发现。</div>"
+    candidate_execution_evidence_html = f"""
+      <div class="cc-home-profile-strip">
+        <div>
+          <div class="cc-home-profile-title">
+            {escape(_home_text(candidate_execution_evidence.get("title"), "候选执行证据总览"))}
+            <span class="cc-home-chip {escape(_home_text(candidate_execution_evidence.get("tone"), "missing"))}">
+              {escape(_home_text(candidate_execution_evidence.get("headline"), "候选执行证据待补齐"))}
+            </span>
+          </div>
+          <div class="cc-home-profile-meta">
+            {escape(_home_text(candidate_execution_evidence.get("summary"), "已验证 0｜需复核 0｜阻断 0｜待验证 2"))}<br>
+            {escape(_home_text(candidate_execution_evidence.get("stage_text"), "下一票/ETF 证据 → 趋势推演 → 策略执行 → 今日总决策"))}
+          </div>
+        </div>
+        <div>
+          {candidate_execution_item_html}
+          <div class="cc-home-profile-meta">交易保护：{escape(_home_text(candidate_execution_evidence.get("decision_guardrail"), "候选票和 ETF 证据未验证前不能作为交易依据。"))}</div>
+          <div class="cc-home-profile-meta">{escape(_home_text(candidate_execution_evidence.get("next_action"), "先补齐候选执行证据。"))}</div>
+          <div class="cc-home-profile-meta">DeepSeek：未调用 ｜ 外部接口：{escape(_home_text(candidate_execution_evidence.get("external_call_policy"), "not_triggered"))}</div>
         </div>
       </div>
     """
@@ -6512,6 +6556,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       {decision_loop_html}
       {a_share_status_console_html}
       {evidence_loop_html}
+      {candidate_execution_evidence_html}
       {execution_guardrail_html}
       {old_workspace_overview_html}
       <div class="cc-home-grid">

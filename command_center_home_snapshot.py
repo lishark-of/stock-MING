@@ -3834,6 +3834,110 @@ def attach_execution_guardrail_dependencies(snapshot: Any = None) -> dict:
     return payload
 
 
+def _candidate_packet_status_tone(verification_status: str, decision_chain_state: str = "") -> str:
+    verification = _to_text(verification_status)
+    chain = _to_text(decision_chain_state)
+    if verification == "阻断决策" or chain == "blocked":
+        return "failed"
+    if verification in {"已验证", "可进入证据链"} or chain == "ready":
+        return "ready"
+    if verification in {"缓存辅助", "待验证"} or chain == "cache_only":
+        return "stale"
+    return "missing"
+
+
+def _candidate_execution_evidence_item(packet: Any = None, *, key: str, label: str) -> dict:
+    payload = _as_mapping(packet)
+    verification_status = _to_text(payload.get("verification_status"), "待验证")
+    chain_state = _to_text(payload.get("decision_chain_state"), "waiting")
+    tone = _candidate_packet_status_tone(verification_status, chain_state)
+    return {
+        "key": key,
+        "label": label,
+        "packet_role": _to_text(payload.get("packet_role"), label),
+        "verification_status": verification_status,
+        "decision_chain_state": chain_state,
+        "decision_chain_label": _to_text(payload.get("decision_chain_label"), verification_status),
+        "tone": tone,
+        "evidence_summary": _to_text(payload.get("evidence_summary"), f"{label}证据待验证。"),
+        "action_hint": _to_text(payload.get("action_hint"), f"先手动补齐{label}证据，再进入执行判断。"),
+        "decision_guardrail": _to_text(
+            payload.get("decision_guardrail"),
+            f"{label}未验证前不能作为买入、追高、加融资或放大仓位依据。",
+        ),
+        "manual_required_text": _to_text(
+            payload.get("manual_required_text"),
+            "页面打开只读取本地 packet；重型任务必须按钮触发。",
+        ),
+        "source": _to_text(payload.get("source"), "本地 packet"),
+        "updated_at": _to_text(payload.get("updated_at") or payload.get("generated_at"), "暂无"),
+        "deepseek_called": False,
+        "external_call_policy": _to_text(payload.get("external_call_policy"), "not_triggered"),
+    }
+
+
+def build_candidate_execution_evidence_overview(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    items = [
+        _candidate_execution_evidence_item(
+            payload.get("radar_packet"),
+            key="next_ticket_radar",
+            label="下一票 Top3",
+        ),
+        _candidate_execution_evidence_item(
+            payload.get("etf_packet"),
+            key="margin_etf",
+            label="ETF/融资",
+        ),
+    ]
+    ready = [item for item in items if item.get("tone") == "ready"]
+    stale = [item for item in items if item.get("tone") == "stale"]
+    failed = [item for item in items if item.get("tone") == "failed"]
+    missing = [item for item in items if item.get("tone") == "missing"]
+    if failed:
+        headline = "候选执行证据仍有阻断"
+        tone = "failed"
+        next_action = "先处理阻断项；不要把候选票或 ETF 写成可执行交易动作。"
+    elif missing:
+        headline = "候选执行证据待补齐"
+        tone = "missing"
+        next_action = "先手动恢复下一票雷达或 ETF/融资快照，再进入策略执行。"
+    elif stale:
+        headline = "候选执行证据需复核"
+        tone = "stale"
+        next_action = "执行前复核缓存、待验证项、触发条件和现金/融资边界。"
+    else:
+        headline = "候选执行证据已进入闭环"
+        tone = "ready"
+        next_action = "继续联动趋势推演、策略执行和今日总决策；DeepSeek 仍只解释结构化结果。"
+    summary = f"已验证 {len(ready)}｜需复核 {len(stale)}｜阻断 {len(failed)}｜待验证 {len(missing)}"
+    guardrails = [
+        _to_text(item.get("decision_guardrail"))
+        for item in items
+        if _to_text(item.get("decision_guardrail"))
+    ]
+    return {
+        "title": "候选执行证据总览",
+        "headline": headline,
+        "tone": tone,
+        "summary": summary,
+        "items": items,
+        "next_action": next_action,
+        "decision_guardrail": "；".join(guardrails[:2])
+        or "候选票和 ETF 证据未验证前，不能作为买入、追高、加融资或放大仓位依据。",
+        "stage_text": "下一票/ETF 证据 → 趋势推演 → 策略执行 → 今日总决策",
+        "safe_mode_text": "这里只读取 radar_packet / etf_packet 顶层证据摘要；不会自动扫描、全量发现、DeepSeek 或外部接口。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
+    }
+
+
+def attach_candidate_execution_evidence_overview(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    payload["candidate_execution_evidence_overview"] = build_candidate_execution_evidence_overview(payload)
+    return payload
+
+
 def build_legacy_migration_recovery_actions_snapshot(
     legacy_migration_map: Any = None,
     limit: int = MAX_CAPABILITY_ITEMS,
@@ -6051,6 +6155,7 @@ def build_home_action_snapshot(
         empty["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(empty)
         empty = attach_a_share_evidence_module_dependencies(empty)
         empty = attach_execution_guardrail_dependencies(empty)
+        empty = attach_candidate_execution_evidence_overview(empty)
         empty["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(empty)
@@ -6078,6 +6183,7 @@ def build_home_action_snapshot(
     snapshot["a_share_evidence_module_panel"] = build_a_share_evidence_module_panel(snapshot)
     snapshot = attach_a_share_evidence_module_dependencies(snapshot)
     snapshot = attach_execution_guardrail_dependencies(snapshot)
+    snapshot = attach_candidate_execution_evidence_overview(snapshot)
     snapshot["strategy_prerequisite_recovery_ledger"] = build_strategy_prerequisite_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)

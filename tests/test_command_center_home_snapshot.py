@@ -217,6 +217,15 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(payload["next_ticket_candidates"][0]["execution_guardrail_dependency_summary"]["deepseek_called"])
         self.assertIn("候选不是买入指令", payload["next_ticket_candidates"][0]["action_guardrail"])
         self.assertIn("不会自动全市场扫描", payload["next_ticket_candidates"][0]["manual_required_text"])
+        overview = payload["candidate_execution_evidence_overview"]
+        self.assertEqual(overview["title"], "候选执行证据总览")
+        self.assertIn("下一票/ETF 证据", overview["stage_text"])
+        overview_items = {item["key"]: item for item in overview["items"]}
+        self.assertIn("next_ticket_radar", overview_items)
+        self.assertIn("下一票 Top", overview_items["next_ticket_radar"]["evidence_summary"])
+        self.assertIn("候选不是买入指令", overview_items["next_ticket_radar"]["decision_guardrail"])
+        self.assertFalse(overview["deepseek_called"])
+        self.assertEqual(overview["external_call_policy"], "not_triggered")
         self.assertFalse(payload["radar_packet"]["deepseek_called"])
 
     def test_next_ticket_missing_evidence_enters_recovery_center(self):
@@ -366,6 +375,13 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("待验证", payload["margin_etf_summary"]["recommended_etfs"][0]["execution_guardrail_dependency_summary"]["summary"])
         self.assertFalse(payload["margin_etf_summary"]["recommended_etfs"][0]["execution_guardrail_dependency_summary"]["deepseek_called"])
         self.assertIn("不能放大仓位", payload["margin_etf_summary"]["recommended_etfs"][0]["action_guardrail"])
+        overview = payload["candidate_execution_evidence_overview"]
+        overview_items = {item["key"]: item for item in overview["items"]}
+        self.assertIn("margin_etf", overview_items)
+        self.assertIn("ETF Top2", overview_items["margin_etf"]["evidence_summary"])
+        self.assertIn("放大仓位", overview_items["margin_etf"]["decision_guardrail"])
+        self.assertIn("下一票/ETF 证据", overview["stage_text"])
+        self.assertFalse(overview["deepseek_called"])
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])
 
