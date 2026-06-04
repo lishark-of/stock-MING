@@ -853,9 +853,14 @@ def build_data_recovery_actions_snapshot(
                 "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
                 "writes_packet": writes_packet,
                 "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+                "recovery_mode": _to_text(item.get("recovery_mode"), "manual_check"),
+                "recovery_mode_label": _to_text(item.get("recovery_mode_label"), "手动检查"),
+                "recovery_steps": _as_list(item.get("recovery_steps")),
                 "recovery_button_context": (
-                    f"点击“{action_label}”只检测 {api or label}，结果回流 {writes_packet}；DeepSeek 未调用。"
+                    _to_text(item.get("recovery_button_context"))
+                    or f"点击“{action_label}”只检测 {api or label}，结果回流 {writes_packet}；DeepSeek 未调用。"
                 ),
+                "external_call_policy": _to_text(item.get("external_call_policy"), "not_triggered"),
                 "deepseek_called": False,
             }
         )
@@ -2113,10 +2118,14 @@ def _normalize_recovery_center_action(
         "legacy_tab": legacy_tab,
         "writes_packet": writes_packet,
         "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+        "recovery_mode": _to_text(item.get("recovery_mode"), "manual_check"),
+        "recovery_mode_label": _to_text(item.get("recovery_mode_label"), "手动检查"),
+        "recovery_steps": _as_list(item.get("recovery_steps")),
         "recovery_button_context": _to_text(
             item.get("recovery_button_context") or item.get("button_context"),
             f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
         ),
+        "external_call_policy": _to_text(item.get("external_call_policy"), "not_triggered"),
         "deepseek_called": False,
     }
 
@@ -2291,10 +2300,14 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "legacy_tab": _to_text(action.get("legacy_tab")),
                 "writes_packet": writes_packet,
                 "refresh_policy": _to_text(action.get("refresh_policy"), "button_gated"),
+                "recovery_mode": _to_text(action.get("recovery_mode"), "manual_check"),
+                "recovery_mode_label": _to_text(action.get("recovery_mode_label"), "手动检查"),
+                "recovery_steps": _as_list(action.get("recovery_steps")),
                 "recovery_button_context": _to_text(
                     action.get("recovery_button_context") or action.get("button_context"),
                     f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
                 ),
+                "external_call_policy": _to_text(action.get("external_call_policy"), "not_triggered"),
                 "recovery_result_status": _to_text(action.get("recovery_result_status"), "waiting"),
                 "recovery_result_status_label": _to_text(action.get("recovery_result_status_label"), "待验证"),
                 "recovery_result_tone": _to_text(action.get("recovery_result_tone"), "missing"),

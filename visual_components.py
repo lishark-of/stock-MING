@@ -5140,6 +5140,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           ｜恢复：{escape(_home_text(item.get("action_label"), "手动检查"))}
           ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_data_capability_packet"))}
         </div>
+        <div class="cc-home-item-meta">
+          恢复模式：{escape(_home_text(item.get("recovery_mode_label"), "手动检查"))}
+          ｜按钮边界：{escape(_home_text(item.get("recovery_button_context"), "按钮只处理当前接口并回流 packet；不会自动调用 DeepSeek 或重型任务。"))}
+        </div>
         """
     if not provider_gap_item_html:
         provider_gap_item_html = "<div class='cc-home-item-meta'>暂无多数据源能力诊断；页面打开不会自动请求外部接口。</div>"
@@ -5394,6 +5398,11 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     data_recovery_center_action_html = ""
     for item in data_recovery_center_actions[:6]:
+        recovery_steps_text = " → ".join(
+            _home_text(step)
+            for step in (item.get("recovery_steps") or [])
+            if _home_text(step)
+        )
         data_recovery_center_action_html += f"""
         <div class="cc-home-candidate">
           <div class="cc-home-item-title">
@@ -5401,6 +5410,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <span class="cc-home-chip {escape('failed' if item.get('priority') == 1 else 'stale')}">{escape(_home_text(item.get("source_label"), "恢复队列"))}</span>
           </div>
           <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("status_label"), item.get("status") or "待验证"))} ｜ 动作：{escape(_home_text(item.get("action_label"), "手动恢复"))}</div>
+          <div class="cc-home-item-meta">恢复模式：{escape(_home_text(item.get("recovery_mode_label"), "手动检查"))} ｜ 外部接口：{escape(_home_text(item.get("external_call_policy"), "not_triggered"))}</div>
+          <div class="cc-home-item-meta">恢复步骤：{escape(_home_text(recovery_steps_text, "进入对应高级工具 → 手动检测 → 回流综合中心 packet"))}</div>
           <div class="cc-home-item-meta">接口原因：{escape(_home_text(item.get("interface_cause_label"), item.get("status_label") or "待验证"))} ｜ {escape(_home_text(item.get("interface_diagnostic_answer"), item.get("diagnostic_answer") or "仍需核对接口状态。"))}</div>
           <div class="cc-home-item-meta">原因：{escape(_home_text(item.get("reason"), "仍需手动确认。"))}</div>
           <div class="cc-home-item-meta">诊断：{escape(_home_text(item.get("diagnostic_answer"), "仍需核对接口状态、日期和覆盖范围。"))}</div>

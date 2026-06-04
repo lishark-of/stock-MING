@@ -62,7 +62,7 @@ class CommandCenterDataCapabilityConsoleTests(unittest.TestCase):
         self.assertEqual(packet["recovery_actions"][0]["refresh_policy"], "button_gated")
         self.assertEqual(packet["recovery_actions"][0]["recovery_mode"], "check_permission")
         self.assertEqual(packet["recovery_actions"][0]["recovery_mode_label"], "先查权限/积分")
-        self.assertIn("只处理 margin_detail", packet["recovery_actions"][0]["recovery_button_context"])
+        self.assertIn("只检测 margin_detail", packet["recovery_actions"][0]["recovery_button_context"])
         self.assertIn("回流 command_center_margin_packet", packet["recovery_actions"][0]["recovery_steps"][-1])
         self.assertIn("不会自动调用 DeepSeek", packet["recovery_actions"][0]["recovery_button_context"])
         self.assertIn("不能支撑加仓", packet["recovery_actions"][0]["decision_guardrail"])

@@ -1238,6 +1238,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["data_recovery_actions"][0]["label"], "融资融券")
         self.assertEqual(payload["data_recovery_actions"][0]["writes_packet"], "command_center_margin_packet")
         self.assertEqual(payload["data_recovery_actions"][0]["refresh_policy"], "button_gated")
+        self.assertEqual(payload["data_recovery_actions"][0]["recovery_mode"], "check_permission")
+        self.assertEqual(payload["data_recovery_actions"][0]["recovery_mode_label"], "先查权限/积分")
+        self.assertIn("回流 command_center_margin_packet", payload["data_recovery_actions"][0]["recovery_steps"][-1])
+        self.assertEqual(payload["data_recovery_actions"][0]["external_call_policy"], "not_triggered")
         self.assertEqual(payload["data_recovery_actions"][0]["interface_cause_key"], "permission_or_points")
         self.assertEqual(payload["data_recovery_actions"][0]["interface_cause_label"], "权限/积分不足")
         self.assertIn("专业接口已开通", payload["data_recovery_actions"][0]["interface_diagnostic_answer"])
@@ -1249,6 +1253,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("只允许观察、降风险", payload["risk_alerts"]["reduce_conditions"][0])
         self.assertTrue(any("融资融券" in item for item in payload["risk_alerts"]["data_gaps"]))
         self.assertTrue(any("AkShare 重型刷新" in item for item in payload["risk_alerts"]["data_gaps"]))
+        center_action = payload["data_recovery_center"]["actions"][0]
+        self.assertEqual(center_action["recovery_mode"], "check_permission")
+        self.assertIn("权限/积分", center_action["recovery_mode_label"])
+        self.assertIn("回流 command_center_margin_packet", center_action["recovery_steps"][-1])
+        self.assertEqual(center_action["external_call_policy"], "not_triggered")
         self.assertIn("个股资金流", dumped)
         self.assertIn("融资融券", dumped)
         self.assertIn("AkShare 重型刷新", dumped)
@@ -1394,6 +1403,14 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                         "action_label": "手动刷新融资融券",
                         "writes_packet": "command_center_margin_packet",
                         "refresh_policy": "button_gated",
+                        "recovery_mode": "check_permission",
+                        "recovery_mode_label": "先查权限/积分",
+                        "recovery_steps": [
+                            "先确认融资融券对应接口权限/积分是否开通。",
+                            "进入高级工具箱 / 融资 ETF，点击“手动刷新融资融券”。",
+                            "结果回流 command_center_margin_packet 后，再进入综合中心决策链。",
+                        ],
+                        "external_call_policy": "not_triggered",
                     }
                 ],
                 "a_share_user_data_diagnostic": {
@@ -1476,6 +1493,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(decision_queue[0]["writes_packet"], "command_center_margin_packet")
         self.assertIn("不能支持加融资", decision_queue[0]["decision_impact"])
         self.assertIn("只检测 margin_detail", decision_queue[0]["recovery_button_context"])
+        self.assertEqual(decision_queue[0]["recovery_mode"], "check_permission")
+        self.assertEqual(decision_queue[0]["recovery_mode_label"], "先查权限/积分")
+        self.assertIn("结果回流 command_center_margin_packet", decision_queue[0]["recovery_steps"][-1])
+        self.assertEqual(decision_queue[0]["external_call_policy"], "not_triggered")
         self.assertEqual(decision_queue[0]["workspace_state_key"], "workspace_mode_v2")
         self.assertEqual(decision_queue[0]["legacy_tab_state_key"], "legacy_workspace_selected_tab")
         self.assertEqual(decision_queue[0]["legacy_tab"], "融资 ETF")

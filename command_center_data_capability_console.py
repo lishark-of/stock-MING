@@ -288,7 +288,7 @@ def _recovery_mode_label(mode: str) -> str:
 def _recovery_button_context(item: Mapping[str, Any], action_label: str, writes_packet: str) -> str:
     api = _to_text(item.get("api") or item.get("label"), "当前接口")
     return (
-        f"{action_label}只处理 {api} 并回流 {writes_packet}；"
+        f"{action_label}只检测 {api} 并回流 {writes_packet}；"
         "不会自动调用 DeepSeek、回测、全市场扫描或外部重型刷新。"
     )
 
