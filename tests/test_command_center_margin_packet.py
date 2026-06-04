@@ -15,6 +15,12 @@ class CommandCenterMarginPacketTests(unittest.TestCase):
         self.assertEqual(packet["data_status"], "missing")
         self.assertIn("不会自动请求", packet["summary"])
         self.assertIn("手动刷新", packet["manual_required_text"])
+        self.assertEqual(packet["packet_role"], "A股融资融券杠杆证据")
+        self.assertEqual(packet["verification_status"], "待验证")
+        self.assertIn("待手动刷新", packet["evidence_summary"])
+        self.assertIn("手动刷新", packet["action_hint"])
+        self.assertIn("缺少融资融券", packet["decision_guardrail"])
+        self.assertEqual(packet["evidence_items"][0]["status"], "待验证")
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
 
@@ -43,6 +49,15 @@ class CommandCenterMarginPacketTests(unittest.TestCase):
         self.assertEqual(packet["financing_balance_yi"], 12.3)
         self.assertEqual(packet["financing_buy_yi"], 1.2)
         self.assertEqual(packet["leverage_state"], "融资买入增加")
+        self.assertEqual(packet["verification_status"], "已验证")
+        self.assertIn("杠杆状态：融资买入增加", packet["evidence_summary"])
+        self.assertIn("融资买入 1.2 亿", packet["evidence_summary"])
+        self.assertIn("融资余额 12.3 亿", packet["evidence_summary"])
+        self.assertIn("不能直接等同主力资金改善", packet["action_hint"])
+        self.assertIn("不能单独支持加融资", packet["decision_guardrail"])
+        evidence_by_key = {item["key"]: item for item in packet["evidence_items"]}
+        self.assertEqual(evidence_by_key["financing_buy"]["value"], "1.2 亿")
+        self.assertEqual(evidence_by_key["financing_balance"]["status"], "已验证")
         self.assertIn("不等于主力资金", " ".join(packet["risk_notes"]))
         self.assertFalse(packet["deepseek_called"])
 
@@ -69,6 +84,10 @@ class CommandCenterMarginPacketTests(unittest.TestCase):
         self.assertEqual(packet["capability_state"], "permission_denied")
         self.assertEqual(packet["status_label"], "权限不足")
         self.assertEqual(packet["recovery_state"], "blocked")
+        self.assertEqual(packet["verification_status"], "阻断决策")
+        self.assertIn("权限不足", packet["evidence_summary"])
+        self.assertIn("margin_detail 权限", packet["action_hint"])
+        self.assertIn("缺少融资融券", packet["decision_guardrail"])
         self.assertIn("不能假设杠杆资金改善", " ".join(packet["risk_notes"]))
 
     def test_disabled_this_session_keeps_skip_state(self):
@@ -97,6 +116,8 @@ class CommandCenterMarginPacketTests(unittest.TestCase):
         self.assertEqual(packet["recovery_state"], "blocked")
         self.assertEqual(packet["updated_at"], "2026-06-03T10:02:00")
         self.assertEqual(packet["checked_at"], "2026-06-03T10:02:00")
+        self.assertIn("本会话跳过", packet["evidence_summary"])
+        self.assertIn("margin_detail 权限", packet["action_hint"])
         self.assertIn("本会话跳过", packet["summary"])
         self.assertFalse(packet["deepseek_called"])
 
@@ -127,6 +148,8 @@ class CommandCenterMarginPacketTests(unittest.TestCase):
         self.assertEqual(packet["recovery_state"], "recovered")
         self.assertEqual(packet["financing_balance_yi"], None)
         self.assertEqual(packet["trade_date"], "20260603")
+        self.assertIn("接口可用", packet["evidence_summary"])
+        self.assertIn("价格纪律", packet["action_hint"])
         self.assertIn("状态", packet["summary"])
         self.assertFalse(packet["deepseek_called"])
 

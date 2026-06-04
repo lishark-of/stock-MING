@@ -492,6 +492,43 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertIn("禁止把热度写成追高理由", brief_items["limit_emotion"]["guardrail_text"])
         self.assertIn("禁止把胜率写成加仓理由", dumped)
 
+    def test_dragon_tiger_and_margin_guardrails_flow_into_core_evidence_brief(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "dragon_tiger_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "activity_state": "席位净买入",
+                    "evidence_summary": "席位行为：席位净买入｜净买入 1.3 亿",
+                    "action_hint": "把龙虎榜净买入作为席位行为线索。",
+                    "decision_guardrail": "龙虎榜净买入只作辅助证据；不能单独构成买入或加仓理由。",
+                    "evidence_items": [{"key": "net_buy_amount", "label": "净买入", "value": "1.3 亿", "status": "已验证"}],
+                },
+                "margin_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "leverage_state": "融资买入增加",
+                    "evidence_summary": "杠杆状态：融资买入增加｜融资买入 1.2 亿",
+                    "action_hint": "不能直接等同主力资金改善。",
+                    "decision_guardrail": "融资买入增加不等于主力资金改善；不能单独支持加融资或放大仓位。",
+                    "evidence_items": [{"key": "financing_buy", "label": "融资买入", "value": "1.2 亿", "status": "已验证"}],
+                },
+                "limit_emotion_packet": {"status": "ready", "data_status": "ready", "emotion_state": "情绪线索可参考"},
+            }
+        )
+        by_key = {item["key"]: item for item in vm["items"]}
+        core = {item["key"]: item for item in vm["core_evidence_items"]}
+        brief_items = {item["key"]: item for item in vm["core_evidence_action_brief"]["items"]}
+
+        self.assertIn("净买入 1.3 亿", by_key["dragon_tiger"]["evidence_summary"])
+        self.assertIn("不能单独构成买入", by_key["dragon_tiger"]["decision_signal"])
+        self.assertEqual(by_key["dragon_tiger"]["evidence_items"][0]["key"], "net_buy_amount")
+        self.assertIn("融资买入 1.2 亿", by_key["margin"]["evidence_summary"])
+        self.assertIn("不能直接等同主力资金改善", by_key["margin"]["next_action"])
+        self.assertIn("不能单独支持加融资", by_key["margin"]["decision_signal"])
+        self.assertIn("不能单独构成买入", brief_items["dragon_tiger"]["guardrail_text"])
+        self.assertIn("不能单独支持加融资", core["margin"]["decision_signal"])
+
     def test_hard_risk_packet_headline_and_count_are_visible(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {

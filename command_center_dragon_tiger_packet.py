@@ -220,6 +220,97 @@ def _build_risk_notes(payload: Mapping[str, Any], status: str, activity_state: s
     return _dedupe_text(notes)
 
 
+def _verification_status(status: str, recovery_state: str) -> str:
+    if status == "ready":
+        return "已验证"
+    if recovery_state == "blocked":
+        return "阻断决策"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    status_label: str,
+    recovery_state: str,
+    activity_state: str,
+    net_buy_amount_yi: int | float | None,
+    inst_rows: list[dict],
+) -> str:
+    if status == "ready":
+        parts = [f"席位行为：{activity_state}"]
+        if net_buy_amount_yi is not None:
+            parts.append(f"净买入 {net_buy_amount_yi} 亿")
+        if inst_rows:
+            parts.append(f"席位明细 {len(inst_rows)} 条")
+        if len(parts) == 1:
+            parts.append("接口可用，上榜明细待验证")
+        return "｜".join(parts)
+    if recovery_state == "blocked":
+        return f"{status_label}：龙虎榜不能进入席位行为依据。"
+    return "龙虎榜待手动刷新；未回流前不能确认席位行为或机构参与。"
+
+
+def _build_evidence_items(
+    status: str,
+    status_label: str,
+    verification_status: str,
+    activity_state: str,
+    net_buy_amount_yi: int | float | None,
+    inst_rows: list[dict],
+) -> list[dict]:
+    if status != "ready":
+        return [
+            {
+                "key": "dragon_tiger",
+                "label": "龙虎榜",
+                "value": status_label,
+                "status": verification_status,
+            }
+        ]
+    return [
+        {
+            "key": "activity_state",
+            "label": "席位行为",
+            "value": activity_state,
+            "status": verification_status,
+        },
+        {
+            "key": "net_buy_amount",
+            "label": "净买入",
+            "value": f"{net_buy_amount_yi} 亿" if net_buy_amount_yi is not None else "待验证",
+            "status": "已验证" if net_buy_amount_yi is not None else "待验证",
+        },
+        {
+            "key": "inst_rows",
+            "label": "席位明细",
+            "value": f"{len(inst_rows)} 条" if inst_rows else "待验证",
+            "status": "已回流" if inst_rows else "待验证",
+        },
+    ]
+
+
+def _action_hint(status: str, capability_state: str, activity_state: str) -> str:
+    if status == "ready" and activity_state == "席位净买入":
+        return "把龙虎榜净买入作为席位行为线索；仍需资金流、价格纪律和仓位预算共同确认。"
+    if status == "ready" and activity_state == "席位净卖出":
+        return "先复核席位净卖出是否削弱短线情绪；策略应偏观察或降风险。"
+    if status == "ready":
+        return "把龙虎榜作为短线席位和情绪线索；不上榜或无明细不能写成机构支持。"
+    if capability_state in {"permission_denied", "disabled_this_session", "network_failed", "not_configured", "failed"}:
+        return "先在数据恢复中心处理 Tushare top_list/top_inst 权限、积分、网络或接口状态。"
+    return "需要时手动刷新龙虎榜能力；缺失时不把席位行为写入买入依据。"
+
+
+def _decision_guardrail(status: str, activity_state: str) -> str:
+    if status != "ready":
+        return "缺少龙虎榜时，不能确认席位行为、机构参与或短线情绪支持。"
+    if activity_state == "席位净买入":
+        return "龙虎榜净买入只作辅助证据；不能单独构成买入或加仓理由。"
+    if activity_state == "席位净卖出":
+        return "席位净卖出需要降低短线追高冲动，并复核资金流和价格纪律。"
+    return "龙虎榜只验证上榜和席位行为，不替代趋势、资金流和风险预算。"
+
+
 def build_command_center_dragon_tiger_packet(
     state: Any = None,
     live_packet: Any = None,
@@ -241,6 +332,7 @@ def build_command_center_dragon_tiger_packet(
     net_buy_amount_yi = to_number(payload.get("net_buy_amount_yi") or payload.get("net_buy_amount") or payload.get("net_buy"))
     inst_rows = _normalize_rows(payload.get("inst_rows"))
     activity_state = _activity_state(status, net_buy_amount_yi, inst_rows)
+    verification_status = _verification_status(status, recovery_state)
     summary = _first_text(
         payload.get("summary"),
         payload.get("inst_summary"),
@@ -276,6 +368,30 @@ def build_command_center_dragon_tiger_packet(
         "raw_rows": [as_mapping(item) for item in as_list(payload.get("raw_rows"))[:MAX_ROWS]],
         "activity_state": activity_state,
         "summary": summary,
+        "packet_role": "A股龙虎榜席位证据",
+        "verification_status": verification_status,
+        "evidence_summary": _first_text(
+            payload.get("evidence_summary"),
+            default=_build_evidence_summary(
+                status,
+                status_label,
+                recovery_state,
+                activity_state,
+                net_buy_amount_yi,
+                inst_rows,
+            ),
+        ),
+        "evidence_items": as_list(payload.get("evidence_items"))
+        or _build_evidence_items(
+            status,
+            status_label,
+            verification_status,
+            activity_state,
+            net_buy_amount_yi,
+            inst_rows,
+        ),
+        "action_hint": _first_text(payload.get("action_hint"), default=_action_hint(status, capability_state, activity_state)),
+        "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, activity_state)),
         "risk_notes": _build_risk_notes(payload, status, activity_state),
         "manual_required_text": "龙虎榜来自 Tushare top_list/top_inst 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,

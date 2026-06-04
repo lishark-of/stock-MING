@@ -14,6 +14,14 @@ def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def as_list(value: Any) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
 def to_text(value: Any, default: str = "") -> str:
     if value is None:
         return default
@@ -194,6 +202,107 @@ def _build_risk_notes(payload: Mapping[str, Any], status: str, leverage_state: s
     return _dedupe_text(notes)
 
 
+def _verification_status(status: str, recovery_state: str) -> str:
+    if status == "ready":
+        return "已验证"
+    if recovery_state == "blocked":
+        return "阻断决策"
+    return "待验证"
+
+
+def _build_evidence_summary(
+    status: str,
+    status_label: str,
+    recovery_state: str,
+    leverage_state: str,
+    financing_balance_yi: int | float | None,
+    financing_buy_yi: int | float | None,
+    margin_balance_yi: int | float | None,
+) -> str:
+    if status == "ready":
+        parts = [f"杠杆状态：{leverage_state}"]
+        if financing_buy_yi is not None:
+            parts.append(f"融资买入 {financing_buy_yi} 亿")
+        if financing_balance_yi is not None:
+            parts.append(f"融资余额 {financing_balance_yi} 亿")
+        if margin_balance_yi is not None:
+            parts.append(f"两融余额 {margin_balance_yi} 亿")
+        if len(parts) == 1:
+            parts.append("接口可用，个股余额待验证")
+        return "｜".join(parts)
+    if recovery_state == "blocked":
+        return f"{status_label}：融资融券不能进入杠杆依据。"
+    return "融资融券待手动刷新；未回流前不能确认杠杆资金是否改善。"
+
+
+def _build_evidence_items(
+    status: str,
+    status_label: str,
+    verification_status: str,
+    leverage_state: str,
+    financing_balance_yi: int | float | None,
+    financing_buy_yi: int | float | None,
+    margin_balance_yi: int | float | None,
+) -> list[dict]:
+    if status != "ready":
+        return [
+            {
+                "key": "margin",
+                "label": "融资融券",
+                "value": status_label,
+                "status": verification_status,
+            }
+        ]
+    return [
+        {
+            "key": "leverage_state",
+            "label": "杠杆状态",
+            "value": leverage_state,
+            "status": verification_status,
+        },
+        {
+            "key": "financing_buy",
+            "label": "融资买入",
+            "value": f"{financing_buy_yi} 亿" if financing_buy_yi is not None else "待验证",
+            "status": "已验证" if financing_buy_yi is not None else "待验证",
+        },
+        {
+            "key": "financing_balance",
+            "label": "融资余额",
+            "value": f"{financing_balance_yi} 亿" if financing_balance_yi is not None else "待验证",
+            "status": "已验证" if financing_balance_yi is not None else "待验证",
+        },
+        {
+            "key": "margin_balance",
+            "label": "两融余额",
+            "value": f"{margin_balance_yi} 亿" if margin_balance_yi is not None else "待验证",
+            "status": "已验证" if margin_balance_yi is not None else "待验证",
+        },
+    ]
+
+
+def _action_hint(status: str, capability_state: str, leverage_state: str) -> str:
+    if status == "ready" and leverage_state == "融资买入增加":
+        return "把融资买入增加作为杠杆行为证据；不能直接等同主力资金改善或允许加融资。"
+    if status == "ready" and leverage_state == "融资买入减少":
+        return "先复核融资买入减少是否削弱风险偏好；策略应偏观察或降风险。"
+    if status == "ready":
+        return "把融资融券作为杠杆和风险预算证据；执行前仍需价格纪律确认。"
+    if capability_state in {"permission_denied", "disabled_this_session", "network_failed", "not_configured", "failed"}:
+        return "先在数据恢复中心处理 Tushare margin_detail 权限、积分、网络或接口状态。"
+    return "需要时手动刷新融资融券能力；缺失时融资比例和风险预算必须保守。"
+
+
+def _decision_guardrail(status: str, leverage_state: str) -> str:
+    if status != "ready":
+        return "缺少融资融券时，不能确认杠杆资金、融资余额或风险预算改善。"
+    if leverage_state == "融资买入增加":
+        return "融资买入增加不等于主力资金改善；不能单独支持加融资或放大仓位。"
+    if leverage_state == "融资买入减少":
+        return "融资买入减少时先降低杠杆假设，复核价格纪律和现金缓冲。"
+    return "融资融券只验证杠杆变化，不替代资金流、趋势和纪律条件。"
+
+
 def build_command_center_margin_packet(
     state: Any = None,
     live_packet: Any = None,
@@ -217,6 +326,7 @@ def build_command_center_margin_packet(
     margin_balance_yi = to_number(payload.get("margin_balance_yi"))
     short_sell_volume = to_number(payload.get("short_sell_volume"))
     leverage_state = _leverage_state(financing_balance_yi, financing_buy_yi, margin_balance_yi, status)
+    verification_status = _verification_status(status, recovery_state)
     summary = _first_text(
         payload.get("summary"),
         payload.get("evidence"),
@@ -247,6 +357,32 @@ def build_command_center_margin_packet(
         "short_sell_volume": short_sell_volume,
         "leverage_state": leverage_state,
         "summary": summary,
+        "packet_role": "A股融资融券杠杆证据",
+        "verification_status": verification_status,
+        "evidence_summary": _first_text(
+            payload.get("evidence_summary"),
+            default=_build_evidence_summary(
+                status,
+                status_label,
+                recovery_state,
+                leverage_state,
+                financing_balance_yi,
+                financing_buy_yi,
+                margin_balance_yi,
+            ),
+        ),
+        "evidence_items": as_list(payload.get("evidence_items"))
+        or _build_evidence_items(
+            status,
+            status_label,
+            verification_status,
+            leverage_state,
+            financing_balance_yi,
+            financing_buy_yi,
+            margin_balance_yi,
+        ),
+        "action_hint": _first_text(payload.get("action_hint"), default=_action_hint(status, capability_state, leverage_state)),
+        "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, leverage_state)),
         "risk_notes": _build_risk_notes(payload, status, leverage_state),
         "manual_required_text": "融资融券来自 Tushare margin_detail 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
         "deepseek_called": False,
