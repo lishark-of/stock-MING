@@ -49,6 +49,15 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertEqual(packet["recommended_etfs"][0]["bucket"], "科技成长ETF")
         self.assertEqual(packet["recommended_etfs"][0]["status_label"], "只观察不追")
         self.assertTrue(packet["recommended_etfs"][0]["evidence_items"])
+        self.assertTrue(packet["recommended_etfs"][0]["evidence_chain"])
+        chain_keys = {item["key"] for item in packet["recommended_etfs"][0]["evidence_chain"]}
+        self.assertEqual(
+            chain_keys,
+            {"tracking_index", "liquidity", "overlap", "overheat", "margin_cash"},
+        )
+        self.assertIn("融资", packet["recommended_etfs"][0]["evidence_chain"][-1]["label"])
+        self.assertIn("不能放大仓位", packet["recommended_etfs"][0]["action_guardrail"])
+        self.assertFalse(packet["recommended_etfs"][0]["deepseek_called"])
         self.assertIn("流动性", "；".join(packet["recommended_etfs"][0]["data_gaps"]))
         self.assertIn("不会自动全量发现", packet["recommended_etfs"][0]["manual_required_text"])
         self.assertEqual(packet["data_status"], "ready")
@@ -91,9 +100,45 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertEqual(existing, original)
         self.assertEqual(packet["recommended_etfs"][0]["code"], "159801.SZ")
         self.assertTrue(packet["recommended_etfs"][0]["evidence_items"])
+        self.assertTrue(packet["recommended_etfs"][0]["evidence_chain"])
+        self.assertIn("可参考", packet["recommended_etfs"][0]["evidence_chain_summary"])
         self.assertIn("不会自动全量发现", packet["manual_required_text"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
+
+    def test_etf_candidate_evidence_chain_uses_real_context_without_mutating_input(self):
+        row = {
+            "etf_code": "560780.SH",
+            "etf_name": "半导体设备ETF广发",
+            "bucket": "科技成长ETF",
+            "tracking_index": "中证半导体设备主题指数",
+            "turnover_yi": 8.6,
+            "holding_overlap": "与芯片 ETF 有重叠",
+            "premium_rate": "溢价待复核",
+            "trigger_condition": "回踩 MA20 不破且成交额放大",
+        }
+        original = copy.deepcopy(row)
+
+        candidate = etf_packet.normalize_etf_candidate(
+            row,
+            margin_context={
+                "current_margin_ratio": 28,
+                "recommended_margin_ratio": 20,
+                "recommended_cash_ratio": 22,
+            },
+        )
+
+        self.assertEqual(row, original)
+        chain = {item["key"]: item for item in candidate["evidence_chain"]}
+        self.assertEqual(chain["tracking_index"]["value"], "中证半导体设备主题指数")
+        self.assertEqual(chain["liquidity"]["value"], "8.6亿")
+        self.assertIn("重叠", chain["overlap"]["value"])
+        self.assertIn("溢价", chain["overheat"]["value"])
+        self.assertIn("现金缓冲 22%", chain["margin_cash"]["value"])
+        self.assertEqual(chain["tracking_index"]["external_call_policy"], "not_triggered")
+        self.assertFalse(chain["margin_cash"]["deepseek_called"])
+        self.assertIn("不能放大仓位", candidate["action_guardrail"])
+        json.dumps(candidate, ensure_ascii=False)
 
     def test_score_packet_can_supply_candidates_when_allocation_has_no_selected_items(self):
         packet = etf_packet.build_command_center_etf_packet(

@@ -4975,11 +4975,19 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if etfs:
         etf_html = ""
         for item in etfs[:3]:
+            etf_chain = [evidence for evidence in (item.get("evidence_chain") or []) if isinstance(evidence, dict)]
             etf_evidence = "；".join(
+                f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('status_label'), evidence.get('value') or '待验证')}"
+                for evidence in etf_chain[:4]
+            ) or "；".join(
                 f"{_home_text(evidence.get('label'), '证据')}:{_home_text(evidence.get('value'), '待验证')}"
                 for evidence in (item.get("evidence_items") or [])[:3]
                 if isinstance(evidence, dict)
             ) or f"赛道:{_home_text(item.get('bucket'), 'ETF')}；分数:{_home_number(item.get('score'))}"
+            etf_guardrail = "；".join(
+                f"{_home_text(evidence.get('label'), '证据')}→{_home_text(evidence.get('external_call_policy'), 'not_triggered')}"
+                for evidence in etf_chain[:3]
+            ) or "跟踪指数、流动性、同类重叠和融资现金缓冲仍需逐步回流为 packet。"
             etf_gaps = "；".join(str(gap).strip() for gap in (item.get("data_gaps") or [])[:3] if str(gap).strip()) or "暂无显式数据缺口"
             etf_html += f"""
             <div class="cc-home-etf">
@@ -4989,8 +4997,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               </div>
               <div class="cc-home-item-meta">{escape(_home_text(item.get("bucket"), "ETF"))} ｜ 分数：{escape(_home_number(item.get("score")))} ｜ {escape(_home_text(item.get("action_state"), "只观察不追"))}</div>
               <div class="cc-home-item-meta">证据：{escape(etf_evidence)}</div>
+              <div class="cc-home-item-meta">证据链：{escape(_home_text(item.get("evidence_chain_summary"), "证据链待验证"))} ｜ {escape(etf_guardrail)}</div>
               <div class="cc-home-item-meta">触发：{escape(_home_text(item.get("trigger_condition"), "等待回踩、量能和风险线确认。"))}</div>
               <div class="cc-home-item-meta">风险：{escape(_home_text(item.get("risk_note"), "ETF 需复核流动性、跟踪指数、同类重叠和追高风险。"))}</div>
+              <div class="cc-home-item-meta">执行保护：{escape(_home_text(item.get("action_guardrail"), "ETF 候选不是买入指令；融资现金缓冲未确认前不能放大仓位。"))}</div>
               <div class="cc-home-item-meta">数据缺口：{escape(etf_gaps)}</div>
             </div>
             """

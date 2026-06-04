@@ -8,6 +8,7 @@ from typing import Any
 MAX_RECOMMENDED_ETFS = 3
 MAX_RISK_NOTES = 6
 MAX_EVIDENCE_ITEMS = 5
+MAX_EVIDENCE_CHAIN_ITEMS = 5
 
 
 def as_mapping(value: Any) -> dict:
@@ -169,6 +170,135 @@ def _build_evidence_items(payload: Mapping[str, Any], score: int | float | None,
     return items[:MAX_EVIDENCE_ITEMS]
 
 
+def _chain_status(value: str, *, risk_text: str = "") -> tuple[str, str, str]:
+    text = to_text(value)
+    risk = to_text(risk_text)
+    if not text or text in {"待验证", "暂无", "N/A", "--"}:
+        return "missing", "待验证", "missing"
+    if any(word in text + risk for word in ("不足", "过热", "追高", "异常", "高重叠", "偏高", "风险")):
+        return "stale", "需复核", "stale"
+    return "ready", "可参考", "ready"
+
+
+def _chain_item(key: str, label: str, value: str, detail: str, guardrail: str, *, risk_text: str = "") -> dict:
+    status, status_label, tone = _chain_status(value, risk_text=risk_text)
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "status_label": status_label,
+        "tone": tone,
+        "value": value or "待验证",
+        "detail": detail,
+        "guardrail": guardrail,
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def _overlap_text(payload: Mapping[str, Any]) -> str:
+    return _first_text(
+        payload.get("overlap_risk"),
+        payload.get("holding_overlap"),
+        payload.get("same_bucket_overlap"),
+        payload.get("similar_etf_overlap"),
+        payload.get("overlap"),
+        default="待验证",
+    )
+
+
+def _overheat_text(payload: Mapping[str, Any], bucket: str) -> str:
+    explicit = _first_text(
+        payload.get("overheat_risk"),
+        payload.get("premium_discount"),
+        payload.get("premium_rate"),
+        payload.get("valuation_heat"),
+        payload.get("no_chase_reason"),
+    )
+    if explicit:
+        return explicit
+    risk = _etf_risk_text(payload, bucket)
+    if risk:
+        return risk
+    return "追高/溢价折价待验证"
+
+
+def _margin_cash_text(payload: Mapping[str, Any], margin_context: Mapping[str, Any]) -> str:
+    explicit = _first_text(
+        payload.get("cash_buffer"),
+        payload.get("cash_buffer_text"),
+        payload.get("margin_guardrail"),
+        payload.get("margin_note"),
+    )
+    if explicit:
+        return explicit
+    cash_ratio = _first_number(payload.get("recommended_cash_ratio"), margin_context.get("recommended_cash_ratio"))
+    margin_ratio = _first_number(payload.get("recommended_margin_ratio"), margin_context.get("recommended_margin_ratio"))
+    current_ratio = _first_number(payload.get("current_margin_ratio"), margin_context.get("current_margin_ratio"))
+    parts = []
+    if cash_ratio is not None:
+        parts.append(f"现金缓冲 {cash_ratio:g}%")
+    if margin_ratio is not None:
+        parts.append(f"建议融资 {margin_ratio:g}%")
+    if current_ratio is not None:
+        parts.append(f"当前融资 {current_ratio:g}%")
+    return "；".join(parts) if parts else "待验证"
+
+
+def _summarize_evidence_chain(chain: list[dict]) -> str:
+    ready = len([item for item in chain if item.get("status") == "ready"])
+    missing = len([item for item in chain if item.get("status") == "missing"])
+    review = len([item for item in chain if item.get("status") in {"stale", "failed"}])
+    return f"可参考 {ready}｜待补证 {missing}｜需复核 {review}"
+
+
+def _build_evidence_chain(payload: Mapping[str, Any], bucket: str, margin_context: Mapping[str, Any] | None = None) -> list[dict]:
+    context = as_mapping(margin_context)
+    tracking = _first_text(payload.get("tracking_index"), payload.get("index_name"), payload.get("index"), default="待验证")
+    liquidity = _liquidity_text(payload)
+    overlap = _overlap_text(payload)
+    overheat = _overheat_text(payload, bucket)
+    margin_cash = _margin_cash_text(payload, context)
+    return [
+        _chain_item(
+            "tracking_index",
+            "跟踪指数",
+            tracking,
+            "确认跟踪指数、主题和成分暴露，避免把 ETF 当作普通个股处理。",
+            "跟踪指数未确认前，只能观察，不放大仓位。",
+        ),
+        _chain_item(
+            "liquidity",
+            "流动性",
+            liquidity,
+            "以成交额/流动性作为可交易性线索；缺失时不适合融资放大。",
+            "流动性未验证前，不加融资、不追高。",
+        ),
+        _chain_item(
+            "overlap",
+            "同类重叠",
+            overlap,
+            "检查是否与已有 ETF 或同赛道持仓重复暴露。",
+            "同类重叠未确认前，不重复配置同一赛道。",
+        ),
+        _chain_item(
+            "overheat",
+            "追高/溢价",
+            overheat,
+            "复核赛道是否过热、是否存在溢价折价或拥挤交易。",
+            "追高/溢价风险未排除前，只能等待回踩确认。",
+            risk_text=overheat,
+        ),
+        _chain_item(
+            "margin_cash",
+            "融资/现金",
+            margin_cash,
+            "把 ETF 动作和融资比例、现金缓冲放在同一条风控线上。",
+            "现金缓冲和融资比例未确认前，不能放大仓位。",
+        ),
+    ][:MAX_EVIDENCE_CHAIN_ITEMS]
+
+
 def _data_gaps(payload: Mapping[str, Any], evidence_items: list[dict]) -> list[str]:
     gaps = _dedupe_text(payload.get("data_gaps") or payload.get("missing_items"), limit=MAX_RISK_NOTES)
     if not _first_text(payload.get("tracking_index"), payload.get("index_name"), payload.get("index")):
@@ -192,8 +322,14 @@ def _candidate_rows(candidates: Any) -> list[dict]:
     return [row for row in rows if row]
 
 
-def normalize_etf_candidate(row: Any = None, rank: int = 0, default_source: str = "融资 ETF 本地配置") -> dict:
+def normalize_etf_candidate(
+    row: Any = None,
+    rank: int = 0,
+    default_source: str = "融资 ETF 本地配置",
+    margin_context: Any = None,
+) -> dict:
     payload = as_mapping(row)
+    context = as_mapping(margin_context)
     bucket = _first_text(payload.get("bucket"), payload.get("theme"), payload.get("category"), default="ETF")
     score = _first_number(payload.get("total_score"), payload.get("score"), payload.get("composite_score"))
     action_state = _first_text(payload.get("action_state"), payload.get("advice"), payload.get("signal"), default="只观察不追")
@@ -204,6 +340,7 @@ def normalize_etf_candidate(row: Any = None, rank: int = 0, default_source: str 
         default="等待回踩、量能和风险线确认。",
     )
     evidence_items = _build_evidence_items(payload, score, bucket, action_state, trigger_condition)
+    evidence_chain = _build_evidence_chain(payload, bucket, context)
     return {
         "rank": rank,
         "code": _first_text(payload.get("etf_code"), payload.get("code"), payload.get("ts_code"), payload.get("symbol")),
@@ -217,14 +354,26 @@ def normalize_etf_candidate(row: Any = None, rank: int = 0, default_source: str 
         "trigger_condition": trigger_condition,
         "risk_note": _etf_risk_text(payload, bucket),
         "evidence_items": evidence_items,
+        "evidence_chain": evidence_chain,
+        "evidence_chain_summary": _summarize_evidence_chain(evidence_chain),
+        "action_guardrail": _first_text(
+            payload.get("action_guardrail"),
+            default="ETF 候选不是买入指令；跟踪指数、流动性、同类重叠、追高风险和融资现金缓冲未确认前不能放大仓位。",
+        ),
         "data_gaps": _data_gaps(payload, evidence_items),
         "liquidity_text": _liquidity_text(payload),
         "source": _first_text(payload.get("source"), default=default_source),
         "manual_required_text": "ETF 候选来自本地配置或手动刷新结果；页面打开不会自动全量发现或拉取重行情。",
+        "deepseek_called": False,
     }
 
 
-def extract_recommended_etfs(allocation_result: Any = None, daily_packet: Any = None, limit: int = MAX_RECOMMENDED_ETFS) -> list[dict]:
+def extract_recommended_etfs(
+    allocation_result: Any = None,
+    daily_packet: Any = None,
+    limit: int = MAX_RECOMMENDED_ETFS,
+    margin_context: Any = None,
+) -> list[dict]:
     allocation = as_mapping(allocation_result)
     daily = as_mapping(daily_packet)
     candidates = (
@@ -240,7 +389,7 @@ def extract_recommended_etfs(allocation_result: Any = None, daily_packet: Any = 
     normalized = []
     seen = set()
     for row in rows:
-        item = normalize_etf_candidate(row, rank=len(normalized) + 1)
+        item = normalize_etf_candidate(row, rank=len(normalized) + 1, margin_context=margin_context)
         key = item.get("code") or item.get("name")
         if not key or key in seen:
             continue
@@ -346,10 +495,20 @@ def build_command_center_etf_packet(
     live_section = as_mapping(live.get("margin_etf"))
     existing = as_mapping(state_map.get("command_center_etf_packet"))
     if existing.get("recommended_etfs") or existing.get("status") in {"ready", "partial"}:
+        existing_context = {
+            "current_margin_ratio": existing.get("current_margin_ratio"),
+            "recommended_margin_ratio": existing.get("recommended_margin_ratio"),
+            "recommended_cash_ratio": existing.get("recommended_cash_ratio"),
+        }
         return {
             **existing,
             "recommended_etfs": [
-                normalize_etf_candidate(item, rank=index + 1, default_source=to_text(existing.get("source"), "融资 ETF 本地配置"))
+                normalize_etf_candidate(
+                    item,
+                    rank=index + 1,
+                    default_source=to_text(existing.get("source"), "融资 ETF 本地配置"),
+                    margin_context=existing_context,
+                )
                 for index, item in enumerate(as_list(existing.get("recommended_etfs"))[: int(limit or MAX_RECOMMENDED_ETFS)])
             ],
             "watch_not_chase": _dedupe_text(existing.get("watch_not_chase"), fallback="不追高 ETF；等待回踩、量能和风险线确认。", limit=MAX_RECOMMENDED_ETFS),
@@ -363,7 +522,6 @@ def build_command_center_etf_packet(
         }
     allocation = as_mapping(state_map.get("legacy_margin_etf_allocation_result"))
     daily = as_mapping(state_map.get("legacy_margin_etf_daily_packet"))
-    etfs = extract_recommended_etfs(allocation, daily, limit=limit)
     current_ratio = _first_number(
         live_section.get("current_margin_ratio"),
         live_section.get("current_margin_debt_ratio"),
@@ -374,6 +532,12 @@ def build_command_center_etf_packet(
     )
     recommended_ratio = _first_number(live_section.get("recommended_margin_ratio"), allocation.get("recommended_margin_ratio"))
     recommended_cash_ratio = _first_number(live_section.get("recommended_cash_ratio"), allocation.get("recommended_cash_ratio"))
+    margin_context = {
+        "current_margin_ratio": current_ratio,
+        "recommended_margin_ratio": recommended_ratio,
+        "recommended_cash_ratio": recommended_cash_ratio,
+    }
+    etfs = extract_recommended_etfs(allocation, daily, limit=limit, margin_context=margin_context)
     status = _derive_status(allocation, daily, live_section, etfs)
     updated_at = _first_text(
         live_section.get("updated_at"),

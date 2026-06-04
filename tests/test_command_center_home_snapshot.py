@@ -184,6 +184,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["margin_etf_summary"]["recommended_margin_ratio"], 20)
         self.assertEqual(payload["margin_etf_summary"]["recommended_etfs"][0]["name"], "半导体设备ETF广发")
         self.assertTrue(payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_items"])
+        self.assertTrue(payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_chain"])
+        self.assertIn("可参考", payload["margin_etf_summary"]["recommended_etfs"][0]["evidence_chain_summary"])
+        self.assertIn("不能放大仓位", payload["margin_etf_summary"]["recommended_etfs"][0]["action_guardrail"])
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])
 
