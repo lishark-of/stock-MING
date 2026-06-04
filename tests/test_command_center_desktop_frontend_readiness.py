@@ -99,6 +99,60 @@ class CommandCenterDesktopFrontendReadinessTests(unittest.TestCase):
         self.assertEqual(surfaces["etf_margin_action"]["status"], "ready")
         self.assertEqual(surfaces["risk_alerts"]["status"], "ready")
 
+    def test_home_snapshot_nested_sections_can_satisfy_home_surfaces(self):
+        state = {
+            "command_center_home_snapshot": {
+                "status": "ready",
+                "is_empty": False,
+                "data_freshness": {"state": "today", "label": "今日已刷新"},
+                "next_ticket_candidates": [{"ticker": "002008.SZ", "name": "大族激光"}],
+                "margin_etf_summary": {
+                    "recommended_margin_ratio": 25,
+                    "recommended_etfs": [{"code": "560780.SH", "name": "半导体设备ETF"}],
+                },
+                "risk_alerts": {
+                    "hard_risk_status": "待验证",
+                    "data_gaps": ["公告风险待验证"],
+                },
+            },
+            "command_center_decision_packet": {"status": "ready"},
+            "command_center_projection_packet": {"status": "ready"},
+            "command_center_analysis_method_packet": {"status": "ready"},
+            "strategy_execution_packet": {"status": "ready"},
+        }
+        packet = readiness.build_desktop_frontend_readiness(state)
+        surfaces = {item["key"]: item for item in packet["surfaces"]}
+
+        self.assertEqual(surfaces["data_freshness"]["status"], "ready")
+        self.assertIn("command_center_refresh_summary", surfaces["data_freshness"]["available_required_packets"])
+        self.assertEqual(surfaces["next_ticket_candidates"]["status"], "ready")
+        self.assertIn("command_center_radar_packet", surfaces["next_ticket_candidates"]["available_required_packets"])
+        self.assertEqual(surfaces["etf_margin_action"]["status"], "ready")
+        self.assertIn("command_center_etf_packet", surfaces["etf_margin_action"]["available_required_packets"])
+        self.assertEqual(surfaces["risk_alerts"]["status"], "ready")
+        self.assertIn("command_center_hard_risk_packet", surfaces["risk_alerts"]["available_required_packets"])
+
+    def test_empty_home_snapshot_does_not_satisfy_nested_surfaces(self):
+        state = {
+            "command_center_home_snapshot": {
+                "status": "empty",
+                "is_empty": True,
+                "data_freshness": {"state": "missing", "label": "待刷新"},
+                "risk_alerts": {"data_gaps": ["暂无可执行候选。点击刷新今日基础数据生成。"]},
+            },
+            "command_center_decision_packet": {"status": "ready"},
+            "command_center_projection_packet": {"status": "ready"},
+            "command_center_analysis_method_packet": {"status": "ready"},
+            "strategy_execution_packet": {"status": "ready"},
+        }
+        packet = readiness.build_desktop_frontend_readiness(state)
+        surfaces = {item["key"]: item for item in packet["surfaces"]}
+
+        self.assertEqual(surfaces["data_freshness"]["status"], "missing")
+        self.assertEqual(surfaces["next_ticket_candidates"]["status"], "missing")
+        self.assertEqual(surfaces["etf_margin_action"]["status"], "missing")
+        self.assertEqual(surfaces["risk_alerts"]["status"], "missing")
+
     def test_error_packet_marks_surface_blocked(self):
         state = {
             "command_center_hard_risk_packet": {"status": "failed", "last_error": "permission denied"},

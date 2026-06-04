@@ -100,6 +100,27 @@ def _as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _as_list(value: Any) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _has_mapping_payload(value: Any) -> bool:
+    payload = _as_mapping(value)
+    return bool(payload) and not bool(payload.get("is_empty"))
+
+
+def _has_text_or_items(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return any(_has_text_or_items(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_has_text_or_items(item) for item in value)
+    return bool(_to_text(value))
+
+
 def _packet_keys_for_surfaces() -> list[str]:
     keys = []
     seen = set()
@@ -118,6 +139,93 @@ def _responses_by_key(bundle: Mapping[str, Any]) -> dict[str, dict]:
         key = _to_text(packet.get("packet_key"))
         if key:
             result[key] = packet
+    return result
+
+
+def _home_snapshot_from_state(state: Any) -> dict:
+    return _as_mapping(_as_mapping(state).get("command_center_home_snapshot"))
+
+
+def _home_snapshot_fallback_payload(home_snapshot: Mapping[str, Any], packet_key: str) -> dict:
+    if packet_key == "command_center_refresh_summary":
+        data_freshness = _as_mapping(home_snapshot.get("data_freshness"))
+        if _has_mapping_payload(data_freshness) and data_freshness.get("state") != "missing":
+            return {
+                "status": "cached",
+                "source": "command_center_home_snapshot.data_freshness",
+                "data_freshness": data_freshness,
+            }
+    if packet_key == "command_center_radar_packet":
+        candidates = _as_list(home_snapshot.get("next_ticket_candidates"))
+        radar_packet = _as_mapping(home_snapshot.get("radar_packet"))
+        if candidates:
+            return {
+                "status": "cached",
+                "source": "command_center_home_snapshot.next_ticket_candidates",
+                "top_candidates": candidates,
+                "display_count": len(candidates),
+            }
+        if _has_mapping_payload(radar_packet):
+            return {**radar_packet, "source": radar_packet.get("source") or "command_center_home_snapshot.radar_packet"}
+    if packet_key == "command_center_etf_packet":
+        etf_packet = _as_mapping(home_snapshot.get("etf_packet"))
+        margin_summary = _as_mapping(home_snapshot.get("margin_etf_summary"))
+        recommended = _as_list(margin_summary.get("recommended_etfs"))
+        if _has_mapping_payload(etf_packet):
+            return {**etf_packet, "source": etf_packet.get("source") or "command_center_home_snapshot.etf_packet"}
+        if recommended:
+            return {
+                "status": "cached",
+                "source": "command_center_home_snapshot.margin_etf_summary",
+                "recommended_etfs": recommended,
+                "recommended_margin_ratio": margin_summary.get("recommended_margin_ratio"),
+                "recommended_cash_ratio": margin_summary.get("recommended_cash_ratio"),
+                "today_main_direction": margin_summary.get("today_main_direction"),
+                "watch_not_chase": margin_summary.get("watch_not_chase") or [],
+            }
+    if packet_key == "command_center_hard_risk_packet":
+        hard_risk_packet = _as_mapping(home_snapshot.get("hard_risk_packet"))
+        risk_alerts = _as_mapping(home_snapshot.get("risk_alerts"))
+        if _has_mapping_payload(hard_risk_packet):
+            return {**hard_risk_packet, "source": hard_risk_packet.get("source") or "command_center_home_snapshot.hard_risk_packet"}
+        if _has_text_or_items(risk_alerts):
+            return {
+                "status": "cached",
+                "source": "command_center_home_snapshot.risk_alerts",
+                "risk_alerts": risk_alerts,
+            }
+    return {}
+
+
+def _merge_home_snapshot_fallbacks(state: Any, responses: dict[str, dict]) -> dict[str, dict]:
+    home_snapshot = _home_snapshot_from_state(state)
+    if not home_snapshot or home_snapshot.get("is_empty"):
+        return responses
+    result = dict(responses)
+    for packet_key in [
+        "command_center_refresh_summary",
+        "command_center_radar_packet",
+        "command_center_etf_packet",
+        "command_center_hard_risk_packet",
+    ]:
+        existing = _as_mapping(result.get(packet_key))
+        if _is_available(existing) and not _is_error(existing):
+            continue
+        fallback_payload = _home_snapshot_fallback_payload(home_snapshot, packet_key)
+        if not fallback_payload:
+            continue
+        result[packet_key] = local_api_contract.build_packet_response_envelope(
+            packet_key=packet_key,
+            payload=fallback_payload,
+            status=fallback_payload.get("status") or "cached",
+            warnings=["using command_center_home_snapshot fallback for desktop readiness"],
+            meta={
+                "available": True,
+                "preview_only": True,
+                "preview_source": "command_center_home_snapshot",
+                "fallback_for": packet_key,
+            },
+        )
     return result
 
 
@@ -213,7 +321,7 @@ def build_desktop_frontend_readiness(
         include_legacy=include_legacy,
         include_missing=True,
     )
-    responses = _responses_by_key(preview_bundle)
+    responses = _merge_home_snapshot_fallbacks(state, _responses_by_key(preview_bundle))
     surfaces = [_surface_item(spec, responses) for spec in SURFACE_SPECS]
     ready_count = sum(1 for item in surfaces if item["status"] == "ready")
     partial_count = sum(1 for item in surfaces if item["status"] == "partial")
