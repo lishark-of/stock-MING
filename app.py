@@ -10805,6 +10805,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             for recovery_key in [
                 "command_center_last_tool_recovery_key",
                 "command_center_last_tool_recovery_label",
+                "command_center_last_tool_recovery_provider",
+                "command_center_last_tool_recovery_api",
                 "command_center_last_tool_recovery_writes_packet",
                 "command_center_last_tool_recovery_target_tab",
                 "command_center_last_tool_recovery_source_type",

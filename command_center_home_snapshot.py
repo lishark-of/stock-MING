@@ -2064,6 +2064,7 @@ def build_provider_recovery_matrix(snapshot: Any = None) -> dict:
                 "key": _to_text(recovery_action.get("key"), f"provider_recovery:{provider}"),
                 "label": _to_text(recovery_action.get("label"), provider),
                 "provider": provider,
+                "api": _to_text(recovery_action.get("api") or item.get("api")),
                 "status": status,
                 "status_label": recovery_state,
                 "tone": _to_text(item.get("tone"), "missing"),
@@ -2548,6 +2549,7 @@ def _normalize_recovery_center_action(
         "key": _to_text(item.get("key") or item.get("api") or writes_packet or label),
         "label": label,
         "provider": _to_text(item.get("provider")),
+        "api": _to_text(item.get("api")),
         "source_type": _to_text(source_type, "recovery"),
         "source_label": _to_text(source_label, "恢复队列"),
         "status": status,
@@ -4107,6 +4109,8 @@ def build_tool_recovery_navigation_state(action: Any = None) -> dict:
         legacy_tab_state_key: legacy_tab,
         "command_center_last_tool_recovery_key": _to_text(item.get("key")),
         "command_center_last_tool_recovery_label": _to_text(item.get("label"), legacy_tab),
+        "command_center_last_tool_recovery_provider": _to_text(item.get("provider")),
+        "command_center_last_tool_recovery_api": _to_text(item.get("api")),
         "command_center_last_tool_recovery_writes_packet": _to_text(item.get("writes_packet")),
         "command_center_last_tool_recovery_target_tab": legacy_tab,
         "command_center_last_tool_recovery_source_type": _to_text(item.get("source_type"), "recovery"),
@@ -4130,6 +4134,11 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
     if _to_text(state_map.get("command_center_last_tool_recovery_policy")) != "navigation_only":
         return {}
     label = _to_text(state_map.get("command_center_last_tool_recovery_label"), "旧工具能力")
+    provider = _provider_cockpit_name(
+        state_map.get("command_center_last_tool_recovery_provider")
+        or state_map.get("command_center_last_tool_recovery_label")
+    )
+    api = _to_text(state_map.get("command_center_last_tool_recovery_api"))
     writes_packet = _to_text(state_map.get("command_center_last_tool_recovery_writes_packet"), "command_center_packet")
     selected = _to_text(selected_tab, _to_text(state_map.get("legacy_workspace_selected_tab"), "高级工具"))
     target_tab = _to_text(
@@ -4166,6 +4175,8 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         "status": "ready",
         "title": "来自首页恢复队列",
         "label": label,
+        "provider": provider,
+        "api": api,
         "selected_tab": selected,
         "target_tab": target_tab,
         "is_target_tab": is_target_tab,
@@ -4264,6 +4275,38 @@ TOOL_RECOVERY_MANUAL_CHECKS = {
 }
 
 
+PROVIDER_RECOVERY_MANUAL_HINTS = {
+    "Tushare": {
+        "check_key": "provider_tushare",
+        "label": "Tushare 专业接口",
+        "module_button_label": "运行数据源体检 / 查看 Tushare 接口权限表",
+        "module_button_key": "btn_run_data_source_healthcheck",
+        "help_text": "数据源体检会检查 Tushare 基础连接、权限、返回行数和最新交易日；DeepSeek ping 默认关闭，不会自动跑回测、全市场扫描或批量刷新。",
+    },
+    "AkShare": {
+        "check_key": "provider_akshare",
+        "label": "AkShare 补充数据",
+        "module_button_label": "运行数据源体检 / 再到对应模块手动刷新 AkShare",
+        "module_button_key": "btn_run_data_source_healthcheck / AkShare module buttons",
+        "help_text": "数据源体检只标记 AkShare 是否需要手动；真正的 AkShare 资金穿透或补充数据仍在对应模块按钮触发，不会在导航时自动运行重型刷新。",
+    },
+    "yfinance": {
+        "check_key": "provider_yfinance",
+        "label": "yfinance 美股/全球行情",
+        "module_button_label": "运行数据源体检 / 复核美股与全球行情口径",
+        "module_button_key": "btn_run_data_source_healthcheck / yfinance module checks",
+        "help_text": "yfinance 用于美股/全球行情补充；缺失时不能用 A股口径替代财报、RS、行业和宏观验证，不会在导航时自动请求外部行情。",
+    },
+    "Supabase": {
+        "check_key": "provider_supabase",
+        "label": "Supabase 云端外脑",
+        "module_button_label": "运行数据源体检 / 读取云端记忆档案",
+        "module_button_key": "btn_run_data_source_healthcheck / btn_load_cloud_memories",
+        "help_text": "Supabase 恢复先检查本地配置和表连接；不会展示 secrets。云端记忆读取必须在云端外脑模块手动点击。",
+    },
+}
+
+
 def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any = "") -> dict:
     context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
     if not context:
@@ -4280,6 +4323,29 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
             "deepseek_called": False,
         }
     writes_packet = context["writes_packet"]
+    provider = _provider_cockpit_name(context.get("provider"))
+    provider_config = PROVIDER_RECOVERY_MANUAL_HINTS.get(provider)
+    if writes_packet == "command_center_data_capability_packet" and provider_config:
+        module_button_label = _to_text(provider_config.get("module_button_label"), "运行数据源体检")
+        return {
+            "available": False,
+            "module_button_hint": True,
+            "provider": provider,
+            "api": _to_text(context.get("api")),
+            "label": provider_config["label"],
+            "selected_tab": context["selected_tab"],
+            "writes_packet": writes_packet,
+            "check_key": provider_config["check_key"],
+            "module_button_label": module_button_label,
+            "module_button_key": _to_text(provider_config.get("module_button_key")),
+            "message": f"{provider_config['label']}已定位到“{context['target_tab']}”；请点击“{module_button_label}”，成功后回流 {writes_packet}。",
+            "help_text": _to_text(
+                provider_config.get("help_text"),
+                f"{provider_config['label']}需要使用模块内按钮手动恢复；不会自动运行 DeepSeek、回测、全市场扫描或批量刷新。",
+            ),
+            "external_call_policy": "button_gated",
+            "deepseek_called": False,
+        }
     config = TOOL_RECOVERY_MANUAL_CHECKS.get(writes_packet)
     if not config:
         return {

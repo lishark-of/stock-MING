@@ -1145,6 +1145,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         navigation = snapshot.build_tool_recovery_navigation_state(by_provider["AkShare"])
         self.assertEqual(navigation["workspace_mode_v2"], "高级工具箱（旧版保留）")
         self.assertEqual(navigation["legacy_workspace_selected_tab"], "数据源体检")
+        self.assertEqual(navigation["command_center_last_tool_recovery_provider"], "AkShare")
+        self.assertEqual(navigation["command_center_last_tool_recovery_api"], "akshare_manual_refresh")
         self.assertEqual(navigation["command_center_last_tool_recovery_policy"], "navigation_only")
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in center["actions"]))
         self.assertTrue(all(item["external_call_policy"] == "not_triggered" for item in center["actions"]))
@@ -2636,6 +2638,37 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(hint["external_call_policy"], "not_triggered")
         self.assertIn("还没有绑定单项检测按钮", hint["message"])
         self.assertFalse(hint["deepseek_called"])
+
+    def test_tool_recovery_manual_check_hint_maps_provider_data_sources(self):
+        cases = [
+            ("Tushare", "数据源体检", "运行数据源体检", "Tushare 基础连接", "provider_tushare"),
+            ("AkShare", "数据源体检", "对应模块手动刷新 AkShare", "真正的 AkShare 资金穿透", "provider_akshare"),
+            ("yfinance", "数据源体检", "复核美股与全球行情口径", "不能用 A股口径替代", "provider_yfinance"),
+            ("Supabase", "云端外脑", "读取云端记忆档案", "不会展示 secrets", "provider_supabase"),
+        ]
+        for provider, selected_tab, button_fragment, help_fragment, check_key in cases:
+            with self.subTest(provider=provider):
+                hint = snapshot.build_tool_recovery_manual_check_hint(
+                    {
+                        "command_center_last_tool_recovery_label": provider,
+                        "command_center_last_tool_recovery_provider": provider,
+                        "command_center_last_tool_recovery_api": "provider_check",
+                        "command_center_last_tool_recovery_writes_packet": "command_center_data_capability_packet",
+                        "command_center_last_tool_recovery_target_tab": selected_tab,
+                        "command_center_last_tool_recovery_policy": "navigation_only",
+                        "legacy_workspace_selected_tab": selected_tab,
+                    },
+                    selected_tab=selected_tab,
+                )
+
+                self.assertFalse(hint["available"])
+                self.assertTrue(hint["module_button_hint"])
+                self.assertEqual(hint["provider"], provider)
+                self.assertEqual(hint["check_key"], check_key)
+                self.assertIn(button_fragment, hint["module_button_label"])
+                self.assertIn(help_fragment, hint["help_text"])
+                self.assertEqual(hint["external_call_policy"], "button_gated")
+                self.assertFalse(hint["deepseek_called"])
 
     def test_tool_recovery_result_notice_waits_for_packet(self):
         notice = snapshot.build_tool_recovery_result_notice(
