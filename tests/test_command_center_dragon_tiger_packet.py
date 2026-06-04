@@ -43,6 +43,9 @@ class CommandCenterDragonTigerPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["status"], "ready")
         self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["capability_state"], "available")
+        self.assertEqual(packet["status_label"], "可用")
+        self.assertEqual(packet["recovery_state"], "recovered")
         self.assertEqual(packet["net_buy_amount_yi"], 1.3)
         self.assertEqual(packet["activity_state"], "席位净买入")
         self.assertEqual(packet["inst_rows"][0]["name"], "机构专用")
@@ -69,7 +72,69 @@ class CommandCenterDragonTigerPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["status"], "partial")
         self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "empty_recent")
+        self.assertEqual(packet["status_label"], "近期无数据")
+        self.assertEqual(packet["recovery_state"], "waiting")
         self.assertIn("不等于机构支持", " ".join(packet["risk_notes"]))
+
+    def test_permission_denied_is_blocked_not_support(self):
+        packet = dragon_packet.build_command_center_dragon_tiger_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "dragon_tiger",
+                            "label": "龙虎榜",
+                            "state": "permission_denied",
+                            "status": "权限不足",
+                            "api": "top_list/top_inst",
+                            "risk": "抱歉，您没有访问该接口的权限。",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "failed")
+        self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "permission_denied")
+        self.assertEqual(packet["status_label"], "权限不足")
+        self.assertEqual(packet["recovery_state"], "blocked")
+        self.assertEqual(packet["updated_at"], "2026-06-03T10:02:00")
+        self.assertEqual(packet["checked_at"], "2026-06-03T10:02:00")
+        self.assertIn("不等于机构支持", " ".join(packet["risk_notes"]))
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_available_capability_item_marks_recovered_without_fake_rows(self):
+        packet = dragon_packet.build_command_center_dragon_tiger_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "dragon_tiger",
+                            "label": "龙虎榜",
+                            "state": "available",
+                            "status": "可用",
+                            "api": "top_list/top_inst",
+                            "rows": 1,
+                            "latest_date": "20260603",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["capability_state"], "available")
+        self.assertEqual(packet["status_label"], "可用")
+        self.assertEqual(packet["recovery_state"], "recovered")
+        self.assertEqual(packet["trade_date"], "20260603")
+        self.assertEqual(packet["inst_rows"], [])
+        self.assertIn("状态", packet["summary"])
+        self.assertFalse(packet["deepseek_called"])
 
     def test_existing_packet_is_preserved_without_mutating_input(self):
         state = {

@@ -37,6 +37,9 @@ class CommandCenterMarginPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["status"], "ready")
         self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["capability_state"], "available")
+        self.assertEqual(packet["status_label"], "可用")
+        self.assertEqual(packet["recovery_state"], "recovered")
         self.assertEqual(packet["financing_balance_yi"], 12.3)
         self.assertEqual(packet["financing_buy_yi"], 1.2)
         self.assertEqual(packet["leverage_state"], "融资买入增加")
@@ -63,7 +66,69 @@ class CommandCenterMarginPacketTests(unittest.TestCase):
 
         self.assertEqual(packet["status"], "failed")
         self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "permission_denied")
+        self.assertEqual(packet["status_label"], "权限不足")
+        self.assertEqual(packet["recovery_state"], "blocked")
         self.assertIn("不能假设杠杆资金改善", " ".join(packet["risk_notes"]))
+
+    def test_disabled_this_session_keeps_skip_state(self):
+        packet = margin_packet.build_command_center_margin_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "margin",
+                            "label": "融资融券",
+                            "state": "disabled_this_session",
+                            "status": "本会话跳过",
+                            "api": "margin_detail",
+                            "message": "margin_detail 当前权限不足，已在本会话跳过重复请求。",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "failed")
+        self.assertEqual(packet["data_status"], "missing")
+        self.assertEqual(packet["capability_state"], "disabled_this_session")
+        self.assertEqual(packet["status_label"], "本会话跳过")
+        self.assertEqual(packet["recovery_state"], "blocked")
+        self.assertEqual(packet["updated_at"], "2026-06-03T10:02:00")
+        self.assertEqual(packet["checked_at"], "2026-06-03T10:02:00")
+        self.assertIn("本会话跳过", packet["summary"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_available_capability_item_marks_recovered_without_fake_balance(self):
+        packet = margin_packet.build_command_center_margin_packet(
+            {
+                "command_center_facts_packet": {
+                    "items": [
+                        {
+                            "key": "margin",
+                            "label": "融资融券",
+                            "state": "available",
+                            "status": "可用",
+                            "api": "margin_detail",
+                            "rows": 3,
+                            "latest_date": "20260603",
+                            "checked_at": "2026-06-03T10:02:00",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["data_status"], "ready")
+        self.assertEqual(packet["capability_state"], "available")
+        self.assertEqual(packet["status_label"], "可用")
+        self.assertEqual(packet["recovery_state"], "recovered")
+        self.assertEqual(packet["financing_balance_yi"], None)
+        self.assertEqual(packet["trade_date"], "20260603")
+        self.assertIn("状态", packet["summary"])
+        self.assertFalse(packet["deepseek_called"])
 
     def test_existing_packet_is_preserved_without_mutating_input(self):
         state = {
