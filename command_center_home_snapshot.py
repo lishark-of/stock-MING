@@ -1037,6 +1037,69 @@ def _a_share_fact_diagnostic_text(label: str, recovery_state: str, status_label:
     return f"{label}尚未形成当日可验证事实；保持空态或缓存，等待手动检测。"
 
 
+def _a_share_fact_root_cause_label(status: str, data_status: str, capability_state: str) -> str:
+    state = _to_text(capability_state).lower()
+    data = _to_text(data_status).lower()
+    raw_status = _to_text(status).lower()
+    if state == "permission_denied":
+        return "接口权限/积分"
+    if state == "disabled_this_session":
+        return "本会话跳过"
+    if state in {"empty_recent", "no_data"} or data in {"empty_recent", "empty"}:
+        return "近期无记录"
+    if state in {"stale_cache", "fallback_used", "cached"} or data in {"cache", "cached", "stale", "stale_cache"}:
+        return "使用缓存/替代口径"
+    if state == "not_configured":
+        return "配置待确认"
+    if state in {"network_failed", "failed"} or raw_status == "failed":
+        return "接口失败/网络"
+    if raw_status == "ready" or state == "available":
+        return "已可用"
+    return "需要手动刷新"
+
+
+def _a_share_fact_why_previous_full_not_enough(
+    label: str,
+    source: str,
+    status: str,
+    data_status: str,
+    capability_state: str,
+) -> str:
+    root_cause = _a_share_fact_root_cause_label(status, data_status, capability_state)
+    source_text = _to_text(source, "Tushare 专业接口")
+    if root_cause == "已可用":
+        return f"{source_text} 已有可读结果；仍要复核交易日、来源和是否匹配当前标的。"
+    if root_cause == "接口权限/积分":
+        return f"“拉满 Tushare”只代表基础 token/连接可用；{source_text} 仍可能需要单独权限、积分或接口开通。"
+    if root_cause == "本会话跳过":
+        return f"{source_text} 已在本会话被判定受限并跳过重复请求，避免页面卡顿；需要手动重新检测。"
+    if root_cause == "近期无记录":
+        return f"{source_text} 可能受交易日、披露时间、上榜条件或标的覆盖限制；无记录不等于无风险。"
+    if root_cause == "使用缓存/替代口径":
+        return f"{label} 当前只能使用缓存或替代口径；执行前必须确认日期和覆盖范围。"
+    if root_cause == "配置待确认":
+        return f"{source_text} 尚未确认配置完整；不能把配置缺口写成数据结论。"
+    if root_cause == "接口失败/网络":
+        return f"{source_text} 最近检测失败；先保留上次结果或安全空态，不自动重试重型接口。"
+    return f"{label} 尚未手动检测；页面打开不会自动请求 {source_text}。"
+
+
+def _a_share_fact_decision_guardrail(
+    label: str,
+    recovery_state: str,
+    root_cause_label: str,
+    packet_guardrail: Any = "",
+) -> str:
+    explicit = _to_text(packet_guardrail)
+    if explicit:
+        return explicit
+    if recovery_state == "recovered":
+        return f"{label}可进入证据链，但不能单独决定买入、追高、加仓或加融资。"
+    if root_cause_label == "使用缓存/替代口径":
+        return f"{label}只作为缓存证据；执行前必须复核交易日、来源和仓位纪律。"
+    return f"{label}未恢复前只能标记为待验证，不能把缺失写成利好、无风险或可加仓依据。"
+
+
 def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) -> dict:
     payload = _as_mapping(packet)
     writes_packet = _to_text(config.get("writes_packet"), "command_center_packet")
@@ -1054,6 +1117,15 @@ def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) ->
         "暂无",
     )
     source = _to_text(payload.get("source") or payload.get("source_key"), _to_text(config.get("source_fallback"), "本地 packet"))
+    source_fallback = _to_text(config.get("source_fallback"), source)
+    root_cause_label = _a_share_fact_root_cause_label(status, data_status, capability_state)
+    why_previous_full_not_enough = _a_share_fact_why_previous_full_not_enough(
+        _to_text(config.get("label"), "A股事实"),
+        source_fallback,
+        status,
+        data_status,
+        capability_state,
+    )
     if recovery_state == "recovered":
         tone = "ready"
         readable_state = "已回流"
@@ -1081,9 +1153,19 @@ def _a_share_fact_summary_item(config: Mapping[str, Any], packet: Any = None) ->
         "status_label": status_label,
         "updated_at": updated_at,
         "source": source,
+        "provider": "Tushare",
+        "provider_scope_text": source_fallback,
+        "root_cause_label": root_cause_label,
+        "why_previous_full_not_enough": why_previous_full_not_enough,
         "action_label": action_label if recovery_state != "recovered" else "查看回流结果",
         "next_action": _a_share_fact_next_action(label, recovery_state, writes_packet, action_label),
         "diagnostic_answer": _a_share_fact_diagnostic_text(label, recovery_state, status_label),
+        "decision_guardrail": _a_share_fact_decision_guardrail(
+            label,
+            recovery_state,
+            root_cause_label,
+            payload.get("decision_guardrail"),
+        ),
         "packet_status_text": f"{readable_state}｜{status_label}｜{writes_packet}",
         "toolbox_entry": f"高级工具箱 / {legacy_tab}",
         "workspace_target": "高级工具箱（旧版保留）",

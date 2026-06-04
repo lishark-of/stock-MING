@@ -6430,6 +6430,13 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           下一步：{escape(_home_text(item.get("next_action"), item.get("action_label") or "按数据恢复中心手动处理。"))}
           ｜来源：{escape(_home_text(item.get("source"), "本地 packet"))}
         </div>
+        <div class="cc-home-item-meta">
+          根因：{escape(_home_text(item.get("root_cause_label"), "需要手动刷新"))}
+          ｜为什么拉满仍不够：{escape(_home_text(item.get("why_previous_full_not_enough"), "Tushare 基础连接可用不等于每个专业接口都有当日可用证据。"))}
+        </div>
+        <div class="cc-home-item-meta">
+          决策保护：{escape(_home_text(item.get("decision_guardrail"), "未恢复前不能把缺失写成利好、无风险或可加仓依据。"))}
+        </div>
         """
     if not a_share_fact_recovery_items_html:
         a_share_fact_recovery_items_html = "<div class='cc-home-item-meta'>五类 A股事实尚未形成回流总账；页面打开不会自动请求 Tushare。</div>"
