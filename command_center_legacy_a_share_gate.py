@@ -300,6 +300,32 @@ def _fact_recovery_action(key: str, state: str, packet: Mapping[str, Any]) -> di
     }
 
 
+def _fact_packet_route_summary(label: str, writes_packet: str) -> str:
+    return f"{label} → {writes_packet} → 综合推演中心数据能力状态 / A股事实回流 / 今日总决策依据链。"
+
+
+def _fact_decision_chain_effect(
+    label: str,
+    state: str,
+    packet: Mapping[str, Any],
+    writes_packet: str,
+) -> str:
+    existing = _first_text(
+        packet.get("decision_chain_effect"),
+        packet.get("decision_guardrail"),
+        packet.get("decision_impact"),
+    )
+    if existing:
+        return existing
+    if state == "ready":
+        return f"{label}已回流 {writes_packet}，可进入综合中心证据链；仍需复核交易日、来源和仓位纪律。"
+    if state == "cached":
+        return f"{label}当前只作为缓存/待复核证据；执行前必须确认日期、来源和覆盖口径。"
+    if state == "failed":
+        return f"{label}受限/失败时，{writes_packet} 未恢复前不能支撑加仓、追高、加融资或把风险写成已排除。"
+    return f"{label}尚未回流 {writes_packet}；综合中心只能把这项标记为待验证，不能当作已验证事实。"
+
+
 def _packet_risk_text(packet: Mapping[str, Any]) -> str:
     notes = packet.get("risk_notes")
     if isinstance(notes, (list, tuple)):
@@ -311,6 +337,8 @@ def _packet_summary_item(key: str, label: str, source_key: str, packet_value: An
     packet = as_mapping(packet_value)
     state = _packet_state(packet)
     default_api = SECTION_SPECS.get(key, ("", "", ""))[1]
+    recovery_action = _fact_recovery_action(key, state, packet)
+    writes_packet = recovery_action.get("writes_packet") or f"command_center_{key}_packet"
     return {
         "key": key,
         "label": label,
@@ -324,7 +352,9 @@ def _packet_summary_item(key: str, label: str, source_key: str, packet_value: An
         "updated_at": _first_text(packet.get("updated_at"), packet.get("trade_date"), packet.get("date")),
         "summary": _first_text(packet.get("summary"), packet.get("message"), default=SECTION_SPECS.get(key, ("", "", ""))[2]),
         "risk_note": _packet_risk_text(packet),
-        "recovery_action": _fact_recovery_action(key, state, packet),
+        "decision_chain_effect": _fact_decision_chain_effect(label, state, packet, writes_packet),
+        "packet_route_summary": _fact_packet_route_summary(label, writes_packet),
+        "recovery_action": recovery_action,
         "deepseek_called": bool(packet.get("deepseek_called", False)),
     }
 
@@ -405,6 +435,9 @@ def _primary_fact_card(key: str, title: str, packet_value: Any, metrics: list[di
     packet = as_mapping(packet_value)
     state = _packet_state(packet)
     summary = _first_text(packet.get("summary"), packet.get("message"), default=SECTION_SPECS.get(key, ("", "", ""))[2])
+    recovery_action = _fact_recovery_action(key, state, packet)
+    writes_packet = recovery_action.get("writes_packet") or f"command_center_{key}_packet"
+    label = FACT_RECOVERY_CONFIG.get(key, {}).get("label") or title
     return {
         "key": key,
         "title": title,
@@ -416,7 +449,9 @@ def _primary_fact_card(key: str, title: str, packet_value: Any, metrics: list[di
         "captions": [item for item in captions if item and item != "暂无"] if state == "ready" else [],
         "source_caption": _format_source_caption(packet),
         "risk_note": _packet_risk_text(packet),
-        "recovery_action": _fact_recovery_action(key, state, packet),
+        "decision_chain_effect": _fact_decision_chain_effect(label, state, packet, writes_packet),
+        "packet_route_summary": _fact_packet_route_summary(label, writes_packet),
+        "recovery_action": recovery_action,
         "deepseek_called": bool(packet.get("deepseek_called", False)),
     }
 
@@ -432,6 +467,9 @@ def _secondary_fact_section(
     packet = as_mapping(packet_value)
     state = _packet_state(packet)
     summary = _first_text(packet.get("summary"), packet.get("message"), default=SECTION_SPECS.get(key, ("", "", ""))[2])
+    recovery_action = _fact_recovery_action(key, state, packet)
+    writes_packet = recovery_action.get("writes_packet") or f"command_center_{key}_packet"
+    label = FACT_RECOVERY_CONFIG.get(key, {}).get("label") or title
     return {
         "key": key,
         "title": title,
@@ -444,7 +482,9 @@ def _secondary_fact_section(
         "tables": tables if state == "ready" else [],
         "source_caption": _format_source_caption(packet),
         "risk_note": _packet_risk_text(packet),
-        "recovery_action": _fact_recovery_action(key, state, packet),
+        "decision_chain_effect": _fact_decision_chain_effect(label, state, packet, writes_packet),
+        "packet_route_summary": _fact_packet_route_summary(label, writes_packet),
+        "recovery_action": recovery_action,
         "deepseek_called": bool(packet.get("deepseek_called", False)),
     }
 

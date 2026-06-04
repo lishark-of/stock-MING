@@ -10281,6 +10281,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 st.info(card.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
             if card.get("risk_note"):
                 st.caption(f"风险口径：{card.get('risk_note')}")
+            if card.get("packet_route_summary"):
+                st.caption(f"回流链路：{card.get('packet_route_summary')}")
+            if card.get("decision_chain_effect"):
+                st.caption(f"决策影响：{card.get('decision_chain_effect')}")
             recovery_action = card.get("recovery_action") or {}
             _render_legacy_fact_recovery_button(recovery_action, "primary")
             st.caption(card.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
@@ -10331,6 +10335,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 st.info(section.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
             if section.get("risk_note"):
                 st.caption(f"风险口径：{section.get('risk_note')}")
+            if section.get("packet_route_summary"):
+                st.caption(f"回流链路：{section.get('packet_route_summary')}")
+            if section.get("decision_chain_effect"):
+                st.caption(f"决策影响：{section.get('decision_chain_effect')}")
             recovery_action = section.get("recovery_action") or {}
             _render_legacy_fact_recovery_button(recovery_action, "secondary")
             st.caption(section.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
