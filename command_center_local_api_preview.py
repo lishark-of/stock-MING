@@ -41,6 +41,12 @@ def _payload_from_state(state: Any, packet_key: str) -> Any:
     snapshot = _as_mapping(state_map.get("command_center_home_snapshot"))
     if packet_key == "latest_recovery_result_notice":
         return deepcopy(snapshot.get("latest_recovery_result_notice") or {})
+    if packet_key == "command_center_recovery_result_timeline":
+        return deepcopy(
+            snapshot.get("command_center_recovery_result_timeline")
+            or snapshot.get("recovery_result_timeline")
+            or {}
+        )
     if packet_key == "command_center_evidence_radar_packet":
         return deepcopy(
             snapshot.get("command_center_evidence_radar_packet")

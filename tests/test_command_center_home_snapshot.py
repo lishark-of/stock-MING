@@ -1719,6 +1719,52 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(strip["items"][0]["external_call_policy"], "not_triggered")
         self.assertFalse(strip["deepseek_called"])
 
+    def test_recovery_result_timeline_keeps_recent_manual_outcomes(self):
+        timeline = snapshot.build_recovery_result_timeline(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "blocked",
+                    "label": "融资融券",
+                    "writes_packet": "command_center_margin_packet",
+                    "source": "Tushare margin_detail",
+                    "updated_at": "2026-06-03T10:00:00",
+                    "next_action": "检查权限后手动重试。",
+                },
+                "command_center_margin_packet": {
+                    "status": "failed",
+                    "data_status": "permission_denied",
+                    "status_label": "权限不足",
+                    "updated_at": "2026-06-03T10:00:00",
+                    "source": "Tushare margin_detail",
+                },
+                "command_center_recovery_result_timeline": {
+                    "items": [
+                        {
+                            "label": "个股资金流",
+                            "writes_packet": "command_center_moneyflow_packet",
+                            "packet_key": "command_center_moneyflow_packet",
+                            "status": "recovered",
+                            "status_label": "已回流",
+                            "tone": "ready",
+                            "updated_at": "2026-06-03T09:50:00",
+                            "source": "Tushare moneyflow",
+                        }
+                    ]
+                },
+            }
+        )
+
+        self.assertEqual(timeline["title"], "恢复结果时间线")
+        self.assertEqual(timeline["status"], "blocked")
+        self.assertEqual(timeline["items"][0]["event_type"], "packet_blocked")
+        self.assertEqual(timeline["items"][0]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(timeline["items"][1]["event_type"], "packet_recovered")
+        self.assertEqual(timeline["status_counts"]["blocked"], 1)
+        self.assertEqual(timeline["status_counts"]["recovered"], 1)
+        self.assertEqual(timeline["external_call_policy"], "not_triggered")
+        self.assertFalse(timeline["deepseek_called"])
+        json.dumps(timeline, ensure_ascii=False)
+
     def test_home_snapshot_includes_recovery_result_status_strip(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(
@@ -1756,6 +1802,12 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(strip["items"][0]["writes_packet"], "command_center_dragon_tiger_packet")
         self.assertEqual(strip["items"][0]["status_label"], "权限不足")
         self.assertFalse(strip["deepseek_called"])
+        timeline = payload["command_center_recovery_result_timeline"]
+        self.assertEqual(timeline["title"], "恢复结果时间线")
+        self.assertEqual(timeline["items"][0]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertEqual(timeline["items"][0]["event_type"], "packet_blocked")
+        self.assertEqual(payload["recovery_result_timeline"], timeline)
+        self.assertFalse(timeline["deepseek_called"])
 
     def test_home_snapshot_skips_ready_old_tool_packets_in_recovery_actions(self):
         today = _dt.date.today().isoformat()

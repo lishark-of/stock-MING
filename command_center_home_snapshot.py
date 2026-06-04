@@ -325,6 +325,8 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "legacy_migration_map": legacy_migration_map_service.build_legacy_migration_map(),
         "latest_recovery_result_notice": {},
         "recovery_result_status_strip": build_recovery_result_status_strip(),
+        "command_center_recovery_result_timeline": build_recovery_result_timeline(),
+        "recovery_result_timeline": build_recovery_result_timeline(),
         "market_packet": market_packet_service.build_command_center_market_packet({}),
         "errors": [],
         "empty_message": reason,
@@ -444,6 +446,12 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["latest_recovery_result_notice"] = _as_mapping(snapshot.get("latest_recovery_result_notice"))
     snapshot["recovery_result_status_strip"] = build_recovery_result_status_strip(snapshot)
+    snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
+        snapshot,
+        latest_notice=snapshot.get("latest_recovery_result_notice") or {},
+        status_strip=snapshot.get("recovery_result_status_strip") or {},
+    )
+    snapshot["recovery_result_timeline"] = snapshot["command_center_recovery_result_timeline"]
     snapshot["risk_alerts"] = attach_recovery_priority_risk_alerts(
         attach_hard_risk_risk_alerts(
             snapshot.get("risk_alerts") or {},
@@ -1743,6 +1751,127 @@ def build_recovery_result_status_strip(
     }
 
 
+def _recovery_timeline_event_type(status: Any = "") -> str:
+    text = _to_text(status)
+    if text == "recovered":
+        return "packet_recovered"
+    if text == "cached":
+        return "packet_cached"
+    if text == "blocked":
+        return "packet_blocked"
+    return "packet_waiting"
+
+
+def _recovery_timeline_item(raw: Any = None, source_type: Any = "") -> dict:
+    item = _as_mapping(raw)
+    if not item:
+        return {}
+    status = _to_text(item.get("status"), "waiting")
+    label = _to_text(item.get("label"), "恢复项")
+    writes_packet = _to_text(item.get("writes_packet"), "command_center_packet")
+    updated_at = _to_text(item.get("updated_at"), "暂无")
+    packet_key = _to_text(item.get("packet_key"), writes_packet)
+    source = _to_text(item.get("source"), "本地恢复状态")
+    event_type = _recovery_timeline_event_type(status)
+    return {
+        "key": _to_text(
+            item.get("key"),
+            f"{event_type}:{writes_packet}:{updated_at}:{label}",
+        ),
+        "event_type": event_type,
+        "source_type": _to_text(item.get("source_type"), _to_text(source_type, "recovery_result")),
+        "label": label,
+        "writes_packet": writes_packet,
+        "packet_key": packet_key,
+        "status": status,
+        "status_label": _to_text(item.get("status_label"), "待验证"),
+        "tone": _to_text(item.get("tone"), {"recovered": "ready", "cached": "stale", "blocked": "failed"}.get(status, "missing")),
+        "message": _to_text(item.get("message"), f"{label} 恢复结果待验证。"),
+        "updated_at": updated_at,
+        "source": source,
+        "next_action": _to_text(item.get("next_action"), "返回综合推演中心查看快照。"),
+        "external_call_policy": _to_text(item.get("external_call_policy"), "not_triggered"),
+        "deepseek_called": False,
+    }
+
+
+def build_recovery_result_timeline(
+    state: Any = None,
+    latest_notice: Any = None,
+    status_strip: Any = None,
+    limit: int = 4,
+) -> dict:
+    """Build a read-only timeline of manual recovery outcomes for the home snapshot."""
+    state_map = _as_mapping(state)
+    latest = _as_mapping(latest_notice) or _as_mapping(state_map.get("latest_recovery_result_notice"))
+    strip = _as_mapping(status_strip) or _as_mapping(state_map.get("recovery_result_status_strip"))
+    if not strip:
+        strip = build_recovery_result_status_strip(state_map, latest_notice=latest)
+
+    timeline_source = (
+        _as_mapping(state_map.get("command_center_recovery_result_timeline"))
+        or _as_mapping(state_map.get("recovery_result_timeline"))
+    )
+    candidates = []
+    for raw in _as_list(strip.get("items")):
+        item = _recovery_timeline_item(raw, source_type=latest.get("source_type") or "latest_recovery_result")
+        if item:
+            candidates.append(item)
+    if latest and not candidates:
+        candidates.append(_recovery_timeline_item(latest, source_type=latest.get("source_type") or "latest_recovery_result"))
+    for raw in _as_list(timeline_source.get("items")):
+        item = _recovery_timeline_item(raw, source_type=raw.get("source_type") if isinstance(raw, Mapping) else "persisted_snapshot")
+        if item:
+            candidates.append(item)
+
+    seen = set()
+    items = []
+    for item in candidates:
+        key = item["key"]
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(item)
+        if len(items) >= max(1, int(limit or 4)):
+            break
+
+    if items:
+        status = items[0]["status"]
+        tone = items[0]["tone"]
+        headline = {
+            "recovered": "最近恢复已回流",
+            "cached": "最近恢复使用缓存",
+            "blocked": "最近恢复仍受限",
+        }.get(status, "最近恢复待验证")
+        summary = f"最近 {len(items)} 条恢复记录；最新项：{items[0]['label']}｜{items[0]['status_label']}。"
+        next_action = items[0]["next_action"]
+    else:
+        status = "waiting"
+        tone = "missing"
+        headline = "暂无恢复结果时间线"
+        summary = "还没有手动恢复结果回流；按数据恢复队列进入高级工具箱后再手动检测。"
+        next_action = "先处理决策优先恢复队列；页面打开不会自动请求外部接口。"
+
+    status_counts = {
+        "recovered": len([item for item in items if item["status"] == "recovered"]),
+        "cached": len([item for item in items if item["status"] == "cached"]),
+        "blocked": len([item for item in items if item["status"] == "blocked"]),
+        "waiting": len([item for item in items if item["status"] == "waiting"]),
+    }
+    return {
+        "title": "恢复结果时间线",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": summary,
+        "items": items,
+        "status_counts": status_counts,
+        "next_action": next_action,
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
 def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "") -> dict:
     context = build_tool_recovery_context_notice(state, selected_tab=selected_tab)
     if not context:
@@ -2465,6 +2594,8 @@ def build_home_action_snapshot(
         "data_recovery_center": {},
         "latest_recovery_result_notice": latest_recovery_result_notice,
         "recovery_result_status_strip": {},
+        "command_center_recovery_result_timeline": {},
+        "recovery_result_timeline": {},
         "market_packet": market_packet,
         "market_profile_evidence": market_profile_evidence,
         "errors": errors,
@@ -2504,6 +2635,12 @@ def build_home_action_snapshot(
             latest_notice=empty.get("latest_recovery_result_notice") or snapshot["latest_recovery_result_notice"],
             data_recovery_center=empty.get("data_recovery_center") or {},
         )
+        empty["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
+            empty,
+            latest_notice=empty.get("latest_recovery_result_notice") or snapshot["latest_recovery_result_notice"],
+            status_strip=empty.get("recovery_result_status_strip") or {},
+        )
+        empty["recovery_result_timeline"] = empty["command_center_recovery_result_timeline"]
         empty["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
             empty,
             data_capability_packet=empty.get("data_capability") or {},
@@ -2543,6 +2680,12 @@ def build_home_action_snapshot(
         latest_notice=snapshot.get("latest_recovery_result_notice") or {},
         data_recovery_center=snapshot.get("data_recovery_center") or {},
     )
+    snapshot["command_center_recovery_result_timeline"] = build_recovery_result_timeline(
+        snapshot,
+        latest_notice=snapshot.get("latest_recovery_result_notice") or {},
+        status_strip=snapshot.get("recovery_result_status_strip") or {},
+    )
+    snapshot["recovery_result_timeline"] = snapshot["command_center_recovery_result_timeline"]
     snapshot["legacy_migration_map"] = legacy_migration_map_service.build_legacy_migration_map(
         snapshot,
         data_capability_packet=snapshot.get("data_capability") or {},

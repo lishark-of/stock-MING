@@ -80,6 +80,18 @@ class CommandCenterLocalApiContractTests(unittest.TestCase):
         self.assertEqual(response["meta"]["area"], "data_governance")
         self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])
 
+    def test_recovered_status_is_valid_for_recovery_timeline(self):
+        response = contract.build_packet_response_envelope(
+            "command_center_recovery_result_timeline",
+            payload={"status": "recovered", "items": [{"label": "个股资金流"}]},
+            status="recovered",
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["status"], "recovered")
+        self.assertEqual(response["meta"]["area"], "recovery")
+        self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])
+
     def test_packet_response_redacts_secrets_without_mutating_input(self):
         payload = {
             "ticker": "002008.SZ",

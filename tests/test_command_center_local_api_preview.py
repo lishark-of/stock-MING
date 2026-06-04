@@ -49,6 +49,27 @@ def sample_state():
                 "status": "ready",
                 "writes_packet": "command_center_moneyflow_packet",
             },
+            "command_center_recovery_result_timeline": {
+                "title": "恢复结果时间线",
+                "status": "recovered",
+                "headline": "最近恢复已回流",
+                "items": [
+                    {
+                        "event_type": "packet_recovered",
+                        "label": "个股资金流",
+                        "writes_packet": "command_center_moneyflow_packet",
+                        "packet_key": "command_center_moneyflow_packet",
+                        "status": "recovered",
+                        "status_label": "已回流",
+                        "tone": "ready",
+                        "updated_at": "2026-06-04T09:30:00",
+                        "external_call_policy": "not_triggered",
+                        "deepseek_called": False,
+                    }
+                ],
+                "external_call_policy": "not_triggered",
+                "deepseek_called": False,
+            },
             "command_center_data_health_visibility_summary": {
                 "title": "为什么搜不到",
                 "status": "blocked",
@@ -193,6 +214,24 @@ class CommandCenterLocalApiPreviewTests(unittest.TestCase):
         self.assertEqual(response["packet_key"], "latest_recovery_result_notice")
         self.assertTrue(response["meta"]["available"])
         self.assertEqual(response["payload"]["writes_packet"], "command_center_moneyflow_packet")
+
+    def test_recovery_result_timeline_can_be_read_from_home_snapshot(self):
+        response = preview.get_preview_response_for_path(
+            sample_state(),
+            "command_center_recovery_result_timeline",
+        )
+        payload = response["payload"]
+
+        self.assertEqual(response["packet_key"], "command_center_recovery_result_timeline")
+        self.assertEqual(response["status"], "recovered")
+        self.assertTrue(response["ok"])
+        self.assertTrue(response["meta"]["available"])
+        self.assertEqual(response["meta"]["area"], "recovery")
+        self.assertEqual(payload["items"][0]["event_type"], "packet_recovered")
+        self.assertEqual(payload["items"][0]["writes_packet"], "command_center_moneyflow_packet")
+        self.assertEqual(payload["external_call_policy"], "not_triggered")
+        self.assertFalse(payload["deepseek_called"])
+        self.assertTrue(contract.validate_packet_response_envelope(response)["valid"])
 
     def test_evidence_radar_packet_can_be_read_from_home_snapshot_alias(self):
         bundle = preview.build_local_api_preview_bundle(

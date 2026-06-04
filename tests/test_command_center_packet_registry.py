@@ -66,6 +66,16 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertFalse(spec["writes_session_state"])
         self.assertIn("P0/P1/P2", spec["description"])
 
+    def test_recovery_result_timeline_is_read_only_recovery_packet(self):
+        spec = registry.get_command_center_packet_spec("command_center_recovery_result_timeline")
+
+        self.assertEqual(spec["area"], "recovery")
+        self.assertEqual(spec["refresh_policy"], "derived_display")
+        self.assertEqual(spec["external_call_policy"], "not_triggered")
+        self.assertEqual(spec["deepseek_policy"], "never")
+        self.assertFalse(spec["writes_session_state"])
+        self.assertIn("时间线", spec["description"])
+
     def test_data_health_visibility_summary_is_read_only_governance_packet(self):
         spec = registry.get_command_center_packet_spec("command_center_data_health_visibility_summary")
 
