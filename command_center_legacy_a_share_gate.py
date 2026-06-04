@@ -83,6 +83,14 @@ FACT_RECOVERY_CONFIG = {
     for key, label, packet_key in PACKET_SECTION_ORDER
 }
 
+FACT_RECOVERY_LEGACY_TABS = {
+    "dragon_tiger": "下一票雷达",
+    "margin": "融资 ETF",
+    "moneyflow": "今日关注池",
+    "limit_emotion": "数据源体检",
+    "chip_radar": "量化推演",
+}
+
 
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -219,6 +227,7 @@ def _fact_recovery_action(key: str, state: str, packet: Mapping[str, Any]) -> di
     label = _first_text(config.get("label"), key, default="A股事实")
     api = _first_text(packet.get("api"), default=SECTION_SPECS.get(key, ("", "", ""))[1])
     writes_packet = _first_text(config.get("writes_packet"), default=f"command_center_{key}_packet")
+    legacy_tab = FACT_RECOVERY_LEGACY_TABS.get(key, "今日关注池")
     if state == "ready":
         action_label = "无需恢复"
         reason = f"{label}已回流；只需复核交易日、来源和口径。"
@@ -243,6 +252,11 @@ def _fact_recovery_action(key: str, state: str, packet: Mapping[str, Any]) -> di
         "action_label": action_label,
         "reason": reason,
         "toolbox_entry": _first_text(config.get("toolbox_entry"), default="高级工具箱 / 数据源体检"),
+        "workspace_target": "高级工具箱（旧版保留）",
+        "workspace_state_key": "workspace_mode_v2",
+        "legacy_tab": legacy_tab,
+        "legacy_tab_state_key": "legacy_workspace_selected_tab",
+        "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
         "writes_packet": writes_packet,
         "api_hint": api,
         "refresh_policy": refresh_policy,

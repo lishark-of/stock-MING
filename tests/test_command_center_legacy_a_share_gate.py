@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 import command_center_legacy_a_share_gate as gate
+import command_center_home_snapshot as home_snapshot
 import market_data_capability as capability
 
 
@@ -217,8 +218,15 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["refresh_policy"], "button_gated")
         self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["writes_packet"], "command_center_dragon_tiger_packet")
         self.assertIn("手动刷新龙虎榜", by_key["dragon_tiger"]["recovery_action"]["action_label"])
+        self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["legacy_tab"], "下一票雷达")
+        self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["workspace_target"], "高级工具箱（旧版保留）")
         self.assertEqual(by_key["margin"]["recovery_action"]["writes_packet"], "command_center_margin_packet")
         self.assertFalse(by_key["margin"]["recovery_action"]["deepseek_called"])
+        navigation_state = home_snapshot.build_tool_recovery_navigation_state(by_key["margin"]["recovery_action"])
+        self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_policy"], "navigation_only")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_margin_packet")
         json.dumps(cards, ensure_ascii=False)
 
     def test_primary_fact_cards_do_not_mutate_input(self):
@@ -296,8 +304,13 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertIn("权限不足", by_key["chip_radar"]["risk_note"])
         self.assertEqual(by_key["limit_emotion"]["recovery_action"]["refresh_policy"], "button_gated")
         self.assertEqual(by_key["limit_emotion"]["recovery_action"]["writes_packet"], "command_center_limit_emotion_packet")
+        self.assertEqual(by_key["limit_emotion"]["recovery_action"]["legacy_tab"], "数据源体检")
         self.assertEqual(by_key["chip_radar"]["recovery_action"]["writes_packet"], "command_center_chip_packet")
+        self.assertEqual(by_key["chip_radar"]["recovery_action"]["legacy_tab"], "量化推演")
         self.assertFalse(by_key["chip_radar"]["recovery_action"]["deepseek_called"])
+        navigation_state = home_snapshot.build_tool_recovery_navigation_state(by_key["chip_radar"]["recovery_action"])
+        self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "量化推演")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_chip_packet")
         json.dumps(sections, ensure_ascii=False)
 
     def test_secondary_fact_sections_do_not_mutate_input(self):
