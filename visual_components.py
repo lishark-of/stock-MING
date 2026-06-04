@@ -5992,21 +5992,25 @@ def render_analysis_methods_card(packet: dict | None = None):
 
 def _registry_tone_class(tone):
     text = str(tone or "").strip()
-    if text == "safe":
+    if text in {"safe", "ready"}:
         return "safe"
-    if text == "manual":
+    if text in {"manual", "partial"}:
         return "manual"
-    if text == "danger":
+    if text in {"danger", "blocked"}:
         return "danger"
     return "neutral"
 
 
-def render_command_center_packet_registry_card(view_model: dict | None = None):
+def render_command_center_packet_registry_card(view_model: dict | None = None, readiness_view_model: dict | None = None):
     _inject_command_center_css()
     payload = view_model or {}
+    readiness = readiness_view_model or {}
     safe_items = [item for item in (payload.get("safe_mode_items") or []) if isinstance(item, dict)]
     area_items = [item for item in (payload.get("area_items") or []) if isinstance(item, dict)]
     packet_items = [item for item in (payload.get("packet_items") or []) if isinstance(item, dict)]
+    readiness_metrics = [item for item in (readiness.get("metrics") or []) if isinstance(item, dict)]
+    readiness_blockers = [item for item in (readiness.get("blockers") or []) if isinstance(item, dict)]
+    readiness_surfaces = [item for item in (readiness.get("surfaces") or []) if isinstance(item, dict)]
 
     safe_html = ""
     for item in safe_items[:4]:
@@ -6026,6 +6030,61 @@ def render_command_center_packet_registry_card(view_model: dict | None = None):
             f"<b>{escape(str(item.get('count') or 0))}</b>"
             "</span>"
         )
+
+    readiness_metric_html = ""
+    for item in readiness_metrics[:4]:
+        tone = _registry_tone_class(item.get("tone"))
+        readiness_metric_html += (
+            f"<div class='cc-readiness-metric {tone}'>"
+            f"<div class='cc-registry-metric-label'>{escape(str(item.get('label') or '首屏模块'))}</div>"
+            f"<div class='cc-registry-metric-value'>{escape(str(item.get('value') or 0))}</div>"
+            "</div>"
+        )
+
+    readiness_surface_html = ""
+    for item in readiness_surfaces[:9]:
+        tone = _registry_tone_class(item.get("tone"))
+        readiness_surface_html += (
+            f"<span class='cc-readiness-surface {tone}'>"
+            f"{escape(str(item.get('label') or item.get('key') or '首屏模块'))}"
+            f"<b>{escape(str(item.get('status_label') or item.get('status') or '待验证'))}</b>"
+            "</span>"
+        )
+
+    readiness_blocker_html = ""
+    for item in readiness_blockers[:5]:
+        missing = item.get("missing_required_packets") or []
+        errors = item.get("error_packets") or []
+        details = missing or errors
+        detail_text = "、".join(str(value) for value in details[:3]) if details else "等待 packet 回流"
+        readiness_blocker_html += (
+            "<div class='cc-readiness-blocker'>"
+            f"<div class='cc-readiness-blocker-title'>{escape(str(item.get('label') or item.get('surface') or '首屏模块'))}</div>"
+            f"<div class='cc-readiness-blocker-detail'>{escape(detail_text)}</div>"
+            f"<div class='cc-readiness-blocker-action'>{escape(str(item.get('next_action') or '保持按钮触发，等待数据回流。'))}</div>"
+            "</div>"
+        )
+
+    readiness_html = ""
+    if readiness:
+        readiness_html = f"""
+        <div class="cc-readiness-box">
+          <div class="cc-readiness-head">
+            <div>
+              <div class="cc-registry-section-kicker">Desktop Frontend Readiness</div>
+              <div class="cc-readiness-title">{escape(str(readiness.get("title") or "桌面交易指挥台首屏可用性"))}</div>
+              <div class="cc-readiness-summary">{escape(str(readiness.get("summary") or "检查首屏 packet 是否足够支撑桌面前端。"))}</div>
+            </div>
+            <div class="cc-readiness-score">
+              <span>{escape(str(readiness.get("score") or 0))}</span>
+              <small>readiness</small>
+            </div>
+          </div>
+          <div class="cc-readiness-metrics">{readiness_metric_html}</div>
+          <div class="cc-readiness-surfaces">{readiness_surface_html}</div>
+          <div class="cc-readiness-blockers">{readiness_blocker_html}</div>
+        </div>
+        """
 
     packet_html = ""
     for item in packet_items[:10]:
@@ -6058,6 +6117,7 @@ def render_command_center_packet_registry_card(view_model: dict | None = None):
         </div>
       </div>
       <div class="cc-registry-metrics">{safe_html}</div>
+      {readiness_html}
       <div class="cc-registry-pills">{area_html}</div>
       <div class="cc-registry-table">{packet_html}</div>
       <div class="cc-analysis-foot">
@@ -6128,6 +6188,123 @@ def render_command_center_packet_registry_card(view_model: dict | None = None):
           flex-wrap: wrap;
           gap: 8px;
           margin: 8px 0 12px;
+        }}
+        .cc-readiness-box {{
+          border-radius: 16px;
+          border: 1px solid rgba(148, 163, 184, 0.20);
+          background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), #ffffff);
+          padding: 12px;
+          margin: 12px 0;
+        }}
+        .cc-readiness-head {{
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: flex-start;
+        }}
+        .cc-registry-section-kicker {{
+          color: #64748b;
+          font-size: 0.72rem;
+          font-weight: 760;
+          letter-spacing: 0;
+          margin-bottom: 3px;
+        }}
+        .cc-readiness-title {{
+          color: #0f172a;
+          font-weight: 780;
+          font-size: 1rem;
+          line-height: 1.3;
+        }}
+        .cc-readiness-summary {{
+          color: #64748b;
+          font-size: 0.78rem;
+          line-height: 1.45;
+          margin-top: 4px;
+        }}
+        .cc-readiness-score {{
+          min-width: 86px;
+          border-radius: 14px;
+          background: rgba(15, 23, 42, 0.04);
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          padding: 9px 10px;
+          text-align: center;
+          color: #0f172a;
+        }}
+        .cc-readiness-score span {{
+          display: block;
+          font-size: 1.45rem;
+          font-weight: 820;
+          line-height: 1;
+        }}
+        .cc-readiness-score small {{
+          color: #64748b;
+          font-size: 0.68rem;
+        }}
+        .cc-readiness-metrics {{
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+          gap: 8px;
+          margin-top: 10px;
+        }}
+        .cc-readiness-metric {{
+          border-radius: 13px;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: #ffffff;
+          padding: 8px 10px;
+        }}
+        .cc-readiness-metric.safe {{ background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.16); }}
+        .cc-readiness-metric.manual {{ background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.16); }}
+        .cc-readiness-metric.danger {{ background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.16); }}
+        .cc-readiness-surfaces {{
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+          margin: 10px 0 8px;
+        }}
+        .cc-readiness-surface {{
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border-radius: 999px;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: #ffffff;
+          color: #334155;
+          padding: 5px 8px;
+          font-size: 0.72rem;
+          font-weight: 650;
+        }}
+        .cc-readiness-surface.safe {{ background: rgba(16, 185, 129, 0.08); color: #047857; }}
+        .cc-readiness-surface.manual {{ background: rgba(245, 158, 11, 0.08); color: #92400e; }}
+        .cc-readiness-surface.danger {{ background: rgba(239, 68, 68, 0.08); color: #b91c1c; }}
+        .cc-readiness-surface b {{
+          font-weight: 760;
+        }}
+        .cc-readiness-blockers {{
+          display: grid;
+          gap: 7px;
+        }}
+        .cc-readiness-blocker {{
+          border-radius: 13px;
+          border: 1px solid rgba(245, 158, 11, 0.16);
+          background: rgba(255, 251, 235, 0.72);
+          padding: 8px 10px;
+        }}
+        .cc-readiness-blocker-title {{
+          color: #78350f;
+          font-weight: 760;
+          font-size: 0.78rem;
+        }}
+        .cc-readiness-blocker-detail {{
+          color: #92400e;
+          font-size: 0.74rem;
+          margin-top: 2px;
+          word-break: break-word;
+        }}
+        .cc-readiness-blocker-action {{
+          color: #64748b;
+          font-size: 0.72rem;
+          line-height: 1.4;
+          margin-top: 3px;
         }}
         .cc-registry-pill {{
           display: inline-flex;

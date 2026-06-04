@@ -18,6 +18,7 @@ import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
 import command_center_packet_registry as packet_registry_service
+import command_center_desktop_frontend_readiness as desktop_readiness_service
 import command_center_analysis_methods as analysis_methods_service
 import command_center_facts_packet as facts_packet_service
 import command_center_discipline_packet as discipline_packet_service
@@ -5141,7 +5142,22 @@ packet:
     with projection_slot.container():
         render_command_center_projection_chart(projection_packet)
     render_analysis_methods_card(analysis_method_packet)
-    render_command_center_packet_registry_card(packet_registry_service.build_packet_registry_view_model())
+    readiness_state = dict(st.session_state)
+    readiness_state.update(
+        {
+            "command_center_home_snapshot": home_snapshot,
+            "command_center_live_packet": live_packet,
+            "command_center_evidence_radar_packet": evidence_radar_vm,
+            "command_center_analysis_method_packet": analysis_method_packet,
+            "command_center_projection_packet": projection_packet,
+            "strategy_execution_packet": _get_strategy_execution_display_packet(),
+            "command_center_decision_packet": _get_command_center_decision_display_packet(),
+        }
+    )
+    render_command_center_packet_registry_card(
+        packet_registry_service.build_packet_registry_view_model(),
+        readiness_view_model=desktop_readiness_service.build_desktop_frontend_readiness_view_model(readiness_state),
+    )
     live_packet = render_strategy_execution_card(
         live_packet,
         target=target,
