@@ -4556,17 +4556,26 @@ def build_tool_recovery_navigation_state(action: Any = None) -> dict:
     legacy_tab = _to_text(item.get("legacy_tab"))
     if not legacy_tab:
         return {}
+    provider_dependencies = _as_list(item.get("provider_dependencies"))
+    provider = _to_text(item.get("provider"))
+    if not provider:
+        first_dependency = _as_mapping(provider_dependencies[0]) if provider_dependencies else {}
+        provider = _to_text(first_dependency.get("provider"))
     return {
         workspace_state_key: workspace_target,
         legacy_tab_state_key: legacy_tab,
         "command_center_last_tool_recovery_key": _to_text(item.get("key")),
         "command_center_last_tool_recovery_label": _to_text(item.get("label"), legacy_tab),
-        "command_center_last_tool_recovery_provider": _to_text(item.get("provider")),
+        "command_center_last_tool_recovery_provider": provider,
         "command_center_last_tool_recovery_api": _to_text(item.get("api")),
         "command_center_last_tool_recovery_writes_packet": _to_text(item.get("writes_packet")),
         "command_center_last_tool_recovery_target_tab": legacy_tab,
         "command_center_last_tool_recovery_source_type": _to_text(item.get("source_type"), "recovery"),
         "command_center_last_tool_recovery_source_label": _to_text(item.get("source_label"), "首页恢复队列"),
+        "command_center_last_tool_recovery_provider_dependencies": provider_dependencies,
+        "command_center_last_tool_recovery_provider_dependency_summary": _to_text(item.get("provider_dependency_summary")),
+        "command_center_last_tool_recovery_packet_route_summary": _to_text(item.get("packet_route_summary")),
+        "command_center_last_tool_recovery_provider_decision_impact": _to_text(item.get("provider_decision_impact")),
         "command_center_last_tool_recovery_priority_label": _to_text(item.get("priority_label")),
         "command_center_last_tool_recovery_decision_mode": _to_text(item.get("decision_mode")),
         "command_center_last_tool_recovery_decision_impact": _to_text(item.get("decision_guardrail") or item.get("decision_impact")),
@@ -4604,6 +4613,19 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         state_map.get("command_center_last_tool_recovery_decision_impact"),
         f"{label}未恢复前只能作为待验证，不能直接支撑交易动作。",
     )
+    provider_dependencies = _as_list(state_map.get("command_center_last_tool_recovery_provider_dependencies"))
+    provider_dependency_summary = _to_text(
+        state_map.get("command_center_last_tool_recovery_provider_dependency_summary"),
+        "provider 依赖待确认",
+    )
+    packet_route_summary = _to_text(
+        state_map.get("command_center_last_tool_recovery_packet_route_summary"),
+        f"{label} → {writes_packet} → Home Action Snapshot",
+    )
+    provider_decision_impact = _to_text(
+        state_map.get("command_center_last_tool_recovery_provider_decision_impact"),
+        decision_impact,
+    )
     recovery_mode_label = _to_text(state_map.get("command_center_last_tool_recovery_recovery_mode_label"))
     recovery_steps = _as_list(state_map.get("command_center_last_tool_recovery_recovery_steps"))
     button_context = _to_text(
@@ -4634,6 +4656,10 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         "is_target_tab": is_target_tab,
         "writes_packet": writes_packet,
         "source_label": source_label,
+        "provider_dependencies": provider_dependencies,
+        "provider_dependency_summary": provider_dependency_summary,
+        "packet_route_summary": packet_route_summary,
+        "provider_decision_impact": provider_decision_impact,
         "priority_label": priority_label,
         "decision_mode": decision_mode,
         "decision_impact": decision_impact,

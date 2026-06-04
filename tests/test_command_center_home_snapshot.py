@@ -1866,7 +1866,7 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
                         "progress_label": "1/2",
                         "target_packet_text": "command_center_etf_packet、command_center_margin_packet",
                         "missing_targets": ["command_center_margin_packet"],
-                    "missing_target_text": "command_center_margin_packet",
+                        "missing_target_text": "command_center_margin_packet",
                     },
                     "provider_dependency_summary": "Tushare:权限不足",
                     "provider_dependencies": [
@@ -1933,6 +1933,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
         self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_writes_packet"], "command_center_margin_packet")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_provider"], "Tushare")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_provider_dependency_summary"], "Tushare:权限不足")
+        self.assertIn("ETF / 融资动作", navigation_state["command_center_last_tool_recovery_packet_route_summary"])
+        self.assertIn("Tushare:权限不足", navigation_state["command_center_last_tool_recovery_provider_decision_impact"])
         self.assertTrue(all(item["deepseek_called"] is False for item in migration_actions))
         self.assertFalse(center["deepseek_called"])
         json.dumps(center, ensure_ascii=False)
@@ -2569,6 +2573,17 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
             "priority_label": "P0 阻断交易判断",
             "decision_mode": "阻断加仓",
             "decision_guardrail": "缺少融资融券时，融资比例和风险预算必须保守。",
+            "provider_dependency_summary": "Tushare:权限不足",
+            "provider_dependencies": [
+                {
+                    "provider": "Tushare",
+                    "status": "permission_denied",
+                    "status_label": "权限不足",
+                    "interfaces": ["margin_detail"],
+                }
+            ],
+            "packet_route_summary": "融资 ETF → command_center_margin_packet → Home Action Snapshot",
+            "provider_decision_impact": "Tushare 融资融券权限不足会影响 ETF / 融资动作；未恢复前不能加融资。",
             "recovery_mode": "manual_check",
             "recovery_mode_label": "按清单手动恢复",
             "recovery_steps": ["高级工具箱 / 融资 ETF", "手动检测融资融券", "确认结果写回 command_center_margin_packet"],
@@ -2588,6 +2603,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(navigation_state["workspace_mode_v2"], "高级工具箱（旧版保留）")
         self.assertEqual(navigation_state["legacy_workspace_selected_tab"], "融资 ETF")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_source_label"], "旧能力迁移清单")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_provider"], "Tushare")
+        self.assertEqual(navigation_state["command_center_last_tool_recovery_provider_dependency_summary"], "Tushare:权限不足")
+        self.assertIn("command_center_margin_packet", navigation_state["command_center_last_tool_recovery_packet_route_summary"])
+        self.assertIn("不能加融资", navigation_state["command_center_last_tool_recovery_provider_decision_impact"])
         self.assertEqual(navigation_state["command_center_last_tool_recovery_priority_label"], "P0 阻断交易判断")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_decision_mode"], "阻断加仓")
         self.assertEqual(navigation_state["command_center_last_tool_recovery_recovery_mode_label"], "按清单手动恢复")
@@ -2596,6 +2615,10 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("P0 阻断交易判断", notice["message"])
         self.assertEqual(notice["priority_label"], "P0 阻断交易判断")
         self.assertEqual(notice["decision_mode"], "阻断加仓")
+        self.assertEqual(notice["provider"], "Tushare")
+        self.assertEqual(notice["provider_dependency_summary"], "Tushare:权限不足")
+        self.assertIn("Home Action Snapshot", notice["packet_route_summary"])
+        self.assertIn("不能加融资", notice["provider_decision_impact"])
         self.assertIn("融资比例", notice["decision_impact"])
         self.assertIn("手动检测融资融券", " ".join(notice["recovery_steps"]))
         self.assertEqual(notice["button_context"], action["recovery_button_context"])

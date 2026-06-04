@@ -10821,6 +10821,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         recovery_context_text = "｜".join(str(item) for item in recovery_context_bits if item)
         if recovery_context_text:
             st.caption(f"恢复上下文：{recovery_context_text}")
+        if recovery_notice.get("provider_dependency_summary"):
+            st.caption(f"provider 依赖：{recovery_notice['provider_dependency_summary']}")
+        if recovery_notice.get("packet_route_summary"):
+            st.caption(f"packet 路由：{recovery_notice['packet_route_summary']}")
+        if recovery_notice.get("provider_decision_impact"):
+            st.caption(f"provider 影响：{recovery_notice['provider_decision_impact']}")
         st.caption(f"{recovery_notice['action_hint']}｜{recovery_notice['safety_text']}")
         if recovery_notice.get("decision_impact"):
             st.caption(f"决策保护：{recovery_notice['decision_impact']}")
@@ -10893,6 +10899,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 "command_center_last_tool_recovery_target_tab",
                 "command_center_last_tool_recovery_source_type",
                 "command_center_last_tool_recovery_source_label",
+                "command_center_last_tool_recovery_provider_dependencies",
+                "command_center_last_tool_recovery_provider_dependency_summary",
+                "command_center_last_tool_recovery_packet_route_summary",
+                "command_center_last_tool_recovery_provider_decision_impact",
                 "command_center_last_tool_recovery_priority_label",
                 "command_center_last_tool_recovery_decision_mode",
                 "command_center_last_tool_recovery_decision_impact",
