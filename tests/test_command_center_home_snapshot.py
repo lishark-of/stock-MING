@@ -2796,6 +2796,70 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(timeline["deepseek_called"])
         json.dumps(timeline, ensure_ascii=False)
 
+    def test_recovery_result_timeline_dedupes_and_limits_recent_outcomes(self):
+        timeline = snapshot.build_recovery_result_timeline(
+            {
+                "latest_recovery_result_notice": {
+                    "status": "recovered",
+                    "label": "下一票雷达",
+                    "writes_packet": "command_center_radar_packet",
+                    "packet_key": "command_center_radar_packet",
+                    "status_label": "已回流",
+                    "updated_at": "2026-06-03T10:10:00",
+                    "source": "下一票雷达本地缓存",
+                    "next_action": "返回综合中心查看候选。",
+                },
+                "command_center_radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [{"ticker": "002008.SZ"}],
+                    "generated_at": "2026-06-03T10:10:00",
+                    "source": "下一票雷达本地缓存",
+                },
+                "command_center_recovery_result_timeline": {
+                    "items": [
+                        {
+                            "status": "recovered",
+                            "label": "下一票雷达",
+                            "writes_packet": "command_center_radar_packet",
+                            "packet_key": "command_center_radar_packet",
+                            "status_label": "已回流",
+                            "updated_at": "2026-06-03T10:10:00",
+                            "source": "下一票雷达本地缓存",
+                            "next_action": "返回综合中心查看候选。",
+                        },
+                        {
+                            "status": "blocked",
+                            "label": "融资融券",
+                            "writes_packet": "command_center_margin_packet",
+                            "packet_key": "command_center_margin_packet",
+                            "status_label": "权限不足",
+                            "updated_at": "2026-06-03T10:05:00",
+                            "source": "Tushare margin_detail",
+                        },
+                        {
+                            "status": "recovered",
+                            "label": "个股资金流",
+                            "writes_packet": "command_center_moneyflow_packet",
+                            "packet_key": "command_center_moneyflow_packet",
+                            "status_label": "已回流",
+                            "updated_at": "2026-06-03T10:00:00",
+                            "source": "Tushare moneyflow",
+                        },
+                    ]
+                },
+            },
+            limit=2,
+        )
+
+        self.assertEqual(len(timeline["items"]), 2)
+        self.assertEqual(timeline["items"][0]["writes_packet"], "command_center_radar_packet")
+        self.assertEqual(timeline["items"][1]["writes_packet"], "command_center_margin_packet")
+        self.assertEqual(timeline["status_counts"]["recovered"], 1)
+        self.assertEqual(timeline["status_counts"]["blocked"], 1)
+        self.assertEqual(timeline["external_call_policy"], "not_triggered")
+        self.assertFalse(timeline["deepseek_called"])
+        json.dumps(timeline, ensure_ascii=False)
+
     def test_home_snapshot_includes_recovery_result_status_strip(self):
         today = _dt.date.today().isoformat()
         payload = snapshot.build_home_action_snapshot(

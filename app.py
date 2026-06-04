@@ -3868,6 +3868,18 @@ def _remember_legacy_tool_packet_recovery_result(
     st.session_state["command_center_last_tool_recovery_writes_packet"] = writes_packet
     st.session_state["command_center_last_tool_recovery_target_tab"] = target_tab or st.session_state.get("legacy_workspace_selected_tab") or "高级工具"
     st.session_state["command_center_last_tool_recovery_policy"] = "navigation_only"
+    latest_notice = home_snapshot_service.build_latest_recovery_result_notice(
+        st.session_state,
+        selected_tab=st.session_state["command_center_last_tool_recovery_target_tab"],
+    )
+    if latest_notice:
+        st.session_state["latest_recovery_result_notice"] = latest_notice
+        recovery_timeline = home_snapshot_service.build_recovery_result_timeline(
+            st.session_state,
+            latest_notice=latest_notice,
+        )
+        st.session_state["command_center_recovery_result_timeline"] = recovery_timeline
+        st.session_state["recovery_result_timeline"] = recovery_timeline
     return _persist_home_action_snapshot(
         live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
         target=target,
