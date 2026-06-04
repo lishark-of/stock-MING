@@ -364,6 +364,88 @@ def _append_evidence_text(base: Any, addition: str) -> str:
     return f"{text.rstrip('。；; ')}；{note}"
 
 
+def _evidence_group_count(group: Mapping[str, Any]) -> int:
+    try:
+        return max(0, int(float(group.get("count"))))
+    except Exception:
+        return len([item for item in _as_list(group.get("items")) if _as_mapping(item)])
+
+
+def _fallback_evidence_status_groups(evidence_radar_packet: Mapping[str, Any]) -> list[dict]:
+    configs = [
+        ("recovered", "已回流", "ready", evidence_radar_packet.get("support_items")),
+        ("blocked", "仍受限", "failed", evidence_radar_packet.get("blocker_items")),
+        ("cached", "使用缓存", "stale", evidence_radar_packet.get("cached_items")),
+        ("manual", "待手动", "missing", evidence_radar_packet.get("missing_items")),
+    ]
+    groups = []
+    for key, label, tone, raw_items in configs:
+        items = [_as_mapping(item) for item in _as_list(raw_items) if _as_mapping(item)]
+        groups.append(
+            {
+                "key": key,
+                "label": label,
+                "tone": tone,
+                "count": len(items),
+                "labels_text": _evidence_label_text(items, fallback="无"),
+                "deepseek_called": False,
+            }
+        )
+    return groups
+
+
+def _evidence_status_group_summary(evidence_radar_packet: Mapping[str, Any]) -> dict:
+    groups = [_as_mapping(item) for item in _as_list(evidence_radar_packet.get("evidence_status_groups")) if _as_mapping(item)]
+    if not groups:
+        groups = _fallback_evidence_status_groups(evidence_radar_packet)
+    counts = {group.get("key"): _evidence_group_count(group) for group in groups}
+    if not any(counts.values()):
+        return {}
+    recovered = counts.get("recovered", 0)
+    blocked = counts.get("blocked", 0)
+    cached = counts.get("cached", 0)
+    manual = counts.get("manual", 0)
+    if blocked:
+        status = "blocked"
+        label = "证据分组受限"
+        tone = "failed"
+        guardrail = "仍受限证据未恢复前，乐观路径不能作为加仓依据。"
+    elif cached or manual:
+        status = "partial"
+        label = "证据分组待复核"
+        tone = "stale"
+        guardrail = "缓存和待手动证据只能支撑观察，执行前需复核交易日和来源。"
+    else:
+        status = "ready"
+        label = "证据分组已回流"
+        tone = "ready"
+        guardrail = "已回流证据可增强路径可信度，但仍需价格纪律确认。"
+    items = []
+    for group in groups:
+        count = _evidence_group_count(group)
+        if count <= 0:
+            continue
+        items.append(
+            {
+                "key": _to_text(group.get("key")),
+                "label": _to_text(group.get("label"), "证据分组"),
+                "count": count,
+                "labels_text": _to_text(group.get("labels_text")) or _evidence_label_text(group.get("items"), fallback=f"{count} 项"),
+                "tone": _to_text(group.get("tone"), "missing"),
+                "deepseek_called": False,
+            }
+        )
+    return {
+        "status": status,
+        "label": label,
+        "tone": tone,
+        "summary": f"已回流 {recovered}｜仍受限 {blocked}｜缓存 {cached}｜待手动 {manual}",
+        "guardrail": guardrail,
+        "items": items,
+        "deepseek_called": False,
+    }
+
+
 def _a_share_evidence_guidance(evidence_radar_packet: Any) -> dict:
     evidence = _as_mapping(evidence_radar_packet)
     if not evidence:
@@ -396,6 +478,7 @@ def _a_share_evidence_guidance(evidence_radar_packet: Any) -> dict:
         "has_latest_recovered": latest_state == "supporting",
         "has_latest_blocked": latest_state == "blocked",
         "has_latest_waiting": latest_state == "missing",
+        "group_summary": _evidence_status_group_summary(evidence),
     }
 
 
@@ -461,12 +544,12 @@ def _latest_recovery_projection_note(evidence: Mapping[str, Any], index: int) ->
     return "", "", ""
 
 
-def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: Any, market_type: str) -> tuple[list[dict], str, dict]:
+def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: Any, market_type: str) -> tuple[list[dict], str, dict, dict]:
     if market_type != "A股":
-        return paths, "", {}
+        return paths, "", {}, {}
     evidence = _a_share_evidence_guidance(evidence_radar_packet)
     if not evidence:
-        return paths, "", {}
+        return paths, "", {}, {}
 
     support_text = evidence["support_text"]
     blocker_text = evidence["blocker_text"]
@@ -516,10 +599,13 @@ def _merge_a_share_evidence_guidance(paths: list[dict], evidence_radar_packet: A
         item["risk_note"] = item["risk"]
         item["evidence_note"] = note
         guided_paths.append(item)
+    group_summary = _as_mapping(evidence.get("group_summary"))
     basis = f"A股证据雷达：{evidence['summary']}"
+    if group_summary:
+        basis = f"{basis}｜证据分组：{group_summary['summary']}"
     if evidence["latest_text"]:
         basis = f"{basis}｜最近恢复：{evidence['latest_label']} {evidence['latest_state'] or 'waiting'}"
-    return guided_paths, basis, evidence["latest_impact"]
+    return guided_paths, basis, evidence["latest_impact"], group_summary
 
 
 def _status_console_from_snapshot(home_snapshot: Any) -> dict:
@@ -788,6 +874,16 @@ def build_projection_confidence_summary(projection_packet: Any = None) -> dict:
     elif path_basis:
         support_items.append("路径依据已生成")
 
+    evidence_group_status = _to_text(packet.get("path_evidence_group_status"))
+    evidence_group_summary = _to_text(packet.get("path_evidence_group_summary"))
+    evidence_group_label = _to_text(packet.get("path_evidence_group_label"), "A股证据分组")
+    if evidence_group_status == "blocked":
+        blocker_items.append(f"{evidence_group_label}：{evidence_group_summary or '仍受限'}")
+    elif evidence_group_status == "partial":
+        pending_items.append(f"{evidence_group_label}：{evidence_group_summary or '待复核'}")
+    elif evidence_group_status == "ready":
+        support_items.append(f"{evidence_group_label}：{evidence_group_summary or '已回流'}")
+
     recovery = _as_mapping(packet.get("path_recovery_impact"))
     recovery_state = _to_text(recovery.get("evidence_state"))
     recovery_label = _to_text(recovery.get("label"), "最近恢复")
@@ -856,6 +952,9 @@ def build_projection_confidence_summary(projection_packet: Any = None) -> dict:
         "summary": "｜".join(summary_parts) or "趋势推演暂无可读依据。",
         "guardrail": guardrail,
         "path_basis": path_basis,
+        "evidence_group_summary": evidence_group_summary,
+        "evidence_group_status": evidence_group_status,
+        "evidence_group_guardrail": _to_text(packet.get("path_evidence_group_guardrail")),
         "recovery_impact_summary": _to_text(packet.get("path_recovery_impact_summary")),
         "blocker_items": blocker_items[:5],
         "pending_items": pending_items[:5],
@@ -906,7 +1005,7 @@ def build_projection_packet(
             }
         )
     paths, market_type, path_basis = _merge_path_guidance(paths, analysis_method_packet)
-    paths, evidence_basis, latest_recovery_impact = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
+    paths, evidence_basis, latest_recovery_impact, evidence_group_summary = _merge_a_share_evidence_guidance(paths, evidence_radar_packet, market_type)
     data_console = _as_mapping(a_share_data_console) or _status_console_from_snapshot(snapshot)
     paths, data_capability_basis = _merge_a_share_data_capability_guidance(paths, data_console, market_type)
     health_ledger = _as_mapping(data_health_ledger) or _as_mapping(snapshot.get("data_health_ledger")) or _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
@@ -928,6 +1027,11 @@ def build_projection_packet(
         "market_type": market_type,
         "path_basis": " ｜ ".join([item for item in [path_basis, evidence_basis, data_capability_basis, data_health_basis, fact_recovery_basis] if item]),
         "path_evidence_summary": evidence_basis,
+        "path_evidence_group_summary": _to_text(evidence_group_summary.get("summary")),
+        "path_evidence_group_status": _to_text(evidence_group_summary.get("status")),
+        "path_evidence_group_label": _to_text(evidence_group_summary.get("label")),
+        "path_evidence_group_guardrail": _to_text(evidence_group_summary.get("guardrail")),
+        "path_evidence_group_items": evidence_group_summary.get("items") or [],
         "path_recovery_impact": latest_recovery_impact,
         "path_recovery_impact_summary": _to_text(latest_recovery_impact.get("impact_text")),
         "path_data_capability_summary": data_capability_basis,

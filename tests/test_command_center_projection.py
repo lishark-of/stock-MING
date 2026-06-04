@@ -185,6 +185,51 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("阻断证据", joined)
         self.assertFalse(packet["deepseek_called"])
 
+    def test_a_share_evidence_status_groups_surface_on_projection_confidence(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "decision_summary": "支持 2｜阻断 1｜缓存 1｜缺失 2",
+                "evidence_status_groups": [
+                    {"key": "recovered", "label": "已回流", "count": 2, "tone": "ready", "labels_text": "个股资金流、公告/硬风险"},
+                    {"key": "blocked", "label": "仍受限", "count": 1, "tone": "failed", "labels_text": "龙虎榜"},
+                    {"key": "cached", "label": "使用缓存", "count": 1, "tone": "stale", "labels_text": "融资融券"},
+                    {"key": "manual", "label": "待手动", "count": 2, "tone": "missing", "labels_text": "筹码/胜率、涨跌停/情绪"},
+                ],
+            },
+        )
+        confidence = projection.build_projection_confidence_summary(packet)
+        dumped = json.dumps(packet, ensure_ascii=False)
+
+        self.assertEqual(packet["path_evidence_group_status"], "blocked")
+        self.assertEqual(packet["path_evidence_group_label"], "证据分组受限")
+        self.assertEqual(packet["path_evidence_group_summary"], "已回流 2｜仍受限 1｜缓存 1｜待手动 2")
+        self.assertIn("证据分组：已回流 2｜仍受限 1｜缓存 1｜待手动 2", packet["path_basis"])
+        self.assertEqual(confidence["status"], "blocked")
+        self.assertIn("证据分组受限", json.dumps(confidence["blocker_items"], ensure_ascii=False))
+        self.assertIn("龙虎榜", dumped)
+        self.assertIn("筹码/胜率", dumped)
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(confidence["deepseek_called"])
+
+    def test_a_share_evidence_group_summary_falls_back_to_evidence_lists(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "等待", "updated_at": "2026-06-01T10:00:00"},
+            analysis_method_packet={"market": "A股", "summary": "A股分析框架"},
+            evidence_radar_packet={
+                "support_items": [{"label": "个股资金流"}, {"label": "公告/硬风险"}],
+                "cached_items": [{"label": "融资融券"}],
+                "missing_items": [{"label": "龙虎榜"}],
+            },
+        )
+
+        self.assertEqual(packet["path_evidence_group_status"], "partial")
+        self.assertIn("已回流 2｜仍受限 0｜缓存 1｜待手动 1", packet["path_evidence_group_summary"])
+        self.assertIn("证据分组：已回流 2", packet["path_basis"])
+        self.assertFalse(packet["deepseek_called"])
+
     def test_latest_recovery_impact_enriches_a_share_projection_paths(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},

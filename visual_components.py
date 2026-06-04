@@ -5960,6 +5960,16 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     source = str(payload.get("source") or "command_center_projection")
     horizon = payload.get("horizon_days") or 10
     data_capability_summary = str(payload.get("path_data_capability_summary") or "")
+    evidence_group_summary = str(payload.get("path_evidence_group_summary") or "")
+    evidence_group_status = str(payload.get("path_evidence_group_status") or "")
+    evidence_group_label = str(payload.get("path_evidence_group_label") or "证据分组")
+    evidence_group_items = [item for item in (payload.get("path_evidence_group_items") or []) if isinstance(item, dict)]
+    evidence_tone_class = {
+        "ready": "green",
+        "partial": "blue",
+        "blocked": "orange",
+        "missing": "gray",
+    }.get(evidence_group_status, "gray")
     fact_recovery_items = [item for item in (payload.get("path_fact_recovery_items") or []) if isinstance(item, dict)]
     fact_recovery_summary = str(payload.get("path_fact_recovery_summary") or "")
     fact_tone = str(payload.get("path_fact_recovery_tone") or "missing")
@@ -5997,11 +6007,22 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         if data_capability_summary
         else ""
     )
-    if data_capability_summary or fact_recovery_summary or fact_recovery_items:
+    evidence_group_pill_html = (
+        f"<span class='projection-fact-summary {escape(evidence_tone_class)}'>{escape(evidence_group_label)}：{escape(evidence_group_summary)}</span>"
+        if evidence_group_summary
+        else ""
+    )
+    evidence_group_item_html = "".join(
+        f"<span class='projection-fact-pill {escape(evidence_tone_class)}'>{escape(str(item.get('label') or '证据'))} {escape(str(item.get('count') or 0))}：{escape(str(item.get('labels_text') or '无'))}</span>"
+        for item in evidence_group_items[:4]
+    )
+    if data_capability_summary or evidence_group_summary or fact_recovery_summary or fact_recovery_items:
         fact_strip_html = f"""
         <div class="projection-fact-strip">
           <span class="projection-fact-title">数据依据</span>
           {capability_pill_html}
+          {evidence_group_pill_html}
+          <div class="projection-fact-pills">{evidence_group_item_html}</div>
           <span class="projection-fact-summary {escape(fact_tone_class)}">{escape(fact_recovery_summary or "A股事实回流待验证")}</span>
           <div class="projection-fact-pills">{fact_pills_html}</div>
         </div>
