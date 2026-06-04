@@ -351,6 +351,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "deepseek_called": False,
     }
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
@@ -469,6 +470,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         attach_next_ticket_evidence_recovery_results(snapshot)
     )
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
@@ -995,6 +997,84 @@ def build_a_share_fact_recovery_summary(snapshot: Any = None) -> dict:
         "next_action": next_action,
         "safe_mode_text": "这里只汇总本地 packet 状态；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
         "deepseek_called": False,
+    }
+
+
+def _a_share_evidence_ledger_decision_impact(item: Mapping[str, Any]) -> str:
+    label = _to_text(item.get("label"), "A股证据")
+    state = _to_text(item.get("recovery_state"), "waiting")
+    if state == "recovered":
+        return f"{label}已回流，可进入证据链辅助判断；执行前仍需复核交易日、来源和仓位纪律。"
+    if state == "blocked":
+        return f"{label}仍受限，阻断加仓/追高/加融资依据；不能把缺失数据当成利好或无风险。"
+    return f"{label}待验证，只能展示安全空态或缓存；不能作为买入、追高或放大仓位依据。"
+
+
+def build_a_share_evidence_recovery_ledger(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    fact_summary = _as_mapping(payload.get("a_share_fact_recovery_summary"))
+    if not fact_summary:
+        fact_summary = build_a_share_fact_recovery_summary(payload)
+    items = []
+    for raw in _as_list(fact_summary.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        state = _to_text(item.get("recovery_state"), "waiting")
+        items.append(
+            {
+                "key": _to_text(item.get("key"), "a_share_evidence"),
+                "label": _to_text(item.get("label"), "A股证据"),
+                "ledger_state": state,
+                "ledger_label": _to_text(item.get("readable_state"), "待验证"),
+                "tone": _to_text(item.get("tone"), "missing"),
+                "status_label": _to_text(item.get("status_label"), "待验证"),
+                "updated_at": _to_text(item.get("updated_at"), "暂无"),
+                "source": _to_text(item.get("source"), "本地 packet"),
+                "writes_packet": _to_text(item.get("writes_packet"), "command_center_packet"),
+                "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱"),
+                "action_label": _to_text(item.get("action_label"), "手动检测"),
+                "next_action": _to_text(item.get("next_action"), "按数据恢复中心手动处理。"),
+                "decision_impact": _a_share_evidence_ledger_decision_impact(item),
+                "navigation_label": _to_text(item.get("navigation_label"), "进入高级工具箱对应模块后手动检测。"),
+                "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
+                "deepseek_called": False,
+                "external_call_policy": "not_triggered",
+            }
+        )
+    recovered_count = len([item for item in items if item["ledger_state"] == "recovered"])
+    blocked_count = len([item for item in items if item["ledger_state"] == "blocked"])
+    waiting_count = len([item for item in items if item["ledger_state"] not in {"recovered", "blocked"}])
+    if blocked_count:
+        status = "blocked"
+        tone = "failed"
+        headline = f"A股证据回流仍有 {blocked_count} 项阻断"
+        next_action = "先处理仍受限证据；未恢复前不能把缺口写成安全或利好。"
+    elif waiting_count:
+        status = "partial"
+        tone = "stale" if recovered_count else "missing"
+        headline = f"A股证据已回流 {recovered_count}｜待验证 {waiting_count}"
+        next_action = "继续按恢复入口补齐待验证证据；页面打开不会自动请求 Tushare。"
+    else:
+        status = "ready"
+        tone = "ready"
+        headline = "五类 A股证据已形成回流总账"
+        next_action = "可进入证据链复核；执行前仍需价格、纪律和仓位确认。"
+    return {
+        "title": "A股证据回流总账",
+        "status": status,
+        "tone": tone,
+        "headline": headline,
+        "summary": f"已回流 {recovered_count}｜仍受限 {blocked_count}｜待验证 {waiting_count}",
+        "items": items,
+        "recovered_count": recovered_count,
+        "blocked_count": blocked_count,
+        "waiting_count": waiting_count,
+        "total_count": len(items),
+        "next_action": next_action,
+        "safe_mode_text": "这里只读取本地 packet 和恢复结果；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "deepseek_called": False,
+        "external_call_policy": "not_triggered",
     }
 
 
@@ -3377,6 +3457,7 @@ def build_home_action_snapshot(
         empty["limit_emotion_packet"] = snapshot["limit_emotion_packet"]
         empty["hard_risk_packet"] = snapshot["hard_risk_packet"]
         empty["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(empty)
+        empty["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(empty)
         empty["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(empty)
         empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
         empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
@@ -3391,6 +3472,7 @@ def build_home_action_snapshot(
         empty["errors"] = errors
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
+    snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
     snapshot["legacy_a_share_gap_summary"] = build_legacy_a_share_gap_summary(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]

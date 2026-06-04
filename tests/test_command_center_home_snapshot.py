@@ -2566,6 +2566,43 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertFalse(summary["deepseek_called"])
         json.dumps(summary, ensure_ascii=False)
 
+    def test_a_share_evidence_recovery_ledger_explains_decision_impact(self):
+        ledger = snapshot.build_a_share_evidence_recovery_ledger(
+            {
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "recovery_state": "recovered",
+                    "status_label": "可用",
+                    "source": "Tushare moneyflow",
+                    "updated_at": "2026-06-04T10:00:00",
+                },
+                "dragon_tiger_packet": {
+                    "status": "failed",
+                    "capability_state": "permission_denied",
+                    "recovery_state": "blocked",
+                    "status_label": "权限不足",
+                    "source": "Tushare top_list",
+                },
+            }
+        )
+        by_key = {item["key"]: item for item in ledger["items"]}
+
+        self.assertEqual(ledger["title"], "A股证据回流总账")
+        self.assertEqual(ledger["status"], "blocked")
+        self.assertEqual(ledger["recovered_count"], 1)
+        self.assertEqual(ledger["blocked_count"], 1)
+        self.assertIn("已回流 1", ledger["summary"])
+        self.assertIn("仍受限 1", ledger["summary"])
+        self.assertEqual(by_key["moneyflow"]["ledger_label"], "已回流")
+        self.assertIn("可进入证据链", by_key["moneyflow"]["decision_impact"])
+        self.assertIn("阻断加仓", by_key["dragon_tiger"]["decision_impact"])
+        self.assertEqual(by_key["dragon_tiger"]["writes_packet"], "command_center_dragon_tiger_packet")
+        self.assertIn("高级工具箱", by_key["dragon_tiger"]["toolbox_entry"])
+        self.assertFalse(ledger["deepseek_called"])
+        self.assertEqual(ledger["external_call_policy"], "not_triggered")
+        json.dumps(ledger, ensure_ascii=False)
+
     def test_legacy_a_share_gap_summary_focuses_limit_and_chip(self):
         summary = snapshot.build_legacy_a_share_gap_summary(
             {
@@ -2658,6 +2695,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("涨跌停/情绪", json.dumps(legacy_gap, ensure_ascii=False))
         self.assertIn("筹码/胜率", json.dumps(legacy_gap, ensure_ascii=False))
         self.assertFalse(legacy_gap["deepseek_called"])
+        ledger = payload["a_share_evidence_recovery_ledger"]
+        self.assertEqual(ledger["title"], "A股证据回流总账")
+        self.assertIn("融资融券", json.dumps(ledger, ensure_ascii=False))
+        self.assertIn("阻断加仓", json.dumps(ledger, ensure_ascii=False))
+        self.assertFalse(ledger["deepseek_called"])
 
     def test_home_snapshot_persists_hard_risk_packet(self):
         today = _dt.date.today().isoformat()
