@@ -54,9 +54,21 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("build_legacy_a_share_gap_summary", tokens)
         self.assertIn("build_old_workspace_data_absence_ledger", tokens)
         self.assertIn("build_tool_recovery_navigation_state", tokens)
+        self.assertIn("_apply_tool_recovery_navigation_state", tokens)
+        self.assertIn("_apply_tool_recovery_navigation_state(item, persist_snapshot=True)", source)
         self.assertIn("render_legacy_a_share_gap_recovery_panel(legacy_gap_context", source)
         self.assertIn("command_center_limit_emotion_packet", source)
         self.assertIn("command_center_chip_packet", source)
+
+    def test_tool_recovery_navigation_state_persists_latest_notice(self):
+        tokens = _function_tokens("_apply_tool_recovery_navigation_state")
+
+        self.assertIn("build_tool_recovery_navigation_state", tokens)
+        self.assertIn("build_latest_recovery_result_notice", tokens)
+        self.assertIn("latest_recovery_result_notice", tokens)
+        self.assertIn("build_recovery_result_timeline", tokens)
+        self.assertIn("command_center_recovery_result_timeline", tokens)
+        self.assertIn("_persist_home_action_snapshot", tokens)
 
     def test_evidence_backfill_controls_are_labeled_as_recovery_center(self):
         tokens = _function_tokens("render_home_evidence_backfill_controls")

@@ -3784,11 +3784,35 @@ def _get_latest_recovery_result_notice_from_state():
     )
 
 
-def _apply_tool_recovery_navigation_state(action):
+def _apply_tool_recovery_navigation_state(action, *, persist_snapshot=False, live_packet=None, target="", position_profile=None):
     navigation_state = home_snapshot_service.build_tool_recovery_navigation_state(action)
     for nav_key, nav_value in navigation_state.items():
         st.session_state[nav_key] = nav_value
-    return bool(navigation_state)
+    if not navigation_state:
+        return False
+    selected_tab = navigation_state.get("legacy_workspace_selected_tab") or st.session_state.get("legacy_workspace_selected_tab")
+    latest_notice = home_snapshot_service.build_latest_recovery_result_notice(
+        st.session_state,
+        selected_tab=selected_tab,
+    )
+    if latest_notice:
+        st.session_state["latest_recovery_result_notice"] = latest_notice
+        recovery_timeline = home_snapshot_service.build_recovery_result_timeline(
+            st.session_state,
+            latest_notice=latest_notice,
+        )
+        st.session_state["command_center_recovery_result_timeline"] = recovery_timeline
+        st.session_state["recovery_result_timeline"] = recovery_timeline
+    if persist_snapshot:
+        _persist_home_action_snapshot(
+            live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+            target=target or st.session_state.get("current_stock_code") or "",
+            position_profile=position_profile
+            or st.session_state.get("position_profile")
+            or st.session_state.get("current_holding_context")
+            or {},
+        )
+    return True
 
 
 def build_command_center_view_model(live_packet=None):
@@ -4794,8 +4818,7 @@ def render_legacy_a_share_gap_recovery_panel(snapshot_context=None, key_prefix="
                     help=item.get("navigation_label") or "切换到对应高级工具；检测仍需手动按钮触发。",
                     width="stretch",
                 ):
-                    for nav_key, nav_value in navigation_state.items():
-                        st.session_state[nav_key] = nav_value
+                    _apply_tool_recovery_navigation_state(item, persist_snapshot=True)
                     st.rerun()
 
 
