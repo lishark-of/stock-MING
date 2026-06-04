@@ -5282,6 +5282,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         """
     evidence_vm = build_a_share_evidence_radar_view_model(payload)
     evidence_card = evidence_vm.get("radar_card") or {}
+    recovered_evidence_modules = [item for item in (evidence_vm.get("recovered_evidence_modules") or []) if isinstance(item, dict)]
+    recovered_evidence_summary = _home_text(evidence_vm.get("recovered_evidence_summary"), "暂无已回流 A股证据模块")
+    recovered_evidence_html = ""
+    for item in recovered_evidence_modules[:4]:
+        recovered_evidence_html += f"""
+        <div class="cc-home-item-meta">
+          {escape(_home_text(item.get("label"), "A股证据"))}：
+          {escape(_home_text(item.get("headline"), "已回流"))}
+          ｜指标：{escape(_home_text(item.get("metric"), "暂无数值"))}
+          ｜回流：{escape(_home_text(item.get("writes_packet"), "command_center_packet"))}
+        </div>
+        """
+    if not recovered_evidence_html:
+        recovered_evidence_html = "<div class='cc-home-item-meta'>暂无已回流证据模块；恢复后的 packet 会显示在这里。</div>"
     latest_evidence_impact = evidence_card.get("latest_recovery_impact") or evidence_vm.get("latest_recovery_impact") or {}
     latest_evidence_impact_html = ""
     if latest_evidence_impact:
@@ -5300,6 +5314,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">结论：{escape(_home_text(evidence_card.get("execution_guardrail"), "证据未补齐前，不支撑放大仓位。"))}</div>
           <div class="cc-home-item-meta">摘要：{escape(_home_text(evidence_card.get("summary"), "支持 0｜阻断 0｜缓存 0｜缺失 0"))} ｜ 支持：{escape(_home_text(evidence_card.get("support_text"), "暂无支持证据"))}</div>
+          <div class="cc-home-item-meta">已回流模块：{escape(recovered_evidence_summary)}</div>
+          {recovered_evidence_html}
           <div class="cc-home-item-meta">待处理：{escape(_home_text(evidence_card.get("recovery_text"), "暂无待补证据"))} ｜ DeepSeek：未调用</div>
           {latest_evidence_impact_html}
         </div>

@@ -98,7 +98,22 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertEqual(card["status_label"], "可进入证据链")
         self.assertIn("价格纪律", card["execution_guardrail"])
         self.assertEqual(len(card["top_supports"]), 3)
+        self.assertIn("已回流：个股资金流、公告/硬风险、融资融券", vm["recovered_evidence_summary"])
+        self.assertEqual(vm["recovered_evidence_modules"][0]["label"], "个股资金流")
+        self.assertEqual(vm["recovered_evidence_modules"][0]["writes_packet"], "command_center_moneyflow_packet")
+        self.assertFalse(vm["recovered_evidence_modules"][0]["deepseek_called"])
         json.dumps(card, ensure_ascii=False)
+
+    def test_recovered_evidence_modules_are_empty_when_no_supporting_packets(self):
+        vm = evidence_summary.build_a_share_evidence_radar_view_model(
+            {
+                "margin_packet": {"status": "partial", "data_status": "cached", "summary": "融资缓存"},
+                "dragon_tiger_packet": {"status": "waiting", "data_status": "missing", "summary": "待查龙虎榜"},
+            }
+        )
+
+        self.assertEqual(vm["recovered_evidence_modules"], [])
+        self.assertIn("暂无已回流", vm["recovered_evidence_summary"])
 
     def test_latest_recovery_result_promotes_recovered_packet_into_radar_card(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(

@@ -253,6 +253,39 @@ def _short_decision_signals(items: Any, limit: int = 3) -> list[str]:
     return signals
 
 
+def build_recovered_evidence_modules(support_items: Any = None, limit: int = 4) -> list[dict]:
+    modules = []
+    for raw in as_list(support_items):
+        item = as_mapping(raw)
+        if not item:
+            continue
+        modules.append(
+            {
+                "key": to_text(item.get("key"), "a_share_evidence"),
+                "label": to_text(item.get("label"), "A股证据"),
+                "headline": to_text(item.get("headline"), "已回流"),
+                "metric": to_text(item.get("metric"), "暂无数值"),
+                "decision_role": to_text(item.get("decision_role"), "辅助验证。"),
+                "decision_signal": to_text(item.get("decision_signal"), "已回流，可辅助验证。"),
+                "source": to_text(item.get("source"), "本地 packet"),
+                "updated_at": to_text(item.get("updated_at"), "暂无时间"),
+                "writes_packet": to_text(as_mapping(item.get("manual_action")).get("writes_packet")),
+                "deepseek_called": False,
+            }
+        )
+        if len(modules) >= max(1, int(limit or 4)):
+            break
+    return modules
+
+
+def recovered_evidence_summary_text(support_items: Any = None) -> str:
+    modules = build_recovered_evidence_modules(support_items)
+    if not modules:
+        return "暂无已回流 A股证据模块"
+    labels = [item["label"] for item in modules if item.get("label")]
+    return "已回流：" + "、".join(labels[:4])
+
+
 def build_latest_recovery_evidence_impact(latest_recovery_result_notice: Any = None) -> dict:
     notice = as_mapping(latest_recovery_result_notice)
     if not notice:
@@ -529,6 +562,7 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         f"支持 {len(support_items)}｜阻断 {len(blocker_items)}｜缓存 {len(cached_items)}｜缺失 {len(missing_items)}"
     )
     latest_recovery_impact = build_latest_recovery_evidence_impact(payload.get("latest_recovery_result_notice"))
+    recovered_modules = build_recovered_evidence_modules(support_items)
     radar_card = build_evidence_radar_card_view_model(
         support_items=support_items,
         blocker_items=blocker_items,
@@ -542,6 +576,8 @@ def build_a_share_evidence_radar_view_model(snapshot: Any = None) -> dict:
         "decision_summary": decision_summary,
         "radar_card": radar_card,
         "latest_recovery_impact": latest_recovery_impact,
+        "recovered_evidence_modules": recovered_modules,
+        "recovered_evidence_summary": recovered_evidence_summary_text(support_items),
         "items": items,
         "support_items": support_items,
         "blocker_items": blocker_items,

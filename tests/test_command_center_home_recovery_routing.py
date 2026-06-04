@@ -121,6 +121,13 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("最近检查", source)
         self.assertIn("最近成功", source)
 
+    def test_home_snapshot_renders_recovered_evidence_modules(self):
+        source = Path("visual_components.py").read_text(encoding="utf-8")
+
+        self.assertIn("recovered_evidence_modules", source)
+        self.assertIn("已回流模块", source)
+        self.assertIn("暂无已回流证据模块", source)
+
     def test_home_snapshot_collapses_verbose_diagnostics(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")
 
