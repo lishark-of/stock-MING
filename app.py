@@ -3721,12 +3721,17 @@ def _build_margin_etf_live_section():
             etf_scores=score_packet,
         )
     candidates = allocation.get("selected_etf_candidates") or {}
+    etf_candidate_names = []
     if isinstance(candidates, dict):
         direction_items = []
         for bucket, rows in candidates.items():
             if isinstance(rows, list) and rows:
                 first = rows[0]
-                direction_items.append(_cc_first_text(first.get("name"), first.get("etf_name"), bucket))
+                candidate_name = _cc_first_text(first.get("name"), first.get("etf_name"), bucket)
+                direction_items.append(candidate_name)
+                etf_candidate_names.append(
+                    f"{_cc_first_text(first.get('code'), first.get('symbol'), bucket)} {candidate_name}".strip()
+                )
         main_direction = " / ".join(direction_items[:3])
     else:
         main_direction = ""
@@ -3745,6 +3750,7 @@ def _build_margin_etf_live_section():
         "updated_at": daily_packet.get("updated_at") or allocation.get("generated_at") or "",
         "source": "融资 ETF",
         "today_main_direction": main_direction or "待 ETF 强弱表确认",
+        "etf_candidates": etf_candidate_names[:5],
         "action_state": allocation.get("action_state") or "待判断",
         "is_fresh": True,
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
@@ -5874,23 +5880,107 @@ def render_command_center_current_holding_panel(target="", market_badge="", pric
     price = profile.get("current_price")
     if price is None:
         price = detail.get("price")
+    price_value = _num(price)
+    holding_units = _num(profile.get("holding_units"), 0) or 0
+    cost_price = _num(profile.get("cost_price"), 0) or 0
+    market_value = round(price_value * holding_units, 2) if price_value is not None and holding_units else None
+    cost_amount = round(cost_price * holding_units, 2) if cost_price and holding_units else None
+    margin_ratio = _num(profile.get("margin_ratio_pct"), 0) or 0
+    decision_packet = st.session_state.get("command_center_decision_packet") or {}
+    strategy_packet = st.session_state.get("command_center_strategy_packet") or {}
+    holding_action = _home_trade_text(
+        decision_packet.get("position_mode")
+        or strategy_packet.get("position_advice")
+        or summary.get("strategy_action")
+        or profile.get("normalized_position_state"),
+        "等待确认",
+    )
+    next_step = _home_trade_text(
+        summary.get("next_step")
+        or decision_packet.get("summary")
+        or strategy_packet.get("add_condition")
+        or "先看今日总决策和风险警报；未满足条件前不追高、不加杠杆。",
+        "先看今日总决策和风险警报；未满足条件前不追高、不加杠杆。",
+    )
+    cards = [
+        ("标的", target or profile.get("ticker") or "未锁定"),
+        ("持仓状态", profile.get("normalized_position_state") or profile.get("position_status") or "待确认"),
+        ("市场", market_badge or "未知"),
+        ("当前价", _fmt_price(price, currency)),
+        ("持仓数量", _display_text(profile.get("holding_units"), "0")),
+        ("持仓市值", _fmt_price(market_value, currency)),
+        ("成本价", _fmt_price(profile.get("cost_price"), currency)),
+        ("持仓成本", _fmt_price(cost_amount, currency)),
+        ("浮动盈亏", profile.get("profit_state") or "未计算"),
+        ("盈亏金额", _fmt_price(profile.get("pnl_amount"), currency)),
+        ("融资比例", f"{margin_ratio:.1f}%"),
+    ]
+    card_html = "".join(
+        (
+            "<div class='cc-holding-info-card'>"
+            f"<div class='cc-holding-info-label'>{html_escape(str(label))}</div>"
+            f"<div class='cc-holding-info-value'>{html_escape(str(value))}</div>"
+            "</div>"
+        )
+        for label, value in cards
+    )
     with st.container(border=True):
+        st.markdown(
+            """
+            <style>
+            .cc-holding-info-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+                gap: 10px;
+                margin: 8px 0 12px;
+            }
+            .cc-holding-info-card {
+                border: 1px solid rgba(15, 23, 42, .10);
+                border-radius: 8px;
+                padding: 12px 14px;
+                background: rgba(255, 255, 255, .76);
+                min-width: 0;
+            }
+            .cc-holding-info-label {
+                color: #64748b;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.25;
+                margin-bottom: 6px;
+            }
+            .cc-holding-info-value {
+                color: #0f172a;
+                font-size: 20px;
+                font-weight: 760;
+                line-height: 1.18;
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+            .cc-holding-info-note {
+                border: 1px solid rgba(20, 184, 166, .18);
+                background: rgba(240, 253, 250, .56);
+                border-radius: 8px;
+                padding: 10px 12px;
+                color: #0f172a;
+                font-size: 13px;
+                line-height: 1.55;
+                margin-top: 8px;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.markdown("### 当前持仓")
-        metric_cols = st.columns(5)
-        metric_cols[0].metric("标的", target or "未锁定")
-        metric_cols[1].metric("市场", market_badge or "未知")
-        metric_cols[2].metric("当前价", _fmt_price(price, currency))
-        metric_cols[3].metric("持仓数量", _display_text(profile.get("holding_units"), "0"))
-        pnl_delta = _fmt_price(profile.get("pnl_amount"), currency) if profile.get("pnl_amount") is not None else None
-        metric_cols[4].metric("浮动盈亏", profile.get("profit_state") or "未计算", pnl_delta)
-        pnl_amount_text = f"盈亏金额：{pnl_delta} ｜ " if pnl_delta else ""
-        st.caption(
-            f"成本：{_fmt_price(profile.get('cost_price'), currency)} ｜ "
-            f"{pnl_amount_text}"
-            f"周期：{profile.get('analysis_horizon') or '短中期'} ｜ "
-            f"融资比例：{_display_text(profile.get('margin_ratio_pct'), '0')}% ｜ "
+        st.markdown(f"<div class='cc-holding-info-grid'>{card_html}</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='cc-holding-info-note'>"
+            f"当前持仓动作：{html_escape(str(holding_action))}<br>"
+            f"下一步操作：{html_escape(str(next_step))}<br>"
+            f"周期：{html_escape(str(profile.get('analysis_horizon') or '短中期'))} ｜ "
             f"行情状态：{'已读取' if price is not None else '未读取'}"
-            f"{'｜数据日期：' + str(detail.get('data_date')) if detail.get('data_date') else ''}"
+            f"{' ｜ 数据日期：' + html_escape(str(detail.get('data_date'))) if detail.get('data_date') else ''}"
+            "</div>",
+            unsafe_allow_html=True,
         )
         if profile.get("position_warning"):
             st.warning(profile["position_warning"])
@@ -5898,6 +5988,32 @@ def render_command_center_current_holding_panel(target="", market_badge="", pric
             st.warning(f"行情读取失败：{summary.get('price_warning') or '未返回可用价格'}")
         elif detail.get("warning"):
             st.caption(f"行情提示：{detail.get('warning')}")
+
+
+def _command_center_position_context_text(position_profile=None, price_detail=None):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    detail = price_detail if isinstance(price_detail, dict) else {}
+    currency = profile.get("currency") or ""
+    price = profile.get("current_price")
+    if price is None:
+        price = detail.get("price")
+    margin_ratio = _num(profile.get("margin_ratio_pct"), 0) or 0
+    pieces = [
+        f"标的 {profile.get('ticker') or '未锁定'}",
+        f"状态 {profile.get('normalized_position_state') or profile.get('position_status') or '待确认'}",
+        f"持仓 {_display_text(profile.get('holding_units'), '0')} 股",
+        f"成本 {_fmt_price(profile.get('cost_price'), currency)}",
+        f"当前价 {_fmt_price(price, currency)}",
+        str(profile.get("profit_state") or "盈亏未计算"),
+        f"盈亏 {_fmt_price(profile.get('pnl_amount'), currency)}",
+        f"融资 {margin_ratio:.1f}%",
+        f"周期 {profile.get('analysis_horizon') or '短中期'}",
+    ]
+    return " ｜ ".join(pieces)
+
+
+def render_command_center_position_context_note(label, position_profile=None, price_detail=None):
+    st.caption(f"{label}：{_command_center_position_context_text(position_profile, price_detail)}")
 
 
 def render_command_center_decision_trade_panel(decision_packet=None, strategy_packet=None):
@@ -5991,19 +6107,51 @@ def render_command_center_next_ticket_top3(live_packet=None):
                     f"{index}. {item.get('ticker') or '未知'} {item.get('name') or ''}："
                     f"{item.get('action_state') or '只观察'} / 评分 {item.get('score') if item.get('score') is not None else '暂无'}"
                 )
+                trigger = _home_trade_text(item.get("trigger") or item.get("entry_condition"), "")
+                invalidation = _home_trade_text(item.get("invalidation") or item.get("invalid_condition"), "")
+                if trigger:
+                    st.caption(f"触发条件：{trigger}")
+                if invalidation:
+                    st.caption(f"失效条件：{invalidation}")
         else:
             st.info(section.get("summary") or "暂无 Top3 候选；下一票雷达未刷新或无可用缓存。")
+            st.write("- 触发条件：执行满血数据刷新后若已有下一票雷达缓存，则显示候选；不会自动触发全市场扫描。")
+            st.write("- 失效条件：无候选、数据不足或候选未进入观察池时，不用下一票替代当前持仓决策。")
+            st.write("- 来源说明：当前只读取本地缓存/手动刷新结果，DeepSeek 未调用。")
         st.caption(f"状态：{section.get('status') or '待刷新'}｜DeepSeek：未调用")
 
 
-def render_command_center_etf_config_panel(live_packet=None):
+def render_command_center_etf_config_panel(live_packet=None, position_profile=None):
     section = (live_packet or {}).get("margin_etf") or _build_margin_etf_live_section()
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    current_margin = _num(profile.get("margin_ratio_pct"), 0) or 0
+    recommended_margin = _num(section.get("recommended_margin_ratio"))
+    recommended_cash = _num(section.get("recommended_cash_ratio"))
+    margin_gap = round(current_margin - recommended_margin, 2) if recommended_margin is not None else None
+    candidates = section.get("etf_candidates") or []
     with st.container(border=True):
         st.markdown("### ETF 配置")
-        cols = st.columns(3)
-        cols[0].metric("建议融资比例", _display_text(section.get("recommended_margin_ratio")))
-        cols[1].metric("建议现金比例", _display_text(section.get("recommended_cash_ratio")))
-        cols[2].metric("主方向", section.get("today_main_direction") or "待确认")
+        cols = st.columns(4)
+        cols[0].metric("当前融资比例", f"{current_margin:.1f}%")
+        cols[1].metric("建议融资比例", f"{recommended_margin:.1f}%" if recommended_margin is not None else "暂无")
+        cols[2].metric("融资差距", f"{margin_gap:+.1f}pct" if margin_gap is not None else "待刷新")
+        cols[3].metric("建议现金比例", f"{recommended_cash:.1f}%" if recommended_cash is not None else "暂无")
+        st.write(f"主方向：{section.get('today_main_direction') or '待 ETF 强弱表确认'}")
+        if margin_gap is not None and margin_gap > 0:
+            st.warning(
+                f"当前融资 {current_margin:.1f}% 高于建议 {recommended_margin:.1f}%，"
+                "本轮优先降风险或维持观察，不新增融资。"
+            )
+        elif current_margin > 0 and recommended_margin is not None:
+            st.info(f"当前融资 {current_margin:.1f}% 未高于建议上限；仍禁止临时加杠杆。")
+        elif current_margin > 0:
+            st.warning(f"当前输入融资 {current_margin:.1f}%，但 ETF 建议尚未刷新；先按谨慎风险预算处理。")
+        if candidates:
+            st.markdown("**ETF 候选**")
+            for item in candidates[:3]:
+                st.write(f"- {item}")
+        else:
+            st.caption("ETF 候选：暂无具体候选；等待 ETF 强弱表缓存或手动刷新结果。")
         st.caption(section.get("summary") or "ETF 配置未刷新；可在高级工具箱或满血数据刷新后复核。")
 
 
@@ -6014,14 +6162,31 @@ def render_command_center_risk_alert_panel(
     projection_packet=None,
     price_detail=None,
     direct_summary=None,
+    position_profile=None,
 ):
     alerts = []
     detail = price_detail if isinstance(price_detail, dict) else {}
     summary = direct_summary if isinstance(direct_summary, dict) else {}
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    margin_section = (live_packet or {}).get("margin_etf") or {}
+    current_margin = _num(profile.get("margin_ratio_pct"), 0) or 0
+    recommended_margin = _num(margin_section.get("recommended_margin_ratio"))
     packet_errors = summary.get("errors") or []
     alerts.extend(str(item) for item in packet_errors[:3] if item)
     if detail.get("price") is None:
         alerts.append(f"当前价不可用：{detail.get('warning') or '行情接口未返回价格'}")
+    if current_margin > 0 and recommended_margin is not None:
+        gap = round(current_margin - recommended_margin, 2)
+        if gap > 0:
+            alerts.append(
+                f"融资风险：当前融资 {current_margin:.1f}% 高于建议 {recommended_margin:.1f}%（差距 {gap:.1f}pct）；禁止新增融资，优先降风险或保现金。"
+            )
+        else:
+            alerts.append(f"融资风险：当前融资 {current_margin:.1f}% 未高于建议 {recommended_margin:.1f}%；仍需避免临时加杠杆。")
+    elif current_margin > 0:
+        alerts.append(f"融资风险：当前输入融资 {current_margin:.1f}%，但建议融资比例待刷新；按高谨慎度处理。")
+    if profile.get("profit_state") and profile.get("pnl_amount") is not None:
+        alerts.append(f"持仓风险：{profile.get('profit_state')}，盈亏金额 {_fmt_price(profile.get('pnl_amount'), profile.get('currency') or '')}；不要让盈利回撤变成融资压力。")
     risk_budget = (strategy_packet or {}).get("risk_budget") or {}
     if risk_budget.get("risk_level"):
         alerts.append(f"风险预算：{risk_budget.get('risk_level')}；现金缓冲 {risk_budget.get('cash_buffer') if risk_budget.get('cash_buffer') is not None else '待计算'}")
@@ -6357,10 +6522,12 @@ packet:
         position_profile=position_profile,
         direct_summary=direct_summary,
     )
-    render_home_analysis_methods_strip(
-        analysis_methods_service.build_home_analysis_method_summary(analysis_method_packet)
-    )
     st.markdown("### 今日总决策 Hero")
+    render_command_center_position_context_note(
+        "本轮决策上下文",
+        position_profile=position_profile,
+        price_detail=page_price_detail,
+    )
     live_packet = render_command_center_decision_card(
         live_packet,
         target=target,
@@ -6371,6 +6538,11 @@ packet:
         home_compact=True,
     )
     st.markdown("### 未来 5~10 日趋势推演")
+    render_command_center_position_context_note(
+        "趋势推演持仓锚点",
+        position_profile=position_profile,
+        price_detail=page_price_detail,
+    )
     render_command_center_projection_chart(projection_packet, home_compact=True)
     st.markdown("### 策略执行实验室")
     live_packet = render_strategy_execution_card(
@@ -6384,7 +6556,7 @@ packet:
         home_compact=True,
     )
     render_command_center_next_ticket_top3(live_packet)
-    render_command_center_etf_config_panel(live_packet)
+    render_command_center_etf_config_panel(live_packet, position_profile=position_profile)
     render_command_center_risk_alert_panel(
         live_packet=live_packet,
         decision_packet=decision_packet,
@@ -6392,6 +6564,10 @@ packet:
         projection_packet=projection_packet,
         price_detail=page_price_detail,
         direct_summary=direct_summary,
+        position_profile=position_profile,
+    )
+    render_home_analysis_methods_strip(
+        analysis_methods_service.build_home_analysis_method_summary(analysis_method_packet)
     )
 
     explanation = st.session_state.get(explanation_key)

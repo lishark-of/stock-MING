@@ -4475,13 +4475,6 @@ def render_strategy_execution_command_card(
     summary = vm.get("summary") or vm.get("empty_message") or "尚未生成策略执行建议。"
     risk_level = vm.get("risk_label") or "未知"
     budget_tiles = [item for item in (vm.get("risk_budget_items") or []) if isinstance(item, dict)]
-    budget_html = "".join(
-        f"<div class='cc-strategy-tile {_tone_to_strategy_class(item.get('tone'))}'>"
-        f"<div class='cc-strategy-label'>{escape(str(item.get('label') or '项目'))}</div>"
-        f"<div class='cc-strategy-value'>{escape(str(item.get('value') or '暂无'))}</div>"
-        "</div>"
-        for item in budget_tiles[:5]
-    )
     conditions = vm.get("condition_items") or []
     if not conditions:
         conditions_payload = vm.get("conditions") or {}
@@ -4490,6 +4483,97 @@ def render_strategy_execution_command_card(
             {"label": "减仓条件", "value": conditions_payload.get("reduce") or "触发止损、减仓或风险预算失效时优先降低暴露。", "tone": "warning", "check_label": "触发后优先降低暴露"},
             {"label": "失效条件", "value": conditions_payload.get("invalidation") or "市场环境转弱或纪律信号反向时，本轮建议失效。", "tone": "danger", "check_label": "触发后本轮建议作废"},
         ]
+    warning_lines = [str(item) for item in (vm.get("warning_items") or [])]
+    guidance = vm.get("market_method_guidance") or {}
+    evidence_card = vm.get("evidence_radar_card") or {}
+    evidence_gate = str(vm.get("evidence_confidence_gate") or evidence_card.get("confidence_gate") or "不可验证")
+    projection_confidence = vm.get("projection_confidence_summary") or {}
+    if home_compact:
+        with st.container(border=True):
+            head_left, head_right = st.columns([2.2, 1])
+            with head_left:
+                st.caption("Strategy Execution")
+                st.markdown(f"## {action}")
+                st.write(summary)
+                if vm.get("action_guardrail"):
+                    st.caption(str(vm.get("action_guardrail")))
+                if vm.get("readiness_text"):
+                    st.caption(str(vm.get("readiness_text")))
+            with head_right:
+                st.metric("置信度", confidence)
+                st.metric("风险", risk_level)
+                st.caption(f"证据门槛：{evidence_gate}")
+                st.caption(vm.get("deepseek_text") or "DeepSeek：未调用")
+
+            if budget_tiles:
+                st.markdown("**风险预算**")
+                budget_cols = st.columns(min(4, len(budget_tiles[:4])))
+                for col, item in zip(budget_cols, budget_tiles[:4]):
+                    col.metric(str(item.get("label") or "项目"), str(item.get("value") or "暂无"))
+
+            st.markdown("**操作条件**")
+            condition_cols = st.columns(min(3, max(1, len(conditions[:3]))))
+            for col, item in zip(condition_cols, conditions[:3]):
+                with col:
+                    st.markdown(f"**{item.get('label') or '条件'}**")
+                    st.write(str(item.get("value") or "等待验证。"))
+                    st.caption(f"✓ {item.get('check_label') or '按条件执行'}")
+
+            focus_items = [str(item) for item in (guidance.get("focus_items") or [])[:5] if item]
+            if focus_items:
+                st.caption("A股验证重点：" + " / ".join(focus_items))
+
+            path_items = [item for item in (vm.get("path_items") or []) if isinstance(item, dict)]
+            if path_items:
+                st.markdown("**未来 5-10 日路径**")
+                path_cols = st.columns(min(3, len(path_items[:3])))
+                for col, item in zip(path_cols, path_items[:3]):
+                    with col:
+                        st.markdown(f"**{item.get('name') or '路径'}**")
+                        st.write(str(item.get("condition") or "等待验证。"))
+                        st.caption(f"动作：{item.get('action') or '只观察。'}")
+                        st.caption(f"风险提示：{item.get('risk') or '不追高、不重仓，等待验证。'}")
+
+            discipline_items = [item for item in (vm.get("discipline_items") or []) if isinstance(item, dict)]
+            foot_left, foot_right = st.columns(2)
+            with foot_left:
+                st.markdown("**纪律校验**")
+                if discipline_items:
+                    for item in discipline_items[:6]:
+                        label = str(item.get("label") or item.get("name") or "纪律")
+                        value = str(item.get("value") or item.get("text") or item.get("status") or "待刷新")
+                        st.write(f"- {label}：{value}")
+                else:
+                    st.write("- 暂无纪律校验缓存。")
+            with foot_right:
+                st.markdown("**风险红线 / 异常**")
+                if warning_lines:
+                    for item in warning_lines[:6]:
+                        st.write(f"- {item}")
+                else:
+                    st.write("- 暂无新增异常；仍需遵守不追高、不自动重仓。")
+
+            status_items = [item for item in (vm.get("data_status_items") or []) if isinstance(item, dict)]
+            if status_items:
+                st.markdown("**数据状态**")
+                status_cols = st.columns(min(3, len(status_items[:3])))
+                for col, item in zip(status_cols, status_items[:3]):
+                    col.metric(str(item.get("label") or item.get("key") or "模块"), str(item.get("text") or item.get("state") or "missing"))
+            st.caption(
+                f"最后更新时间：{vm.get('updated_text') or '暂无'} ｜ "
+                f"{vm.get('deepseek_text') or 'DeepSeek：未调用'}"
+            )
+            if vm.get("user_boundary_text"):
+                st.caption(str(vm.get("user_boundary_text")))
+        return
+
+    budget_html = "".join(
+        f"<div class='cc-strategy-tile {_tone_to_strategy_class(item.get('tone'))}'>"
+        f"<div class='cc-strategy-label'>{escape(str(item.get('label') or '项目'))}</div>"
+        f"<div class='cc-strategy-value'>{escape(str(item.get('value') or '暂无'))}</div>"
+        "</div>"
+        for item in budget_tiles[:5]
+    )
     condition_html = "".join(
         f"<div class='cc-strategy-condition {_tone_to_strategy_class(item.get('tone'))}'>"
         f"<div class='cc-strategy-label'>{escape(str(item.get('label') or '条件'))}</div>"
@@ -4514,16 +4598,11 @@ def render_strategy_execution_command_card(
         "</div>"
         for item in (vm.get("data_status_items") or [])
     )
-    warning_lines = [str(item) for item in (vm.get("warning_items") or [])]
-    guidance = vm.get("market_method_guidance") or {}
     focus_html = "".join(f"<span>{escape(str(item))}</span>" for item in (guidance.get("focus_items") or [])[:5])
     a_share_data_validation_summary = str(vm.get("a_share_data_validation_summary") or "").strip()
     a_share_fact_recovery_validation_summary = str(vm.get("a_share_fact_recovery_validation_summary") or "").strip()
     latest_recovery_validation_summary = str(vm.get("latest_recovery_validation_summary") or "").strip()
     recovery_timeline_validation_summary = str(vm.get("recovery_timeline_validation_summary") or "").strip()
-    evidence_card = vm.get("evidence_radar_card") or {}
-    evidence_gate = str(vm.get("evidence_confidence_gate") or evidence_card.get("confidence_gate") or "不可验证")
-    projection_confidence = vm.get("projection_confidence_summary") or {}
     validation_title = str(vm.get("evidence_validation_summary") or "支持 0｜阻断 0｜缓存 0｜缺失 0")
     if projection_confidence.get("status") and projection_confidence.get("status") != "missing":
         validation_title = f"{validation_title} ｜ 路径：{projection_confidence.get('label') or '待验证'}"
@@ -4668,10 +4747,12 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-section-title">数据状态</div>
       <div class="cc-strategy-status-row">{status_html}</div>
       <div class="cc-strategy-foot">
-        最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
-        {source_footer}
-        {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
-        <br>{escape(str(vm.get("user_boundary_text") or ""))}
+        <div>
+          最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
+          {source_footer}
+          {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
+        </div>
+        <div>{escape(str(vm.get("user_boundary_text") or ""))}</div>
       </div>
     </section>
     """
