@@ -344,6 +344,71 @@ def _limited_text_join(value: Any, fallback: str = "暂无明细", limit: int = 
     return "、".join(values[:limit]) + suffix
 
 
+HOME_COMPACT_INTERNAL_TERMS = (
+    "provider",
+    "Provider",
+    "packet",
+    "Packet",
+    "恢复入口",
+    "数据恢复",
+    "权限",
+    "缓存路径",
+    "根因",
+    "旧能力链",
+    "旧工具",
+    "旧工作台",
+    "A股事实",
+    "事实回流",
+    "接口健康",
+    "数据能力",
+    "Tushare",
+    "AkShare",
+    "Supabase",
+    "yfinance",
+)
+
+
+def _home_compact_has_internal_text(value: Any) -> bool:
+    text = _to_text(value)
+    return any(term in text for term in HOME_COMPACT_INTERNAL_TERMS)
+
+
+def _home_compact_clean_text(value: Any, fallback: str = "待验证") -> str:
+    text = _to_text(value)
+    if not text or _home_compact_has_internal_text(text):
+        return fallback
+    return text
+
+
+def _home_compact_warning_items(items: Any) -> list[str]:
+    cleaned = []
+    for item in _as_list(items):
+        text = _home_compact_clean_text(item, "")
+        if text:
+            cleaned.append(text)
+        if len(cleaned) >= 4:
+            break
+    return cleaned or ["暂无新增异常；仍需遵守不追高、不自动重仓。"]
+
+
+def _home_compact_data_status_items(items: Any) -> list[dict]:
+    compact_items = []
+    for raw in _as_list(items):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        key = _to_text(item.get("key"))
+        compact_items.append(
+            {
+                "key": "live" if _home_compact_has_internal_text(key) else key,
+                "label": _to_text(item.get("label")) or "模块",
+                "state": _to_text(item.get("state")) or "missing",
+                "text": _to_text(item.get("text")) or "待刷新",
+            }
+        )
+    return compact_items
+
+
 def _evidence_group_count(group: Mapping[str, Any]) -> int:
     try:
         return max(0, int(float(group.get("count"))))
@@ -1120,6 +1185,7 @@ def build_strategy_summary_view_model(
     a_share_fact_recovery_summary: Any = None,
     latest_recovery_result_notice: Any = None,
     recovery_result_timeline: Any = None,
+    surface: str = "full",
 ) -> dict:
     payload = _as_mapping(packet)
     is_empty = not bool(payload)
@@ -1148,7 +1214,7 @@ def build_strategy_summary_view_model(
         a_share_fact_recovery_summary,
         market_type=market_type,
     )
-    return {
+    view_model = {
         "status": normalize_strategy_status(payload),
         "status_label": strategy_status_label(payload),
         "status_tone": strategy_status_tone(payload),
@@ -1189,3 +1255,56 @@ def build_strategy_summary_view_model(
         "last_error_text": _to_text(payload.get("last_error")),
         "empty_message": "尚未生成策略执行建议。",
     }
+    if _to_text(surface) in {"home", "home_compact", "compact"}:
+        compact_projection = dict(projection_confidence or {})
+        compact_projection["summary"] = _home_compact_clean_text(
+            compact_projection.get("summary"),
+            "趋势路径已生成；用于约束仓位节奏。",
+        )
+        compact_projection["guardrail"] = _home_compact_clean_text(
+            compact_projection.get("guardrail"),
+            "路径只做条件化推演，不直接决定仓位。",
+        )
+        for key in (
+            "path_basis",
+            "legacy_decision_chain_summary",
+            "legacy_decision_chain_status",
+            "evidence_group_summary",
+            "evidence_group_status",
+            "evidence_group_guardrail",
+            "recovery_impact_summary",
+        ):
+            compact_projection[key] = ""
+        compact_projection["blocker_items"] = []
+        compact_projection["pending_items"] = []
+        compact_projection["support_items"] = []
+        view_model = dict(view_model)
+        view_model.update(
+            {
+                "home_compact": True,
+                "summary": _home_compact_clean_text(summary, "策略执行建议已生成；按条件小步验证。"),
+                "readiness_text": _home_compact_clean_text(
+                    view_model.get("readiness_text"),
+                    "执行前仍需确认价格、纪律和风险预算。",
+                ),
+                "projection_confidence_summary": compact_projection,
+                "evidence_radar_card": {},
+                "evidence_confidence_gate": "按交易条件确认",
+                "evidence_execution_guardrail": "缺少价格、纪律或风险预算确认时，只观察或降风险。",
+                "evidence_validation_items": [],
+                "a_share_evidence_group_guidance": {},
+                "a_share_fact_recovery_condition_guidance": {},
+                "data_health_impact": {},
+                "evidence_validation_summary": "执行条件已压缩为首页交易视图",
+                "a_share_data_validation_summary": "",
+                "a_share_fact_recovery_validation_summary": "",
+                "latest_recovery_validation_summary": "",
+                "recovery_timeline_validation_summary": "",
+                "data_status_items": _home_compact_data_status_items(view_model.get("data_status_items")),
+                "warning_items": _home_compact_warning_items(view_model.get("warning_items")),
+                "user_boundary_text": "本卡不是交易指令，不保证收益；DeepSeek 只在手动解释时使用。",
+                "source_text": "综合中心本地结论",
+                "empty_message": "尚未生成策略执行建议；首页保留安全空态，不自动调用 DeepSeek。",
+            }
+        )
+    return view_model

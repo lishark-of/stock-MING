@@ -117,6 +117,56 @@ class CommandCenterAnalysisMethodsTests(unittest.TestCase):
         self.assertIn("等待数据刷新", packet["summary"])
         self.assertFalse(packet["deepseek_called"])
 
+    def test_home_summary_keeps_a_share_method_layer_visible(self):
+        packet = methods.build_analysis_method_packet(
+            ticker="002008.SZ",
+            live_packet={"market": {"status": "ready"}, "quant": {"status": "ready"}},
+            strategy_packet={"status": "ready", "action": "等待验证"},
+            decision_packet={"status": "ready", "overall_action": "只观察"},
+            now="2026-06-01T09:30:00",
+        )
+        view_model = methods.build_home_analysis_method_summary(packet)
+        dumped = json.dumps(view_model, ensure_ascii=False)
+
+        self.assertEqual(view_model["market"], "A股")
+        self.assertIn("A股个股", view_model["headline"])
+        self.assertIn("资金流", dumped)
+        self.assertIn("MA20", dumped)
+        self.assertFalse(view_model["deepseek_called"])
+        self.assertNotIn("packet", dumped)
+
+    def test_home_summary_keeps_us_stock_terms_separate_from_a_share(self):
+        packet = methods.build_analysis_method_packet(
+            ticker="AAPL",
+            live_packet={"market": {"status": "ready"}},
+            now="2026-06-01T09:30:00",
+        )
+        view_model = methods.build_home_analysis_method_summary(packet)
+        dumped = json.dumps(view_model, ensure_ascii=False)
+
+        self.assertEqual(view_model["market"], "美股")
+        self.assertIn("美股个股", view_model["headline"])
+        self.assertIn("52周新高", dumped)
+        self.assertIn("财报", dumped)
+        self.assertNotIn("龙虎榜", dumped)
+        self.assertNotIn("涨跌停", dumped)
+        self.assertFalse(view_model["deepseek_called"])
+
+    def test_home_summary_keeps_etf_allocation_prominent(self):
+        packet = methods.build_analysis_method_packet(
+            ticker="560780.SH",
+            live_packet={"margin_etf": {"status": "ready"}},
+            now="2026-06-01T09:30:00",
+        )
+        view_model = methods.build_home_analysis_method_summary(packet)
+        dumped = json.dumps(view_model, ensure_ascii=False)
+
+        self.assertEqual(view_model["market"], "ETF")
+        self.assertIn("ETF / 基金", view_model["headline"])
+        self.assertIn("ETF 赛道配置", dumped)
+        self.assertIn("流动性", dumped)
+        self.assertFalse(view_model["deepseek_called"])
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_analysis_methods.py").read_text())
         imports = []

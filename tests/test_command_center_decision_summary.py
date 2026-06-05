@@ -715,6 +715,61 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["evidence_chain_items"][0]["value"], "市场类型待确认")
         json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
 
+    def test_home_compact_surface_hides_internal_diagnostics_but_keeps_trade_decision(self):
+        view_model = summary.build_decision_summary_view_model(
+            {
+                "status": "ready",
+                "overall_action": "只观察",
+                "risk_level": "中",
+                "reason_summary": "provider packet 权限不足，恢复入口见缓存路径。",
+                "data_coverage": {"market": "ready", "quant": "cached", "discipline": "ready"},
+            },
+            analysis_method_packet={
+                "market": "A股",
+                "methods": [
+                    {"name": "趋势跟踪", "status": "通过"},
+                    {"name": "资金流", "status": "待验证"},
+                ],
+            },
+            projection_packet={
+                "status": "ready",
+                "path_basis": "旧能力链：packet cache",
+                "path_legacy_decision_chain_status": "blocked",
+                "path_legacy_decision_chain_summary": "旧能力链阻断",
+            },
+            data_capability_brief={"headline": "Provider / A股事实 / 旧能力链待检测"},
+            evidence_radar_packet={
+                "decision_summary": "支持 0｜阻断 1｜缓存 0｜缺失 5",
+                "blocker_items": [{"label": "公告权限不足"}],
+            },
+            a_share_data_console={"decision_readiness_label": "数据能力受限", "summary": "权限不足"},
+            a_share_fact_recovery_summary={"summary": "A股事实回流待验证", "blocked_count": 1},
+            latest_recovery_result_notice={"label": "恢复入口", "message": "写回 packet"},
+            recovery_result_timeline={"decision_impact_summary": "缓存路径仍待复核"},
+            old_workspace_packet_bridge={"status": "blocked", "summary": "旧工具 packet 阻断"},
+            surface="home_compact",
+        )
+
+        def iter_values(value):
+            if isinstance(value, dict):
+                for child in value.values():
+                    yield from iter_values(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from iter_values(child)
+            else:
+                yield str(value)
+
+        visible_text = "\n".join(iter_values(view_model))
+        for term in ["provider", "packet", "恢复入口", "权限", "缓存路径", "旧能力链", "A股事实", "接口健康"]:
+            self.assertNotIn(term, visible_text)
+        self.assertTrue(view_model["home_compact"])
+        self.assertEqual(view_model["action_label"], "只观察")
+        self.assertEqual(view_model["risk_label"], "中")
+        self.assertEqual(view_model["source_text"], "综合中心本地结论")
+        self.assertIn("趋势推演", json.dumps(view_model["evidence_chain_items"], ensure_ascii=False))
+        self.assertEqual(view_model["deepseek_text"], "DeepSeek：未调用")
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_decision_summary.py").read_text())
         imports = []

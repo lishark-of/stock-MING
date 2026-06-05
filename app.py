@@ -69,6 +69,7 @@ try:
         "render_fusion_summary_card": "融合结论卡",
         "render_home_action_snapshot": "首页交易快照",
         "render_holdings_snapshot_summary": "ETF 持仓差异",
+        "render_home_analysis_methods_strip": "首页市场分析口径",
         "render_intraday_etf_snapshot": "ETF 实时快照",
         "render_margin_allocator_chart": "融资ETF配置图",
         "render_margin_bucket_weights_table": "Bucket 权重表",
@@ -130,6 +131,9 @@ except Exception as module_error:
 
     def render_home_action_snapshot(*args, **kwargs):
         _visual_component_unavailable("首页交易快照")
+
+    def render_home_analysis_methods_strip(*args, **kwargs):
+        _visual_component_unavailable("首页市场分析口径")
 
     def render_command_center_shell(*args, **kwargs):
         _visual_component_unavailable("综合推演中心框架")
@@ -4001,6 +4005,7 @@ def render_command_center_decision_card(
     analysis_method_packet=None,
     projection_packet=None,
     show_generate_button=True,
+    home_compact=False,
 ):
     live_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(live_packet))
     packet = _get_command_center_decision_display_packet()
@@ -4077,6 +4082,7 @@ def render_command_center_decision_card(
             if isinstance(home_snapshot, dict)
             else {}
         ),
+        surface="home_compact" if home_compact else "full",
     )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
     if packet and packet.get("stale"):
@@ -4111,6 +4117,7 @@ def render_strategy_execution_card(
     evidence_radar_packet=None,
     projection_packet=None,
     show_generate_button=True,
+    home_compact=False,
 ):
     live_packet = _attach_strategy_execution_packet(live_packet)
     packet = _get_strategy_execution_display_packet()
@@ -4172,6 +4179,7 @@ def render_strategy_execution_card(
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
         latest_recovery_result_notice=latest_recovery_result_notice,
         recovery_result_timeline=recovery_result_timeline,
+        surface="home_compact" if home_compact else "full",
     )
     render_strategy_execution_command_card(packet, live_packet=live_packet, strategy_view_model=strategy_vm)
     return live_packet
@@ -5825,6 +5833,12 @@ _COMMAND_CENTER_HOME_DEBUG_TERMS = (
     "A股事实",
     "事实回流",
     "旧能力链",
+    "旧能力",
+    "缺失证据",
+    "待手动",
+    "接口未",
+    "数据未刷新",
+    "回流",
     "接口健康",
 )
 
@@ -5836,7 +5850,7 @@ def _is_command_center_home_debug_text(value):
 
 def _home_trade_text(value, fallback="待验证"):
     text = str(value or "").strip()
-    if not text or _is_command_center_home_debug_text(text):
+    if not text or len(text) > 140 or _is_command_center_home_debug_text(text):
         return fallback
     return text
 
@@ -6343,6 +6357,9 @@ packet:
         position_profile=position_profile,
         direct_summary=direct_summary,
     )
+    render_home_analysis_methods_strip(
+        analysis_methods_service.build_home_analysis_method_summary(analysis_method_packet)
+    )
     st.markdown("### 今日总决策 Hero")
     live_packet = render_command_center_decision_card(
         live_packet,
@@ -6351,9 +6368,10 @@ packet:
         analysis_method_packet=analysis_method_packet,
         projection_packet=projection_packet,
         show_generate_button=False,
+        home_compact=True,
     )
     st.markdown("### 未来 5~10 日趋势推演")
-    render_command_center_projection_chart(projection_packet)
+    render_command_center_projection_chart(projection_packet, home_compact=True)
     st.markdown("### 策略执行实验室")
     live_packet = render_strategy_execution_card(
         live_packet,
@@ -6363,6 +6381,7 @@ packet:
         evidence_radar_packet=evidence_radar_vm,
         projection_packet=projection_packet,
         show_generate_button=False,
+        home_compact=True,
     )
     render_command_center_next_ticket_top3(live_packet)
     render_command_center_etf_config_panel(live_packet)

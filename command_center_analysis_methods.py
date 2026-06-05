@@ -206,3 +206,96 @@ def build_analysis_method_packet(
         "last_error": None,
     }
 
+
+def _home_method_tone(status: str) -> str:
+    if status == "通过":
+        return "success"
+    if status == "失败":
+        return "danger"
+    if status == "不适用":
+        return "muted"
+    return "warning"
+
+
+def _home_method_rank(item: Mapping[str, Any]) -> tuple[int, int]:
+    status = _to_text(item.get("status"))
+    fit = _to_text(item.get("fit"))
+    status_rank = {"失败": 0, "通过": 1, "待验证": 2, "不适用": 9}.get(status, 3)
+    fit_rank = {"核心": 0, "辅助": 1, "待适配": 2, "不适用": 9}.get(fit, 3)
+    return status_rank, fit_rank
+
+
+def build_home_analysis_method_summary(packet: Any = None) -> dict:
+    payload = _as_mapping(packet)
+    profile = _as_mapping(payload.get("profile"))
+    market = _to_text(payload.get("market")) or _to_text(profile.get("market")) or "未知"
+    label = _to_text(profile.get("label")) or ("市场类型待确认" if market in {"", "未知"} else market)
+    methods = [_as_mapping(item) for item in _as_list(payload.get("methods")) if _as_mapping(item)]
+    applicable = [item for item in methods if _to_text(item.get("status")) != "不适用"]
+    ranked = sorted(applicable, key=_home_method_rank)
+    visible_methods = []
+    for item in ranked[:4]:
+        visible_methods.append(
+            {
+                "name": _to_text(item.get("name"), "分析方法"),
+                "status": _to_text(item.get("status"), "待验证"),
+                "tone": _home_method_tone(_to_text(item.get("status"))),
+                "fit": _to_text(item.get("fit"), "待适配"),
+                "action_hint": _to_text(item.get("action_hint"), "待验证后再行动。"),
+            }
+        )
+    if not visible_methods:
+        visible_methods = [
+            {
+                "name": "市场画像",
+                "status": "待验证",
+                "tone": "warning",
+                "fit": "待适配",
+                "action_hint": "先确认标的和市场类型。",
+            }
+        ]
+
+    coverage = _as_mapping(payload.get("data_coverage"))
+    ready_count = len([state for state in coverage.values() if state == "ready"])
+    cached_count = len([state for state in coverage.values() if state == "cached"])
+    pending_count = len([item for item in visible_methods if item.get("status") == "待验证"])
+    failed_count = len([item for item in visible_methods if item.get("status") == "失败"])
+    if failed_count:
+        headline = f"{label}：先处理风险方法"
+        next_action = "风险方法未解除前，主路径只观察或降风险。"
+        tone = "danger"
+    elif ready_count:
+        headline = f"{label}：已有可用分析口径"
+        next_action = "按已通过方法验证趋势、仓位和失效条件。"
+        tone = "success"
+    elif cached_count:
+        headline = f"{label}：读取缓存口径"
+        next_action = "缓存只辅助判断，执行前等待价格和纪律确认。"
+        tone = "warning"
+    else:
+        headline = f"{label}：等待数据验证"
+        next_action = "先刷新基础数据，不把通用框架当成结论。"
+        tone = "warning"
+
+    focus_items = _as_list(profile.get("indicator_focus"))[:5]
+    risk_items = _as_list(profile.get("risk_focus"))[:4]
+    return {
+        "market": market or "未知",
+        "label": label,
+        "headline": headline,
+        "summary": _to_text(payload.get("summary"), f"{label} 分析框架等待数据验证。"),
+        "tone": tone,
+        "method_items": visible_methods,
+        "focus_items": focus_items or ["趋势", "量价", "风险预算"],
+        "risk_items": risk_items or ["数据缺口", "流动性"],
+        "status_counts": {
+            "ready_modules": ready_count,
+            "cached_modules": cached_count,
+            "pending_methods": pending_count,
+            "failed_methods": failed_count,
+        },
+        "next_action": next_action,
+        "updated_at": _to_text(payload.get("updated_at"), "暂无"),
+        "deepseek_called": False,
+        "deepseek_text": "DeepSeek：未调用",
+    }

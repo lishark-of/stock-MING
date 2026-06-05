@@ -4469,6 +4469,7 @@ def render_strategy_execution_command_card(
     payload = strategy_execution_packet or {}
     del live_packet
     vm = strategy_view_model or build_strategy_summary_view_model(payload)
+    home_compact = bool(vm.get("home_compact"))
     action = vm.get("action_label") or "等待"
     confidence = vm.get("confidence_label") or "低"
     summary = vm.get("summary") or vm.get("empty_message") or "尚未生成策略执行建议。"
@@ -4545,7 +4546,7 @@ def render_strategy_execution_command_card(
         <div class="cc-strategy-guidance-row"><span>失效</span><b>{escape(str(guidance.get("invalidation_condition") or "市场画像无法确认时只保留观察。"))}</b></div>
       </div>
     """
-    a_share_evidence_group_guidance = vm.get("a_share_evidence_group_guidance") or {}
+    a_share_evidence_group_guidance = {} if home_compact else (vm.get("a_share_evidence_group_guidance") or {})
     a_share_evidence_group_guidance_html = ""
     if a_share_evidence_group_guidance:
         group_highlight_html = "".join(
@@ -4565,7 +4566,7 @@ def render_strategy_execution_command_card(
             {condition_rows}
           </div>
         """
-    a_share_fact_recovery_condition_guidance = vm.get("a_share_fact_recovery_condition_guidance") or {}
+    a_share_fact_recovery_condition_guidance = {} if home_compact else (vm.get("a_share_fact_recovery_condition_guidance") or {})
     a_share_fact_recovery_condition_html = ""
     if a_share_fact_recovery_condition_guidance:
         group_highlight_html = "".join(
@@ -4585,7 +4586,7 @@ def render_strategy_execution_command_card(
             {condition_rows}
           </div>
         """
-    evidence_validation_html = "".join(
+    evidence_validation_html = "" if home_compact else "".join(
         f"<div class='cc-strategy-condition {_tone_to_strategy_class(item.get('tone'))}'>"
         f"<div class='cc-strategy-label'>P{escape(str(item.get('priority') or 3))} · {escape(str(item.get('label') or '证据'))}</div>"
         f"<div class='cc-strategy-text'>{escape(str(item.get('check_text') or '待验证。'))}</div>"
@@ -4595,7 +4596,7 @@ def render_strategy_execution_command_card(
         if isinstance(item, dict)
     )
     evidence_gate_html = ""
-    if evidence_card:
+    if evidence_card and not home_compact:
         evidence_gate_html = f"""
           <div class="cc-strategy-condition {_tone_to_strategy_class(evidence_card.get('tone'))}">
             <div class="cc-strategy-label">A股证据门槛 · {escape(str(evidence_card.get('status_label') or '待验证'))}</div>
@@ -4621,6 +4622,13 @@ def render_strategy_execution_command_card(
         f"<span class='cc-strategy-pill {_tone_to_strategy_class(flag)}'>{escape(text)}</span>"
         for text, flag in pill_items
     )
+    evidence_section_html = "" if home_compact else f"""
+      <div class="cc-strategy-section-title">证据验证重点 · {escape(validation_title)}</div>
+      {projection_confidence_html}
+      {evidence_gate_html}
+      <div class="cc-strategy-condition-grid">{evidence_validation_html}</div>
+    """
+    source_footer = "" if home_compact else f"来源：{escape(str(vm.get('source_text') or 'strategy_execution_service / session_state cache'))} ｜"
     html = f"""
     <section class="cc-strategy-card">
       <div class="cc-strategy-head">
@@ -4632,11 +4640,11 @@ def render_strategy_execution_command_card(
           <div class="cc-muted-note">{escape(str(vm.get("readiness_text") or ""))}</div>
           <div class="cc-strategy-pill-row">{pill_html}</div>
         </div>
-        <aside class="cc-strategy-side">
+        <div class="cc-strategy-side">
           <div class="cc-strategy-side-label">置信度</div>
           <div class="cc-strategy-confidence">{escape(confidence)}</div>
           <div class="cc-muted-note">证据门槛：{escape(evidence_gate)}。不放大确定性；缺少量化、纪律或 A股证据时，只能作为待验证路径。</div>
-        </aside>
+        </div>
       </div>
       <div class="cc-strategy-budget-grid">{budget_html}</div>
       <div class="cc-strategy-section-title">操作条件</div>
@@ -4644,10 +4652,7 @@ def render_strategy_execution_command_card(
       {guidance_html}
       {a_share_evidence_group_guidance_html}
       {a_share_fact_recovery_condition_html}
-      <div class="cc-strategy-section-title">证据验证重点 · {escape(validation_title)}</div>
-      {projection_confidence_html}
-      {evidence_gate_html}
-      <div class="cc-strategy-condition-grid">{evidence_validation_html}</div>
+      {evidence_section_html}
       <div class="cc-strategy-section-title">未来 5-10 日路径</div>
       <div class="cc-strategy-path-grid">{path_html}</div>
       <div class="cc-strategy-foot-grid">
@@ -4664,7 +4669,7 @@ def render_strategy_execution_command_card(
       <div class="cc-strategy-status-row">{status_html}</div>
       <div class="cc-strategy-foot">
         最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
-        来源：{escape(str(vm.get("source_text") or "strategy_execution_service / session_state cache"))} ｜
+        {source_footer}
         {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
         <br>{escape(str(vm.get("user_boundary_text") or ""))}
       </div>
@@ -4677,6 +4682,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
     _inject_command_center_css()
     payload = packet or {}
     vm = decision_view_model or build_decision_summary_view_model(payload)
+    home_compact = bool(vm.get("home_compact"))
     status = str(vm.get("status") or "waiting")
     projection_confidence = vm.get("projection_confidence_summary") or {}
     tiles = [
@@ -4710,7 +4716,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         "</span>"
         for item in (vm.get("evidence_chain_items") or [])[:6]
     )
-    a_share_data_basis_items = vm.get("a_share_data_basis_items") or []
+    a_share_data_basis_items = [] if home_compact else (vm.get("a_share_data_basis_items") or [])
     a_share_data_basis_html = "".join(
         f"<span class='cc-decision-chain-pill {escape(str(item.get('tone') or 'muted'))}'>"
         f"{escape(str(item.get('label') or 'A股数据'))}：{escape(str(item.get('value') or '待验证'))}"
@@ -4719,7 +4725,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
     )
     if a_share_data_basis_html:
         a_share_data_basis_html = f"<div class='cc-decision-chain'>{a_share_data_basis_html}</div>"
-    a_share_fact_detail_items = vm.get("a_share_fact_recovery_detail_items") or []
+    a_share_fact_detail_items = [] if home_compact else (vm.get("a_share_fact_recovery_detail_items") or [])
     a_share_fact_detail_html = "".join(
         f"<span class='cc-decision-chain-pill {escape(str(item.get('tone') or 'muted'))}'>"
         f"{escape(str(item.get('label') or 'A股事实'))}：{escape(str(item.get('value') or '待验证'))}"
@@ -4732,7 +4738,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             f"<div class='cc-decision-chain'>{a_share_fact_detail_html}"
             f"<span class='cc-decision-chain-pill muted'>{escape(guardrail_text)}</span></div>"
         )
-    a_share_evidence_group = vm.get("a_share_evidence_group_basis_item") or {}
+    a_share_evidence_group = {} if home_compact else (vm.get("a_share_evidence_group_basis_item") or {})
     a_share_evidence_group_html = ""
     if a_share_evidence_group:
         a_share_evidence_group_html = (
@@ -4743,7 +4749,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             f"<span class='cc-decision-chain-pill muted'>{escape(str(a_share_evidence_group.get('guardrail') or '证据分组待验证。'))}</span>"
             "</div>"
         )
-    recovery_timeline_basis = vm.get("recovery_timeline_basis_item") or {}
+    recovery_timeline_basis = {} if home_compact else (vm.get("recovery_timeline_basis_item") or {})
     recovery_timeline_basis_html = ""
     if recovery_timeline_basis:
         recovery_timeline_basis_html = (
@@ -4754,6 +4760,33 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             f"<span class='cc-decision-chain-pill muted'>{escape(str(recovery_timeline_basis.get('guardrail') or '未恢复项不能作为已验证依据。'))}</span>"
             "</div>"
         )
+    extra_decision_chain_html = (
+        ""
+        if home_compact
+        else f"{a_share_data_basis_html}{a_share_fact_detail_html}{a_share_evidence_group_html}{recovery_timeline_basis_html}"
+    )
+    if home_compact:
+        foot_html = f"""
+      <div class="cc-decision-foot">
+        状态：{escape(status)} ｜ 最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
+        {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
+        <br>{escape(str(vm.get("evidence_summary_text") or ""))}
+        <br>趋势推演：{escape(str(projection_confidence.get("summary") or "路径待生成"))}
+      </div>
+        """
+    else:
+        foot_html = f"""
+      <div class="cc-decision-foot">
+        状态：{escape(status)} ｜ 最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
+        来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
+        <br>{escape(str(vm.get("evidence_summary_text") or ""))}
+        <br>A股证据雷达：{escape(str(vm.get("a_share_evidence_summary_text") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
+        <br>A股证据分组：{escape(str(vm.get("a_share_evidence_group_summary_text") or "A股证据分组待生成"))}
+        <br>A股数据能力：{escape(str(vm.get("a_share_data_basis_summary_text") or "待检测"))}
+        <br>A股事实回流：{escape(str(vm.get("a_share_fact_recovery_summary_text") or "待检测"))}
+        <br>趋势推演：{escape(str(projection_confidence.get("summary") or "路径待生成"))}
+      </div>
+        """
     html = f"""
     <section class="cc-decision-hero">
       <div class="cc-decision-top">
@@ -4768,17 +4801,13 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
             <span class="cc-decision-badge">路径：{escape(str(projection_confidence.get("label") or "路径待生成"))}</span>
             <span class="cc-decision-badge">{escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}</span>
           </div>
-          <div class="cc-decision-chain">{evidence_chain_html}</div>
-          {a_share_data_basis_html}
-          {a_share_fact_detail_html}
-          {a_share_evidence_group_html}
-          {recovery_timeline_basis_html}
+          <div class="cc-decision-chain">{evidence_chain_html}</div>{extra_decision_chain_html}
         </div>
-        <aside class="cc-decision-risk">
+        <div class="cc-decision-risk">
           <div class="cc-decision-risk-label">风险等级</div>
           <div class="cc-decision-risk-value">{escape(str(vm.get("risk_label") or "中"))}</div>
           <div class="cc-muted-note">{escape(str(vm.get("stale_note") or vm.get("empty_message") or ""))}</div>
-        </aside>
+        </div>
       </div>
       <div class="cc-decision-grid">{tile_html}</div>
       <div class="cc-decision-lists">
@@ -4792,16 +4821,7 @@ def render_command_center_decision_hero(packet: dict | None = None, decision_vie
         </div>
       </div>
       <div class="cc-coverage-grid">{coverage_html}</div>
-      <div class="cc-decision-foot">
-        状态：{escape(status)} ｜ 最后更新时间：{escape(str(vm.get("updated_text") or "暂无"))} ｜
-        来源：{escape(str(vm.get("source_text") or "command_center_decision_engine"))} ｜ {escape(str(vm.get("deepseek_text") or "DeepSeek：未调用"))}
-        <br>{escape(str(vm.get("evidence_summary_text") or ""))}
-        <br>A股证据雷达：{escape(str(vm.get("a_share_evidence_summary_text") or "支持 0｜阻断 0｜缓存 0｜缺失 0"))}
-        <br>A股证据分组：{escape(str(vm.get("a_share_evidence_group_summary_text") or "A股证据分组待生成"))}
-        <br>A股数据能力：{escape(str(vm.get("a_share_data_basis_summary_text") or "待检测"))}
-        <br>A股事实回流：{escape(str(vm.get("a_share_fact_recovery_summary_text") or "待检测"))}
-        <br>趋势推演：{escape(str(projection_confidence.get("summary") or "路径待生成"))}
-      </div>
+      {foot_html}
     </section>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -7164,6 +7184,70 @@ def _projection_status_label(status):
     }.get(str(status or ""), "待刷新")
 
 
+_PROJECTION_HOME_COMPACT_INTERNAL_TERMS = (
+    "provider",
+    "Provider",
+    "packet",
+    "Packet",
+    "恢复入口",
+    "权限",
+    "缓存路径",
+    "旧能力链",
+    "旧工具",
+    "A股事实",
+    "事实回流",
+    "接口健康",
+    "数据能力",
+    "Tushare",
+    "AkShare",
+    "Supabase",
+    "yfinance",
+    "缺失证据",
+    "待手动",
+    "未刷新",
+    "接口",
+    "旧能力",
+)
+
+
+def _projection_home_compact_has_internal_text(value):
+    text = str(value or "")
+    return any(term in text for term in _PROJECTION_HOME_COMPACT_INTERNAL_TERMS)
+
+
+def _projection_home_compact_text(value, fallback):
+    text = str(value or "").strip()
+    if not text or len(text) > 120 or _projection_home_compact_has_internal_text(text):
+        return fallback
+    return text
+
+
+def _projection_home_compact_paths(paths):
+    compact_paths = []
+    fallback_triggers = {
+        "乐观": "价格站稳关键位，量能与纪律条件同向后再考虑小幅试探。",
+        "中性": "信号仍有分歧时继续观察，等待下一次明确触发。",
+        "谨慎": "价格或纪律转弱时先降风险、保现金。",
+    }
+    for raw in (paths or [])[:3]:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "路径")
+        fallback_trigger = next(
+            (text for key, text in fallback_triggers.items() if key in name),
+            "等待价格、量能和纪律条件确认。",
+        )
+        compact_paths.append(
+            {
+                **raw,
+                "trigger": _projection_home_compact_text(raw.get("trigger") or raw.get("condition"), fallback_trigger),
+                "action": _projection_home_compact_text(raw.get("action"), "只观察或按纪律小幅试探。"),
+                "risk": _projection_home_compact_text(raw.get("risk") or raw.get("risk_note"), "若价格或纪律转弱，优先降风险。"),
+            }
+        )
+    return compact_paths
+
+
 def _projection_path_cards(paths):
     tones = ["green", "blue", "orange"]
     for col, item, tone in zip(st.columns(3), (paths or [])[:3], tones):
@@ -7191,6 +7275,52 @@ def _analysis_status_class(status):
     if text == "不适用":
         return "na"
     return "pending"
+
+
+def render_home_analysis_methods_strip(view_model: dict | None = None):
+    _inject_command_center_css()
+    payload = view_model or {}
+    methods = [item for item in (payload.get("method_items") or []) if isinstance(item, dict)]
+    focus_items = [str(item).strip() for item in (payload.get("focus_items") or []) if str(item).strip()]
+    risk_items = [str(item).strip() for item in (payload.get("risk_items") or []) if str(item).strip()]
+    counts = payload.get("status_counts") if isinstance(payload.get("status_counts"), dict) else {}
+    method_html = ""
+    for item in methods[:4]:
+        status = str(item.get("status") or "待验证")
+        status_class = _analysis_status_class(status)
+        method_html += (
+            f"<div class='cc-analysis-method {status_class}'>"
+            f"<div class='cc-analysis-method-title'>{escape(str(item.get('name') or '分析方法'))}</div>"
+            f"<span class='cc-analysis-status {status_class}'>{escape(status)}</span>"
+            f"<div class='cc-analysis-line'><span>适配</span> {escape(str(item.get('fit') or '待适配'))}</div>"
+            f"<div class='cc-analysis-line'><span>动作</span> {escape(str(item.get('action_hint') or '待验证后再行动。'))}</div>"
+            "</div>"
+        )
+    focus_html = " ".join(f"<span class='cc-analysis-status pending'>{escape(item)}</span>" for item in focus_items[:5])
+    risk_html = " ".join(f"<span class='cc-analysis-status failed'>{escape(item)}</span>" for item in risk_items[:4])
+    html = f"""
+    <section class="cc-analysis-card">
+      <div class="cc-analysis-head">
+        <div>
+          <div class="cc-analysis-kicker">Market Profile</div>
+          <h2 class="cc-analysis-title">{escape(str(payload.get("headline") or "市场口径待确认"))}</h2>
+          <div class="cc-analysis-summary">{escape(str(payload.get("summary") or "等待数据刷新，不把通用框架当成完整结论。"))}</div>
+        </div>
+        <div class="cc-analysis-market">{escape(str(payload.get("market") or "未知"))}</div>
+      </div>
+      <div class="cc-analysis-method-grid">{method_html}</div>
+      <div class="cc-analysis-line"><span>关注</span> {focus_html or "趋势 / 量价 / 风险预算"}</div>
+      <div class="cc-analysis-line"><span>风险</span> {risk_html or "数据缺口"}</div>
+      <div class="cc-analysis-foot">
+        已刷新模块 {escape(str(counts.get("ready_modules", 0)))} ｜
+        使用缓存 {escape(str(counts.get("cached_modules", 0)))} ｜
+        待验证方法 {escape(str(counts.get("pending_methods", 0)))} ｜
+        {escape(str(payload.get("next_action") or "先刷新基础数据，再进入综合推演。"))} ｜
+        {escape(str(payload.get("deepseek_text") or "DeepSeek：未调用"))}
+      </div>
+    </section>
+    """
+    _render_html(html)
 
 
 def render_analysis_methods_card(packet: dict | None = None):
@@ -7661,7 +7791,7 @@ def _projection_static_frame(packet):
     return pd.DataFrame.from_dict(rows, orient="index").sort_index()
 
 
-def render_command_center_projection_chart(projection_packet: dict | None = None):
+def render_command_center_projection_chart(projection_packet: dict | None = None, home_compact=False):
     _inject_command_center_css()
     payload = projection_packet or {}
     paths = payload.get("paths") or []
@@ -7705,6 +7835,17 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         "danger": "orange",
         "missing": "gray",
     }.get(fact_tone, "gray")
+    if home_compact:
+        paths = _projection_home_compact_paths(paths)
+        note = _projection_home_compact_text(note, "基于当前持仓与已生成结论的条件化路径。")
+        source = "综合中心本地趋势"
+        data_capability_summary = ""
+        evidence_group_summary = ""
+        evidence_group_items = []
+        fact_recovery_items = []
+        fact_recovery_detail_items = []
+        fact_recovery_summary = ""
+        legacy_chain_summary = ""
     fact_pills_html = ""
     for item in fact_recovery_items[:5]:
         item_tone = str(item.get("tone") or "missing")
@@ -7967,10 +8108,13 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
             st.info("暂无路径数据，点击刷新今日基础数据生成。")
         else:
             st.line_chart(frame, height=320)
-    st.caption(
-        f"路径依据来自：{payload.get('path_basis') or '市场类型待确认 / 数据待验证'} ｜ "
-        f"路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。来源：{source}"
-    )
+    if home_compact:
+        st.caption("路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。DeepSeek：未调用")
+    else:
+        st.caption(
+            f"路径依据来自：{payload.get('path_basis') or '市场类型待确认 / 数据待验证'} ｜ "
+            f"路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。来源：{source}"
+        )
     _projection_path_cards(paths)
 
 
