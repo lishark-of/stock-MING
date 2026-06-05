@@ -4788,7 +4788,7 @@ def build_tool_recovery_navigation_state(action: Any = None) -> dict:
         "command_center_last_tool_recovery_writes_packet": _to_text(item.get("writes_packet")),
         "command_center_last_tool_recovery_target_tab": legacy_tab,
         "command_center_last_tool_recovery_source_type": _to_text(item.get("source_type"), "recovery"),
-        "command_center_last_tool_recovery_source_label": _to_text(item.get("source_label"), "首页恢复队列"),
+        "command_center_last_tool_recovery_source_label": _to_text(item.get("source_label"), "待补数据"),
         "command_center_last_tool_recovery_provider_dependencies": provider_dependencies,
         "command_center_last_tool_recovery_provider_dependency_summary": _to_text(item.get("provider_dependency_summary")),
         "command_center_last_tool_recovery_packet_route_summary": _to_text(item.get("packet_route_summary")),
@@ -4823,7 +4823,7 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         state_map.get("command_center_last_tool_recovery_target_tab"),
         _to_text(state_map.get("legacy_workspace_selected_tab"), selected),
     )
-    source_label = _to_text(state_map.get("command_center_last_tool_recovery_source_label"), "首页恢复队列")
+    source_label = _to_text(state_map.get("command_center_last_tool_recovery_source_label"), "待补数据")
     priority_label = _to_text(state_map.get("command_center_last_tool_recovery_priority_label"))
     decision_mode = _to_text(state_map.get("command_center_last_tool_recovery_decision_mode"))
     decision_impact = _to_text(
@@ -4837,7 +4837,7 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
     )
     packet_route_summary = _to_text(
         state_map.get("command_center_last_tool_recovery_packet_route_summary"),
-        f"{label} → {writes_packet} → Home Action Snapshot",
+        f"{label} → 结果缓存 → 综合推演中心",
     )
     provider_decision_impact = _to_text(
         state_map.get("command_center_last_tool_recovery_provider_decision_impact"),
@@ -4847,24 +4847,22 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
     recovery_steps = _as_list(state_map.get("command_center_last_tool_recovery_recovery_steps"))
     button_context = _to_text(
         state_map.get("command_center_last_tool_recovery_button_context"),
-        f"按钮只恢复 {label} 并回流 {writes_packet}；不会自动调用 DeepSeek、回测或全市场扫描。",
+        f"点击本模块按钮后同步到综合中心；不会自动调用 DeepSeek、回测或全市场扫描。",
     )
     navigation_label = _to_text(
         state_map.get("command_center_last_tool_recovery_navigation_label"),
-        f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{target_tab}；手动执行后回流 {writes_packet}。",
+        f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{target_tab}；手动执行后同步到综合中心。",
     )
     is_target_tab = selected == target_tab
-    source_prefix = f"{source_label}｜" if source_label else ""
-    priority_prefix = f"{priority_label}｜" if priority_label else ""
     if is_target_tab:
-        message = f"你是从首页{source_prefix}{priority_prefix}进入“{target_tab}”；请在本模块手动点击对应按钮恢复 {writes_packet}。"
+        message = f"{label} 需要在“{target_tab}”补充；请点击本模块对应按钮。"
         action_hint = f"{button_context}｜这里只是导航提示，不会自动运行扫描、回测、DeepSeek 或重型数据接口。"
     else:
-        message = f"首页{source_prefix}{priority_prefix}目标是“{target_tab}”，当前在“{selected}”；请先切回“{target_tab}”再恢复 {writes_packet}。"
+        message = f"当前在“{selected}”，目标模块是“{target_tab}”。"
         action_hint = "当前模块不会显示该恢复按钮；这仍然只是导航提示，不会自动运行任何重型任务。"
     return {
         "status": "ready",
-        "title": "来自首页恢复队列",
+        "title": "待补数据",
         "label": label,
         "provider": provider,
         "api": api,
@@ -4886,7 +4884,7 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
         "navigation_label": navigation_label,
         "message": message,
         "action_hint": action_hint,
-        "safety_text": "恢复成功后的结构化结果会回流到 Home Action Snapshot。",
+        "safety_text": "补齐成功后的结构化结果会同步到综合中心。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
     }
@@ -5013,7 +5011,7 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
             "selected_tab": context["selected_tab"],
             "target_tab": context["target_tab"],
             "writes_packet": context["writes_packet"],
-            "message": f"当前在“{context['selected_tab']}”；请先切回“{context['target_tab']}”再手动恢复 {context['writes_packet']}。",
+            "message": f"当前在“{context['selected_tab']}”；请先切回“{context['target_tab']}”再补齐这项数据。",
             "external_call_policy": "not_triggered",
             "deepseek_called": False,
         }
@@ -5033,7 +5031,7 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
             "check_key": provider_config["check_key"],
             "module_button_label": module_button_label,
             "module_button_key": _to_text(provider_config.get("module_button_key")),
-            "message": f"{provider_config['label']}已定位到“{context['target_tab']}”；请点击“{module_button_label}”，成功后回流 {writes_packet}。",
+            "message": f"{provider_config['label']}已定位到“{context['target_tab']}”；请点击“{module_button_label}”，成功后同步到综合中心。",
             "help_text": _to_text(
                 provider_config.get("help_text"),
                 f"{provider_config['label']}需要使用模块内按钮手动恢复；不会自动运行 DeepSeek、回测、全市场扫描或批量刷新。",
@@ -5048,7 +5046,7 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
             "label": context["label"],
             "selected_tab": context["selected_tab"],
             "writes_packet": writes_packet,
-            "message": f"{writes_packet} 还没有绑定单项检测按钮；请在当前高级工具模块手动查找对应刷新入口。",
+            "message": "这项结果缓存还没有绑定单项检测按钮；请在当前高级工具模块手动查找对应刷新入口。",
             "external_call_policy": "not_triggered",
             "deepseek_called": False,
         }
@@ -5063,7 +5061,7 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
             "check_key": config["check_key"],
             "module_button_label": module_button_label,
             "module_button_key": _to_text(config.get("module_button_key")),
-            "message": f"{config['label']}已定位到本模块恢复入口；请点击“{module_button_label}”，成功后回流 {writes_packet}。",
+            "message": f"{config['label']}已定位到本模块补数据入口；请点击“{module_button_label}”，成功后同步到综合中心。",
             "help_text": _to_text(
                 config.get("help_text"),
                 f"{config['label']}需要使用模块内按钮手动恢复；不会自动运行 DeepSeek、回测、全市场扫描或批量刷新。",
@@ -5081,7 +5079,7 @@ def build_tool_recovery_manual_check_hint(state: Any = None, selected_tab: Any =
         "button_label": config["button_label"],
         "status_label": config["status_label"],
         "result_label": config["result_label"],
-        "help_text": f"只检测 {config['label']} 并回流 {writes_packet}；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。",
+        "help_text": f"只检测 {config['label']} 并同步到综合中心；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。",
         "external_call_policy": "button_gated",
         "deepseek_called": False,
     }
@@ -5573,7 +5571,7 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
         "对应手动按钮",
     )
     manual_button_key = _to_text(config.get("module_button_key") or config.get("check_key"))
-    recovery_route = f"{context['target_tab']} → {manual_button_label} → {writes_packet} → 综合推演中心"
+    recovery_route = f"{context['target_tab']} → {manual_button_label} → 结果缓存 → 综合推演中心"
     if not context.get("is_target_tab", True):
         return {
             "status": "waiting",
@@ -5582,17 +5580,17 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
             "selected_tab": context["selected_tab"],
             "target_tab": context["target_tab"],
             "writes_packet": context["writes_packet"],
-            "message": f"当前在“{context['selected_tab']}”，首页恢复队列目标是“{context['target_tab']}”。",
+            "message": f"当前在“{context['selected_tab']}”，目标模块是“{context['target_tab']}”。",
             "next_action": f"请切回“{context['target_tab']}”后手动运行对应按钮；不会自动执行旧工具。",
-            "confirmation_text": f"尚未进入目标模块；恢复路径：{recovery_route}。",
+            "confirmation_text": f"尚未进入目标模块；技术路径已收起到诊断详情。",
             "recovery_state_label": "待验证",
             "packet_status_label": "待验证",
             "manual_button_label": manual_button_label,
             "manual_button_key": manual_button_key,
             "recovery_route": recovery_route,
-            "return_home_action": "恢复完成后返回综合推演中心 2.0 查看 Home Action Snapshot。",
+            "return_home_action": "补齐完成后返回综合推演中心 2.0 复核今日总决策和证据链。",
             "updated_at": "",
-            "source": "首页恢复队列",
+            "source": "待补数据",
             "deepseek_called": False,
             "external_call_policy": "not_triggered",
         }
@@ -5604,26 +5602,26 @@ def build_tool_recovery_result_notice(state: Any = None, selected_tab: Any = "")
     source = _to_text(packet.get("source"), context["selected_tab"])
     if recovery_state == "recovered":
         status = "recovered"
-        title = "恢复结果已回流"
-        message = f"{context['label']} 已写入 {writes_packet}；首页快照会读取该结构化结果。"
-        next_action = "返回综合推演中心 2.0 后查看 Home Action Snapshot。"
-        confirmation_text = f"{context['label']} → {writes_packet}：{display_state['label']}；综合中心可读取这项结构化结果。"
-        return_home_action = "返回综合推演中心 2.0，复核 Home Action Snapshot、今日总决策和证据链。"
+        title = "数据已同步"
+        message = f"{context['label']} 已同步到综合中心；可返回综合推演中心复核。"
+        next_action = "返回综合推演中心 2.0 后复核今日总决策和证据链。"
+        confirmation_text = f"{context['label']} → 结果缓存：{display_state['label']}；综合中心可读取这项结构化结果。"
+        return_home_action = "返回综合推演中心 2.0，复核今日总决策和证据链。"
     elif recovery_state == "blocked":
         status = "blocked"
         title = "恢复结果仍受限"
         reason = _to_text(packet.get("risk_note") or packet.get("message") or packet.get("summary"), "接口权限、积分、网络或交易日状态仍待处理。")
-        message = f"{context['label']} 仍未形成可用回流：{reason}"
+        message = f"{context['label']} 仍未形成可用数据：{reason}"
         next_action = "先检查权限/积分/交易日/网络；不要把缺失数据当作利好或安全信号。"
-        confirmation_text = f"{context['label']} → {writes_packet}：{display_state['label']}；缺口仍会限制综合中心结论。"
+        confirmation_text = f"{context['label']} → 结果缓存：{display_state['label']}；缺口仍会限制综合中心结论。"
         return_home_action = "回综合推演中心时继续按待验证处理，不要把该项视作已恢复。"
     else:
         status = "waiting"
         title = "恢复结果待验证"
-        message = f"尚未检测到 {writes_packet} 的可读结果；请在“{context['selected_tab']}”中手动运行对应按钮。"
+        message = f"尚未检测到可读结果；请在“{context['selected_tab']}”中手动运行对应按钮。"
         next_action = "运行完成后不要刷新外部重接口，先确认本模块是否显示缓存/已刷新状态。"
-        confirmation_text = f"{context['label']} → {writes_packet}：待验证；请点击“{manual_button_label}”后确认是否写回。"
-        return_home_action = "按钮运行完成后返回综合推演中心 2.0 查看是否回流。"
+        confirmation_text = f"{context['label']} → 结果缓存：待验证；请点击“{manual_button_label}”后确认是否同步。"
+        return_home_action = "按钮运行完成后返回综合推演中心 2.0 查看是否同步。"
     return {
         "status": status,
         "title": title,

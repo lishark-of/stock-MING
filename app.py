@@ -5144,29 +5144,69 @@ def _clear_command_center_tool_recovery_notice_state():
         st.session_state.pop(recovery_key, None)
 
 
+def _tool_recovery_user_message(notice, manual_check_hint=None, result_notice=None):
+    payload = notice if isinstance(notice, dict) else {}
+    hint = manual_check_hint if isinstance(manual_check_hint, dict) else {}
+    result = result_notice if isinstance(result_notice, dict) else {}
+    label = str(payload.get("label") or hint.get("label") or "这项数据").strip()
+    target_tab = str(payload.get("target_tab") or hint.get("target_tab") or payload.get("selected_tab") or "对应模块").strip()
+    selected_tab = str(payload.get("selected_tab") or "").strip()
+    button_label = str(
+        hint.get("module_button_label")
+        or hint.get("button_label")
+        or result.get("manual_button_label")
+        or "刷新"
+    ).strip()
+    if result.get("status") == "recovered":
+        return f"{label} 已同步到综合中心；可返回综合推演中心复核。"
+    if label == "融资 ETF" or target_tab == "融资 ETF":
+        if selected_tab and selected_tab != target_tab:
+            return f"当前在“{selected_tab}”，目标模块是“{target_tab}”。"
+        return f"融资 ETF 数据未刷新。请点击“{button_label}”；不会调用 DeepSeek。"
+    if label == "量化推演" or target_tab == "量化推演":
+        if selected_tab and selected_tab != target_tab:
+            return f"当前在“{selected_tab}”，目标模块是“{target_tab}”。"
+        return "量化推演已有缓存，可直接生成新推演；不会自动调用 DeepSeek。"
+    if label == "龙虎榜":
+        return "龙虎榜数据待验证，可展开技术诊断或重新检测。"
+    if selected_tab and target_tab and selected_tab != target_tab:
+        return f"当前在“{selected_tab}”，目标模块是“{target_tab}”。"
+    return f"{label} 数据待补。请点击“{button_label}”；不会调用 DeepSeek。"
+
+
 def render_legacy_tool_recovery_notice_panel(recovery_notice, *, legacy_tab=""):
     notice = recovery_notice if isinstance(recovery_notice, dict) else {}
     if not notice:
         return
     label = notice.get("label") or legacy_tab or "旧工具能力"
-    writes_packet = notice.get("writes_packet") or "command_center_packet"
-    st.caption(
-        f"恢复提示：{label} → {writes_packet} 已折叠；这是从首页进入旧工具的导航记录，不会自动运行扫描、回测或 DeepSeek。"
+    recovery_result_notice = home_snapshot_service.build_tool_recovery_result_notice(
+        st.session_state,
+        selected_tab=legacy_tab,
     )
-    with st.expander(f"首页恢复提示｜{label}", expanded=False):
-        st.info(notice["message"])
-        recovery_context_bits = [
-            notice.get("priority_label"),
-            notice.get("decision_mode"),
-            notice.get("recovery_mode_label"),
-        ]
-        recovery_context_text = "｜".join(str(item) for item in recovery_context_bits if item)
-        if recovery_context_text:
-            st.caption(f"恢复上下文：{recovery_context_text}")
-        st.caption(f"{notice['action_hint']}｜{notice['safety_text']}")
-        recovery_result_notice = home_snapshot_service.build_tool_recovery_result_notice(
-            st.session_state,
-            selected_tab=legacy_tab,
+    manual_check_hint = home_snapshot_service.build_tool_recovery_manual_check_hint(
+        st.session_state,
+        selected_tab=legacy_tab,
+    )
+    target_tab = str(notice.get("target_tab") or manual_check_hint.get("target_tab") or legacy_tab or "").strip()
+    selected_tab = str(notice.get("selected_tab") or legacy_tab or "").strip()
+    user_message = _tool_recovery_user_message(
+        notice,
+        manual_check_hint=manual_check_hint,
+        result_notice=recovery_result_notice,
+    )
+    st.caption(f"待补数据：{user_message}")
+    if target_tab and selected_tab and selected_tab != target_tab:
+        switch_col, ignore_col, _ = st.columns([1, 1, 4])
+        if switch_col.button(f"切到{target_tab}", key=f"btn_switch_tool_recovery_{target_tab}"):
+            st.session_state["legacy_workspace_selected_tab"] = target_tab
+            st.rerun()
+        if ignore_col.button("忽略本次", key="btn_ignore_tool_recovery_notice"):
+            _clear_command_center_tool_recovery_notice_state()
+            st.rerun()
+    with st.expander("查看技术诊断", expanded=False):
+        st.caption(
+            f"原始提示：{notice.get('message') or '暂无'}｜"
+            f"{notice.get('action_hint') or ''}｜{notice.get('safety_text') or ''}"
         )
         if recovery_result_notice.get("status") == "recovered":
             st.success(recovery_result_notice["message"])
@@ -5175,17 +5215,13 @@ def render_legacy_tool_recovery_notice_panel(recovery_notice, *, legacy_tab=""):
         elif recovery_result_notice:
             st.warning(recovery_result_notice["message"])
             st.caption(recovery_result_notice["next_action"])
-        manual_check_hint = home_snapshot_service.build_tool_recovery_manual_check_hint(
-            st.session_state,
-            selected_tab=legacy_tab,
-        )
         if manual_check_hint.get("available"):
             st.caption(manual_check_hint.get("message") or manual_check_hint.get("help_text") or "当前模块已接入单项检测状态。")
         elif manual_check_hint:
             st.caption(manual_check_hint["message"])
             if manual_check_hint.get("module_button_hint"):
                 st.caption(manual_check_hint.get("help_text", ""))
-        st.markdown("##### 诊断详情")
+        st.markdown("##### 工程细节")
         if notice.get("provider_dependency_summary"):
             st.caption(f"provider 依赖：{notice['provider_dependency_summary']}")
         if notice.get("packet_route_summary"):
@@ -5197,7 +5233,7 @@ def render_legacy_tool_recovery_notice_panel(recovery_notice, *, legacy_tab=""):
         recovery_steps = notice.get("recovery_steps") or []
         if recovery_steps:
             st.caption("恢复路径：" + " → ".join(str(step) for step in recovery_steps if step))
-        if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):
+        if st.button("忽略本次", key="btn_clear_home_tool_recovery_notice"):
             _clear_command_center_tool_recovery_notice_state()
             st.rerun()
 

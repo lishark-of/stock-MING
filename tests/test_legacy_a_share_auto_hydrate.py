@@ -250,9 +250,23 @@ class LegacyAShareAutoHydrateTests(unittest.TestCase):
         function_start = source.index("def render_legacy_tool_recovery_notice_panel")
         function_source = source[function_start:source.index("def render_legacy_a_share_gap_recovery_panel", function_start)]
 
-        self.assertIn('with st.expander(f"首页恢复提示｜{label}", expanded=False):', function_source)
-        self.assertIn("不会自动运行扫描、回测或 DeepSeek", function_source)
+        self.assertIn('st.caption(f"待补数据：{user_message}")', function_source)
+        self.assertIn('switch_col.button(f"切到{target_tab}"', function_source)
+        self.assertIn('ignore_col.button("忽略本次"', function_source)
+        self.assertIn('with st.expander("查看技术诊断", expanded=False):', function_source)
+        self.assertIn("provider 依赖", function_source)
+        self.assertIn("packet 路由", function_source)
         self.assertNotIn("_run_legacy_a_share_auto_hydrate(", function_source)
+
+    def test_legacy_tool_recovery_user_message_hides_internal_terms(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+        function_start = source.index("def _tool_recovery_user_message")
+        function_source = source[function_start:source.index("def render_legacy_tool_recovery_notice_panel", function_start)]
+
+        self.assertIn("当前在“{selected_tab}”，目标模块是“{target_tab}”。", function_source)
+        self.assertIn("已同步到综合中心", function_source)
+        self.assertNotIn("command_center_", function_source)
+        self.assertNotIn("Home Action Snapshot", function_source)
 
 
 if __name__ == "__main__":
