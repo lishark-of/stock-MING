@@ -5236,6 +5236,445 @@ def _run_command_center_full_war_game(target="", market_type="", position_profil
     return summary, live_packet, decision_packet, strategy_packet, projection_packet
 
 
+def _enrich_position_profile_for_command_center(profile=None, *, horizon="", margin_ratio_pct=0):
+    enriched = dict(profile or {})
+    margin_ratio = _num(margin_ratio_pct, 0) or 0
+    enriched["analysis_horizon"] = horizon or enriched.get("analysis_horizon") or "短中期"
+    enriched["margin_ratio_pct"] = round(margin_ratio, 2)
+    enriched["margin_ratio"] = round(margin_ratio / 100, 4)
+    if margin_ratio > 0:
+        enriched["margin_note"] = f"当前输入融资比例 {margin_ratio:.1f}%，综合推演仅用于风险预算，不自动下单或融资。"
+    else:
+        enriched["margin_note"] = "未输入融资比例，按普通持仓风险预算处理。"
+    return enriched
+
+
+def _run_command_center_analysis_chain(target="", market_type="", position_profile=None, *, refresh_level=None, status=None):
+    refresh_level = refresh_level or cc_service.REFRESH_LEVEL_MANUAL_BASIC
+    errors = []
+
+    def _status_write(message):
+        if status is not None:
+            status.write(message)
+
+    try:
+        live_packet = build_command_center_live_packet(target=target, refresh_level=refresh_level)
+        live_packet["data_capability"] = _get_command_center_data_capability_packet()
+        _status_write("已聚合本地缓存与上次成功数据；DeepSeek：未调用。")
+    except Exception as exc:
+        live_packet = {"refresh_level": refresh_level, "status": "partial_failed", "last_error": str(exc)}
+        errors.append(f"本地数据聚合失败：{exc}")
+
+    try:
+        strategy_packet = strategy_service.safe_generate_strategy_execution_packet(
+            st.session_state,
+            target=target,
+            position_profile=position_profile,
+            live_packet=live_packet,
+        )
+        live_packet = cc_state_adapter.attach_command_center_child_packets_for_display(
+            live_packet,
+            strategy_execution_packet=strategy_packet,
+        )
+        _status_write("已生成策略执行建议；DeepSeek：未调用。")
+    except Exception as exc:
+        strategy_packet = _get_strategy_execution_display_packet()
+        errors.append(f"策略执行建议失败：{exc}")
+
+    try:
+        decision_packet, live_packet = _generate_command_center_decision(live_packet)
+        _status_write("已生成今日总决策；DeepSeek：未调用。")
+    except Exception as exc:
+        decision_packet = _get_command_center_decision_display_packet()
+        errors.append(f"今日总决策失败：{exc}")
+
+    try:
+        home_snapshot = _persist_home_action_snapshot(
+            live_packet=live_packet,
+            target=target,
+            position_profile=position_profile,
+            strategy_packet=strategy_packet,
+            decision_packet=decision_packet,
+        )
+    except Exception as exc:
+        home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
+        errors.append(f"首页快照更新失败：{exc}")
+
+    try:
+        evidence_radar_packet = evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
+        analysis_method_packet = _build_analysis_methods_display_packet(
+            live_packet=live_packet,
+            target=target,
+            market_type=market_type,
+            home_snapshot=home_snapshot,
+        )
+        projection_packet = projection_service.build_projection_packet(
+            decision_packet=decision_packet,
+            strategy_packet=strategy_packet,
+            live_packet=live_packet,
+            home_snapshot=home_snapshot,
+            analysis_method_packet=analysis_method_packet,
+            evidence_radar_packet=evidence_radar_packet,
+            data_health_ledger=home_snapshot.get("data_health_ledger") if isinstance(home_snapshot, dict) else {},
+            horizon_days=10,
+        )
+        st.session_state["command_center_projection_packet"] = projection_packet
+        st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
+        st.session_state["command_center_evidence_radar_packet"] = evidence_radar_packet
+        _status_write("已生成未来 5-10 日趋势推演；DeepSeek：未调用。")
+    except Exception as exc:
+        evidence_radar_packet = st.session_state.get("command_center_evidence_radar_packet") or {}
+        analysis_method_packet = st.session_state.get("command_center_analysis_method_packet") or {}
+        projection_packet = st.session_state.get("command_center_projection_packet") or {}
+        errors.append(f"趋势推演失败：{exc}")
+
+    st.session_state["command_center_live_packet"] = live_packet
+    return {
+        "live_packet": live_packet,
+        "strategy_packet": strategy_packet,
+        "decision_packet": decision_packet,
+        "home_snapshot": home_snapshot,
+        "evidence_radar_packet": evidence_radar_packet,
+        "analysis_method_packet": analysis_method_packet,
+        "projection_packet": projection_packet,
+        "errors": errors,
+        "deepseek_called": False,
+    }
+
+
+def _apply_command_center_current_holding(
+    target="",
+    market_type="",
+    currency="",
+    position_status="",
+    cost_price=0,
+    holding_units=0,
+    capital_plan=0,
+    horizon="短中期",
+    margin_ratio_pct=0,
+    status=None,
+):
+    if status is not None:
+        status.write("正在读取当前标的行情；DeepSeek：未调用。")
+    try:
+        price_detail = get_current_price_detail(target, market_type)
+    except Exception as exc:
+        price_detail = {
+            "ticker": target,
+            "price": None,
+            "price_source": "unavailable",
+            "data_date": "",
+            "raw_source": "",
+            "warning": str(exc),
+        }
+    price = _num((price_detail or {}).get("price"))
+    effective_position_status = position_status
+    if _num(holding_units, 0) and str(position_status or "").startswith("未买入"):
+        effective_position_status = "已持有 (持仓/找卖点)"
+    position_profile = build_position_profile(
+        target,
+        price,
+        cost_price,
+        holding_units,
+        capital_plan,
+        effective_position_status,
+        currency,
+    )
+    position_profile = _enrich_position_profile_for_command_center(
+        position_profile,
+        horizon=horizon,
+        margin_ratio_pct=margin_ratio_pct,
+    )
+    position_profile["price_fetch_source"] = (price_detail or {}).get("price_source") or "unknown"
+    position_profile["price_fetch_warning"] = (price_detail or {}).get("warning") or ""
+    position_profile["price_data_date"] = (price_detail or {}).get("data_date") or ""
+    st.session_state["position_profile"] = position_profile
+    st.session_state["current_holding_context"] = position_profile
+    st.session_state["current_stock_code"] = target
+    st.session_state["command_center_direct_price_detail"] = price_detail
+    st.session_state["command_center_direct_analysis_target"] = target
+    st.session_state["command_center_direct_analysis_requested"] = True
+
+    analysis_packet = _run_command_center_analysis_chain(
+        target=target,
+        market_type=market_type,
+        position_profile=position_profile,
+        refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
+        status=status,
+    )
+    price_status = "available" if price is not None else "failed"
+    warning = (price_detail or {}).get("warning") or ""
+    summary = {
+        "target": target,
+        "generated_at": _cc_now(),
+        "price_status": price_status,
+        "price": price,
+        "price_source": (price_detail or {}).get("price_source") or "unknown",
+        "price_data_date": (price_detail or {}).get("data_date") or "",
+        "price_warning": warning,
+        "profit_state": position_profile.get("profit_state") or "未计算",
+        "pnl_amount": position_profile.get("pnl_amount"),
+        "pnl_pct": position_profile.get("pnl_pct"),
+        "holding_units": position_profile.get("holding_units"),
+        "cost_price": position_profile.get("cost_price"),
+        "analysis_horizon": position_profile.get("analysis_horizon"),
+        "margin_ratio_pct": position_profile.get("margin_ratio_pct"),
+        "strategy_action": (analysis_packet.get("strategy_packet") or {}).get("action")
+        or (analysis_packet.get("strategy_packet") or {}).get("overall_action")
+        or "等待",
+        "decision_action": (analysis_packet.get("decision_packet") or {}).get("overall_action") or "等待",
+        "projection_horizon_days": (analysis_packet.get("projection_packet") or {}).get("horizon_days") or 10,
+        "deepseek_called": False,
+        "deepseek_note": "本轮未调用 DeepSeek；解释入口仍需手动点击。",
+        "errors": analysis_packet.get("errors") or [],
+    }
+    if price is None and warning:
+        summary["errors"] = [f"行情读取失败：{warning}", *summary["errors"]]
+    packet = {
+        **analysis_packet,
+        "target": target,
+        "price_detail": price_detail,
+        "position_profile": position_profile,
+        "summary": summary,
+    }
+    st.session_state["command_center_direct_analysis_packet"] = packet
+    st.session_state["command_center_direct_analysis_summary"] = summary
+    return packet
+
+
+def _command_center_direct_packet_for_target(target=""):
+    packet = st.session_state.get("command_center_direct_analysis_packet") or {}
+    if isinstance(packet, dict) and str(packet.get("target") or "") == str(target or ""):
+        return packet
+    return {}
+
+
+def _display_text(value, fallback="暂无"):
+    if value is None or value == "":
+        return fallback
+    return str(value)
+
+
+_COMMAND_CENTER_HOME_DEBUG_TERMS = (
+    "数据能力",
+    "provider",
+    "Provider",
+    "packet",
+    "Packet",
+    "恢复入口",
+    "根因",
+    "权限",
+    "缓存路径",
+    "A股事实",
+    "事实回流",
+    "旧能力链",
+    "接口健康",
+)
+
+
+def _is_command_center_home_debug_text(value):
+    text = str(value or "")
+    return any(term in text for term in _COMMAND_CENTER_HOME_DEBUG_TERMS)
+
+
+def _home_trade_text(value, fallback="待验证"):
+    text = str(value or "").strip()
+    if not text or _is_command_center_home_debug_text(text):
+        return fallback
+    return text
+
+
+def _home_trade_items(items, fallback_items=None, limit=4):
+    cleaned = []
+    for item in items or []:
+        text = _home_trade_text(item, "")
+        if text:
+            cleaned.append(text)
+        if len(cleaned) >= limit:
+            break
+    return cleaned or list(fallback_items or [])
+
+
+def render_command_center_current_holding_panel(target="", market_badge="", price_detail=None, position_profile=None, direct_summary=None):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    detail = price_detail if isinstance(price_detail, dict) else {}
+    summary = direct_summary if isinstance(direct_summary, dict) else {}
+    currency = profile.get("currency") or ""
+    price = profile.get("current_price")
+    if price is None:
+        price = detail.get("price")
+    with st.container(border=True):
+        st.markdown("### 当前持仓")
+        metric_cols = st.columns(5)
+        metric_cols[0].metric("标的", target or "未锁定")
+        metric_cols[1].metric("市场", market_badge or "未知")
+        metric_cols[2].metric("当前价", _fmt_price(price, currency))
+        metric_cols[3].metric("持仓数量", _display_text(profile.get("holding_units"), "0"))
+        pnl_delta = _fmt_price(profile.get("pnl_amount"), currency) if profile.get("pnl_amount") is not None else None
+        metric_cols[4].metric("浮动盈亏", profile.get("profit_state") or "未计算", pnl_delta)
+        pnl_amount_text = f"盈亏金额：{pnl_delta} ｜ " if pnl_delta else ""
+        st.caption(
+            f"成本：{_fmt_price(profile.get('cost_price'), currency)} ｜ "
+            f"{pnl_amount_text}"
+            f"周期：{profile.get('analysis_horizon') or '短中期'} ｜ "
+            f"融资比例：{_display_text(profile.get('margin_ratio_pct'), '0')}% ｜ "
+            f"行情状态：{'已读取' if price is not None else '未读取'}"
+            f"{'｜数据日期：' + str(detail.get('data_date')) if detail.get('data_date') else ''}"
+        )
+        if profile.get("position_warning"):
+            st.warning(profile["position_warning"])
+        if summary.get("price_status") == "failed":
+            st.warning(f"行情读取失败：{summary.get('price_warning') or '未返回可用价格'}")
+        elif detail.get("warning"):
+            st.caption(f"行情提示：{detail.get('warning')}")
+
+
+def render_command_center_decision_trade_panel(decision_packet=None, strategy_packet=None):
+    decision = decision_packet if isinstance(decision_packet, dict) else {}
+    strategy = strategy_packet if isinstance(strategy_packet, dict) else {}
+    action = decision.get("overall_action") or "等待"
+    position_mode = decision.get("position_mode") or (strategy.get("risk_budget") or {}).get("position_mode") or "待确认"
+    margin_mode = decision.get("margin_mode") or "不使用融资"
+    risk_level = decision.get("risk_level") or (strategy.get("risk_budget") or {}).get("risk_level") or "中"
+    reason = _home_trade_text(
+        decision.get("reason_summary") or strategy.get("summary"),
+        "当前结论仍需价格、趋势和纪律条件确认。",
+    )
+    validations = _home_trade_items(
+        decision.get("next_validation_conditions") or [],
+        fallback_items=["确认量价方向没有转弱。", "仓位动作必须落在风险预算内。", "触发失效条件后重新生成结论。"],
+        limit=3,
+    )
+    must_not = _home_trade_items(
+        decision.get("must_not_do") or [],
+        fallback_items=["不追高", "不满仓", "不自动下单"],
+        limit=4,
+    )
+    with st.container(border=True):
+        st.markdown("### 今日总决策")
+        cols = st.columns(4)
+        cols[0].metric("总动作", action)
+        cols[1].metric("当前持仓动作", position_mode)
+        cols[2].metric("融资动作", margin_mode)
+        cols[3].metric("风险等级", risk_level)
+        st.write(reason)
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**明日验证条件**")
+            for item in validations:
+                st.write(f"- {item}")
+        with right:
+            st.markdown("**禁止动作**")
+            for item in must_not:
+                st.write(f"- {item}")
+        st.caption("DeepSeek：未调用；结论为条件化作战建议，不保证收益，不自动下单。")
+
+
+def render_command_center_projection_trade_panel(projection_packet=None):
+    packet = projection_packet if isinstance(projection_packet, dict) else {}
+    paths = [item for item in (packet.get("paths") or []) if isinstance(item, dict)]
+    horizon = packet.get("horizon_days") or 10
+    with st.container(border=True):
+        st.markdown("### 未来5~10日趋势推演")
+        if not paths:
+            st.info("趋势推演尚未生成；应用当前持仓或执行满血综合推演后显示路径。")
+        else:
+            cols = st.columns(min(3, len(paths)))
+            for index, path in enumerate(paths[:3]):
+                with cols[index % len(cols)]:
+                    probability = path.get("probability")
+                    probability_text = f"{round(float(probability) * 100)}%" if isinstance(probability, (int, float)) else _display_text(probability)
+                    st.metric(path.get("name") or f"路径{index + 1}", probability_text)
+                    st.write(_home_trade_text(path.get("action"), "按计划观察，不追高。"))
+                    st.caption(f"触发：{_home_trade_text(path.get('trigger'), '等待价格、量能和纪律条件确认。')}")
+                    st.caption(f"风险：{_home_trade_text(path.get('risk'), '若方向转弱，按风险预算降级。')}")
+        st.caption(f"观察窗口：未来 {horizon} 日｜DeepSeek：未调用")
+
+
+def render_command_center_strategy_trade_panel(strategy_packet=None):
+    packet = strategy_packet if isinstance(strategy_packet, dict) else {}
+    action = packet.get("action") or packet.get("overall_action") or "等待"
+    risk_budget = packet.get("risk_budget") if isinstance(packet.get("risk_budget"), dict) else {}
+    with st.container(border=True):
+        st.markdown("### 策略执行实验室")
+        cols = st.columns(4)
+        cols[0].metric("策略动作", action)
+        cols[1].metric("置信度", packet.get("confidence") or "低")
+        cols[2].metric("风险预算", risk_budget.get("risk_level") or "待确认")
+        cols[3].metric("可加金额", _display_text(risk_budget.get("max_add_amount")))
+        st.write(_home_trade_text(packet.get("position_advice"), "等待策略执行建议补齐。"))
+        st.write(f"加仓条件：{_home_trade_text(packet.get('add_condition'), '只有量价和纪律同向时才考虑小幅试探。')}")
+        st.write(f"减仓条件：{_home_trade_text(packet.get('reduce_condition'), '跌破纪律线或风险扩大时优先降风险。')}")
+        st.write(f"失效条件：{_home_trade_text(packet.get('invalidation_condition'), '市场转弱或验证信号反向时，本轮建议失效。')}")
+        st.caption("策略只约束仓位和动作边界；不会自动交易。")
+
+
+def render_command_center_next_ticket_top3(live_packet=None):
+    section = (live_packet or {}).get("next_ticket") or _build_next_ticket_live_section()
+    candidates = section.get("top_candidates") or []
+    with st.container(border=True):
+        st.markdown("### 下一票 Top3")
+        if candidates:
+            for index, item in enumerate(candidates[:3], start=1):
+                st.write(
+                    f"{index}. {item.get('ticker') or '未知'} {item.get('name') or ''}："
+                    f"{item.get('action_state') or '只观察'} / 评分 {item.get('score') if item.get('score') is not None else '暂无'}"
+                )
+        else:
+            st.info(section.get("summary") or "暂无 Top3 候选；下一票雷达未刷新或无可用缓存。")
+        st.caption(f"状态：{section.get('status') or '待刷新'}｜DeepSeek：未调用")
+
+
+def render_command_center_etf_config_panel(live_packet=None):
+    section = (live_packet or {}).get("margin_etf") or _build_margin_etf_live_section()
+    with st.container(border=True):
+        st.markdown("### ETF 配置")
+        cols = st.columns(3)
+        cols[0].metric("建议融资比例", _display_text(section.get("recommended_margin_ratio")))
+        cols[1].metric("建议现金比例", _display_text(section.get("recommended_cash_ratio")))
+        cols[2].metric("主方向", section.get("today_main_direction") or "待确认")
+        st.caption(section.get("summary") or "ETF 配置未刷新；可在高级工具箱或满血数据刷新后复核。")
+
+
+def render_command_center_risk_alert_panel(
+    live_packet=None,
+    decision_packet=None,
+    strategy_packet=None,
+    projection_packet=None,
+    price_detail=None,
+    direct_summary=None,
+):
+    alerts = []
+    detail = price_detail if isinstance(price_detail, dict) else {}
+    summary = direct_summary if isinstance(direct_summary, dict) else {}
+    packet_errors = summary.get("errors") or []
+    alerts.extend(str(item) for item in packet_errors[:3] if item)
+    if detail.get("price") is None:
+        alerts.append(f"当前价不可用：{detail.get('warning') or '行情接口未返回价格'}")
+    risk_budget = (strategy_packet or {}).get("risk_budget") or {}
+    if risk_budget.get("risk_level"):
+        alerts.append(f"风险预算：{risk_budget.get('risk_level')}；现金缓冲 {risk_budget.get('cash_buffer') if risk_budget.get('cash_buffer') is not None else '待计算'}")
+    invalidation = (strategy_packet or {}).get("invalidation_condition")
+    if invalidation:
+        alerts.append(f"失效条件：{invalidation}")
+    for condition in (decision_packet or {}).get("next_validation_conditions") or []:
+        alerts.append(f"验证条件：{condition}")
+    for path in (projection_packet or {}).get("paths") or []:
+        if not isinstance(path, dict):
+            continue
+        risk_text = _home_trade_text(path.get("risk"), "")
+        if risk_text:
+            alerts.append(f"{path.get('name') or '趋势路径'}：{risk_text}")
+            break
+    if not alerts:
+        alerts.append("暂无新增风险警报；仍需按纪律边界复核，不保证收益，不自动下单。")
+    with st.container(border=True):
+        st.markdown("### 风险警报")
+        for item in alerts[:6]:
+            st.write(f"- {item}")
+        st.caption("DeepSeek：未调用；本系统不保证收益，不自动下单。")
+
+
 def render_command_center_live_cards(live_packet, target="", market_type="", price=None, position_profile=None):
     st.markdown("#### 真实摘要接入")
     cards = [
@@ -5370,10 +5809,10 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
                 latest_recovery_result_notice=_get_latest_recovery_result_notice_from_state(),
             )
-            status.write(f"数据能力：{_cc_status_group_summary(data_capability_packet)}")
+            status.write("刷新结果已写入本轮作战包；诊断细节保留在高级工具箱。")
             fact_summary_text = refresh_status_view.get("a_share_fact_recovery_summary")
             if fact_summary_text:
-                status.write(f"A股事实回流：{fact_summary_text}")
+                status.write("关键证据状态已更新；首页只保留交易结论。")
             errors = refresh_status_view.get("error_items") or refresh_status_view.get("errors") or []
             if errors:
                 status.update(label=f"满血数据刷新完成，{len(errors)} 个模块/数据源失败", state="complete", expanded=False)
@@ -5387,7 +5826,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 market_type=market_type,
                 position_profile=position_profile,
             )
-            status.write(f"数据能力：{summary.get('data_capability_summary')}")
+            status.write("已读取本轮作战包；诊断细节保留在高级工具箱。")
             status.write(f"策略执行：{strategy_packet.get('overall_action') or strategy_packet.get('status') or '已生成'}；DeepSeek：未调用")
             status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}；DeepSeek：未调用")
             status.write(f"趋势推演：未来 {summary.get('projection_horizon_days') or 10} 日；DeepSeek：未调用")
@@ -5425,6 +5864,97 @@ packet:
             st.session_state[explanation_at_key] = datetime.datetime.now().isoformat(timespec="seconds")
             st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
             status.update(label="DeepSeek 解释已写入 session_state", state="complete")
+
+    page_price_detail = {
+        "ticker": target,
+        "price": price,
+        "price_source": "lightweight_mock_mode" if price is None else "input_context",
+        "data_date": "",
+        "warning": "综合推演中心 2.0 默认不自动读取实时行情；点击“应用当前持仓”后读取当前标的行情。",
+    }
+    direct_packet = _command_center_direct_packet_for_target(target)
+    if direct_packet:
+        page_price_detail = direct_packet.get("price_detail") or page_price_detail
+        position_profile = direct_packet.get("position_profile") or position_profile
+        live_packet = direct_packet.get("live_packet") or live_packet
+
+    live_packet = live_packet or run_command_center_auto_light_snapshot(target=target)
+    strategy_packet = direct_packet.get("strategy_packet") if direct_packet else None
+    strategy_packet = strategy_packet or _get_strategy_execution_display_packet()
+    decision_packet = direct_packet.get("decision_packet") if direct_packet else None
+    decision_packet = decision_packet or _get_command_center_decision_display_packet()
+    home_snapshot = direct_packet.get("home_snapshot") if direct_packet else None
+    home_snapshot = home_snapshot or _build_home_action_snapshot_display(
+        live_packet=live_packet,
+        target=target,
+        position_profile=position_profile,
+    )
+    evidence_radar_vm = direct_packet.get("evidence_radar_packet") if direct_packet else None
+    evidence_radar_vm = evidence_radar_vm or evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
+    st.session_state["command_center_evidence_radar_packet"] = evidence_radar_vm
+    analysis_method_packet = direct_packet.get("analysis_method_packet") if direct_packet else None
+    analysis_method_packet = analysis_method_packet or _build_analysis_methods_display_packet(
+        live_packet=live_packet,
+        target=target,
+        market_type=market_type,
+        home_snapshot=home_snapshot,
+    )
+    st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
+    projection_packet = direct_packet.get("projection_packet") if direct_packet else None
+    projection_packet = projection_packet or projection_service.build_projection_packet(
+        decision_packet=decision_packet,
+        strategy_packet=strategy_packet,
+        live_packet=live_packet,
+        home_snapshot=home_snapshot,
+        analysis_method_packet=analysis_method_packet,
+        evidence_radar_packet=evidence_radar_vm,
+        data_health_ledger=home_snapshot.get("data_health_ledger") if isinstance(home_snapshot, dict) else {},
+        horizon_days=10,
+    )
+    st.session_state["command_center_projection_packet"] = projection_packet
+    live_packet = cc_state_adapter.attach_command_center_child_packets_for_display(
+        live_packet,
+        strategy_execution_packet=strategy_packet,
+        decision_packet=decision_packet,
+    )
+    st.session_state["command_center_live_packet"] = live_packet
+
+    direct_summary = direct_packet.get("summary") if direct_packet else {}
+    st.caption(
+        f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
+        f"估算 Token：{st.session_state.token_usage.get('estimated_tokens', 0):,} ｜ "
+        f"解释生成：{st.session_state.get(explanation_at_key) or '未生成'} ｜ "
+        f"{'本轮未调用 DeepSeek' if not direct_summary else direct_summary.get('deepseek_note', '本轮未调用 DeepSeek')}"
+    )
+
+    render_command_center_current_holding_panel(
+        target=target,
+        market_badge=market_badge,
+        price_detail=page_price_detail,
+        position_profile=position_profile,
+        direct_summary=direct_summary,
+    )
+    render_command_center_decision_trade_panel(decision_packet, strategy_packet=strategy_packet)
+    render_command_center_projection_trade_panel(projection_packet)
+    render_command_center_strategy_trade_panel(strategy_packet)
+    render_command_center_next_ticket_top3(live_packet)
+    render_command_center_etf_config_panel(live_packet)
+    render_command_center_risk_alert_panel(
+        live_packet=live_packet,
+        decision_packet=decision_packet,
+        strategy_packet=strategy_packet,
+        projection_packet=projection_packet,
+        price_detail=page_price_detail,
+        direct_summary=direct_summary,
+    )
+
+    explanation = st.session_state.get(explanation_key)
+    if explanation:
+        with st.expander("DeepSeek 手动解释缓存", expanded=False):
+            st.caption(f"生成时间：{st.session_state.get(explanation_at_key) or '暂无'}")
+            st.markdown(explanation)
+    render_command_center_shell_end()
+    return
 
     home_evidence_recovery_slot = st.empty()
 
@@ -5808,6 +6338,35 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
         elif selected_nav == "高级工具箱入口":
             render_command_center_shell(active_nav=selected_nav)
             render_command_center_toolbox_entry()
+            st.markdown("### 数据能力诊断")
+            toolbox_live_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
+            render_a_share_data_capability_controls(
+                target=target,
+                position_profile=position_profile,
+                live_packet=toolbox_live_packet,
+                key_prefix="toolbox",
+            )
+            data_capability_packet = _get_command_center_data_capability_packet()
+            capability_items = data_capability_packet.get("items") if isinstance(data_capability_packet, dict) else []
+            if capability_items:
+                capability_df = pd.DataFrame(capability_items)
+                capability_columns = [
+                    "label",
+                    "api",
+                    "status",
+                    "state",
+                    "latest_date",
+                    "updated_at",
+                    "action_hint",
+                    "error",
+                ]
+                capability_columns = [column for column in capability_columns if column in capability_df.columns]
+                with st.expander("数据源 capability 明细", expanded=False):
+                    st.dataframe(capability_df[capability_columns], width="stretch", hide_index=True)
+            render_command_center_packet_registry_card(
+                packet_registry_service.build_packet_registry_view_model(),
+                readiness_view_model=desktop_readiness_service.build_desktop_frontend_readiness_view_model(dict(st.session_state)),
+            )
         else:
             render_command_center_shell(active_nav=selected_nav)
             render_command_center_placeholder(selected_nav)
@@ -11021,17 +11580,29 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         target, market_type, market_badge, currency = identify_market(raw_target)
 
     with top_c2:
+        direct_packet = _command_center_direct_packet_for_target(target)
+        direct_price_detail = (direct_packet.get("price_detail") or {}) if direct_packet else {}
         if workspace_mode == "综合推演中心 2.0":
-            price_detail = {
-                "ticker": target,
-                "price": None,
-                "price_source": "lightweight_mock_mode",
-                "data_date": "",
-                "warning": "综合推演中心 2.0 默认不自动读取实时行情，避免打开页面触发外部接口。",
-            }
-            price = None
-            st.metric(f"📡 轻量模式 ({market_badge})", "未自动读取")
-            st.caption("默认展示缓存 / mock packet；需要真实行情时进入旧版工作台或后续接按钮触发链路。")
+            if direct_price_detail:
+                price_detail = direct_price_detail
+                price = price_detail.get("price")
+                if price:
+                    st.metric(f"📡 当前报价 ({market_badge})", f"{currency} {price}")
+                    st.caption(f"行情已读取｜数据日期：{price_detail.get('data_date') or '未知'}")
+                else:
+                    st.metric(f"📡 行情读取失败 ({market_badge})", "暂无价格")
+                    st.caption(price_detail.get("warning") or "接口未返回可用价格。")
+            else:
+                price_detail = {
+                    "ticker": target,
+                    "price": None,
+                    "price_source": "lightweight_mock_mode",
+                    "data_date": "",
+                    "warning": "综合推演中心 2.0 默认不自动读取实时行情，避免打开页面触发外部接口。",
+                }
+                price = None
+                st.metric(f"📡 轻量模式 ({market_badge})", "未自动读取")
+                st.caption("点击“应用当前持仓”后，只读取当前标的行情并进入分析链。")
         else:
             price_detail = get_current_price_detail(target, market_type)
             price = price_detail.get("price")
@@ -11046,40 +11617,61 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 if price_detail.get("warning"):
                     st.caption(f"价格读取失败：{price_detail.get('warning')}")
 
-    pos_c1, pos_c2, pos_c3, pos_c4 = st.columns([1.5, 1, 1, 1])
-    with pos_c1:
-        position_status = st.selectbox(
-            "持仓状态",
-            ["未买入 (观望/找买点)", "已持有 (持仓/找卖点)", "想加仓 (已有底仓/找加仓点)"],
-            key="position_status",
-        )
-    with pos_c2:
-        capital_plan = st.number_input(
-            "本金/计划仓位（元）",
-            min_value=0.0,
-            value=0.0,
-            step=1000.0,
-            key="capital_plan",
-        )
-    with pos_c3:
-        cost_price = st.number_input(
-            "成本价/参考价",
-            min_value=0.0,
-            value=0.0,
-            step=0.01,
-            format="%.3f",
-            key="cost_price",
-            help="已持有时填真实成本价；未买入时可填计划买入参考价。",
-        )
-    with pos_c4:
-        holding_units = st.number_input(
-            "持仓数量（可选）",
-            min_value=0.0,
-            value=0.0,
-            step=1.0,
-            format="%.2f",
-            key="holding_units",
-        )
+    with st.form("command_center_current_holding_form", clear_on_submit=False):
+        pos_c1, pos_c2, pos_c3, pos_c4 = st.columns([1.5, 1, 1, 1])
+        with pos_c1:
+            position_status = st.selectbox(
+                "持仓状态",
+                ["未买入 (观望/找买点)", "已持有 (持仓/找卖点)", "想加仓 (已有底仓/找加仓点)"],
+                key="position_status",
+            )
+        with pos_c2:
+            capital_plan = st.number_input(
+                "本金/计划仓位（元）",
+                min_value=0.0,
+                value=0.0,
+                step=1000.0,
+                key="capital_plan",
+            )
+        with pos_c3:
+            cost_price_input = st.text_input(
+                "成本价/参考价",
+                value=str(st.session_state.get("command_center_cost_price_input", "0") or "0"),
+                key="command_center_cost_price_input",
+                help="已持有时填真实成本价；未买入时可填计划买入参考价。",
+            )
+        with pos_c4:
+            holding_units_input = st.text_input(
+                "持仓数量（可选）",
+                value=str(st.session_state.get("command_center_holding_units_input", "0") or "0"),
+                key="command_center_holding_units_input",
+            )
+
+        apply_c1, apply_c2, apply_c3 = st.columns([1.2, 1, 1.2])
+        with apply_c1:
+            analysis_horizon = st.selectbox(
+                "分析周期",
+                ["短中期", "短线", "中期", "长期"],
+                index=0,
+                key="command_center_analysis_horizon",
+            )
+        with apply_c2:
+            margin_ratio_pct_input = st.text_input(
+                "融资比例（%）",
+                value=str(st.session_state.get("command_center_margin_ratio_pct_input", "0") or "0"),
+                key="command_center_margin_ratio_pct_input",
+            )
+        with apply_c3:
+            st.write("")
+            st.write("")
+            apply_current_holding = st.form_submit_button(
+                "应用当前持仓",
+                type="primary",
+                width="stretch",
+            )
+    cost_price = _num(cost_price_input, 0) or 0
+    holding_units = _num(holding_units_input, 0) or 0
+    margin_ratio_pct = max(0, min(100, _num(margin_ratio_pct_input, 0) or 0))
 
     position_profile_preview = build_position_profile(
         target,
@@ -11090,6 +11682,42 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         position_status,
         currency,
     )
+    position_profile_preview = _enrich_position_profile_for_command_center(
+        position_profile_preview,
+        horizon=analysis_horizon,
+        margin_ratio_pct=margin_ratio_pct,
+    )
+    if apply_current_holding:
+        apply_status = st.status("正在应用当前持仓并生成综合分析...", expanded=True)
+        applied_packet = _apply_command_center_current_holding(
+            target=target,
+            market_type=market_type,
+            currency=currency,
+            position_status=position_status,
+            cost_price=cost_price,
+            holding_units=holding_units,
+            capital_plan=capital_plan,
+            horizon=analysis_horizon,
+            margin_ratio_pct=margin_ratio_pct,
+            status=apply_status,
+        )
+        applied_summary = applied_packet.get("summary") or {}
+        if applied_summary.get("price_status") == "failed":
+            apply_status.update(label="当前持仓已应用，但行情读取失败；页面将展示失败原因。", state="complete", expanded=False)
+        else:
+            apply_status.update(label="当前持仓已应用，综合分析已生成。", state="complete", expanded=False)
+        st.session_state["command_center_apply_current_holding_notice"] = applied_summary
+        st.rerun()
+
+    apply_notice = st.session_state.pop("command_center_apply_current_holding_notice", None)
+    if isinstance(apply_notice, dict) and apply_notice.get("target") == target:
+        if apply_notice.get("price_status") == "failed":
+            st.warning(f"当前持仓已进入分析链；行情读取失败：{apply_notice.get('price_warning') or '未返回价格'}")
+        else:
+            st.success(
+                f"当前持仓已进入分析链：今日总决策 {apply_notice.get('decision_action') or '等待'}｜"
+                f"策略 {apply_notice.get('strategy_action') or '等待'}｜DeepSeek：未调用。"
+            )
     if cost_price > 0:
         p1, p2, p3 = st.columns(3)
         p1.metric("成本价", _fmt_price(position_profile_preview.get("cost_price"), currency))

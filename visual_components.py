@@ -7010,7 +7010,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
 def render_command_center_shell(active_nav: str = "综合推演中心 2.0"):
     _inject_command_center_css()
     title = active_nav or "综合推演中心 2.0"
-    subtitle = "把量化推演、交易纪律实验室和风险验证放在同一张工作台。默认展示缓存或 mock packet；重型扫描、DeepSeek、Tushare 批量请求都必须手动触发。"
+    subtitle = "把量化推演、交易纪律实验室和风险验证放在同一张工作台。默认展示上次缓存快照；重型扫描、DeepSeek、Tushare 批量请求都必须手动触发。"
     if title != "综合推演中心 2.0":
         subtitle = "左侧导航为真实 Streamlit 控件；当前模块为轻量占位，不触发 DeepSeek、Tushare 批量请求或旧版重型 tabs。"
     st.markdown(
