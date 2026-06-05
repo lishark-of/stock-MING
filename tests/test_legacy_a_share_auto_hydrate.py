@@ -251,11 +251,13 @@ class LegacyAShareAutoHydrateTests(unittest.TestCase):
         function_source = source[function_start:source.index("def render_legacy_a_share_gap_recovery_panel", function_start)]
 
         self.assertIn('st.caption(f"待补数据：{user_message}")', function_source)
-        self.assertIn('switch_col.button(f"切到{target_tab}"', function_source)
-        self.assertIn('ignore_col.button("忽略本次"', function_source)
+        self.assertIn("selected_tab != target_tab", function_source)
+        self.assertNotIn('switch_col.button(f"切到{target_tab}"', function_source)
         self.assertIn('with st.expander("查看技术诊断", expanded=False):', function_source)
         self.assertIn("provider 依赖", function_source)
         self.assertIn("packet 路由", function_source)
+        self.assertIn('recovery_result_notice.get("status") == "recovered"', function_source)
+        self.assertIn("_clear_command_center_tool_recovery_notice_state()", function_source)
         self.assertNotIn("_run_legacy_a_share_auto_hydrate(", function_source)
 
     def test_legacy_tool_recovery_user_message_hides_internal_terms(self):
@@ -267,6 +269,37 @@ class LegacyAShareAutoHydrateTests(unittest.TestCase):
         self.assertIn("已同步到综合中心", function_source)
         self.assertNotIn("command_center_", function_source)
         self.assertNotIn("Home Action Snapshot", function_source)
+
+    def test_recent_sentiment_view_merges_hard_risk_clues(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn("def build_hard_risk_sentiment_rows", source)
+        self.assertIn("公告/减持硬风险自动合并到近48小时视图", source)
+        self.assertIn("merge_sentiment_with_hard_risk_rows(", source)
+        self.assertIn('if base_view == "近48小时舆情":', source)
+        self.assertIn("build_tianyan_risk_fact_packet(", source)
+        self.assertIn("不调用 DeepSeek", source)
+
+    def test_command_center_first_diagnosis_prewarms_hard_risk_partition_only(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn("def _run_command_center_first_diagnosis_prewarm", source)
+        self.assertIn("command_center_first_diagnosis_prewarm_packet", source)
+        self.assertIn('module_keys=["hard_risk"]', source)
+        self.assertIn("fingerprint_modules=module_keys or", source)
+        self.assertIn("partition_cache_active", source)
+        self.assertIn("DeepSeek 未调用", source)
+        self.assertIn("同标的短时间内不重复请求", source)
+
+    def test_risk_alert_reads_prewarmed_hard_risk_without_internal_terms(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+        function_start = source.index("def render_command_center_risk_alert_panel")
+        function_source = source[function_start:source.index("def render_command_center_live_cards", function_start)]
+
+        self.assertIn('st.session_state.get("command_center_hard_risk_packet")', function_source)
+        self.assertIn("公告/硬风险：", function_source)
+        self.assertNotIn("provider", function_source)
+        self.assertNotIn("恢复路径", function_source)
 
 
 if __name__ == "__main__":

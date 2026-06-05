@@ -4782,7 +4782,7 @@ def _run_legacy_a_share_auto_hydrate(
         module_specs=service_specs,
         handlers=handler_map,
         module_keys=module_keys,
-        fingerprint_modules=[spec["key"] for spec in specs],
+        fingerprint_modules=module_keys or [spec["key"] for spec in specs],
         ttl_seconds=st.session_state.get(
             legacy_a_share_auto_hydrate_service.TTL_KEY,
             legacy_a_share_auto_hydrate_service.DEFAULT_TTL_SECONDS,
@@ -5059,6 +5059,134 @@ def render_a_share_data_capability_controls(target="", position_profile=None, li
     return packet
 
 
+def _run_command_center_first_diagnosis_prewarm(
+    *,
+    target="",
+    market_type="",
+    position_profile=None,
+    live_packet=None,
+    force=False,
+):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    if not (is_a_share_market(market_type) or a_share_manual_checks_service.is_a_share_ts_code(ticker)):
+        packet = {
+            "target": ticker,
+            "market_type": market_type,
+            "status": "skipped",
+            "summary": "首诊预热仅对 A股当前标的自动读取公告/减持硬风险。",
+            "deepseek_called": False,
+            "updated_at": _cc_now(),
+        }
+        st.session_state["command_center_first_diagnosis_prewarm_packet"] = packet
+        return packet
+
+    existing_auto_packet = st.session_state.get(legacy_a_share_auto_hydrate_service.STATUS_KEY) or {}
+    existing_modules = [
+        module for module in (existing_auto_packet.get("modules") or [])
+        if isinstance(module, dict)
+    ]
+    has_fresh_hard_risk = any(module.get("key") == "hard_risk" for module in existing_modules)
+    try:
+        last_at = float(st.session_state.get(legacy_a_share_auto_hydrate_service.LAST_AT_KEY) or 0)
+    except Exception:
+        last_at = 0.0
+    ttl_seconds = int(
+        st.session_state.get(
+            legacy_a_share_auto_hydrate_service.TTL_KEY,
+            legacy_a_share_auto_hydrate_service.DEFAULT_TTL_SECONDS,
+        )
+        or legacy_a_share_auto_hydrate_service.DEFAULT_TTL_SECONDS
+    )
+    existing_target = str(existing_auto_packet.get("target") or "").strip().upper()
+    ticker_text = str(ticker or "").strip().upper()
+    can_reuse_existing = (
+        not force
+        and has_fresh_hard_risk
+        and existing_target == ticker_text
+        and last_at
+        and (time.time() - last_at) < ttl_seconds
+    )
+    if can_reuse_existing:
+        auto_packet = {
+            **existing_auto_packet,
+            "skipped_by_ttl": True,
+            "decision": {
+                **(existing_auto_packet.get("decision") or {}),
+                "reason": "partition_cache_active",
+                "ttl_seconds": ttl_seconds,
+            },
+        }
+    else:
+        try:
+            auto_packet = _run_legacy_a_share_auto_hydrate(
+                target=ticker,
+                market_type=market_type or "A股",
+                position_profile=position_profile,
+                live_packet=live_packet,
+                module_keys=["hard_risk"],
+                force=force,
+            )
+        except Exception as exc:
+            packet = {
+                "target": ticker,
+                "market_type": market_type or "A股",
+                "status": "failed",
+                "status_label": "预热失败",
+                "summary": f"公告/减持硬风险预热失败：{exc}；页面继续使用上次缓存。",
+                "deepseek_called": False,
+                "updated_at": _cc_now(),
+            }
+            st.session_state["command_center_first_diagnosis_prewarm_packet"] = packet
+            return packet
+    hard_risk_packet = st.session_state.get("command_center_hard_risk_packet") or {}
+    if not isinstance(hard_risk_packet, dict) or not hard_risk_packet:
+        hard_risk_packet = hard_risk_packet_service.build_command_center_hard_risk_packet(
+            st.session_state,
+            live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+            target=ticker,
+        )
+        st.session_state["command_center_hard_risk_packet"] = hard_risk_packet
+
+    hard_module = next(
+        (
+            module
+            for module in (auto_packet.get("modules") or [])
+            if isinstance(module, dict) and module.get("key") == "hard_risk"
+        ),
+        {},
+    )
+    risk_items = [
+        item
+        for item in (hard_risk_packet.get("risk_items") or hard_risk_packet.get("announcement_items") or [])
+        if isinstance(item, dict)
+    ]
+    status_label = (
+        hard_module.get("status_label")
+        or hard_risk_packet.get("status_label")
+        or hard_risk_packet.get("data_status")
+        or "待验证"
+    )
+    packet = {
+        "target": ticker,
+        "market_type": market_type or "A股",
+        "status": hard_module.get("status") or hard_risk_packet.get("data_status") or "unknown",
+        "status_label": status_label,
+        "summary": (
+            f"公告/减持硬风险：{status_label}；"
+            f"线索 {len(risk_items)} 条；同标的短时间内不重复请求。"
+        ),
+        "hard_risk_packet": hard_risk_packet,
+        "auto_hydrate_packet": auto_packet,
+        "risk_item_count": len(risk_items),
+        "skipped_by_ttl": bool(auto_packet.get("skipped_by_ttl")),
+        "deepseek_called": False,
+        "updated_at": hard_risk_packet.get("updated_at") or auto_packet.get("updated_at") or _cc_now(),
+    }
+    st.session_state["command_center_first_diagnosis_prewarm_packet"] = packet
+    return packet
+
+
 def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target="", market_type="", position_profile=None, live_packet=None):
     profile = position_profile if isinstance(position_profile, dict) else {}
     ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
@@ -5183,26 +5311,23 @@ def render_legacy_tool_recovery_notice_panel(recovery_notice, *, legacy_tab=""):
         st.session_state,
         selected_tab=legacy_tab,
     )
+    if recovery_result_notice.get("status") == "recovered":
+        _clear_command_center_tool_recovery_notice_state()
+        return
     manual_check_hint = home_snapshot_service.build_tool_recovery_manual_check_hint(
         st.session_state,
         selected_tab=legacy_tab,
     )
     target_tab = str(notice.get("target_tab") or manual_check_hint.get("target_tab") or legacy_tab or "").strip()
     selected_tab = str(notice.get("selected_tab") or legacy_tab or "").strip()
+    if target_tab and selected_tab and selected_tab != target_tab:
+        return
     user_message = _tool_recovery_user_message(
         notice,
         manual_check_hint=manual_check_hint,
         result_notice=recovery_result_notice,
     )
     st.caption(f"待补数据：{user_message}")
-    if target_tab and selected_tab and selected_tab != target_tab:
-        switch_col, ignore_col, _ = st.columns([1, 1, 4])
-        if switch_col.button(f"切到{target_tab}", key=f"btn_switch_tool_recovery_{target_tab}"):
-            st.session_state["legacy_workspace_selected_tab"] = target_tab
-            st.rerun()
-        if ignore_col.button("忽略本次", key="btn_ignore_tool_recovery_notice"):
-            _clear_command_center_tool_recovery_notice_state()
-            st.rerun()
     with st.expander("查看技术诊断", expanded=False):
         st.caption(
             f"原始提示：{notice.get('message') or '暂无'}｜"
@@ -6600,6 +6725,29 @@ def render_command_center_risk_alert_panel(
     recommended_margin = _num(margin_section.get("recommended_margin_ratio"))
     packet_errors = summary.get("errors") or []
     alerts.extend(str(item) for item in packet_errors[:3] if item)
+    hard_risk_packet = st.session_state.get("command_center_hard_risk_packet") or {}
+    if isinstance(hard_risk_packet, dict) and hard_risk_packet:
+        hard_items = [
+            item
+            for item in (hard_risk_packet.get("risk_items") or hard_risk_packet.get("announcement_items") or [])
+            if isinstance(item, dict)
+        ]
+        if hard_items:
+            for item in hard_items[:2]:
+                message = (
+                    item.get("message")
+                    or item.get("title")
+                    or item.get("summary")
+                    or item.get("type")
+                    or ""
+                )
+                if message:
+                    alerts.append(f"公告/硬风险：{message}")
+        elif hard_risk_packet.get("data_status") not in {"ready", "cached"}:
+            alerts.append(
+                f"公告/硬风险：{hard_risk_packet.get('status_label') or '待验证'}；"
+                "缺口不能当作无风险。"
+            )
     if detail.get("price") is None:
         alerts.append(f"当前价不可用：{detail.get('warning') or '行情接口未返回价格'}")
     if current_margin > 0 and recommended_margin is not None:
@@ -6894,6 +7042,12 @@ packet:
 
     active_packet = page_packet
     live_packet = active_packet.get("live_packet") or live_packet or build_command_center_live_packet(target=target)
+    first_diagnosis_prewarm_packet = _run_command_center_first_diagnosis_prewarm(
+        target=target,
+        market_type=market_type,
+        position_profile=position_profile,
+        live_packet=live_packet,
+    )
     strategy_packet = active_packet.get("strategy_packet")
     strategy_packet = strategy_packet or _get_strategy_execution_display_packet()
     decision_packet = active_packet.get("decision_packet")
@@ -6941,6 +7095,12 @@ packet:
         f"解释生成：{st.session_state.get(explanation_at_key) or '未生成'} ｜ "
         f"{'本轮未调用 DeepSeek' if not direct_summary else direct_summary.get('deepseek_note', '本轮未调用 DeepSeek')}"
     )
+    if isinstance(first_diagnosis_prewarm_packet, dict) and first_diagnosis_prewarm_packet.get("summary"):
+        st.caption(
+            f"首诊预热：{first_diagnosis_prewarm_packet.get('summary')}｜"
+            f"更新时间：{first_diagnosis_prewarm_packet.get('updated_at') or '暂无'}｜"
+            "DeepSeek 未调用"
+        )
 
     render_command_center_current_holding_panel(
         target=target,
@@ -11550,6 +11710,103 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         return packet
 
+    def build_hard_risk_sentiment_rows(tianyan_packet, limit=8):
+        """Expose announcement and reduction risks inside the sentiment view."""
+        packet = tianyan_packet if isinstance(tianyan_packet, dict) else {}
+        hard = packet.get("verified_hard_risks") or {}
+        rows = []
+        seen = set()
+
+        def add_row(*, title, source, date="", url="", risk_tag="公告/硬风险", sentiment="利空/待验证", summary=""):
+            title_text = str(title or "").strip()
+            if not title_text:
+                return
+            key = (title_text, str(url or "").strip(), str(date or "").strip(), source)
+            if key in seen:
+                return
+            seen.add(key)
+            rows.append(
+                {
+                    "relevance_score": 100,
+                    "market_filter": "A_SHARE_HARD_RISK",
+                    "filter_reason": "公告/减持硬风险自动合并到近48小时视图",
+                    "keyword": "公告/减持",
+                    "title": title_text,
+                    "sentiment": sentiment,
+                    "risk_tag": risk_tag,
+                    "created_at": str(date or packet.get("updated_at") or "").strip(),
+                    "url": str(url or "").strip(),
+                    "source": source,
+                    "summary": str(summary or "").strip(),
+                    "verification_status": "公告/交易所/Tushare 硬风险线索，优先于软舆情",
+                    "fact_boundary": "公告标题/摘要是风险线索；交易前仍需复核公告原文。",
+                }
+            )
+
+        for section_name, source_label in [
+            ("announcements", "Tushare anns_d"),
+            ("free_announcement_radar", "公告雷达"),
+        ]:
+            section = hard.get(section_name) or {}
+            for item in (section.get("rows") or [])[:limit]:
+                title = item.get("title") or item.get("message") or item.get("summary")
+                joined = " ".join(str(value or "") for value in [title, item.get("ai_summary"), item.get("risk_tags")])
+                risk_tag = "公告风险"
+                sentiment = "利空/待验证" if any(word in joined for word in ["减持", "处罚", "问询", "诉讼", "立案", "质押", "解禁", "亏损"]) else "中性/待验证"
+                add_row(
+                    title=title,
+                    source=source_label,
+                    date=item.get("ann_date") or item.get("published_at") or item.get("updated_at"),
+                    url=item.get("pdf_url") or item.get("url"),
+                    risk_tag=risk_tag,
+                    sentiment=sentiment,
+                    summary=item.get("ai_summary") or item.get("summary") or "",
+                )
+
+        holder_section = hard.get("holder_reduction") or {}
+        for item in (holder_section.get("rows") or [])[:limit]:
+            holder = str(item.get("holder_name") or item.get("shareholder") or "股东").strip()
+            ratio = item.get("change_ratio")
+            ratio_text = f"，变动比例 {ratio}%" if ratio not in [None, ""] else ""
+            title = f"股东减持记录：{holder}{ratio_text}"
+            add_row(
+                title=title,
+                source="Tushare stk_holdertrade",
+                date=item.get("ann_date") or item.get("begin_date") or item.get("close_date"),
+                risk_tag="股东减持",
+                sentiment="利空/待验证",
+                summary=item.get("change_reason") or "",
+            )
+
+        for flag in hard.get("risk_flags") or []:
+            add_row(
+                title=str(flag),
+                source="硬风险汇总",
+                date=hard.get("updated_at") or packet.get("updated_at"),
+                risk_tag="硬风险",
+                sentiment="利空/待验证",
+            )
+
+        return rows[: max(1, int(limit or 8))]
+
+    def merge_sentiment_with_hard_risk_rows(news_rows, tianyan_packet, limit=12):
+        merged = []
+        seen = set()
+        for item in build_hard_risk_sentiment_rows(tianyan_packet, limit=6):
+            key = (item.get("title"), item.get("url"), item.get("created_at"))
+            if key not in seen:
+                seen.add(key)
+                merged.append(item)
+        for item in news_rows or []:
+            if not isinstance(item, dict):
+                continue
+            key = (item.get("title"), item.get("url"), item.get("created_at"))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+        return merged[: max(1, int(limit or 12))]
+
     def build_next_day_plan_fact_packet(
         stock_code,
         stock_name,
@@ -14739,7 +14996,33 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             if base_view == "情景推演":
                 render_scenario_module(scenario_snapshot)
             if base_view == "近48小时舆情":
-                render_recent_sentiment_module(recent_news_rows)
+                sentiment_rows = recent_news_rows
+                if is_a_share_market(market_type):
+                    tianyan_for_sentiment = st.session_state.get("tianyan_risk_fact_packet")
+                    try:
+                        packet_stock = (
+                            (tianyan_for_sentiment or {}).get("stock", {}).get("ts_code")
+                            if isinstance(tianyan_for_sentiment, dict)
+                            else ""
+                        )
+                        current_ts_code = _cn_ts_code(_cn_stock_code_6(normalized_target))
+                        if not isinstance(tianyan_for_sentiment, dict) or packet_stock != current_ts_code:
+                            tianyan_for_sentiment = build_tianyan_risk_fact_packet(
+                                normalized_target,
+                                supply_profile.get("name") or target,
+                                current_price=price,
+                            )
+                            st.session_state["tianyan_risk_fact_packet"] = tianyan_for_sentiment
+                        sentiment_rows = merge_sentiment_with_hard_risk_rows(
+                            recent_news_rows,
+                            tianyan_for_sentiment,
+                            limit=12,
+                        )
+                        if len(sentiment_rows or []) > len(recent_news_rows or []):
+                            st.caption("已自动合并公告/减持等硬风险线索；该步骤使用 10 分钟缓存，不调用 DeepSeek。")
+                    except Exception as sentiment_error:
+                        st.warning(f"公告/硬风险线索合并失败，继续显示软舆情缓存：{sentiment_error}")
+                render_recent_sentiment_module(sentiment_rows)
             if base_view == "持仓体检":
                 render_portfolio_health_module(portfolio_health)
             if base_view == "资金面":
