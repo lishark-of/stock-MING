@@ -34,23 +34,24 @@ def _assert_token_contains(testcase, tokens, fragment):
 class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
     def test_home_diagnostic_recovery_routes_chip_and_hard_risk(self):
         tokens = _function_tokens("render_home_a_share_diagnostic_recovery_controls")
+        spec_tokens = _function_tokens("_get_legacy_a_share_auto_hydrate_specs")
 
-        _assert_token_contains(self, tokens, "数据恢复中心｜A股接口检测")
-        self.assertIn("chip_radar", tokens)
-        self.assertIn("hard_risk", tokens)
-        self.assertIn("_run_manual_chip_radar_capability_check", tokens)
-        self.assertIn("_run_manual_hard_risk_capability_check", tokens)
-        self.assertIn("btn_cc_home_a_share_diagnostic_recovery_", tokens)
+        _assert_token_contains(self, tokens, "数据恢复中心｜A股接口状态")
+        self.assertIn("chip_radar", spec_tokens)
+        self.assertIn("hard_risk", spec_tokens)
+        self.assertIn("_run_legacy_a_share_auto_hydrate", tokens)
+        self.assertIn("_render_legacy_a_share_auto_hydrate_cards", tokens)
+        self.assertIn("home_a_share_recovery", tokens)
 
     def test_legacy_a_share_page_surfaces_gap_recovery_ledger(self):
         tokens = _function_tokens("render_legacy_a_share_gap_recovery_panel")
         source = Path("app.py").read_text(encoding="utf-8")
 
         _assert_token_contains(self, tokens, "数据恢复中心｜旧版数据缺口总账")
-        _assert_token_contains(self, tokens, "为什么搜不到：")
-        _assert_token_contains(self, tokens, "按钮说明：")
-        _assert_token_contains(self, tokens, "决策保护：")
-        _assert_token_contains(self, tokens, "打开恢复入口：")
+        _assert_token_contains(self, tokens, "查看诊断详情")
+        _assert_token_contains(self, tokens, "原因")
+        _assert_token_contains(self, tokens, "决策保护")
+        _assert_token_contains(self, tokens, "打开模块")
         self.assertIn("build_legacy_a_share_gap_summary", tokens)
         self.assertIn("build_old_workspace_data_absence_ledger", tokens)
         self.assertIn("build_tool_recovery_navigation_state", tokens)
@@ -78,10 +79,13 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
 
     def test_a_share_capability_controls_include_hard_risk_check(self):
         tokens = _function_tokens("render_a_share_data_capability_controls")
+        spec_tokens = _function_tokens("_get_legacy_a_share_auto_hydrate_specs")
 
-        self.assertIn("hard_risk_capability_check", tokens)
-        self.assertIn("检测公告硬风险", tokens)
-        self.assertIn("_run_manual_hard_risk_capability_check", tokens)
+        _assert_token_contains(self, tokens, "A股专业数据自动检测")
+        self.assertIn("_run_legacy_a_share_auto_hydrate", tokens)
+        self.assertIn("_render_legacy_a_share_auto_hydrate_cards", tokens)
+        self.assertIn("hard_risk", spec_tokens)
+        self.assertIn("_run_manual_hard_risk_capability_check", spec_tokens)
 
     def test_home_snapshot_tool_navigation_uses_recovery_center_language(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

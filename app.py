@@ -39,8 +39,8 @@ import command_center_evidence_summary as evidence_summary_service
 import market_data_capability as data_capability
 import data_capability_service as data_capability_governance_service
 import command_center_toolbox_summary as toolbox_summary_service
-import command_center_a_share_capability_matrix as a_share_capability_matrix_service
 import command_center_a_share_manual_checks as a_share_manual_checks_service
+import command_center_legacy_a_share_auto_hydrate as legacy_a_share_auto_hydrate_service
 import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
@@ -4315,13 +4315,11 @@ def _run_manual_dragon_tiger_capability_check(target="", position_profile=None, 
         try:
             top_list_result = _tushare_adapter.get_top_list(
                 ts_code=request["ts_code"],
-                start_date=request["start_date"],
-                end_date=request["end_date"],
+                trade_date=request["end_date"],
             )
             top_inst_result = _tushare_adapter.get_top_inst(
                 ts_code=request["ts_code"],
-                start_date=request["start_date"],
-                end_date=request["end_date"],
+                trade_date=request["end_date"],
             )
             item = a_share_manual_checks_service.build_dragon_tiger_capability_item(
                 top_list_result,
@@ -4702,50 +4700,363 @@ def _render_manual_capability_check_button(
     return result
 
 
-def render_a_share_data_capability_controls(target="", position_profile=None, live_packet=None, key_prefix="cc"):
-    capability_matrix = a_share_capability_matrix_service.build_a_share_capability_matrix(
-        data_capability_packet=_get_command_center_data_capability_packet(),
-        facts_packet=_get_command_center_facts_packet(target=target),
+def _get_legacy_a_share_auto_hydrate_specs():
+    return [
+        {
+            "key": "moneyflow",
+            "label": "资金流",
+            "api": "moneyflow",
+            "source": "Tushare moneyflow",
+            "packet_key": "command_center_moneyflow_packet",
+            "legacy_packet_key": "legacy_moneyflow_packet",
+            "runner": _run_manual_moneyflow_capability_check,
+        },
+        {
+            "key": "dragon_tiger",
+            "label": "龙虎榜",
+            "api": "top_list/top_inst",
+            "source": "Tushare top_list/top_inst",
+            "packet_key": "command_center_dragon_tiger_packet",
+            "legacy_packet_key": "legacy_dragon_tiger_packet",
+            "runner": _run_manual_dragon_tiger_capability_check,
+        },
+        {
+            "key": "margin",
+            "label": "融资融券",
+            "api": "margin_detail",
+            "source": "Tushare margin_detail",
+            "packet_key": "command_center_margin_packet",
+            "legacy_packet_key": "legacy_margin_packet",
+            "runner": _run_manual_margin_detail_capability_check,
+        },
+        {
+            "key": "limit_emotion",
+            "label": "涨跌停/情绪",
+            "api": "limit_cpt_list",
+            "source": "Tushare limit_cpt_list",
+            "packet_key": "command_center_limit_emotion_packet",
+            "legacy_packet_key": "legacy_limit_emotion_packet",
+            "runner": _run_manual_limit_cpt_capability_check,
+        },
+        {
+            "key": "chip_radar",
+            "label": "筹码/胜率",
+            "api": "cyq_perf/cyq_chips",
+            "source": "Tushare cyq_perf/cyq_chips",
+            "packet_key": "command_center_chip_packet",
+            "legacy_packet_key": "legacy_chip_packet",
+            "runner": _run_manual_chip_radar_capability_check,
+        },
+        {
+            "key": "hard_risk",
+            "label": "公告/硬风险",
+            "api": "anns_d/forecast/stk_holdertrade/share_float/pledge",
+            "source": "Tushare 公告/硬风险",
+            "packet_key": "command_center_hard_risk_packet",
+            "legacy_packet_key": "legacy_hard_risk_packet",
+            "runner": _run_manual_hard_risk_capability_check,
+        },
+    ]
+
+
+def _run_legacy_a_share_auto_hydrate(
+    *,
+    target="",
+    market_type="A股",
+    position_profile=None,
+    live_packet=None,
+    module_keys=None,
+    force=False,
+):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    ticker = target or profile.get("ticker") or st.session_state.get("current_stock_code") or ""
+    if not (is_a_share_market(market_type) or a_share_manual_checks_service.is_a_share_ts_code(ticker)):
+        return {}
+    specs = _get_legacy_a_share_auto_hydrate_specs()
+    service_specs = [{key: value for key, value in spec.items() if key != "runner"} for spec in specs]
+    handler_map = {spec["key"]: spec["runner"] for spec in specs}
+    packet = legacy_a_share_auto_hydrate_service.execute_auto_hydrate(
+        st.session_state,
+        target=ticker,
+        market_type=market_type or "A股",
+        module_specs=service_specs,
+        handlers=handler_map,
+        module_keys=module_keys,
+        fingerprint_modules=[spec["key"] for spec in specs],
+        ttl_seconds=st.session_state.get(
+            legacy_a_share_auto_hydrate_service.TTL_KEY,
+            legacy_a_share_auto_hydrate_service.DEFAULT_TTL_SECONDS,
+        ),
+        now_text=_cc_now(),
+        force=force,
+        position_profile=position_profile,
+        live_packet=live_packet,
     )
-    summary_text = a_share_capability_matrix_service.build_a_share_capability_summary_text(capability_matrix)
-    with st.expander(f"A股数据能力检测｜{summary_text}", expanded=False):
-        st.caption(
-            f"{capability_matrix.get('summary') or summary_text}。只在点击按钮后请求对应 Tushare 接口；"
-            "用于确认权限、近期数据、缓存和缺口，不自动调用 DeepSeek。"
+    professional_packet = st.session_state.get("a_share_professional_data_capability") or {}
+    if professional_packet:
+        st.session_state["legacy_a_share_fact_packet"] = professional_packet
+    if packet.get("hydrated") and not module_keys:
+        provider_status = _run_legacy_a_share_provider_status_probe(ticker, market_type or "A股")
+        if provider_status:
+            packet["provider_status"] = provider_status
+            st.session_state[legacy_a_share_auto_hydrate_service.STATUS_KEY] = packet
+    _persist_home_action_snapshot(
+        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        target=ticker,
+        position_profile=position_profile,
+    )
+    return packet
+
+
+def _legacy_provider_result_line(label, status, detail=""):
+    text = f"{label} {status}"
+    return f"{text}（{detail}）" if detail else text
+
+
+def _run_legacy_a_share_provider_status_probe(target="", market_type="A股"):
+    checked_at = _cc_now()
+    results = []
+    normalized_market_type = "A_SHARE" if _cc_is_a_share_market_type(market_type) else market_type
+    sample_ts_code = _cc_healthcheck_sample_ts_code(target)
+    try:
+        health_result = run_data_source_healthcheck(
+            sample_ts_code=sample_ts_code,
+            include_deepseek_ping=False,
+            cache_version=f"legacy_a_share_provider_{sample_ts_code}_{datetime.date.today().isoformat()}",
+            _supabase_client=supabase,
+            _deepseek_keys=st.session_state.get("ds_keys") or [],
         )
-        check_cols = st.columns(3)
-        checks = [
-            ("检测资金流", "moneyflow_capability_check", "正在手动检测个股资金流...", "资金流", _run_manual_moneyflow_capability_check, "moneyflow", "command_center_moneyflow_packet"),
-            ("检测龙虎榜", "dragon_tiger_capability_check", "正在手动检测龙虎榜...", "龙虎榜", _run_manual_dragon_tiger_capability_check, "dragon_tiger", "command_center_dragon_tiger_packet"),
-            ("检测融资融券", "margin_capability_check", "正在手动检测融资融券权限...", "融资融券", _run_manual_margin_detail_capability_check, "margin", "command_center_margin_packet"),
-            ("检测涨跌停", "limit_cpt_capability_check", "正在手动检测涨跌停/情绪权限...", "涨跌停/情绪", _run_manual_limit_cpt_capability_check, "limit_emotion", "command_center_limit_emotion_packet"),
-            ("检测筹码胜率", "chip_capability_check", "正在手动检测筹码/胜率...", "筹码/胜率", _run_manual_chip_radar_capability_check, "chip_radar", "command_center_chip_packet"),
-            ("检测公告硬风险", "hard_risk_capability_check", "正在手动检测公告/硬风险...", "公告/硬风险", _run_manual_hard_risk_capability_check, "hard_risk", "command_center_hard_risk_packet"),
-        ]
-        for index, (button_label, button_key, status_label, result_label, runner, recovery_key, writes_packet) in enumerate(checks):
-            with check_cols[index % len(check_cols)]:
-                result = _render_manual_capability_check_button(
-                    button_label,
-                    f"btn_{key_prefix}_{button_key}",
-                    status_label,
-                    result_label,
-                    runner,
-                    target=target,
-                    position_profile=position_profile,
-                    live_packet=live_packet,
-                )
-                if result:
-                    _remember_a_share_manual_recovery_result(
-                        result,
-                        key=recovery_key,
-                        label=result_label,
-                        writes_packet=writes_packet,
-                    )
-                    _persist_home_action_snapshot(
-                        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
-                        target=target,
-                        position_profile=position_profile,
-                    )
+        st.session_state["last_data_source_healthcheck"] = health_result
+        if isinstance(health_result, dict) and health_result.get("data_capability"):
+            st.session_state["command_center_data_capability_packet"] = health_result.get("data_capability")
+        tushare_health = health_result.get("tushare") if isinstance(health_result, dict) else {}
+        tushare_total = len((tushare_health or {}).get("items") or [])
+        results.append(
+            {
+                "label": "Tushare",
+                "status": "已检测" if tushare_total else "待验证",
+                "detail": f"{(tushare_health or {}).get('ok_count', 0)}/{tushare_total} 可用" if tushare_total else "",
+                "updated_at": (tushare_health or {}).get("checked_at") or checked_at,
+            }
+        )
+        supabase_health = health_result.get("supabase") if isinstance(health_result, dict) else {}
+        supabase_total = len((supabase_health or {}).get("items") or [])
+        results.append(
+            {
+                "label": "Supabase",
+                "status": "已检测" if supabase_total else "待验证",
+                "detail": f"{(supabase_health or {}).get('ok_count', 0)}/{supabase_total} 可连接" if supabase_total else "",
+                "updated_at": (supabase_health or {}).get("checked_at") or checked_at,
+            }
+        )
+    except Exception as exc:
+        results.append({"label": "Tushare/Supabase", "status": "失败", "detail": str(exc), "updated_at": checked_at})
+
+    try:
+        yfinance_snapshot = _cc_refresh_yfinance_snapshot(target=target, market_type=normalized_market_type)
+        yfinance_status = "跳过" if yfinance_snapshot.get("skipped") else ("失败" if yfinance_snapshot.get("error") else "已检测")
+        results.append(
+            {
+                "label": "yfinance",
+                "status": yfinance_status,
+                "detail": yfinance_snapshot.get("reason") or yfinance_snapshot.get("warning") or yfinance_snapshot.get("data_date") or "",
+                "updated_at": yfinance_snapshot.get("updated_at") or checked_at,
+            }
+        )
+    except Exception as exc:
+        results.append({"label": "yfinance", "status": "失败", "detail": str(exc), "updated_at": checked_at})
+
+    try:
+        akshare_result = _cc_collect_auto_page_akshare_snapshot(target=target, market_type=normalized_market_type)
+        akshare_snapshot = akshare_result.get("snapshot") if isinstance(akshare_result, dict) else {}
+        akshare_error = akshare_result.get("error") if isinstance(akshare_result, dict) else {}
+        warnings = akshare_snapshot.get("warnings") if isinstance(akshare_snapshot, dict) else []
+        akshare_status = "失败" if akshare_error else ("跳过" if akshare_snapshot.get("mode") == "skipped" else "已检测")
+        results.append(
+            {
+                "label": "AkShare",
+                "status": akshare_status,
+                "detail": (warnings or ["轻量资金快照已处理。"])[0],
+                "updated_at": akshare_snapshot.get("updated_at") if isinstance(akshare_snapshot, dict) else checked_at,
+            }
+        )
+    except Exception as exc:
+        results.append({"label": "AkShare", "status": "失败", "detail": str(exc), "updated_at": checked_at})
+
+    provider_status = {
+        "checked_at": checked_at,
+        "results": results,
+        "summary": "｜".join(
+            _legacy_provider_result_line(item.get("label"), item.get("status"), item.get("detail"))
+            for item in results
+            if item.get("label")
+        ),
+        "deepseek_called": False,
+    }
+    st.session_state["legacy_auto_hydrate_provider_status"] = provider_status
+    return provider_status
+
+
+def _legacy_a_share_status_card_tone(status):
+    return {
+        "available": "success",
+        "cached": "info",
+        "no_permission": "warning",
+        "no_data": "info",
+        "skipped": "info",
+        "failed": "warning",
+    }.get(str(status or ""), "info")
+
+
+def _render_legacy_a_share_auto_hydrate_cards(
+    packet,
+    *,
+    target="",
+    market_type="A股",
+    position_profile=None,
+    live_packet=None,
+    key_prefix="legacy",
+    module_filter=None,
+    cards_expanded=True,
+):
+    payload = packet if isinstance(packet, dict) else {}
+    modules = [item for item in (payload.get("modules") or []) if isinstance(item, dict)]
+    if module_filter:
+        allowed = {str(item) for item in module_filter}
+        modules = [item for item in modules if str(item.get("key") or "") in allowed]
+    if not modules:
+        st.info("A股专业数据待检测；页面会在进入该模块时按 TTL 自动尝试刷新。")
+        return
+    st.caption(
+        f"{payload.get('summary_text') or legacy_a_share_auto_hydrate_service.build_main_summary_text(payload)}｜"
+        f"TTL {st.session_state.get(legacy_a_share_auto_hydrate_service.TTL_KEY, legacy_a_share_auto_hydrate_service.DEFAULT_TTL_SECONDS)} 秒"
+    )
+    provider_status = payload.get("provider_status") or st.session_state.get("legacy_auto_hydrate_provider_status") or {}
+    if provider_status.get("summary"):
+        st.caption(f"数据源覆盖：{provider_status.get('summary')}")
+    else:
+        st.caption("数据源覆盖：Tushare A股专业接口；AkShare / Supabase / yfinance 进入对应模块时按需读取。")
+    if payload.get("skipped_by_ttl"):
+        decision = payload.get("decision") or {}
+        remaining = decision.get("remaining_seconds")
+        st.caption(f"本轮未重复请求外部接口：同一标的仍在 TTL 内{f'，约 {remaining} 秒后可自动刷新' if remaining else ''}。")
+
+    problem_items = [
+        item for item in modules
+        if str(item.get("status") or "") in {"failed", "no_permission", "skipped"}
+    ]
+    if not cards_expanded and problem_items:
+        st.warning(
+            "需处理：" + "；".join(
+                f"{item.get('label') or 'A股数据'}：{item.get('status_label') or '待验证'}"
+                for item in problem_items[:3]
+            )
+        )
+
+    def render_status_card_grid():
+        card_cols = st.columns(3)
+        for index, item in enumerate(modules):
+            key = str(item.get("key") or index)
+            with card_cols[index % len(card_cols)]:
+                with st.container(border=True):
+                    st.markdown(f"**{item.get('label') or 'A股数据'}**")
+                    status_label = item.get("status_label") or "待验证"
+                    status_tone = _legacy_a_share_status_card_tone(item.get("status"))
+                    if item.get("runtime_secret_missing"):
+                        st.warning(f"状态：{status_label}")
+                    elif status_tone == "success":
+                        st.success(f"状态：{status_label}")
+                    elif status_tone == "warning":
+                        st.warning(f"状态：{status_label}")
+                    else:
+                        st.info(f"状态：{status_label}")
+                    st.write(item.get("conclusion") or "等待当前模块自动检测。")
+                    st.caption(f"更新时间：{item.get('updated_at') or '暂无'}")
+                    st.caption(f"来源：{item.get('source') or 'Tushare'}")
+                    if st.button(
+                        "重新检测",
+                        key=f"btn_{key_prefix}_legacy_a_share_recheck_{key}",
+                        width="stretch",
+                    ):
+                        refreshed_packet = _run_legacy_a_share_auto_hydrate(
+                            target=target,
+                            market_type=market_type,
+                            position_profile=position_profile,
+                            live_packet=live_packet,
+                            module_keys=[key],
+                            force=True,
+                        )
+                        refreshed_item = next(
+                            (
+                                module
+                                for module in (refreshed_packet.get("modules") or [])
+                                if isinstance(module, dict) and module.get("key") == key
+                            ),
+                            {},
+                        )
+                        if refreshed_item.get("status") == "available":
+                            st.success(f"{refreshed_item.get('label') or '数据'}已重新检测；DeepSeek：未调用。")
+                        else:
+                            st.warning(
+                                f"{refreshed_item.get('label') or '数据'}重新检测完成："
+                                f"{refreshed_item.get('status_label') or '待验证'}；DeepSeek：未调用。"
+                            )
+                        st.rerun()
+
+    if cards_expanded:
+        render_status_card_grid()
+    else:
+        with st.expander("查看接口状态卡 / 重新检测", expanded=False):
+            render_status_card_grid()
+
+    with st.expander("查看诊断详情", expanded=False):
+        decision = payload.get("decision") or {}
+        st.caption(
+            f"自动补水原因：{decision.get('reason') or '未知'}｜"
+            f"fingerprint：{payload.get('fingerprint') or '暂无'}｜"
+            f"DeepSeek：{'已调用' if payload.get('deepseek_called') else '未调用'}"
+        )
+        detail_rows = []
+        for item in modules:
+            detail_rows.append(
+                {
+                    "名称": item.get("label"),
+                    "状态": item.get("status_label"),
+                    "api": item.get("api"),
+                    "writes_packet": item.get("writes_packet"),
+                    "legacy_packet": item.get("legacy_packet_key"),
+                    "error": item.get("error"),
+                    "cache_available": item.get("cache_available"),
+                    "updated_at": item.get("updated_at"),
+                }
+            )
+        if detail_rows:
+            st.dataframe(pd.DataFrame(detail_rows), width="stretch", hide_index=True)
+        provider_rows = (provider_status or {}).get("results") or []
+        if provider_rows:
+            st.markdown("##### 数据源详情")
+            st.dataframe(pd.DataFrame(provider_rows), width="stretch", hide_index=True)
+
+
+def render_a_share_data_capability_controls(target="", position_profile=None, live_packet=None, key_prefix="cc"):
+    packet = _run_legacy_a_share_auto_hydrate(
+        target=target,
+        market_type="A股",
+        position_profile=position_profile,
+        live_packet=live_packet,
+    )
+    with st.container(border=True):
+        st.markdown("#### A股专业数据自动检测")
+        _render_legacy_a_share_auto_hydrate_cards(
+            packet,
+            target=target,
+            market_type="A股",
+            position_profile=position_profile,
+            live_packet=live_packet,
+            key_prefix=key_prefix,
+            cards_expanded=False,
+        )
+    return packet
 
 
 def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target="", market_type="", position_profile=None, live_packet=None):
@@ -4762,53 +5073,30 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
     ]
     if not actions:
         return
-    runner_map = {
-        "moneyflow": ("资金流", _run_manual_moneyflow_capability_check),
-        "dragon_tiger": ("龙虎榜", _run_manual_dragon_tiger_capability_check),
-        "margin": ("融资融券", _run_manual_margin_detail_capability_check),
-        "limit_emotion": ("涨跌停/情绪", _run_manual_limit_cpt_capability_check),
-        "chip_radar": ("筹码/胜率", _run_manual_chip_radar_capability_check),
-        "hard_risk": ("公告/硬风险", _run_manual_hard_risk_capability_check),
-    }
-    runnable_actions = [action for action in actions if str(action.get("key") or "") in runner_map][:6]
+    available_keys = {spec["key"] for spec in _get_legacy_a_share_auto_hydrate_specs()}
+    runnable_actions = [action for action in actions if str(action.get("key") or "") in available_keys][:6]
     if not runnable_actions:
         return
+    module_keys = [str(action.get("key") or "") for action in runnable_actions]
+    packet = _run_legacy_a_share_auto_hydrate(
+        target=ticker,
+        market_type=market_type or "A股",
+        position_profile=position_profile,
+        live_packet=live_packet,
+        module_keys=module_keys,
+    )
     with st.container(border=True):
-        st.markdown("#### 数据恢复中心｜A股接口检测")
-        st.caption(
-            "这些按钮来自首页数据恢复中心，只检测当前标的对应的单项 Tushare 能力；不自动运行 DeepSeek、回测、全市场扫描或批量刷新。"
+        st.markdown("#### 数据恢复中心｜A股接口状态")
+        _render_legacy_a_share_auto_hydrate_cards(
+            packet,
+            target=ticker,
+            market_type=market_type or "A股",
+            position_profile=position_profile,
+            live_packet=live_packet,
+            key_prefix="home_a_share_recovery",
+            module_filter=module_keys,
+            cards_expanded=False,
         )
-        cols = st.columns(min(3, len(runnable_actions)))
-        for index, action in enumerate(runnable_actions):
-            key = str(action.get("key") or "")
-            result_label, runner = runner_map[key]
-            button_label = action.get("action_label") or f"检测{action.get('label') or result_label}"
-            with cols[index % len(cols)]:
-                st.caption(f"{action.get('label') or result_label}｜{action.get('status_label') or '待验证'}")
-                st.caption(action.get("reason") or "页面打开不会自动请求 Tushare。")
-                result = _render_manual_capability_check_button(
-                    button_label,
-                    f"btn_cc_home_a_share_diagnostic_recovery_{key}",
-                    f"正在检测{result_label}...",
-                    result_label,
-                    runner,
-                    target=ticker,
-                    position_profile=position_profile,
-                    live_packet=live_packet,
-                )
-                if result:
-                    _remember_a_share_manual_recovery_result(
-                        result,
-                        key=key,
-                        label=action.get("label") or result_label,
-                        writes_packet=action.get("writes_packet") or "command_center_facts_packet",
-                        api_hint=action.get("api_hint"),
-                    )
-                    _persist_home_action_snapshot(
-                        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
-                        target=ticker,
-                        position_profile=position_profile,
-                    )
         notice = home_snapshot_service.build_a_share_diagnostic_recovery_result_notice(st.session_state)
         if notice:
             if notice.get("status") == "recovered":
@@ -4817,12 +5105,101 @@ def render_home_a_share_diagnostic_recovery_controls(home_snapshot=None, target=
                 st.warning(notice["message"])
             else:
                 st.info(notice["message"])
-            st.caption(
-                f"回流：{notice.get('writes_packet') or 'command_center_facts_packet'}"
-                f"｜来源：{notice.get('source') or 'A股手动检测'}"
-                f"｜更新时间：{notice.get('updated_at') or '暂无'}"
-                f"｜{notice.get('next_action') or '继续观察。'}"
-            )
+            with st.expander("查看诊断详情", expanded=False):
+                st.caption(
+                    f"回流：{notice.get('writes_packet') or 'command_center_facts_packet'}"
+                    f"｜来源：{notice.get('source') or 'A股自动检测'}"
+                    f"｜更新时间：{notice.get('updated_at') or '暂无'}"
+                    f"｜{notice.get('next_action') or '继续观察。'}"
+                )
+
+
+COMMAND_CENTER_TOOL_RECOVERY_NOTICE_KEYS = [
+    "command_center_last_tool_recovery_key",
+    "command_center_last_tool_recovery_label",
+    "command_center_last_tool_recovery_provider",
+    "command_center_last_tool_recovery_api",
+    "command_center_last_tool_recovery_writes_packet",
+    "command_center_last_tool_recovery_target_tab",
+    "command_center_last_tool_recovery_source_type",
+    "command_center_last_tool_recovery_source_label",
+    "command_center_last_tool_recovery_provider_dependencies",
+    "command_center_last_tool_recovery_provider_dependency_summary",
+    "command_center_last_tool_recovery_packet_route_summary",
+    "command_center_last_tool_recovery_provider_decision_impact",
+    "command_center_last_tool_recovery_priority_label",
+    "command_center_last_tool_recovery_decision_mode",
+    "command_center_last_tool_recovery_decision_impact",
+    "command_center_last_tool_recovery_recovery_mode",
+    "command_center_last_tool_recovery_recovery_mode_label",
+    "command_center_last_tool_recovery_recovery_steps",
+    "command_center_last_tool_recovery_button_context",
+    "command_center_last_tool_recovery_navigation_label",
+    "command_center_last_tool_recovery_policy",
+]
+
+
+def _clear_command_center_tool_recovery_notice_state():
+    for recovery_key in COMMAND_CENTER_TOOL_RECOVERY_NOTICE_KEYS:
+        st.session_state.pop(recovery_key, None)
+
+
+def render_legacy_tool_recovery_notice_panel(recovery_notice, *, legacy_tab=""):
+    notice = recovery_notice if isinstance(recovery_notice, dict) else {}
+    if not notice:
+        return
+    label = notice.get("label") or legacy_tab or "旧工具能力"
+    writes_packet = notice.get("writes_packet") or "command_center_packet"
+    st.caption(
+        f"恢复提示：{label} → {writes_packet} 已折叠；这是从首页进入旧工具的导航记录，不会自动运行扫描、回测或 DeepSeek。"
+    )
+    with st.expander(f"首页恢复提示｜{label}", expanded=False):
+        st.info(notice["message"])
+        recovery_context_bits = [
+            notice.get("priority_label"),
+            notice.get("decision_mode"),
+            notice.get("recovery_mode_label"),
+        ]
+        recovery_context_text = "｜".join(str(item) for item in recovery_context_bits if item)
+        if recovery_context_text:
+            st.caption(f"恢复上下文：{recovery_context_text}")
+        st.caption(f"{notice['action_hint']}｜{notice['safety_text']}")
+        recovery_result_notice = home_snapshot_service.build_tool_recovery_result_notice(
+            st.session_state,
+            selected_tab=legacy_tab,
+        )
+        if recovery_result_notice.get("status") == "recovered":
+            st.success(recovery_result_notice["message"])
+            st.caption(f"更新时间：{recovery_result_notice.get('updated_at') or '暂无'}｜{recovery_result_notice['next_action']}")
+            st.caption(f"来源：{recovery_result_notice.get('source') or '本地 packet'}")
+        elif recovery_result_notice:
+            st.warning(recovery_result_notice["message"])
+            st.caption(recovery_result_notice["next_action"])
+        manual_check_hint = home_snapshot_service.build_tool_recovery_manual_check_hint(
+            st.session_state,
+            selected_tab=legacy_tab,
+        )
+        if manual_check_hint.get("available"):
+            st.caption(manual_check_hint.get("message") or manual_check_hint.get("help_text") or "当前模块已接入单项检测状态。")
+        elif manual_check_hint:
+            st.caption(manual_check_hint["message"])
+            if manual_check_hint.get("module_button_hint"):
+                st.caption(manual_check_hint.get("help_text", ""))
+        st.markdown("##### 诊断详情")
+        if notice.get("provider_dependency_summary"):
+            st.caption(f"provider 依赖：{notice['provider_dependency_summary']}")
+        if notice.get("packet_route_summary"):
+            st.caption(f"packet 路由：{notice['packet_route_summary']}")
+        if notice.get("provider_decision_impact"):
+            st.caption(f"provider 影响：{notice['provider_decision_impact']}")
+        if notice.get("decision_impact"):
+            st.caption(f"决策影响：{notice['decision_impact']}")
+        recovery_steps = notice.get("recovery_steps") or []
+        if recovery_steps:
+            st.caption("恢复路径：" + " → ".join(str(step) for step in recovery_steps if step))
+        if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):
+            _clear_command_center_tool_recovery_notice_state()
+            st.rerun()
 
 
 def render_legacy_a_share_gap_recovery_panel(snapshot_context=None, key_prefix="legacy_a_share"):
@@ -4842,32 +5219,44 @@ def render_legacy_a_share_gap_recovery_panel(snapshot_context=None, key_prefix="
             f"{legacy_gap_summary.get('headline') or '旧能力缺口待验证'}｜"
             f"{legacy_gap_summary.get('summary') or '等待本地 packet 回流'}"
         )
-        st.caption(
-            absence_ledger.get("short_answer")
-            or "Tushare 基础连接正常不等于每个旧版专业接口都有当日数据；这里按接口原因分账。"
-        )
-        st.caption(legacy_gap_summary.get("safe_mode_text") or "这里只读取本地 packet；不会自动调用外部接口。")
         columns = st.columns(min(2, len(gap_items)))
         for index, item in enumerate(gap_items):
             with columns[index % len(columns)]:
                 st.markdown(f"**{item.get('label') or '旧版能力'}**")
                 st.caption(
                     f"{item.get('readable_state') or item.get('status_label') or '待验证'}"
-                    f"｜写回：{item.get('writes_packet') or 'command_center_packet'}"
-                    f"｜入口：{item.get('toolbox_entry') or item.get('legacy_tab') or '高级工具箱'}"
+                    f"｜更新时间：{item.get('updated_at') or '暂无'}"
                 )
-                st.caption(f"为什么搜不到：{item.get('why_not_found') or item.get('diagnostic_answer') or item.get('message') or '仍需核对接口、交易日和缓存。'}")
-                st.caption(f"按钮说明：{item.get('button_context') or item.get('recovery_button_context') or '按钮只做手动恢复，不自动触发 DeepSeek。'}")
-                st.caption(f"决策保护：{item.get('decision_guardrail') or '未恢复前不能作为加仓、追高或加融资依据。'}")
+                st.write(item.get("diagnostic_answer") or item.get("message") or "仍需核对接口、交易日和缓存。")
                 navigation_state = home_snapshot_service.build_tool_recovery_navigation_state(item)
                 if navigation_state and st.button(
-                    f"打开恢复入口：{item.get('label') or '旧版能力'}",
+                    f"打开模块",
                     key=f"btn_{key_prefix}_legacy_gap_recovery_{index}_{item.get('key') or item.get('writes_packet')}",
-                    help=item.get("navigation_label") or "切换到对应高级工具；检测仍需手动按钮触发。",
+                    help=item.get("navigation_label") or "切换到对应高级工具模块。",
                     width="stretch",
                 ):
                     _apply_tool_recovery_navigation_state(item, persist_snapshot=True)
                     st.rerun()
+        with st.expander("查看诊断详情", expanded=False):
+            st.caption(
+                absence_ledger.get("short_answer")
+                or "Tushare 基础连接正常不等于每个旧版专业接口都有当日数据；这里按接口原因分账。"
+            )
+            st.caption(legacy_gap_summary.get("safe_mode_text") or "这里只读取本地状态；不会调用 DeepSeek。")
+            detail_rows = []
+            for item in gap_items:
+                detail_rows.append(
+                    {
+                        "名称": item.get("label"),
+                        "状态": item.get("readable_state") or item.get("status_label"),
+                        "写回": item.get("writes_packet"),
+                        "入口": item.get("toolbox_entry") or item.get("legacy_tab"),
+                        "原因": item.get("why_not_found") or item.get("diagnostic_answer") or item.get("message"),
+                        "决策保护": item.get("decision_guardrail"),
+                    }
+                )
+            if detail_rows:
+                st.dataframe(pd.DataFrame(detail_rows), width="stretch", hide_index=True)
 
 
 def render_home_evidence_backfill_controls(evidence_radar_vm=None, target="", market_type="", position_profile=None, live_packet=None):
@@ -4949,7 +5338,9 @@ def _get_command_center_facts_packet(target="", name=""):
 
 
 def _cc_is_a_share_market_type(market_type):
-    return str(market_type or "").upper().startswith("A_SHARE")
+    text = str(market_type or "").strip()
+    upper = text.upper()
+    return upper.startswith("A_SHARE") or text in {"A股", "沪深A股"} or "A股" in text
 
 
 def _cc_healthcheck_sample_ts_code(target=""):
@@ -6830,6 +7221,7 @@ def render_command_center_toolbox_entry():
         data_capability_packet=_get_command_center_data_capability_packet(),
     )
     item_html = ""
+    detail_rows = []
     for item in packet.get("items") or []:
         capability = item.get("capability_summary") or {}
         status = item.get("capability_status") or {}
@@ -6855,30 +7247,39 @@ def render_command_center_toolbox_entry():
           <div class="cc-mini-title">{html_escape(str(item.get("label") or "高级工具"))}</div>
           <div class="cc-mini-value">{html_escape(str(status.get("status_label") or "待检测"))}</div>
           <div class="cc-mini-desc">{html_escape(str(status.get("summary") or "尚未读取到匹配的数据能力检测结果。"))}</div>
-          <div class="cc-mini-desc">根因：{html_escape(root_causes or str(issue_explainer.get("short_answer") or "尚未检测；不会自动请求外部接口。"))}</div>
-          <div class="cc-mini-desc">建议：{html_escape(issue_next_actions or str(status.get("next_action") or item.get("gate") or "按钮手动触发"))}</div>
           <div class="cc-mini-desc">{html_escape(str(item.get("purpose") or "旧版工具保留。"))}</div>
-          <div class="cc-mini-desc">依赖数据：{html_escape(dependencies or "本地缓存 / 手动刷新结果")}</div>
-          <div class="cc-mini-desc">已匹配状态：{html_escape(matched_items or "暂无本地检测结果")}</div>
-          <div class="cc-mini-desc">为什么可能没数据：{html_escape(missing_reasons or "待检测、权限不足、非交易日或缓存过期。")}</div>
-          <div class="cc-mini-desc">安全空态：{html_escape(str(capability.get("safe_empty_state") or "显示待验证，不自动触发重型请求。"))}</div>
-          <div class="cc-mini-desc">回流 packet：{html_escape(str(item.get("packet") or "待接入"))}</div>
-          <div class="cc-mini-desc">触发方式：{html_escape(str(item.get("gate") or "按钮手动触发"))}</div>
         </div>
         """
+        detail_rows.append(
+            {
+                "模块": item.get("label"),
+                "状态": status.get("status_label"),
+                "匹配状态": matched_items or "暂无本地检测结果",
+                "根因": root_causes or issue_explainer.get("short_answer") or "",
+                "建议": issue_next_actions or status.get("next_action") or item.get("gate"),
+                "依赖数据": dependencies,
+                "为什么可能没数据": missing_reasons,
+                "安全空态": capability.get("safe_empty_state"),
+                "回流": item.get("packet"),
+                "触发方式": item.get("gate"),
+            }
+        )
     st.markdown(
         f"""
         <section class="cc-card">
           <div class="cc-card-title">{html_escape(str(packet.get("title") or "高级工具箱"))}</div>
           <div class="cc-card-caption">{html_escape(str(packet.get("summary") or "旧版工作台保留为高级工具。"))}</div>
-          <div class="cc-card-caption">{html_escape(str(packet.get("data_gap_note") or "数据能力待检测。"))}</div>
           <div class="cc-mini-grid">{item_html}</div>
-          <div class="cc-card-caption">{html_escape(str(packet.get("manual_note") or "高级工具只在按钮触发时运行。"))}</div>
-          <div class="cc-card-caption">{html_escape(str(packet.get("next_step") or ""))}</div>
         </section>
         """,
         unsafe_allow_html=True,
     )
+    with st.expander("查看高级工具诊断详情", expanded=False):
+        st.caption(packet.get("data_gap_note") or "数据能力待检测。")
+        st.caption(packet.get("manual_note") or "高级工具只在按钮触发时运行。")
+        st.caption(packet.get("next_step") or "")
+        if detail_rows:
+            st.dataframe(pd.DataFrame(detail_rows), width="stretch", hide_index=True)
     st.info("需要进入旧版完整页面时，请使用页面顶部的“高级工具箱（旧版保留）”切换；这里不会自动运行旧版模块。")
 
 
@@ -6960,7 +7361,6 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
             )
         elif selected_nav == "高级工具箱入口":
             render_command_center_shell(active_nav=selected_nav)
-            render_command_center_toolbox_entry()
             st.markdown("### 数据能力诊断")
             toolbox_live_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
             render_a_share_data_capability_controls(
@@ -6969,6 +7369,7 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
                 live_packet=toolbox_live_packet,
                 key_prefix="toolbox",
             )
+            render_command_center_toolbox_entry()
             data_capability_packet = _get_command_center_data_capability_packet()
             capability_items = data_capability_packet.get("items") if isinstance(data_capability_packet, dict) else []
             if capability_items:
@@ -11549,29 +11950,31 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             <h4 style="margin-bottom: 0;">🇨🇳 A股专业数据穿透系统</h4>
         </div>
         """, unsafe_allow_html=True)
-        initial_status_strip = legacy_a_share_gate_service.build_a_share_status_strip(professional_facts)
-        st.info(
-            f"{initial_status_strip.get('title')}｜{initial_status_strip.get('status_label')}｜"
-            f"{initial_status_strip.get('summary')}｜{initial_status_strip.get('manual_note')}"
-        )
+        st.info("A股专业数据进入本模块会按 TTL 自动检测当前标的；DeepSeek 不自动调用。")
         render_tushare_refresh_control(stock_code, "a_share_professional")
-        render_a_share_data_capability_controls(
+        auto_hydrate_packet = render_a_share_data_capability_controls(
             target=target,
             position_profile=st.session_state.get("position_profile") or st.session_state.get("current_holding_context") or {},
             live_packet=st.session_state.get("command_center_live_packet") or {},
             key_prefix="legacy_a_share",
         )
+        hydrated_capability_packet = st.session_state.get("a_share_professional_data_capability") or {}
+        reuse_professional_facts = (
+            legacy_a_share_gate_service.has_a_share_professional_cache(professional_facts)
+            or bool((hydrated_capability_packet or {}).get("items"))
+            or bool((auto_hydrate_packet or {}).get("modules"))
+        )
 
         cn_status = st.status("正在检查 A股龙虎榜、融资融券、资金流向与筹码事实...", expanded=False)
         cn_progress = st.progress(0)
         if reuse_professional_facts:
-            dragon_data = professional_facts.get("dragon_tiger") or {}
-            margin_data = professional_facts.get("margin") or {}
-            moneyflow_data = professional_facts.get("moneyflow") or {}
-            limit_emotion_data = professional_facts.get("limit_emotion") or {}
-            chip_radar_data = professional_facts.get("chip_radar") or {}
+            dragon_data = professional_facts.get("dragon_tiger") or st.session_state.get("command_center_dragon_tiger_packet") or {}
+            margin_data = professional_facts.get("margin") or st.session_state.get("command_center_margin_packet") or {}
+            moneyflow_data = professional_facts.get("moneyflow") or st.session_state.get("command_center_moneyflow_packet") or {}
+            limit_emotion_data = professional_facts.get("limit_emotion") or st.session_state.get("command_center_limit_emotion_packet") or {}
+            chip_radar_data = professional_facts.get("chip_radar") or st.session_state.get("command_center_chip_packet") or {}
             cn_progress.progress(100)
-            cn_status.write("完成：复用主诊断A股专业事实包")
+            cn_status.write("完成：已读取 A股专业数据状态")
         else:
             manual_gate_facts = legacy_a_share_gate_service.build_manual_gate_a_share_professional_facts(
                 stock_code,
@@ -11583,8 +11986,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             limit_emotion_data = manual_gate_facts.get("limit_emotion") or {}
             chip_radar_data = manual_gate_facts.get("chip_radar") or {}
             cn_progress.progress(100)
-            cn_status.write("待手动刷新：未自动请求 Tushare 专业接口")
-            st.info(legacy_a_share_gate_service.empty_notice())
+            cn_status.write("自动检测未取得可用专业事实；页面继续展示安全空态。")
+            st.info("当前没有可用 A股专业事实；可查看上方状态卡，或对单项点击重新检测。")
         a_share_fact_payload = {
             "stock_code": stock_code,
             "dragon_tiger": dragon_data or {},
@@ -11594,7 +11997,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             "chip_radar": chip_radar_data or {},
             "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         }
-        a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(a_share_fact_payload)
+        if isinstance(hydrated_capability_packet, dict) and hydrated_capability_packet.get("items"):
+            a_share_capability_packet = hydrated_capability_packet
+        else:
+            a_share_capability_packet = data_capability.build_a_share_professional_capability_packet(a_share_fact_payload)
         current_status_strip = legacy_a_share_gate_service.build_a_share_status_strip(
             a_share_fact_payload,
             a_share_capability_packet,
@@ -11642,8 +12048,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         capability_items = a_share_capability_packet.get("items") or []
         if capability_items:
             st.caption(
-                f"A股专业数据能力状态：{current_status_strip.get('status_label')}｜"
-                f"{current_status_strip.get('summary')}｜来源：{current_status_strip.get('source')}"
+                f"A股专业数据能力：{current_status_strip.get('status_label')}｜"
+                f"{current_status_strip.get('summary')}"
             )
             with st.expander("A股专业数据能力明细", expanded=False):
                 capability_df = pd.DataFrame(capability_items)
@@ -11687,8 +12093,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             st.success(diagnostic_message)
         else:
             st.info(diagnostic_message)
-        st.caption(legacy_user_diagnostic.get("safe_mode_text") or "页面打开不会自动请求外部重接口。")
         with st.expander("A股数据能力诊断明细", expanded=False):
+            st.caption(legacy_user_diagnostic.get("safe_mode_text") or "自动检测受 TTL 控制；不会调用 DeepSeek。")
             diagnostic_df = pd.DataFrame(legacy_user_diagnostic.get("items") or [])
             diagnostic_columns = [
                 "label",
@@ -11721,10 +12127,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         }
         render_legacy_a_share_gap_recovery_panel(legacy_gap_context, key_prefix=f"legacy_a_share_{stock_code}")
         st.caption(
-            f"{legacy_packet_summary.get('title')}：{legacy_packet_summary.get('status_label')}｜"
-            f"{legacy_packet_summary.get('summary')}｜{legacy_packet_summary.get('manual_note')}"
+            f"A股专业事实：{legacy_packet_summary.get('status_label')}｜"
+            f"{legacy_packet_summary.get('summary')}"
         )
-        with st.expander("A股专业事实 packet 状态", expanded=False):
+        with st.expander("A股专业事实明细", expanded=False):
+            st.caption(legacy_packet_summary.get("manual_note") or "DeepSeek 未调用。")
             packet_df = pd.DataFrame(legacy_packet_summary.get("items") or [])
             packet_columns = [
                 "label",
@@ -11748,24 +12155,25 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         def _render_legacy_fact_recovery_button(recovery_action, key_prefix):
             if not recovery_action or recovery_action.get("refresh_policy") == "not_needed":
                 return
-            st.caption(
-                f"恢复路径：{recovery_action.get('action_label') or '手动刷新'}"
-                f"｜回流：{recovery_action.get('writes_packet') or 'command_center_packet'}"
-                f"｜入口：{recovery_action.get('toolbox_entry') or '高级工具箱'}"
-                "｜DeepSeek：未调用"
-            )
             navigation_state = home_snapshot_service.build_tool_recovery_navigation_state(recovery_action)
             if not navigation_state:
                 return
             if st.button(
-                f"进入恢复：{recovery_action.get('label') or 'A股事实'}",
+                f"打开模块：{recovery_action.get('label') or 'A股事实'}",
                 key=f"btn_legacy_a_share_recovery_{key_prefix}_{recovery_action.get('key') or recovery_action.get('writes_packet')}",
-                help=recovery_action.get("navigation_label") or "切到对应高级工具模块；不会自动执行接口请求。",
+                help=recovery_action.get("navigation_label") or "切到对应高级工具模块。",
                 width="stretch",
             ):
                 for nav_key, nav_value in navigation_state.items():
                     st.session_state[nav_key] = nav_value
                 st.rerun()
+            with st.expander("查看诊断详情", expanded=False):
+                st.caption(
+                    f"恢复路径：{recovery_action.get('action_label') or '刷新'}"
+                    f"｜回流：{recovery_action.get('writes_packet') or 'command_center_packet'}"
+                    f"｜入口：{recovery_action.get('toolbox_entry') or '高级工具箱'}"
+                    "｜DeepSeek：未调用"
+                )
 
         def _render_legacy_primary_fact_card(card):
             st.markdown(f"**{card.get('title')}**")
@@ -11777,16 +12185,18 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 for caption in card.get("captions") or []:
                     st.caption(caption)
             else:
-                st.info(card.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
-            if card.get("risk_note"):
-                st.caption(f"风险口径：{card.get('risk_note')}")
-            if card.get("packet_route_summary"):
-                st.caption(f"回流链路：{card.get('packet_route_summary')}")
-            if card.get("decision_chain_effect"):
-                st.caption(f"决策影响：{card.get('decision_chain_effect')}")
+                st.info(card.get("message") or "等待自动检测或使用缓存。")
             recovery_action = card.get("recovery_action") or {}
             _render_legacy_fact_recovery_button(recovery_action, "primary")
             st.caption(card.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
+            if card.get("risk_note") or card.get("packet_route_summary") or card.get("decision_chain_effect"):
+                with st.expander("查看诊断详情", expanded=False):
+                    if card.get("risk_note"):
+                        st.caption(f"风险路径：{card.get('risk_note')}")
+                    if card.get("packet_route_summary"):
+                        st.caption(f"回流路径：{card.get('packet_route_summary')}")
+                    if card.get("decision_chain_effect"):
+                        st.caption(f"决策影响：{card.get('decision_chain_effect')}")
         
         # 第一排：龙虎榜 + 融资融券 + 个股资金流向
         col_a1, col_a2, col_a3 = st.columns(3)
@@ -11831,16 +12241,18 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             else:
                                 st.info(table.get("empty_message") or "暂无可验证明细。")
             else:
-                st.info(section.get("message") or "待手动刷新；页面打开不会自动请求 Tushare。")
-            if section.get("risk_note"):
-                st.caption(f"风险口径：{section.get('risk_note')}")
-            if section.get("packet_route_summary"):
-                st.caption(f"回流链路：{section.get('packet_route_summary')}")
-            if section.get("decision_chain_effect"):
-                st.caption(f"决策影响：{section.get('decision_chain_effect')}")
+                st.info(section.get("message") or "等待自动检测或使用缓存。")
             recovery_action = section.get("recovery_action") or {}
             _render_legacy_fact_recovery_button(recovery_action, "secondary")
             st.caption(section.get("source_caption") or "数据源：Tushare A股专业事实缓存｜本地拉取时间：未知")
+            if section.get("risk_note") or section.get("packet_route_summary") or section.get("decision_chain_effect"):
+                with st.expander("查看诊断详情", expanded=False):
+                    if section.get("risk_note"):
+                        st.caption(f"风险路径：{section.get('risk_note')}")
+                    if section.get("packet_route_summary"):
+                        st.caption(f"回流路径：{section.get('packet_route_summary')}")
+                    if section.get("decision_chain_effect"):
+                        st.caption(f"决策影响：{section.get('decision_chain_effect')}")
 
         secondary_sections = legacy_secondary_sections.get("sections") or []
         _render_legacy_secondary_fact_section(secondary_sections[0] if len(secondary_sections) > 0 else {})
@@ -12382,109 +12794,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
     recovery_notice = home_snapshot_service.build_tool_recovery_context_notice(st.session_state, selected_tab=legacy_tab)
     if recovery_notice:
-        st.info(recovery_notice["message"])
-        recovery_context_bits = [
-            recovery_notice.get("priority_label"),
-            recovery_notice.get("decision_mode"),
-            recovery_notice.get("recovery_mode_label"),
-        ]
-        recovery_context_text = "｜".join(str(item) for item in recovery_context_bits if item)
-        if recovery_context_text:
-            st.caption(f"恢复上下文：{recovery_context_text}")
-        if recovery_notice.get("provider_dependency_summary"):
-            st.caption(f"provider 依赖：{recovery_notice['provider_dependency_summary']}")
-        if recovery_notice.get("packet_route_summary"):
-            st.caption(f"packet 路由：{recovery_notice['packet_route_summary']}")
-        if recovery_notice.get("provider_decision_impact"):
-            st.caption(f"provider 影响：{recovery_notice['provider_decision_impact']}")
-        st.caption(f"{recovery_notice['action_hint']}｜{recovery_notice['safety_text']}")
-        if recovery_notice.get("decision_impact"):
-            st.caption(f"决策保护：{recovery_notice['decision_impact']}")
-        recovery_steps = recovery_notice.get("recovery_steps") or []
-        if recovery_steps:
-            st.caption("恢复步骤：" + " → ".join(str(step) for step in recovery_steps if step))
-        recovery_result_notice = home_snapshot_service.build_tool_recovery_result_notice(st.session_state, selected_tab=legacy_tab)
-        if recovery_result_notice.get("status") == "recovered":
-            st.success(recovery_result_notice["message"])
-            st.caption(
-                f"来源：{recovery_result_notice.get('source') or '本地 packet'}"
-                f"｜更新时间：{recovery_result_notice.get('updated_at') or '暂无'}"
-                f"｜{recovery_result_notice['next_action']}"
-            )
-        elif recovery_result_notice:
-            st.warning(recovery_result_notice["message"])
-            st.caption(recovery_result_notice["next_action"])
-        manual_check_hint = home_snapshot_service.build_tool_recovery_manual_check_hint(st.session_state, selected_tab=legacy_tab)
-        if manual_check_hint.get("available"):
-            st.caption(manual_check_hint["help_text"])
-            recovery_runner_map = {
-                "moneyflow": _run_manual_moneyflow_capability_check,
-                "dragon_tiger": _run_manual_dragon_tiger_capability_check,
-                "margin": _run_manual_margin_detail_capability_check,
-                "limit_emotion": _run_manual_limit_cpt_capability_check,
-                "chip_radar": _run_manual_chip_radar_capability_check,
-                "hard_risk": _run_manual_hard_risk_capability_check,
-            }
-            recovery_runner = recovery_runner_map.get(manual_check_hint.get("check_key"))
-            if recovery_runner:
-                recovery_result = _render_manual_capability_check_button(
-                    manual_check_hint["button_label"],
-                    f"btn_legacy_tool_recovery_manual_check_{manual_check_hint['check_key']}",
-                    manual_check_hint["status_label"],
-                    manual_check_hint["result_label"],
-                    recovery_runner,
-                    target=target,
-                    position_profile=position_profile_preview,
-                    live_packet=st.session_state.get("command_center_live_packet") or {},
-                )
-                if recovery_result:
-                    recovery_item = recovery_result.get("item") or {}
-                    st.session_state["command_center_last_a_share_diagnostic_recovery_result"] = {
-                        "key": manual_check_hint["check_key"],
-                        "label": manual_check_hint["label"],
-                        "writes_packet": manual_check_hint["writes_packet"],
-                        "api_hint": recovery_item.get("api"),
-                        "capability_state": recovery_item.get("capability_state") or recovery_item.get("state"),
-                        "status_label": recovery_item.get("status") or recovery_item.get("capability_label") or recovery_item.get("capability_state") or "待验证",
-                        "message": recovery_item.get("action_hint") or recovery_item.get("error") or recovery_item.get("message") or "已更新本地数据能力状态。",
-                        "checked_at": recovery_item.get("checked_at") or recovery_item.get("updated_at"),
-                        "deepseek_called": False,
-                    }
-                    _persist_home_action_snapshot(
-                        live_packet=st.session_state.get("command_center_live_packet") or {},
-                        target=target,
-                        position_profile=position_profile_preview,
-                    )
-        elif manual_check_hint:
-            st.caption(manual_check_hint["message"])
-            if manual_check_hint.get("module_button_hint"):
-                st.caption(manual_check_hint.get("help_text", ""))
-        if st.button("清除首页恢复提示", key="btn_clear_home_tool_recovery_notice"):
-            for recovery_key in [
-                "command_center_last_tool_recovery_key",
-                "command_center_last_tool_recovery_label",
-                "command_center_last_tool_recovery_provider",
-                "command_center_last_tool_recovery_api",
-                "command_center_last_tool_recovery_writes_packet",
-                "command_center_last_tool_recovery_target_tab",
-                "command_center_last_tool_recovery_source_type",
-                "command_center_last_tool_recovery_source_label",
-                "command_center_last_tool_recovery_provider_dependencies",
-                "command_center_last_tool_recovery_provider_dependency_summary",
-                "command_center_last_tool_recovery_packet_route_summary",
-                "command_center_last_tool_recovery_provider_decision_impact",
-                "command_center_last_tool_recovery_priority_label",
-                "command_center_last_tool_recovery_decision_mode",
-                "command_center_last_tool_recovery_decision_impact",
-                "command_center_last_tool_recovery_recovery_mode",
-                "command_center_last_tool_recovery_recovery_mode_label",
-                "command_center_last_tool_recovery_recovery_steps",
-                "command_center_last_tool_recovery_button_context",
-                "command_center_last_tool_recovery_navigation_label",
-                "command_center_last_tool_recovery_policy",
-            ]:
-                st.session_state.pop(recovery_key, None)
-            st.rerun()
+        render_legacy_tool_recovery_notice_panel(recovery_notice, legacy_tab=legacy_tab)
 
     if legacy_tab == "今日关注池":
         st.markdown("""
@@ -15156,7 +15466,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
     if legacy_tab == "数据源体检":
         st.markdown("### ⚙️ 数据源与权限体检")
-        st.caption("默认不自动运行；点击按钮后只检查连接、权限和返回行数，不展示 token、secrets 或原始数据。")
+        st.caption("进入本页会按 TTL 自动检查连接、权限和返回行数；DeepSeek ping 默认不执行，不展示 token、secrets 或原始数据。")
 
         health_col1, health_col2, health_col3 = st.columns([1.2, 1, 1])
         with health_col1:
@@ -15183,7 +15493,30 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 st.session_state.pop("last_data_source_healthcheck", None)
                 st.success("已清除体检缓存。")
 
-        if st.button("运行数据源体检", type="primary", key="btn_run_data_source_healthcheck", width="stretch"):
+        health_ttl = st.session_state.get(
+            legacy_a_share_auto_hydrate_service.TTL_KEY,
+            legacy_a_share_auto_hydrate_service.DEFAULT_TTL_SECONDS,
+        )
+        health_fingerprint = f"legacy_data_source_health|{health_sample_ts_code}|{datetime.date.today().isoformat()}"
+        health_last_fingerprint = st.session_state.get("legacy_data_source_health_fingerprint") or ""
+        health_last_at = _num(st.session_state.get("legacy_data_source_health_last_at"), 0) or 0
+        should_auto_healthcheck = (
+            health_last_fingerprint != health_fingerprint
+            or not health_last_at
+            or (time.time() - float(health_last_at)) >= int(health_ttl or 600)
+        )
+        if should_auto_healthcheck:
+            _run_legacy_a_share_provider_status_probe(health_sample_ts_code, "A股")
+            st.session_state["legacy_data_source_health_fingerprint"] = health_fingerprint
+            st.session_state["legacy_data_source_health_last_at"] = time.time()
+        elif st.session_state.get("legacy_auto_hydrate_provider_status"):
+            st.caption("本轮未重复体检：样例标的仍在 TTL 内。")
+
+        provider_status = st.session_state.get("legacy_auto_hydrate_provider_status") or {}
+        if provider_status.get("summary"):
+            st.caption(f"数据源覆盖：{provider_status.get('summary')}")
+
+        if st.button("强制体检", type="primary", key="btn_run_data_source_healthcheck", width="stretch"):
             with st.spinner("正在检查 Tushare、Supabase 和 DeepSeek 配置..."):
                 st.session_state["last_data_source_healthcheck"] = run_data_source_healthcheck(
                     health_sample_ts_code,
@@ -15191,10 +15524,12 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                     _supabase_client=supabase,
                     _deepseek_keys=ds_keys,
                 )
+                st.session_state["legacy_data_source_health_fingerprint"] = health_fingerprint
+                st.session_state["legacy_data_source_health_last_at"] = time.time()
 
         health_result = st.session_state.get("last_data_source_healthcheck")
         if not health_result:
-            st.info("尚未运行体检。点击“运行数据源体检”后显示摘要。")
+            st.info("尚未取得体检结果。可等待自动体检完成，或点击“强制体检”。")
         else:
             checked_at = health_result.get("checked_at", "")
             st.caption(f"最近体检时间：{checked_at}｜样例股票：{health_result.get('sample_ts_code', '')}")
