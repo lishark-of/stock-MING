@@ -53,41 +53,57 @@ from command_center_strategy_summary import build_strategy_summary_view_model
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
 try:
-    from visual_components import (
-        render_action_matrix,
-        render_command_center_account_budget_card,
-        render_command_center_decision_hero,
-        render_command_center_projection_chart,
-        render_analysis_methods_card,
-        render_command_center_packet_registry_card,
-        render_command_center_shell,
-        render_command_center_shell_end,
-        render_etf_score_table,
-        render_discipline_validation_grid,
-        render_fusion_summary_card,
-        render_home_action_snapshot,
-        render_holdings_snapshot_summary,
-        render_intraday_etf_snapshot,
-        render_margin_allocator_chart,
-        render_margin_bucket_weights_table,
-        render_margin_candidate_table,
-        render_margin_etf_data_status,
-        render_margin_etf_research_summary,
-        render_margin_execution_summary,
-        render_margin_recommended_etf_plan,
-        render_moneyflow_conflict,
-        render_next_ticket_holding_card,
-        render_next_ticket_research_summary,
-        render_observation_pool_card,
-        render_path_projection_card,
-        render_position_waterline,
-        render_process_stepper,
-        render_price_simulator,
-        render_risk_radar_summary,
-        render_signal_confluence_card,
-        render_strategy_execution_command_card,
-        render_theme_comparison_table,
-    )
+    import visual_components as _visual_components
+
+    _VISUAL_COMPONENT_LABELS = {
+        "render_action_matrix": "动作辅助矩阵",
+        "render_command_center_account_budget_card": "账户金额与预算",
+        "render_command_center_decision_hero": "今日总决策主卡",
+        "render_command_center_projection_chart": "趋势推演主视觉",
+        "render_analysis_methods_card": "市场分析方法",
+        "render_command_center_packet_registry_card": "综合中心能力地图",
+        "render_command_center_shell": "综合推演中心框架",
+        "render_command_center_shell_end": "",
+        "render_etf_score_table": "ETF 强弱表",
+        "render_discipline_validation_grid": "纪律校验区",
+        "render_fusion_summary_card": "融合结论卡",
+        "render_home_action_snapshot": "首页交易快照",
+        "render_holdings_snapshot_summary": "ETF 持仓差异",
+        "render_intraday_etf_snapshot": "ETF 实时快照",
+        "render_margin_allocator_chart": "融资ETF配置图",
+        "render_margin_bucket_weights_table": "Bucket 权重表",
+        "render_margin_candidate_table": "候选 ETF 表",
+        "render_margin_etf_data_status": "ETF 数据状态卡",
+        "render_margin_etf_research_summary": "ETF 调研解释",
+        "render_margin_execution_summary": "今日执行摘要",
+        "render_margin_recommended_etf_plan": "今日建议 ETF 配置清单",
+        "render_moneyflow_conflict": "资金流冲突仪表",
+        "render_next_ticket_holding_card": "下一票持仓卡",
+        "render_next_ticket_research_summary": "下一票深度研究摘要",
+        "render_observation_pool_card": "观察池",
+        "render_path_projection_card": "路径推演图",
+        "render_position_waterline": "持仓盈亏水位",
+        "render_process_stepper": "流程步骤条",
+        "render_price_simulator": "盘中价格情景推演",
+        "render_risk_radar_summary": "本地风险雷达摘要",
+        "render_signal_confluence_card": "信号共振",
+        "render_strategy_execution_command_card": "策略执行操作卡",
+        "render_theme_comparison_table": "同赛道 ETF 对比",
+    }
+
+    def _missing_visual_component(component_name, display_name):
+        def _fallback(*args, **kwargs):
+            if display_name:
+                st.warning(f"{display_name} 暂不可用：visual_components 缺少 {component_name}")
+
+        return _fallback
+
+    for _component_name, _component_label in _VISUAL_COMPONENT_LABELS.items():
+        globals()[_component_name] = getattr(
+            _visual_components,
+            _component_name,
+            _missing_visual_component(_component_name, _component_label),
+        )
 except Exception as module_error:
     VISUAL_COMPONENTS_MODULE_ERROR = module_error
 

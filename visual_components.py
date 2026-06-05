@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import math
 from html import escape
@@ -141,10 +142,16 @@ def _clean_html(markup):
 
 def _render_html(markup):
     html = _clean_html(markup)
-    if hasattr(st, "html"):
-        st.html(html)
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _render_html_document(markup, *, height=400):
+    html = str(markup or "")
+    if hasattr(st, "iframe"):
+        encoded = base64.b64encode(html.encode("utf-8")).decode("ascii")
+        st.iframe(f"data:text/html;charset=utf-8;base64,{encoded}", height=height)
     else:
-        st.markdown(html, unsafe_allow_html=True)
+        components.html(html, height=height, scrolling=False)
 
 
 def _inject_component_css():
@@ -6809,7 +6816,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       <div class="cc-home-foot">快照只读取本地结构化结果；页面打开不会自动调用 DeepSeek、回测、全市场扫描或重型行情接口。</div>
     </section>
     """
-    st.html(html)
+    _render_html(html)
     valid_decision_priority_actions = [
         item
         for item in decision_priority_items[:5]
@@ -7953,7 +7960,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     </html>
     """
     if components:
-        components.html(chart_html, height=392, scrolling=False)
+        _render_html_document(chart_html, height=392)
     else:  # pragma: no cover - runtime fallback for unexpected Streamlit install
         frame = _projection_static_frame(payload)
         if frame.empty:
