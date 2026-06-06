@@ -4940,6 +4940,17 @@ def _home_freshness_class(state):
     return "missing"
 
 
+def _home_risk_class(level):
+    text = str(level or "")
+    if "高" in text:
+        return "failed" if "中高" not in text else "partial_failed"
+    if "中" in text:
+        return "partial_failed"
+    if "低" in text:
+        return "ready"
+    return "missing"
+
+
 def _apply_tool_recovery_navigation(action):
     for key, value in build_tool_recovery_navigation_state(action).items():
         if key and value is not None:
@@ -4953,6 +4964,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     holding = payload.get("holding_action") or {}
     margin_etf = payload.get("margin_etf_summary") or {}
     risk_alerts = payload.get("risk_alerts") or {}
+    risk_breakdown = payload.get("risk_breakdown") or {}
+    if not isinstance(risk_breakdown, dict):
+        risk_breakdown = {}
     freshness = payload.get("data_freshness") or {}
     data_capability_brief = payload.get("data_capability_brief") or {}
     if not isinstance(data_capability_brief, dict):
@@ -6808,6 +6822,41 @@ def render_home_action_snapshot(snapshot: dict | None = None):
             <div class="cc-home-row"><span>DeepSeek</span><strong>{'已调用' if payload.get('deepseek_called') else '未调用'}</strong></div>
           </details>
     """
+    risk_items = risk_breakdown.get("items") if isinstance(risk_breakdown.get("items"), list) else []
+    if not risk_items:
+        risk_items = [
+            {
+                "key": "overall",
+                "label": "账户整体风险",
+                "level": _home_text(today_action.get("risk_level"), "中"),
+                "reason": "来自今日总决策。",
+            },
+            {"key": "position", "label": "单票风险", "level": "待评估", "reason": "持仓输入后自动评估。"},
+            {"key": "margin", "label": "融资风险", "level": "待评估", "reason": "融资比例输入后自动评估。"},
+            {"key": "data", "label": "数据风险", "level": "待评估", "reason": "刷新数据后自动评估。"},
+        ]
+    risk_breakdown_rows_html = ""
+    for item in risk_items[:4]:
+        if not isinstance(item, dict):
+            continue
+        label = _home_text(item.get("label"), "风险")
+        level = _home_text(item.get("level"), "待评估")
+        reason = _home_text(item.get("reason"), "暂无说明")
+        risk_breakdown_rows_html += f"""
+          <div class="cc-home-row">
+            <span>{escape(label)}</span>
+            <strong><span class="cc-home-chip {escape(_home_risk_class(level))}">{escape(level)}</span></strong>
+          </div>
+          <div class="cc-muted-note">{escape(reason)}</div>
+        """
+    overall_risk_item = risk_breakdown.get("overall") if isinstance(risk_breakdown.get("overall"), dict) else {}
+    overall_risk_level = _home_text(overall_risk_item.get("level"), today_action.get("risk_level") or "中")
+    risk_consistency_notice = _home_text(risk_breakdown.get("consistency_notice"), "")
+    risk_consistency_html = (
+        f"<div class='cc-muted-note'>{escape(risk_consistency_notice)}</div>"
+        if risk_consistency_notice
+        else ""
+    )
     html = f"""
     <section class="cc-home-snapshot">
       <div class="cc-home-head">
@@ -6831,8 +6880,10 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           {legacy_decision_priority_html}
         </div>
         <aside class="cc-home-side">
-          <div class="cc-home-side-label">风险等级</div>
-          <div class="cc-home-risk">{escape(_home_text(today_action.get("risk_level"), "中"))}</div>
+          <div class="cc-home-side-label">账户整体风险</div>
+          <div class="cc-home-risk">{escape(overall_risk_level)}</div>
+          {risk_breakdown_rows_html}
+          {risk_consistency_html}
           <div class="cc-muted-note">最后更新时间：{escape(_home_text(freshness.get("last_updated"), "暂无"))}</div>
           <div class="cc-muted-note">失败/错误：{escape(error_line)}</div>
         </aside>

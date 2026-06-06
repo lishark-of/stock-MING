@@ -40,6 +40,7 @@ SNAPSHOT_SOURCE = "command_center_home_snapshot"
 MAX_CANDIDATES = 3
 MAX_ERRORS = 8
 MAX_CAPABILITY_ITEMS = 8
+RISK_RANKS = {"低": 1, "待评估": 1, "中": 2, "中高": 3, "高": 4}
 
 DATA_HEALTH_TIMELINE_RECOVERY_EVENTS = {
     "last_failure",
@@ -382,6 +383,195 @@ def build_position_risk_notes(
     return deduped
 
 
+def _first_risk_number(*values: Any) -> int | float | None:
+    for value in values:
+        number = _to_number(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _risk_rank(level: Any) -> int:
+    text = _to_text(level)
+    if text in RISK_RANKS:
+        return RISK_RANKS[text]
+    if "中高" in text:
+        return RISK_RANKS["中高"]
+    if "高" in text:
+        return RISK_RANKS["高"]
+    if "中" in text:
+        return RISK_RANKS["中"]
+    if "低" in text:
+        return RISK_RANKS["低"]
+    return RISK_RANKS["待评估"]
+
+
+def _max_risk_level(*levels: Any) -> str:
+    ranked = [(_risk_rank(level), _to_text(level, "待评估")) for level in levels if _to_text(level)]
+    if not ranked:
+        return "待评估"
+    return max(ranked, key=lambda item: item[0])[1]
+
+
+def _floating_pnl_values(profile: Mapping[str, Any], price_detail: Mapping[str, Any]) -> tuple[int | float | None, int | float | None]:
+    floating = _as_mapping(profile.get("floating_pnl"))
+    pnl_pct = _first_risk_number(
+        profile.get("pnl_pct"),
+        profile.get("floating_profit_pct"),
+        floating.get("pct"),
+    )
+    pnl_amount = _first_risk_number(
+        profile.get("pnl_amount"),
+        profile.get("floating_profit_amount"),
+        floating.get("amount"),
+    )
+    current = _first_risk_number(profile.get("current_price"), price_detail.get("price"))
+    cost = _first_risk_number(profile.get("cost_price"), profile.get("cost"))
+    shares = _first_risk_number(profile.get("holding_units"), profile.get("shares")) or 0
+    if current is not None and cost is not None and cost > 0:
+        if pnl_pct is None:
+            pnl_pct = round((current / cost - 1) * 100, 2)
+        if pnl_amount is None and shares > 0:
+            pnl_amount = round((current - cost) * shares, 2)
+    return pnl_pct, pnl_amount
+
+
+def build_risk_breakdown(
+    decision_packet: Any = None,
+    *,
+    position_profile: Any = None,
+    data_freshness: Any = None,
+    coverage: Any = None,
+    errors: Any = None,
+    price_detail: Any = None,
+    risk_alerts: Any = None,
+    margin_etf_summary: Any = None,
+) -> dict:
+    decision = _as_mapping(decision_packet)
+    profile = _as_mapping(position_profile)
+    freshness = _as_mapping(data_freshness)
+    coverage_map = _as_mapping(coverage)
+    detail = _as_mapping(price_detail)
+    alerts = _as_mapping(risk_alerts)
+    margin_summary = _as_mapping(margin_etf_summary)
+    error_list = _as_list(errors)
+
+    overall_level = _to_text(decision.get("risk_level"), "中")
+    overall_reason = _to_text(
+        decision.get("reason_summary"),
+        "来自今日总决策；保留原始 risk_level，不覆盖决策引擎规则。",
+    )
+
+    pnl_pct, pnl_amount = _floating_pnl_values(profile, detail)
+    profit_state = _to_text(profile.get("profit_state") or profile.get("floating_pnl_text"))
+    shares = _first_risk_number(profile.get("holding_units"), profile.get("shares")) or 0
+    cost = _first_risk_number(profile.get("cost_price"), profile.get("cost"))
+    cost_amount = (cost or 0) * shares if shares and cost else 0
+    is_holding = shares > 0 or "已持" in _to_text(profile.get("normalized_position_state") or profile.get("position_status"))
+    is_loss = (
+        (pnl_amount is not None and pnl_amount < 0)
+        or (pnl_pct is not None and pnl_pct < 0)
+        or "浮亏" in profit_state
+    )
+    if not is_holding:
+        position_level = "低"
+        position_reason = "暂无明确持仓，单票风险待随持仓输入重新评估。"
+    elif is_loss:
+        position_level = "中"
+        position_reason = "当前为浮亏持仓，优先控制风险暴露。"
+    elif (pnl_pct is not None and pnl_pct >= 20) or cost_amount >= 200000:
+        position_level = "中"
+        if pnl_pct is not None and pnl_pct >= 20:
+            position_reason = "浮盈较大，需避免盈利回撤。"
+        else:
+            position_reason = "单票持仓成本金额较大，需单独观察集中度。"
+    else:
+        position_level = "低"
+        position_reason = "单票持仓未触发浮亏或集中度风险。"
+
+    margin_ratio = _first_risk_number(
+        profile.get("margin_ratio_pct"),
+        profile.get("margin_ratio"),
+        margin_summary.get("current_margin_ratio"),
+    ) or 0
+    if margin_ratio <= 0:
+        margin_level = "低"
+        margin_reason = "当前未使用融资。"
+    elif margin_ratio < 10:
+        margin_level = "低"
+        margin_reason = f"当前融资 {margin_ratio:g}%，处于低融资区间。"
+    elif margin_ratio < 20:
+        margin_level = "中"
+        margin_reason = f"当前融资 {margin_ratio:g}%，新增融资需等待数据刷新确认。"
+    elif margin_ratio <= 40:
+        margin_level = "中高"
+        margin_reason = "融资比例存在压力，刷新数据前不建议新增融资。"
+    else:
+        margin_level = "高"
+        margin_reason = f"当前融资 {margin_ratio:g}%，杠杆压力较高，优先降风险或保现金。"
+    if is_loss and margin_ratio > 0:
+        margin_level = _max_risk_level(margin_level, "中高")
+        margin_reason = "浮亏叠加融资，融资风险至少按中高处理；刷新数据前不建议新增融资。"
+
+    freshness_state = _to_text(freshness.get("state"))
+    current_price = _first_risk_number(profile.get("current_price"), detail.get("price"))
+    warning_text = _to_text(detail.get("warning") or profile.get("price_warning") or profile.get("warning"))
+    missing_count = sum(1 for state in coverage_map.values() if state == "missing")
+    cached_count = sum(1 for state in coverage_map.values() if state == "cached")
+    data_gap_text = "；".join(_to_text(item) for item in _as_list(alerts.get("data_gaps")) if _to_text(item))
+    error_text = "；".join(
+        _to_text(_as_mapping(item).get("message") or item)
+        for item in error_list
+        if _to_text(_as_mapping(item).get("message") or item)
+    )
+    if is_holding and current_price is None:
+        data_level = "高"
+        data_reason = warning_text or "当前价不可用，浮盈亏和风险判断需按高数据风险处理。"
+    elif error_list or freshness_state == "partial_failed":
+        data_level = "中高"
+        data_reason = error_text or "本轮刷新部分失败，结论需要结合缓存谨慎使用。"
+    elif missing_count:
+        data_level = "中高"
+        data_reason = f"关键数据仍有 {missing_count} 项待刷新，不能把缺口理解为无风险。"
+    elif cached_count or freshness_state == "stale":
+        data_level = "中"
+        data_reason = "当前使用缓存数据，需关注数据新鲜度。"
+    elif freshness_state == "missing":
+        data_level = "中高"
+        data_reason = "今日基础数据待刷新，当前结论只适合作为观察参考。"
+    elif data_gap_text and "暂无" not in data_gap_text:
+        data_level = "中"
+        data_reason = data_gap_text
+    else:
+        data_level = "低"
+        data_reason = "关键数据状态未显示明显缺口。"
+
+    consistency_notice = ""
+    if _risk_rank(overall_level) <= RISK_RANKS["低"] and (
+        _risk_rank(position_level) >= RISK_RANKS["中高"] or _risk_rank(margin_level) >= RISK_RANKS["中高"]
+    ):
+        consistency_notice = "账户整体风险较低，但单票融资/浮亏风险需单独观察。"
+    elif _risk_rank(overall_level) <= RISK_RANKS["低"] and _risk_rank(data_level) >= RISK_RANKS["中高"]:
+        consistency_notice = "账户整体风险较低，但数据缺口风险需单独观察。"
+
+    items = [
+        {"key": "overall", "label": "账户整体风险", "level": overall_level, "reason": overall_reason},
+        {"key": "position", "label": "单票风险", "level": position_level, "reason": position_reason},
+        {"key": "margin", "label": "融资风险", "level": margin_level, "reason": margin_reason},
+        {"key": "data", "label": "数据风险", "level": data_level, "reason": data_reason},
+    ]
+    return {
+        "overall": items[0],
+        "position": items[1],
+        "margin": items[2],
+        "data": items[3],
+        "items": items,
+        "summary": " / ".join(f"{item['label']}：{item['level']}" for item in items),
+        "consistency_notice": consistency_notice,
+        "deepseek_called": False,
+    }
+
+
 def _now_iso(now: Any = None) -> str:
     if isinstance(now, _dt.datetime):
         return now.isoformat(timespec="seconds")
@@ -513,6 +703,14 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "empty_message": reason,
         "deepseek_called": False,
     }
+    snapshot["risk_breakdown"] = build_risk_breakdown(
+        snapshot.get("today_action") or {},
+        position_profile=snapshot.get("holding_action") or {},
+        data_freshness=snapshot.get("data_freshness") or {},
+        coverage=snapshot.get("data_coverage") or {},
+        risk_alerts=snapshot.get("risk_alerts") or {},
+        margin_etf_summary=snapshot.get("margin_etf_summary") or {},
+    )
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
@@ -697,6 +895,15 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["market_profile_evidence"] = normalized_market_profile
     snapshot = attach_decision_loop_status(snapshot)
     snapshot["data_capability_brief"] = build_home_data_capability_brief(snapshot)
+    snapshot["risk_breakdown"] = build_risk_breakdown(
+        snapshot.get("decision_packet") or snapshot.get("today_action") or {},
+        position_profile=snapshot.get("holding_action") or {},
+        data_freshness=snapshot.get("data_freshness") or {},
+        coverage=snapshot.get("data_coverage") or {},
+        errors=snapshot.get("errors") or [],
+        risk_alerts=snapshot.get("risk_alerts") or {},
+        margin_etf_summary=snapshot.get("margin_etf_summary") or {},
+    )
     return snapshot
 
 
@@ -5869,7 +6076,7 @@ def build_holding_action(target: str = "", position_profile: Any = None, strateg
         else:
             pnl_text = "暂无"
     return {
-        "ticker": ticker,
+        "ticker": display_a_share_ticker(ticker),
         "name": _to_text(profile.get("name") or profile.get("current_holding_name")),
         "investment_horizon": _to_text(
             profile.get("investment_horizon")
@@ -6913,6 +7120,7 @@ def build_home_action_snapshot(
         ),
         hard_risk_packet,
     )
+    data_freshness = build_data_freshness(timestamp, errors, deepseek_called=deepseek_called)
     analysis_method_packet = (
         state_map.get("command_center_analysis_method_packet")
         or state_map.get("analysis_method_packet")
@@ -6962,8 +7170,17 @@ def build_home_action_snapshot(
         "legacy_a_share_gap_summary": {},
         "margin_etf_summary": margin_etf_summary,
         "risk_alerts": risk_alerts,
+        "risk_breakdown": build_risk_breakdown(
+            decision,
+            position_profile=position_profile,
+            data_freshness=data_freshness,
+            coverage=coverage,
+            errors=errors,
+            risk_alerts=risk_alerts,
+            margin_etf_summary=margin_etf_summary,
+        ),
         "data_coverage": coverage,
-        "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
+        "data_freshness": data_freshness,
         "data_capability": data_capability_snapshot,
         "a_share_capability_matrix": a_share_capability_matrix,
         "facts_packet": facts_packet_snapshot,
@@ -7105,6 +7322,15 @@ def build_home_action_snapshot(
         )
         empty["data_capability_brief"] = build_home_data_capability_brief(empty)
         empty["errors"] = errors
+        empty["risk_breakdown"] = build_risk_breakdown(
+            empty.get("decision_packet") or empty.get("today_action") or {},
+            position_profile=empty.get("holding_action") or {},
+            data_freshness=empty.get("data_freshness") or {},
+            coverage=empty.get("data_coverage") or {},
+            errors=empty.get("errors") or [],
+            risk_alerts=empty.get("risk_alerts") or {},
+            margin_etf_summary=empty.get("margin_etf_summary") or {},
+        )
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
@@ -7160,6 +7386,15 @@ def build_home_action_snapshot(
         decision_packet=decision,
     )
     snapshot["data_capability_brief"] = build_home_data_capability_brief(snapshot)
+    snapshot["risk_breakdown"] = build_risk_breakdown(
+        decision,
+        position_profile=position_profile or snapshot.get("holding_action") or {},
+        data_freshness=snapshot.get("data_freshness") or {},
+        coverage=snapshot.get("data_coverage") or {},
+        errors=snapshot.get("errors") or [],
+        risk_alerts=snapshot.get("risk_alerts") or {},
+        margin_etf_summary=snapshot.get("margin_etf_summary") or {},
+    )
     return sanitize_snapshot_payload(snapshot)
 
 

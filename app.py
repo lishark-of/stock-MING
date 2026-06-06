@@ -7196,6 +7196,13 @@ def render_command_center_decision_trade_panel(
     margin_ratio = _num(profile.get("margin_ratio_pct"), 0) or 0
     pnl_text = profile.get("profit_state") or "盈亏未计算"
     refresh_label, refresh_impact = _cc_home_refresh_state()
+    risk_breakdown = home_snapshot_service.build_risk_breakdown(
+        decision,
+        position_profile=profile,
+        coverage=decision.get("data_coverage") if isinstance(decision.get("data_coverage"), dict) else {},
+        price_detail=detail,
+        errors=detail.get("errors") or [],
+    )
     reason = _home_trade_text(
         decision.get("reason_summary") or strategy.get("summary"),
         "当前结论仍需价格、趋势和纪律条件确认。",
@@ -7263,7 +7270,14 @@ def render_command_center_decision_trade_panel(
         cols[0].metric("总动作", action)
         cols[1].metric("当前持仓动作", position_mode)
         cols[2].metric("融资动作", margin_mode)
-        cols[3].metric("风险等级", risk_level)
+        cols[3].metric("账户整体风险", risk_breakdown.get("overall", {}).get("level") or risk_level)
+        risk_cols = st.columns(4)
+        for col, item in zip(risk_cols, risk_breakdown.get("items") or []):
+            with col:
+                st.metric(item.get("label") or "风险", item.get("level") or "待评估")
+                st.caption(item.get("reason") or "暂无说明")
+        if risk_breakdown.get("consistency_notice"):
+            st.warning(risk_breakdown["consistency_notice"])
         t1, t2, t3 = st.columns(3)
         t1.markdown("**触发条件**")
         t1.write(trigger_line)
@@ -7478,6 +7492,13 @@ def render_command_center_risk_alert_panel(
     current_margin = _num(profile.get("margin_ratio_pct"), 0) or 0
     recommended_margin = _num(margin_section.get("recommended_margin_ratio"))
     packet_errors = summary.get("errors") or []
+    risk_breakdown = home_snapshot_service.build_risk_breakdown(
+        decision_packet,
+        position_profile=profile,
+        price_detail=detail,
+        errors=packet_errors,
+        margin_etf_summary=margin_section,
+    )
     alerts.extend(str(item) for item in packet_errors[:3] if item)
     hard_risk_packet = st.session_state.get("command_center_hard_risk_packet") or {}
     if isinstance(hard_risk_packet, dict) and hard_risk_packet:
@@ -7522,8 +7543,10 @@ def render_command_center_risk_alert_panel(
             total_risk_level=risk_budget.get("risk_level") or (decision_packet or {}).get("risk_level"),
         )
     )
+    if risk_breakdown.get("consistency_notice"):
+        alerts.append(risk_breakdown["consistency_notice"])
     if risk_budget.get("risk_level"):
-        alerts.append(f"风险预算：{risk_budget.get('risk_level')}；现金缓冲 {risk_budget.get('cash_buffer') if risk_budget.get('cash_buffer') is not None else '待计算'}")
+        alerts.append(f"策略风险预算：{risk_budget.get('risk_level')}；现金缓冲 {risk_budget.get('cash_buffer') if risk_budget.get('cash_buffer') is not None else '待计算'}")
     invalidation = (strategy_packet or {}).get("invalidation_condition")
     if invalidation:
         alerts.append(f"失效条件：{invalidation}")

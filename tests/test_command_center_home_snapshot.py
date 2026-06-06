@@ -151,6 +151,109 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("账户总风险低，但单票融资/浮亏风险需单独观察", text)
         self.assertNotIn("盈利回撤", text)
 
+    def test_risk_breakdown_marks_thirty_percent_margin_mid_high(self):
+        decision = {"risk_level": "低", "reason_summary": "规则总风险仍低。"}
+        breakdown = snapshot.build_risk_breakdown(
+            decision,
+            position_profile={
+                "ticker": "002008.SZ",
+                "cost_price": 98,
+                "current_price": 120,
+                "holding_units": 3000,
+                "pnl_pct": 22.45,
+                "pnl_amount": 66000,
+                "margin_ratio_pct": 30,
+                "normalized_position_state": "已持仓",
+                "profit_state": "浮盈 22.45%",
+            },
+            data_freshness={"state": "today"},
+            coverage={"market": "ready", "quant": "ready"},
+        )
+
+        self.assertEqual(decision["risk_level"], "低")
+        self.assertEqual(breakdown["overall"]["level"], "低")
+        self.assertIn(breakdown["margin"]["level"], {"中高", "高"})
+        self.assertIn("账户整体风险较低", breakdown["consistency_notice"])
+        self.assertFalse(breakdown["deepseek_called"])
+
+    def test_risk_breakdown_loss_with_margin_has_position_and_margin_pressure(self):
+        breakdown = snapshot.build_risk_breakdown(
+            {"risk_level": "低"},
+            position_profile={
+                "ticker": "601012.SH",
+                "cost_price": 20,
+                "current_price": 18,
+                "holding_units": 1000,
+                "pnl_pct": -10,
+                "pnl_amount": -2000,
+                "margin_ratio_pct": 20,
+                "normalized_position_state": "已持仓",
+                "profit_state": "浮亏 10.00%",
+            },
+            data_freshness={"state": "today"},
+        )
+        dumped = json.dumps(breakdown, ensure_ascii=False)
+
+        self.assertEqual(breakdown["position"]["level"], "中")
+        self.assertIn(breakdown["margin"]["level"], {"中高", "高"})
+        self.assertIn("当前为浮亏持仓，优先控制风险暴露", dumped)
+        self.assertIn("账户整体风险较低", breakdown["consistency_notice"])
+        self.assertNotIn("盈利回撤", dumped)
+        self.assertFalse(breakdown["deepseek_called"])
+
+    def test_risk_breakdown_missing_current_price_is_data_risk(self):
+        breakdown = snapshot.build_risk_breakdown(
+            {"risk_level": "低"},
+            position_profile={
+                "ticker": "688041.SH",
+                "cost_price": 120,
+                "current_price": None,
+                "holding_units": 500,
+                "normalized_position_state": "已持仓",
+                "profit_state": "行情失败，不计算实时浮盈亏。",
+            },
+            price_detail={"price": None, "warning": "行情失败：未取得当前价"},
+            data_freshness={"state": "partial_failed"},
+        )
+
+        self.assertIn(breakdown["data"]["level"], {"中高", "高"})
+        self.assertIn("行情失败", breakdown["data"]["reason"])
+        self.assertFalse(breakdown["deepseek_called"])
+
+    def test_home_snapshot_adds_risk_breakdown_without_rewriting_decision_risk(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "只观察",
+                "risk_level": "低",
+                "market_bias": "震荡",
+                "updated_at": f"{today}T10:00:00",
+            }
+        }
+        payload = snapshot.build_home_action_snapshot(
+            state,
+            target="688041.SH",
+            position_profile={
+                "ticker": "688041.SS",
+                "cost_price": 120,
+                "current_price": 140,
+                "holding_units": 500,
+                "margin_ratio_pct": 0,
+                "normalized_position_state": "已持仓",
+                "profit_state": "浮盈 16.67%",
+            },
+            now=f"{today}T10:05:00",
+        )
+
+        self.assertEqual(payload["decision_packet"]["risk_level"], "低")
+        self.assertEqual(payload["today_action"]["risk_level"], "低")
+        self.assertIn("risk_breakdown", payload)
+        self.assertEqual(payload["risk_breakdown"]["overall"]["level"], "低")
+        self.assertEqual(payload["risk_breakdown"]["margin"]["level"], "低")
+        self.assertEqual(payload["holding_action"]["ticker"], "688041.SH")
+        self.assertFalse(payload["risk_breakdown"]["deepseek_called"])
+
     def test_data_freshness_today_stale_missing_and_partial_failed(self):
         self.assertEqual(snapshot.classify_data_freshness("2026-06-01T09:30:00", today="2026-06-01"), "today")
         self.assertEqual(snapshot.classify_data_freshness("2026-05-31T09:30:00", today="2026-06-01"), "stale")
