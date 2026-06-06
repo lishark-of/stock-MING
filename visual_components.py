@@ -7429,6 +7429,17 @@ def _projection_path_cards(paths):
                 st.markdown(f"<span class='cc-projection-pill {tone}'>{escape(probability_text)}</span>", unsafe_allow_html=True)
                 st.caption("触发条件")
                 st.write(str(item.get("trigger") or "等待验证。"))
+                target_value = _to_float(item.get("target_value"))
+                target_change = _to_float(item.get("target_change_pct"))
+                target_pnl = _to_float(item.get("target_pnl_amount"))
+                target_pnl_pct = _to_float(item.get("target_pnl_pct"))
+                if target_value is not None:
+                    st.caption("路径目标")
+                    target_label = str(item.get("target_label") or _fmt_price(target_value))
+                    target_text = f"{target_label}（{_fmt_pct(target_change)}）"
+                    if target_pnl is not None or target_pnl_pct is not None:
+                        target_text += f"｜目标浮盈亏 {_fmt_pct(target_pnl_pct)} / {_fmt_money(target_pnl)}"
+                    st.write(target_text)
                 st.caption("对应动作")
                 st.write(str(item.get("action") or "只观察。"))
                 st.caption("风险提示")
@@ -7994,6 +8005,25 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     legacy_chain_summary = str(payload.get("path_legacy_decision_chain_summary") or "")
     legacy_chain_status = str(payload.get("path_legacy_decision_chain_status") or "")
     legacy_chain_label = str(payload.get("path_legacy_decision_chain_label") or "旧能力链")
+    position_context = payload.get("position_context") if isinstance(payload.get("position_context"), dict) else {}
+    reference_lines = [item for item in (payload.get("reference_lines") or []) if isinstance(item, dict)]
+    price_basis = str(position_context.get("price_basis") or "normalized")
+    ticker_text = str(position_context.get("ticker") or "当前持仓")
+    name_text = str(position_context.get("name") or "").strip()
+    shares_value = _to_float(position_context.get("shares"))
+    shares_text = f"{shares_value:,.0f} 股" if shares_value is not None else "持仓未填"
+    current_text = (
+        _fmt_price(position_context.get("current_price"))
+        if price_basis == "real_price"
+        else "未刷新 / 归一化 100"
+    )
+    cost_text = _fmt_price(position_context.get("cost_price"))
+    cost_amount_text = _fmt_money(position_context.get("cost_amount"))
+    pnl_amount_text = _fmt_money(position_context.get("floating_pnl_amount"))
+    pnl_pct_text = _fmt_pct(position_context.get("floating_pnl_pct"))
+    margin_value = _to_float(position_context.get("margin_ratio_pct"))
+    margin_text = f"{margin_value:.0f}%" if margin_value is not None else "暂无"
+    position_summary = str(payload.get("position_context_summary") or position_context.get("summary") or "")
     legacy_chain_tone_class = {
         "ready": "green",
         "cache_only": "blue",
@@ -8098,6 +8128,19 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           <div class="projection-fact-pills">{fact_pills_html}</div>
         </div>
         """
+    position_title = f"{ticker_text} {name_text}".strip()
+    position_strip_html = f"""
+    <div class="projection-position-strip">
+      <span class="projection-position-title">{escape(position_title)}</span>
+      <span class="projection-position-pill">当前：{escape(current_text)}</span>
+      <span class="projection-position-pill">成本：{escape(cost_text)}</span>
+      <span class="projection-position-pill">数量：{escape(shares_text)}</span>
+      <span class="projection-position-pill">成本金额：{escape(cost_amount_text)}</span>
+      <span class="projection-position-pill">浮盈亏：{escape(pnl_pct_text)} / {escape(pnl_amount_text)}</span>
+      <span class="projection-position-pill">融资：{escape(margin_text)}</span>
+      <span class="projection-position-note">{escape(position_summary or "趋势路径按当前持仓条件化展示。")}</span>
+    </div>
+    """
     projection_subtitle = f"{note} ｜ 最后更新时间：{updated_at}"
     if deepseek_called or not home_compact:
         projection_subtitle += f" ｜ DeepSeek：{deepseek_status_text}"
@@ -8143,6 +8186,37 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           font-size: 11px;
         }}
         .projection-fact-title {{ font-weight: 780; color: #334155; }}
+        .projection-position-strip {{
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          flex-wrap: wrap;
+          margin: 0 0 5px;
+          color: #334155;
+          font-size: 11px;
+        }}
+        .projection-position-title {{
+          font-weight: 820;
+          color: #0f172a;
+          max-width: 128px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }}
+        .projection-position-pill {{
+          border-radius: 999px;
+          background: rgba(15,23,42,0.04);
+          border: 1px solid rgba(15,23,42,0.08);
+          padding: 4px 8px;
+          font-weight: 720;
+          white-space: nowrap;
+        }}
+        .projection-position-note {{
+          color: #64748b;
+          flex: 1 1 220px;
+          min-width: 180px;
+          line-height: 1.35;
+        }}
         .projection-fact-summary,
         .projection-fact-pill {{
           border-radius: 999px;
@@ -8170,8 +8244,8 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           font-weight: 760;
           white-space: nowrap;
         }}
-        #projection-chart {{ height: 285px; width: 100%; }}
-        .fallback-svg {{ width: 100%; height: 285px; display: block; }}
+        #projection-chart {{ height: 255px; width: 100%; }}
+        .fallback-svg {{ width: 100%; height: 255px; display: block; }}
         .fallback-label {{ font-size: 11px; fill: #64748b; font-weight: 650; }}
       </style>
     </head>
@@ -8184,6 +8258,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           </div>
           <div class="projection-badge">{escape(projection_badge)}</div>
         </div>
+        {position_strip_html}
         {fact_strip_html}
         <div id="projection-chart"></div>
       </section>
@@ -8196,6 +8271,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           const points = [];
           (packet.historical || []).forEach(p => points.push([Number(p.t), Number(p.value)]));
           (packet.paths || []).forEach(path => (path.points || []).forEach(p => points.push([Number(p.t), Number(p.value)])));
+          (packet.reference_lines || []).forEach(line => points.push([0, Number(line.value)]));
           return points.filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
         }}
         function renderFallback() {{
@@ -8209,7 +8285,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           const minY = Math.min(...points.map(p => p[1]));
           const maxY = Math.max(...points.map(p => p[1]));
           const w = Math.max(root.clientWidth || 760, 320);
-          const h = 285;
+          const h = 255;
           const pad = 26;
           const sx = x => pad + (x - minX) / Math.max(maxX - minX, 1) * (w - pad * 2);
           const sy = y => h - pad - (y - minY) / Math.max(maxY - minY, 1) * (h - pad * 2);
@@ -8217,6 +8293,14 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           let svg = '<svg class="fallback-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">';
           svg += '<line x1="' + sx(0) + '" y1="18" x2="' + sx(0) + '" y2="' + (h - 18) + '" stroke="#94a3b8" stroke-dasharray="4 4" />';
           svg += '<text x="' + (sx(0) + 6) + '" y="28" class="fallback-label">T0</text>';
+          (packet.reference_lines || []).forEach(lineInfo => {{
+            const yValue = Number(lineInfo.value);
+            if (!Number.isFinite(yValue)) return;
+            const y = sy(yValue);
+            const color = String(lineInfo.key || '') === 'cost_line' ? '#f97316' : '#2563eb';
+            svg += '<line x1="26" y1="' + y + '" x2="' + (w - 26) + '" y2="' + y + '" stroke="' + color + '" stroke-dasharray="5 5" opacity="0.72" />';
+            svg += '<text x="32" y="' + (y - 5) + '" class="fallback-label">' + String(lineInfo.label || '参考线') + '</text>';
+          }});
           svg += line(packet.historical || [], '#94a3b8');
           (packet.paths || []).slice(0, 3).forEach((path, idx) => {{
             svg += line(path.points || [], colors[idx], 'stroke-dasharray="' + (idx === 1 ? '0' : '5 5') + '"');
@@ -8228,6 +8312,9 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         }}
         function makeSeries(step) {{
           const historical = (packet.historical || []).map(p => [Number(p.t), Number(p.value)]);
+          const referenceMarkLines = (packet.reference_lines || [])
+            .filter(line => Number.isFinite(Number(line.value)))
+            .map(line => ({{ yAxis: Number(line.value), name: String(line.label || '参考线') }}));
           const series = [{{
             name: '历史走势',
             type: 'line',
@@ -8235,7 +8322,12 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
             symbol: 'none',
             smooth: 0.35,
             lineStyle: {{ width: 3, color: '#94a3b8' }},
-            markLine: {{ symbol: 'none', lineStyle: {{ color: '#64748b', type: 'dashed' }}, data: [{{ xAxis: 0, name: 'T0' }}], label: {{ formatter: 'T0' }} }}
+            markLine: {{
+              symbol: 'none',
+              lineStyle: {{ color: '#64748b', type: 'dashed' }},
+              data: [{{ xAxis: 0, name: 'T0' }}].concat(referenceMarkLines),
+              label: {{ formatter: params => params.name || '参考线' }}
+            }}
           }}];
           (packet.paths || []).slice(0, 3).forEach((path, idx) => {{
             const full = (path.points || []).map(p => [Number(p.t), Number(p.value)]);

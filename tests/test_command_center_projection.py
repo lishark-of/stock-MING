@@ -73,6 +73,56 @@ class CommandCenterProjectionTests(unittest.TestCase):
             self.assertTrue(path["points"])
             self.assertEqual(path["points"][0]["t"], 0)
 
+    def test_position_context_adds_cost_line_margin_and_path_pnl(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "risk_level": "中", "updated_at": "2026-06-01T09:30:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            home_snapshot={
+                "holding_action": {
+                    "ticker": "002008.SZ",
+                    "name": "大族激光",
+                    "shares": 3000,
+                    "cost": 98,
+                    "current_price": 127.87,
+                    "investment_horizon": "短中期",
+                },
+                "margin_etf_summary": {"current_margin_ratio": 30, "recommended_margin_ratio": 20},
+            },
+        )
+
+        context = packet["position_context"]
+        self.assertEqual(packet["unit"], "price")
+        self.assertEqual(context["ticker"], "002008.SZ")
+        self.assertEqual(context["cost_amount"], 294000)
+        self.assertEqual(context["margin_ratio_pct"], 30)
+        self.assertEqual({item["key"] for item in packet["reference_lines"]}, {"current_price", "cost_line"})
+        self.assertIn("融资比例 30%", packet["position_context_summary"])
+        self.assertIsNotNone(packet["paths"][0]["target_pnl_amount"])
+        self.assertIn("不新增融资追高", packet["paths"][0]["risk"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_missing_current_price_uses_normalized_projection_not_cost_price(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "等待", "updated_at": "2026-06-01T09:30:00"},
+            home_snapshot={
+                "holding_action": {
+                    "ticker": "688041.SH",
+                    "shares": 500,
+                    "cost": 120,
+                    "investment_horizon": "短中期",
+                }
+            },
+        )
+
+        self.assertEqual(packet["unit"], "index")
+        self.assertEqual(packet["base_value"], 100.0)
+        self.assertEqual(packet["position_context"]["price_basis"], "normalized")
+        self.assertEqual(packet["reference_lines"][0]["label"], "归一化基准")
+        self.assertIn("当前价未刷新", packet["position_context_summary"])
+        self.assertIn("归一化路径", packet["paths"][0]["action"])
+        self.assertIn("归一化", packet["paths"][0]["target_label"])
+        self.assertIsNone(packet["paths"][0]["target_pnl_amount"])
+
     def test_deepseek_called_is_always_false_for_projection_build(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "只观察", "deepseek_called": True},

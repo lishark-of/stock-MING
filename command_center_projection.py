@@ -148,9 +148,9 @@ def _probabilities(decision_packet: Mapping[str, Any], strategy_packet: Mapping[
     return (25, 50, 25)
 
 
-def _base_value(home_snapshot: Mapping[str, Any], live_packet: Mapping[str, Any]) -> float:
+def _current_price_value(home_snapshot: Mapping[str, Any], live_packet: Mapping[str, Any]) -> float | None:
     holding = _as_mapping(home_snapshot.get("holding_action"))
-    value = _to_number(holding.get("current_price") or holding.get("cost"))
+    value = _to_number(holding.get("current_price"))
     if value and value > 0:
         return round(value, 4)
     for key in ("market", "quant", "discipline"):
@@ -158,7 +158,174 @@ def _base_value(home_snapshot: Mapping[str, Any], live_packet: Mapping[str, Any]
         value = _to_number(section.get("current_price") or section.get("price") or section.get("value"))
         if value and value > 0:
             return round(value, 4)
+    return None
+
+
+def _base_value(home_snapshot: Mapping[str, Any], live_packet: Mapping[str, Any]) -> float:
+    value = _current_price_value(home_snapshot, live_packet)
+    if value and value > 0:
+        return round(value, 4)
     return 100.0
+
+
+def _holding_margin_ratio(home_snapshot: Mapping[str, Any]) -> float | None:
+    holding = _as_mapping(home_snapshot.get("holding_action"))
+    margin_summary = _as_mapping(home_snapshot.get("margin_etf_summary"))
+    margin_risk = _as_mapping(_as_mapping(home_snapshot.get("risk_breakdown")).get("margin"))
+    value = _to_number(
+        holding.get("margin_ratio_pct")
+        or holding.get("margin_ratio")
+        or margin_summary.get("current_margin_ratio")
+        or margin_risk.get("ratio_pct")
+    )
+    return value if value is not None else None
+
+
+def _position_projection_context(
+    home_snapshot: Mapping[str, Any],
+    live_packet: Mapping[str, Any],
+    base_value: float,
+) -> dict:
+    holding = _as_mapping(home_snapshot.get("holding_action"))
+    margin_summary = _as_mapping(home_snapshot.get("margin_etf_summary"))
+    current_price = _current_price_value(home_snapshot, live_packet)
+    cost_price = _to_number(holding.get("cost") or holding.get("cost_price"))
+    shares = _to_number(holding.get("shares") or holding.get("holding_units"))
+    floating = _as_mapping(holding.get("floating_pnl"))
+    pnl_pct = _to_number(floating.get("pct") or holding.get("pnl_pct"))
+    pnl_amount = _to_number(floating.get("amount") or holding.get("pnl_amount"))
+    if current_price is not None and cost_price and shares:
+        if pnl_pct is None:
+            pnl_pct = round((current_price / cost_price - 1) * 100, 2)
+        if pnl_amount is None:
+            pnl_amount = round((current_price - cost_price) * shares, 2)
+    margin_ratio = _holding_margin_ratio(home_snapshot)
+    recommended_margin_ratio = _to_number(margin_summary.get("recommended_margin_ratio"))
+    cost_amount = round(cost_price * shares, 2) if cost_price and shares else None
+    market_value = round(current_price * shares, 2) if current_price is not None and shares else None
+    price_basis = "real_price" if current_price is not None else "normalized"
+    reference_lines = [
+        {
+            "key": "current_price",
+            "label": "当前价基准" if price_basis == "real_price" else "归一化基准",
+            "value": round(current_price if current_price is not None else base_value, 4),
+            "tone": "blue",
+        }
+    ]
+    if price_basis == "real_price" and cost_price:
+        reference_lines.append(
+            {
+                "key": "cost_line",
+                "label": "成本线",
+                "value": round(cost_price, 4),
+                "tone": "orange" if current_price is None or current_price < cost_price else "green",
+            }
+        )
+    notes = []
+    if current_price is None:
+        notes.append("当前价未刷新，本轮趋势以 100 归一化基准展示，不能当作实时价格目标。")
+    elif cost_price:
+        if current_price >= cost_price:
+            notes.append("当前价位于成本线上方，重点观察盈利回撤和触发条件。")
+        else:
+            notes.append("当前为成本线下方持仓，优先控制风险暴露。")
+    if margin_ratio and margin_ratio >= 20:
+        notes.append(f"融资比例 {margin_ratio:g}%，不建议因为乐观路径额外加杠杆追高。")
+    elif margin_ratio and margin_ratio > 0:
+        notes.append(f"融资比例 {margin_ratio:g}%，新增融资需等待价格和数据同时确认。")
+    return {
+        "ticker": _to_text(holding.get("ticker")),
+        "name": _to_text(holding.get("name")),
+        "investment_horizon": _to_text(holding.get("investment_horizon")),
+        "shares": shares,
+        "cost_price": cost_price,
+        "current_price": current_price,
+        "cost_amount": cost_amount,
+        "market_value": market_value,
+        "floating_pnl_pct": pnl_pct,
+        "floating_pnl_amount": pnl_amount,
+        "margin_ratio_pct": margin_ratio,
+        "recommended_margin_ratio": recommended_margin_ratio,
+        "price_basis": price_basis,
+        "reference_lines": reference_lines,
+        "summary": "｜".join(notes) or "暂无持仓价格上下文；趋势路径仅作条件化观察。",
+        "deepseek_called": False,
+    }
+
+
+def _append_sentence(base: Any, addition: str) -> str:
+    text = _to_text(base)
+    if not addition:
+        return text
+    if not text:
+        return addition
+    if addition in text:
+        return text
+    return f"{text} {addition}"
+
+
+def _position_path_note(index: int, target_value: float, base_value: float, context: Mapping[str, Any]) -> dict:
+    shares = _to_number(context.get("shares"))
+    cost = _to_number(context.get("cost_price"))
+    current = _to_number(context.get("current_price"))
+    margin = _to_number(context.get("margin_ratio_pct")) or 0
+    price_basis = _to_text(context.get("price_basis"), "normalized")
+    target_change_pct = round((target_value / base_value - 1) * 100, 2) if base_value else 0.0
+    target_pnl_pct = None
+    target_pnl_amount = None
+    if price_basis == "real_price" and cost and shares:
+        target_pnl_pct = round((target_value / cost - 1) * 100, 2)
+        target_pnl_amount = round((target_value - cost) * shares, 2)
+    if price_basis != "real_price":
+        action = "价格未刷新，先按归一化路径观察，不把路径点位当成买卖价。"
+        risk = "当前价缺失时，必须先刷新行情，再判断成本线、浮盈亏和仓位动作。"
+    elif index == 0:
+        action = "触发后也只允许按纪律小幅试探。"
+        risk = "不追高；先看是否站稳当前价基准和成本线。"
+    elif index == 1:
+        action = "持仓观察，等待量价、纪律和数据能力同向确认。"
+        risk = "横盘不等于买点；成本线附近避免频繁加减。"
+    else:
+        action = "优先降风险、保现金，必要时降低融资暴露。"
+        risk = "若跌破成本线或谨慎路径触发，不能继续把回撤当成正常波动。"
+    if margin >= 20:
+        risk = _append_sentence(risk, f"当前融资 {margin:g}%，不新增融资追高。")
+        if index == 0:
+            action = _append_sentence(action, "融资压力未降前，优先现金小额或 ETF 替代。")
+    if current is not None and cost:
+        if current < cost:
+            risk = _append_sentence(risk, "当前仍低于成本线，先控制浮亏暴露。")
+        elif target_value < cost:
+            risk = _append_sentence(risk, "路径目标跌回成本线下方时，优先执行降风险。")
+    return {
+        "target_value": round(target_value, 4),
+        "target_label": f"{target_value:.2f}" if price_basis == "real_price" else f"归一化 {target_value:.2f}",
+        "target_change_pct": target_change_pct,
+        "target_pnl_pct": target_pnl_pct,
+        "target_pnl_amount": target_pnl_amount,
+        "position_action": action,
+        "position_risk_note": risk,
+    }
+
+
+def _merge_position_context_into_paths(
+    paths: list[dict],
+    position_context: Mapping[str, Any],
+    base_value: float,
+) -> list[dict]:
+    guided_paths = []
+    for index, path in enumerate(paths):
+        item = dict(path)
+        points = _as_list(item.get("points"))
+        last = _as_mapping(points[-1]) if points else {}
+        target = _to_number(last.get("value"), base_value) or base_value
+        note = _position_path_note(index, target, base_value, position_context)
+        item.update(note)
+        item["action"] = _append_sentence(item.get("action"), note["position_action"])
+        item["risk"] = _append_sentence(item.get("risk") or item.get("risk_note"), note["position_risk_note"])
+        item["risk_note"] = item["risk"]
+        guided_paths.append(item)
+    return guided_paths
 
 
 def _historical_points(base_value: float, market_bias: str = "", days: int = HISTORICAL_DAYS) -> list[dict]:
@@ -1547,6 +1714,7 @@ def build_projection_packet(
     updated_at = _packet_updated_at(decision, strategy, live, snapshot, now=now)
     status = _status_from_inputs(decision, strategy, live, snapshot)
     base = _base_value(snapshot, live)
+    position_context = _position_projection_context(snapshot, live, base)
     market_bias = _to_text(decision.get("market_bias") or _as_mapping(snapshot.get("today_action")).get("market_bias"), "未刷新")
     probabilities = _probabilities(decision, strategy)
     targets = _path_targets(decision, strategy)
@@ -1583,6 +1751,7 @@ def build_projection_packet(
         paths,
         legacy_decision_chain,
     )
+    paths = _merge_position_context_into_paths(paths, position_context, base)
     fallback = status == "waiting" or not _has_payload(decision, strategy, live, snapshot)
     note = "示例路径 / 待刷新" if fallback else "基于现有结构化 packet 的条件化路径推演"
     return {
@@ -1625,6 +1794,9 @@ def build_projection_packet(
         "path_legacy_decision_chain_status": _to_text(legacy_decision_chain_guidance.get("status")),
         "path_legacy_decision_chain_label": _to_text(legacy_decision_chain_guidance.get("label")),
         "path_legacy_decision_chain_items": legacy_decision_chain_guidance.get("items") or [],
+        "position_context": position_context,
+        "reference_lines": position_context.get("reference_lines") or [],
+        "position_context_summary": _to_text(position_context.get("summary")),
         "market_method_summary": _to_text(_as_mapping(analysis_method_packet).get("summary"), "分析方法待验证"),
         "source": SOURCE_FALLBACK if fallback else SOURCE_READY,
         "updated_at": updated_at,
@@ -1632,7 +1804,7 @@ def build_projection_packet(
         "is_fallback": fallback,
         "note": note,
         "base_value": round(base, 4),
-        "unit": "price" if base != 100.0 else "index",
+        "unit": "price" if position_context.get("price_basis") == "real_price" else "index",
     }
 
 
