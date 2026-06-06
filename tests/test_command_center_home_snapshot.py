@@ -127,6 +127,30 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIsInstance(payload, dict)
         json.dumps(payload, ensure_ascii=False)
 
+    def test_display_a_share_ticker_keeps_sh_suffix_for_users(self):
+        self.assertEqual(snapshot.display_a_share_ticker("688041.SH"), "688041.SH")
+        self.assertEqual(snapshot.display_a_share_ticker("688041.SS"), "688041.SH")
+        self.assertEqual(snapshot.display_a_share_ticker("688041"), "688041.SH")
+        self.assertEqual(snapshot.display_a_share_ticker("300750.SZ"), "300750.SZ")
+
+    def test_position_risk_notes_use_loss_and_margin_context(self):
+        notes = snapshot.build_position_risk_notes(
+            {
+                "profit_state": "浮亏 -34.35%",
+                "pnl_amount": -6870,
+                "currency": "¥",
+                "margin_ratio_pct": 20,
+            },
+            recommended_margin_ratio=15,
+            total_risk_level="低",
+        )
+        text = " ".join(notes)
+
+        self.assertIn("当前为浮亏持仓", text)
+        self.assertIn("融资比例存在压力", text)
+        self.assertIn("账户总风险低，但单票融资/浮亏风险需单独观察", text)
+        self.assertNotIn("盈利回撤", text)
+
     def test_data_freshness_today_stale_missing_and_partial_failed(self):
         self.assertEqual(snapshot.classify_data_freshness("2026-06-01T09:30:00", today="2026-06-01"), "today")
         self.assertEqual(snapshot.classify_data_freshness("2026-05-31T09:30:00", today="2026-06-01"), "stale")

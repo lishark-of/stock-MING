@@ -4505,7 +4505,6 @@ def render_strategy_execution_command_card(
                 st.metric("置信度", confidence)
                 st.metric("风险", risk_level)
                 st.caption(f"证据门槛：{evidence_gate}")
-                st.caption(vm.get("deepseek_text") or "DeepSeek：未调用")
 
             if budget_tiles:
                 st.markdown("**风险预算**")
@@ -4561,10 +4560,7 @@ def render_strategy_execution_command_card(
                 status_cols = st.columns(min(3, len(status_items[:3])))
                 for col, item in zip(status_cols, status_items[:3]):
                     col.metric(str(item.get("label") or item.get("key") or "模块"), str(item.get("text") or item.get("state") or "missing"))
-            st.caption(
-                f"最后更新时间：{vm.get('updated_text') or '暂无'} ｜ "
-                f"{vm.get('deepseek_text') or 'DeepSeek：未调用'}"
-            )
+            st.caption(f"最后更新时间：{vm.get('updated_text') or '暂无'}")
             if vm.get("user_boundary_text"):
                 st.caption(str(vm.get("user_boundary_text")))
         return
@@ -7113,9 +7109,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
 def render_command_center_shell(active_nav: str = "综合推演中心 2.0"):
     _inject_command_center_css()
     title = active_nav or "综合推演中心 2.0"
-    subtitle = "把量化推演、交易纪律实验室和风险验证放在同一张工作台。默认展示上次缓存快照；重型扫描、DeepSeek、Tushare 批量请求都必须手动触发。"
+    subtitle = "输入持仓后，先看今日动作、风险警报、下一票、ETF/融资清单和未来路径。"
     if title != "综合推演中心 2.0":
-        subtitle = "左侧导航为真实 Streamlit 控件；当前模块为轻量占位，不触发 DeepSeek、Tushare 批量请求或旧版重型 tabs。"
+        subtitle = "当前模块用于查看交易摘要和手动工具入口。"
     st.markdown(
         f"""
         <div class="cc-shell">
@@ -7401,8 +7397,7 @@ def render_home_analysis_methods_strip(view_model: dict | None = None):
         已刷新模块 {escape(str(counts.get("ready_modules", 0)))} ｜
         使用缓存 {escape(str(counts.get("cached_modules", 0)))} ｜
         待验证方法 {escape(str(counts.get("pending_methods", 0)))} ｜
-        {escape(str(payload.get("next_action") or "先刷新基础数据，再进入综合推演。"))} ｜
-        {escape(str(payload.get("deepseek_text") or "DeepSeek：未调用"))}
+        {escape(str(payload.get("next_action") or "先刷新基础数据，再进入综合推演。"))}
       </div>
     </section>
     """
@@ -8013,6 +8008,14 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           <div class="projection-fact-pills">{fact_pills_html}</div>
         </div>
         """
+    projection_subtitle = f"{note} ｜ 最后更新时间：{updated_at}"
+    if deepseek_called or not home_compact:
+        projection_subtitle += f" ｜ DeepSeek：{deepseek_status_text}"
+    projection_badge = (
+        f"{deepseek_badge_text} · {horizon}日"
+        if deepseek_called or not home_compact
+        else f"规则路径 · {horizon}日"
+    )
     packet_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     chart_html = f"""
     <!doctype html>
@@ -8087,9 +8090,9 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         <div class="projection-head">
           <div>
             <div class="projection-title">未来 5~10 个交易日趋势推演</div>
-            <div class="projection-subtitle">{escape(note)} ｜ 最后更新时间：{escape(updated_at)} ｜ DeepSeek：{escape(deepseek_status_text)}</div>
+            <div class="projection-subtitle">{escape(projection_subtitle)}</div>
           </div>
-          <div class="projection-badge">{escape(deepseek_badge_text)} · {escape(str(horizon))}日</div>
+          <div class="projection-badge">{escape(projection_badge)}</div>
         </div>
         {fact_strip_html}
         <div id="projection-chart"></div>
@@ -8108,7 +8111,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         function renderFallback() {{
           const points = allPoints();
           if (!points.length) {{
-            root.innerHTML = '<div style="color:#64748b;font-size:13px;padding:36px 10px;">暂无路径数据，点击刷新今日基础数据生成。</div>';
+            root.innerHTML = '<div style="color:#64748b;font-size:13px;padding:36px 10px;">暂无路径数据；应用持仓或运行规则综合推演后显示。</div>';
             return;
           }}
           const minX = Math.min(...points.map(p => p[0]));
@@ -8200,14 +8203,14 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     else:  # pragma: no cover - runtime fallback for unexpected Streamlit install
         frame = _projection_static_frame(payload)
         if frame.empty:
-            st.info("暂无路径数据，点击刷新今日基础数据生成。")
+            st.info("暂无路径数据；应用持仓或运行规则综合推演后显示。")
         else:
             st.line_chart(frame, height=320)
     if home_compact:
         if deepseek_called:
             st.caption("路径推演不是投资建议；DeepSeek 仅在手动按钮触发后整理三路径，不自动交易、不绑定 rerun。")
         else:
-            st.caption("路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。DeepSeek：未调用")
+            st.caption("路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。")
     else:
         st.caption(
             f"路径依据来自：{payload.get('path_basis') or '市场类型待确认 / 数据待验证'} ｜ "

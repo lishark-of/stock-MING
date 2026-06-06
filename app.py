@@ -17,6 +17,8 @@ import numpy as np
 import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
+import command_center_radar_packet as radar_packet_service
+import command_center_etf_packet as etf_packet_service
 import command_center_packet_registry as packet_registry_service
 import command_center_desktop_frontend_readiness as desktop_readiness_service
 import command_center_analysis_methods as analysis_methods_service
@@ -3628,131 +3630,137 @@ def _build_discipline_live_section(target=""):
     }
 
 
-def _build_next_ticket_live_section():
-    scan_state = st.session_state.get("radar_scan_results") or {}
-    summary = st.session_state.get("radar_scan_summary") or scan_state.get("summary") or {}
-    status_raw = st.session_state.get("radar_scan_status") or ""
-    rule_rows = scan_state.get("rule_rows") or scan_state.get("results") or []
+def _build_next_ticket_live_section(live_packet=None):
+    live_packet = live_packet or st.session_state.get("command_center_live_packet") or {}
+    packet = radar_packet_service.build_command_center_radar_packet(
+        st.session_state,
+        live_packet=live_packet,
+    )
+    top_candidates = packet.get("top_candidates") or []
+    if not top_candidates:
+        home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
+        if isinstance(home_snapshot, dict):
+            snapshot_packet = home_snapshot.get("radar_packet") or {}
+            snapshot_candidates = home_snapshot.get("next_ticket_candidates") or []
+            if snapshot_packet:
+                packet = radar_packet_service.build_command_center_radar_packet(
+                    {"command_center_radar_packet": snapshot_packet},
+                    live_packet=live_packet,
+                )
+                top_candidates = packet.get("top_candidates") or []
+            if not top_candidates and snapshot_candidates:
+                packet = radar_packet_service.build_command_center_radar_packet(
+                    {
+                        "command_center_radar_packet": {
+                            "status": "ready",
+                            "source": "Home Snapshot",
+                            "generated_at": home_snapshot.get("saved_at") or home_snapshot.get("updated_at") or "",
+                            "top_candidates": snapshot_candidates,
+                        }
+                    },
+                    live_packet=live_packet,
+                )
+                top_candidates = packet.get("top_candidates") or []
     meta = _cc_get_module_meta("next_ticket")
-    if not scan_state or status_raw not in {"completed", "partial_failed", "failed"}:
+    if not top_candidates:
         return {
-            "status": "未刷新",
+            "status": "使用缓存" if packet.get("status") in {"partial", "waiting"} else "未刷新",
             "top_candidates": [],
-            "summary": meta.get("error") or "本轮自动刷新未取得下一票雷达缓存；不会自动触发全市场扫描。",
-            "updated_at": "",
-            "source": "下一票雷达",
+            "summary": "暂无下一票缓存。可点击满血数据刷新，或进入高级工具箱运行下一票雷达。",
+            "updated_at": packet.get("generated_at") or "",
+            "source": "下一票雷达缓存",
             "action_state": "待刷新",
             "is_fresh": False,
             "last_error": meta.get("error", ""),
         }
-    top_candidates = []
-    action_states = []
-    for row in rule_rows[:3]:
-        candidate = row.get("candidate") or {}
-        score = row.get("score") or {}
-        action = score.get("battle_state") or "只观察"
-        action_states.append(action)
-        top_candidates.append(
-            {
-                "ticker": candidate.get("ticker") or score.get("ticker") or "",
-                "name": candidate.get("name") or score.get("name") or "",
-                "score": score.get("total_score"),
-                "action_state": action,
-            }
-        )
+    action_states = [item.get("status_label") or item.get("action_state") for item in top_candidates]
     aggregate_action = "只观察"
     if "可准备" in action_states:
         aggregate_action = "可准备"
     elif "等验证" in action_states:
         aggregate_action = "等验证"
-    scan_status = "已刷新" if status_raw in {"completed", "partial_failed"} else "使用缓存"
-    deepseek_detail = summary.get("deepseek_detail") or "未调用"
     return {
-        "status": scan_status,
+        "status": "已刷新" if packet.get("data_status") == "ready" else "使用缓存",
         "top_candidates": top_candidates,
-        "summary": (
-            f"规则雷达已保存 {len(rule_rows)} 条候选；"
-            f"展示 Top {summary.get('display_count') or len(top_candidates)}；DeepSeek：{deepseek_detail}。"
-        ),
-        "updated_at": scan_state.get("generated_at") or st.session_state.get("radar_scan_finished_at") or "",
-        "source": "下一票雷达",
+        "summary": f"已读取上次成功下一票 Top{len(top_candidates[:3])}。",
+        "updated_at": packet.get("generated_at") or packet.get("updated_at") or "",
+        "source": _cc_user_source(packet.get("source"), "下一票雷达缓存"),
         "action_state": aggregate_action,
-        "is_fresh": status_raw in {"completed", "partial_failed"},
+        "is_fresh": packet.get("data_status") == "ready",
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
     }
 
 
-def _build_margin_etf_live_section():
-    daily_packet = st.session_state.get("legacy_margin_etf_daily_packet") or {}
-    allocation = st.session_state.get("legacy_margin_etf_allocation_result") or {}
+def _build_margin_etf_live_section(live_packet=None):
+    live_packet = live_packet or st.session_state.get("command_center_live_packet") or {}
+    packet = etf_packet_service.build_command_center_etf_packet(
+        st.session_state,
+        live_packet=live_packet,
+    )
+    recommended_etfs = packet.get("recommended_etfs") or []
+    if not recommended_etfs:
+        home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
+        if isinstance(home_snapshot, dict):
+            snapshot_packet = home_snapshot.get("etf_packet") or {}
+            snapshot_summary = home_snapshot.get("margin_etf_summary") or {}
+            snapshot_etfs = snapshot_packet.get("recommended_etfs") or snapshot_summary.get("recommended_etfs") or []
+            if snapshot_etfs:
+                packet = etf_packet_service.build_command_center_etf_packet(
+                    {
+                        "command_center_etf_packet": {
+                            **snapshot_packet,
+                            "status": snapshot_packet.get("status") or "ready",
+                            "source": snapshot_packet.get("source") or "Home Snapshot",
+                            "updated_at": snapshot_packet.get("updated_at") or home_snapshot.get("saved_at") or "",
+                            "recommended_margin_ratio": snapshot_packet.get("recommended_margin_ratio")
+                            or snapshot_summary.get("recommended_margin_ratio"),
+                            "recommended_cash_ratio": snapshot_packet.get("recommended_cash_ratio")
+                            or snapshot_summary.get("recommended_cash_ratio"),
+                            "today_main_direction": snapshot_packet.get("today_main_direction")
+                            or snapshot_summary.get("today_main_direction"),
+                            "recommended_etfs": snapshot_etfs,
+                            "watch_not_chase": snapshot_packet.get("watch_not_chase")
+                            or snapshot_summary.get("watch_not_chase"),
+                        }
+                    },
+                    live_packet=live_packet,
+                )
+                recommended_etfs = packet.get("recommended_etfs") or []
     meta = _cc_get_module_meta("margin_etf")
-    if not daily_packet:
+    if not recommended_etfs:
         return {
-            "status": "未刷新",
-            "recommended_margin_ratio": None,
-            "recommended_cash_ratio": None,
-            "summary": meta.get("error") or "本轮自动刷新未取得 ETF 配置；继续展示可用缓存和失败状态。",
-            "updated_at": "",
-            "source": "融资 ETF",
+            "status": "使用缓存" if packet.get("status") == "partial" else "未刷新",
+            "recommended_margin_ratio": packet.get("recommended_margin_ratio"),
+            "recommended_cash_ratio": packet.get("recommended_cash_ratio"),
+            "summary": "暂无 ETF 配置。可点击满血数据刷新，或进入高级工具箱的融资 ETF 工具。",
+            "updated_at": packet.get("updated_at") or "",
+            "source": "融资 ETF 配置缓存",
+            "today_main_direction": "待 ETF 强弱表确认",
+            "recommended_etfs": [],
+            "etf_candidates": [],
+            "watch_not_chase": packet.get("watch_not_chase") or [],
+            "risk_state": packet.get("risk_state") or "待刷新",
+            "action_state": "待刷新",
             "is_fresh": False,
             "last_error": meta.get("error", ""),
         }
-    if not allocation:
-        score_packet = daily_packet.get("score_packet") or {"rows": []}
-        account = {
-            "total_asset": float(st.session_state.get("margin_total_asset", 1000000.0) or 0.0),
-            "cash_balance": float(st.session_state.get("margin_cash_balance", 200000.0) or 0.0),
-            "stock_market_value": float(st.session_state.get("margin_stock_value", 600000.0) or 0.0),
-            "etf_market_value": float(st.session_state.get("margin_etf_value", 100000.0) or 0.0),
-            "margin_debt": float(st.session_state.get("margin_debt", 100000.0) or 0.0),
-            "available_margin": float(st.session_state.get("margin_available_margin", 0.0) or 0.0),
-            "maintenance_ratio": float(st.session_state.get("margin_maintenance_ratio", 0.0) or 0.0),
-            "margin_interest_rate": float(st.session_state.get("margin_interest_rate", 6.8) or 0.0),
-            "max_drawdown_pct": float(st.session_state.get("margin_max_drawdown", 15) or 0.0),
-        }
-        profile = {
-            "style": st.session_state.get("margin_style", "平衡"),
-            "leverage_mode": st.session_state.get("margin_leverage_mode", "小幅使用"),
-        }
-        allocation = calculate_margin_etf_allocation(
-            account,
-            st.session_state.get("margin_market_state", "强趋势"),
-            profile,
-            etf_scores=score_packet,
-        )
-    candidates = allocation.get("selected_etf_candidates") or {}
-    etf_candidate_names = []
-    if isinstance(candidates, dict):
-        direction_items = []
-        for bucket, rows in candidates.items():
-            if isinstance(rows, list) and rows:
-                first = rows[0]
-                candidate_name = _cc_first_text(first.get("name"), first.get("etf_name"), bucket)
-                direction_items.append(candidate_name)
-                etf_candidate_names.append(
-                    f"{_cc_first_text(first.get('code'), first.get('symbol'), bucket)} {candidate_name}".strip()
-                )
-        main_direction = " / ".join(direction_items[:3])
-    else:
-        main_direction = ""
-    summary = _cc_first_text(
-        allocation.get("action_state"),
-        daily_packet.get("daily_dataset", {}).get("status") if isinstance(daily_packet.get("daily_dataset"), dict) else "",
-        "ETF 日线数据已刷新，使用本地规则读取配置摘要。",
-    )
-    if main_direction:
-        summary = f"{summary}；今日 ETF 主方向：{main_direction}。"
     return {
-        "status": "已刷新",
-        "recommended_margin_ratio": _cc_round(allocation.get("recommended_margin_ratio")),
-        "recommended_cash_ratio": _cc_round(allocation.get("recommended_cash_ratio")),
-        "summary": summary,
-        "updated_at": daily_packet.get("updated_at") or allocation.get("generated_at") or "",
-        "source": "融资 ETF",
-        "today_main_direction": main_direction or "待 ETF 强弱表确认",
-        "etf_candidates": etf_candidate_names[:5],
-        "action_state": allocation.get("action_state") or "待判断",
-        "is_fresh": True,
+        "status": "已刷新" if packet.get("data_status") == "ready" else "使用缓存",
+        "recommended_margin_ratio": _cc_round(packet.get("recommended_margin_ratio")),
+        "recommended_cash_ratio": _cc_round(packet.get("recommended_cash_ratio")),
+        "summary": f"已读取上次成功 ETF 配置 Top{len(recommended_etfs[:3])}。",
+        "updated_at": packet.get("updated_at") or "",
+        "source": _cc_user_source(packet.get("source"), "融资 ETF 配置缓存"),
+        "today_main_direction": packet.get("today_main_direction") or "待 ETF 强弱表确认",
+        "recommended_etfs": recommended_etfs,
+        "etf_candidates": [
+            f"{item.get('code') or ''} {item.get('name') or ''}".strip()
+            for item in recommended_etfs[:5]
+        ],
+        "watch_not_chase": packet.get("watch_not_chase") or [],
+        "risk_state": packet.get("risk_state") or "只观察不追",
+        "action_state": packet.get("risk_state") or "待判断",
+        "is_fresh": packet.get("data_status") == "ready",
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
     }
 
@@ -5758,7 +5766,7 @@ def _run_command_center_full_data_refresh(target="", market_type="", price=None,
         if event == "start":
             status.update(label=f"正在刷新{label}", state="running")
         elif event == "success":
-            status.write(f"{label}：完成；DeepSeek：未调用")
+            status.write(f"{label}：完成")
         elif event == "failure":
             status.write(
                 f"{label}：失败，已继续下一步；"
@@ -5782,7 +5790,7 @@ def _run_command_center_full_data_refresh(target="", market_type="", price=None,
         refresh_summary.setdefault("results", []).append(result)
         if status is not None:
             if result.get("ok"):
-                status.write(f"{result.get('module')}：{result.get('message')}；DeepSeek：未调用")
+                status.write(f"{result.get('module')}：{result.get('message')}")
             else:
                 status.write(f"{result.get('module')}：失败，已继续下一步；{result.get('error') or result.get('message')}")
     refresh_summary.setdefault("errors", []).extend(probes["provider_errors"])
@@ -6044,7 +6052,7 @@ def _run_command_center_analysis_chain(target="", market_type="", position_profi
     try:
         live_packet = build_command_center_live_packet(target=target, refresh_level=refresh_level)
         live_packet["data_capability"] = _get_command_center_data_capability_packet()
-        _status_write("已聚合本地缓存与上次成功数据；DeepSeek：未调用。")
+        _status_write("已聚合本地缓存与上次成功数据。")
     except Exception as exc:
         live_packet = {"refresh_level": refresh_level, "status": "partial_failed", "last_error": str(exc)}
         errors.append(f"本地数据聚合失败：{exc}")
@@ -6060,14 +6068,14 @@ def _run_command_center_analysis_chain(target="", market_type="", position_profi
             live_packet,
             strategy_execution_packet=strategy_packet,
         )
-        _status_write("已生成策略执行建议；DeepSeek：未调用。")
+        _status_write("已生成策略执行建议。")
     except Exception as exc:
         strategy_packet = _get_strategy_execution_display_packet()
         errors.append(f"策略执行建议失败：{exc}")
 
     try:
         decision_packet, live_packet = _generate_command_center_decision(live_packet)
-        _status_write("已生成今日总决策；DeepSeek：未调用。")
+        _status_write("已生成今日总决策。")
     except Exception as exc:
         decision_packet = _get_command_center_decision_display_packet()
         errors.append(f"今日总决策失败：{exc}")
@@ -6105,7 +6113,7 @@ def _run_command_center_analysis_chain(target="", market_type="", position_profi
         st.session_state["command_center_projection_packet"] = projection_packet
         st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
         st.session_state["command_center_evidence_radar_packet"] = evidence_radar_packet
-        _status_write("已生成未来 5-10 日趋势推演；DeepSeek：未调用。")
+        _status_write("已生成未来 5-10 日趋势推演。")
     except Exception as exc:
         evidence_radar_packet = st.session_state.get("command_center_evidence_radar_packet") or {}
         analysis_method_packet = st.session_state.get("command_center_analysis_method_packet") or {}
@@ -6487,7 +6495,7 @@ def _apply_command_center_current_holding(
     status=None,
 ):
     if status is not None:
-        status.write("正在读取当前标的行情；DeepSeek：未调用。")
+        status.write("正在读取当前标的行情。")
     try:
         price_detail = get_current_price_detail(target, market_type)
     except Exception as exc:
@@ -6587,6 +6595,84 @@ def _display_text(value, fallback="暂无"):
     return str(value)
 
 
+def _cc_display_ticker(value, fallback="未锁定"):
+    text = home_snapshot_service.display_a_share_ticker(value)
+    return text or fallback
+
+
+def _cc_first_number(*values):
+    for value in values:
+        number = _num(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _cc_percent_text(value, fallback="待计算"):
+    number = _num(value)
+    if number is None:
+        return fallback
+    if 0 < number <= 1:
+        number *= 100
+    return f"{number:.1f}%"
+
+
+def _cc_home_refresh_state():
+    refresh = st.session_state.get("command_center_refresh_summary") or {}
+    if isinstance(refresh, dict) and refresh:
+        errors = refresh.get("errors") or refresh.get("error_items") or []
+        finished_at = refresh.get("finished_at") or refresh.get("generated_at") or refresh.get("updated_at")
+        if errors:
+            return "部分刷新", f"部分刷新：{len(errors)} 个模块未取到新数据；当前结论使用已刷新模块和上次成功缓存。"
+        if finished_at:
+            return "今日已刷新", "今日已刷新；当前结论基于本轮可用数据，缺口仍按缓存或待验证处理。"
+
+    page_packet = st.session_state.get("command_center_auto_analysis_packet") or {}
+    summary = page_packet.get("summary") if isinstance(page_packet, dict) else {}
+    if isinstance(summary, dict) and summary:
+        errors = summary.get("errors") or []
+        if errors:
+            return "部分刷新", f"部分刷新：{len(errors)} 个项目失败；当前结论会保留可用缓存，不把缺口写成确定信号。"
+        if summary.get("generated_at"):
+            if summary.get("price_status") == "available":
+                return "使用缓存", "已读取当前持仓和轻量行情；重型扫描仍需手动触发。"
+            return "使用缓存", "已读取本地缓存；当前价不可用时，交易结论按待验证处理。"
+
+    live_packet = st.session_state.get("command_center_live_packet") or {}
+    if isinstance(live_packet, dict) and (live_packet.get("updated_at") or live_packet.get("generated_at")):
+        return "使用缓存", "已读取上次成功快照；刷新前不把缺口当作确定依据。"
+    return "使用缓存", "当前以本地可用结果展示；需要新数据时点击满血数据刷新。"
+
+
+def _cc_user_refresh_text(value, fallback=""):
+    text = _home_trade_text(value, "")
+    if not text:
+        return fallback
+    if "点击刷新今日基础数据" in text or "刷新今日基础数据" in text:
+        return fallback or _cc_home_refresh_state()[1]
+    return text
+
+
+def _cc_user_source(value, fallback="缓存结果"):
+    text = _display_text(value, fallback)
+    lowered = text.lower()
+    debug_terms = (
+        "provider",
+        "packet",
+        "capability",
+        "command_center",
+        "tushare",
+        "akshare",
+        "yfinance",
+        "supabase",
+        "权限",
+        "缓存路径",
+    )
+    if any(term in lowered for term in debug_terms):
+        return fallback
+    return text
+
+
 _COMMAND_CENTER_HOME_DEBUG_TERMS = (
     "数据能力",
     "provider",
@@ -6664,7 +6750,7 @@ def render_command_center_current_holding_panel(target="", market_badge="", pric
         "先看今日总决策和风险警报；未满足条件前不追高、不加杠杆。",
     )
     cards = [
-        ("标的", target or profile.get("ticker") or "未锁定"),
+        ("标的", _cc_display_ticker(target or profile.get("ticker"))),
         ("持仓状态", profile.get("normalized_position_state") or profile.get("position_status") or "待确认"),
         ("市场", market_badge or "未知"),
         ("当前价", _fmt_price(price, currency)),
@@ -6760,7 +6846,7 @@ def _command_center_position_context_text(position_profile=None, price_detail=No
         price = detail.get("price")
     margin_ratio = _num(profile.get("margin_ratio_pct"), 0) or 0
     pieces = [
-        f"标的 {profile.get('ticker') or '未锁定'}",
+        f"标的 {_cc_display_ticker(profile.get('ticker'))}",
         f"状态 {profile.get('normalized_position_state') or profile.get('position_status') or '待确认'}",
         f"持仓 {_display_text(profile.get('holding_units'), '0')} 股",
         f"成本 {_fmt_price(profile.get('cost_price'), currency)}",
@@ -6810,6 +6896,7 @@ def render_command_center_decision_trade_panel(
     shares = _num(profile.get("holding_units"), 0) or 0
     margin_ratio = _num(profile.get("margin_ratio_pct"), 0) or 0
     pnl_text = profile.get("profit_state") or "盈亏未计算"
+    refresh_label, refresh_impact = _cc_home_refresh_state()
     reason = _home_trade_text(
         decision.get("reason_summary") or strategy.get("summary"),
         "当前结论仍需价格、趋势和纪律条件确认。",
@@ -6834,6 +6921,7 @@ def render_command_center_decision_trade_panel(
         else "",
         _first_projection_path_text(projection_packet, "乐观", "trigger", "放量站稳关键位，量化和纪律同向后再考虑。"),
     )
+    trigger_line = _cc_user_refresh_text(trigger_line, refresh_impact)
     invalidation_line = _home_trade_text(
         (strategy.get("invalidation_condition") or strategy.get("invalid_condition") or "")
         if isinstance(strategy, dict)
@@ -6841,20 +6929,19 @@ def render_command_center_decision_trade_panel(
         _first_projection_path_text(projection_packet, "谨慎", "trigger", "跌破纪律线、公告/硬风险转弱或数据缺口扩大。"),
     )
     margin_line = (
-        f"当前融资 {margin_ratio:.1f}%；未确认强触发前不加杠杆，风险升高先降融资。"
+        f"当前融资 {margin_ratio:.1f}%；融资比例存在压力，刷新数据前不建议新增融资。"
         if margin_ratio > 0
         else "当前未使用融资；不因单次推演主动加杠杆。"
     )
-    next_button = "下一步：先点满血数据刷新；再点满血综合推演；需要解释时再点 DeepSeek。"
+    next_button = f"{refresh_label}：{refresh_impact}"
     if projection_packet and (projection_packet or {}).get("deepseek_called"):
         next_button = "下一步：按三路径触发条件观察；若价格/公告变化，先刷新数据再重新增强。"
-    elif projection_packet and (projection_packet or {}).get("status") in {"ready", "cached"}:
-        next_button = "下一步：如要模型整理曲线，再点 DeepSeek 增强趋势推演。"
     validations = _home_trade_items(
         decision.get("next_validation_conditions") or [],
         fallback_items=[trigger_line, "仓位动作必须落在风险预算内。", "触发失效条件后重新生成结论。"],
         limit=3,
     )
+    validations = [_cc_user_refresh_text(item, refresh_impact) for item in validations]
     must_not = _home_trade_items(
         decision.get("must_not_do") or [],
         fallback_items=["不追高", "不满仓", "不自动下单"],
@@ -6886,6 +6973,12 @@ def render_command_center_decision_trade_panel(
         t3.markdown("**融资处理**")
         t3.write(margin_line)
         st.info(next_button)
+        risk_notes = home_snapshot_service.build_position_risk_notes(
+            profile,
+            total_risk_level=risk_level,
+        )
+        if risk_notes:
+            st.warning(" ".join(risk_notes[:3]))
         left, right = st.columns(2)
         with left:
             st.markdown("**明日验证条件**")
@@ -6895,7 +6988,6 @@ def render_command_center_decision_trade_panel(
             st.markdown("**禁止动作**")
             for item in must_not:
                 st.write(f"- {item}")
-        st.caption("DeepSeek：未调用；结论为条件化作战建议，不保证收益，不自动下单。")
 
 
 def render_command_center_projection_trade_panel(projection_packet=None):
@@ -6916,7 +7008,7 @@ def render_command_center_projection_trade_panel(projection_packet=None):
                     st.write(_home_trade_text(path.get("action"), "按计划观察，不追高。"))
                     st.caption(f"触发：{_home_trade_text(path.get('trigger'), '等待价格、量能和纪律条件确认。')}")
                     st.caption(f"风险：{_home_trade_text(path.get('risk'), '若方向转弱，按风险预算降级。')}")
-        st.caption(f"观察窗口：未来 {horizon} 日｜DeepSeek：未调用")
+        st.caption(f"观察窗口：未来 {horizon} 日")
 
 
 def render_command_center_strategy_trade_panel(strategy_packet=None):
@@ -6938,38 +7030,36 @@ def render_command_center_strategy_trade_panel(strategy_packet=None):
 
 
 def render_command_center_next_ticket_top3(live_packet=None):
-    section = (live_packet or {}).get("next_ticket") or _build_next_ticket_live_section()
+    section = _build_next_ticket_live_section(live_packet=live_packet)
     candidates = section.get("top_candidates") or []
     with st.container(border=True):
         st.markdown("### 下一票 Top3")
         if candidates:
             for index, item in enumerate(candidates[:3], start=1):
-                st.write(
-                    f"{index}. {item.get('ticker') or '未知'} {item.get('name') or ''}："
-                    f"{item.get('action_state') or '只观察'} / 评分 {item.get('score') if item.get('score') is not None else '暂无'}"
+                ticker = _cc_display_ticker(item.get("ticker"), "未知")
+                name = _display_text(item.get("name"), "")
+                status_label = item.get("status_label") or item.get("action_state") or "只观察"
+                score_text = item.get("score") if item.get("score") is not None else "暂无"
+                st.markdown(f"**{index}. {ticker} {name}｜{status_label}｜评分 {score_text}**")
+                st.write(f"触发条件：{_home_trade_text(item.get('trigger_condition'), '等待规则雷达触发条件确认。')}")
+                st.write(f"失效条件：{_home_trade_text(item.get('invalidation_condition'), '市场转弱、评分下降或纪律信号反向时失效。')}")
+                st.caption(
+                    f"来源：{_cc_user_source(item.get('source'), '下一票雷达缓存')}｜"
+                    f"更新时间：{_display_text(item.get('updated_at'), '暂无')}"
                 )
-                trigger = _home_trade_text(item.get("trigger") or item.get("entry_condition"), "")
-                invalidation = _home_trade_text(item.get("invalidation") or item.get("invalid_condition"), "")
-                if trigger:
-                    st.caption(f"触发条件：{trigger}")
-                if invalidation:
-                    st.caption(f"失效条件：{invalidation}")
         else:
-            st.info(section.get("summary") or "暂无 Top3 候选；下一票雷达未刷新或无可用缓存。")
-            st.write("- 触发条件：执行满血数据刷新后若已有下一票雷达缓存，则显示候选；不会自动触发全市场扫描。")
-            st.write("- 失效条件：无候选、数据不足或候选未进入观察池时，不用下一票替代当前持仓决策。")
-            st.write("- 来源说明：当前只读取本地缓存/手动刷新结果，DeepSeek 未调用。")
-        st.caption(f"状态：{section.get('status') or '待刷新'}｜DeepSeek：未调用")
+            st.info(section.get("summary") or "暂无下一票缓存。可点击满血数据刷新，或进入高级工具箱运行下一票雷达。")
+        st.caption(f"状态：{section.get('status') or '待刷新'}｜更新时间：{section.get('updated_at') or '暂无'}")
 
 
 def render_command_center_etf_config_panel(live_packet=None, position_profile=None):
-    section = (live_packet or {}).get("margin_etf") or _build_margin_etf_live_section()
+    section = _build_margin_etf_live_section(live_packet=live_packet)
     profile = position_profile if isinstance(position_profile, dict) else {}
     current_margin = _num(profile.get("margin_ratio_pct"), 0) or 0
     recommended_margin = _num(section.get("recommended_margin_ratio"))
     recommended_cash = _num(section.get("recommended_cash_ratio"))
     margin_gap = round(current_margin - recommended_margin, 2) if recommended_margin is not None else None
-    candidates = section.get("etf_candidates") or []
+    candidates = section.get("recommended_etfs") or []
     with st.container(border=True):
         st.markdown("### ETF 配置")
         cols = st.columns(4)
@@ -6990,10 +7080,35 @@ def render_command_center_etf_config_panel(live_packet=None, position_profile=No
         if candidates:
             st.markdown("**ETF 候选**")
             for item in candidates[:3]:
-                st.write(f"- {item}")
+                weight = _cc_first_number(
+                    item.get("recommended_ratio"),
+                    item.get("suggested_ratio"),
+                    item.get("target_ratio"),
+                    item.get("weight"),
+                )
+                amount = _cc_first_number(
+                    item.get("recommended_amount"),
+                    item.get("suggested_amount"),
+                    item.get("target_amount"),
+                    item.get("amount"),
+                )
+                total_asset = _cc_first_number(st.session_state.get("margin_total_asset"))
+                if amount is None and weight is not None and total_asset is not None:
+                    amount = total_asset * (weight / 100 if weight > 1 else weight)
+                ratio_text = _cc_percent_text(weight) if weight is not None else "待计算"
+                amount_text = _fmt_price(amount, profile.get("currency") or "¥") if amount is not None else "待计算"
+                st.markdown(
+                    f"**{item.get('name') or 'ETF'}｜{item.get('code') or '暂无代码'}｜"
+                    f"{item.get('status_label') or item.get('action_state') or '只观察'}**"
+                )
+                st.write(f"bucket：{item.get('bucket') or 'ETF'}｜建议比例：{ratio_text}｜建议金额：{amount_text}")
+                st.write(f"触发条件：{_home_trade_text(item.get('trigger_condition'), '等待回踩、量能和风险线确认。')}")
+                st.caption(f"来源：{_cc_user_source(item.get('source'), '融资 ETF 配置缓存')}")
         else:
-            st.caption("ETF 候选：暂无具体候选；等待 ETF 强弱表缓存或手动刷新结果。")
-        st.caption(section.get("summary") or "ETF 配置未刷新；可在高级工具箱或满血数据刷新后复核。")
+            st.info(section.get("summary") or "暂无 ETF 配置。可点击满血数据刷新，或进入高级工具箱的融资 ETF 工具。")
+        if section.get("watch_not_chase"):
+            st.caption("不追高提示：" + "；".join(str(item) for item in (section.get("watch_not_chase") or [])[:2]))
+        st.caption(f"状态：{section.get('status') or '待刷新'}｜更新时间：{section.get('updated_at') or '暂无'}")
 
 
 def render_command_center_risk_alert_panel(
@@ -7049,9 +7164,14 @@ def render_command_center_risk_alert_panel(
             alerts.append(f"融资风险：当前融资 {current_margin:.1f}% 未高于建议 {recommended_margin:.1f}%；仍需避免临时加杠杆。")
     elif current_margin > 0:
         alerts.append(f"融资风险：当前输入融资 {current_margin:.1f}%，但建议融资比例待刷新；按高谨慎度处理。")
-    if profile.get("profit_state") and profile.get("pnl_amount") is not None:
-        alerts.append(f"持仓风险：{profile.get('profit_state')}，盈亏金额 {_fmt_price(profile.get('pnl_amount'), profile.get('currency') or '')}；不要让盈利回撤变成融资压力。")
     risk_budget = (strategy_packet or {}).get("risk_budget") or {}
+    alerts.extend(
+        home_snapshot_service.build_position_risk_notes(
+            profile,
+            recommended_margin_ratio=recommended_margin,
+            total_risk_level=risk_budget.get("risk_level") or (decision_packet or {}).get("risk_level"),
+        )
+    )
     if risk_budget.get("risk_level"):
         alerts.append(f"风险预算：{risk_budget.get('risk_level')}；现金缓冲 {risk_budget.get('cash_buffer') if risk_budget.get('cash_buffer') is not None else '待计算'}")
     invalidation = (strategy_packet or {}).get("invalidation_condition")
@@ -7068,11 +7188,15 @@ def render_command_center_risk_alert_panel(
             break
     if not alerts:
         alerts.append("暂无新增风险警报；仍需按纪律边界复核，不保证收益，不自动下单。")
+    display_alerts = []
+    for item in alerts:
+        if item and item not in display_alerts:
+            display_alerts.append(item)
     with st.container(border=True):
         st.markdown("### 风险警报")
-        for item in alerts[:6]:
+        for item in display_alerts[:6]:
             st.write(f"- {item}")
-        st.caption("DeepSeek：未调用；本系统不保证收益，不自动下单。")
+        st.caption("本系统不保证收益，不自动下单。")
 
 
 def render_command_center_live_cards(live_packet, target="", market_type="", price=None, position_profile=None):
@@ -7112,7 +7236,7 @@ def render_command_center_live_cards(live_packet, target="", market_type="", pri
                         build_command_center_live_packet(target=target)
                         section = section_builders[key]()
                         if result.get("ok"):
-                            st.success(f"{title}刷新完成；DeepSeek：未调用。")
+                            st.success(f"{title}刷新完成。")
                         else:
                             st.warning(f"{title}刷新失败，已保留上次成功结果：{result.get('error') or '未知错误'}")
                         module_summary = build_module_summary_view_model(section, module_name=title)
@@ -7205,7 +7329,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     manual_full_refresh_clicked = False
     manual_war_game_clicked = False
     manual_deepseek_clicked = False
-    control_cols = st.columns([1.1, 1.1, 1.0])
+    control_cols = st.columns([1.1, 1.1])
     with control_cols[0]:
         if st.button("满血数据刷新", key="btn_cc_full_data_refresh", type="primary", width="stretch"):
             manual_full_refresh_clicked = True
@@ -7259,10 +7383,10 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 position_profile=position_profile,
             )
             status.write("已读取本轮作战包；诊断细节保留在高级工具箱。")
-            status.write(f"策略执行：{strategy_packet.get('overall_action') or strategy_packet.get('status') or '已生成'}；DeepSeek：未调用")
-            status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}；DeepSeek：未调用")
-            status.write(f"趋势推演：未来 {summary.get('projection_horizon_days') or 10} 日；DeepSeek：未调用")
-            status.update(label="满血综合推演完成；本轮未调用 DeepSeek", state="complete", expanded=False)
+            status.write(f"策略执行：{strategy_packet.get('overall_action') or strategy_packet.get('status') or '已生成'}")
+            status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}")
+            status.write(f"趋势推演：未来 {summary.get('projection_horizon_days') or 10} 日")
+            status.update(label="满血综合推演完成", state="complete", expanded=False)
             page_packet = _run_command_center_auto_page_cycle(
                 target=target,
                 market_type=market_type,
@@ -7272,7 +7396,8 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 run_provider_probes=False,
             )
             live_packet = page_packet.get("live_packet") or live_packet
-    with control_cols[2]:
+    with st.expander("高级操作", expanded=False):
+        st.caption("DeepSeek 只在这里手动触发；不会随刷新、切换页面或规则推演自动调用。")
         if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
             manual_deepseek_clicked = True
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
@@ -7380,19 +7505,22 @@ packet:
     st.session_state["command_center_live_packet"] = live_packet
 
     direct_summary = active_packet.get("summary") or {}
+    deepseek_called_count = st.session_state.token_usage.get("deepseek_calls", 0)
+    deepseek_token_count = st.session_state.token_usage.get("estimated_tokens", 0)
+    deepseek_status = (
+        "已解释"
+        if st.session_state.get(explanation_at_key) or st.session_state.get("command_center_deepseek_projection_generated_at")
+        else "未调用"
+    )
     st.caption(
-        f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
-        f"估算 Token：{st.session_state.token_usage.get('estimated_tokens', 0):,} ｜ "
-        f"解释生成：{st.session_state.get(explanation_at_key) or '未生成'} ｜ "
-        f"趋势增强：{st.session_state.get('command_center_deepseek_projection_generated_at') or '未生成'} ｜ "
-        f"{'本轮未调用 DeepSeek' if not direct_summary else direct_summary.get('deepseek_note', '本轮未调用 DeepSeek')}"
+        f"DeepSeek：{deepseek_status} ｜ 调用次数：{deepseek_called_count} ｜ Token：{deepseek_token_count:,}"
     )
     if isinstance(first_diagnosis_prewarm_packet, dict) and first_diagnosis_prewarm_packet.get("summary"):
-        st.caption(
-            f"首诊预热：{first_diagnosis_prewarm_packet.get('summary')}｜"
-            f"更新时间：{first_diagnosis_prewarm_packet.get('updated_at') or '暂无'}｜"
-            "DeepSeek 未调用"
-        )
+        with st.expander("高级诊断状态", expanded=False):
+            st.caption(
+                f"首诊预热：{first_diagnosis_prewarm_packet.get('summary')}｜"
+                f"更新时间：{first_diagnosis_prewarm_packet.get('updated_at') or '暂无'}"
+            )
 
     render_command_center_current_holding_panel(
         target=target,
@@ -7400,12 +7528,6 @@ packet:
         price_detail=page_price_detail,
         position_profile=position_profile,
         direct_summary=direct_summary,
-    )
-    st.markdown("### 今日总决策 Hero")
-    render_command_center_position_context_note(
-        "本轮决策上下文",
-        position_profile=position_profile,
-        price_detail=page_price_detail,
     )
     render_command_center_decision_trade_panel(
         decision_packet=decision_packet,
@@ -7415,57 +7537,54 @@ packet:
         projection_packet=projection_packet,
     )
     st.markdown("### 未来 5~10 日趋势推演")
-    render_command_center_position_context_note(
-        "趋势推演持仓锚点",
-        position_profile=position_profile,
-        price_detail=page_price_detail,
-    )
-    if st.button(
-        "DeepSeek 增强趋势推演",
-        key="btn_cc_deepseek_projection_overlay",
-        help="手动调用 DeepSeek，把当前量化推演、交易纪律、持仓和风险证据整理成三路径曲线；不会自动下单，也不会在普通刷新或切换页面时触发。",
-        width="stretch",
-    ):
-        status = st.status("正在手动增强趋势推演...", expanded=True)
-        status.write("先刷新当前标的作战上下文；DeepSeek 暂未调用。")
-        preflight_packet = _run_command_center_auto_page_cycle(
-            target=target,
-            market_type=market_type,
-            price_detail=page_price_detail,
-            position_profile=position_profile,
-            run_refresh=True,
-            run_provider_probes=True,
-        )
-        live_packet = preflight_packet.get("live_packet") or live_packet
-        decision_packet = preflight_packet.get("decision_packet") or decision_packet
-        strategy_packet = preflight_packet.get("strategy_packet") or strategy_packet
-        projection_packet = preflight_packet.get("projection_packet") or projection_packet
-        home_snapshot = preflight_packet.get("home_snapshot") or home_snapshot
-        page_price_detail = preflight_packet.get("price_detail") or page_price_detail
-        preflight_errors = preflight_packet.get("errors") or []
-        status.write("已重算策略执行、今日总决策和规则趋势；现在调用 DeepSeek 整理三路径。")
-        if preflight_errors:
-            status.write(f"刷新上下文有 {len(preflight_errors)} 个失败项；将继续使用可用缓存和失败原因。")
-        enhanced_projection, parsed_overlay, raw_overlay = _run_command_center_deepseek_projection_overlay(
-            target=target,
-            market_type=market_type,
-            position_profile=position_profile,
-            live_packet=live_packet,
-            decision_packet=decision_packet,
-            strategy_packet=strategy_packet,
-            projection_packet=projection_packet,
-            home_snapshot=home_snapshot,
-        )
-        if parsed_overlay:
-            projection_packet = enhanced_projection
-            status.write("DeepSeek 已返回结构化三路径；曲线、概率、触发条件和风险提示已合并。")
-            status.update(label="趋势推演已手动增强", state="complete", expanded=False)
-        else:
-            status.write("DeepSeek 未返回可解析 JSON；页面保留原规则趋势推演。")
-            if raw_overlay:
-                with st.expander("查看 DeepSeek 原始返回", expanded=False):
-                    st.write(raw_overlay)
-            status.update(label="趋势增强未合并，已保留原曲线", state="error", expanded=False)
+    with st.expander("高级趋势增强", expanded=False):
+        st.caption("仅在需要大模型整理三路径时手动触发；普通刷新和规则推演不会调用。")
+        if st.button(
+            "DeepSeek 增强趋势推演",
+            key="btn_cc_deepseek_projection_overlay",
+            help="手动调用 DeepSeek，把当前量化推演、交易纪律、持仓和风险证据整理成三路径曲线；不会自动下单，也不会在普通刷新或切换页面时触发。",
+            width="stretch",
+        ):
+            status = st.status("正在手动增强趋势推演...", expanded=True)
+            status.write("先刷新当前标的作战上下文；DeepSeek 暂未调用。")
+            preflight_packet = _run_command_center_auto_page_cycle(
+                target=target,
+                market_type=market_type,
+                price_detail=page_price_detail,
+                position_profile=position_profile,
+                run_refresh=True,
+                run_provider_probes=True,
+            )
+            live_packet = preflight_packet.get("live_packet") or live_packet
+            decision_packet = preflight_packet.get("decision_packet") or decision_packet
+            strategy_packet = preflight_packet.get("strategy_packet") or strategy_packet
+            projection_packet = preflight_packet.get("projection_packet") or projection_packet
+            home_snapshot = preflight_packet.get("home_snapshot") or home_snapshot
+            page_price_detail = preflight_packet.get("price_detail") or page_price_detail
+            preflight_errors = preflight_packet.get("errors") or []
+            status.write("已重算策略执行、今日总决策和规则趋势；现在调用 DeepSeek 整理三路径。")
+            if preflight_errors:
+                status.write(f"刷新上下文有 {len(preflight_errors)} 个失败项；将继续使用可用缓存和失败原因。")
+            enhanced_projection, parsed_overlay, raw_overlay = _run_command_center_deepseek_projection_overlay(
+                target=target,
+                market_type=market_type,
+                position_profile=position_profile,
+                live_packet=live_packet,
+                decision_packet=decision_packet,
+                strategy_packet=strategy_packet,
+                projection_packet=projection_packet,
+                home_snapshot=home_snapshot,
+            )
+            if parsed_overlay:
+                projection_packet = enhanced_projection
+                status.write("DeepSeek 已返回结构化三路径；曲线、概率、触发条件和风险提示已合并。")
+                status.update(label="趋势推演已手动增强", state="complete", expanded=False)
+            else:
+                status.write("DeepSeek 未返回可解析 JSON；页面保留原规则趋势推演。")
+                if raw_overlay:
+                    with st.expander("查看 DeepSeek 原始返回", expanded=False):
+                        st.write(raw_overlay)
+                status.update(label="趋势增强未合并，已保留原曲线", state="error", expanded=False)
     render_command_center_projection_chart(projection_packet, home_compact=True)
     st.markdown("### 策略执行实验室")
     live_packet = render_strategy_execution_card(

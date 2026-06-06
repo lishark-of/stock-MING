@@ -314,6 +314,74 @@ def _to_number(value: Any) -> int | float | None:
     return None
 
 
+def display_a_share_ticker(value: Any) -> str:
+    """Return the user-facing A-share suffix without changing provider mapping."""
+    text = _to_text(value).upper()
+    if not text:
+        return ""
+    if text.endswith(".SS"):
+        return f"{text[:-3]}.SH"
+    if text.endswith((".SH", ".SZ", ".BJ")):
+        return text
+    if text.isdigit() and len(text) == 6:
+        if text.startswith("6"):
+            return f"{text}.SH"
+        if text.startswith(("0", "3")):
+            return f"{text}.SZ"
+    return text
+
+
+def _format_position_money(value: Any, currency: str = "") -> str:
+    number = _to_number(value)
+    prefix = _to_text(currency)
+    if number is None:
+        return "待计算"
+    text = f"{number:,.2f}"
+    return f"{prefix}{text}" if prefix else text
+
+
+def build_position_risk_notes(
+    position_profile: Any = None,
+    *,
+    recommended_margin_ratio: Any = None,
+    total_risk_level: Any = "",
+) -> list[str]:
+    profile = _as_mapping(position_profile)
+    profit_state = _to_text(profile.get("profit_state"), "盈亏未计算")
+    pnl_amount = _to_number(profile.get("pnl_amount"))
+    currency = _to_text(profile.get("currency"))
+    margin_ratio = _to_number(profile.get("margin_ratio_pct")) or 0
+    recommended = _to_number(recommended_margin_ratio)
+    risk_level = _to_text(total_risk_level)
+    notes: list[str] = []
+
+    if pnl_amount is not None:
+        money = _format_position_money(pnl_amount, currency)
+        if pnl_amount < 0 or "浮亏" in profit_state:
+            notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；当前为浮亏持仓，优先控制风险暴露。")
+        elif pnl_amount > 0 or "浮盈" in profit_state:
+            notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；避免盈利回撤变成融资压力。")
+        else:
+            notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；按纪律边界观察。")
+
+    if margin_ratio >= 20:
+        notes.append("融资比例存在压力，刷新数据前不建议新增融资。")
+    elif margin_ratio > 0:
+        notes.append(f"融资风险：当前融资 {margin_ratio:g}%，刷新数据前不建议新增融资。")
+
+    if margin_ratio > 0 and recommended is not None and margin_ratio > recommended:
+        notes.append(f"融资风险：当前融资 {margin_ratio:g}% 高于建议 {recommended:g}%，优先降风险或保现金。")
+
+    if risk_level == "低" and (margin_ratio > 0 or (pnl_amount is not None and pnl_amount < 0)):
+        notes.append("账户总风险低，但单票融资/浮亏风险需单独观察。")
+
+    deduped: list[str] = []
+    for item in notes:
+        if item and item not in deduped:
+            deduped.append(item)
+    return deduped
+
+
 def _now_iso(now: Any = None) -> str:
     if isinstance(now, _dt.datetime):
         return now.isoformat(timespec="seconds")
