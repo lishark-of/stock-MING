@@ -6802,14 +6802,49 @@ def build_today_action(decision_packet: Any = None) -> dict:
     }
 
 
+def rewrite_refresh_prompt_for_user(value: Any = None, fallback: Any = "") -> str:
+    text = _to_text(value)
+    if not text:
+        return _to_text(fallback)
+    if "点击刷新今日基础数据" not in text and "刷新今日基础数据" not in text:
+        return text
+    replacement = _to_text(
+        fallback,
+        "请先查看首页数据状态；需要新数据时点击满血数据刷新。",
+    )
+    for prefix in ("验证条件：", "验证条件:", "触发条件：", "触发条件:"):
+        if text.startswith(prefix):
+            return f"{prefix}{replacement}"
+    return replacement
+
+
+def _risk_refresh_prompt_fallback(coverage: Any = None, errors: Any = None) -> str:
+    coverage_map = _as_mapping(coverage)
+    error_list = _as_list(errors)
+    if error_list:
+        return "部分刷新存在失败项；先复核失败来源和缓存影响后再判断。"
+    if any(state == "missing" for state in coverage_map.values()):
+        return "关键模块仍有缺口；先补齐缺失模块或复核缓存影响后再判断。"
+    if coverage_map:
+        return "已读取当前可用数据；继续复核数据缺口和缓存影响后再判断。"
+    return "请先查看首页数据状态；需要新数据时点击满血数据刷新。"
+
+
 def build_risk_alerts(decision_packet: Any = None, strategy_packet: Any = None, coverage: Any = None, errors: Any = None) -> dict:
     decision = _as_mapping(decision_packet)
     strategy = _as_mapping(strategy_packet)
     must_not_do = [_to_text(item) for item in _as_list(decision.get("must_not_do"))]
     must_not_do = [item for item in must_not_do if item] or ["不追高", "不满仓", "不在未刷新数据下加融资"]
-    reduce_conditions = [_to_text(strategy.get("reduce_condition")) or _to_text(item) for item in _as_list(decision.get("next_validation_conditions"))]
-    reduce_conditions = [item for item in reduce_conditions if item][:MAX_CANDIDATES]
     coverage_map = _as_mapping(coverage)
+    refresh_fallback = _risk_refresh_prompt_fallback(coverage_map, errors)
+    reduce_conditions = [
+        rewrite_refresh_prompt_for_user(
+            _to_text(strategy.get("reduce_condition")) or _to_text(item),
+            refresh_fallback,
+        )
+        for item in _as_list(decision.get("next_validation_conditions"))
+    ]
+    reduce_conditions = [item for item in reduce_conditions if item][:MAX_CANDIDATES]
     data_gaps = [DATA_GAP_LABELS.get(key, key) for key, state in coverage_map.items() if state == "missing"]
     if _as_list(errors):
         data_gaps.append("存在刷新失败模块")

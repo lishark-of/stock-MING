@@ -6944,12 +6944,10 @@ def _cc_home_refresh_state():
 
 
 def _cc_user_refresh_text(value, fallback=""):
-    text = _home_trade_text(value, "")
-    if not text:
-        return fallback
-    if "点击刷新今日基础数据" in text or "刷新今日基础数据" in text:
-        return fallback or _cc_home_refresh_state()[1]
-    return text
+    return home_snapshot_service.rewrite_refresh_prompt_for_user(
+        value,
+        fallback or _cc_home_refresh_state()[1],
+    )
 
 
 def _cc_user_source(value, fallback="缓存结果"):
@@ -7550,8 +7548,9 @@ def render_command_center_risk_alert_panel(
     invalidation = (strategy_packet or {}).get("invalidation_condition")
     if invalidation:
         alerts.append(f"失效条件：{invalidation}")
+    _, refresh_impact = _cc_home_refresh_state()
     for condition in (decision_packet or {}).get("next_validation_conditions") or []:
-        alerts.append(f"验证条件：{condition}")
+        alerts.append(f"验证条件：{_cc_user_refresh_text(condition, refresh_impact)}")
     for path in (projection_packet or {}).get("paths") or []:
         if not isinstance(path, dict):
             continue

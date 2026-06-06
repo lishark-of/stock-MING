@@ -176,6 +176,33 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("账户整体风险较低", breakdown["consistency_notice"])
         self.assertFalse(breakdown["deepseek_called"])
 
+    def test_refresh_prompt_is_rewritten_for_user_status(self):
+        text = snapshot.rewrite_refresh_prompt_for_user(
+            "验证条件：点击刷新今日基础数据，补齐缺失模块后再判断。",
+            "今日已刷新；当前结论基于本轮可用数据，缺口仍按缓存或待验证处理。",
+        )
+
+        self.assertEqual(
+            text,
+            "验证条件：今日已刷新；当前结论基于本轮可用数据，缺口仍按缓存或待验证处理。",
+        )
+        self.assertNotIn("点击刷新今日基础数据", text)
+
+    def test_risk_alerts_do_not_surface_old_refresh_prompt_after_coverage(self):
+        alerts = snapshot.build_risk_alerts(
+            {
+                "next_validation_conditions": [
+                    "点击刷新今日基础数据，补齐缺失模块后再判断。",
+                    "先确认市场环境、量化、纪律三项至少两项同向。",
+                ]
+            },
+            coverage={"market": "ready", "quant": "ready", "discipline": "cached"},
+        )
+        dumped = json.dumps(alerts, ensure_ascii=False)
+
+        self.assertNotIn("点击刷新今日基础数据", dumped)
+        self.assertIn("已读取当前可用数据", dumped)
+
     def test_risk_breakdown_loss_with_margin_has_position_and_margin_pressure(self):
         breakdown = snapshot.build_risk_breakdown(
             {"risk_level": "低"},
