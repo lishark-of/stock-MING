@@ -3322,6 +3322,12 @@ def _cc_build_next_ticket_callbacks():
     }
 
 
+def _cc_build_light_next_ticket_callbacks():
+    callbacks = dict(_cc_build_next_ticket_callbacks())
+    callbacks.pop("call_deepseek_non_stream", None)
+    return callbacks
+
+
 def _cc_refresh_market_environment(target="", market_type="", price=None, position_profile=None):
     del target, market_type, price, position_profile
     packet = build_market_style_fact_packet()
@@ -3478,38 +3484,122 @@ def _cc_refresh_margin_etf_config(target="", market_type="", price=None, positio
 
 
 def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_profile=None):
-    del market_type, price, position_profile
+    del market_type
     token = _cc_now()
     previous_rows = legacy_packet_sync_service.extract_legacy_radar_rows(st.session_state)
+    profile = (
+        position_profile
+        if isinstance(position_profile, dict)
+        else st.session_state.get("position_profile")
+        or st.session_state.get("current_holding_context")
+        or {}
+    )
+    current_price = (
+        _num(price)
+        or _num(profile.get("current_price"))
+        or _num((st.session_state.get("command_center_direct_price_detail") or {}).get("price"))
+    )
+    current_name = (
+        profile.get("name")
+        or profile.get("current_holding_name")
+        or st.session_state.get("current_stock_name")
+        or ""
+    )
+    errors = []
+    scan_state = {}
+    try:
+        scan_state = run_light_rule_scan_for_command_center(
+            supabase=supabase,
+            current_ticker=target,
+            current_name=current_name,
+            current_price=current_price,
+            position_profile=profile,
+            callbacks=_cc_build_light_next_ticket_callbacks(),
+            candidate_limit=8,
+            display_limit=3,
+        )
+    except Exception as exc:
+        errors.append(str(exc))
+        scan_state = {}
+    generated_at = scan_state.get("generated_at") or token
+    raw_rows = scan_state.get("rule_rows") or scan_state.get("results") or []
+    light_rows = [
+        row
+        for row in raw_rows
+        if isinstance(row, dict)
+        and not row.get("error")
+        and ((row.get("candidate") or {}).get("ticker") or (row.get("score") or {}).get("ticker"))
+    ]
+    rows_source = "综合中心轻量雷达"
+    display_rows = light_rows
+    if not display_rows and previous_rows:
+        display_rows = previous_rows
+        rows_source = "上一轮下一票雷达缓存"
+    candidate_count = len(display_rows)
+    status = "completed" if candidate_count else "skipped"
+    insufficiency_reason = ""
+    if not candidate_count:
+        if errors:
+            insufficiency_reason = f"轻量规则扫描失败：{errors[0]}"
+        elif raw_rows:
+            insufficiency_reason = "轻量候选池返回结果均不可用，可能是单票数据构造失败或关键数据缺失。"
+        else:
+            insufficiency_reason = "轻量候选池没有生成可用候选；未跑全市场扫描。"
+    elif candidate_count < 3:
+        insufficiency_reason = f"轻量候选池仅生成 {candidate_count} 个可用候选，首页按实际数量展示。"
     summary = {
-        "source_mode": "综合中心 manual_basic 本地快照",
+        "source_mode": rows_source,
         "deepseek_called": False,
         "deepseek_detail": "未调用",
-        "display_count": min(3, len(previous_rows)),
-        "note": "综合中心今日基础刷新只读取已有雷达缓存，不触发全市场扫描、候选精筛或 DeepSeek 深研。",
+        "display_count": min(3, candidate_count),
+        "total_count": len(display_rows),
+        "scan_kind": "command_center_light_rule_scan",
+        "candidate_limit": 8,
+        "note": (
+            f"综合中心轻量雷达已生成下一票 Top{min(3, candidate_count)}；"
+            "候选来自轻量样本池/本地规则，不触发全市场扫描或 DeepSeek。"
+            if candidate_count
+            else f"暂无下一票 Top3：{insufficiency_reason}"
+        ),
+        "insufficiency_reason": insufficiency_reason,
+        "errors": errors,
     }
     scan_state = {
-        "generated_at": token,
-        "status": "completed" if previous_rows else "skipped",
+        **(scan_state if isinstance(scan_state, dict) else {}),
+        "generated_at": generated_at,
+        "status": status,
+        "source_mode": rows_source,
+        "source_notes": [
+            "满血数据刷新运行综合中心轻量雷达，不跑全市场重扫描。",
+            f"候选来源：{rows_source}",
+        ],
         "summary": summary,
-        "rule_rows": previous_rows[:3],
+        "rule_rows": clone_command_center_packet(display_rows),
+        "results": clone_command_center_packet(display_rows),
         "refresh_level": cc_service.REFRESH_LEVEL_MANUAL_BASIC,
     }
     st.session_state["radar_scan_results"] = clone_command_center_packet(scan_state)
     st.session_state["radar_scan_summary"] = clone_command_center_packet(summary)
     st.session_state["radar_scan_status"] = scan_state["status"]
-    st.session_state["radar_scan_finished_at"] = token
+    st.session_state["radar_scan_finished_at"] = generated_at
     st.session_state["command_center_radar_packet"] = legacy_packet_sync_service.sync_legacy_radar_packet(
         st.session_state,
-        live_packet={"next_ticket": {"updated_at": token, "source": "下一票雷达本地缓存快照"}},
+        live_packet={"next_ticket": {"updated_at": generated_at, "source": rows_source}},
     )
-    _cc_mark_module("next_ticket", "已刷新", "下一票雷达本地缓存快照")
+    _cc_mark_module(
+        "next_ticket",
+        "已刷新" if candidate_count else "待补充",
+        rows_source,
+        insufficiency_reason,
+    )
     return {
         "module": "下一票雷达",
         "status": "ok",
-        "updated_at": token,
-        "source": "下一票雷达本地缓存快照",
+        "updated_at": generated_at,
+        "source": rows_source,
         "summary": summary["note"],
+        "candidate_count": candidate_count,
+        "deepseek_called": False,
     }
 
 
@@ -3682,10 +3772,22 @@ def _build_next_ticket_live_section(live_packet=None):
             top_candidates = packet.get("top_candidates") or []
     meta = _cc_get_module_meta("next_ticket")
     if not top_candidates:
+        empty_reason = (
+            packet.get("summary")
+            or (st.session_state.get("radar_scan_summary") or {}).get("note")
+            or (st.session_state.get("radar_scan_summary") or {}).get("insufficiency_reason")
+        )
+        excluded_candidates = packet.get("excluded_candidates") or []
+        empty_status = (
+            "已扫描"
+            if packet.get("has_actionable_candidates") is False and excluded_candidates
+            else "使用缓存" if packet.get("status") in {"partial", "waiting"} else "未刷新"
+        )
         return {
-            "status": "使用缓存" if packet.get("status") in {"partial", "waiting"} else "未刷新",
+            "status": empty_status,
             "top_candidates": [],
-            "summary": "暂无下一票缓存。可点击满血数据刷新，或进入高级工具箱运行下一票雷达。",
+            "excluded_candidates": excluded_candidates,
+            "summary": empty_reason or "暂无下一票缓存。可点击满血数据刷新，或进入高级工具箱运行下一票雷达。",
             "updated_at": packet.get("generated_at") or "",
             "source": "下一票雷达缓存",
             "action_state": "待刷新",
@@ -3701,6 +3803,7 @@ def _build_next_ticket_live_section(live_packet=None):
     return {
         "status": "已刷新" if packet.get("data_status") == "ready" else "使用缓存",
         "top_candidates": top_candidates,
+        "excluded_candidates": packet.get("excluded_candidates") or [],
         "summary": f"已读取上次成功下一票 Top{len(top_candidates[:3])}。",
         "updated_at": packet.get("generated_at") or packet.get("updated_at") or "",
         "source": _cc_user_source(packet.get("source"), "下一票雷达缓存"),
@@ -7169,6 +7272,7 @@ def render_command_center_strategy_trade_panel(strategy_packet=None):
 def render_command_center_next_ticket_top3(live_packet=None):
     section = _build_next_ticket_live_section(live_packet=live_packet)
     candidates = section.get("top_candidates") or []
+    excluded_candidates = section.get("excluded_candidates") or []
     with st.container(border=True):
         st.markdown("### 下一票 Top3")
         if candidates:
@@ -7186,6 +7290,19 @@ def render_command_center_next_ticket_top3(live_packet=None):
                 )
         else:
             st.info(section.get("summary") or "暂无下一票缓存。可点击满血数据刷新，或进入高级工具箱运行下一票雷达。")
+        if excluded_candidates:
+            with st.expander("未纳入 / 排除原因", expanded=not candidates):
+                for item in excluded_candidates[:5]:
+                    ticker = _cc_display_ticker(item.get("ticker"), "未知")
+                    name = _display_text(item.get("name"), "")
+                    status_label = item.get("status_label") or item.get("action_state") or "暂不纳入"
+                    score_text = item.get("score") if item.get("score") is not None else "暂无"
+                    st.markdown(f"**{ticker} {name}｜{status_label}｜评分 {score_text}**")
+                    st.write(_home_trade_text(item.get("reason"), "候选未达主路径展示标准。"))
+                    st.caption(
+                        f"来源：{_cc_user_source(item.get('source'), '下一票雷达缓存')}｜"
+                        f"更新时间：{_display_text(item.get('updated_at'), '暂无')}"
+                    )
         st.caption(f"状态：{section.get('status') or '待刷新'}｜更新时间：{section.get('updated_at') or '暂无'}")
 
 

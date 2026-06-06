@@ -181,6 +181,44 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(items[0]["decision_brief"]["execution_label"], "可准备")
         self.assertFalse(items[0]["decision_brief"]["deepseek_called"])
 
+    def test_next_ticket_candidates_exclude_not_included_rows(self):
+        state = {
+            "radar_scan_results": {
+                "generated_at": "2026-06-06T10:00:00",
+                "rule_rows": [
+                    {"candidate": {"ticker": "601138.SH", "name": "工业富联"}, "score": {"total_score": 91, "battle_state": "暂不纳入"}},
+                    {"candidate": {"ticker": "688041.SH", "name": "海光信息"}, "score": {"total_score": 68, "battle_state": "只观察"}},
+                    {"candidate": {"ticker": "300750.SZ", "name": "宁德时代"}, "score": {"total_score": 64, "battle_state": "等验证"}},
+                    {"candidate": {"ticker": "002008.SZ", "name": "大族激光"}, "score": {"total_score": 55, "battle_state": "可准备"}},
+                ],
+            }
+        }
+
+        items = snapshot.extract_next_ticket_candidates(state)
+        packet = snapshot.radar_packet_service.build_command_center_radar_packet(state)
+
+        self.assertEqual([item["ticker"] for item in items], ["002008.SZ", "300750.SZ", "688041.SH"])
+        self.assertNotIn("601138.SH", [item["ticker"] for item in items])
+        self.assertEqual(packet["excluded_candidates"][0]["ticker"], "601138.SH")
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_next_ticket_candidates_empty_when_only_excluded_rows(self):
+        state = {
+            "radar_scan_results": {
+                "generated_at": "2026-06-06T10:00:00",
+                "rule_rows": [
+                    {"candidate": {"ticker": "601138.SH", "name": "工业富联"}, "score": {"total_score": 91, "battle_state": "暂不纳入"}},
+                ],
+            }
+        }
+
+        items = snapshot.extract_next_ticket_candidates(state)
+        packet = snapshot.radar_packet_service.build_command_center_radar_packet(state)
+
+        self.assertEqual(items, [])
+        self.assertEqual(len(packet["excluded_candidates"]), 1)
+        self.assertIn("本轮轻量雷达未产生可执行候选", packet["summary"])
+
     def test_next_ticket_candidates_prefer_radar_packet(self):
         state = {
             "command_center_radar_packet": {
@@ -952,7 +990,8 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["holding_action"]["investment_horizon"], "短中期")
         self.assertIsNone(payload["holding_action"]["current_price"])
         self.assertIn("不计算实时浮盈亏", payload["holding_action"]["floating_pnl_text"])
-        self.assertEqual(len(payload["next_ticket_candidates"]), 3)
+        self.assertEqual(len(payload["next_ticket_candidates"]), 2)
+        self.assertEqual(len(payload["radar_packet"]["excluded_candidates"]), 2)
         self.assertEqual(payload["margin_etf_summary"]["current_margin_ratio"], 30)
         self.assertEqual(payload["margin_etf_summary"]["recommended_margin_ratio"], 25)
         self.assertEqual(len(payload["margin_etf_summary"]["recommended_etfs"]), 3)

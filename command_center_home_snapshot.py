@@ -5916,11 +5916,36 @@ def _first_rows_from_mapping(payload: Mapping[str, Any], *keys: str) -> list:
 
 def _normalize_next_ticket_state(value: Any = "") -> str:
     text = _to_text(value)
+    if "风险过高" in text:
+        return "风险过高"
+    if "分数不足" in text:
+        return "分数不足"
+    if "数据不足" in text:
+        return "数据不足"
+    if "剔除" in text or "排除" in text:
+        return "剔除"
+    if "暂不纳入" in text or "不纳入" in text:
+        return "暂不纳入"
     if "准备" in text or "可执行" in text:
         return "可准备"
     if "验证" in text or "待补" in text or "等待" in text:
         return "等验证"
     return "只观察"
+
+
+def _is_home_next_ticket_main_candidate(item: Any = None) -> bool:
+    payload = _as_mapping(item)
+    status = _normalize_next_ticket_state(payload.get("status_label") or payload.get("action_state"))
+    return status in {"可准备", "等验证", "只观察"}
+
+
+def _home_next_ticket_sort_key(item: Any = None) -> tuple:
+    payload = _as_mapping(item)
+    priority = {"可准备": 0, "等验证": 1, "只观察": 2}
+    score = _to_number(payload.get("score"))
+    rank = _to_number(payload.get("rank"))
+    status = _normalize_next_ticket_state(payload.get("status_label") or payload.get("action_state"))
+    return (priority.get(status, 99), -(score if score is not None else -1), rank if rank is not None else 999)
 
 
 def _text_items(value: Any) -> list[str]:
@@ -6105,10 +6130,12 @@ def _candidate_from_row(row: Any, scan_state: Any = None, live_section: Any = No
 
 def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, limit: int = MAX_CANDIDATES) -> list[dict]:
     state_map = _as_mapping(state)
+    live = _as_mapping(live_packet)
+    live_section = _as_mapping(live.get("next_ticket"))
     radar_packet = _as_mapping(state_map.get("command_center_radar_packet"))
-    if radar_packet.get("top_candidates"):
+    if radar_packet.get("top_candidates") or state_map.get("radar_scan_results") or live_section.get("top_candidates"):
         enriched = radar_packet_service.build_command_center_radar_packet(
-            {"command_center_radar_packet": radar_packet},
+            state_map if not radar_packet.get("top_candidates") else {"command_center_radar_packet": radar_packet},
             live_packet=live_packet,
             limit=limit,
         )
@@ -6119,8 +6146,8 @@ def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, l
         ]
         if enriched_candidates:
             return enriched_candidates
-    live = _as_mapping(live_packet)
-    live_section = _as_mapping(live.get("next_ticket"))
+        if enriched.get("has_actionable_candidates") is False and _as_list(enriched.get("excluded_candidates")):
+            return []
     scan_state = _as_mapping(state_map.get("radar_scan_results"))
     summary = _as_mapping(state_map.get("radar_scan_summary") or scan_state.get("summary"))
     home_snapshot = _as_mapping(state_map.get("command_center_home_snapshot"))
@@ -6158,9 +6185,11 @@ def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, l
         key = item.get("ticker") or item.get("name")
         if not key or key in seen:
             continue
+        if not _is_home_next_ticket_main_candidate(item):
+            continue
         seen.add(key)
         candidates.append(item)
-    return candidates[:limit]
+    return sorted(candidates, key=_home_next_ticket_sort_key)[:limit]
 
 
 def _normalize_etf_status_label(value: Any = "") -> str:

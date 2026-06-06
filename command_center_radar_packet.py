@@ -10,6 +10,9 @@ from command_center_legacy_packet_contract import build_legacy_packet_decision_c
 MAX_TOP_CANDIDATES = 3
 MAX_EVIDENCE_ITEMS = 5
 MAX_BRIEF_ITEMS = 4
+ACTIONABLE_STATUS_PRIORITY = {"可准备": 0, "等验证": 1, "只观察": 2}
+EXCLUDED_STATUS_LABELS = {"暂不纳入", "剔除", "风险过高", "分数不足", "数据不足"}
+EXCLUDED_STATUS_MARKERS = ("暂不纳入", "剔除", "风险过高", "分数不足", "数据不足", "排除", "不纳入")
 
 RADAR_EVIDENCE_LINKS = (
     {
@@ -111,12 +114,21 @@ def _action_tone(action_state: str) -> str:
         return "ready"
     if action_state in {"等验证", "待验证"}:
         return "stale"
-    if action_state in {"暂不纳入", "排除", "不纳入"}:
+    if action_state in {"暂不纳入", "排除", "不纳入", "剔除", "风险过高", "分数不足", "数据不足"}:
         return "failed"
     return "missing"
 
 
 def _candidate_status_label(action_state: str) -> str:
+    raw = to_text(action_state)
+    if "风险过高" in raw:
+        return "风险过高"
+    if "分数不足" in raw:
+        return "分数不足"
+    if "数据不足" in raw:
+        return "数据不足"
+    if "剔除" in raw or "排除" in raw:
+        return "剔除"
     if action_state in {"可准备", "准备", "ready"}:
         return "可准备"
     if action_state in {"等验证", "待验证"}:
@@ -124,6 +136,120 @@ def _candidate_status_label(action_state: str) -> str:
     if action_state in {"暂不纳入", "排除", "不纳入"}:
         return "暂不纳入"
     return action_state or "只观察"
+
+
+def _candidate_status_text(candidate: Any = None) -> str:
+    payload = as_mapping(candidate)
+    brief = as_mapping(payload.get("decision_brief"))
+    return _candidate_status_label(
+        _first_text(
+            payload.get("status_label"),
+            payload.get("action_state"),
+            brief.get("execution_label"),
+            default="只观察",
+        )
+    )
+
+
+def _is_excluded_candidate(candidate: Any = None) -> bool:
+    payload = as_mapping(candidate)
+    status = _candidate_status_text(payload)
+    status_blob = " ".join(
+        to_text(value)
+        for value in [
+            status,
+            payload.get("status_label"),
+            payload.get("action_state"),
+            payload.get("reason"),
+        ]
+    )
+    return status in EXCLUDED_STATUS_LABELS or any(marker in status_blob for marker in EXCLUDED_STATUS_MARKERS)
+
+
+def _is_actionable_candidate(candidate: Any = None) -> bool:
+    status = _candidate_status_text(candidate)
+    return status in ACTIONABLE_STATUS_PRIORITY and not _is_excluded_candidate(candidate)
+
+
+def _candidate_sort_key(candidate: Any = None) -> tuple:
+    payload = as_mapping(candidate)
+    status = _candidate_status_text(payload)
+    score = to_number(payload.get("score"))
+    rank = to_number(payload.get("rank"))
+    return (
+        ACTIONABLE_STATUS_PRIORITY.get(status, 99),
+        -(score if score is not None else -1),
+        rank if rank is not None else 999,
+    )
+
+
+def _excluded_sort_key(candidate: Any = None) -> tuple:
+    payload = as_mapping(candidate)
+    score = to_number(payload.get("score"))
+    rank = to_number(payload.get("rank"))
+    return (-(score if score is not None else -1), rank if rank is not None else 999)
+
+
+def _prepare_packet_candidate(candidate: Any = None, rank: int = 0) -> dict:
+    payload = as_mapping(candidate)
+    status = _candidate_status_text(payload)
+    payload["action_state"] = _first_text(payload.get("action_state"), default=status)
+    payload["status_label"] = status
+    payload["tone"] = _action_tone(status)
+    payload["score"] = to_number(payload.get("score"))
+    if rank and not payload.get("rank"):
+        payload["rank"] = rank
+    payload["decision_brief"] = build_candidate_decision_brief(payload)
+    return payload
+
+
+def _rerank_candidates(candidates: Any = None) -> list[dict]:
+    rows = []
+    for index, item in enumerate(as_list(candidates), start=1):
+        payload = as_mapping(item)
+        payload["rank"] = index
+        payload["decision_brief"] = build_candidate_decision_brief(payload)
+        rows.append(payload)
+    return rows
+
+
+def split_radar_candidates(candidates: Any = None, limit: int = MAX_TOP_CANDIDATES) -> dict:
+    main_candidates = []
+    excluded_candidates = []
+    seen = set()
+    for index, item in enumerate(as_list(candidates), start=1):
+        payload = _prepare_packet_candidate(item, rank=index)
+        key = payload.get("ticker") or payload.get("name")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if _is_actionable_candidate(payload):
+            main_candidates.append(payload)
+        else:
+            excluded_candidates.append(payload)
+    ranked_main = sorted(main_candidates, key=_candidate_sort_key)
+    top_candidates = _rerank_candidates(ranked_main[: int(limit or MAX_TOP_CANDIDATES)])
+    watch_candidates = _rerank_candidates(
+        [item for item in ranked_main if _candidate_status_text(item) == "只观察"]
+    )
+    excluded_candidates = _rerank_candidates(sorted(excluded_candidates, key=_excluded_sort_key))
+    return {
+        "top_candidates": top_candidates,
+        "watch_candidates": watch_candidates,
+        "excluded_candidates": excluded_candidates,
+        "has_actionable_candidates": bool(top_candidates),
+    }
+
+
+def _radar_summary_text(top_candidates: Any = None, excluded_candidates: Any = None, total_count: int = 0) -> str:
+    top_count = len(as_list(top_candidates))
+    excluded_count = len(as_list(excluded_candidates))
+    if top_count:
+        excluded_suffix = f"；未纳入 {excluded_count} 个排除候选。" if excluded_count else "。"
+        return f"本轮下一票主候选 Top{top_count} 已按可准备/等验证/只观察分层展示{excluded_suffix}"
+    if total_count or excluded_count:
+        return "本轮轻量雷达未产生可执行候选。已完成轻量扫描，但候选未达主路径展示标准。可进入高级工具箱运行全量雷达扫描。"
+    return "暂无下一票雷达缓存；点击满血数据刷新，或进入高级工具箱运行下一票雷达。页面不会自动全市场扫描。"
 
 
 def _evidence_items(
@@ -254,10 +380,10 @@ def _candidate_execution_mode(action_state: str) -> dict:
             "summary": "先补齐关键证据，再判断是否进入作战准备。",
             "next_action": "手动恢复资金流、龙虎榜、涨跌停/情绪、硬风险等证据 packet。",
         }
-    if label == "暂不纳入":
+    if label in EXCLUDED_STATUS_LABELS:
         return {
             "execution_status": "blocked",
-            "execution_label": "暂不纳入",
+            "execution_label": label,
             "tone": "failed",
             "summary": "当前候选暂不纳入交易准备。",
             "next_action": "保持排除；除非下一票雷达手动扫描重新给出有效信号。",
@@ -597,16 +723,35 @@ def build_command_center_radar_packet(
     live_section = as_mapping(live.get("next_ticket"))
     existing = as_mapping(state_map.get("command_center_radar_packet"))
     if existing.get("top_candidates"):
-        top_candidates = [
-            _with_candidate_decision_brief(item, rank=index + 1)
-            for index, item in enumerate(as_list(existing.get("top_candidates"))[: int(limit or MAX_TOP_CANDIDATES)])
-        ]
-        data_status = _first_text(existing.get("data_status"), existing.get("cache_state"), default="ready")
+        split = split_radar_candidates(
+            [
+                *as_list(existing.get("top_candidates")),
+                *as_list(existing.get("watch_candidates")),
+                *as_list(existing.get("excluded_candidates")),
+            ],
+            limit=limit,
+        )
+        top_candidates = split["top_candidates"]
+        watch_candidates = split["watch_candidates"]
+        excluded_candidates = split["excluded_candidates"]
+        data_status = "ready" if top_candidates else "missing"
+        packet_status = _first_text(existing.get("status"), default="ready" if top_candidates else "waiting")
         packet = {
             **existing,
             "top_candidates": top_candidates,
+            "watch_candidates": watch_candidates,
+            "excluded_candidates": excluded_candidates,
+            "excluded_count": len(excluded_candidates),
+            "has_actionable_candidates": bool(top_candidates),
             "display_count": len(top_candidates),
             "cache_state": data_status,
+            "data_status": data_status,
+            "status": packet_status if top_candidates else "waiting",
+            "summary": _radar_summary_text(
+                top_candidates,
+                excluded_candidates,
+                existing.get("total_count") or len(top_candidates) + len(excluded_candidates),
+            ),
             "decision_summary": build_radar_decision_summary(top_candidates),
             "manual_required_text": _first_text(
                 existing.get("manual_required_text"),
@@ -637,18 +782,18 @@ def build_command_center_radar_packet(
     )
     errors = _first_list(state_map.get("radar_scan_errors"), summary.get("errors"), scan_packet.get("errors"))
     status_raw = to_text(state_map.get("radar_scan_status") or scan_packet.get("status"))
-    top_candidates = []
-    seen = set()
+    all_candidates = []
     for row in rows:
-        candidate = normalize_radar_candidate(row, scan_packet=scan_packet, live_section=live_section, rank=len(top_candidates) + 1)
-        key = candidate.get("ticker") or candidate.get("name")
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        top_candidates.append(candidate)
-        if len(top_candidates) >= int(limit or MAX_TOP_CANDIDATES):
-            break
+        all_candidates.append(
+            normalize_radar_candidate(row, scan_packet=scan_packet, live_section=live_section, rank=len(all_candidates) + 1)
+        )
+    split = split_radar_candidates(all_candidates, limit=limit)
+    top_candidates = split["top_candidates"]
+    watch_candidates = split["watch_candidates"]
+    excluded_candidates = split["excluded_candidates"]
     status = _packet_status(scan_packet, rows, errors, status_raw)
+    if rows and not top_candidates and status == "ready":
+        status = "waiting"
     generated_at = _first_text(
         scan_packet.get("generated_at"),
         state_map.get("radar_scan_finished_at"),
@@ -665,15 +810,11 @@ def build_command_center_radar_packet(
         "total_count": total_count,
         "display_count": len(top_candidates),
         "top_candidates": top_candidates,
-        "summary": _first_text(
-            summary.get("note"),
-            summary.get("summary"),
-            default=(
-                f"规则雷达缓存 {total_count} 条，首页展示 Top {len(top_candidates)}。"
-                if rows
-                else "暂无下一票雷达缓存；点击刷新今日基础数据不会自动全市场扫描。"
-            ),
-        ),
+        "watch_candidates": watch_candidates,
+        "excluded_candidates": excluded_candidates,
+        "excluded_count": len(excluded_candidates),
+        "has_actionable_candidates": bool(top_candidates),
+        "summary": _radar_summary_text(top_candidates, excluded_candidates, total_count),
         "errors": [to_text(item) for item in errors if to_text(item)][:8],
         "data_status": data_status,
         "decision_summary": build_radar_decision_summary(top_candidates),

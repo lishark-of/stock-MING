@@ -343,14 +343,20 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("build_command_center_margin_packet", tokens)
         _assert_token_contains(self, tokens, "融资 ETF 本地配置快照")
 
-    def test_next_ticket_refresh_reads_legacy_radar_rows_and_writes_packet(self):
+    def test_next_ticket_refresh_runs_light_radar_and_writes_packet(self):
         tokens = _function_tokens("_cc_run_next_ticket_radar")
+        callback_tokens = _function_tokens("_cc_build_light_next_ticket_callbacks")
 
+        self.assertIn("run_light_rule_scan_for_command_center", tokens)
         self.assertIn("extract_legacy_radar_rows", tokens)
         self.assertIn("command_center_radar_packet", tokens)
         self.assertIn("sync_legacy_radar_packet", tokens)
-        _assert_token_contains(self, tokens, "下一票雷达本地缓存快照")
+        self.assertIn("call_deepseek_non_stream", callback_tokens)
+        self.assertIn("pop", callback_tokens)
+        _assert_token_contains(self, tokens, "综合中心轻量雷达")
+        _assert_token_contains(self, tokens, "command_center_light_rule_scan")
         _assert_token_contains(self, tokens, "不触发全市场扫描")
+        _assert_token_contains(self, tokens, "DeepSeek")
 
     def test_legacy_a_share_screen_uses_direct_fact_cards_not_recovery_controls(self):
         source = _function_source("display_cn_stock_analysis")

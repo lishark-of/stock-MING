@@ -35,9 +35,15 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         )
 
         self.assertEqual(packet["status"], "ready")
-        self.assertEqual(packet["display_count"], 3)
+        self.assertEqual(packet["display_count"], 2)
         self.assertEqual(packet["top_candidates"][0]["ticker"], "300750.SZ")
         self.assertEqual(packet["top_candidates"][0]["status_label"], "等验证")
+        self.assertEqual(packet["top_candidates"][1]["ticker"], "512480.SH")
+        self.assertEqual(packet["top_candidates"][1]["status_label"], "只观察")
+        self.assertEqual(len(packet["excluded_candidates"]), 2)
+        self.assertEqual(packet["excluded_candidates"][0]["ticker"], "600519.SH")
+        self.assertEqual(packet["excluded_candidates"][0]["status_label"], "暂不纳入")
+        self.assertTrue(packet["has_actionable_candidates"])
         self.assertEqual(packet["top_candidates"][0]["tone"], "stale")
         self.assertEqual(packet["top_candidates"][0]["trigger_condition"], "放量站稳 MA20；行业强于指数")
         self.assertEqual(packet["top_candidates"][0]["invalidation_condition"], "跌破 MA20；资金流转弱")
@@ -67,13 +73,57 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         self.assertIn("下一票雷达", packet["decision_chain_effect"])
         self.assertEqual(packet["packet_role"], "下一票 Top3 候选证据")
         self.assertEqual(packet["verification_status"], "待验证")
-        self.assertIn("下一票 Top3", packet["evidence_summary"])
+        self.assertIn("下一票 Top2", packet["evidence_summary"])
         self.assertIn("等验证 1", packet["evidence_summary"])
         self.assertTrue(packet["evidence_items"])
         self.assertIn("候选不是买入指令", packet["decision_guardrail"])
         self.assertIn("补齐", packet["action_hint"])
         self.assertFalse(packet["deepseek_called"])
         json.dumps(packet, ensure_ascii=False)
+
+    def test_excluded_candidates_do_not_enter_top_three(self):
+        packet = radar.build_command_center_radar_packet(
+            {
+                "radar_scan_status": "completed",
+                "radar_scan_results": {
+                    "generated_at": "2026-06-06T10:00:00",
+                    "rule_rows": [
+                        {"candidate": {"ticker": "601138.SH", "name": "工业富联"}, "score": {"total_score": 91, "battle_state": "暂不纳入"}},
+                        {"candidate": {"ticker": "688041.SH", "name": "海光信息"}, "score": {"total_score": 68, "battle_state": "只观察"}},
+                        {"candidate": {"ticker": "300750.SZ", "name": "宁德时代"}, "score": {"total_score": 64, "battle_state": "等验证"}},
+                        {"candidate": {"ticker": "002008.SZ", "name": "大族激光"}, "score": {"total_score": 55, "battle_state": "可准备"}},
+                    ],
+                    "summary": {"deepseek_called": False},
+                },
+            }
+        )
+
+        self.assertEqual([item["ticker"] for item in packet["top_candidates"]], ["002008.SZ", "300750.SZ", "688041.SH"])
+        self.assertEqual([item["status_label"] for item in packet["top_candidates"]], ["可准备", "等验证", "只观察"])
+        self.assertEqual(packet["excluded_candidates"][0]["ticker"], "601138.SH")
+        self.assertNotIn("601138.SH", [item["ticker"] for item in packet["top_candidates"]])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_packet_empty_main_candidates_keeps_exclusions(self):
+        packet = radar.build_command_center_radar_packet(
+            {
+                "radar_scan_status": "completed",
+                "radar_scan_results": {
+                    "generated_at": "2026-06-06T10:00:00",
+                    "rule_rows": [
+                        {"candidate": {"ticker": "601138.SH", "name": "工业富联"}, "score": {"total_score": 91, "battle_state": "暂不纳入"}},
+                        {"candidate": {"ticker": "600519.SH", "name": "贵州茅台"}, "score": {"total_score": 70, "battle_state": "风险过高"}},
+                    ],
+                    "summary": {"deepseek_called": False},
+                },
+            }
+        )
+
+        self.assertEqual(packet["top_candidates"], [])
+        self.assertEqual(len(packet["excluded_candidates"]), 2)
+        self.assertFalse(packet["has_actionable_candidates"])
+        self.assertIn("本轮轻量雷达未产生可执行候选", packet["summary"])
+        self.assertFalse(packet["deepseek_called"])
 
     def test_waiting_packet_when_cache_missing(self):
         packet = radar.build_command_center_radar_packet({})
