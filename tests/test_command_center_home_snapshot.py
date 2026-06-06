@@ -569,11 +569,13 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         etfs = summary["recommended_etfs"]
         self.assertEqual(len(etfs), 2)
         self.assertEqual(etfs[0]["code"], "512480.SH")
-        self.assertEqual(etfs[0]["status_label"], "可配置")
+        self.assertEqual(etfs[0]["status_label"], "可用现金配置")
         self.assertEqual(etfs[0]["recommended_ratio"], 12)
         self.assertEqual(etfs[0]["recommended_amount"], 36000)
         self.assertIn("芯片链", etfs[0]["reason"])
         self.assertEqual(summary["recommended_margin_ratio"], 20)
+        self.assertFalse(summary["allow_new_margin"])
+        self.assertIn("当前融资比例 30%", summary["margin_risk_notice"])
 
     def test_margin_etf_summary_backfills_from_bucket_allocation_plan(self):
         summary = snapshot.build_margin_etf_summary(
@@ -598,7 +600,23 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(etf["bucket"], "科技成长ETF")
         self.assertEqual(etf["recommended_ratio"], 15)
         self.assertEqual(etf["recommended_amount"], 45000)
-        self.assertEqual(etf["status_label"], "不追高")
+        self.assertEqual(etf["status_label"], "只观察不追")
+
+    def test_margin_etf_summary_keeps_avoid_and_excluded_out_of_main_list(self):
+        summary = snapshot.build_margin_etf_summary(
+            {
+                "legacy_margin_etf_allocation_result": {
+                    "selected_etf_candidates": [
+                        {"code": "159915.SZ", "name": "创业板ETF", "state": "不追高", "score": 70},
+                        {"code": "510300.SH", "name": "沪深300ETF", "state": "数据不足"},
+                    ],
+                }
+            }
+        )
+
+        self.assertEqual(summary["recommended_etfs"], [])
+        self.assertEqual([item["code"] for item in summary["avoid_etfs"]], ["159915.SZ"])
+        self.assertEqual([item["code"] for item in summary["excluded_etfs"]], ["510300.SH"])
 
     def test_margin_etf_summary_empty_cache_returns_clear_empty_list(self):
         summary = snapshot.build_margin_etf_summary(

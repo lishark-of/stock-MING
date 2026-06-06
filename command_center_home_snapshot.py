@@ -6359,28 +6359,35 @@ def build_margin_etf_summary(state: Any = None, live_packet: Any = None, etf_pac
     home_snapshot = _as_mapping(state_map.get("command_center_home_snapshot"))
     snapshot_summary = _as_mapping(home_snapshot.get("margin_etf_summary"))
     snapshot_packet = _as_mapping(home_snapshot.get("etf_packet"))
-    candidates = []
-    for source_candidates, source_payload in (
-        (live_section.get("recommended_etfs") or live_section.get("etf_candidates") or live_section.get("candidates"), live_section),
-        (allocation.get("selected_etf_candidates"), allocation),
-        (allocation.get("recommended_etfs"), allocation),
-        (allocation.get("recommended_etf_allocation"), allocation),
-        (allocation.get("etf_score_table"), allocation),
-        (daily.get("selected_etf_candidates") or daily.get("recommended_etfs"), daily),
-        (_as_mapping(daily.get("score_packet")).get("rows"), daily),
-        (snapshot_summary.get("recommended_etfs"), snapshot_summary),
-        (snapshot_packet.get("recommended_etfs"), snapshot_packet),
-        (etf.get("recommended_etfs"), etf),
-    ):
-        candidates = _flatten_etf_candidates(
-            source_candidates,
-            allocation=allocation or source_payload,
-            live_section=live_section,
-            source=_to_text(_as_mapping(source_payload).get("source") or _as_mapping(source_payload).get("data_source")),
-            updated_at=_to_text(_as_mapping(source_payload).get("updated_at") or _as_mapping(source_payload).get("generated_at")),
-        )
-        if candidates:
-            break
+    candidates = _as_list(etf.get("recommended_etfs"))
+    split_candidate_layers = (
+        _as_list(etf.get("actionable_etfs")),
+        _as_list(etf.get("watch_etfs")),
+        _as_list(etf.get("avoid_etfs")),
+        _as_list(etf.get("excluded_etfs")),
+    )
+    has_packet_candidate_evidence = bool(candidates or any(split_candidate_layers))
+    if not candidates and not has_packet_candidate_evidence:
+        for source_candidates, source_payload in (
+            (live_section.get("recommended_etfs") or live_section.get("etf_candidates") or live_section.get("candidates"), live_section),
+            (allocation.get("selected_etf_candidates"), allocation),
+            (allocation.get("recommended_etfs"), allocation),
+            (allocation.get("recommended_etf_allocation"), allocation),
+            (allocation.get("etf_score_table"), allocation),
+            (daily.get("selected_etf_candidates") or daily.get("recommended_etfs"), daily),
+            (_as_mapping(daily.get("score_packet")).get("rows"), daily),
+            (snapshot_summary.get("recommended_etfs"), snapshot_summary),
+            (snapshot_packet.get("recommended_etfs"), snapshot_packet),
+        ):
+            candidates = _flatten_etf_candidates(
+                source_candidates,
+                allocation=allocation or source_payload,
+                live_section=live_section,
+                source=_to_text(_as_mapping(source_payload).get("source") or _as_mapping(source_payload).get("data_source")),
+                updated_at=_to_text(_as_mapping(source_payload).get("updated_at") or _as_mapping(source_payload).get("generated_at")),
+            )
+            if candidates:
+                break
     watch_not_chase = etf.get("watch_not_chase") or allocation.get("watch_not_chase") or allocation.get("watch_not_chase_etfs") or []
     watch_not_chase_items = [_to_text(item) for item in _as_list(watch_not_chase)]
     watch_not_chase_items = [item for item in watch_not_chase_items if item]
@@ -6395,6 +6402,14 @@ def build_margin_etf_summary(state: Any = None, live_packet: Any = None, etf_pac
         "recommended_cash_ratio": _to_number(etf.get("recommended_cash_ratio") or live_section.get("recommended_cash_ratio") or allocation.get("recommended_cash_ratio")),
         "today_main_direction": _to_text(etf.get("today_main_direction") or live_section.get("today_main_direction") or allocation.get("today_main_direction") or allocation.get("action_state"), "待刷新"),
         "recommended_etfs": candidates[:MAX_CANDIDATES],
+        "actionable_etfs": _as_list(etf.get("actionable_etfs"))[:MAX_CANDIDATES],
+        "watch_etfs": _as_list(etf.get("watch_etfs"))[:MAX_CANDIDATES],
+        "avoid_etfs": _as_list(etf.get("avoid_etfs"))[:MAX_CANDIDATES],
+        "excluded_etfs": _as_list(etf.get("excluded_etfs"))[:MAX_CANDIDATES],
+        "allow_new_margin": bool(etf.get("allow_new_margin", False)),
+        "margin_risk_notice": _to_text(etf.get("margin_risk_notice")),
+        "etf_replacement_hint": _to_text(etf.get("etf_replacement_hint")),
+        "leverage_guardrail": _to_text(etf.get("leverage_guardrail"), "不建议因为 ETF 强而额外加杠杆追高。"),
         "watch_not_chase": watch_not_chase_items[:MAX_CANDIDATES],
     }
 
@@ -6763,6 +6778,10 @@ def build_home_action_snapshot(
                     "current_margin_ratio": margin_etf_summary.get("current_margin_ratio"),
                     "today_main_direction": margin_etf_summary.get("today_main_direction"),
                     "recommended_etfs": margin_etf_summary.get("recommended_etfs"),
+                    "actionable_etfs": margin_etf_summary.get("actionable_etfs"),
+                    "watch_etfs": margin_etf_summary.get("watch_etfs"),
+                    "avoid_etfs": margin_etf_summary.get("avoid_etfs"),
+                    "excluded_etfs": margin_etf_summary.get("excluded_etfs"),
                     "watch_not_chase": margin_etf_summary.get("watch_not_chase"),
                 }
             },

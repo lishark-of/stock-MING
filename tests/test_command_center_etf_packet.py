@@ -14,6 +14,10 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertEqual(packet["status"], "waiting")
         self.assertEqual(packet["data_status"], "missing")
         self.assertFalse(packet["recommended_etfs"])
+        self.assertFalse(packet["actionable_etfs"])
+        self.assertFalse(packet["watch_etfs"])
+        self.assertFalse(packet["avoid_etfs"])
+        self.assertFalse(packet["excluded_etfs"])
         self.assertFalse(packet["deepseek_called"])
         self.assertIn("不自动全量发现", packet["summary"])
         self.assertEqual(packet["packet_role"], "ETF/融资配置证据")
@@ -80,6 +84,115 @@ class CommandCenterEtfPacketTests(unittest.TestCase):
         self.assertIn("ETF 候选不是买入指令", packet["decision_guardrail"])
         self.assertEqual(packet["decision_chain_state"], "ready")
         self.assertFalse(packet["deepseek_called"])
+
+    def test_etf_candidates_are_layered_by_actionability(self):
+        packet = etf_packet.build_command_center_etf_packet(
+            {
+                "legacy_margin_etf_allocation_result": {
+                    "recommended_margin_ratio": 10,
+                    "recommended_cash_ratio": 30,
+                    "selected_etf_candidates": [
+                        {
+                            "code": "512480.SH",
+                            "name": "半导体 ETF",
+                            "bucket": "科技成长ETF",
+                            "score": 82,
+                            "state": "可配置",
+                            "ratio_pct": 8,
+                            "amount": 24000,
+                            "reason": "芯片链强于指数。",
+                        },
+                        {
+                            "code": "588000.SH",
+                            "name": "科创50ETF",
+                            "bucket": "宽基ETF",
+                            "score": 75,
+                            "state": "等回踩",
+                        },
+                        {
+                            "code": "159915.SZ",
+                            "name": "创业板ETF",
+                            "bucket": "宽基ETF",
+                            "score": 68,
+                            "state": "不追高",
+                            "reason": "短线过热。",
+                        },
+                        {
+                            "code": "510300.SH",
+                            "name": "沪深300ETF",
+                            "bucket": "宽基ETF",
+                            "state": "数据不足",
+                            "reason": "流动性数据缺失。",
+                        },
+                    ],
+                }
+            }
+        )
+
+        self.assertEqual([item["code"] for item in packet["actionable_etfs"]], ["512480.SH"])
+        self.assertEqual([item["code"] for item in packet["watch_etfs"]], ["588000.SH"])
+        self.assertEqual([item["code"] for item in packet["avoid_etfs"]], ["159915.SZ"])
+        self.assertEqual([item["code"] for item in packet["excluded_etfs"]], ["510300.SH"])
+        self.assertEqual([item["code"] for item in packet["recommended_etfs"]], ["512480.SH", "588000.SH"])
+        self.assertEqual(packet["recommended_etfs"][0]["status_label"], "可配置")
+        self.assertEqual(packet["recommended_etfs"][1]["status_label"], "等回踩")
+        self.assertNotIn("159915.SZ", {item["code"] for item in packet["recommended_etfs"]})
+        self.assertNotIn("510300.SH", {item["code"] for item in packet["recommended_etfs"]})
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_high_margin_makes_actionable_etfs_cash_only_and_blocks_new_margin(self):
+        packet = etf_packet.build_command_center_etf_packet(
+            {
+                "legacy_margin_etf_allocation_result": {
+                    "current_margin_debt_ratio": 30,
+                    "recommended_margin_ratio": 20,
+                    "recommended_cash_ratio": 25,
+                    "selected_etf_candidates": [
+                        {"code": "512480.SH", "name": "半导体 ETF", "score": 80, "state": "可配置"},
+                    ],
+                }
+            }
+        )
+
+        self.assertEqual(packet["actionable_etfs"][0]["status_label"], "可用现金配置")
+        self.assertFalse(packet["allow_new_margin"])
+        self.assertIn("当前融资比例 30%", packet["margin_risk_notice"])
+        self.assertIn("不建议新增融资", packet["margin_risk_notice"])
+        self.assertIn("不建议因为 ETF 强", packet["leverage_guardrail"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_only_avoid_or_excluded_items_do_not_enter_recommended_etfs(self):
+        packet = etf_packet.build_command_center_etf_packet(
+            {
+                "legacy_margin_etf_allocation_result": {
+                    "selected_etf_candidates": [
+                        {"code": "159915.SZ", "name": "创业板ETF", "state": "过热", "score": 70},
+                        {"code": "510300.SH", "name": "沪深300ETF", "state": "数据不足"},
+                    ],
+                }
+            }
+        )
+
+        self.assertFalse(packet["recommended_etfs"])
+        self.assertEqual([item["code"] for item in packet["avoid_etfs"]], ["159915.SZ"])
+        self.assertEqual([item["code"] for item in packet["excluded_etfs"]], ["510300.SH"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_name_only_etf_does_not_get_treated_as_code(self):
+        packet = etf_packet.build_command_center_etf_packet(
+            {
+                "legacy_margin_etf_allocation_result": {
+                    "selected_etf_candidates": [
+                        {"code": "沪深300 ETF", "bucket": "宽基ETF", "state": "观察", "score": 70},
+                    ],
+                }
+            }
+        )
+
+        candidate = packet["recommended_etfs"][0]
+        self.assertEqual(candidate["name"], "沪深300 ETF")
+        self.assertEqual(candidate["code"], "")
+        self.assertEqual(candidate["status_label"], "观察")
 
     def test_risk_state_is_conservative_when_current_ratio_exceeds_recommendation(self):
         packet = etf_packet.build_command_center_etf_packet(

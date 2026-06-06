@@ -3841,6 +3841,14 @@ def _build_margin_etf_live_section(live_packet=None):
                             "today_main_direction": snapshot_packet.get("today_main_direction")
                             or snapshot_summary.get("today_main_direction"),
                             "recommended_etfs": snapshot_etfs,
+                            "actionable_etfs": snapshot_packet.get("actionable_etfs")
+                            or snapshot_summary.get("actionable_etfs"),
+                            "watch_etfs": snapshot_packet.get("watch_etfs")
+                            or snapshot_summary.get("watch_etfs"),
+                            "avoid_etfs": snapshot_packet.get("avoid_etfs")
+                            or snapshot_summary.get("avoid_etfs"),
+                            "excluded_etfs": snapshot_packet.get("excluded_etfs")
+                            or snapshot_summary.get("excluded_etfs"),
                             "watch_not_chase": snapshot_packet.get("watch_not_chase")
                             or snapshot_summary.get("watch_not_chase"),
                         }
@@ -3872,6 +3880,14 @@ def _build_margin_etf_live_section(live_packet=None):
                         "today_main_direction": (packet or {}).get("today_main_direction")
                         or snapshot_summary.get("today_main_direction"),
                         "recommended_etfs": snapshot_etfs,
+                        "actionable_etfs": (packet or {}).get("actionable_etfs")
+                        or snapshot_summary.get("actionable_etfs"),
+                        "watch_etfs": (packet or {}).get("watch_etfs")
+                        or snapshot_summary.get("watch_etfs"),
+                        "avoid_etfs": (packet or {}).get("avoid_etfs")
+                        or snapshot_summary.get("avoid_etfs"),
+                        "excluded_etfs": (packet or {}).get("excluded_etfs")
+                        or snapshot_summary.get("excluded_etfs"),
                         "watch_not_chase": (packet or {}).get("watch_not_chase")
                         or snapshot_summary.get("watch_not_chase"),
                     }
@@ -3881,18 +3897,31 @@ def _build_margin_etf_live_section(live_packet=None):
             recommended_etfs = packet.get("recommended_etfs") or []
     meta = _cc_get_module_meta("margin_etf")
     if not recommended_etfs:
+        has_non_main_etfs = bool((packet.get("avoid_etfs") or []) or (packet.get("excluded_etfs") or []))
         return {
             "status": "使用缓存" if packet.get("status") == "partial" else "未刷新",
             "recommended_margin_ratio": packet.get("recommended_margin_ratio"),
             "recommended_cash_ratio": packet.get("recommended_cash_ratio"),
-            "summary": "暂无 ETF 配置。可点击满血数据刷新，或进入高级工具箱的融资 ETF 工具。",
+            "summary": (
+                "本轮 ETF 未产生可配置/观察候选；不追高或数据不足的 ETF 已放入折叠区。"
+                if has_non_main_etfs
+                else "暂无 ETF 配置。可点击满血数据刷新，或进入高级工具箱的融资 ETF 工具。"
+            ),
             "updated_at": packet.get("updated_at") or "",
             "source": "融资 ETF 配置缓存",
             "today_main_direction": "待 ETF 强弱表确认",
             "recommended_etfs": [],
+            "actionable_etfs": packet.get("actionable_etfs") or [],
+            "watch_etfs": packet.get("watch_etfs") or [],
+            "avoid_etfs": packet.get("avoid_etfs") or [],
+            "excluded_etfs": packet.get("excluded_etfs") or [],
             "etf_candidates": [],
             "watch_not_chase": packet.get("watch_not_chase") or [],
             "risk_state": packet.get("risk_state") or "待刷新",
+            "allow_new_margin": bool(packet.get("allow_new_margin", False)),
+            "margin_risk_notice": packet.get("margin_risk_notice") or "",
+            "etf_replacement_hint": packet.get("etf_replacement_hint") or "",
+            "leverage_guardrail": packet.get("leverage_guardrail") or "不建议因为 ETF 强而额外加杠杆追高。",
             "action_state": "待刷新",
             "is_fresh": False,
             "last_error": meta.get("error", ""),
@@ -3906,12 +3935,20 @@ def _build_margin_etf_live_section(live_packet=None):
         "source": _cc_user_source(packet.get("source"), "融资 ETF 配置缓存"),
         "today_main_direction": packet.get("today_main_direction") or "待 ETF 强弱表确认",
         "recommended_etfs": recommended_etfs,
+        "actionable_etfs": packet.get("actionable_etfs") or [],
+        "watch_etfs": packet.get("watch_etfs") or [],
+        "avoid_etfs": packet.get("avoid_etfs") or [],
+        "excluded_etfs": packet.get("excluded_etfs") or [],
         "etf_candidates": [
             f"{item.get('code') or ''} {item.get('name') or ''}".strip()
             for item in recommended_etfs[:5]
         ],
         "watch_not_chase": packet.get("watch_not_chase") or [],
         "risk_state": packet.get("risk_state") or "只观察不追",
+        "allow_new_margin": bool(packet.get("allow_new_margin", False)),
+        "margin_risk_notice": packet.get("margin_risk_notice") or "",
+        "etf_replacement_hint": packet.get("etf_replacement_hint") or "",
+        "leverage_guardrail": packet.get("leverage_guardrail") or "不建议因为 ETF 强而额外加杠杆追高。",
         "action_state": packet.get("risk_state") or "待判断",
         "is_fresh": packet.get("data_status") == "ready",
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
@@ -3963,7 +4000,11 @@ def _sync_command_center_home_candidate_packets(live_packet=None):
         etf_packet=etf_packet,
     )
     recommended_etfs = margin_summary.get("recommended_etfs") or []
-    if recommended_etfs:
+    split_etfs_available = any(
+        margin_summary.get(key)
+        for key in ("actionable_etfs", "watch_etfs", "avoid_etfs", "excluded_etfs")
+    )
+    if recommended_etfs or split_etfs_available:
         etf_packet = etf_packet_service.build_command_center_etf_packet(
             {
                 "command_center_etf_packet": {
@@ -3976,7 +4017,15 @@ def _sync_command_center_home_candidate_packets(live_packet=None):
                     "recommended_cash_ratio": margin_summary.get("recommended_cash_ratio"),
                     "today_main_direction": margin_summary.get("today_main_direction"),
                     "recommended_etfs": recommended_etfs,
+                    "actionable_etfs": margin_summary.get("actionable_etfs"),
+                    "watch_etfs": margin_summary.get("watch_etfs"),
+                    "avoid_etfs": margin_summary.get("avoid_etfs"),
+                    "excluded_etfs": margin_summary.get("excluded_etfs"),
                     "watch_not_chase": margin_summary.get("watch_not_chase"),
+                    "allow_new_margin": margin_summary.get("allow_new_margin"),
+                    "margin_risk_notice": margin_summary.get("margin_risk_notice"),
+                    "etf_replacement_hint": margin_summary.get("etf_replacement_hint"),
+                    "leverage_guardrail": margin_summary.get("leverage_guardrail"),
                 }
             },
             live_packet=live_packet,
@@ -3995,7 +4044,17 @@ def _sync_command_center_home_candidate_packets(live_packet=None):
                 "current_margin_ratio": etf_packet.get("current_margin_ratio"),
                 "today_main_direction": etf_packet.get("today_main_direction"),
                 "recommended_etfs": etf_packet.get("recommended_etfs") or recommended_etfs,
+                "actionable_etfs": etf_packet.get("actionable_etfs") or margin_summary.get("actionable_etfs") or [],
+                "watch_etfs": etf_packet.get("watch_etfs") or margin_summary.get("watch_etfs") or [],
+                "avoid_etfs": etf_packet.get("avoid_etfs") or margin_summary.get("avoid_etfs") or [],
+                "excluded_etfs": etf_packet.get("excluded_etfs") or margin_summary.get("excluded_etfs") or [],
                 "watch_not_chase": etf_packet.get("watch_not_chase") or margin_summary.get("watch_not_chase"),
+                "allow_new_margin": bool(etf_packet.get("allow_new_margin", False)),
+                "margin_risk_notice": etf_packet.get("margin_risk_notice") or margin_summary.get("margin_risk_notice"),
+                "etf_replacement_hint": etf_packet.get("etf_replacement_hint") or margin_summary.get("etf_replacement_hint"),
+                "leverage_guardrail": etf_packet.get("leverage_guardrail")
+                or margin_summary.get("leverage_guardrail")
+                or "不建议因为 ETF 强而额外加杠杆追高。",
                 "deepseek_called": False,
             }
     return live_packet
@@ -7309,19 +7368,65 @@ def render_command_center_next_ticket_top3(live_packet=None):
 def render_command_center_etf_config_panel(live_packet=None, position_profile=None):
     section = _build_margin_etf_live_section(live_packet=live_packet)
     profile = position_profile if isinstance(position_profile, dict) else {}
-    current_margin = _num(profile.get("margin_ratio_pct"), 0) or 0
+    current_margin = _num(profile.get("margin_ratio_pct"), _num(section.get("current_margin_ratio"), 0)) or 0
     recommended_margin = _num(section.get("recommended_margin_ratio"))
     recommended_cash = _num(section.get("recommended_cash_ratio"))
     margin_gap = round(current_margin - recommended_margin, 2) if recommended_margin is not None else None
     candidates = section.get("recommended_etfs") or []
+    actionable_etfs = section.get("actionable_etfs") or []
+    watch_etfs = section.get("watch_etfs") or []
+    avoid_etfs = section.get("avoid_etfs") or []
+    excluded_etfs = section.get("excluded_etfs") or []
+    if not candidates and (actionable_etfs or watch_etfs):
+        candidates = [*actionable_etfs, *watch_etfs][:3]
+    allow_new_margin = bool(section.get("allow_new_margin", False))
+
+    def _render_etf_item(item, *, compact=False):
+        weight = _cc_first_number(
+            item.get("recommended_ratio"),
+            item.get("suggested_ratio"),
+            item.get("target_ratio"),
+            item.get("weight"),
+        )
+        amount = _cc_first_number(
+            item.get("recommended_amount"),
+            item.get("suggested_amount"),
+            item.get("target_amount"),
+            item.get("amount"),
+        )
+        total_asset = _cc_first_number(st.session_state.get("margin_total_asset"))
+        if amount is None and weight is not None and total_asset is not None:
+            amount = total_asset * (weight / 100 if weight > 1 else weight)
+        ratio_text = _cc_percent_text(weight) if weight is not None else "待计算"
+        amount_text = _fmt_price(amount, profile.get("currency") or "¥") if amount is not None else "待计算"
+        status_label = item.get("status_label") or item.get("action_state") or "观察"
+        st.markdown(
+            f"**{item.get('name') or 'ETF'}｜{item.get('code') or '暂无代码'}｜{status_label}**"
+        )
+        st.write(f"主题：{item.get('bucket') or 'ETF'}｜建议比例：{ratio_text}｜建议金额：{amount_text}")
+        if not compact:
+            st.write(f"理由：{_home_trade_text(item.get('reason'), '等待 ETF 配置理由回填。')}")
+            st.write(f"风险提示：{_home_trade_text(item.get('risk_note'), '复核流动性、溢价折价、同类重叠和追高风险。')}")
+        st.caption(
+            f"来源：{_cc_user_source(item.get('source'), '融资 ETF 配置缓存')}｜"
+            f"更新时间：{_display_text(item.get('updated_at'), '暂无')}"
+        )
+
     with st.container(border=True):
         st.markdown("### ETF 配置")
-        cols = st.columns(4)
+        cols = st.columns(5)
         cols[0].metric("当前融资比例", f"{current_margin:.1f}%")
         cols[1].metric("建议融资比例", f"{recommended_margin:.1f}%" if recommended_margin is not None else "暂无")
         cols[2].metric("融资差距", f"{margin_gap:+.1f}pct" if margin_gap is not None else "待刷新")
         cols[3].metric("建议现金比例", f"{recommended_cash:.1f}%" if recommended_cash is not None else "暂无")
+        cols[4].metric("新增融资", "可小额" if allow_new_margin else "不建议")
         st.write(f"主方向：{section.get('today_main_direction') or '待 ETF 强弱表确认'}")
+        margin_risk_notice = section.get("margin_risk_notice")
+        if margin_risk_notice:
+            if current_margin >= 20 or not allow_new_margin:
+                st.warning(margin_risk_notice)
+            else:
+                st.info(margin_risk_notice)
         if margin_gap is not None and margin_gap > 0:
             st.warning(
                 f"当前融资 {current_margin:.1f}% 高于建议 {recommended_margin:.1f}%，"
@@ -7331,35 +7436,26 @@ def render_command_center_etf_config_panel(live_packet=None, position_profile=No
             st.info(f"当前融资 {current_margin:.1f}% 未高于建议上限；仍禁止临时加杠杆。")
         elif current_margin > 0:
             st.warning(f"当前输入融资 {current_margin:.1f}%，但 ETF 建议尚未刷新；先按谨慎风险预算处理。")
+        if section.get("etf_replacement_hint"):
+            st.write(section.get("etf_replacement_hint"))
+        if section.get("leverage_guardrail"):
+            st.caption(section.get("leverage_guardrail"))
         if candidates:
-            st.markdown("**ETF 候选**")
+            st.markdown("**可配置 / 观察 ETF**")
             for item in candidates[:3]:
-                weight = _cc_first_number(
-                    item.get("recommended_ratio"),
-                    item.get("suggested_ratio"),
-                    item.get("target_ratio"),
-                    item.get("weight"),
-                )
-                amount = _cc_first_number(
-                    item.get("recommended_amount"),
-                    item.get("suggested_amount"),
-                    item.get("target_amount"),
-                    item.get("amount"),
-                )
-                total_asset = _cc_first_number(st.session_state.get("margin_total_asset"))
-                if amount is None and weight is not None and total_asset is not None:
-                    amount = total_asset * (weight / 100 if weight > 1 else weight)
-                ratio_text = _cc_percent_text(weight) if weight is not None else "待计算"
-                amount_text = _fmt_price(amount, profile.get("currency") or "¥") if amount is not None else "待计算"
-                st.markdown(
-                    f"**{item.get('name') or 'ETF'}｜{item.get('code') or '暂无代码'}｜"
-                    f"{item.get('status_label') or item.get('action_state') or '只观察'}**"
-                )
-                st.write(f"bucket：{item.get('bucket') or 'ETF'}｜建议比例：{ratio_text}｜建议金额：{amount_text}")
-                st.write(f"触发条件：{_home_trade_text(item.get('trigger_condition'), '等待回踩、量能和风险线确认。')}")
-                st.caption(f"来源：{_cc_user_source(item.get('source'), '融资 ETF 配置缓存')}")
+                _render_etf_item(item)
         else:
             st.info(section.get("summary") or "暂无 ETF 配置。可点击满血数据刷新，或进入高级工具箱的融资 ETF 工具。")
+        if avoid_etfs:
+            with st.expander("不追高 / 暂不配置 ETF", expanded=not candidates):
+                for item in avoid_etfs[:5]:
+                    _render_etf_item(item, compact=True)
+                    st.write(f"原因：{_home_trade_text(item.get('reason'), '当前不进入主清单。')}")
+        if excluded_etfs:
+            with st.expander("排除 / 数据不足 ETF", expanded=False):
+                for item in excluded_etfs[:5]:
+                    _render_etf_item(item, compact=True)
+                    st.write(f"原因：{_home_trade_text(item.get('reason'), '数据不足或无法评分，暂不纳入。')}")
         if section.get("watch_not_chase"):
             st.caption("不追高提示：" + "；".join(str(item) for item in (section.get("watch_not_chase") or [])[:2]))
         st.caption(f"状态：{section.get('status') or '待刷新'}｜更新时间：{section.get('updated_at') or '暂无'}")

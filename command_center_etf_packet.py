@@ -11,6 +11,10 @@ MAX_RECOMMENDED_ETFS = 3
 MAX_RISK_NOTES = 6
 MAX_EVIDENCE_ITEMS = 5
 MAX_EVIDENCE_CHAIN_ITEMS = 5
+ACTIONABLE_ETF_LABELS = {"可配置", "可小额配置", "可用现金配置", "回踩确认后配置"}
+WATCH_ETF_LABELS = {"观察", "等回踩", "等量能确认", "只观察不追"}
+AVOID_ETF_LABELS = {"不追高", "过热", "重叠过高", "流动性不足", "融资风险不支持"}
+EXCLUDED_ETF_LABELS = {"数据不足", "暂不纳入", "无法评分", "接口失败", "权限失败", "不可判断"}
 
 
 def as_mapping(value: Any) -> dict:
@@ -70,6 +74,16 @@ def _first_number(*values: Any) -> int | float | None:
     return None
 
 
+def _looks_like_etf_code(value: Any) -> bool:
+    text = to_text(value).upper()
+    if not text:
+        return False
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        return False
+    compact = text.replace(".", "").replace("-", "").replace("_", "")
+    return any(ch.isdigit() for ch in compact) and compact.isalnum()
+
+
 def _dedupe_text(values: Any, fallback: str = "", limit: int = MAX_RISK_NOTES) -> list[str]:
     items = []
     raw_values = values if isinstance(values, (list, tuple)) else [values]
@@ -90,21 +104,117 @@ def _dedupe_text(values: Any, fallback: str = "", limit: int = MAX_RISK_NOTES) -
 
 
 def _action_tone(action_state: str) -> str:
-    if any(word in action_state for word in ("可", "配置", "小幅", "准备")):
+    label = _status_label(action_state)
+    if label in ACTIONABLE_ETF_LABELS:
         return "ready"
-    if any(word in action_state for word in ("不追", "观察", "等待", "只观察")):
+    if label in WATCH_ETF_LABELS:
         return "stale"
-    if any(word in action_state for word in ("降", "暂停", "规避", "过热")):
+    if label in AVOID_ETF_LABELS or label in EXCLUDED_ETF_LABELS:
         return "failed"
     return "missing"
 
 
 def _status_label(action_state: str) -> str:
-    if any(word in action_state for word in ("可", "配置", "小幅", "准备")):
+    text = to_text(action_state)
+    if text.lower() in {"ready", "cached", "cache", "partial", "waiting", "missing"}:
+        return "观察"
+    if any(word in text for word in ("数据不足", "暂不纳入", "无法评分", "不可判断")):
+        return "数据不足" if "数据不足" in text else "暂不纳入" if "暂不纳入" in text else "无法评分" if "无法评分" in text else "不可判断"
+    if any(word in text for word in ("权限", "接口失败", "接口")) and any(word in text for word in ("失败", "不可", "不足")):
+        return "接口失败"
+    if any(word in text for word in ("融资风险不支持", "融资压力", "不支持融资")):
+        return "融资风险不支持"
+    if any(word in text for word in ("流动性不足", "成交额不足")):
+        return "流动性不足"
+    if any(word in text for word in ("重叠过高", "高重叠")):
+        return "重叠过高"
+    if any(word in text for word in ("不追高", "只观察不追")):
+        return "不追高" if "不追高" in text else "只观察不追"
+    if any(word in text for word in ("过热", "追高", "溢价")):
+        return "过热"
+    if any(word in text for word in ("等回踩", "回踩确认")):
+        return "回踩确认后配置" if "配置" in text else "等回踩"
+    if any(word in text for word in ("等量能", "量能确认")):
+        return "等量能确认"
+    if any(word in text for word in ("可用现金", "现金配置")):
+        return "可用现金配置"
+    if any(word in text for word in ("小额", "试探")):
+        return "可小额配置"
+    if any(word in text for word in ("可", "配置", "准备")):
         return "可配置"
-    if any(word in action_state for word in ("降", "暂停", "规避", "过热")):
-        return "降风险"
-    return action_state or "只观察不追"
+    if any(word in text for word in ("观察", "等待", "只观察")):
+        return "观察"
+    return text or "观察"
+
+
+def _etf_group_for_status(status_label: str) -> str:
+    label = _status_label(status_label)
+    if label in ACTIONABLE_ETF_LABELS:
+        return "actionable"
+    if label in WATCH_ETF_LABELS:
+        return "watch"
+    if label in AVOID_ETF_LABELS:
+        return "avoid"
+    if label in EXCLUDED_ETF_LABELS:
+        return "excluded"
+    return "watch"
+
+
+def _etf_sort_key(item: Any = None) -> tuple:
+    payload = as_mapping(item)
+    status_priority = {
+        "可配置": 0,
+        "可小额配置": 1,
+        "可用现金配置": 2,
+        "回踩确认后配置": 3,
+        "观察": 4,
+        "等回踩": 5,
+        "等量能确认": 6,
+        "只观察不追": 7,
+    }
+    status = _status_label(payload.get("status_label") or payload.get("action_state"))
+    score = to_number(payload.get("score"))
+    rank = to_number(payload.get("rank"))
+    return (status_priority.get(status, 99), -(score if score is not None else -1), rank if rank is not None else 999)
+
+
+def _rerank_etfs(items: Any = None) -> list[dict]:
+    result = []
+    for index, item in enumerate(as_list(items), start=1):
+        payload = as_mapping(item)
+        payload["rank"] = index
+        result.append(payload)
+    return result
+
+
+def split_etf_candidates(candidates: Any = None, limit: int = MAX_RECOMMENDED_ETFS) -> dict:
+    buckets = {"actionable": [], "watch": [], "avoid": [], "excluded": []}
+    seen = set()
+    for index, item in enumerate(as_list(candidates), start=1):
+        payload = as_mapping(item)
+        key = payload.get("code") or payload.get("name")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        payload["rank"] = index
+        status = _status_label(payload.get("status_label") or payload.get("action_state"))
+        payload["status_label"] = status
+        payload["action_state"] = _first_text(payload.get("action_state"), default=status)
+        payload["tone"] = _action_tone(status)
+        buckets[_etf_group_for_status(status)].append(payload)
+    actionable = sorted(buckets["actionable"], key=_etf_sort_key)
+    watch = sorted(buckets["watch"], key=_etf_sort_key)
+    avoid = sorted(buckets["avoid"], key=_etf_sort_key)
+    excluded = sorted(buckets["excluded"], key=_etf_sort_key)
+    recommended = _rerank_etfs([*actionable, *watch][: int(limit or MAX_RECOMMENDED_ETFS)])
+    return {
+        "actionable_etfs": _rerank_etfs(actionable),
+        "watch_etfs": _rerank_etfs(watch),
+        "avoid_etfs": _rerank_etfs(avoid),
+        "excluded_etfs": _rerank_etfs(excluded),
+        "recommended_etfs": recommended,
+        "has_main_etfs": bool(recommended),
+    }
 
 
 def _etf_risk_text(payload: Mapping[str, Any], bucket: str) -> str:
@@ -482,6 +592,30 @@ def _candidate_rows(candidates: Any) -> list[dict]:
     rows = []
     if isinstance(candidates, Mapping):
         for bucket, items in candidates.items():
+            if isinstance(items, Mapping):
+                nested_items = (
+                    items.get("candidate_etfs")
+                    or items.get("recommended_etfs")
+                    or items.get("selected_etfs")
+                    or items.get("items")
+                    or items.get("candidates")
+                )
+                if nested_items:
+                    for item in as_list(nested_items):
+                        payload = as_mapping(item)
+                        if payload:
+                            payload.setdefault("bucket", bucket)
+                            for source_key, target_key in (
+                                ("ratio_pct", "recommended_ratio"),
+                                ("amount", "recommended_amount"),
+                                ("suggested_ratio", "recommended_ratio"),
+                                ("suggested_amount", "recommended_amount"),
+                            ):
+                                if items.get(source_key) is not None and payload.get(target_key) is None:
+                                    payload[target_key] = items.get(source_key)
+                            rows.append(payload)
+                    continue
+                items = [items]
             for item in as_list(items):
                 payload = as_mapping(item)
                 if payload:
@@ -502,26 +636,59 @@ def normalize_etf_candidate(
     context = as_mapping(margin_context)
     bucket = _first_text(payload.get("bucket"), payload.get("theme"), payload.get("category"), default="ETF")
     score = _first_number(payload.get("total_score"), payload.get("score"), payload.get("composite_score"))
-    action_state = _first_text(payload.get("action_state"), payload.get("advice"), payload.get("signal"), default="只观察不追")
+    action_state = _first_text(
+        payload.get("action_state"),
+        payload.get("state"),
+        payload.get("advice"),
+        payload.get("signal"),
+        payload.get("decision"),
+        default=_first_text(payload.get("status"), default="只观察不追"),
+    )
+    status_label = _status_label(
+        _first_text(payload.get("status_label"), payload.get("state"), payload.get("action"), action_state)
+    )
+    current_margin_ratio = _first_number(context.get("current_margin_ratio"))
+    if current_margin_ratio is not None and current_margin_ratio >= 20 and status_label in {"可配置", "可小额配置"}:
+        status_label = "可用现金配置"
     trigger_condition = _first_text(
         payload.get("trigger_condition"),
         payload.get("condition"),
         payload.get("reason"),
         default="等待回踩、量能和风险线确认。",
     )
-    evidence_items = _build_evidence_items(payload, score, bucket, action_state, trigger_condition)
+    evidence_items = _build_evidence_items(payload, score, bucket, status_label, trigger_condition)
     evidence_chain = _build_evidence_chain(payload, bucket, context)
+    code = _first_text(payload.get("etf_code"), payload.get("code"), payload.get("ts_code"), payload.get("symbol"))
+    name = _first_text(payload.get("etf_name"), payload.get("name"), payload.get("fund_name"))
+    if code and not name and not _looks_like_etf_code(code):
+        name = code
+        code = ""
     return {
         "rank": rank,
-        "code": _first_text(payload.get("etf_code"), payload.get("code"), payload.get("ts_code"), payload.get("symbol")),
-        "name": _first_text(payload.get("etf_name"), payload.get("name"), payload.get("fund_name")),
+        "code": code,
+        "name": name,
         "bucket": bucket,
         "score": score,
         "weight": _first_number(payload.get("weight"), payload.get("target_weight"), payload.get("allocation_ratio")),
+        "recommended_ratio": _first_number(
+            payload.get("recommended_ratio"),
+            payload.get("suggested_ratio"),
+            payload.get("target_ratio"),
+            payload.get("ratio_pct"),
+            payload.get("weight"),
+        ),
+        "recommended_amount": _first_number(
+            payload.get("recommended_amount"),
+            payload.get("suggested_amount"),
+            payload.get("target_amount"),
+            payload.get("allocation_amount"),
+            payload.get("amount"),
+        ),
         "action_state": action_state,
-        "status_label": _status_label(action_state),
-        "tone": _action_tone(action_state),
+        "status_label": status_label,
+        "tone": _action_tone(status_label),
         "trigger_condition": trigger_condition,
+        "reason": _first_text(payload.get("reason"), payload.get("summary"), trigger_condition),
         "risk_note": _etf_risk_text(payload, bucket),
         "evidence_items": evidence_items,
         "evidence_chain": evidence_chain,
@@ -533,6 +700,7 @@ def normalize_etf_candidate(
         "data_gaps": _data_gaps(payload, evidence_items),
         "liquidity_text": _liquidity_text(payload),
         "source": _first_text(payload.get("source"), default=default_source),
+        "updated_at": _first_text(payload.get("updated_at"), payload.get("generated_at")),
         "manual_required_text": "ETF 候选来自本地配置或手动刷新结果；页面打开不会自动全量发现或拉取重行情。",
         "deepseek_called": False,
     }
@@ -558,6 +726,7 @@ def extract_recommended_etfs(
         rows = _candidate_rows(score_packet.get("rows") or allocation.get("etf_score_table"))
     normalized = []
     seen = set()
+    collect_limit = max(int(limit or MAX_RECOMMENDED_ETFS) * 4, MAX_RECOMMENDED_ETFS * 4)
     for row in rows:
         item = normalize_etf_candidate(row, rank=len(normalized) + 1, margin_context=margin_context)
         key = item.get("code") or item.get("name")
@@ -565,7 +734,7 @@ def extract_recommended_etfs(
             continue
         seen.add(key)
         normalized.append(item)
-        if len(normalized) >= int(limit or MAX_RECOMMENDED_ETFS):
+        if len(normalized) >= collect_limit:
             break
     return normalized
 
@@ -622,6 +791,36 @@ def _derive_risk_state(allocation: Mapping[str, Any], current_ratio: int | float
     return _first_text(action_state, default="只观察不追")
 
 
+def _allow_new_margin(current_ratio: int | float | None, recommended_ratio: int | float | None, risk_state: str = "") -> bool:
+    risk = to_text(risk_state)
+    if any(word in risk for word in ("降", "过热", "暂停", "规避", "不支持")):
+        return False
+    if current_ratio is not None and current_ratio >= 20:
+        return False
+    if current_ratio is not None and recommended_ratio is not None and current_ratio >= recommended_ratio:
+        return False
+    return bool(recommended_ratio is not None and recommended_ratio > 0)
+
+
+def _margin_risk_notice(current_ratio: int | float | None, recommended_ratio: int | float | None, allow_new_margin: bool) -> str:
+    if current_ratio is not None and current_ratio >= 20:
+        base = f"当前融资比例 {current_ratio:g}% 偏高，ETF 只能作为风险替代/分散工具，不建议新增融资。"
+        if recommended_ratio is not None:
+            base += f" 建议融资比例 {recommended_ratio:g}%。"
+        return base
+    if not allow_new_margin:
+        return "当前不建议新增融资；ETF 强弱只能作为配置线索，不能作为加杠杆追高依据。"
+    return "允许范围内也只考虑现金或小额配置，不建议因为 ETF 强而额外加杠杆追高。"
+
+
+def _replacement_hint(current_ratio: int | float | None, recommended_ratio: int | float | None) -> str:
+    if current_ratio is not None and current_ratio >= 20:
+        return "可评估用低重叠 ETF 替代部分单票风险，但先降杠杆或保持现金缓冲。"
+    if recommended_ratio is not None and recommended_ratio > 0:
+        return "ETF 可作为分散单票波动的观察工具，优先使用现金预算。"
+    return "ETF 暂只作为观察清单，不作为新增风险暴露依据。"
+
+
 def _build_risk_notes(allocation: Mapping[str, Any], daily: Mapping[str, Any], etfs: list[dict]) -> list[str]:
     notes = []
     for key in (
@@ -670,20 +869,49 @@ def build_command_center_etf_packet(
             "recommended_margin_ratio": existing.get("recommended_margin_ratio"),
             "recommended_cash_ratio": existing.get("recommended_cash_ratio"),
         }
+        normalized_etfs = [
+            normalize_etf_candidate(
+                item,
+                rank=index + 1,
+                default_source=to_text(existing.get("source"), "融资 ETF 本地配置"),
+                margin_context=existing_context,
+            )
+            for index, item in enumerate(
+                [
+                    *as_list(existing.get("recommended_etfs")),
+                    *as_list(existing.get("actionable_etfs")),
+                    *as_list(existing.get("watch_etfs")),
+                    *as_list(existing.get("avoid_etfs")),
+                    *as_list(existing.get("excluded_etfs")),
+                ]
+            )
+        ]
+        split = split_etf_candidates(normalized_etfs, limit=limit)
+        current_ratio = to_number(existing.get("current_margin_ratio"))
+        recommended_ratio = to_number(existing.get("recommended_margin_ratio"))
+        risk_state = _first_text(existing.get("risk_state"), default=_derive_risk_state({}, current_ratio, recommended_ratio, split["recommended_etfs"]))
+        allow_new_margin = _allow_new_margin(current_ratio, recommended_ratio, risk_state)
         packet = {
             **existing,
-            "recommended_etfs": [
-                normalize_etf_candidate(
-                    item,
-                    rank=index + 1,
-                    default_source=to_text(existing.get("source"), "融资 ETF 本地配置"),
-                    margin_context=existing_context,
-                )
-                for index, item in enumerate(as_list(existing.get("recommended_etfs"))[: int(limit or MAX_RECOMMENDED_ETFS)])
-            ],
+            "actionable_etfs": split["actionable_etfs"],
+            "watch_etfs": split["watch_etfs"],
+            "avoid_etfs": split["avoid_etfs"],
+            "excluded_etfs": split["excluded_etfs"],
+            "recommended_etfs": split["recommended_etfs"],
             "watch_not_chase": _dedupe_text(existing.get("watch_not_chase"), fallback="不追高 ETF；等待回踩、量能和风险线确认。", limit=MAX_RECOMMENDED_ETFS),
             "risk_notes": _dedupe_text(existing.get("risk_notes"), fallback="DeepSeek 未调用；ETF 深度调研仍需手动按钮触发。"),
             "cache_state": _first_text(existing.get("cache_state"), existing.get("data_status"), default="ready"),
+            "risk_state": risk_state,
+            "allow_new_margin": allow_new_margin,
+            "margin_risk_notice": _first_text(
+                existing.get("margin_risk_notice"),
+                default=_margin_risk_notice(current_ratio, recommended_ratio, allow_new_margin),
+            ),
+            "etf_replacement_hint": _first_text(
+                existing.get("etf_replacement_hint"),
+                default=_replacement_hint(current_ratio, recommended_ratio),
+            ),
+            "leverage_guardrail": "不建议因为 ETF 强而额外加杠杆追高。",
             "manual_required_text": _first_text(
                 existing.get("manual_required_text"),
                 default="融资 ETF 只读取本地配置或手动刷新结果；页面打开不会自动全量发现。",
@@ -709,6 +937,8 @@ def build_command_center_etf_packet(
         "recommended_cash_ratio": recommended_cash_ratio,
     }
     etfs = extract_recommended_etfs(allocation, daily, limit=limit, margin_context=margin_context)
+    split = split_etf_candidates(etfs, limit=limit)
+    recommended_etfs = split["recommended_etfs"]
     status = _derive_status(allocation, daily, live_section, etfs)
     updated_at = _first_text(
         live_section.get("updated_at"),
@@ -726,9 +956,13 @@ def build_command_center_etf_packet(
         "recommended_margin_ratio": recommended_ratio,
         "recommended_cash_ratio": recommended_cash_ratio,
         "today_main_direction": _derive_main_direction(live_section, allocation, etfs),
-        "recommended_etfs": etfs,
+        "actionable_etfs": split["actionable_etfs"],
+        "watch_etfs": split["watch_etfs"],
+        "avoid_etfs": split["avoid_etfs"],
+        "excluded_etfs": split["excluded_etfs"],
+        "recommended_etfs": recommended_etfs,
         "watch_not_chase": _watch_not_chase_items(allocation, etfs),
-        "risk_state": _derive_risk_state(allocation, current_ratio, recommended_ratio, etfs),
+        "risk_state": _derive_risk_state(allocation, current_ratio, recommended_ratio, recommended_etfs),
         "risk_notes": _build_risk_notes(allocation, daily, etfs),
         "data_status": _derive_data_status(status, daily, etfs),
         "manual_required_text": "融资 ETF 只读取本地配置或手动刷新结果；页面打开不会自动全量发现。",
@@ -743,4 +977,8 @@ def build_command_center_etf_packet(
         ),
         "deepseek_called": False,
     }
+    packet["allow_new_margin"] = _allow_new_margin(current_ratio, recommended_ratio, packet["risk_state"])
+    packet["margin_risk_notice"] = _margin_risk_notice(current_ratio, recommended_ratio, packet["allow_new_margin"])
+    packet["etf_replacement_hint"] = _replacement_hint(current_ratio, recommended_ratio)
+    packet["leverage_guardrail"] = "不建议因为 ETF 强而额外加杠杆追高。"
     return _apply_etf_packet_contract(packet)
