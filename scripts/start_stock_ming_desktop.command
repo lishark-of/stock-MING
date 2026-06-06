@@ -35,8 +35,11 @@ fi
 "$PYTHON_BIN" -c "import webview" 2>/tmp/stock-ming-pywebview-error.log
 if [ $? -ne 0 ]; then
   echo "stock-MING 启动失败：pywebview 未安装或无法导入。"
+  echo "桌面 App 壳依赖 pywebview；安装后才能双击打开独立窗口。"
   echo "请运行："
   echo "$PYTHON_BIN -m pip install pywebview"
+  echo "临时使用可运行："
+  echo "$PYTHON_BIN -m streamlit run app.py --server.port 8502"
   cat /tmp/stock-ming-pywebview-error.log
   exit 1
 fi

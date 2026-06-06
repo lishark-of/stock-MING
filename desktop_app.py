@@ -25,6 +25,7 @@ STREAMLIT_START_TIMEOUT_SECONDS = 60
 PREFLIGHT_TIMEOUT_SECONDS = 5
 TAIL_LINES = 80
 TAIL_CHARS = 12000
+DESKTOP_QUERY = "desktop=1&embed=true"
 
 _streamlit_proc: Optional[subprocess.Popen] = None
 _streamlit_log_handles: list[Any] = []
@@ -191,6 +192,10 @@ def _build_streamlit_cmd(port: int) -> list[str]:
         "--client.toolbarMode",
         "minimal",
     ]
+
+
+def build_desktop_app_url(port: int) -> str:
+    return f"http://127.0.0.1:{port}/?{DESKTOP_QUERY}"
 
 
 def _start_streamlit_process(port: int) -> subprocess.Popen:
@@ -454,8 +459,10 @@ def _load_webview() -> Any:
         raise StartupError(
             "pywebview 未安装或无法导入。",
             suggestions=[
+                "桌面 App 壳依赖 pywebview；安装后才能双击打开独立窗口。",
                 "请在项目虚拟环境中安装 pywebview：.venv/bin/python -m pip install pywebview",
                 "如果使用系统 Python 启动，请确认该 Python 环境能 import webview。",
+                "临时使用时，可先运行：streamlit run app.py --server.port 8502",
             ],
             debug_info=[f"python executable: {sys.executable}", f"original error: {exc}"],
         ) from exc
@@ -563,7 +570,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         raise SystemExit(1) from exc
 
     selected_port = preflight["selected_port"]
-    app_url = f"http://127.0.0.1:{selected_port}"
+    app_url = build_desktop_app_url(selected_port)
     print(f"Starting Streamlit on {app_url}")
     print(f"Startup logs: {_startup_log_dir()}")
 
