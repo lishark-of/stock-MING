@@ -250,7 +250,7 @@ class LegacyAShareAutoHydrateTests(unittest.TestCase):
         function_start = source.index("def render_legacy_tool_recovery_notice_panel")
         function_source = source[function_start:source.index("def render_legacy_a_share_gap_recovery_panel", function_start)]
 
-        self.assertIn('st.caption(f"待补数据：{user_message}")', function_source)
+        self.assertIn('st.caption(f"待验证证据：{user_message}")', function_source)
         self.assertIn("selected_tab != target_tab", function_source)
         self.assertNotIn('switch_col.button(f"切到{target_tab}"', function_source)
         self.assertIn('with st.expander("查看技术诊断", expanded=False):', function_source)

@@ -70,7 +70,7 @@ STATUS_GROUP_CONFIG = {
     "available": {"label": "可用", "tone": "ready", "empty": "暂无可用数据"},
     "permission_denied": {"label": "受限", "tone": "failed", "empty": "暂无权限阻断"},
     "stale_or_empty": {"label": "暂无数据", "tone": "stale", "empty": "暂无空数据项"},
-    "manual_required": {"label": "待手动刷新", "tone": "missing", "empty": "暂无待手动项"},
+    "manual_required": {"label": "自动检测中", "tone": "missing", "empty": "暂无自动检测待验证项"},
 }
 
 
@@ -360,18 +360,18 @@ def _classify_fund_row(row: dict) -> tuple[str, str, str]:
     if state in {"empty_recent", "stale_cache", "fallback_used"}:
         return "stale_or_empty", capability_language.STATE_LABELS.get(state, "暂无当日数据"), capability_language.meaning_for_capability_state(state, "Tushare", FUND_SOURCE_LABELS.get(row.get("name"), "A股数据"))
     if state == "requires_manual_refresh":
-        return "manual_required", "待手动刷新", "页面打开不会自动请求重接口，需要点击检测或刷新。"
-    return "manual_required", "待手动刷新", "页面打开不会自动请求重接口，需要点击检测或刷新。"
+        return "manual_required", "自动检测中", "当前分区会按 TTL 自动检测；强制刷新可绕过 TTL。"
+    return "manual_required", "自动检测中", "当前分区会按 TTL 自动检测；强制刷新可绕过 TTL。"
 
 
 def _recovery_reason(status: str, label: str) -> str:
     if status == "available":
         return f"{label}已可用；无需恢复，只需复核日期和来源。"
     if status == "permission_denied":
-        return f"{label}可能需要更高 Tushare 权限或积分；如已升级权限，再手动检测。"
+        return f"{label}可能需要更高 Tushare 权限或积分；如已升级权限，可强制重检。"
     if status == "stale_or_empty":
-        return f"{label}可能尚未发布、非交易日或标的不覆盖；不能把缺失写成利好，等待发布后手动检测。"
-    return f"{label}待手动检测；页面打开不会自动请求 Tushare 重接口。"
+        return f"{label}可能尚未发布、非交易日或标的不覆盖；不能把缺失写成利好，等待发布后自动重检或强制重检。"
+    return f"{label}自动检测中或待验证；当前分区按 TTL 请求 Tushare。"
 
 
 def _build_recovery_metadata(name: str, status: str, label: str) -> dict:
@@ -414,8 +414,8 @@ def build_status_console(items: Any = None) -> dict:
         readiness = "谨慎验证"
         headline = "A股关键数据部分暂无当日结果"
     elif counts.get("manual_required"):
-        readiness = "待手动刷新"
-        headline = "A股关键数据待手动检测"
+        readiness = "自动检测中"
+        headline = "A股关键数据自动检测中"
     elif counts.get("available"):
         readiness = "可进入证据链"
         headline = "A股关键数据已可用"
@@ -430,10 +430,10 @@ def build_status_console(items: Any = None) -> dict:
             f"可用 {counts.get('available', 0)}｜"
             f"受限 {counts.get('permission_denied', 0)}｜"
             f"暂无数据 {counts.get('stale_or_empty', 0)}｜"
-            f"待手动 {counts.get('manual_required', 0)}"
+            f"自动检测中 {counts.get('manual_required', 0)}"
         ),
         "groups": groups,
-        "safe_mode_text": "只读取本地诊断结果；点击按钮前不会请求 Tushare、DeepSeek、回测或全市场扫描。",
+        "safe_mode_text": "当前页按 TTL 自动请求当前标的必要 Tushare 分区；DeepSeek、回测和全市场扫描仍只手动触发。",
         "deepseek_called": False,
     }
 
@@ -503,11 +503,11 @@ def build_user_data_diagnostic_view_model(
     elif counts["stale_or_empty"]:
         tone = "info"
         headline = "部分 A股数据今日暂未取得"
-        next_action = "等待交易日数据发布后手动刷新，或先按上次成功缓存/空态观察。"
+        next_action = "等待交易日数据发布后自动重检，或先按上次成功缓存/空态观察。"
     elif counts["manual_required"]:
         tone = "info"
-        headline = "A股专业数据待手动刷新"
-        next_action = "点击上方 A股数据能力检测或对应刷新按钮；页面打开不会自动请求 Tushare 重接口。"
+        headline = "A股专业数据自动检测中"
+        next_action = "等待当前分区自动检测完成；如需立即重跑，点击强制刷新。"
     else:
         tone = "success"
         headline = "A股专业数据能力可用"
@@ -550,7 +550,7 @@ def build_user_data_diagnostic_view_model(
         "headline": headline,
         "summary": "；".join(reason_parts) if reason_parts else "关键 A股事实已读取到可验证数据。",
         "next_action": next_action,
-        "safe_mode_text": "页面打开不会自动请求 Tushare、AkShare、DeepSeek 或回测；所有重型动作仍需手动按钮触发。",
+        "safe_mode_text": "当前页按 TTL 自动请求当前标的必要 Tushare 分区；DeepSeek、回测和全市场扫描仍只手动触发。",
         "items": items,
         "status_console": status_console,
         "recovery_actions": recovery_actions,

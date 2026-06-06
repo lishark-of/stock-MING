@@ -106,7 +106,7 @@ class CommandCenterLegacyAShareDebugSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["tone"], "warning")
         self.assertIn("权限不足", view_model["headline"])
         self.assertIn("Tushare 权限", view_model["next_action"])
-        self.assertIn("页面打开不会自动请求", view_model["safe_mode_text"])
+        self.assertIn("按 TTL 自动请求当前标的必要 Tushare 分区", view_model["safe_mode_text"])
         item = next(item for item in view_model["items"] if item["key"] == "moneyflow")
         self.assertEqual(item["status"], "permission_denied")
         self.assertEqual(item["status_label"], "权限不足")

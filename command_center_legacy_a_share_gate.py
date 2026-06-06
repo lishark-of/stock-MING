@@ -7,19 +7,19 @@ import market_data_capability as data_capability_service
 
 
 SECTION_SPECS = {
-    "dragon_tiger": ("龙虎榜", "top_list/top_inst", "龙虎榜待手动刷新；页面打开不会自动请求 Tushare top_list/top_inst。"),
-    "margin": ("融资融券", "margin_detail", "融资融券待手动刷新；页面打开不会自动请求 Tushare margin_detail。"),
-    "moneyflow": ("个股资金流", "moneyflow", "个股资金流待手动刷新；页面打开不会自动请求 Tushare moneyflow。"),
+    "dragon_tiger": ("龙虎榜", "top_list/top_inst", "龙虎榜按当前标的 TTL 自动检测；强制刷新可绕过 TTL。"),
+    "margin": ("融资融券", "margin_detail", "融资融券按当前标的 TTL 自动检测；强制刷新可绕过 TTL。"),
+    "moneyflow": ("个股资金流", "moneyflow", "个股资金流按当前标的 TTL 自动检测；强制刷新可绕过 TTL。"),
     "limit_emotion": (
         "涨跌停/情绪",
         "stk_limit / limit_list_d / limit_cpt_list",
-        "涨跌停/情绪待手动刷新；页面打开不会自动请求 Tushare 涨跌停接口。",
+        "涨跌停/情绪按当前标的 TTL 自动检测；强制刷新可绕过 TTL。",
     ),
-    "chip_radar": ("筹码/胜率", "cyq_perf/cyq_chips", "筹码/胜率待手动刷新；页面打开不会自动请求 Tushare cyq_perf/cyq_chips。"),
+    "chip_radar": ("筹码/胜率", "cyq_perf/cyq_chips", "筹码/胜率按当前标的 TTL 自动检测；强制刷新可绕过 TTL。"),
 }
 
-REFRESH_CAPTION = "刷新会清除本页相关 Tushare 缓存；专业接口仍需点击对应检测/刷新按钮后才会请求，避免页面打开自动打重接口。"
-EMPTY_NOTICE = "未检测到 A股专业事实缓存；为避免页面打开自动打重接口，当前只展示待刷新状态。请使用下方数据能力检测按钮。"
+REFRESH_CAPTION = "本页会按当前标的 TTL 自动请求必要 Tushare 专业接口；强制刷新会清除本页相关缓存并立即重检。"
+EMPTY_NOTICE = "未检测到 A股专业事实缓存；页面会按当前标的自动检测必要 Tushare 专业接口，失败会保留缓存/空态。"
 
 AVAILABLE_STATES = {data_capability_service.STATE_AVAILABLE}
 RESTRICTED_STATES = {
@@ -73,11 +73,11 @@ FACT_RECOVERY_CONFIG = {
             "chip_radar": "高级工具箱 / 量化推演 / 筹码胜率",
         }[key],
         "action_label": {
-            "dragon_tiger": "手动刷新龙虎榜",
-            "margin": "手动刷新融资融券",
-            "moneyflow": "手动刷新个股资金流",
-            "limit_emotion": "手动刷新涨跌停/情绪",
-            "chip_radar": "手动刷新筹码/胜率",
+            "dragon_tiger": "强制刷新龙虎榜",
+            "margin": "强制刷新融资融券",
+            "moneyflow": "强制刷新个股资金流",
+            "limit_emotion": "强制刷新涨跌停/情绪",
+            "chip_radar": "强制刷新筹码/胜率",
         }[key],
     }
     for key, label, packet_key in PACKET_SECTION_ORDER
@@ -155,7 +155,7 @@ def build_a_share_status_strip(professional_facts: Any = None, capability_packet
         status_label = "使用缓存"
         tone = "stale"
     elif manual:
-        status_label = "待手动刷新"
+        status_label = "自动检测中"
         tone = "missing"
     else:
         status_label = "待检测"
@@ -163,10 +163,10 @@ def build_a_share_status_strip(professional_facts: Any = None, capability_packet
     if items:
         summary = (
             f"可用 {len(available)}｜受限/失败 {len(restricted)}｜"
-            f"待验证 {len(pending)}｜手动刷新 {len(manual)}"
+            f"待验证 {len(pending)}｜自动检测中 {len(manual)}"
         )
     else:
-        summary = "暂无 A股专业事实缓存；页面打开不会自动请求 Tushare。"
+        summary = "暂无 A股专业事实缓存；页面会按当前标的自动检测 Tushare。"
     return {
         "title": "A股专业数据能力",
         "status_label": status_label,
@@ -175,7 +175,7 @@ def build_a_share_status_strip(professional_facts: Any = None, capability_packet
         "checked_at": to_text(capability.get("checked_at") or facts.get("updated_at")),
         "source": to_text(capability.get("source") or facts.get("data_source"), "Tushare A股专业事实"),
         "items": items,
-        "manual_note": "专业事实只读缓存或手动检测结果；DeepSeek 未调用。",
+        "manual_note": "专业事实按当前标的自动检测并受 TTL 保护；DeepSeek 未调用。",
         "deepseek_called": False,
     }
 
@@ -185,7 +185,7 @@ def build_a_share_status_completion_notice(status_strip: Any = None, task_label:
     strip = as_mapping(status_strip)
     status_label = _first_text(strip.get("status_label"), default="待检测")
     tone = _first_text(strip.get("tone"), default="missing")
-    summary = _first_text(strip.get("summary"), default="暂无 A股专业事实缓存；页面打开不会自动请求 Tushare。")
+    summary = _first_text(strip.get("summary"), default="暂无 A股专业事实缓存；页面会按当前标的自动检测 Tushare。")
     if tone == "failed" or "受限" in status_label or "失败" in status_label:
         prefix = "部分受限"
         state = "complete"
@@ -194,10 +194,10 @@ def build_a_share_status_completion_notice(status_strip: Any = None, task_label:
         prefix = "使用缓存"
         state = "complete"
         decision_guardrail = "缓存能防白屏，但执行前必须复核交易日、来源和更新时间。"
-    elif "手动" in status_label or status_label in {"待检测", "待刷新"}:
-        prefix = "待手动刷新"
+    elif "手动" in status_label or "自动检测" in status_label or status_label in {"待检测", "待刷新"}:
+        prefix = "自动检测中"
         state = "complete"
-        decision_guardrail = "未手动检测前，只展示安全空态或上次结果，不自动请求 Tushare。"
+        decision_guardrail = "自动检测未取得可用结果前，只展示安全空态或上次结果，不能把缺口当作利好。"
     else:
         prefix = "已整理"
         state = "complete"
@@ -244,7 +244,7 @@ def _packet_state_label(state: str) -> str:
         "ready": "已回流",
         "cached": "使用缓存/待复核",
         "failed": "受限/失败",
-        "waiting": "待手动刷新",
+        "waiting": "自动检测中",
     }.get(state, "待验证")
 
 
@@ -268,16 +268,16 @@ def _fact_recovery_action(key: str, state: str, packet: Mapping[str, Any]) -> di
         reason = f"{label}已回流；只需复核交易日、来源和口径。"
         refresh_policy = "not_needed"
     elif state == "failed":
-        action_label = _first_text(config.get("action_label"), default=f"手动刷新{label}")
-        reason = f"{label}受限/失败；不能把缺失写成利好，需手动检查权限、积分或网络。"
+        action_label = _first_text(config.get("action_label"), default=f"强制刷新{label}")
+        reason = f"{label}受限/失败；不能把缺失写成利好，需检查权限、积分或网络。"
         refresh_policy = "button_gated"
     elif state == "cached":
-        action_label = _first_text(config.get("action_label"), default=f"手动刷新{label}")
+        action_label = _first_text(config.get("action_label"), default=f"强制刷新{label}")
         reason = f"{label}正在使用缓存或待复核；执行前需要确认交易日和更新时间。"
         refresh_policy = "button_gated"
     else:
-        action_label = _first_text(config.get("action_label"), default=f"手动刷新{label}")
-        reason = f"{label}待手动刷新；页面打开不会自动请求 Tushare。"
+        action_label = _first_text(config.get("action_label"), default=f"强制刷新{label}")
+        reason = f"{label}自动检测中或待验证；强制刷新可绕过 TTL。"
         refresh_policy = "button_gated"
     return {
         "key": key,
@@ -842,7 +842,7 @@ def build_legacy_a_share_packet_summary(
         status_label = "部分回流"
         tone = "stale" if counts["cached"] else "ready"
     else:
-        status_label = "待手动刷新"
+        status_label = "自动检测中"
         tone = "missing"
     return {
         "title": "A股专业事实回流",
@@ -850,11 +850,11 @@ def build_legacy_a_share_packet_summary(
         "tone": tone,
         "summary": (
             f"已回流 {counts['ready']}｜使用缓存/待复核 {counts['cached']}｜"
-            f"待手动刷新 {counts['waiting']}｜受限/失败 {counts['failed']}"
+            f"自动检测中 {counts['waiting']}｜受限/失败 {counts['failed']}"
         ),
         "counts": counts,
         "items": items,
-        "manual_note": "以下结果区优先读取 command_center_*_packet 规范状态；页面打开不会自动请求 Tushare，缺失项请手动检测/刷新。",
+        "manual_note": "以下结果区优先读取结构化状态；当前页按 TTL 自动检测当前标的 Tushare 分区，缺失项保留缓存/空态。",
         "deepseek_called": False,
     }
 
@@ -898,9 +898,9 @@ def build_manual_gate_a_share_professional_facts(stock_code: str = "", updated_a
         "data_source": "Tushare A股专业事实",
         "updated_at": timestamp,
         "missing_items": [
-            "旧版 A股专业事实未手动刷新；页面打开只显示缓存/待刷新状态，不自动请求 Tushare。",
+            "旧版 A股专业事实自动检测中；当前页会按 TTL 请求当前标的必要 Tushare 分区。",
         ],
-        "manual_required_text": "请通过 A股数据能力检测或对应刷新按钮手动请求；结果会回流到综合中心。",
+        "manual_required_text": "等待自动检测完成；如需立即重跑，可使用强制刷新。",
         "deepseek_called": False,
     }
     for section_key in SECTION_SPECS:

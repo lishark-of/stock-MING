@@ -817,7 +817,7 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
         f"受限：{'、'.join(restricted) if restricted else '无'}｜"
         f"待验证：{'、'.join(pending) if pending else '无'}"
         if items
-        else "尚未检测；页面打开不会自动请求 Tushare、AkShare、yfinance 或 Supabase。"
+        else "尚未检测 Tushare、AkShare、yfinance、Supabase；当前标的分区会按 TTL 自动补水，慢任务继续使用缓存/强制刷新。"
     )
     return {
         "source": _to_text(packet.get("source"), "数据能力"),
@@ -878,7 +878,7 @@ def build_home_data_capability_brief(snapshot: Any = None) -> dict:
         status = "partial"
         headline = "数据能力待验证"
         trust_label = "可看快照 / 执行前复核"
-        guardrail = "缓存、待手动和近期无数据只能辅助观察；执行前必须复核交易日、来源和覆盖范围。"
+        guardrail = "缓存、自动检测中和近期无数据只能辅助观察；执行前必须复核交易日、来源和覆盖范围。"
     elif available_count or fact_recovered or legacy_chain:
         status = "ready"
         headline = "数据能力可进入闭环"
@@ -888,7 +888,7 @@ def build_home_data_capability_brief(snapshot: Any = None) -> dict:
         status = "missing"
         headline = "数据能力待检测"
         trust_label = "待刷新 / 安全空态"
-        guardrail = "尚未检测数据能力；页面打开不会自动请求 Tushare、AkShare、yfinance、Supabase 或 DeepSeek。"
+        guardrail = "尚未检测数据能力；当前标的轻量分区可自动补水，DeepSeek、回测和全市场扫描仍只手动触发。"
 
     items = [
         {
@@ -1080,7 +1080,7 @@ def _timeline_recovery_action_context(item: Mapping[str, Any]) -> str:
     if event_type == "last_failure":
         return f"最近失败项，只检测 {api} 并回流 {writes_packet}；不会自动调用 DeepSeek 或重型任务。"
     if event_type == "manual_required":
-        return f"需要手动按钮触发，只处理 {api} 并回流 {writes_packet}；页面打开不会自动请求外部接口。"
+        return f"当前分区按 TTL 自动补水 {api} 并回流 {writes_packet}；需要立即重跑时使用强制刷新。"
     if event_type == "cache_used":
         return f"当前依赖缓存，手动复核 {api} 后回流 {writes_packet}；缓存不能当作实时事实。"
     if event_type == "empty_recent":
@@ -1161,7 +1161,7 @@ def _a_share_fact_next_action(label: str, recovery_state: str, writes_packet: st
         return f"{label}已写回 {writes_packet}；执行前复核交易日、来源和风险纪律。"
     if recovery_state == "blocked":
         return f"{label}仍受限；点击“{action_label}”后只检测这一项，结果回流 {writes_packet}。"
-    return f"{label}待验证；需要时点击“{action_label}”，页面打开不会自动请求 Tushare。"
+    return f"{label}待验证；当前分区会按 TTL 自动检测，需要时点击“{action_label}”强制重跑。"
 
 
 def _a_share_fact_diagnostic_text(label: str, recovery_state: str, status_label: str) -> str:
@@ -1169,7 +1169,7 @@ def _a_share_fact_diagnostic_text(label: str, recovery_state: str, status_label:
         return f"{label}已有可读 packet，可进入综合中心证据链。"
     if recovery_state == "blocked":
         return f"{label}当前为{status_label}，不能把缺失数据当成利好或无风险。"
-    return f"{label}尚未形成当日可验证事实；保持空态或缓存，等待手动检测。"
+    return f"{label}尚未形成当日可验证事实；保持空态或缓存，等待分区自动检测。"
 
 
 def _a_share_fact_root_cause_label(status: str, data_status: str, capability_state: str) -> str:
@@ -1330,13 +1330,13 @@ def build_a_share_fact_recovery_summary(snapshot: Any = None) -> dict:
     elif blocked:
         tone = "failed"
         first = blocked[0]
-        next_action = f"优先处理 {first['label']}：检查权限、积分、交易日或进入数据恢复中心手动恢复。"
+        next_action = f"优先处理 {first['label']}：检查权限、积分、交易日或使用强制刷新重检。"
     elif recovered:
         tone = "stale"
-        next_action = "继续手动补齐待验证事实；不要把缺失数据当成无风险。"
+        next_action = "继续等待分区自动补水待验证事实；不要把缺失数据当成无风险。"
     else:
         tone = "missing"
-        next_action = "点击刷新今日基础数据或进入数据恢复中心；页面打开不会自动请求 Tushare。"
+        next_action = "当前标的分区会按 TTL 自动检测；如需立即重跑，使用强制刷新。"
     summary = f"A股事实 {total} 项：已回流 {len(recovered)}｜仍受限 {len(blocked)}｜待验证 {len(waiting)}"
     return {
         "title": "A股事实回流",
@@ -1348,7 +1348,7 @@ def build_a_share_fact_recovery_summary(snapshot: Any = None) -> dict:
         "total_count": total,
         "items": items,
         "next_action": next_action,
-        "safe_mode_text": "这里只汇总本地 packet 状态；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "safe_mode_text": "这里只汇总本地结构化状态；当前标的分区可按 TTL 自动检测，DeepSeek、回测和全市场扫描仍只手动触发。",
         "deepseek_called": False,
     }
 
@@ -1433,7 +1433,7 @@ def build_legacy_decision_chain_summary(snapshot: Any = None) -> dict:
         status = "partial"
         tone = "missing" if not ready else "stale"
         headline = f"旧能力已验证 {len(ready)}｜待验证 {len(waiting)}"
-        next_action = "按恢复队列补齐待验证 packet；页面打开不会自动请求 Tushare。"
+        next_action = "按当前标的自动补水待验证证据；强制刷新只在需要绕过 TTL 时使用。"
     else:
         status = "ready"
         tone = "ready"
@@ -1457,7 +1457,7 @@ def build_legacy_decision_chain_summary(snapshot: Any = None) -> dict:
         "items": items,
         "priority_items": [*blocked, *cache_only, *waiting][:3],
         "next_action": next_action,
-        "safe_mode_text": "这里只读取本地 packet 合同；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "safe_mode_text": "这里只读取本地结构化结果；当前标的 A股分区可按 TTL 自动补水，DeepSeek、回测和全市场扫描仍只手动触发。",
         "deepseek_called": False,
     }
 
@@ -1495,10 +1495,10 @@ def build_a_share_evidence_recovery_ledger(snapshot: Any = None) -> dict:
                 "source": _to_text(item.get("source"), "本地 packet"),
                 "writes_packet": _to_text(item.get("writes_packet"), "command_center_packet"),
                 "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱"),
-                "action_label": _to_text(item.get("action_label"), "手动检测"),
-                "next_action": _to_text(item.get("next_action"), "按数据恢复中心手动处理。"),
+                "action_label": _to_text(item.get("action_label"), "强制刷新"),
+                "next_action": _to_text(item.get("next_action"), "等待自动补水；需要时强制刷新。"),
                 "decision_impact": _a_share_evidence_ledger_decision_impact(item),
-                "navigation_label": _to_text(item.get("navigation_label"), "进入高级工具箱对应模块后手动检测。"),
+                "navigation_label": _to_text(item.get("navigation_label"), "进入高级工具箱对应模块查看分区状态。"),
                 "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
                 "deepseek_called": False,
                 "external_call_policy": "not_triggered",
@@ -1516,7 +1516,7 @@ def build_a_share_evidence_recovery_ledger(snapshot: Any = None) -> dict:
         status = "partial"
         tone = "stale" if recovered_count else "missing"
         headline = f"A股证据已回流 {recovered_count}｜待验证 {waiting_count}"
-        next_action = "继续按恢复入口补齐待验证证据；页面打开不会自动请求 Tushare。"
+        next_action = "继续等待分区自动补水待验证证据；需要时使用强制刷新。"
     else:
         status = "ready"
         tone = "ready"
@@ -1534,7 +1534,7 @@ def build_a_share_evidence_recovery_ledger(snapshot: Any = None) -> dict:
         "waiting_count": waiting_count,
         "total_count": len(items),
         "next_action": next_action,
-        "safe_mode_text": "这里只读取本地 packet 和恢复结果；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "safe_mode_text": "这里只读取本地结构化结果和补水结果；当前标的分区可自动检测，DeepSeek、回测和全市场扫描仍只手动触发。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
     }
@@ -1581,11 +1581,11 @@ def build_a_share_evidence_module_panel(snapshot: Any = None) -> dict:
                 "toolbox_entry": _to_text(item.get("toolbox_entry"), "高级工具箱"),
                 "target_text": _to_text(item.get("toolbox_entry"), "高级工具箱"),
                 "action_label": action_label,
-                "next_action": _to_text(item.get("next_action"), "按恢复队列手动处理。"),
+                "next_action": _to_text(item.get("next_action"), "等待自动补水；需要时强制刷新。"),
                 "decision_guardrail": _a_share_evidence_ledger_decision_impact(item),
-                "navigation_label": _to_text(item.get("navigation_label"), "进入高级工具箱对应模块后手动检测。"),
+                "navigation_label": _to_text(item.get("navigation_label"), "进入高级工具箱对应模块查看分区状态。"),
                 "refresh_policy": _to_text(item.get("refresh_policy"), "button_gated"),
-                "manual_only_text": "只整理本地 packet 状态；需要数据时必须手动按钮触发，不自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+                "manual_only_text": "只整理本地结构化状态；当前标的分区会按 TTL 自动补水，DeepSeek、回测和全市场扫描仍只手动触发。",
                 "deepseek_called": False,
                 "external_call_policy": "not_triggered",
             }
@@ -1600,7 +1600,7 @@ def build_a_share_evidence_module_panel(snapshot: Any = None) -> dict:
     elif waiting_count:
         tone = "stale" if recovered_count else "missing"
         headline = f"A股证据模块已回流 {recovered_count}｜待验证 {waiting_count}"
-        next_action = "继续按模块入口补齐待验证证据；页面打开不会自动请求 Tushare。"
+        next_action = "继续等待当前标的分区自动补水待验证证据；需要时使用强制刷新。"
     else:
         tone = "ready"
         headline = "五类 A股证据模块已回流综合中心"
@@ -2002,7 +2002,7 @@ def build_old_workspace_data_absence_ledger(snapshot: Any = None) -> dict:
             "现在按原因分账，避免把权限、缓存或无记录误读成交易信号。"
         ),
         "next_action": next_action,
-        "safe_mode_text": "这里只读取本地数据能力、恢复队列和旧工具 packet；不会自动调用 Tushare、AkShare、yfinance、Supabase、DeepSeek、回测或全市场扫描。",
+        "safe_mode_text": "这里只整理本地数据能力和旧工具结果；当前标的分区可按 TTL 自动补水，DeepSeek、回测和全市场扫描仍只手动触发。",
         "deepseek_called": False,
         "external_call_policy": "not_triggered",
     }
@@ -2537,11 +2537,11 @@ def build_legacy_a_share_gap_summary(snapshot: Any = None) -> dict:
     if blocked:
         tone = "failed"
         headline = f"旧能力缺口：仍受限 {len(blocked)} 项"
-        next_action = f"优先处理 {blocked[0]['label']}；只切换到高级工具箱，不自动请求 Tushare。"
+        next_action = f"优先处理 {blocked[0]['label']}；检查权限/交易日/覆盖范围，必要时强制刷新。"
     elif waiting:
         tone = "missing" if not recovered else "stale"
         headline = f"旧能力缺口：待验证 {len(waiting)} 项"
-        next_action = f"需要时手动检测 {waiting[0]['label']}；页面打开不会自动请求 Tushare。"
+        next_action = f"等待 {waiting[0]['label']} 分区自动补水；需要时强制刷新。"
     else:
         tone = "ready"
         headline = "旧能力缺口已回流"
@@ -2553,7 +2553,7 @@ def build_legacy_a_share_gap_summary(snapshot: Any = None) -> dict:
         "summary": f"已回流 {len(recovered)}｜仍受限 {len(blocked)}｜待验证 {len(waiting)}",
         "items": items,
         "next_action": next_action,
-        "safe_mode_text": "这里只读取本地 packet 和恢复总账；不会自动调用 Tushare、DeepSeek、回测或全市场扫描。",
+        "safe_mode_text": "这里只读取本地结构化结果和补水总账；当前标的分区可自动检测，DeepSeek、回测和全市场扫描仍只手动触发。",
         "deepseek_called": False,
     }
 
@@ -2771,14 +2771,14 @@ def _legacy_a_share_fact_recovery_actions_from_view(view_model: Any = None) -> l
                 "status": _to_text(action.get("state") or item.get("status"), "waiting"),
                 "status_label": _to_text(action.get("status_label") or item.get("status"), "待验证"),
                 "priority": _legacy_a_share_fact_priority(action),
-                "reason": _to_text(action.get("reason") or item.get("message"), "旧版 A股事实卡仍待手动恢复。"),
-                "action_label": _to_text(action.get("action_label"), "手动刷新 A股事实卡"),
+                "reason": _to_text(action.get("reason") or item.get("message"), "旧版 A股事实卡等待分区自动补水。"),
+                "action_label": _to_text(action.get("action_label"), "强制刷新 A股事实卡"),
                 "toolbox_entry": toolbox_entry,
                 "workspace_target": "高级工具箱（旧版保留）",
                 "workspace_state_key": "workspace_mode_v2",
                 "legacy_tab": legacy_tab,
                 "legacy_tab_state_key": "legacy_workspace_selected_tab",
-                "navigation_label": f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{legacy_tab}；手动执行后回流 {writes_packet}。",
+                "navigation_label": f"高级工具箱（旧版保留）→ {legacy_tab}；查看分区状态或强制刷新后回流 {writes_packet}。",
                 "writes_packet": writes_packet,
                 "refresh_policy": "button_gated",
                 "source_label": "旧版 A股事实卡",
@@ -3142,7 +3142,7 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "status": _to_text(action.get("status"), "waiting"),
                 "status_label": _to_text(action.get("status_label"), "待验证"),
                 "source_type": _to_text(action.get("source_type"), "recovery"),
-                "source_label": _to_text(action.get("source_label"), "恢复队列"),
+                "source_label": _to_text(action.get("source_label"), "自动补水队列"),
                 "provider_dependencies": _as_list(action.get("provider_dependencies")),
                 "provider_dependency_summary": _to_text(action.get("provider_dependency_summary")),
                 "packet_route_summary": _to_text(action.get("packet_route_summary")),
@@ -3155,8 +3155,8 @@ def build_decision_priority_queue(actions: Any = None, limit: int = MAX_CAPABILI
                 "diagnostic_answer": diagnostic,
                 "decision_impact": _to_text(action.get("decision_guardrail") or action.get("decision_impact"), config["fallback_impact"]),
                 "why_first": config["why_first"],
-                "action_label": _to_text(action.get("action_label"), f"手动恢复{label}"),
-                "navigation_label": _to_text(action.get("navigation_label"), "从首页恢复队列进入对应手动工具。"),
+                "action_label": _to_text(action.get("action_label"), f"强制刷新{label}"),
+                "navigation_label": _to_text(action.get("navigation_label"), "进入对应分区查看自动补水状态。"),
                 "workspace_target": _to_text(action.get("workspace_target"), "高级工具箱（旧版保留）"),
                 "workspace_state_key": _to_text(action.get("workspace_state_key"), "workspace_mode_v2"),
                 "legacy_tab_state_key": _to_text(action.get("legacy_tab_state_key"), "legacy_workspace_selected_tab"),
@@ -4847,22 +4847,22 @@ def build_tool_recovery_context_notice(state: Any = None, selected_tab: Any = ""
     recovery_steps = _as_list(state_map.get("command_center_last_tool_recovery_recovery_steps"))
     button_context = _to_text(
         state_map.get("command_center_last_tool_recovery_button_context"),
-        f"点击本模块按钮后同步到综合中心；不会自动调用 DeepSeek、回测或全市场扫描。",
+        f"当前模块会优先读取缓存和当前标的分区补水结果；需要立即重跑时再使用强制刷新。",
     )
     navigation_label = _to_text(
         state_map.get("command_center_last_tool_recovery_navigation_label"),
-        f"主导航切到高级工具箱（旧版保留）→ 高级工具模块选择{target_tab}；手动执行后同步到综合中心。",
+        f"高级工具箱（旧版保留）→ {target_tab}；结果同步到综合中心。",
     )
     is_target_tab = selected == target_tab
     if is_target_tab:
-        message = f"{label} 需要在“{target_tab}”补充；请点击本模块对应按钮。"
-        action_hint = f"{button_context}｜这里只是导航提示，不会自动运行扫描、回测、DeepSeek 或重型数据接口。"
+        message = f"{label} 正在“{target_tab}”按缓存/分区补水状态展示。"
+        action_hint = f"{button_context}｜DeepSeek、回测和全市场扫描仍只手动触发。"
     else:
         message = f"当前在“{selected}”，目标模块是“{target_tab}”。"
-        action_hint = "当前模块不会显示该恢复按钮；这仍然只是导航提示，不会自动运行任何重型任务。"
+        action_hint = "当前模块只保留轻量提示；不自动运行 DeepSeek、回测或全市场扫描。"
     return {
         "status": "ready",
-        "title": "待补数据",
+        "title": "待验证证据",
         "label": label,
         "provider": provider,
         "api": api,
@@ -5516,9 +5516,9 @@ def build_recovery_result_timeline(
     else:
         status = "waiting"
         tone = "missing"
-        headline = "暂无恢复结果时间线"
-        summary = "还没有手动恢复结果回流；按数据恢复队列进入高级工具箱后再手动检测。"
-        next_action = "先处理决策优先恢复队列；页面打开不会自动请求外部接口。"
+        headline = "暂无自动补水结果时间线"
+        summary = "还没有补水结果回流；进入对应分区后会按当前标的 TTL 自动检测，必要时可强制刷新。"
+        next_action = "先看当前缓存/空态，等待分区补水或手动强制刷新；DeepSeek 不自动调用。"
 
     status_counts = {
         "recovered": len([item for item in items if item["status"] == "recovered"]),
@@ -6217,7 +6217,7 @@ def attach_hard_risk_risk_alerts(risk_alerts: Any = None, hard_risk_packet: Any 
             _to_text(
                 hard.get("manual_required_text")
                 or hard.get("summary")
-                or "公告/硬风险仍待手动检测，不能当作无风险。",
+                or "公告/硬风险仍待分区自动检测，不能当作无风险。",
             )
         )
     elif status == "ready":

@@ -11,6 +11,12 @@ def _function_node(name):
     raise AssertionError(f"Function not found: {name}")
 
 
+def _function_source(name):
+    source = Path("app.py").read_text(encoding="utf-8")
+    node = _function_node(name)
+    return ast.get_source_segment(source, node) or ""
+
+
 def _function_tokens(name):
     node = _function_node(name)
     values = set()
@@ -36,7 +42,7 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         tokens = _function_tokens("render_home_a_share_diagnostic_recovery_controls")
         spec_tokens = _function_tokens("_get_legacy_a_share_auto_hydrate_specs")
 
-        _assert_token_contains(self, tokens, "数据恢复中心｜A股接口状态")
+        _assert_token_contains(self, tokens, "A股专业数据自动补水")
         self.assertIn("chip_radar", spec_tokens)
         self.assertIn("hard_risk", spec_tokens)
         self.assertIn("_run_legacy_a_share_auto_hydrate", tokens)
@@ -45,21 +51,22 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
 
     def test_legacy_a_share_page_surfaces_gap_recovery_ledger(self):
         tokens = _function_tokens("render_legacy_a_share_gap_recovery_panel")
-        source = Path("app.py").read_text(encoding="utf-8")
+        display_source = _function_source("display_cn_stock_analysis")
 
-        _assert_token_contains(self, tokens, "数据恢复中心｜旧版数据缺口总账")
-        _assert_token_contains(self, tokens, "查看诊断详情")
+        _assert_token_contains(self, tokens, "A股专业数据分区预热")
+        _assert_token_contains(self, tokens, "查看旧版缺口详情")
         _assert_token_contains(self, tokens, "原因")
         _assert_token_contains(self, tokens, "决策保护")
-        _assert_token_contains(self, tokens, "打开模块")
+        self.assertIn("_run_legacy_a_share_auto_hydrate", tokens)
+        self.assertIn("_render_legacy_a_share_auto_hydrate_cards", tokens)
         self.assertIn("build_legacy_a_share_gap_summary", tokens)
         self.assertIn("build_old_workspace_data_absence_ledger", tokens)
-        self.assertIn("build_tool_recovery_navigation_state", tokens)
-        self.assertIn("_apply_tool_recovery_navigation_state", tokens)
-        self.assertIn("_apply_tool_recovery_navigation_state(item, persist_snapshot=True)", source)
-        self.assertIn("render_legacy_a_share_gap_recovery_panel(legacy_gap_context", source)
-        self.assertIn("command_center_limit_emotion_packet", source)
-        self.assertIn("command_center_chip_packet", source)
+        self.assertNotIn("build_tool_recovery_navigation_state", tokens)
+        self.assertNotIn("_apply_tool_recovery_navigation_state", tokens)
+        self.assertNotIn("_apply_tool_recovery_navigation_state(item, persist_snapshot=True)", display_source)
+        self.assertNotIn("render_legacy_a_share_gap_recovery_panel(", display_source)
+        self.assertIn("command_center_limit_emotion_packet", display_source)
+        self.assertIn("command_center_chip_packet", display_source)
 
     def test_tool_recovery_navigation_state_persists_latest_notice(self):
         tokens = _function_tokens("_apply_tool_recovery_navigation_state")
@@ -74,8 +81,8 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
     def test_evidence_backfill_controls_are_labeled_as_recovery_center(self):
         tokens = _function_tokens("render_home_evidence_backfill_controls")
 
-        _assert_token_contains(self, tokens, "数据恢复中心｜")
-        _assert_token_contains(self, tokens, "数据恢复中心里的证据缺口")
+        _assert_token_contains(self, tokens, "A股证据自动补水｜")
+        _assert_token_contains(self, tokens, "同一标的 TTL 内不重复请求")
 
     def test_a_share_capability_controls_include_hard_risk_check(self):
         tokens = _function_tokens("render_a_share_data_capability_controls")
@@ -345,21 +352,34 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         _assert_token_contains(self, tokens, "下一票雷达本地缓存快照")
         _assert_token_contains(self, tokens, "不触发全市场扫描")
 
-    def test_legacy_a_share_screen_routes_diagnostic_to_recovery_controls(self):
-        source = Path("app.py").read_text(encoding="utf-8")
+    def test_legacy_a_share_screen_uses_direct_fact_cards_not_recovery_controls(self):
+        source = _function_source("display_cn_stock_analysis")
 
-        self.assertIn("render_home_a_share_diagnostic_recovery_controls(", source)
-        self.assertIn('home_snapshot={"a_share_user_data_diagnostic": legacy_user_diagnostic}', source)
-        self.assertIn('market_type="A股"', source)
+        self.assertIn("cached_cn_dragon_tiger_board(stock_code)", source)
+        self.assertIn("cached_cn_margin_data(stock_code)", source)
+        self.assertIn("cached_cn_moneyflow_data(stock_code)", source)
+        self.assertIn("cached_cn_limit_emotion_data(stock_code, current_price=price)", source)
+        self.assertIn("get_cn_chip_radar_data(stock_code, current_price=price)", source)
+        self.assertIn("龙虎榜追踪", source)
+        self.assertIn("融资融券监测", source)
+        self.assertIn("个股资金流向", source)
+        self.assertIn("A股情绪与涨跌停边界", source)
+        self.assertIn("筹码/胜率雷达", source)
+        self.assertIn("接口状态详情", source)
+        self.assertNotIn("render_home_a_share_diagnostic_recovery_controls(", source)
+        self.assertNotIn("render_legacy_a_share_gap_recovery_panel(", source)
+        self.assertNotIn("打开模块：", source)
+        self.assertNotIn("legacy_war_room_inputs", source)
+        self.assertNotIn("legacy_prompt_fact_payloads", source)
 
-    def test_legacy_a_share_fact_cards_show_recovery_path(self):
-        source = Path("app.py").read_text(encoding="utf-8")
+    def test_legacy_a_share_fact_cards_hide_recovery_path_noise(self):
+        source = _function_source("display_cn_stock_analysis")
 
-        self.assertIn("recovery_action = card.get(\"recovery_action\") or {}", source)
-        self.assertIn("recovery_action = section.get(\"recovery_action\") or {}", source)
-        self.assertIn("恢复路径：{recovery_action.get('action_label')", source)
-        self.assertIn("回流：{recovery_action.get('writes_packet')", source)
-        self.assertIn("｜DeepSeek：未调用", source)
+        self.assertNotIn("recovery_action = card.get(\"recovery_action\") or {}", source)
+        self.assertNotIn("recovery_action = section.get(\"recovery_action\") or {}", source)
+        self.assertNotIn("恢复路径：{recovery_action.get('action_label')", source)
+        self.assertNotIn("回流：{recovery_action.get('writes_packet')", source)
+        self.assertNotIn("作战室输入：", source)
 
 
 if __name__ == "__main__":

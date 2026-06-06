@@ -23,12 +23,14 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertFalse(gate.has_a_share_professional_cache(packet))
         self.assertFalse(packet["available"])
         self.assertFalse(packet["deepseek_called"])
-        self.assertIn("不自动请求 Tushare", packet["missing_items"][0])
+        self.assertIn("自动检测中", packet["missing_items"][0])
+        self.assertIn("TTL", packet["missing_items"][0])
         json.dumps(packet, ensure_ascii=False)
 
-    def test_manual_gate_user_text_is_button_gated(self):
-        self.assertIn("点击对应检测/刷新按钮后才会请求", gate.refresh_caption())
-        self.assertIn("数据能力检测按钮", gate.empty_notice())
+    def test_manual_gate_user_text_is_auto_hydrated(self):
+        self.assertIn("自动请求必要 Tushare", gate.refresh_caption())
+        self.assertIn("强制刷新", gate.refresh_caption())
+        self.assertIn("自动检测必要 Tushare", gate.empty_notice())
         self.assertNotIn("重新请求当前可用最新数据", gate.refresh_caption())
 
     def test_existing_updated_fact_counts_as_cache_even_if_unavailable(self):
@@ -64,8 +66,8 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         strip = gate.build_a_share_status_strip(packet, packet["data_capability"])
         dumped = json.dumps(strip, ensure_ascii=False)
 
-        self.assertEqual(strip["status_label"], "待手动刷新")
-        self.assertIn("手动刷新", strip["summary"])
+        self.assertEqual(strip["status_label"], "自动检测中")
+        self.assertIn("自动检测中", strip["summary"])
         self.assertFalse(strip["deepseek_called"])
         self.assertNotIn("commit", dumped.lower())
         self.assertNotIn("feature present", dumped)
@@ -108,16 +110,16 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
 
     def test_completion_notice_separates_manual_gate_from_success(self):
         strip = {
-            "status_label": "待手动刷新",
+            "status_label": "自动检测中",
             "tone": "missing",
-            "summary": "暂无 A股专业事实缓存；页面打开不会自动请求 Tushare。",
+            "summary": "暂无 A股专业事实缓存；当前页按 TTL 自动请求必要 Tushare 专业接口。",
         }
 
         notice = gate.build_a_share_status_completion_notice(strip)
 
-        self.assertTrue(notice["label"].startswith("待手动刷新："))
+        self.assertTrue(notice["label"].startswith("自动检测中："))
         self.assertNotIn("完成：", notice["label"])
-        self.assertIn("不自动请求 Tushare", notice["decision_guardrail"])
+        self.assertIn("自动检测未取得可用结果", notice["decision_guardrail"])
         self.assertFalse(notice["deepseek_called"])
 
     def test_packet_summary_counts_ready_cached_waiting_and_failed(self):
@@ -148,13 +150,13 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         self.assertEqual(summary["status_label"], "部分接口受限")
         self.assertEqual(summary["counts"], {"ready": 1, "cached": 1, "waiting": 2, "failed": 1})
         self.assertIn("已回流 1", summary["summary"])
-        self.assertIn("页面打开不会自动请求 Tushare", summary["manual_note"])
+        self.assertIn("按 TTL 自动检测", summary["manual_note"])
         self.assertFalse(summary["deepseek_called"])
         by_key = {item["key"]: item for item in summary["items"]}
         self.assertEqual(by_key["dragon_tiger"]["status"], "已回流")
         self.assertEqual(by_key["margin"]["status"], "受限/失败")
         self.assertEqual(by_key["moneyflow"]["status"], "使用缓存/待复核")
-        self.assertEqual(by_key["chip_radar"]["status"], "待手动刷新")
+        self.assertEqual(by_key["chip_radar"]["status"], "自动检测中")
 
     def test_packet_summary_is_json_friendly_and_does_not_mutate_input(self):
         packet = {
@@ -176,10 +178,10 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
     def test_packet_summary_handles_empty_packets(self):
         summary = gate.build_legacy_a_share_packet_summary()
 
-        self.assertEqual(summary["status_label"], "待手动刷新")
+        self.assertEqual(summary["status_label"], "自动检测中")
         self.assertEqual(len(summary["items"]), 5)
         self.assertEqual(summary["counts"]["waiting"], 5)
-        self.assertTrue(all(item["status"] == "待手动刷新" for item in summary["items"]))
+        self.assertTrue(all(item["status"] == "自动检测中" for item in summary["items"]))
         json.dumps(summary, ensure_ascii=False)
 
     def test_primary_fact_cards_render_ready_packet_fields(self):
@@ -239,15 +241,15 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         )
         by_key = {card["key"]: card for card in cards["cards"]}
 
-        self.assertEqual(by_key["dragon_tiger"]["status"], "待手动刷新")
+        self.assertEqual(by_key["dragon_tiger"]["status"], "自动检测中")
         self.assertEqual(by_key["margin"]["status"], "受限/失败")
-        self.assertEqual(by_key["moneyflow"]["status"], "待手动刷新")
+        self.assertEqual(by_key["moneyflow"]["status"], "自动检测中")
         self.assertEqual(by_key["dragon_tiger"]["metrics"], [])
         self.assertEqual(by_key["margin"]["metrics"], [])
         self.assertIn("权限不足", by_key["margin"]["risk_note"])
         self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["refresh_policy"], "button_gated")
         self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["writes_packet"], "command_center_dragon_tiger_packet")
-        self.assertIn("手动刷新龙虎榜", by_key["dragon_tiger"]["recovery_action"]["action_label"])
+        self.assertIn("强制刷新龙虎榜", by_key["dragon_tiger"]["recovery_action"]["action_label"])
         self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["legacy_tab"], "下一票雷达")
         self.assertEqual(by_key["dragon_tiger"]["recovery_action"]["workspace_target"], "高级工具箱（旧版保留）")
         self.assertEqual(by_key["margin"]["recovery_action"]["writes_packet"], "command_center_margin_packet")
@@ -331,7 +333,7 @@ class CommandCenterLegacyAShareGateTests(unittest.TestCase):
         )
         by_key = {section["key"]: section for section in sections["sections"]}
 
-        self.assertEqual(by_key["limit_emotion"]["status"], "待手动刷新")
+        self.assertEqual(by_key["limit_emotion"]["status"], "自动检测中")
         self.assertEqual(by_key["chip_radar"]["status"], "受限/失败")
         self.assertEqual(by_key["limit_emotion"]["metrics"], [])
         self.assertEqual(by_key["chip_radar"]["metrics"], [])
