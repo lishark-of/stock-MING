@@ -5505,6 +5505,15 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 for evidence in etf_chain[:3]
             ) or "跟踪指数、流动性、同类重叠和融资现金缓冲仍需逐步回流为 packet。"
             etf_gaps = "；".join(str(gap).strip() for gap in (item.get("data_gaps") or [])[:3] if str(gap).strip()) or "暂无显式数据缺口"
+            etf_ratio = _home_number(
+                item.get("recommended_ratio")
+                if item.get("recommended_ratio") not in [None, ""]
+                else item.get("weight"),
+                "%",
+            )
+            etf_amount_value = item.get("recommended_amount") if item.get("recommended_amount") not in [None, ""] else item.get("amount")
+            etf_amount = "暂无" if etf_amount_value in [None, ""] else f"¥{_home_number(etf_amount_value)}"
+            etf_reason = _home_text(item.get("reason") or item.get("trigger_condition"), "等待回踩、量能和风险线确认。")
             etf_recovery_text = "；".join(
                 f"{_home_text(row.get('label'), '证据')}:{_home_text(row.get('status_label'), '待验证')}"
                 for row in (item.get("evidence_recovery_items") or [])[:5]
@@ -5526,7 +5535,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
                 {escape(_home_text(item.get("code"), "ETF"))} {escape(_home_text(item.get("name"), ""))}
                 <span class="cc-home-chip {escape(_home_text(item.get("tone"), "stale"))}">{escape(_home_text(item.get("status_label"), item.get("action_state") or "只观察不追"))}</span>
               </div>
-              <div class="cc-home-item-meta">{escape(_home_text(item.get("bucket"), "ETF"))} ｜ 分数：{escape(_home_number(item.get("score")))} ｜ {escape(_home_text(item.get("action_state"), "只观察不追"))}</div>
+              <div class="cc-home-item-meta">{escape(_home_text(item.get("bucket"), "ETF"))} ｜ 建议比例：{escape(etf_ratio)} ｜ 建议金额：{escape(etf_amount)}</div>
+              <div class="cc-home-item-meta">状态：{escape(_home_text(item.get("action_state"), "观察"))} ｜ 分数：{escape(_home_number(item.get("score")))} ｜ 理由：{escape(etf_reason)}</div>
               <div class="cc-home-item-meta">证据：{escape(etf_evidence)}</div>
               <div class="cc-home-item-meta">证据链：{escape(_home_text(item.get("evidence_chain_summary"), "证据链待验证"))} ｜ {escape(etf_guardrail)}</div>
               <div class="cc-home-item-meta">A股证据模块：<span class="cc-home-chip {escape(_home_text(etf_module_dependency.get("tone"), "missing"))}">{escape(_home_text(etf_module_dependency.get("label"), "依赖待确认"))}</span> {escape(_home_text(etf_module_dependency.get("summary"), "已回流 0｜仍受限 0｜待验证 0"))} ｜ {escape(etf_module_dependency_text)}</div>
@@ -5537,6 +5547,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
               <div class="cc-home-item-meta">风险：{escape(_home_text(item.get("risk_note"), "ETF 需复核流动性、跟踪指数、同类重叠和追高风险。"))}</div>
               <div class="cc-home-item-meta">执行保护：{escape(_home_text(item.get("action_guardrail"), "ETF 候选不是买入指令；融资现金缓冲未确认前不能放大仓位。"))}</div>
               <div class="cc-home-item-meta">数据缺口：{escape(etf_gaps)}</div>
+              <div class="cc-home-item-meta">来源：{escape(_home_text(item.get("source"), "融资 ETF 配置缓存"))} ｜ {escape(_home_text(item.get("updated_at"), "暂无时间"))}</div>
             </div>
             """
     else:

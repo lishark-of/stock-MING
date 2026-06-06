@@ -3661,6 +3661,25 @@ def _build_next_ticket_live_section(live_packet=None):
                     live_packet=live_packet,
                 )
                 top_candidates = packet.get("top_candidates") or []
+    if not top_candidates:
+        snapshot_candidates = home_snapshot_service.extract_next_ticket_candidates(
+            st.session_state,
+            live_packet=live_packet,
+        )
+        if snapshot_candidates:
+            packet = radar_packet_service.build_command_center_radar_packet(
+                {
+                    "command_center_radar_packet": {
+                        **(packet or {}),
+                        "status": "ready",
+                        "source": (packet or {}).get("source") or "下一票雷达缓存",
+                        "generated_at": (packet or {}).get("generated_at") or live_packet.get("updated_at") or live_packet.get("generated_at") or "",
+                        "top_candidates": snapshot_candidates,
+                    }
+                },
+                live_packet=live_packet,
+            )
+            top_candidates = packet.get("top_candidates") or []
     meta = _cc_get_module_meta("next_ticket")
     if not top_candidates:
         return {
@@ -3726,6 +3745,37 @@ def _build_margin_etf_live_section(live_packet=None):
                     live_packet=live_packet,
                 )
                 recommended_etfs = packet.get("recommended_etfs") or []
+    if not recommended_etfs:
+        snapshot_summary = home_snapshot_service.build_margin_etf_summary(
+            st.session_state,
+            live_packet=live_packet,
+            etf_packet=packet,
+        )
+        snapshot_etfs = snapshot_summary.get("recommended_etfs") or []
+        if snapshot_etfs:
+            packet = etf_packet_service.build_command_center_etf_packet(
+                {
+                    "command_center_etf_packet": {
+                        **(packet or {}),
+                        "status": "ready",
+                        "source": (packet or {}).get("source") or "融资 ETF 配置缓存",
+                        "updated_at": (packet or {}).get("updated_at") or live_packet.get("updated_at") or live_packet.get("generated_at") or "",
+                        "recommended_margin_ratio": (packet or {}).get("recommended_margin_ratio")
+                        or snapshot_summary.get("recommended_margin_ratio"),
+                        "recommended_cash_ratio": (packet or {}).get("recommended_cash_ratio")
+                        or snapshot_summary.get("recommended_cash_ratio"),
+                        "current_margin_ratio": (packet or {}).get("current_margin_ratio")
+                        or snapshot_summary.get("current_margin_ratio"),
+                        "today_main_direction": (packet or {}).get("today_main_direction")
+                        or snapshot_summary.get("today_main_direction"),
+                        "recommended_etfs": snapshot_etfs,
+                        "watch_not_chase": (packet or {}).get("watch_not_chase")
+                        or snapshot_summary.get("watch_not_chase"),
+                    }
+                },
+                live_packet=live_packet,
+            )
+            recommended_etfs = packet.get("recommended_etfs") or []
     meta = _cc_get_module_meta("margin_etf")
     if not recommended_etfs:
         return {
@@ -3763,6 +3813,89 @@ def _build_margin_etf_live_section(live_packet=None):
         "is_fresh": packet.get("data_status") == "ready",
         "last_error": meta.get("error", "") if meta.get("status") == "失败" else "",
     }
+
+
+def _sync_command_center_home_candidate_packets(live_packet=None):
+    live_packet = live_packet or st.session_state.get("command_center_live_packet") or {}
+    next_candidates = home_snapshot_service.extract_next_ticket_candidates(
+        st.session_state,
+        live_packet=live_packet,
+    )
+    if next_candidates:
+        radar_packet = radar_packet_service.build_command_center_radar_packet(
+            {
+                "command_center_radar_packet": {
+                    **(st.session_state.get("command_center_radar_packet") or {}),
+                    "status": "ready",
+                    "source": (st.session_state.get("command_center_radar_packet") or {}).get("source")
+                    or "下一票雷达缓存",
+                    "generated_at": (st.session_state.get("command_center_radar_packet") or {}).get("generated_at")
+                    or live_packet.get("updated_at")
+                    or live_packet.get("generated_at")
+                    or "",
+                    "top_candidates": next_candidates,
+                }
+            },
+            live_packet=live_packet,
+        )
+        st.session_state["command_center_radar_packet"] = radar_packet
+        if isinstance(live_packet, dict):
+            live_section = live_packet.get("next_ticket") if isinstance(live_packet.get("next_ticket"), dict) else {}
+            live_packet["next_ticket"] = {
+                **live_section,
+                "status": "已刷新" if radar_packet.get("data_status") == "ready" else "使用缓存",
+                "summary": f"已读取上次成功下一票 Top{len(next_candidates[:3])}。",
+                "source": radar_packet.get("source") or live_section.get("source") or "下一票雷达缓存",
+                "updated_at": radar_packet.get("generated_at") or radar_packet.get("updated_at") or live_section.get("updated_at") or "",
+                "top_candidates": radar_packet.get("top_candidates") or next_candidates,
+                "deepseek_called": False,
+            }
+    etf_packet = etf_packet_service.build_command_center_etf_packet(
+        st.session_state,
+        live_packet=live_packet,
+    )
+    margin_summary = home_snapshot_service.build_margin_etf_summary(
+        st.session_state,
+        live_packet=live_packet,
+        etf_packet=etf_packet,
+    )
+    recommended_etfs = margin_summary.get("recommended_etfs") or []
+    if recommended_etfs:
+        etf_packet = etf_packet_service.build_command_center_etf_packet(
+            {
+                "command_center_etf_packet": {
+                    **(etf_packet or {}),
+                    "status": "ready",
+                    "source": (etf_packet or {}).get("source") or "融资 ETF 配置缓存",
+                    "updated_at": (etf_packet or {}).get("updated_at") or live_packet.get("updated_at") or live_packet.get("generated_at") or "",
+                    "current_margin_ratio": margin_summary.get("current_margin_ratio"),
+                    "recommended_margin_ratio": margin_summary.get("recommended_margin_ratio"),
+                    "recommended_cash_ratio": margin_summary.get("recommended_cash_ratio"),
+                    "today_main_direction": margin_summary.get("today_main_direction"),
+                    "recommended_etfs": recommended_etfs,
+                    "watch_not_chase": margin_summary.get("watch_not_chase"),
+                }
+            },
+            live_packet=live_packet,
+        )
+        st.session_state["command_center_etf_packet"] = etf_packet
+        if isinstance(live_packet, dict):
+            live_section = live_packet.get("margin_etf") if isinstance(live_packet.get("margin_etf"), dict) else {}
+            live_packet["margin_etf"] = {
+                **live_section,
+                "status": "已刷新" if etf_packet.get("data_status") == "ready" else "使用缓存",
+                "summary": f"已读取上次成功 ETF 配置 Top{len(recommended_etfs[:3])}。",
+                "source": etf_packet.get("source") or live_section.get("source") or "融资 ETF 配置缓存",
+                "updated_at": etf_packet.get("updated_at") or live_section.get("updated_at") or "",
+                "recommended_margin_ratio": etf_packet.get("recommended_margin_ratio"),
+                "recommended_cash_ratio": etf_packet.get("recommended_cash_ratio"),
+                "current_margin_ratio": etf_packet.get("current_margin_ratio"),
+                "today_main_direction": etf_packet.get("today_main_direction"),
+                "recommended_etfs": etf_packet.get("recommended_etfs") or recommended_etfs,
+                "watch_not_chase": etf_packet.get("watch_not_chase") or margin_summary.get("watch_not_chase"),
+                "deepseek_called": False,
+            }
+    return live_packet
 
 
 def _build_command_center_live_conclusion(live_packet):
@@ -5802,6 +5935,7 @@ def _run_command_center_full_data_refresh(target="", market_type="", price=None,
         target=target,
         refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
     )
+    live_packet = _sync_command_center_home_candidate_packets(live_packet)
     first_snapshot = _persist_home_action_snapshot(
         live_packet=live_packet,
         target=target,
@@ -5832,6 +5966,7 @@ def _run_command_center_full_data_refresh(target="", market_type="", price=None,
     refresh_summary["data_capability_status_groups"] = data_capability_packet.get("status_groups") or {}
     refresh_summary["data_capability_summary"] = _cc_status_group_summary(data_capability_packet)
     st.session_state["command_center_refresh_summary"] = refresh_summary
+    live_packet = _sync_command_center_home_candidate_packets(live_packet)
     _persist_home_action_snapshot(
         live_packet=live_packet,
         target=target,
@@ -6051,6 +6186,7 @@ def _run_command_center_analysis_chain(target="", market_type="", position_profi
 
     try:
         live_packet = build_command_center_live_packet(target=target, refresh_level=refresh_level)
+        live_packet = _sync_command_center_home_candidate_packets(live_packet)
         live_packet["data_capability"] = _get_command_center_data_capability_packet()
         _status_write("已聚合本地缓存与上次成功数据。")
     except Exception as exc:
@@ -6442,6 +6578,7 @@ def _run_command_center_auto_page_cycle(
         strategy_execution_packet=strategy_packet,
         decision_packet=decision_packet,
     )
+    live_packet = _sync_command_center_home_candidate_packets(live_packet)
     st.session_state["command_center_live_packet"] = live_packet
     errors = list(refresh_summary.get("errors") or [])
     errors.extend(str(item) for item in (analysis_packet.get("errors") or []) if item)

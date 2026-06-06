@@ -203,6 +203,74 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(items[0]["ticker"], "X")
         self.assertEqual(items[0]["decision_brief"]["execution_label"], "可准备")
 
+    def test_next_ticket_candidates_backfill_from_common_cache_shapes(self):
+        state = {
+            "radar_scan_results": {
+                "generated_at": "2026-06-05T10:00:00",
+                "top_candidates": [
+                    {
+                        "stock_code": "688041.SH",
+                        "stock_name": "海光信息",
+                        "rank_score": 83,
+                        "status": "可准备",
+                        "rank_reason": "国产算力链强于指数。",
+                        "entry_condition": "回踩不破 MA20 后放量。",
+                        "invalid_condition": "跌破 MA20 且资金转弱。",
+                    },
+                    {"symbol": "300750.SZ", "name": "宁德时代", "score": 75, "status_label": "等验证"},
+                    {"ts_code": "601012.SH", "name": "隆基绿能", "total_score": 66, "action_state": "只观察"},
+                    {"code": "002008.SZ", "name": "大族激光", "score": 55},
+                ],
+            }
+        }
+
+        items = snapshot.extract_next_ticket_candidates(state)
+
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["ticker"], "688041.SH")
+        self.assertEqual(items[0]["name"], "海光信息")
+        self.assertEqual(items[0]["status_label"], "可准备")
+        self.assertEqual(items[0]["score"], 83)
+        self.assertIn("MA20", items[0]["trigger_condition"])
+        self.assertIn("资金转弱", items[0]["invalidation_condition"])
+        self.assertEqual(items[0]["source"], "下一票雷达缓存")
+        self.assertFalse(items[0]["deepseek_called"])
+
+    def test_next_ticket_candidates_backfill_from_home_snapshot_packet(self):
+        state = {
+            "command_center_home_snapshot": {
+                "next_ticket_candidates": [
+                    {
+                        "symbol": "002008.SZ",
+                        "stock_name": "大族激光",
+                        "score": 71,
+                        "status_label": "等验证",
+                    }
+                ],
+                "radar_packet": {
+                    "top_candidates": [
+                        {"ticker": "OLD", "name": "旧候选"},
+                    ]
+                },
+            }
+        }
+
+        items = snapshot.extract_next_ticket_candidates(state)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["ticker"], "002008.SZ")
+        self.assertEqual(items[0]["status_label"], "等验证")
+
+    def test_next_ticket_candidates_empty_cache_returns_empty_list(self):
+        items = snapshot.extract_next_ticket_candidates(
+            {
+                "radar_scan_results": {"generated_at": "2026-06-05T10:00:00", "rule_rows": []},
+                "radar_scan_summary": {"top_candidates": []},
+            }
+        )
+
+        self.assertEqual(items, [])
+
     def test_home_snapshot_persists_radar_packet(self):
         today = _dt.date.today().isoformat()
         state = {
@@ -424,6 +492,111 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("下一票/ETF 证据", overview["stage_text"])
         self.assertFalse(overview["deepseek_called"])
         self.assertIn("不追高 ETF", payload["margin_etf_summary"]["watch_not_chase"])
+        self.assertFalse(payload["etf_packet"]["deepseek_called"])
+
+    def test_margin_etf_summary_backfills_from_legacy_allocation_result(self):
+        summary = snapshot.build_margin_etf_summary(
+            {
+                "legacy_margin_etf_allocation_result": {
+                    "generated_at": "2026-06-05T10:00:00",
+                    "current_margin_debt_ratio": 30,
+                    "recommended_margin_ratio": 20,
+                    "recommended_cash_ratio": 25,
+                    "today_main_direction": "科技成长ETF",
+                    "selected_etf_candidates": {
+                        "科技成长ETF": [
+                            {
+                                "etf_code": "512480.SH",
+                                "etf_name": "半导体 ETF",
+                                "total_score": 78,
+                                "ratio_pct": 12,
+                                "amount": 36000,
+                                "state": "可配置",
+                                "reason": "芯片链强于指数。",
+                            },
+                            {
+                                "etf_code": "560780.SH",
+                                "etf_name": "半导体设备ETF广发",
+                                "total_score": 74,
+                                "ratio_pct": 8,
+                                "amount": 24000,
+                                "state": "观察",
+                            },
+                        ]
+                    },
+                }
+            }
+        )
+
+        etfs = summary["recommended_etfs"]
+        self.assertEqual(len(etfs), 2)
+        self.assertEqual(etfs[0]["code"], "512480.SH")
+        self.assertEqual(etfs[0]["status_label"], "可配置")
+        self.assertEqual(etfs[0]["recommended_ratio"], 12)
+        self.assertEqual(etfs[0]["recommended_amount"], 36000)
+        self.assertIn("芯片链", etfs[0]["reason"])
+        self.assertEqual(summary["recommended_margin_ratio"], 20)
+
+    def test_margin_etf_summary_backfills_from_bucket_allocation_plan(self):
+        summary = snapshot.build_margin_etf_summary(
+            {
+                "legacy_margin_etf_allocation_result": {
+                    "generated_at": "2026-06-05T10:00:00",
+                    "recommended_etf_allocation": {
+                        "科技成长ETF": {
+                            "ratio_pct": 15,
+                            "amount": 45000,
+                            "candidate_etfs": [
+                                {"code": "588000.SH", "name": "科创50 ETF", "state": "只观察不追"},
+                            ],
+                        }
+                    },
+                }
+            }
+        )
+
+        etf = summary["recommended_etfs"][0]
+        self.assertEqual(etf["code"], "588000.SH")
+        self.assertEqual(etf["bucket"], "科技成长ETF")
+        self.assertEqual(etf["recommended_ratio"], 15)
+        self.assertEqual(etf["recommended_amount"], 45000)
+        self.assertEqual(etf["status_label"], "不追高")
+
+    def test_margin_etf_summary_empty_cache_returns_clear_empty_list(self):
+        summary = snapshot.build_margin_etf_summary(
+            {
+                "legacy_margin_etf_allocation_result": {},
+                "legacy_margin_etf_daily_packet": {"score_packet": {"rows": []}},
+            }
+        )
+
+        self.assertEqual(summary["recommended_etfs"], [])
+
+    def test_home_snapshot_handles_candidate_missing_fields_without_deepseek(self):
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "radar_scan_results": {
+                    "top_candidates": [
+                        {"symbol": "688041.SH"},
+                        {"name": "缺代码候选"},
+                    ],
+                },
+                "legacy_margin_etf_allocation_result": {
+                    "selected_etf_candidates": {
+                        "科技成长ETF": [
+                            {"etf_code": "560780.SH"},
+                            {"etf_name": "缺代码 ETF"},
+                        ]
+                    },
+                },
+            },
+            target="688041.SH",
+        )
+
+        self.assertEqual(payload["next_ticket_candidates"][0]["ticker"], "688041.SH")
+        self.assertEqual(payload["margin_etf_summary"]["recommended_etfs"][0]["code"], "560780.SH")
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["radar_packet"]["deepseek_called"])
         self.assertFalse(payload["etf_packet"]["deepseek_called"])
 
     def test_margin_etf_evidence_recovery_results_describe_position_impact(self):
@@ -4642,6 +4815,11 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
 
         self.assertIn("今日总决策", payload["risk_alerts"]["data_gaps"])
         self.assertNotIn("decision", payload["risk_alerts"]["data_gaps"])
+
+    def test_home_snapshot_helpers_remain_streamlit_free(self):
+        source = Path("command_center_home_snapshot.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("import streamlit", source)
 
 
 if __name__ == "__main__":

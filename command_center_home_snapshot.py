@@ -3746,12 +3746,30 @@ def attach_margin_etf_evidence_recovery_results(snapshot: Any = None) -> dict:
     payload = _as_mapping(snapshot)
     margin_summary = _as_mapping(payload.get("margin_etf_summary"))
     etf_packet = _as_mapping(payload.get("etf_packet"))
+    packet_candidate_lookup = {}
+    for raw_packet_candidate in _as_list(etf_packet.get("recommended_etfs")):
+        packet_candidate = _as_mapping(raw_packet_candidate)
+        key = _to_text(packet_candidate.get("code") or packet_candidate.get("name"))
+        if key:
+            packet_candidate_lookup[key] = packet_candidate
     candidates = _as_list(margin_summary.get("recommended_etfs")) or _as_list(etf_packet.get("recommended_etfs"))
     enriched = []
     for raw_candidate in candidates:
         candidate = _as_mapping(raw_candidate)
         if not candidate:
             continue
+        packet_candidate = packet_candidate_lookup.get(_to_text(candidate.get("code") or candidate.get("name"))) or {}
+        if packet_candidate:
+            merged_candidate = {**packet_candidate, **candidate}
+            if not candidate.get("evidence_items") and packet_candidate.get("evidence_items"):
+                merged_candidate["evidence_items"] = packet_candidate.get("evidence_items")
+            if not candidate.get("evidence_chain") and packet_candidate.get("evidence_chain"):
+                merged_candidate["evidence_chain"] = packet_candidate.get("evidence_chain")
+            if not candidate.get("evidence_chain_summary") and packet_candidate.get("evidence_chain_summary"):
+                merged_candidate["evidence_chain_summary"] = packet_candidate.get("evidence_chain_summary")
+            if not candidate.get("action_guardrail") and packet_candidate.get("action_guardrail"):
+                merged_candidate["action_guardrail"] = packet_candidate.get("action_guardrail")
+            candidate = merged_candidate
         evidence_rows = []
         counts = {"verified": 0, "review": 0, "blocked": 0, "waiting": 0}
         for raw_evidence in _as_list(candidate.get("evidence_chain")):
@@ -5872,6 +5890,190 @@ def build_holding_action(target: str = "", position_profile: Any = None, strateg
     }
 
 
+def _first_text_from_mapping(payload: Mapping[str, Any], *keys: str, default: str = "") -> str:
+    for key in keys:
+        value = _to_text(payload.get(key))
+        if value:
+            return value
+    return default
+
+
+def _first_number_from_mapping(payload: Mapping[str, Any], *keys: str) -> int | float | None:
+    for key in keys:
+        value = _to_number(payload.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _first_rows_from_mapping(payload: Mapping[str, Any], *keys: str) -> list:
+    for key in keys:
+        rows = _as_list(payload.get(key))
+        if rows:
+            return rows
+    return []
+
+
+def _normalize_next_ticket_state(value: Any = "") -> str:
+    text = _to_text(value)
+    if "准备" in text or "可执行" in text:
+        return "可准备"
+    if "验证" in text or "待补" in text or "等待" in text:
+        return "等验证"
+    return "只观察"
+
+
+def _text_items(value: Any) -> list[str]:
+    rows = _as_list(value)
+    if not rows and _to_text(value):
+        rows = [value]
+    return [_to_text(item) for item in rows if _to_text(item)]
+
+
+def _canonical_radar_row(row: Any, scan_state: Any = None, live_section: Any = None) -> dict:
+    row_map = _as_mapping(row)
+    scan = _as_mapping(scan_state)
+    live = _as_mapping(live_section)
+    candidate = _as_mapping(row_map.get("candidate")) or row_map
+    score = _as_mapping(row_map.get("score")) or row_map
+    context = _as_mapping(row_map.get("candidate_context"))
+    ticker = display_a_share_ticker(
+        _first_text_from_mapping(
+            candidate,
+            "ticker",
+            "symbol",
+            "ts_code",
+            "stock_code",
+            "code",
+            "股票代码",
+            "证券代码",
+        )
+        or _first_text_from_mapping(row_map, "ticker", "symbol", "ts_code", "stock_code", "code", "股票代码", "证券代码")
+        or _first_text_from_mapping(score, "ticker", "symbol", "ts_code", "stock_code", "code")
+    )
+    name = (
+        _first_text_from_mapping(candidate, "name", "stock_name", "short_name", "股票名称", "证券名称")
+        or _first_text_from_mapping(row_map, "name", "stock_name", "short_name", "股票名称", "证券名称")
+        or _first_text_from_mapping(score, "name", "stock_name", "short_name")
+    )
+    total_score = (
+        _first_number_from_mapping(score, "total_score", "score", "rank_score", "composite_score", "综合分")
+        if score
+        else None
+    )
+    if total_score is None:
+        total_score = _first_number_from_mapping(row_map, "total_score", "score", "rank_score", "composite_score", "综合分")
+    action_state = _normalize_next_ticket_state(
+        _first_text_from_mapping(
+            score,
+            "battle_state",
+            "status_label",
+            "action_state",
+            "state",
+            "status",
+        )
+        or _first_text_from_mapping(row_map, "battle_state", "status_label", "action_state", "state", "status")
+        or _first_text_from_mapping(candidate, "action_state", "state", "status")
+    )
+    reason = (
+        _first_text_from_mapping(score, "battle_state_reason", "rank_reason", "reason", "one_sentence_conclusion")
+        or _first_text_from_mapping(row_map, "rank_reason", "reason", "summary", "one_sentence_conclusion", "入选依据")
+        or "规则雷达缓存候选。"
+    )
+    trigger_conditions = (
+        _text_items(score.get("trigger_conditions"))
+        or _text_items(row_map.get("trigger_conditions"))
+        or _text_items(candidate.get("trigger_conditions"))
+    )
+    trigger_text = (
+        _first_text_from_mapping(
+            score,
+            "trigger_condition",
+            "entry_condition",
+            "entry",
+            "buy_condition",
+            "trigger",
+        )
+        or _first_text_from_mapping(row_map, "trigger_condition", "entry_condition", "entry", "buy_condition", "trigger", "触发条件")
+        or reason
+    )
+    invalid_conditions = (
+        _text_items(score.get("invalid_conditions") or score.get("invalidation_conditions"))
+        or _text_items(row_map.get("invalid_conditions") or row_map.get("invalidation_conditions"))
+        or _text_items(candidate.get("invalid_conditions") or candidate.get("invalidation_conditions"))
+    )
+    invalid_text = (
+        _first_text_from_mapping(score, "invalidation_condition", "invalid_condition", "fail_condition", "stop_condition")
+        or _first_text_from_mapping(row_map, "invalidation_condition", "invalid_condition", "fail_condition", "stop_condition", "失效条件")
+        or "市场转弱、候选评分下降或纪律信号反向时失效。"
+    )
+    source = (
+        _first_text_from_mapping(row_map, "source", "scan_source", "candidate_source")
+        or _first_text_from_mapping(context, "scan_source", "candidate_source")
+        or _first_text_from_mapping(scan, "source", "source_mode", "scan_source")
+        or _first_text_from_mapping(live, "source")
+        or "下一票雷达缓存"
+    )
+    updated_at = (
+        _first_text_from_mapping(row_map, "updated_at", "generated_at", "created_at", "finished_at")
+        or _first_text_from_mapping(scan, "updated_at", "generated_at", "finished_at")
+        or _first_text_from_mapping(live, "updated_at", "generated_at")
+        or "暂无"
+    )
+    canonical = dict(row_map)
+    canonical["candidate"] = {**candidate, "ticker": ticker, "name": name}
+    canonical["score"] = {
+        **score,
+        "ticker": ticker,
+        "name": name,
+        "total_score": total_score,
+        "battle_state": action_state,
+        "battle_state_reason": reason,
+        "trigger_condition": trigger_text,
+        "trigger_conditions": trigger_conditions or ([trigger_text] if trigger_text else []),
+        "invalidation_condition": invalid_text,
+        "invalid_conditions": invalid_conditions or ([invalid_text] if invalid_text else []),
+    }
+    canonical["ticker"] = ticker
+    canonical["name"] = name
+    canonical["action_state"] = action_state
+    canonical["status_label"] = action_state
+    canonical["score_value"] = total_score
+    canonical["trigger_condition"] = trigger_text
+    canonical["invalidation_condition"] = invalid_text
+    canonical["reason"] = reason
+    canonical["source"] = source
+    canonical["updated_at"] = updated_at
+    return canonical
+
+
+def _normalize_home_radar_candidate(row: Any, scan_state: Any = None, live_section: Any = None, rank: int = 0) -> dict:
+    canonical = _canonical_radar_row(row, scan_state=scan_state, live_section=live_section)
+    item = radar_packet_service.normalize_radar_candidate(
+        canonical,
+        scan_packet=scan_state,
+        live_section=live_section,
+        rank=rank,
+    )
+    item["ticker"] = display_a_share_ticker(item.get("ticker") or canonical.get("ticker"))
+    item["name"] = _to_text(item.get("name") or canonical.get("name"))
+    item["action_state"] = _normalize_next_ticket_state(item.get("action_state") or canonical.get("action_state"))
+    item["status_label"] = _normalize_next_ticket_state(item.get("status_label") or item.get("action_state"))
+    item["score"] = _to_number(item.get("score"))
+    if item["score"] is None:
+        item["score"] = _to_number(canonical.get("score_value"))
+    item["trigger_condition"] = _to_text(item.get("trigger_condition") or canonical.get("trigger_condition"), "等待规则雷达触发条件确认。")
+    item["invalidation_condition"] = _to_text(
+        item.get("invalidation_condition") or canonical.get("invalidation_condition"),
+        "市场转弱、候选评分下降或纪律信号反向时失效。",
+    )
+    item["reason"] = _to_text(item.get("reason") or canonical.get("reason"), "规则雷达缓存候选。")
+    item["source"] = _to_text(item.get("source") or canonical.get("source"), "下一票雷达缓存")
+    item["updated_at"] = _to_text(item.get("updated_at") or canonical.get("updated_at"), "暂无")
+    item["deepseek_called"] = False
+    return item
+
+
 def _candidate_from_row(row: Any, scan_state: Any = None, live_section: Any = None) -> dict:
     row_map = _as_mapping(row)
     scan = _as_mapping(scan_state)
@@ -5910,19 +6112,46 @@ def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, l
             live_packet=live_packet,
             limit=limit,
         )
-        return _as_list(enriched.get("top_candidates"))[:limit]
+        enriched_candidates = [
+            item
+            for item in _as_list(enriched.get("top_candidates"))[:limit]
+            if _to_text(_as_mapping(item).get("ticker"))
+        ]
+        if enriched_candidates:
+            return enriched_candidates
     live = _as_mapping(live_packet)
     live_section = _as_mapping(live.get("next_ticket"))
     scan_state = _as_mapping(state_map.get("radar_scan_results"))
-    rows = _as_list(live_section.get("top_candidates"))
+    summary = _as_mapping(state_map.get("radar_scan_summary") or scan_state.get("summary"))
+    home_snapshot = _as_mapping(state_map.get("command_center_home_snapshot"))
+    snapshot_radar_packet = _as_mapping(home_snapshot.get("radar_packet"))
+    rows = _first_rows_from_mapping(live_section, "top_candidates", "candidates", "next_ticket_candidates")
     if not rows:
-        rows = _as_list(scan_state.get("rule_rows") or scan_state.get("results"))
+        rows = _first_rows_from_mapping(
+            scan_state,
+            "rule_rows",
+            "results",
+            "top_candidates",
+            "candidates",
+            "candidate_rows",
+        )
+    if not rows:
+        rows = _first_rows_from_mapping(
+            summary,
+            "rule_rows",
+            "results",
+            "top_candidates",
+            "candidates",
+            "candidate_rows",
+        )
+    if not rows:
+        rows = _as_list(home_snapshot.get("next_ticket_candidates")) or _as_list(snapshot_radar_packet.get("top_candidates"))
     candidates = []
     seen = set()
     for row in rows:
-        item = radar_packet_service.normalize_radar_candidate(
+        item = _normalize_home_radar_candidate(
             row,
-            scan_packet=scan_state,
+            scan_state=scan_state or summary,
             live_section=live_section,
             rank=len(candidates) + 1,
         )
@@ -5934,28 +6163,135 @@ def extract_next_ticket_candidates(state: Any = None, live_packet: Any = None, l
     return candidates[:limit]
 
 
-def _flatten_etf_candidates(candidates: Any) -> list[dict]:
+def _normalize_etf_status_label(value: Any = "") -> str:
+    text = _to_text(value)
+    if "不追" in text or "追高" in text or "过热" in text:
+        return "不追高"
+    if "配置" in text or "进攻" in text or "可用" in text or "准备" in text:
+        return "可配置"
+    return "观察"
+
+
+def _flatten_etf_allocation_rows(candidates: Any, *, source: str = "", updated_at: str = "") -> list[dict]:
     rows = []
     if isinstance(candidates, Mapping):
         for bucket, items in candidates.items():
+            bucket_payload = _as_mapping(items)
+            if bucket_payload and _as_list(bucket_payload.get("candidate_etfs")):
+                for item in _as_list(bucket_payload.get("candidate_etfs")):
+                    payload = _as_mapping(item)
+                    if not payload and _to_text(item):
+                        payload = {"etf_code": _to_text(item)}
+                    if payload:
+                        payload.setdefault("bucket", bucket)
+                        payload.setdefault("recommended_ratio", bucket_payload.get("ratio_pct"))
+                        payload.setdefault("recommended_amount", bucket_payload.get("amount"))
+                        payload.setdefault("source", source)
+                        payload.setdefault("updated_at", updated_at)
+                        rows.append(payload)
+                continue
+            if bucket_payload and (
+                bucket_payload.get("code")
+                or bucket_payload.get("etf_code")
+                or bucket_payload.get("name")
+                or bucket_payload.get("etf_name")
+            ):
+                payload = dict(bucket_payload)
+                payload.setdefault("bucket", bucket)
+                payload.setdefault("source", source)
+                payload.setdefault("updated_at", updated_at)
+                rows.append(payload)
+                continue
             for item in _as_list(items):
                 payload = _as_mapping(item)
                 if payload:
                     payload.setdefault("bucket", bucket)
+                    payload.setdefault("source", source)
+                    payload.setdefault("updated_at", updated_at)
                     rows.append(payload)
     else:
-        rows = [_as_mapping(item) for item in _as_list(candidates)]
+        for item in _as_list(candidates):
+            payload = _as_mapping(item)
+            if payload:
+                payload.setdefault("source", source)
+                payload.setdefault("updated_at", updated_at)
+                rows.append(payload)
+    return [row for row in rows if row]
+
+
+def _flatten_etf_candidates(candidates: Any, *, allocation: Any = None, live_section: Any = None, source: str = "", updated_at: str = "") -> list[dict]:
+    allocation_map = _as_mapping(allocation)
+    live_map = _as_mapping(live_section)
+    source_text = source or _to_text(allocation_map.get("data_source") or live_map.get("source"), "融资 ETF 本地配置")
+    updated_text = updated_at or _to_text(
+        allocation_map.get("updated_at")
+        or allocation_map.get("generated_at")
+        or live_map.get("updated_at"),
+        "暂无",
+    )
+    rows = _flatten_etf_allocation_rows(candidates, source=source_text, updated_at=updated_text)
+    bucket_budget = _as_mapping(allocation_map.get("recommended_etf_allocation"))
     normalized = []
     for row in rows:
         if not row:
             continue
+        bucket = _to_text(row.get("bucket") or row.get("theme") or row.get("category"), "ETF")
+        bucket_plan = _as_mapping(bucket_budget.get(bucket))
+        ratio = _first_number_from_mapping(
+            row,
+            "recommended_ratio",
+            "suggested_ratio",
+            "target_ratio",
+            "ratio_pct",
+            "weight",
+            "target_weight",
+            "allocation_ratio",
+        )
+        if ratio is None:
+            ratio = _to_number(bucket_plan.get("ratio_pct"))
+        amount = _first_number_from_mapping(
+            row,
+            "recommended_amount",
+            "suggested_amount",
+            "target_amount",
+            "allocation_amount",
+            "amount",
+        )
+        if amount is None:
+            amount = _to_number(bucket_plan.get("amount"))
+        action_state = _to_text(row.get("status_label") or row.get("action_state") or row.get("advice") or row.get("signal") or row.get("state"), "观察")
+        status_label = _normalize_etf_status_label(action_state)
+        if status_label == "不追高":
+            action_state = "不追高"
+        elif status_label == "可配置":
+            action_state = "可配置"
+        else:
+            action_state = "观察"
+        reason = _to_text(
+            row.get("reason")
+            or row.get("trigger_condition")
+            or row.get("condition")
+            or row.get("risk_note")
+            or row.get("summary")
+            or allocation_map.get("summary"),
+            "等待回踩、量能和风险线确认。",
+        )
         normalized.append(
             {
                 "code": _to_text(row.get("etf_code") or row.get("code") or row.get("ts_code")),
                 "name": _to_text(row.get("etf_name") or row.get("name")),
-                "bucket": _to_text(row.get("bucket") or row.get("theme"), "ETF"),
+                "bucket": bucket,
                 "score": _to_number(row.get("total_score") or row.get("score")),
-                "action_state": _to_text(row.get("action_state") or row.get("advice"), "只观察不追"),
+                "recommended_ratio": ratio,
+                "recommended_amount": amount,
+                "weight": ratio,
+                "action_state": action_state,
+                "status_label": status_label,
+                "reason": reason,
+                "trigger_condition": _to_text(row.get("trigger_condition") or reason, "等待回踩、量能和风险线确认。"),
+                "risk_note": _to_text(row.get("risk_note") or allocation_map.get("no_chase_warning"), "ETF 需复核流动性、跟踪指数、同类重叠和追高风险。"),
+                "source": _to_text(row.get("source") or source_text, "融资 ETF 本地配置"),
+                "updated_at": _to_text(row.get("updated_at") or updated_text, "暂无"),
             }
         )
     return normalized[:MAX_CANDIDATES]
@@ -5990,7 +6326,32 @@ def build_margin_etf_summary(state: Any = None, live_packet: Any = None, etf_pac
     live_section = _as_mapping(_as_mapping(live_packet).get("margin_etf"))
     etf = _as_mapping(etf_packet) or etf_packet_service.build_command_center_etf_packet(state_map, live_packet)
     allocation = _as_mapping(state_map.get("legacy_margin_etf_allocation_result"))
-    candidates = _as_list(etf.get("recommended_etfs")) or _flatten_etf_candidates(allocation.get("selected_etf_candidates") or allocation.get("recommended_etfs"))
+    daily = _as_mapping(state_map.get("legacy_margin_etf_daily_packet"))
+    home_snapshot = _as_mapping(state_map.get("command_center_home_snapshot"))
+    snapshot_summary = _as_mapping(home_snapshot.get("margin_etf_summary"))
+    snapshot_packet = _as_mapping(home_snapshot.get("etf_packet"))
+    candidates = []
+    for source_candidates, source_payload in (
+        (live_section.get("recommended_etfs") or live_section.get("etf_candidates") or live_section.get("candidates"), live_section),
+        (allocation.get("selected_etf_candidates"), allocation),
+        (allocation.get("recommended_etfs"), allocation),
+        (allocation.get("recommended_etf_allocation"), allocation),
+        (allocation.get("etf_score_table"), allocation),
+        (daily.get("selected_etf_candidates") or daily.get("recommended_etfs"), daily),
+        (_as_mapping(daily.get("score_packet")).get("rows"), daily),
+        (snapshot_summary.get("recommended_etfs"), snapshot_summary),
+        (snapshot_packet.get("recommended_etfs"), snapshot_packet),
+        (etf.get("recommended_etfs"), etf),
+    ):
+        candidates = _flatten_etf_candidates(
+            source_candidates,
+            allocation=allocation or source_payload,
+            live_section=live_section,
+            source=_to_text(_as_mapping(source_payload).get("source") or _as_mapping(source_payload).get("data_source")),
+            updated_at=_to_text(_as_mapping(source_payload).get("updated_at") or _as_mapping(source_payload).get("generated_at")),
+        )
+        if candidates:
+            break
     watch_not_chase = etf.get("watch_not_chase") or allocation.get("watch_not_chase") or allocation.get("watch_not_chase_etfs") or []
     watch_not_chase_items = [_to_text(item) for item in _as_list(watch_not_chase)]
     watch_not_chase_items = [item for item in watch_not_chase_items if item]
@@ -6334,7 +6695,51 @@ def build_home_action_snapshot(
         )
     if radar_packet is None:
         radar_packet = radar_packet_service.build_command_center_radar_packet(state_map, live)
+    next_ticket_candidates = extract_next_ticket_candidates(
+        {
+            **state_map,
+            "command_center_radar_packet": radar_packet,
+        },
+        live,
+    )
+    if next_ticket_candidates and not _as_list(_as_mapping(radar_packet).get("top_candidates")):
+        radar_packet = radar_packet_service.build_command_center_radar_packet(
+            {
+                "command_center_radar_packet": {
+                    **_as_mapping(radar_packet),
+                    "status": "ready",
+                    "source": _to_text(_as_mapping(radar_packet).get("source"), "下一票雷达缓存"),
+                    "generated_at": _to_text(_as_mapping(radar_packet).get("generated_at") or live.get("updated_at") or live.get("generated_at")),
+                    "top_candidates": next_ticket_candidates,
+                }
+            },
+            live_packet=live,
+        )
+        next_ticket_candidates = extract_next_ticket_candidates(
+            {"command_center_radar_packet": radar_packet},
+            live,
+        )
     etf_packet = etf_packet_service.build_command_center_etf_packet(state_map, live)
+    margin_etf_summary = build_margin_etf_summary(state_map, live, etf_packet=etf_packet)
+    if margin_etf_summary.get("recommended_etfs") and not _as_list(_as_mapping(etf_packet).get("recommended_etfs")):
+        etf_packet = etf_packet_service.build_command_center_etf_packet(
+            {
+                "command_center_etf_packet": {
+                    **_as_mapping(etf_packet),
+                    "status": "ready",
+                    "source": _to_text(_as_mapping(etf_packet).get("source"), "融资 ETF 配置缓存"),
+                    "updated_at": _to_text(_as_mapping(etf_packet).get("updated_at") or live.get("updated_at") or live.get("generated_at")),
+                    "recommended_margin_ratio": margin_etf_summary.get("recommended_margin_ratio"),
+                    "recommended_cash_ratio": margin_etf_summary.get("recommended_cash_ratio"),
+                    "current_margin_ratio": margin_etf_summary.get("current_margin_ratio"),
+                    "today_main_direction": margin_etf_summary.get("today_main_direction"),
+                    "recommended_etfs": margin_etf_summary.get("recommended_etfs"),
+                    "watch_not_chase": margin_etf_summary.get("watch_not_chase"),
+                }
+            },
+            live_packet=live,
+        )
+        margin_etf_summary = build_margin_etf_summary(state_map, live, etf_packet=etf_packet)
     discipline_packet = discipline_packet_service.build_command_center_discipline_packet(
         state_map,
         live_packet=live,
@@ -6490,7 +6895,7 @@ def build_home_action_snapshot(
         "strategy_packet": strategy,
         "today_action": build_today_action(decision),
         "holding_action": build_holding_action(target=target, position_profile=position_profile, strategy_packet=strategy, state=state_map),
-        "next_ticket_candidates": extract_next_ticket_candidates({"command_center_radar_packet": radar_packet}, live),
+        "next_ticket_candidates": next_ticket_candidates,
         "radar_packet": radar_packet_service.build_command_center_radar_packet(
             {"command_center_radar_packet": radar_packet},
             live_packet=live,
@@ -6507,7 +6912,7 @@ def build_home_action_snapshot(
         "a_share_fact_recovery_summary": {},
         "legacy_decision_chain_summary": {},
         "legacy_a_share_gap_summary": {},
-        "margin_etf_summary": build_margin_etf_summary(state_map, live, etf_packet=etf_packet),
+        "margin_etf_summary": margin_etf_summary,
         "risk_alerts": risk_alerts,
         "data_coverage": coverage,
         "data_freshness": build_data_freshness(timestamp, errors, deepseek_called=deepseek_called),
