@@ -12,6 +12,7 @@ DEFAULT_HORIZON_DAYS = 10
 HISTORICAL_DAYS = 10
 SOURCE_READY = "command_center_projection / packet cache"
 SOURCE_FALLBACK = "command_center_projection / 示例路径，待刷新"
+SOURCE_DEEPSEEK_OVERLAY = "command_center_projection / DeepSeek manual overlay"
 
 
 def _as_mapping(value: Any) -> dict:
@@ -208,6 +209,278 @@ def _curve_points(base_value: float, target_pct: float, horizon_days: int, tone_
         points.append({"t": day, "value": round(value, 4)})
     points[0]["value"] = round(base_value, 4)
     return points
+
+
+def _clamp_number(value: Any, minimum: float, maximum: float, default: float | None = None) -> float | None:
+    number = _to_number(value, default)
+    if number is None:
+        return default
+    return min(maximum, max(minimum, number))
+
+
+def _bounded_text(value: Any, fallback: str = "", limit: int = 160) -> str:
+    text = _to_text(value, fallback)
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."
+
+
+def _find_overlay_path(paths: list, index: int, name: str) -> dict:
+    if index < len(paths):
+        direct = _as_mapping(paths[index])
+        if direct:
+            return direct
+    name_text = _to_text(name)
+    for raw in paths:
+        item = _as_mapping(raw)
+        item_name = _to_text(item.get("name") or item.get("path_name") or item.get("label"))
+        if item_name and (item_name in name_text or name_text in item_name):
+            return item
+    return {}
+
+
+def _overlay_probability(overlay: Mapping[str, Any], overlay_path: Mapping[str, Any], index: int, fallback: Any) -> int:
+    keys = [
+        ("optimistic", "bullish", "乐观"),
+        ("neutral", "base", "中性"),
+        ("cautious", "bearish", "谨慎"),
+    ][index]
+    probability_map = _as_mapping(overlay.get("probability") or overlay.get("probabilities"))
+    raw = overlay_path.get("probability") or overlay_path.get("prob") or overlay_path.get("weight")
+    if raw in [None, ""]:
+        raw = next((probability_map.get(key) for key in keys if probability_map.get(key) not in [None, ""]), None)
+    value = _clamp_number(raw, 5, 90)
+    if value is None:
+        value = _clamp_number(fallback, 5, 90, 33)
+    return int(round(value or 33))
+
+
+def _normalize_probabilities(values: list[int]) -> list[int]:
+    total = sum(value for value in values if value > 0)
+    if total <= 0:
+        return [25, 50, 25]
+    normalized = [max(5, int(round(value * 100 / total))) for value in values]
+    delta = 100 - sum(normalized)
+    if normalized:
+        target_index = max(range(len(normalized)), key=lambda index: normalized[index])
+        normalized[target_index] = max(5, normalized[target_index] + delta)
+    return normalized
+
+
+def _sanitize_overlay_points(
+    raw_points: Any,
+    *,
+    base_value: float,
+    horizon_days: int,
+) -> list[dict]:
+    points = []
+    seen = set()
+    for raw in _as_list(raw_points):
+        item = _as_mapping(raw)
+        t_value = item.get("t")
+        if t_value in [None, ""]:
+            t_value = item.get("day")
+        t_number = _to_number(t_value)
+        value = _clamp_number(item.get("value") or item.get("price"), base_value * 0.72, base_value * 1.28)
+        if t_number is None or value is None:
+            continue
+        t = int(round(t_number))
+        if t < 0 or t > horizon_days or t in seen:
+            continue
+        seen.add(t)
+        points.append({"t": t, "value": round(value, 4)})
+    if not points:
+        return []
+    points.sort(key=lambda item: item["t"])
+    if points[0]["t"] != 0:
+        points.insert(0, {"t": 0, "value": round(base_value, 4)})
+    else:
+        points[0]["value"] = round(base_value, 4)
+    if points[-1]["t"] < horizon_days:
+        points.append({"t": horizon_days, "value": points[-1]["value"]})
+    return points
+
+
+def _overlay_points(
+    overlay_path: Mapping[str, Any],
+    current_path: Mapping[str, Any],
+    *,
+    base_value: float,
+    horizon_days: int,
+    tone_index: int,
+) -> list[dict]:
+    raw_points = overlay_path.get("points") or overlay_path.get("curve_points") or overlay_path.get("path_points")
+    points = _sanitize_overlay_points(raw_points, base_value=base_value, horizon_days=horizon_days)
+    if points:
+        return points
+    target_pct = _clamp_number(
+        overlay_path.get("target_pct")
+        or overlay_path.get("target_change_pct")
+        or overlay_path.get("expected_return_pct"),
+        -18,
+        18,
+    )
+    if target_pct is not None:
+        return _curve_points(base_value, target_pct, horizon_days, tone_index)
+    current_points = _as_list(current_path.get("points"))
+    return current_points if current_points else _curve_points(base_value, 0, horizon_days, tone_index)
+
+
+def build_deepseek_projection_prompt_context(
+    *,
+    target: Any = "",
+    market_type: Any = "",
+    position_profile: Any = None,
+    live_packet: Any = None,
+    decision_packet: Any = None,
+    strategy_packet: Any = None,
+    projection_packet: Any = None,
+    home_snapshot: Any = None,
+    quant_packet: Any = None,
+    discipline_packet: Any = None,
+) -> dict:
+    """Build a compact, serializable context for a manual DeepSeek projection overlay."""
+    projection = _as_mapping(projection_packet)
+    return {
+        "target": _to_text(target),
+        "market_type": _to_text(market_type, projection.get("market_type") or "未知"),
+        "position_profile": _as_mapping(position_profile),
+        "current_price_anchor": projection.get("base_value"),
+        "horizon_days": projection.get("horizon_days") or DEFAULT_HORIZON_DAYS,
+        "existing_projection": {
+            "status": projection.get("status"),
+            "base_value": projection.get("base_value"),
+            "path_basis": projection.get("path_basis"),
+            "paths": projection.get("paths") or [],
+            "data_health": projection.get("path_data_health_summary"),
+            "a_share_fact": projection.get("path_fact_recovery_summary"),
+            "legacy_chain": projection.get("path_legacy_decision_chain_summary"),
+        },
+        "decision_packet": _as_mapping(decision_packet),
+        "strategy_packet": _as_mapping(strategy_packet),
+        "live_packet": _as_mapping(live_packet),
+        "home_snapshot": _as_mapping(home_snapshot),
+        "quant_packet": _as_mapping(quant_packet),
+        "discipline_packet": _as_mapping(discipline_packet),
+    }
+
+
+def merge_deepseek_projection_overlay(
+    projection_packet: Any,
+    overlay_packet: Any = None,
+    *,
+    now: Any = None,
+    model: str = "deepseek-chat",
+    raw_text: Any = None,
+    token_estimate: Any = None,
+) -> dict:
+    """Merge a manually-triggered DeepSeek projection overlay into a safe local packet."""
+    payload = dict(_as_mapping(projection_packet) or build_projection_packet(now=now))
+    overlay = _as_mapping(overlay_packet)
+    if not overlay:
+        payload["deepseek_overlay_parse_error"] = "DeepSeek 未返回可解析 JSON；保留原始规则推演。"
+        return payload
+
+    horizon = _clamp_horizon(payload.get("horizon_days") or DEFAULT_HORIZON_DAYS)
+    base_value = _to_number(payload.get("base_value"), 100.0) or 100.0
+    raw_overlay_paths = _as_list(overlay.get("paths") or overlay.get("projection_paths") or overlay.get("scenarios"))
+    current_paths = [_as_mapping(path) for path in _as_list(payload.get("paths"))[:3]]
+    if len(current_paths) < 3:
+        current_paths = build_projection_packet(now=now)["paths"]
+
+    probabilities = []
+    for index, current_path in enumerate(current_paths[:3]):
+        overlay_path = _find_overlay_path(raw_overlay_paths, index, _to_text(current_path.get("name")))
+        probabilities.append(_overlay_probability(overlay, overlay_path, index, current_path.get("probability")))
+    probabilities = _normalize_probabilities(probabilities)
+
+    enhanced_paths = []
+    for index, current_path in enumerate(current_paths[:3]):
+        overlay_path = _find_overlay_path(raw_overlay_paths, index, _to_text(current_path.get("name")))
+        item = dict(current_path)
+        item["probability"] = probabilities[index]
+        item["points"] = _overlay_points(
+            overlay_path,
+            current_path,
+            base_value=base_value,
+            horizon_days=horizon,
+            tone_index=index,
+        )
+        item["trigger"] = _bounded_text(
+            overlay_path.get("trigger") or overlay_path.get("condition") or current_path.get("trigger"),
+            "等待价格、量能、量化和交易纪律共同确认。",
+            220,
+        )
+        item["action"] = _bounded_text(
+            overlay_path.get("action") or overlay_path.get("suggested_action") or current_path.get("action"),
+            "只观察或按纪律小幅试探。",
+            180,
+        )
+        item["risk"] = _bounded_text(
+            overlay_path.get("risk") or overlay_path.get("risk_note") or current_path.get("risk"),
+            "若价格、公告或纪律转弱，优先降风险。",
+            220,
+        )
+        item["risk_note"] = item["risk"]
+        rationale = _bounded_text(
+            overlay_path.get("rationale") or overlay_path.get("reason") or overlay_path.get("basis"),
+            "",
+            220,
+        )
+        if rationale:
+            item["deepseek_rationale"] = rationale
+        item["deepseek_enhanced"] = True
+        item["deepseek_source"] = "manual_projection_overlay"
+        enhanced_paths.append(item)
+
+    summary = _bounded_text(
+        overlay.get("summary") or overlay.get("path_basis") or overlay.get("rationale"),
+        "DeepSeek 手动增强：基于当前结构化数据、量化推演和交易纪律整理三路径。",
+        240,
+    )
+    discipline_notes = [
+        _bounded_text(item, limit=120)
+        for item in _as_list(overlay.get("discipline_notes") or overlay.get("discipline_checks"))
+        if _to_text(item)
+    ][:5]
+    quant_notes = [
+        _bounded_text(item, limit=120)
+        for item in _as_list(overlay.get("quant_notes") or overlay.get("quant_signals"))
+        if _to_text(item)
+    ][:5]
+    risk_alerts = [
+        _bounded_text(item, limit=120)
+        for item in _as_list(overlay.get("risk_alerts") or overlay.get("risks"))
+        if _to_text(item)
+    ][:5]
+
+    payload["paths"] = enhanced_paths
+    payload["status"] = "ready" if payload.get("status") in {"waiting", "cached", "ready"} else payload.get("status", "ready")
+    payload["horizon_days"] = horizon
+    payload["source"] = SOURCE_DEEPSEEK_OVERLAY
+    payload["updated_at"] = _now_iso(now)
+    payload["deepseek_called"] = True
+    payload["deepseek_mode"] = "manual_projection_overlay"
+    payload["deepseek_projection_summary"] = summary
+    payload["deepseek_projection_notes"] = {
+        "discipline_notes": discipline_notes,
+        "quant_notes": quant_notes,
+        "risk_alerts": risk_alerts,
+    }
+    payload["deepseek_projection"] = {
+        "status": "enhanced",
+        "generated_at": payload["updated_at"],
+        "model": model,
+        "manual_trigger": True,
+        "external_call_policy": "manual_button",
+        "summary": summary,
+        "token_estimate": token_estimate,
+        "raw_text_available": bool(_to_text(raw_text)),
+    }
+    payload["path_basis"] = _append_evidence_text(payload.get("path_basis"), f"DeepSeek 手动增强：{summary}")
+    payload["note"] = "DeepSeek 手动增强曲线；只整理路径、触发条件和纪律边界，不自动交易。"
+    payload["is_fallback"] = False
+    return payload
 
 
 def _default_path_meta(strategy_packet: Mapping[str, Any]) -> list[dict]:

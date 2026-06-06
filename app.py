@@ -5895,6 +5895,131 @@ def _run_command_center_full_war_game(target="", market_type="", position_profil
     return summary, live_packet, decision_packet, strategy_packet, projection_packet
 
 
+def _parse_deepseek_json_payload(content):
+    if isinstance(content, dict):
+        return content
+    if not isinstance(content, str):
+        return {}
+    text = content.strip()
+    if not text:
+        return {}
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except Exception:
+            return {}
+    return {}
+
+
+def _run_command_center_deepseek_projection_overlay(
+    *,
+    target="",
+    market_type="",
+    position_profile=None,
+    live_packet=None,
+    decision_packet=None,
+    strategy_packet=None,
+    projection_packet=None,
+    home_snapshot=None,
+):
+    base_projection = projection_packet or st.session_state.get("command_center_projection_packet") or {}
+    live_payload = live_packet or st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
+    quant_packet = (
+        live_payload.get("quant")
+        if isinstance(live_payload, dict)
+        else {}
+    ) or st.session_state.get("command_center_quant_packet") or {}
+    discipline_packet = (
+        live_payload.get("discipline")
+        if isinstance(live_payload, dict)
+        else {}
+    ) or st.session_state.get("command_center_discipline_packet") or st.session_state.get("discipline_backtest_packet") or {}
+    prompt_context = projection_service.build_deepseek_projection_prompt_context(
+        target=target,
+        market_type=market_type,
+        position_profile=position_profile,
+        live_packet=live_payload,
+        decision_packet=decision_packet or st.session_state.get("command_center_decision_packet") or {},
+        strategy_packet=strategy_packet or st.session_state.get("strategy_execution_packet") or {},
+        projection_packet=base_projection,
+        home_snapshot=home_snapshot or st.session_state.get("command_center_home_snapshot") or {},
+        quant_packet=quant_packet,
+        discipline_packet=discipline_packet,
+    )
+    prompt = f"""
+你是 stock-MING 的趋势推演整理器。请只基于输入的结构化 packet，手动增强未来 5-10 个交易日三路径曲线。
+
+硬性要求：
+1. 只输出 JSON，不要 Markdown，不要解释前缀。
+2. 不得编造未在 packet 中出现的公告、资金流、舆情、价格或新闻。
+3. 必须把“量化推演”和“交易纪律实验室”的证据纳入路径触发条件；缺失就写“待验证”并降低乐观概率。
+4. 公告/硬风险、减持、融资风险、成本价、持仓数量、当前价必须优先进入风险提示。
+5. DeepSeek 只做解释和路径整理，不给自动下单指令。
+6. 曲线锚定 current_price_anchor；如果没有把握，给 target_pct，不要乱造逐日价格。
+
+JSON schema:
+{{
+  "summary": "一句话说明本轮路径依据和置信度",
+  "probability": {{"optimistic": 25, "neutral": 50, "cautious": 25}},
+  "paths": [
+    {{
+      "name": "乐观路径",
+      "probability": 25,
+      "target_pct": 3.2,
+      "trigger": "触发条件",
+      "action": "对应动作",
+      "risk": "风险提示",
+      "rationale": "为何这样画曲线",
+      "points": [{{"t": 0, "value": 100.0}}, {{"t": 5, "value": 102.0}}, {{"t": 10, "value": 103.2}}]
+    }},
+    {{"name": "中性路径", "probability": 50, "target_pct": 0.8, "trigger": "", "action": "", "risk": "", "rationale": ""}},
+    {{"name": "谨慎路径", "probability": 25, "target_pct": -3.0, "trigger": "", "action": "", "risk": "", "rationale": ""}}
+  ],
+  "quant_notes": ["量化证据或缺口"],
+  "discipline_notes": ["交易纪律边界"],
+  "risk_alerts": ["公告/融资/价格/数据缺口风险"]
+}}
+
+输入 packet:
+{json.dumps(prompt_context, ensure_ascii=False, indent=2, default=str)[:14000]}
+"""
+    raw = call_deepseek_non_stream(
+        prompt,
+        system_role="你是克制的交易路径建模助手，只基于用户提供的结构化 packet 生成可验证三路径 JSON，不编造实时事实。",
+        max_tokens=2200,
+    )
+    parsed = _parse_deepseek_json_payload(raw)
+    enhanced = projection_service.merge_deepseek_projection_overlay(
+        base_projection,
+        parsed,
+        now=_cc_now(),
+        model="deepseek-chat",
+        raw_text=raw,
+        token_estimate=estimate_tokens(raw or ""),
+    )
+    if parsed:
+        st.session_state["command_center_projection_packet"] = enhanced
+        page_packet = dict(st.session_state.get("command_center_auto_analysis_packet") or {})
+        page_packet["projection_packet"] = enhanced
+        st.session_state["command_center_auto_analysis_packet"] = page_packet
+        st.session_state["command_center_deepseek_projection_generated_at"] = enhanced.get("updated_at")
+        st.session_state["command_center_deepseek_projection_raw"] = raw or ""
+    return enhanced, parsed, raw
+
+
 def _enrich_position_profile_for_command_center(profile=None, *, horizon="", margin_ratio_pct=0):
     enriched = dict(profile or {})
     margin_ratio = _num(margin_ratio_pct, 0) or 0
@@ -6652,20 +6777,82 @@ def render_command_center_position_context_note(label, position_profile=None, pr
     st.caption(f"{label}：{_command_center_position_context_text(position_profile, price_detail)}")
 
 
-def render_command_center_decision_trade_panel(decision_packet=None, strategy_packet=None):
+def _first_projection_path_text(projection_packet=None, path_name="", field="trigger", fallback="等待验证。"):
+    packet = projection_packet if isinstance(projection_packet, dict) else {}
+    for path in packet.get("paths") or []:
+        if not isinstance(path, dict):
+            continue
+        name = str(path.get("name") or "")
+        if path_name in name:
+            return _home_trade_text(path.get(field) or path.get("condition"), fallback)
+    return fallback
+
+
+def render_command_center_decision_trade_panel(
+    decision_packet=None,
+    strategy_packet=None,
+    position_profile=None,
+    price_detail=None,
+    projection_packet=None,
+):
     decision = decision_packet if isinstance(decision_packet, dict) else {}
     strategy = strategy_packet if isinstance(strategy_packet, dict) else {}
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    detail = price_detail if isinstance(price_detail, dict) else {}
     action = decision.get("overall_action") or "等待"
     position_mode = decision.get("position_mode") or (strategy.get("risk_budget") or {}).get("position_mode") or "待确认"
     margin_mode = decision.get("margin_mode") or "不使用融资"
     risk_level = decision.get("risk_level") or (strategy.get("risk_budget") or {}).get("risk_level") or "中"
+    current_price = profile.get("current_price")
+    if current_price is None:
+        current_price = detail.get("price")
+    cost_price = profile.get("cost_price")
+    shares = _num(profile.get("holding_units"), 0) or 0
+    margin_ratio = _num(profile.get("margin_ratio_pct"), 0) or 0
+    pnl_text = profile.get("profit_state") or "盈亏未计算"
     reason = _home_trade_text(
         decision.get("reason_summary") or strategy.get("summary"),
         "当前结论仍需价格、趋势和纪律条件确认。",
     )
+    if shares <= 0:
+        today_action = "空仓观察，不追高"
+    elif any(key in str(action) for key in ["降风险", "减仓", "禁止", "卖"]):
+        today_action = "先降风险，压低仓位"
+    elif any(key in str(action) for key in ["进攻", "试探", "加仓", "买入"]):
+        today_action = "只允许小幅试探"
+    else:
+        today_action = "持仓观察，不主动加仓"
+    price_anchor = (
+        f"现价 {_fmt_price(current_price, profile.get('currency') or '')} ｜ "
+        f"成本 {_fmt_price(cost_price, profile.get('currency') or '')} ｜ "
+        f"持仓 {_display_text(profile.get('holding_units'), '0')} 股 ｜ "
+        f"{pnl_text}"
+    )
+    trigger_line = _home_trade_text(
+        (decision.get("next_validation_conditions") or [None])[0]
+        if isinstance(decision.get("next_validation_conditions"), list)
+        else "",
+        _first_projection_path_text(projection_packet, "乐观", "trigger", "放量站稳关键位，量化和纪律同向后再考虑。"),
+    )
+    invalidation_line = _home_trade_text(
+        (strategy.get("invalidation_condition") or strategy.get("invalid_condition") or "")
+        if isinstance(strategy, dict)
+        else "",
+        _first_projection_path_text(projection_packet, "谨慎", "trigger", "跌破纪律线、公告/硬风险转弱或数据缺口扩大。"),
+    )
+    margin_line = (
+        f"当前融资 {margin_ratio:.1f}%；未确认强触发前不加杠杆，风险升高先降融资。"
+        if margin_ratio > 0
+        else "当前未使用融资；不因单次推演主动加杠杆。"
+    )
+    next_button = "下一步：先点满血数据刷新；再点满血综合推演；需要解释时再点 DeepSeek。"
+    if projection_packet and (projection_packet or {}).get("deepseek_called"):
+        next_button = "下一步：按三路径触发条件观察；若价格/公告变化，先刷新数据再重新增强。"
+    elif projection_packet and (projection_packet or {}).get("status") in {"ready", "cached"}:
+        next_button = "下一步：如要模型整理曲线，再点 DeepSeek 增强趋势推演。"
     validations = _home_trade_items(
         decision.get("next_validation_conditions") or [],
-        fallback_items=["确认量价方向没有转弱。", "仓位动作必须落在风险预算内。", "触发失效条件后重新生成结论。"],
+        fallback_items=[trigger_line, "仓位动作必须落在风险预算内。", "触发失效条件后重新生成结论。"],
         limit=3,
     )
     must_not = _home_trade_items(
@@ -6675,12 +6862,30 @@ def render_command_center_decision_trade_panel(decision_packet=None, strategy_pa
     )
     with st.container(border=True):
         st.markdown("### 今日总决策")
+        st.markdown(
+            f"""
+            <div style="border:1px solid rgba(15,23,42,.10);border-radius:8px;padding:14px 16px;background:rgba(255,255,255,.78);margin:6px 0 12px;">
+              <div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:6px;">今天怎么处理</div>
+              <div style="font-size:26px;line-height:1.2;font-weight:850;color:#0f172a;">{html_escape(today_action)}</div>
+              <div style="font-size:13px;color:#475569;line-height:1.55;margin-top:8px;">{html_escape(price_anchor)}</div>
+              <div style="font-size:13px;color:#475569;line-height:1.55;margin-top:6px;">原因：{html_escape(reason)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         cols = st.columns(4)
         cols[0].metric("总动作", action)
         cols[1].metric("当前持仓动作", position_mode)
         cols[2].metric("融资动作", margin_mode)
         cols[3].metric("风险等级", risk_level)
-        st.write(reason)
+        t1, t2, t3 = st.columns(3)
+        t1.markdown("**触发条件**")
+        t1.write(trigger_line)
+        t2.markdown("**失效条件**")
+        t2.write(invalidation_line)
+        t3.markdown("**融资处理**")
+        t3.write(margin_line)
+        st.info(next_button)
         left, right = st.columns(2)
         with left:
             st.markdown("**明日验证条件**")
@@ -6960,14 +7165,16 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         .st-key-btn_cc_limit_cpt_capability_check button,
         .st-key-btn_cc_chip_capability_check button,
         [class*="st-key-btn_cc_home_evidence_backfill_"] button,
-        .st-key-btn_cc_deepseek_explain button {
+        .st-key-btn_cc_deepseek_explain button,
+        .st-key-btn_cc_deepseek_projection_overlay button {
             border-radius: 14px !important;
             border: 1px solid rgba(20, 184, 166, 0.24) !important;
             background: linear-gradient(135deg, rgba(14,165,233,0.10), rgba(20,184,166,0.12)) !important;
             color: #0f766e !important;
             box-shadow: 0 10px 28px rgba(15,23,42,0.06) !important;
         }
-        .st-key-btn_cc_deepseek_explain button {
+        .st-key-btn_cc_deepseek_explain button,
+        .st-key-btn_cc_deepseek_projection_overlay button {
             background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(14,165,233,0.10)) !important;
             color: #6d28d9 !important;
             border-color: rgba(139, 92, 246, 0.20) !important;
@@ -7177,6 +7384,7 @@ packet:
         f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
         f"估算 Token：{st.session_state.token_usage.get('estimated_tokens', 0):,} ｜ "
         f"解释生成：{st.session_state.get(explanation_at_key) or '未生成'} ｜ "
+        f"趋势增强：{st.session_state.get('command_center_deepseek_projection_generated_at') or '未生成'} ｜ "
         f"{'本轮未调用 DeepSeek' if not direct_summary else direct_summary.get('deepseek_note', '本轮未调用 DeepSeek')}"
     )
     if isinstance(first_diagnosis_prewarm_packet, dict) and first_diagnosis_prewarm_packet.get("summary"):
@@ -7199,14 +7407,12 @@ packet:
         position_profile=position_profile,
         price_detail=page_price_detail,
     )
-    live_packet = render_command_center_decision_card(
-        live_packet,
-        target=target,
+    render_command_center_decision_trade_panel(
+        decision_packet=decision_packet,
+        strategy_packet=strategy_packet,
         position_profile=position_profile,
-        analysis_method_packet=analysis_method_packet,
+        price_detail=page_price_detail,
         projection_packet=projection_packet,
-        show_generate_button=False,
-        home_compact=True,
     )
     st.markdown("### 未来 5~10 日趋势推演")
     render_command_center_position_context_note(
@@ -7214,6 +7420,52 @@ packet:
         position_profile=position_profile,
         price_detail=page_price_detail,
     )
+    if st.button(
+        "DeepSeek 增强趋势推演",
+        key="btn_cc_deepseek_projection_overlay",
+        help="手动调用 DeepSeek，把当前量化推演、交易纪律、持仓和风险证据整理成三路径曲线；不会自动下单，也不会在普通刷新或切换页面时触发。",
+        width="stretch",
+    ):
+        status = st.status("正在手动增强趋势推演...", expanded=True)
+        status.write("先刷新当前标的作战上下文；DeepSeek 暂未调用。")
+        preflight_packet = _run_command_center_auto_page_cycle(
+            target=target,
+            market_type=market_type,
+            price_detail=page_price_detail,
+            position_profile=position_profile,
+            run_refresh=True,
+            run_provider_probes=True,
+        )
+        live_packet = preflight_packet.get("live_packet") or live_packet
+        decision_packet = preflight_packet.get("decision_packet") or decision_packet
+        strategy_packet = preflight_packet.get("strategy_packet") or strategy_packet
+        projection_packet = preflight_packet.get("projection_packet") or projection_packet
+        home_snapshot = preflight_packet.get("home_snapshot") or home_snapshot
+        page_price_detail = preflight_packet.get("price_detail") or page_price_detail
+        preflight_errors = preflight_packet.get("errors") or []
+        status.write("已重算策略执行、今日总决策和规则趋势；现在调用 DeepSeek 整理三路径。")
+        if preflight_errors:
+            status.write(f"刷新上下文有 {len(preflight_errors)} 个失败项；将继续使用可用缓存和失败原因。")
+        enhanced_projection, parsed_overlay, raw_overlay = _run_command_center_deepseek_projection_overlay(
+            target=target,
+            market_type=market_type,
+            position_profile=position_profile,
+            live_packet=live_packet,
+            decision_packet=decision_packet,
+            strategy_packet=strategy_packet,
+            projection_packet=projection_packet,
+            home_snapshot=home_snapshot,
+        )
+        if parsed_overlay:
+            projection_packet = enhanced_projection
+            status.write("DeepSeek 已返回结构化三路径；曲线、概率、触发条件和风险提示已合并。")
+            status.update(label="趋势推演已手动增强", state="complete", expanded=False)
+        else:
+            status.write("DeepSeek 未返回可解析 JSON；页面保留原规则趋势推演。")
+            if raw_overlay:
+                with st.expander("查看 DeepSeek 原始返回", expanded=False):
+                    st.write(raw_overlay)
+            status.update(label="趋势增强未合并，已保留原曲线", state="error", expanded=False)
     render_command_center_projection_chart(projection_packet, home_compact=True)
     st.markdown("### 策略执行实验室")
     live_packet = render_strategy_execution_card(

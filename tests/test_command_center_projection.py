@@ -691,6 +691,88 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("待验证 4", packet["path_fact_recovery_summary"])
         self.assertIn("龙虎榜", packet["paths"][0]["trigger"])
 
+    def test_build_deepseek_projection_prompt_context_keeps_quant_and_discipline(self):
+        context = projection.build_deepseek_projection_prompt_context(
+            target="002008.SZ",
+            market_type="A股",
+            position_profile={"shares": 3000, "cost_price": 98, "margin_ratio_pct": 30},
+            projection_packet={"base_value": 127.87, "horizon_days": 10, "paths": []},
+            quant_packet={"summary": "量化推演偏谨慎"},
+            discipline_packet={"summary": "跌破纪律线降风险"},
+        )
+
+        self.assertEqual(context["target"], "002008.SZ")
+        self.assertEqual(context["current_price_anchor"], 127.87)
+        self.assertEqual(context["position_profile"]["margin_ratio_pct"], 30)
+        self.assertIn("量化推演偏谨慎", json.dumps(context["quant_packet"], ensure_ascii=False))
+        self.assertIn("跌破纪律线", json.dumps(context["discipline_packet"], ensure_ascii=False))
+
+    def test_deepseek_projection_overlay_enhances_paths_without_service_call(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "小幅进攻", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "小幅试探", "confidence": "中"},
+            live_packet={"market": {"current_price": 100}},
+            analysis_method_packet={"market": "A股"},
+            now="2026-06-01T10:00:00",
+        )
+        enhanced = projection.merge_deepseek_projection_overlay(
+            packet,
+            {
+                "summary": "量化强但纪律要求等待突破确认。",
+                "probability": {"optimistic": 30, "neutral": 50, "cautious": 20},
+                "paths": [
+                    {
+                        "name": "乐观路径",
+                        "target_pct": 4,
+                        "trigger": "放量站稳且纪律确认。",
+                        "action": "只允许小幅试探。",
+                        "risk": "融资比例较高，不追高。",
+                        "rationale": "量化与纪律共振后才抬高乐观路径。",
+                    },
+                    {"name": "中性路径", "target_pct": 1, "trigger": "继续横盘。"},
+                    {"name": "谨慎路径", "target_pct": -5, "trigger": "跌破纪律线。"},
+                ],
+                "quant_notes": ["量化偏强"],
+                "discipline_notes": ["等待突破确认"],
+                "risk_alerts": ["融资风险"],
+            },
+            now="2026-06-01T10:05:00",
+        )
+
+        self.assertTrue(enhanced["deepseek_called"])
+        self.assertEqual(enhanced["deepseek_mode"], "manual_projection_overlay")
+        self.assertEqual(enhanced["source"], projection.SOURCE_DEEPSEEK_OVERLAY)
+        self.assertEqual(sum(path["probability"] for path in enhanced["paths"]), 100)
+        self.assertIn("DeepSeek 手动增强", enhanced["path_basis"])
+        self.assertIn("量化强", enhanced["deepseek_projection_summary"])
+        self.assertIn("量化与纪律共振", enhanced["paths"][0]["deepseek_rationale"])
+        self.assertGreater(enhanced["paths"][0]["points"][-1]["value"], enhanced["base_value"])
+        self.assertTrue(enhanced["deepseek_projection"].get("manual_trigger"))
+
+    def test_deepseek_projection_overlay_clamps_extreme_curve_points(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "等待", "updated_at": "2026-06-01T10:00:00"},
+            live_packet={"market": {"current_price": 100}},
+            now="2026-06-01T10:00:00",
+        )
+        enhanced = projection.merge_deepseek_projection_overlay(
+            packet,
+            {
+                "summary": "极端输出应被夹住。",
+                "paths": [
+                    {"name": "乐观路径", "probability": 500, "points": [{"t": 0, "value": 100}, {"t": 10, "value": 9999}]},
+                    {"name": "中性路径", "probability": 0, "target_pct": 99},
+                    {"name": "谨慎路径", "probability": -30, "target_pct": -99},
+                ],
+            },
+            now="2026-06-01T10:05:00",
+        )
+
+        self.assertEqual(sum(path["probability"] for path in enhanced["paths"]), 100)
+        self.assertLessEqual(enhanced["paths"][0]["points"][-1]["value"], enhanced["base_value"] * 1.28)
+        self.assertLessEqual(enhanced["paths"][1]["points"][-1]["value"], enhanced["base_value"] * 1.18)
+        self.assertGreaterEqual(enhanced["paths"][2]["points"][-1]["value"], enhanced["base_value"] * 0.82)
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_projection.py").read_text())
         imports = []

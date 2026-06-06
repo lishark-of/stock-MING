@@ -147,11 +147,13 @@ def _render_html(markup):
 
 def _render_html_document(markup, *, height=400):
     html = str(markup or "")
-    if hasattr(st, "iframe"):
+    if components:
+        components.html(html, height=height, scrolling=False)
+    elif hasattr(st, "iframe"):
         encoded = base64.b64encode(html.encode("utf-8")).decode("ascii")
         st.iframe(f"data:text/html;charset=utf-8;base64,{encoded}", height=height)
     else:
-        components.html(html, height=height, scrolling=False)
+        st.markdown(html, unsafe_allow_html=True)
 
 
 def _inject_component_css():
@@ -7345,6 +7347,9 @@ def _projection_path_cards(paths):
                 st.write(str(item.get("action") or "只观察。"))
                 st.caption("风险提示")
                 st.write(str(item.get("risk") or "不追高、不满仓。"))
+                if item.get("deepseek_rationale"):
+                    st.caption("DeepSeek 手动依据")
+                    st.write(str(item.get("deepseek_rationale")))
 
 
 def _analysis_status_class(status):
@@ -7881,6 +7886,11 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     updated_at = str(payload.get("updated_at") or "暂无")
     source = str(payload.get("source") or "command_center_projection")
     horizon = payload.get("horizon_days") or 10
+    deepseek_called = bool(payload.get("deepseek_called"))
+    deepseek_projection = payload.get("deepseek_projection") if isinstance(payload.get("deepseek_projection"), dict) else {}
+    deepseek_summary = str(payload.get("deepseek_projection_summary") or deepseek_projection.get("summary") or "")
+    deepseek_status_text = "手动增强" if deepseek_called else "未调用"
+    deepseek_badge_text = "AI增强" if deepseek_called else status_label
     data_capability_summary = str(payload.get("path_data_capability_summary") or "")
     evidence_group_summary = str(payload.get("path_evidence_group_summary") or "")
     evidence_group_status = str(payload.get("path_evidence_group_status") or "")
@@ -7918,8 +7928,12 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     }.get(fact_tone, "gray")
     if home_compact:
         paths = _projection_home_compact_paths(paths)
-        note = _projection_home_compact_text(note, "基于当前持仓与已生成结论的条件化路径。")
-        source = "综合中心本地趋势"
+        if deepseek_called:
+            note = _projection_home_compact_text(deepseek_summary or note, "DeepSeek 已手动整理当前三路径。")
+            source = "DeepSeek 手动增强趋势"
+        else:
+            note = _projection_home_compact_text(note, "基于当前持仓与已生成结论的条件化路径。")
+            source = "综合中心本地趋势"
         data_capability_summary = ""
         evidence_group_summary = ""
         evidence_group_items = []
@@ -8073,9 +8087,9 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         <div class="projection-head">
           <div>
             <div class="projection-title">未来 5~10 个交易日趋势推演</div>
-            <div class="projection-subtitle">{escape(note)} ｜ 最后更新时间：{escape(updated_at)} ｜ DeepSeek：未调用</div>
+            <div class="projection-subtitle">{escape(note)} ｜ 最后更新时间：{escape(updated_at)} ｜ DeepSeek：{escape(deepseek_status_text)}</div>
           </div>
-          <div class="projection-badge">{escape(status_label)} · {escape(str(horizon))}日</div>
+          <div class="projection-badge">{escape(deepseek_badge_text)} · {escape(str(horizon))}日</div>
         </div>
         {fact_strip_html}
         <div id="projection-chart"></div>
@@ -8190,7 +8204,10 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
         else:
             st.line_chart(frame, height=320)
     if home_compact:
-        st.caption("路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。DeepSeek：未调用")
+        if deepseek_called:
+            st.caption("路径推演不是投资建议；DeepSeek 仅在手动按钮触发后整理三路径，不自动交易、不绑定 rerun。")
+        else:
+            st.caption("路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。DeepSeek：未调用")
     else:
         st.caption(
             f"路径依据来自：{payload.get('path_basis') or '市场类型待确认 / 数据待验证'} ｜ "
