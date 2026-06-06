@@ -40,7 +40,7 @@ HOME_SURFACES = {
     "margin_etf": "ETF / 融资动作",
     "data_healthcheck": "数据新鲜度 / 数据恢复中心",
     "next_ticket_radar": "下一票 Top3 / A股证据雷达",
-    "cloud_brain": "可选 DeepSeek 解释上下文",
+    "cloud_brain": "云端外脑记忆摘要",
 }
 
 COMPLETION_REQUIREMENTS = {
@@ -67,7 +67,7 @@ COMPLETION_REQUIREMENTS = {
         ("packet", "command_center_radar_packet", "下一票雷达 packet"),
     ],
     "cloud_brain": [
-        ("capability", "supabase", "Supabase 能力检测"),
+        ("packet", "command_center_cloud_memory_packet", "云端外脑记忆摘要 packet"),
     ],
 }
 

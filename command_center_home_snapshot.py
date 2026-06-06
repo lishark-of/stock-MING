@@ -14,6 +14,7 @@ import command_center_discipline_packet as discipline_packet_service
 import command_center_data_gap_report as data_gap_report_service
 import command_center_market_packet as market_packet_service
 import command_center_quant_packet as quant_packet_service
+import command_center_cloud_memory_packet as cloud_memory_packet_service
 import command_center_chip_packet as chip_packet_service
 import command_center_moneyflow_packet as moneyflow_packet_service
 import command_center_dragon_tiger_packet as dragon_tiger_packet_service
@@ -819,6 +820,9 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     )
     snapshot["quant_packet"] = quant_packet_service.build_command_center_quant_packet(
         {"command_center_quant_packet": snapshot.get("quant_packet") or {}}
+    )
+    snapshot["cloud_memory_packet"] = cloud_memory_packet_service.build_command_center_cloud_memory_packet(
+        {"command_center_cloud_memory_packet": snapshot.get("cloud_memory_packet") or {}}
     )
     snapshot["chip_packet"] = chip_packet_service.build_command_center_chip_packet(
         {"command_center_chip_packet": snapshot.get("chip_packet") or {}}
@@ -5027,6 +5031,9 @@ def build_home_data_recovery_center(snapshot: Any = None, limit: int = MAX_CAPAB
             item = _normalize_recovery_center_action(raw, source_type, source_label, default_priority)
             if not item or item.get("refresh_policy") == "not_needed":
                 continue
+            item_priority = item.get("priority")
+            if source_type == "a_share_fact" and item_priority not in {1, 2}:
+                item["priority"] = 2
             item = attach_recovery_result_status_to_action(item, payload, recovery_result_lookup)
             dedupe_key = item.get("writes_packet") or f"{source_type}:{item.get('key')}"
             if source_type == "next_ticket_evidence":
@@ -7207,6 +7214,7 @@ def build_home_action_snapshot(
     )
     market_packet = market_packet_service.build_command_center_market_packet(state_map, live)
     quant_packet = quant_packet_service.build_command_center_quant_packet(state_map, live, target=target)
+    cloud_memory_packet = cloud_memory_packet_service.build_command_center_cloud_memory_packet(state_map, live)
     chip_packet = chip_packet_service.build_command_center_chip_packet(state_map, live, target=target)
     moneyflow_packet = moneyflow_packet_service.build_command_center_moneyflow_packet(state_map, live, target=target)
     dragon_tiger_packet = dragon_tiger_packet_service.build_command_center_dragon_tiger_packet(state_map, live, target=target)
@@ -7364,6 +7372,7 @@ def build_home_action_snapshot(
         "etf_packet": etf_packet,
         "discipline_packet": discipline_packet,
         "quant_packet": quant_packet,
+        "cloud_memory_packet": cloud_memory_packet,
         "chip_packet": chip_packet,
         "moneyflow_packet": moneyflow_packet,
         "dragon_tiger_packet": dragon_tiger_packet,
@@ -7623,6 +7632,7 @@ def has_action_snapshot_data(snapshot: Any) -> bool:
         or _as_list(_as_mapping(payload.get("etf_packet")).get("recommended_etfs"))
         or _as_mapping(payload.get("discipline_packet")).get("data_status") == "ready"
         or _as_list(_as_mapping(payload.get("margin_etf_summary")).get("recommended_etfs"))
+        or _as_list(_as_mapping(payload.get("cloud_memory_packet")).get("items"))
         or _as_list(_as_mapping(payload.get("facts_packet")).get("items"))
     )
 

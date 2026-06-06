@@ -4975,6 +4975,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     if not isinstance(user_data_summary, dict):
         user_data_summary = {}
     data_capability = payload.get("data_capability") or {}
+    cloud_memory_packet = payload.get("cloud_memory_packet") or {}
+    if not isinstance(cloud_memory_packet, dict):
+        cloud_memory_packet = {}
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
     data_capability_console = payload.get("data_capability_console") or {}
@@ -5069,6 +5072,33 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         {user_data_items_html}
         <div class="cc-muted-note">{escape(_home_text(user_data_summary.get("details_hint"), "接口明细已收进数据能力诊断。"))}</div>
         <div class="cc-muted-note">护栏：{escape(_home_text(data_capability_brief.get("guardrail"), "页面打开不会自动请求外部接口。"))}</div>
+      </div>
+    """
+    cloud_memory_items_html = ""
+    for item in (cloud_memory_packet.get("items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        risk_notes = "；".join(str(note).strip() for note in (item.get("risk_triggers") or [])[:2] if str(note).strip())
+        cloud_memory_items_html += f"""
+        <div class="cc-home-candidate">
+          <div class="cc-home-item-title">{escape(_home_text(item.get("title"), "历史投喂资料"))}</div>
+          <div class="cc-home-item-meta">{escape(_home_text(item.get("memory_type"), "memory"))} ｜ {escape(_home_text(item.get("source"), "云端外脑"))} ｜ {escape(_home_text(item.get("status"), "已保存"))}</div>
+          <div class="cc-home-item-meta">风险线索：{escape(risk_notes or "未提取明确风险线索；执行前仍需行情验证。")}</div>
+        </div>
+        """
+    if not cloud_memory_items_html:
+        cloud_memory_items_html = "<div class='cc-muted-note'>暂无云端外脑记忆缓存。进入高级工具箱读取云端记忆或投喂资料后，首页会自动回流摘要。</div>"
+    cloud_memory_html = f"""
+      <div class="cc-home-panel">
+        <div class="cc-home-panel-title">
+          云端外脑记忆
+          <span class="cc-home-chip {escape(_home_text(cloud_memory_packet.get("status"), "waiting"))}">
+            {escape(_home_text(cloud_memory_packet.get("status"), "待回流"))}
+          </span>
+        </div>
+        <div class="cc-muted-note">{escape(_home_text(cloud_memory_packet.get("summary"), "暂无云端外脑记忆缓存。"))}</div>
+        {cloud_memory_items_html}
+        <div class="cc-muted-note">{escape(_home_text(cloud_memory_packet.get("decision_guardrail"), "投喂资料是历史观点或待验证线索，不能直接作为买卖依据。"))}</div>
       </div>
     """
     legacy_decision_priority_html = ""
@@ -6898,6 +6928,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       </div>
       {market_profile_html}
       {data_capability_brief_html}
+      {cloud_memory_html}
       {decision_loop_html}
       {a_share_status_console_html}
       {evidence_loop_html}

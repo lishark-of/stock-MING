@@ -101,6 +101,17 @@ LEGACY_PACKET_ABILITIES = (
         "recovery_action_label": "手动运行下一票雷达",
         "decision_guardrail": "缺少雷达 packet 时，首页不能把候选池当成可执行清单。",
     },
+    {
+        "key": "cloud_brain",
+        "label": "云端外脑",
+        "target_packet": "command_center_cloud_memory_packet",
+        "packet_alias": "cloud_memory_packet",
+        "legacy_entry": "高级工具箱 / 云端外脑",
+        "home_surface": "云端外脑记忆 / 数据对结论的影响",
+        "decision_chain_stage": "云端外脑 → Home Action Snapshot → DeepSeek 手动解释上下文",
+        "recovery_action_label": "读取云端记忆或投喂资料",
+        "decision_guardrail": "投喂资料只能作为待验证线索，不能直接决定买卖。",
+    },
 )
 
 

@@ -26,6 +26,7 @@ import command_center_facts_packet as facts_packet_service
 import command_center_discipline_packet as discipline_packet_service
 import command_center_market_packet as market_packet_service
 import command_center_quant_packet as quant_packet_service
+import command_center_cloud_memory_packet as cloud_memory_packet_service
 import command_center_chip_packet as chip_packet_service
 import command_center_moneyflow_packet as moneyflow_packet_service
 import command_center_dragon_tiger_packet as dragon_tiger_packet_service
@@ -4236,6 +4237,29 @@ def _remember_legacy_tool_packet_recovery_result(
         st.session_state["recovery_result_timeline"] = recovery_timeline
     return _persist_home_action_snapshot(
         live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        target=target,
+        position_profile=position_profile,
+    )
+
+
+def _sync_legacy_cloud_memory_to_command_center(target="", position_profile=None, live_packet=None):
+    token = datetime.datetime.now().isoformat(timespec="seconds")
+    cloud_packet = cloud_memory_packet_service.build_command_center_cloud_memory_packet(
+        st.session_state,
+        live_packet={
+            "cloud_memory": {
+                "updated_at": token,
+                "source": "云端外脑缓存",
+            }
+        },
+    )
+    st.session_state["command_center_cloud_memory_packet"] = cloud_packet
+    return _remember_legacy_tool_packet_recovery_result(
+        key="legacy_cloud_brain",
+        label="云端外脑",
+        writes_packet="command_center_cloud_memory_packet",
+        target_tab="云端外脑",
+        live_packet=live_packet,
         target=target,
         position_profile=position_profile,
     )
@@ -16766,6 +16790,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                             manager_name=feed_manager_name.strip(),
                             source="手动碎片投喂",
                         )
+                    st.session_state["legacy_cloud_memory_write_result"] = counts
+                    st.session_state["legacy_cloud_memory_extract_result"] = extract_result
+                    st.session_state["legacy_cloud_memory_written_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                    _sync_legacy_cloud_memory_to_command_center(
+                        target=target,
+                        position_profile=position_profile_preview,
+                    )
                     if extract_result.get("status") == "needs_ai_extract":
                         st.warning("已保存，等待 AI 提炼。")
                     else:
@@ -16800,6 +16831,13 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                                 manager_name=feed_manager_name.strip(),
                                 source=file_name,
                             )
+                        st.session_state["legacy_cloud_memory_write_result"] = counts
+                        st.session_state["legacy_cloud_memory_extract_result"] = extract_result
+                        st.session_state["legacy_cloud_memory_written_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                        _sync_legacy_cloud_memory_to_command_center(
+                            target=target,
+                            position_profile=position_profile_preview,
+                        )
                         if extract_result.get("status") == "needs_ai_extract":
                             st.warning(f"文件 {file_name} 已保存摘要，等待 AI 提炼。")
                         else:
@@ -16822,6 +16860,10 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             with st.spinner("正在链接 Supabase 云端突触..."):
                 st.session_state["legacy_cloud_memories"] = get_all_cloud_memories()
                 st.session_state["legacy_cloud_memories_loaded_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                _sync_legacy_cloud_memory_to_command_center(
+                    target=target,
+                    position_profile=position_profile_preview,
+                )
 
         memories = st.session_state.get("legacy_cloud_memories")
         if memories is None:

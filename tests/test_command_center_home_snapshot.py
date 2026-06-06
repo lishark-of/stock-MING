@@ -4204,6 +4204,38 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("手动触发", payload["quant_packet"]["manual_required_text"])
         self.assertFalse(payload["quant_packet"]["deepseek_called"])
 
+    def test_home_snapshot_persists_cloud_memory_packet(self):
+        today = _dt.date.today().isoformat()
+        state = {
+            "command_center_decision_packet": {
+                "status": "ready",
+                "overall_action": "等待",
+                "updated_at": f"{today}T10:00:00",
+            },
+            "legacy_cloud_memories": [
+                {
+                    "id": 9,
+                    "memory_type": "strategy",
+                    "content": json.dumps(
+                        {
+                            "core_view": "盈利后不追高，回踩确认再看。",
+                            "risk_triggers": ["放量跌破 MA20"],
+                            "source": "手动碎片投喂",
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ],
+            "legacy_cloud_memories_loaded_at": f"{today}T10:01:00",
+        }
+
+        payload = snapshot.build_home_action_snapshot(state, target="002008.SZ", now=f"{today}T10:02:00")
+
+        self.assertEqual(payload["cloud_memory_packet"]["data_status"], "ready")
+        self.assertEqual(payload["cloud_memory_packet"]["items"][0]["title"], "盈利后不追高，回踩确认再看。")
+        self.assertIn("历史观点", payload["cloud_memory_packet"]["decision_guardrail"])
+        self.assertFalse(payload["cloud_memory_packet"]["deepseek_called"])
+
     def test_home_snapshot_persists_chip_packet(self):
         today = _dt.date.today().isoformat()
         state = {

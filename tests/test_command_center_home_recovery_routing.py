@@ -141,10 +141,12 @@ class CommandCenterHomeRecoveryRoutingTests(unittest.TestCase):
         self.assertIn("command_center_quant_packet", source)
         self.assertIn("command_center_etf_packet", source)
         self.assertIn("command_center_radar_packet", source)
+        self.assertIn("command_center_cloud_memory_packet", source)
         self.assertIn("legacy_discipline", source)
         self.assertIn("legacy_quant", source)
         self.assertIn("legacy_margin_etf", source)
         self.assertIn("legacy_next_ticket_radar", source)
+        self.assertIn("legacy_cloud_brain", source)
 
     def test_decision_and_strategy_cards_surface_projection_confidence(self):
         source = Path("visual_components.py").read_text(encoding="utf-8")

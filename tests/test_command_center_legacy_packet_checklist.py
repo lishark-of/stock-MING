@@ -28,7 +28,7 @@ class CommandCenterLegacyPacketChecklistTests(unittest.TestCase):
         dumped = json.dumps(packet, ensure_ascii=False)
 
         self.assertEqual(packet["title"], "旧工作台能力迁移清单")
-        self.assertEqual(len(packet["items"]), 7)
+        self.assertEqual(len(packet["items"]), len(checklist.LEGACY_PACKET_ABILITIES))
         self.assertFalse(packet["deepseek_called"])
         self.assertEqual(packet["external_call_policy"], "not_triggered")
         self.assertIn("不会自动调用 Tushare", packet["safe_mode_text"])
@@ -39,9 +39,13 @@ class CommandCenterLegacyPacketChecklistTests(unittest.TestCase):
         self.assertIn("筹码/胜率", dumped)
         self.assertIn("纪律/回测", dumped)
         self.assertIn("下一票雷达", dumped)
+        self.assertIn("云端外脑", dumped)
         self.assertTrue(all(item["refresh_policy"] == "button_gated" for item in packet["items"]))
         self.assertTrue(all(item["external_call_policy"] == "not_triggered" for item in packet["items"]))
         self.assertTrue(all(item["deepseek_called"] is False for item in packet["items"]))
+        by_key = {item["key"]: item for item in packet["items"]}
+        self.assertEqual(by_key["cloud_brain"]["target_packet"], "command_center_cloud_memory_packet")
+        self.assertIn("读取云端记忆或投喂资料", by_key["cloud_brain"]["recovery_action_label"])
 
     def test_ready_moneyflow_packet_is_marked_as_packet_ready(self):
         packet = checklist.build_legacy_packet_migration_checklist(
