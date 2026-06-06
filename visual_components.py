@@ -4971,6 +4971,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     data_capability_brief = payload.get("data_capability_brief") or {}
     if not isinstance(data_capability_brief, dict):
         data_capability_brief = {}
+    user_data_summary = data_capability_brief.get("user_summary") or payload.get("user_data_impact_summary") or {}
+    if not isinstance(user_data_summary, dict):
+        user_data_summary = {}
     data_capability = payload.get("data_capability") or {}
     data_gap_report = payload.get("data_gap_report") or {}
     data_issue_explainer = payload.get("data_issue_explainer") or {}
@@ -5033,36 +5036,39 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         risk_alerts.get("legacy_decision_chain_summary") or "旧能力：待验证",
     )
     legacy_decision_chain_tone = _home_text(legacy_decision_chain.get("tone"), "missing")
-    data_capability_brief_items_html = ""
-    for item in (data_capability_brief.get("items") or [])[:4]:
+    user_data_items_html = ""
+    for item in (user_data_summary.get("items") or [])[:5]:
         if not isinstance(item, dict):
             continue
-        data_capability_brief_items_html += f"""
+        user_data_items_html += f"""
         <div class="cc-home-row">
           <span>{escape(_home_text(item.get("label"), "数据状态"))}</span>
-          <strong><span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("value"), "待验证"))}</span></strong>
+          <strong>
+            <span class="cc-home-chip {escape(_home_text(item.get("tone"), "missing"))}">{escape(_home_text(item.get("status_label"), "未刷新"))}</span>
+            <span class="cc-home-chip {escape(_home_risk_class(item.get("impact_level")))}">影响 {escape(_home_text(item.get("impact_level"), "中"))}</span>
+          </strong>
         </div>
+        <div class="cc-muted-note">{escape(_home_text(item.get("reason"), "数据状态会影响当前结论可信度。"))}</div>
         """
-    if not data_capability_brief_items_html:
-        data_capability_brief_items_html = """
+    if not user_data_items_html:
+        user_data_items_html = """
         <div class="cc-home-row">
-          <span>数据能力</span>
+          <span>数据状态</span>
           <strong><span class="cc-home-chip missing">待检测</span></strong>
         </div>
         """
     data_capability_brief_html = f"""
       <div class="cc-home-panel">
         <div class="cc-home-panel-title">
-          数据能力总状态
-          <span class="cc-home-chip {escape(_home_text(data_capability_brief.get("tone"), "missing"))}">
-            {escape(_home_text(data_capability_brief.get("headline"), "数据能力待检测"))}
+          {escape(_home_text(user_data_summary.get("title"), "数据对结论的影响"))}
+          <span class="cc-home-chip {escape(_home_text(user_data_summary.get("tone"), "missing"))}">
+            {escape(_home_text(user_data_summary.get("headline"), "对当前结论影响：中"))}
           </span>
         </div>
-        <div class="cc-muted-note">{escape(_home_text(data_capability_brief.get("summary"), "Provider / A股事实 / 旧能力链待检测。"))}</div>
-        <div class="cc-home-row"><span>可信度</span><strong>{escape(_home_text(data_capability_brief.get("trust_label"), "待刷新 / 安全空态"))}</strong></div>
-        {data_capability_brief_items_html}
+        <div class="cc-muted-note">{escape(_home_text(user_data_summary.get("summary"), "行情、资金、ETF、云端记忆和 DeepSeek 状态待刷新。"))}</div>
+        {user_data_items_html}
+        <div class="cc-muted-note">{escape(_home_text(user_data_summary.get("details_hint"), "接口明细已收进数据能力诊断。"))}</div>
         <div class="cc-muted-note">护栏：{escape(_home_text(data_capability_brief.get("guardrail"), "页面打开不会自动请求外部接口。"))}</div>
-        <div class="cc-muted-note">下一步：{escape(_home_text(data_capability_brief.get("next_action"), "需要时手动刷新或进入高级工具箱。"))}</div>
       </div>
     """
     legacy_decision_priority_html = ""
@@ -6782,6 +6788,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     diagnostic_details_html = f"""
           <details class="cc-home-details">
             <summary>诊断详情：A股矩阵 / 数据能力控制台 / 原因解释</summary>
+            {provider_recovery_matrix_html}
+            {home_data_issue_brief_html}
             <div class="cc-home-candidate">
               <div class="cc-home-item-title">
                 {escape(_home_text(a_share_matrix.get("title"), "A股数据能力矩阵"))}
@@ -6890,8 +6898,6 @@ def render_home_action_snapshot(snapshot: dict | None = None):
       </div>
       {market_profile_html}
       {data_capability_brief_html}
-      {provider_recovery_matrix_html}
-      {home_data_issue_brief_html}
       {decision_loop_html}
       {a_share_status_console_html}
       {evidence_loop_html}
@@ -6959,17 +6965,8 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-big-value">{escape(str(freshness_label))}</div>
           <div class="cc-home-row"><span>最后更新时间</span><strong>{escape(_home_text(freshness.get("last_updated"), "暂无"))}</strong></div>
           <div class="cc-home-row"><span>是否使用缓存</span><strong>{'是' if risk_alerts.get('uses_cache') or freshness_state == 'stale' else '否'}</strong></div>
-          <div class="cc-home-row"><span>旧能力决策链</span><strong>{escape(legacy_decision_chain_summary_text)}</strong></div>
-          <div class="cc-home-row"><span>数据治理</span><strong>{escape(governance_summary)}</strong></div>
-          {provider_cockpit_html}
-          {tushare_gap_explainer_html}
-          {provider_gap_explainer_html}
-          {old_workspace_absence_html}
-          {data_health_visibility_html}
-          {data_recovery_center_html}
-          {legacy_migration_html}
-          {legacy_packet_checklist_html}
-          {old_workspace_packet_bridge_html}
+          <div class="cc-home-row"><span>结论影响</span><strong>{escape(_home_text(user_data_summary.get("impact_level"), "中"))}</strong></div>
+          <div class="cc-muted-note">{escape(_home_text(user_data_summary.get("summary"), "数据状态待刷新。"))}</div>
           {diagnostic_details_html}
           <div class="cc-muted-note">{escape(str(safety_line))}</div>
         </div>

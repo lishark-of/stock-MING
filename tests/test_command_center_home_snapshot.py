@@ -1165,10 +1165,53 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("受限", brief["summary"])
         self.assertIn("不加仓", brief["guardrail"])
         self.assertIn("Provider", json.dumps(brief["items"], ensure_ascii=False))
+        self.assertIn("user_summary", brief)
+        user_summary_text = json.dumps(brief["user_summary"], ensure_ascii=False)
+        self.assertIn("行情数据", user_summary_text)
+        self.assertIn("资金数据", user_summary_text)
+        self.assertIn("ETF 数据", user_summary_text)
+        self.assertIn("云端记忆", user_summary_text)
+        self.assertIn("DeepSeek", user_summary_text)
+        self.assertNotIn("Provider", user_summary_text)
+        self.assertNotIn("packet", user_summary_text.lower())
         self.assertEqual(brief["external_call_policy"], "not_triggered")
         self.assertFalse(brief["deepseek_called"])
         self.assertFalse(matrix["deepseek_called"])
         self.assertFalse(capability["deepseek_called"])
+
+    def test_user_data_impact_summary_uses_user_facing_categories(self):
+        summary = snapshot.build_user_data_impact_summary(
+            {
+                "data_freshness": {"state": "today", "label": "今日已刷新"},
+                "data_capability": {
+                    "items": [
+                        {"label": "Tushare 日线", "api": "daily", "provider": "Tushare", "state": "available"},
+                        {"label": "Tushare 个股资金流", "api": "moneyflow", "provider": "Tushare", "state": "failed"},
+                        {"label": "Tushare ETF", "api": "etf_basic", "provider": "Tushare", "state": "stale_cache"},
+                        {"label": "Supabase 记忆", "api": "brain_memory", "provider": "Supabase", "state": "available"},
+                    ]
+                },
+                "margin_etf_summary": {"recommended_etfs": [{"code": "512480.SH", "name": "半导体 ETF"}]},
+                "deepseek_called": False,
+            }
+        )
+        by_key = {item["key"]: item for item in summary["items"]}
+        dumped = json.dumps(summary, ensure_ascii=False)
+
+        self.assertEqual(summary["title"], "数据对结论的影响")
+        self.assertEqual(by_key["quote"]["label"], "行情数据")
+        self.assertEqual(by_key["quote"]["status_label"], "已可用")
+        self.assertEqual(by_key["funds"]["status_label"], "失败")
+        self.assertEqual(by_key["funds"]["impact_level"], "高")
+        self.assertEqual(by_key["etf"]["status_label"], "已可用")
+        self.assertEqual(by_key["cloud"]["status_label"], "已可用")
+        self.assertEqual(by_key["deepseek"]["status_label"], "未调用")
+        self.assertIn("对当前结论影响：高", summary["headline"])
+        self.assertNotIn("provider", dumped.lower())
+        self.assertNotIn("packet", dumped.lower())
+        self.assertNotIn("available", dumped.lower())
+        self.assertEqual(summary["external_call_policy"], "not_triggered")
+        self.assertFalse(summary["deepseek_called"])
 
     def test_empty_data_capability_summary_names_all_external_providers(self):
         capability = snapshot.build_data_capability_snapshot({})

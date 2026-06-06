@@ -1106,6 +1106,174 @@ def build_data_capability_snapshot(data_capability_packet: Any = None) -> dict:
     }
 
 
+def _capability_user_status_from_states(states: list[str], *, missing_label: str = "未刷新") -> str:
+    clean = [_to_text(state) for state in states if _to_text(state)]
+    if not clean:
+        return missing_label
+    ready_count = sum(1 for state in clean if state == "available")
+    cached_count = sum(1 for state in clean if state in {"stale_cache", "fallback_used", "cached"})
+    failed_count = sum(1 for state in clean if state in CAPABILITY_RESTRICTED_STATES)
+    no_data_count = sum(1 for state in clean if state in {"empty_recent", "no_data"})
+    waiting_count = sum(1 for state in clean if state in CAPABILITY_PENDING_STATES or state in {"unknown", "skipped"})
+    if ready_count and not (failed_count or no_data_count or waiting_count):
+        return "已可用"
+    if ready_count or cached_count:
+        if failed_count or no_data_count or waiting_count:
+            return "部分失败"
+        return "使用缓存" if cached_count and not ready_count else "已可用"
+    if failed_count:
+        return "失败"
+    if no_data_count:
+        return "无数据"
+    return missing_label
+
+
+def _capability_user_tone(status_label: str) -> str:
+    if status_label in {"已可用", "已解释"}:
+        return "ready"
+    if status_label in {"使用缓存", "部分失败", "无数据", "未刷新", "未调用"}:
+        return "stale"
+    if status_label == "失败":
+        return "failed"
+    return "missing"
+
+
+def _capability_user_impact(status_label: str, *, critical: bool = False) -> str:
+    if status_label in {"已可用", "已解释", "未调用"}:
+        return "低"
+    if status_label in {"使用缓存", "无数据", "未刷新"}:
+        return "中" if critical else "低"
+    if status_label == "部分失败":
+        return "中"
+    if status_label == "失败":
+        return "高" if critical else "中"
+    return "中" if critical else "低"
+
+
+def _capability_user_reason(label: str, status_label: str, impact: str) -> str:
+    if label == "行情数据":
+        if status_label == "已可用":
+            return "当前价、成本线和浮盈亏可以进入交易摘要。"
+        if status_label == "使用缓存":
+            return "当前价或趋势可能滞后，执行前需要刷新确认。"
+        if status_label == "失败":
+            return "当前价和浮盈亏不可靠，本轮结论只能观察。"
+        return "行情未刷新时，趋势和盈亏只作为低置信度参考。"
+    if label == "资金数据":
+        if status_label == "已可用":
+            return "资金流和交易热度可作为下一票/风险验证依据。"
+        if status_label == "部分失败":
+            return "部分资金证据缺失，不能把缺口当成买入确认。"
+        return "资金证据不足时，下一票和加仓条件需要更保守。"
+    if label == "ETF 数据":
+        if status_label == "已可用":
+            return "ETF/融资清单可进入执行前复核。"
+        if status_label == "使用缓存":
+            return "ETF 强弱可能滞后，不建议据此追高或额外加杠杆。"
+        if status_label == "无数据":
+            return "没有可用 ETF 配置时，不输出替代配置动作。"
+        return "ETF 数据未确认前，融资配置只保留观察。"
+    if label == "云端记忆":
+        if status_label == "已可用":
+            return "历史偏好和投研上下文可辅助解释当前结论。"
+        return "云端记忆未刷新不会阻断交易摘要，但会降低个性化上下文。"
+    if label == "DeepSeek":
+        if status_label == "已解释":
+            return "已有人为触发解释；它只解释，不直接决定仓位。"
+        return "未调用 DeepSeek；本地规则摘要仍可使用。"
+    return "数据状态会影响当前结论可信度。"
+
+
+def _capability_items_by_kind(capability: Mapping[str, Any]) -> dict[str, list[dict]]:
+    buckets = {"quote": [], "funds": [], "etf": [], "cloud": []}
+    for raw in _as_list(capability.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        haystack = " ".join(
+            _to_text(item.get(key)).lower()
+            for key in ("key", "label", "provider", "api", "source")
+        )
+        if any(token in haystack for token in ("etf", "融资 etf", "tushare_etf")):
+            buckets["etf"].append(item)
+        if any(token in haystack for token in ("moneyflow", "资金", "top_list", "龙虎", "margin_detail", "融资融券")):
+            buckets["funds"].append(item)
+        if any(token in haystack for token in ("daily", "quote", "行情", "日线", "realtime", "price", "yfinance_quote")):
+            buckets["quote"].append(item)
+        if any(token in haystack for token in ("supabase", "brain_memory", "memory", "记忆", "投喂")):
+            buckets["cloud"].append(item)
+    return buckets
+
+
+def build_user_data_impact_summary(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    capability = _as_mapping(payload.get("data_capability"))
+    freshness = _as_mapping(payload.get("data_freshness"))
+    margin_etf = _as_mapping(payload.get("margin_etf_summary"))
+    etf_packet = _as_mapping(payload.get("etf_packet"))
+    buckets = _capability_items_by_kind(capability)
+
+    quote_status = _capability_user_status_from_states([item.get("state") for item in buckets["quote"]])
+    if not buckets["quote"] and freshness.get("state") == "today":
+        quote_status = "已可用"
+    elif not buckets["quote"] and freshness.get("state") in {"stale", "partial_failed"}:
+        quote_status = "使用缓存" if freshness.get("state") == "stale" else "部分失败"
+
+    funds_status = _capability_user_status_from_states([item.get("state") for item in buckets["funds"]])
+
+    etf_status = _capability_user_status_from_states([item.get("state") for item in buckets["etf"]], missing_label="未刷新")
+    if _as_list(margin_etf.get("recommended_etfs")) or _as_list(margin_etf.get("actionable_etfs")) or _as_list(margin_etf.get("watch_etfs")):
+        etf_status = "已可用"
+    elif _as_list(margin_etf.get("avoid_etfs")) or _as_list(margin_etf.get("excluded_etfs")):
+        etf_status = "无数据"
+    elif _to_text(etf_packet.get("status")) in {"ready", "cached"}:
+        etf_status = "已可用" if _to_text(etf_packet.get("status")) == "ready" else "使用缓存"
+
+    cloud_status = _capability_user_status_from_states([item.get("state") for item in buckets["cloud"]])
+    deepseek_status = "已解释" if payload.get("deepseek_called") else "未调用"
+
+    specs = [
+        ("quote", "行情数据", quote_status, True),
+        ("funds", "资金数据", funds_status, True),
+        ("etf", "ETF 数据", etf_status, False),
+        ("cloud", "云端记忆", cloud_status, False),
+        ("deepseek", "DeepSeek", deepseek_status, False),
+    ]
+    items = []
+    impact_rank = {"低": 1, "中": 2, "高": 3}
+    for key, label, status_label, critical in specs:
+        impact = _capability_user_impact(status_label, critical=critical)
+        items.append(
+            {
+                "key": key,
+                "label": label,
+                "status_label": status_label,
+                "impact_level": impact,
+                "tone": _capability_user_tone(status_label),
+                "reason": _capability_user_reason(label, status_label, impact),
+            }
+        )
+    overall_impact = max((item["impact_level"] for item in items), key=lambda value: impact_rank.get(value, 0))
+    blockers = [item for item in items if item["impact_level"] == "高"]
+    if blockers:
+        headline = f"对当前结论影响：高"
+        summary = "；".join(f"{item['label']}：{item['status_label']}" for item in blockers[:2])
+    else:
+        headline = f"对当前结论影响：{overall_impact}"
+        summary = "；".join(f"{item['label']}：{item['status_label']}" for item in items)
+    return {
+        "title": "数据对结论的影响",
+        "headline": headline,
+        "summary": summary,
+        "impact_level": overall_impact,
+        "tone": _brief_tone_from_status("blocked" if overall_impact == "高" else "partial" if overall_impact == "中" else "ready"),
+        "items": items,
+        "details_hint": "接口与权限明细已收进数据能力诊断。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": bool(payload.get("deepseek_called")),
+    }
+
+
 def _brief_tone_from_status(status: str) -> str:
     return {
         "blocked": "failed",
@@ -1121,6 +1289,7 @@ def _brief_int(value: Any) -> int:
 
 def build_home_data_capability_brief(snapshot: Any = None) -> dict:
     payload = _as_mapping(snapshot)
+    user_summary = build_user_data_impact_summary(payload)
     freshness = _as_mapping(payload.get("data_freshness"))
     capability = _as_mapping(payload.get("data_capability"))
     provider_cockpit = _as_mapping(payload.get("provider_data_capability_cockpit"))
@@ -1221,6 +1390,7 @@ def build_home_data_capability_brief(snapshot: Any = None) -> dict:
         "guardrail": guardrail,
         "next_action": next_action,
         "items": items,
+        "user_summary": user_summary,
         "external_call_policy": "not_triggered",
         "deepseek_called": False,
     }
