@@ -247,6 +247,78 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("行情失败", breakdown["data"]["reason"])
         self.assertFalse(breakdown["deepseek_called"])
 
+    def test_position_risk_budget_blocks_add_when_margin_is_high(self):
+        payload = {
+            "decision_packet": {"overall_action": "小幅进攻", "position_mode": "小幅试探", "risk_level": "低"},
+            "strategy_packet": {
+                "action": "小幅试探",
+                "risk_budget": {"risk_budget_amount": 50000, "cash_buffer_amount": 30000, "max_add_amount": 20000},
+            },
+            "holding_action": {
+                "ticker": "002008.SZ",
+                "shares": 3000,
+                "cost": 98,
+                "current_price": 127.87,
+                "reduce_condition": "跌破纪律线先降风险。",
+                "invalidation_condition": "放量跌破 MA20，本轮失效。",
+            },
+            "margin_etf_summary": {
+                "current_margin_ratio": 30,
+                "recommended_margin_ratio": 20,
+                "watch_etfs": [{"code": "512480.SH", "name": "半导体 ETF"}],
+            },
+            "risk_alerts": {"reduce_conditions": ["融资压力未降前不新增融资。"]},
+        }
+        payload["risk_breakdown"] = snapshot.build_risk_breakdown(
+            payload["decision_packet"],
+            position_profile=payload["holding_action"],
+            data_freshness={"state": "today"},
+            margin_etf_summary=payload["margin_etf_summary"],
+        )
+
+        budget = snapshot.build_position_risk_budget_guidance(payload)
+        dumped = json.dumps(budget, ensure_ascii=False)
+
+        self.assertFalse(budget["allow_add"])
+        self.assertIn("不新增融资", budget["margin_account_guidance"])
+        self.assertIn("ETF 替代部分个股风险", budget["etf_substitution_text"])
+        self.assertEqual(budget["max_add_amount"], 0)
+        self.assertIn("不保证收益", budget["guardrail"])
+        self.assertFalse(budget["deepseek_called"])
+        self.assertIn("融资比例 30%", dumped)
+
+    def test_position_risk_budget_allows_small_add_only_with_price_and_low_risk(self):
+        payload = {
+            "decision_packet": {"overall_action": "小幅进攻", "risk_level": "低"},
+            "strategy_packet": {
+                "action": "小幅试探",
+                "risk_budget": {"available_cash": 80000, "risk_budget_amount": 60000, "cash_buffer_amount": 20000},
+            },
+            "holding_action": {
+                "ticker": "300750.SZ",
+                "shares": 200,
+                "cost": 180,
+                "current_price": 210,
+                "reduce_condition": "跌破成本线先降风险。",
+                "invalidation_condition": "纪律信号反向。",
+            },
+            "margin_etf_summary": {"current_margin_ratio": 0, "recommended_margin_ratio": 0},
+        }
+        payload["risk_breakdown"] = snapshot.build_risk_breakdown(
+            payload["decision_packet"],
+            position_profile=payload["holding_action"],
+            data_freshness={"state": "today"},
+            margin_etf_summary=payload["margin_etf_summary"],
+        )
+
+        budget = snapshot.build_position_risk_budget_guidance(payload)
+
+        self.assertTrue(budget["allow_add"])
+        self.assertFalse(budget["rebalance_only"])
+        self.assertEqual(budget["max_add_amount"], 20000)
+        self.assertIn("主账户小幅进攻区间", budget["main_account_guidance"])
+        self.assertIn("不使用融资", budget["margin_account_guidance"])
+
     def test_home_snapshot_adds_risk_breakdown_without_rewriting_decision_risk(self):
         today = _dt.date.today().isoformat()
         state = {
@@ -279,6 +351,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["risk_breakdown"]["overall"]["level"], "低")
         self.assertEqual(payload["risk_breakdown"]["margin"]["level"], "低")
         self.assertEqual(payload["holding_action"]["ticker"], "688041.SH")
+        self.assertIn("position_risk_budget", payload)
+        self.assertIn("主账户", payload["position_risk_budget"]["main_account_guidance"])
+        self.assertFalse(payload["position_risk_budget"]["deepseek_called"])
         self.assertFalse(payload["risk_breakdown"]["deepseek_called"])
 
     def test_data_freshness_today_stale_missing_and_partial_failed(self):

@@ -4967,6 +4967,9 @@ def render_home_action_snapshot(snapshot: dict | None = None):
     risk_breakdown = payload.get("risk_breakdown") or {}
     if not isinstance(risk_breakdown, dict):
         risk_breakdown = {}
+    position_risk_budget = payload.get("position_risk_budget") or {}
+    if not isinstance(position_risk_budget, dict):
+        position_risk_budget = {}
     freshness = payload.get("data_freshness") or {}
     data_capability_brief = payload.get("data_capability_brief") or {}
     if not isinstance(data_capability_brief, dict):
@@ -6895,6 +6898,24 @@ def render_home_action_snapshot(snapshot: dict | None = None):
         if risk_consistency_notice
         else ""
     )
+    budget_items_html = ""
+    for item in (position_risk_budget.get("items") or [])[:6]:
+        if not isinstance(item, dict):
+            continue
+        budget_items_html += f"""
+          <div class="cc-home-row">
+            <span>{escape(_home_text(item.get("label"), "仓位预算"))}</span>
+            <strong><span class="cc-home-chip {escape(_home_text(item.get("tone"), "muted"))}">{escape(_home_text(item.get("value"), "待评估"))}</span></strong>
+          </div>
+        """
+    budget_reduce_html = _home_list(
+        position_risk_budget.get("must_reduce_conditions"),
+        "暂无明确降风险触发；仍需遵守策略减仓条件。",
+    )
+    budget_invalid_html = _home_list(
+        position_risk_budget.get("invalidation_conditions"),
+        "市场转弱、纪律反向或数据失败时，本轮仓位建议失效。",
+    )
     html = f"""
     <section class="cc-home-snapshot">
       <div class="cc-home-head">
@@ -6946,6 +6967,20 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           <div class="cc-home-row"><span>加仓条件</span><strong>{escape(_home_text(holding.get("add_condition"), "等待验证。"))}</strong></div>
           <div class="cc-home-row"><span>减仓条件</span><strong>{escape(_home_text(holding.get("reduce_condition"), "触发风险线时优先降低暴露。"))}</strong></div>
           <div class="cc-home-row"><span>失效条件</span><strong>{escape(_home_text(holding.get("invalidation_condition"), "市场转弱或纪律反向。"))}</strong></div>
+        </div>
+        <div class="cc-home-panel">
+          <div class="cc-home-panel-title">仓位与风险预算</div>
+          <div class="cc-home-big-value">{escape(_home_text(position_risk_budget.get("max_add_amount_text"), "待输入现金/风险预算"))}</div>
+          <div class="cc-muted-note">可加仓金额</div>
+          <div class="cc-home-row"><span>主账户</span><strong>{escape(_home_text(position_risk_budget.get("main_account_guidance"), "主账户等待区间：0%-20%，先观察再决定。"))}</strong></div>
+          <div class="cc-home-row"><span>融资账户</span><strong>{escape(_home_text(position_risk_budget.get("margin_account_guidance"), "融资账户：不使用融资。"))}</strong></div>
+          <div class="cc-home-row"><span>ETF 替代</span><strong>{escape(_home_text(position_risk_budget.get("etf_substitution_text"), "暂无 ETF 替代清单；刷新后再评估。"))}</strong></div>
+          {budget_items_html}
+          <div class="cc-home-item-title">必须降风险条件</div>
+          {budget_reduce_html}
+          <div class="cc-home-item-title">失效条件</div>
+          {budget_invalid_html}
+          <div class="cc-muted-note">{escape(_home_text(position_risk_budget.get("guardrail"), "不保证收益，不自动下单；DeepSeek 只解释结构化结果，不直接决定仓位。"))}</div>
         </div>
         <div class="cc-home-panel">
           <div class="cc-home-panel-title">下一票候选 Top 3</div>

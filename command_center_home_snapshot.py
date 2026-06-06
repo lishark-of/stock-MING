@@ -392,6 +392,15 @@ def _first_risk_number(*values: Any) -> int | float | None:
     return None
 
 
+def _dedupe_text_list(values: Any) -> list[str]:
+    items = []
+    for value in _as_list(values):
+        text = _to_text(value)
+        if text and text not in items:
+            items.append(text)
+    return items
+
+
 def _risk_rank(level: Any) -> int:
     text = _to_text(level)
     if text in RISK_RANKS:
@@ -573,6 +582,173 @@ def build_risk_breakdown(
     }
 
 
+def _budget_amount_text(value: Any, fallback: str = "待输入现金/风险预算") -> str:
+    number = _to_number(value)
+    if number is None:
+        return fallback
+    return _format_position_money(number)
+
+
+def build_position_risk_budget_guidance(snapshot: Any = None) -> dict:
+    payload = _as_mapping(snapshot)
+    decision = _as_mapping(payload.get("decision_packet") or payload.get("today_action"))
+    strategy = _as_mapping(payload.get("strategy_packet"))
+    holding = _as_mapping(payload.get("holding_action"))
+    margin_summary = _as_mapping(payload.get("margin_etf_summary"))
+    risk_breakdown = _as_mapping(payload.get("risk_breakdown"))
+    risk_alerts = _as_mapping(payload.get("risk_alerts"))
+    risk_budget = _as_mapping(strategy.get("risk_budget"))
+    account = _as_mapping(payload.get("account_snapshot") or risk_budget.get("account_snapshot"))
+
+    action_text = " ".join(
+        _to_text(item)
+        for item in [
+            decision.get("overall_action"),
+            decision.get("position_mode"),
+            strategy.get("action"),
+            holding.get("action_state"),
+        ]
+        if _to_text(item)
+    )
+    current_price = _first_risk_number(holding.get("current_price"))
+    shares = _first_risk_number(holding.get("shares"), holding.get("holding_units")) or 0
+    cost = _first_risk_number(holding.get("cost"), holding.get("cost_price"))
+    current_amount = current_price * shares if current_price is not None and shares else None
+    cost_amount = cost * shares if cost is not None and shares else None
+    position_level = _to_text(_as_mapping(risk_breakdown.get("position")).get("level"), "待评估")
+    margin_level = _to_text(_as_mapping(risk_breakdown.get("margin")).get("level"), "待评估")
+    data_level = _to_text(_as_mapping(risk_breakdown.get("data")).get("level"), "待评估")
+    margin_ratio = _first_risk_number(margin_summary.get("current_margin_ratio")) or 0
+    recommended_margin = _first_risk_number(margin_summary.get("recommended_margin_ratio"))
+    cash = _first_risk_number(
+        account.get("cash"),
+        account.get("available_cash"),
+        risk_budget.get("available_cash"),
+        payload.get("available_cash"),
+    )
+    risk_budget_amount = _first_risk_number(
+        risk_budget.get("risk_budget_amount"),
+        risk_budget.get("risk_budget"),
+        payload.get("risk_budget_amount"),
+    )
+    cash_buffer_amount = _first_risk_number(
+        risk_budget.get("cash_buffer_amount"),
+        risk_budget.get("cash_buffer"),
+        account.get("cash_buffer_amount"),
+    )
+    max_add_amount = _first_risk_number(
+        risk_budget.get("max_add_amount"),
+        payload.get("max_add_amount"),
+        account.get("max_add_amount"),
+    )
+
+    wants_reduce = any(key in action_text for key in ["降风险", "减仓", "卖出", "退出", "禁止"])
+    wants_attack = any(key in action_text for key in ["小幅进攻", "试探", "可加仓", "买入", "允许进攻"])
+    hard_risk = (
+        wants_reduce
+        or _risk_rank(position_level) >= RISK_RANKS["中高"]
+        or _risk_rank(margin_level) >= RISK_RANKS["中高"]
+        or _risk_rank(data_level) >= RISK_RANKS["中高"]
+    )
+    allow_add = bool(wants_attack and not hard_risk and current_price is not None)
+    if max_add_amount is None:
+        if not allow_add:
+            max_add_amount = 0
+        elif cash is not None:
+            max_add_amount = max(0, cash * 0.25)
+    elif not allow_add:
+        max_add_amount = 0
+
+    if wants_reduce or _risk_rank(position_level) >= RISK_RANKS["中高"]:
+        main_account = "主账户降风险区间：0%-30%，优先降低单票暴露。"
+    elif allow_add:
+        main_account = "主账户小幅进攻区间：30%-50%，新增只限风险预算内。"
+    elif shares:
+        main_account = "主账户持仓观察区间：30%-60%，暂不新增风险。"
+    else:
+        main_account = "主账户等待区间：0%-20%，先观察再决定。"
+
+    if margin_ratio <= 0:
+        margin_account = "融资账户：不使用融资。"
+    elif _risk_rank(margin_level) >= RISK_RANKS["中高"]:
+        target = f"建议不高于 {recommended_margin:g}%" if recommended_margin is not None else "建议先降至保守区间"
+        margin_account = f"融资账户：不新增融资，{target}。"
+    else:
+        margin_account = "融资账户：仅维持已用融资，不因单次信号额外加杠杆。"
+
+    actionable_etfs = _as_list(margin_summary.get("actionable_etfs") or margin_summary.get("recommended_etfs"))
+    watch_etfs = _as_list(margin_summary.get("watch_etfs"))
+    etf_substitution_allowed = bool(actionable_etfs or watch_etfs or margin_ratio >= 20 or _risk_rank(position_level) >= RISK_RANKS["中"])
+    if margin_ratio >= 20 or _risk_rank(position_level) >= RISK_RANKS["中"]:
+        etf_substitution_text = "建议优先考虑 ETF 替代部分个股风险，不因为 ETF 强而额外加杠杆追高。"
+    elif actionable_etfs or watch_etfs:
+        etf_substitution_text = "可用 ETF 承接部分主题暴露，但仍需等待比例、金额和不追高条件确认。"
+    else:
+        etf_substitution_text = "暂无 ETF 替代清单；刷新或进入融资 ETF 工具后再评估。"
+
+    reduce_conditions = [
+        _to_text(item)
+        for item in [
+            holding.get("reduce_condition"),
+            *_as_list(risk_alerts.get("reduce_conditions")),
+        ]
+        if _to_text(item)
+    ]
+    if margin_ratio >= 20:
+        reduce_conditions.append(f"融资比例 {margin_ratio:g}% 未降至建议区间前，不新增融资。")
+    if _risk_rank(data_level) >= RISK_RANKS["中高"]:
+        reduce_conditions.append("关键数据缺口未恢复前，不放大仓位。")
+    invalidation_conditions = [
+        _to_text(item)
+        for item in [
+            holding.get("invalidation_condition"),
+            strategy.get("invalidation_condition"),
+        ]
+        if _to_text(item)
+    ]
+    if current_price is None and shares:
+        invalidation_conditions.append("当前价未刷新时，本轮仓位建议只能观察，不能执行加仓。")
+    if _risk_rank(data_level) >= RISK_RANKS["中高"]:
+        invalidation_conditions.append("行情或关键数据失败时，进攻建议失效。")
+
+    rebalance_only = bool(not allow_add and not wants_reduce and shares)
+    items = [
+        {"label": "主账户建议", "value": main_account, "tone": "danger" if wants_reduce else "success" if allow_add else "warning"},
+        {"label": "融资账户建议", "value": margin_account, "tone": "danger" if _risk_rank(margin_level) >= RISK_RANKS["中高"] else "muted"},
+        {"label": "是否允许加仓", "value": "允许小幅加仓" if allow_add else "暂不允许加仓", "tone": "success" if allow_add else "warning"},
+        {"label": "是否只允许调仓", "value": "只允许调仓/观察" if rebalance_only else "可按风险状态处理", "tone": "warning" if rebalance_only else "muted"},
+        {"label": "ETF 替代", "value": etf_substitution_text, "tone": "success" if etf_substitution_allowed else "muted"},
+        {"label": "可加仓金额", "value": _budget_amount_text(max_add_amount), "tone": "success" if allow_add and max_add_amount else "muted"},
+        {"label": "风险预算", "value": _budget_amount_text(risk_budget_amount), "tone": "muted" if risk_budget_amount is None else "success"},
+        {"label": "现金缓冲", "value": _budget_amount_text(cash_buffer_amount), "tone": "muted" if cash_buffer_amount is None else "success"},
+    ]
+    return {
+        "status": "ready",
+        "main_account_guidance": main_account,
+        "margin_account_guidance": margin_account,
+        "allow_add": allow_add,
+        "rebalance_only": rebalance_only,
+        "etf_substitution_allowed": etf_substitution_allowed,
+        "etf_substitution_text": etf_substitution_text,
+        "max_add_amount": max_add_amount,
+        "max_add_amount_text": _budget_amount_text(max_add_amount),
+        "risk_budget_amount": risk_budget_amount,
+        "risk_budget_amount_text": _budget_amount_text(risk_budget_amount),
+        "cash_buffer_amount": cash_buffer_amount,
+        "cash_buffer_amount_text": _budget_amount_text(cash_buffer_amount),
+        "current_position_amount": current_amount,
+        "current_position_amount_text": _budget_amount_text(current_amount, "当前价未刷新"),
+        "cost_amount": cost_amount,
+        "cost_amount_text": _budget_amount_text(cost_amount),
+        "must_reduce_conditions": _dedupe_text_list(reduce_conditions)[:5],
+        "invalidation_conditions": _dedupe_text_list(invalidation_conditions)[:5],
+        "items": items,
+        "summary": f"{main_account} {margin_account}",
+        "guardrail": "不保证收益，不自动下单；DeepSeek 只解释结构化结果，不直接决定仓位。",
+        "deepseek_called": False,
+    }
+
+
 def _now_iso(now: Any = None) -> str:
     if isinstance(now, _dt.datetime):
         return now.isoformat(timespec="seconds")
@@ -712,6 +888,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         risk_alerts=snapshot.get("risk_alerts") or {},
         margin_etf_summary=snapshot.get("margin_etf_summary") or {},
     )
+    snapshot["position_risk_budget"] = build_position_risk_budget_guidance(snapshot)
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
     snapshot["a_share_evidence_recovery_ledger"] = build_a_share_evidence_recovery_ledger(snapshot)
@@ -908,6 +1085,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         risk_alerts=snapshot.get("risk_alerts") or {},
         margin_etf_summary=snapshot.get("margin_etf_summary") or {},
     )
+    snapshot["position_risk_budget"] = build_position_risk_budget_guidance(snapshot)
     return snapshot
 
 
@@ -7545,6 +7723,7 @@ def build_home_action_snapshot(
             risk_alerts=empty.get("risk_alerts") or {},
             margin_etf_summary=empty.get("margin_etf_summary") or {},
         )
+        empty["position_risk_budget"] = build_position_risk_budget_guidance(empty)
         return empty
     snapshot["a_share_fact_recovery_summary"] = build_a_share_fact_recovery_summary(snapshot)
     snapshot["legacy_decision_chain_summary"] = build_legacy_decision_chain_summary(snapshot)
@@ -7609,6 +7788,7 @@ def build_home_action_snapshot(
         risk_alerts=snapshot.get("risk_alerts") or {},
         margin_etf_summary=snapshot.get("margin_etf_summary") or {},
     )
+    snapshot["position_risk_budget"] = build_position_risk_budget_guidance(snapshot)
     return sanitize_snapshot_payload(snapshot)
 
 
