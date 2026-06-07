@@ -51,7 +51,7 @@ import strategy_execution_service as strategy_service
 from command_center_decision_summary import build_decision_summary_view_model
 from command_center_module_summary import build_module_summary_view_model
 from command_center_overview_summary import build_command_center_overview_view_model
-from command_center_refresh_summary import build_refresh_summary_view_model
+from command_center_refresh_summary import build_full_refresh_steps, build_refresh_summary_view_model
 from command_center_strategy_summary import (
     build_deepseek_latest_explanation_view_model,
     build_strategy_summary_view_model,
@@ -4228,9 +4228,16 @@ def build_command_center_view_model(live_packet=None):
         decision_packet_key=decision_engine.PACKET_KEY,
         decision_last_success_key=decision_engine.LAST_SUCCESS_KEY,
     )
+    refresh_result_for_view = st.session_state.get("command_center_refresh_summary") or {}
+    full_steps_for_view = st.session_state.get("command_center_full_refresh_steps") or []
+    if full_steps_for_view:
+        refresh_result_for_view = {
+            **(refresh_result_for_view if isinstance(refresh_result_for_view, dict) else {}),
+            "full_refresh_steps": full_steps_for_view,
+        }
     view_model["refresh_summary"] = build_refresh_summary_view_model(
         live_packet=live_packet,
-        refresh_result=st.session_state.get("command_center_refresh_summary") or {},
+        refresh_result=refresh_result_for_view,
         refresh_level=cc_adapter.get_nested(live_packet, "refresh_level"),
         generated_at=(
             cc_adapter.get_nested(live_packet, "updated_at")
@@ -4261,7 +4268,17 @@ def _build_home_action_snapshot_display(live_packet=None, target="", position_pr
     return snapshot
 
 
+def _sync_command_center_full_refresh_steps(refresh_summary=None, live_packet=None):
+    steps = build_full_refresh_steps(refresh_summary or {}, live_packet=live_packet or {})
+    if isinstance(refresh_summary, dict):
+        refresh_summary["full_refresh_steps"] = steps
+    st.session_state["command_center_full_refresh_steps"] = steps
+    return steps
+
+
 def _persist_home_action_snapshot(live_packet=None, target="", position_profile=None, decision_packet=None, strategy_packet=None, refresh_summary=None):
+    if refresh_summary is not None:
+        _sync_command_center_full_refresh_steps(refresh_summary, live_packet=live_packet)
     snapshot = home_snapshot_service.build_home_action_snapshot(
         st.session_state,
         target=target,
@@ -6300,6 +6317,7 @@ def _run_command_center_full_data_refresh(target="", market_type="", price=None,
     st.session_state["command_center_data_capability_packet"] = data_capability_packet
     refresh_summary["data_capability_status_groups"] = data_capability_packet.get("status_groups") or {}
     refresh_summary["data_capability_summary"] = _cc_status_group_summary(data_capability_packet)
+    _sync_command_center_full_refresh_steps(refresh_summary, live_packet=live_packet)
     st.session_state["command_center_refresh_summary"] = refresh_summary
     live_packet = _sync_command_center_home_candidate_packets(live_packet)
     _persist_home_action_snapshot(
@@ -6858,6 +6876,7 @@ def _run_command_center_auto_page_cycle(
             "result": {},
             "error": None,
         }
+    _sync_command_center_full_refresh_steps(refresh_summary)
     st.session_state["command_center_refresh_summary"] = refresh_summary
 
     analysis_packet = _run_command_center_analysis_chain(
@@ -6879,6 +6898,7 @@ def _run_command_center_auto_page_cycle(
     )
     refresh_summary["data_capability_status_groups"] = data_capability_packet.get("status_groups") or {}
     refresh_summary["data_capability_summary"] = _cc_status_group_summary(data_capability_packet)
+    _sync_command_center_full_refresh_steps(refresh_summary, live_packet=live_packet)
     st.session_state["command_center_refresh_summary"] = refresh_summary
     final_snapshot = _persist_home_action_snapshot(
         live_packet=live_packet,
@@ -8138,7 +8158,19 @@ packet:
         if st.session_state.get(explanation_at_key) or st.session_state.get("command_center_deepseek_projection_generated_at")
         else "未调用"
     )
+    full_refresh_steps_for_display = (
+        st.session_state.get("command_center_full_refresh_steps")
+        or (st.session_state.get("command_center_home_snapshot") or {}).get("full_refresh_steps")
+        or []
+    )
     refresh_summary_for_display = st.session_state.get("command_center_refresh_summary") or {}
+    if full_refresh_steps_for_display and isinstance(refresh_summary_for_display, dict):
+        refresh_summary_for_display = {
+            **refresh_summary_for_display,
+            "full_refresh_steps": full_refresh_steps_for_display,
+        }
+    elif full_refresh_steps_for_display:
+        refresh_summary_for_display = {"full_refresh_steps": full_refresh_steps_for_display}
     if refresh_summary_for_display:
         refresh_summary_view_for_display = build_refresh_summary_view_model(
             live_packet=live_packet,

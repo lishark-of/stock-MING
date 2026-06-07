@@ -23,6 +23,7 @@ import command_center_dragon_tiger_packet as dragon_tiger_packet_service
 import command_center_margin_packet as margin_packet_service
 import command_center_limit_emotion_packet as limit_emotion_packet_service
 import command_center_hard_risk_packet as hard_risk_packet_service
+import command_center_refresh_summary as refresh_summary_service
 import command_center_market_profile_summary as market_profile_summary_service
 import command_center_evidence_summary as evidence_summary_service
 import command_center_data_issue_explainer as data_issue_explainer_service
@@ -854,6 +855,7 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         "is_empty": True,
         "timestamp": "",
         "source": SNAPSHOT_SOURCE,
+        "full_refresh_steps": [],
         "decision_packet": {},
         "strategy_packet": {},
         "today_action": {
@@ -7465,6 +7467,11 @@ def build_home_action_snapshot(
         target=target,
     )
     refresh = _as_mapping(refresh_summary or state_map.get("command_center_refresh_summary"))
+    refresh_for_steps = dict(refresh)
+    session_full_steps = _as_list(state_map.get("command_center_full_refresh_steps") or refresh.get("full_refresh_steps"))
+    if session_full_steps:
+        refresh_for_steps["full_refresh_steps"] = session_full_steps
+    full_refresh_steps = refresh_summary_service.build_full_refresh_steps(refresh_for_steps, live)
     timestamp = _to_text(
         refresh.get("finished_at")
         or refresh.get("updated_at")
@@ -7595,6 +7602,7 @@ def build_home_action_snapshot(
         "is_empty": False,
         "timestamp": timestamp,
         "source": SNAPSHOT_SOURCE,
+        "full_refresh_steps": full_refresh_steps,
         "decision_packet": decision,
         "strategy_packet": strategy,
         "today_action": build_today_action(decision),
@@ -7671,6 +7679,7 @@ def build_home_action_snapshot(
     if not has_payload:
         empty = _empty_snapshot()
         empty["timestamp"] = timestamp
+        empty["full_refresh_steps"] = full_refresh_steps
         empty["holding_action"] = snapshot["holding_action"]
         empty["data_coverage"] = coverage
         empty["risk_alerts"] = attach_hard_risk_risk_alerts(

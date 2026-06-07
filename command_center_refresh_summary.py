@@ -113,6 +113,45 @@ USER_STATUS_LABELS = {
     "unknown": "待确认",
 }
 
+FULL_REFRESH_STEP_KEY_ALIASES = {
+    "market": "market",
+    "市场": "market",
+    "市场环境": "market",
+    "quant": "quant",
+    "量化": "quant",
+    "量化推演": "quant",
+    "量化摘要": "quant",
+    "discipline": "discipline",
+    "纪律": "discipline",
+    "交易纪律": "discipline",
+    "纪律校验": "discipline",
+    "next_ticket": "next_ticket",
+    "下一票": "next_ticket",
+    "下一票雷达": "next_ticket",
+    "margin_etf": "etf",
+    "etf": "etf",
+    "ETF": "etf",
+    "ETF 配置": "etf",
+    "融资 ETF": "etf",
+    "持仓行情": "holding",
+    "yfinance 行情": "holding",
+    "数据能力": "data_capability",
+    "数据能力体检": "data_capability",
+    "Tushare / Supabase 体检": "data_capability",
+    "资金数据": "data_capability",
+    "AkShare 资金穿透": "data_capability",
+}
+
+FULL_REFRESH_DECISION_KEYS = {
+    "market",
+    "holding",
+    "quant",
+    "discipline",
+    "next_ticket",
+    "etf",
+    "data_capability",
+}
+
 INTERNAL_TEXT_REPLACEMENTS = (
     ("command_center_", ""),
     ("command_center", "综合中心"),
@@ -176,6 +215,20 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, Number):
+        return float(value)
+    text = _to_text(value)
+    if not text:
+        return default
+    try:
+        return float(text)
+    except ValueError:
+        return default
+
+
 def _clean_user_text(value: Any, default: str = "") -> str:
     text = _to_text(value) or default
     if not text:
@@ -227,11 +280,16 @@ def user_refresh_status_label(status: Any, *, module_label: str = "") -> str:
 
 def _module_user_label(result: Mapping[str, Any]) -> str:
     raw = _clean_user_text(
-        result.get("module")
-        or result.get("label")
+        result.get("name")
+        or result.get("module")
+        or result.get("module_name")
+        or result.get("module_label")
+        or result.get("step_name")
+        or result.get("step_label")
         or result.get("module_key")
         or result.get("key")
         or result.get("source")
+        or result.get("label")
     )
     if not raw:
         return "刷新步骤"
@@ -243,6 +301,36 @@ def _module_user_label(result: Mapping[str, Any]) -> str:
     if "tushare" in lower and "supabase" in lower:
         return "数据能力体检"
     return USER_MODULE_LABELS.get(raw, USER_MODULE_LABELS.get(lower, raw))
+
+
+def _full_refresh_step_key(result: Mapping[str, Any], module_label: str) -> str:
+    raw = _to_text(
+        result.get("key")
+        or result.get("module_key")
+        or result.get("module")
+        or result.get("name")
+        or result.get("source")
+    )
+    key = FULL_REFRESH_STEP_KEY_ALIASES.get(raw, FULL_REFRESH_STEP_KEY_ALIASES.get(raw.lower()))
+    if key:
+        return key
+    label = module_label or _module_user_label(result)
+    lowered = label.lower()
+    if "yfinance" in lowered or "行情" in label or "报价" in label:
+        return "holding"
+    if "下一票" in label:
+        return "next_ticket"
+    if "etf" in lowered or "ETF" in label:
+        return "etf"
+    if "纪律" in label:
+        return "discipline"
+    if "量化" in label:
+        return "quant"
+    if "市场" in label:
+        return "market"
+    if "数据能力" in label or "体检" in label or "资金" in label or "tushare" in lowered or "akshare" in lowered:
+        return "data_capability"
+    return raw.lower() if raw else "unknown"
 
 
 def _step_status_key(result: Mapping[str, Any], module_label: str = "") -> str:
@@ -323,6 +411,49 @@ def _build_user_refresh_step_item(result: Any) -> dict:
     }
 
 
+def _build_full_refresh_step_item(result: Any) -> dict | None:
+    payload = as_mapping(result)
+    if not payload:
+        return None
+    module_label = _module_user_label(payload)
+    key = _full_refresh_step_key(payload, module_label)
+    if key == "deepseek":
+        return None
+    status_key = _step_status_key(payload, module_label)
+    error_text = _clean_user_text(payload.get("error") or payload.get("last_error"))
+    return {
+        "name": module_label,
+        "key": key,
+        "status": status_key,
+        "label": user_refresh_status_label(status_key, module_label=module_label),
+        "started_at": _to_text(payload.get("started_at")),
+        "finished_at": _to_text(payload.get("finished_at") or payload.get("updated_at")),
+        "duration_seconds": round(max(0.0, _to_float(payload.get("duration_seconds"))), 3),
+        "message": _step_user_message(payload, module_label, status_key),
+        "error": error_text or None,
+        "affects_decision": key in FULL_REFRESH_DECISION_KEYS,
+    }
+
+
+def build_full_refresh_steps(refresh_result: Any = None, live_packet: Any = None) -> list[dict]:
+    del live_packet
+    payload = as_mapping(refresh_result)
+    raw_steps = payload.get("full_refresh_steps")
+    if not isinstance(raw_steps, (list, tuple)):
+        raw_steps = payload.get("steps")
+    if not isinstance(raw_steps, (list, tuple)):
+        raw_steps = payload.get("results")
+    if not isinstance(raw_steps, (list, tuple)):
+        raw_steps = []
+
+    steps: list[dict] = []
+    for raw in raw_steps:
+        step = _build_full_refresh_step_item(raw)
+        if step is not None:
+            steps.append(step)
+    return clone_packet({"steps": steps}).get("steps", [])
+
+
 def _status_group_count(groups: Mapping[str, Any], key: str) -> int:
     value = groups.get(key)
     if isinstance(value, (list, tuple, set)):
@@ -394,7 +525,11 @@ def build_user_data_capability_summary(refresh_result: Any = None) -> dict:
 def build_user_refresh_summary(refresh_result: Any = None, live_packet: Any = None) -> dict:
     del live_packet
     payload = as_mapping(refresh_result)
-    raw_results = payload.get("results") if isinstance(payload.get("results"), (list, tuple)) else []
+    raw_results = payload.get("full_refresh_steps")
+    if not isinstance(raw_results, (list, tuple)):
+        raw_results = payload.get("results")
+    if not isinstance(raw_results, (list, tuple)):
+        raw_results = []
     step_items = [_build_user_refresh_step_item(result) for result in raw_results]
     counts = {
         "completed": sum(1 for item in step_items if item["status"] == "completed"),

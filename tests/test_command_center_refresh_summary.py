@@ -252,6 +252,95 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         self.assertIn("cache missing", items["纪律校验"]["message"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_full_refresh_steps_standardizes_results(self):
+        steps = summary.build_full_refresh_steps(
+            {
+                "finished_at": "2026-06-07T10:00:08",
+                "deepseek_called": False,
+                "results": [
+                    {
+                        "module_key": "market",
+                        "module": "市场环境",
+                        "status": "completed",
+                        "ok": True,
+                        "started_at": "2026-06-07T10:00:00",
+                        "finished_at": "2026-06-07T10:00:02",
+                        "duration_seconds": 2.14,
+                        "message": "市场环境完成。",
+                    },
+                    {
+                        "module_key": "next_ticket",
+                        "module": "下一票雷达",
+                        "status": "empty",
+                        "ok": True,
+                        "duration_seconds": 1,
+                    },
+                    {
+                        "module": "DeepSeek 综合解释",
+                        "key": "deepseek",
+                        "status": "completed",
+                    },
+                ],
+            }
+        )
+
+        by_key = {item["key"]: item for item in steps}
+        self.assertIn("market", by_key)
+        self.assertIn("next_ticket", by_key)
+        self.assertNotIn("deepseek", by_key)
+        self.assertEqual(by_key["market"]["name"], "市场环境")
+        self.assertEqual(by_key["market"]["status"], "completed")
+        self.assertEqual(by_key["market"]["label"], "完成")
+        self.assertEqual(by_key["market"]["duration_seconds"], 2.14)
+        self.assertIn("started_at", by_key["market"])
+        self.assertIn("finished_at", by_key["market"])
+        self.assertTrue(by_key["market"]["affects_decision"])
+        self.assertEqual(by_key["next_ticket"]["label"], "无可执行候选")
+        self.assertIn("本轮轻量雷达未产生可执行候选", by_key["next_ticket"]["message"])
+        json.dumps(steps, ensure_ascii=False)
+
+    def test_full_refresh_steps_preserve_failed_cached_and_missing_fields(self):
+        steps = summary.build_full_refresh_steps(
+            {
+                "results": [
+                    {"module": "ETF 配置", "status": "cached", "duration_seconds": 0.33},
+                    {"module": "纪律校验", "status": "failed", "ok": False, "error": "cache missing"},
+                    {"module": None, "duration_seconds": "bad"},
+                ]
+            }
+        )
+
+        by_name = {item["name"]: item for item in steps}
+        self.assertEqual(by_name["ETF 配置"]["key"], "etf")
+        self.assertEqual(by_name["ETF 配置"]["label"], "使用缓存")
+        self.assertEqual(by_name["纪律校验"]["status"], "failed")
+        self.assertEqual(by_name["纪律校验"]["label"], "失败")
+        self.assertEqual(by_name["纪律校验"]["error"], "cache missing")
+        self.assertEqual(by_name["纪律校验"]["duration_seconds"], 0.0)
+        self.assertTrue(all({"key", "name", "status", "label", "duration_seconds"} <= set(item) for item in steps))
+        json.dumps(steps, ensure_ascii=False)
+
+    def test_user_refresh_summary_reads_full_refresh_steps_first(self):
+        view_model = summary.build_refresh_summary_view_model(
+            refresh_result={
+                "results": [{"module": "市场环境", "status": "completed", "ok": True}],
+                "full_refresh_steps": [
+                    {
+                        "name": "下一票雷达",
+                        "key": "next_ticket",
+                        "status": "empty",
+                        "label": "无可执行候选",
+                        "duration_seconds": 1.2,
+                    }
+                ],
+            }
+        )
+
+        items = view_model["user_summary"]["step_items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["label"], "下一票雷达")
+        self.assertEqual(items[0]["status_label"], "无可执行候选")
+
     def test_user_refresh_summary_sanitizes_internal_terms(self):
         view_model = summary.build_refresh_summary_view_model(
             refresh_result={

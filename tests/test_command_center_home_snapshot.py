@@ -59,6 +59,60 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("candidate_execution_evidence", loop_items)
         self.assertEqual(loop_items["deepseek"]["status"], "manual")
 
+    def test_home_snapshot_saves_and_loads_full_refresh_steps(self):
+        refresh_summary = {
+            "finished_at": "2026-06-07T10:00:08",
+            "deepseek_called": False,
+            "results": [
+                {
+                    "module_key": "market",
+                    "module": "市场环境",
+                    "status": "completed",
+                    "ok": True,
+                    "duration_seconds": 2.1,
+                },
+                {
+                    "module_key": "next_ticket",
+                    "module": "下一票雷达",
+                    "status": "empty",
+                    "ok": True,
+                    "duration_seconds": 1.0,
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = snapshot.build_home_action_snapshot(
+                {
+                    "command_center_decision_packet": {
+                        "status": "ready",
+                        "overall_action": "只观察",
+                        "risk_level": "低",
+                    },
+                    "command_center_refresh_summary": refresh_summary,
+                },
+                target="002008.SZ",
+                position_profile={
+                    "ticker": "002008.SZ",
+                    "shares": 3000,
+                    "cost": 98,
+                    "current_price": 127.87,
+                    "margin_ratio_pct": 30,
+                    "normalized_position_state": "已持仓",
+                },
+                refresh_summary=refresh_summary,
+                now="2026-06-07T10:00:09",
+            )
+            snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            loaded = snapshot.load_home_action_snapshot(base_dir=tmp)
+
+        self.assertIn("full_refresh_steps", payload)
+        self.assertEqual(payload["full_refresh_steps"][0]["key"], "market")
+        self.assertEqual(payload["full_refresh_steps"][0]["label"], "完成")
+        self.assertEqual(payload["full_refresh_steps"][1]["key"], "next_ticket")
+        self.assertEqual(payload["full_refresh_steps"][1]["label"], "无可执行候选")
+        self.assertEqual(loaded["full_refresh_steps"], payload["full_refresh_steps"])
+        self.assertFalse(loaded["deepseek_called"])
+
     def test_save_snapshot_uses_unique_temp_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             payload = snapshot.build_home_action_snapshot(
