@@ -59,6 +59,20 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("candidate_execution_evidence", loop_items)
         self.assertEqual(loop_items["deepseek"]["status"], "manual")
 
+    def test_save_snapshot_uses_unique_temp_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = snapshot.build_home_action_snapshot(
+                {"command_center_decision_packet": {"status": "ready", "overall_action": "只观察"}},
+                target="002008",
+                now="2026-06-01T09:30:00",
+            )
+            first = snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            second = snapshot.save_home_action_snapshot(payload, base_dir=tmp)
+            leftovers = list(Path(tmp).glob("*.tmp"))
+
+        self.assertEqual(first, second)
+        self.assertEqual(leftovers, [])
+
     def test_attach_decision_loop_status_keeps_recovery_navigation_action(self):
         payload = snapshot.attach_decision_loop_status(
             {

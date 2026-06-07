@@ -3333,6 +3333,30 @@ def _cc_build_next_ticket_callbacks():
 def _cc_build_light_next_ticket_callbacks():
     callbacks = dict(_cc_build_next_ticket_callbacks())
     callbacks.pop("call_deepseek_non_stream", None)
+    callbacks["compute_technical_snapshot"] = lambda ticker, *args, **kwargs: {
+        "ticker": ticker,
+        "latest_close": None,
+        "missing": ["轻量雷达使用本地缓存，不在满血刷新中调用外部技术行情。"],
+        "confidence": 0,
+        "source": "command_center_light_cache_only",
+    }
+    callbacks["get_current_price_detail"] = lambda ticker, market_type=None, *args, **kwargs: {
+        "ticker": ticker,
+        "market_type": market_type or "A_SHARE",
+        "price": None,
+        "price_source": "cache_only",
+        "warning": "轻量雷达不在满血刷新中逐候选调用外部行情。",
+    }
+    callbacks["build_tianyan_risk_fact_packet"] = lambda stock_code, name="", price=None, *args, **kwargs: {
+        "stock_code": stock_code,
+        "name": name,
+        "price": price,
+        "sections": {},
+        "summary": "轻量雷达使用本地规则和缓存，不在满血刷新中逐候选调用硬风险接口。",
+        "source": "command_center_light_cache_only",
+        "deepseek_called": False,
+    }
+    callbacks["load_announcement_watchlist"] = lambda *args, **kwargs: {"items": [], "source": "cache_only"}
     return callbacks
 
 
@@ -3493,7 +3517,9 @@ def _cc_refresh_margin_etf_config(target="", market_type="", price=None, positio
 
 def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_profile=None):
     del market_type
-    token = _cc_now()
+    started_at = _cc_now()
+    start_monotonic = time.monotonic()
+    timeout_seconds = 8.0
     previous_rows = legacy_packet_sync_service.extract_legacy_radar_rows(st.session_state)
     profile = (
         position_profile
@@ -3529,7 +3555,11 @@ def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_pr
     except Exception as exc:
         errors.append(str(exc))
         scan_state = {}
-    generated_at = scan_state.get("generated_at") or token
+    finished_at = _cc_now()
+    duration_seconds = round(max(0.0, time.monotonic() - start_monotonic), 3)
+    scan_status = str(scan_state.get("status") or st.session_state.get("radar_scan_status") or "").lower()
+    timed_out = duration_seconds > timeout_seconds or scan_status in {"timeout", "timed_out"}
+    generated_at = scan_state.get("generated_at") or finished_at
     raw_rows = scan_state.get("rule_rows") or scan_state.get("results") or []
     light_rows = [
         row
@@ -3540,21 +3570,33 @@ def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_pr
     ]
     rows_source = "综合中心轻量雷达"
     display_rows = light_rows
-    if not display_rows and previous_rows:
-        display_rows = previous_rows
+    radar_status = "ready" if display_rows else "empty"
+    if errors or scan_status == "failed":
+        radar_status = "failed"
+        display_rows = []
+    if timed_out:
+        radar_status = "timeout"
+        display_rows = previous_rows if previous_rows else []
         rows_source = "上一轮下一票雷达缓存"
     candidate_count = len(display_rows)
-    status = "completed" if candidate_count else "skipped"
     insufficiency_reason = ""
     if not candidate_count:
-        if errors:
+        if radar_status == "timeout":
+            insufficiency_reason = "下一票雷达超时，已停止等待；当前无上次结果可展示。"
+        elif errors:
             insufficiency_reason = f"轻量规则扫描失败：{errors[0]}"
         elif raw_rows:
-            insufficiency_reason = "轻量候选池返回结果均不可用，可能是单票数据构造失败或关键数据缺失。"
+            insufficiency_reason = "本轮轻量雷达未产生可执行候选。候选未达主路径展示标准。"
         else:
             insufficiency_reason = "轻量候选池没有生成可用候选；未跑全市场扫描。"
     elif candidate_count < 3:
         insufficiency_reason = f"轻量候选池仅生成 {candidate_count} 个可用候选，首页按实际数量展示。"
+    if radar_status == "timeout" and candidate_count:
+        insufficiency_reason = f"下一票雷达超时，保留上次成功 Top{min(3, candidate_count)}。"
+    if radar_status == "failed" and not insufficiency_reason:
+        insufficiency_reason = "下一票雷达刷新失败，已记录错误原因。"
+    if timed_out and not errors:
+        errors.append(insufficiency_reason or "下一票雷达超时。")
     summary = {
         "source_mode": rows_source,
         "deepseek_called": False,
@@ -3563,11 +3605,16 @@ def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_pr
         "total_count": len(display_rows),
         "scan_kind": "command_center_light_rule_scan",
         "candidate_limit": 8,
+        "status": radar_status,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
+        "timeout_seconds": timeout_seconds,
         "note": (
             f"综合中心轻量雷达已生成下一票 Top{min(3, candidate_count)}；"
             "候选来自轻量样本池/本地规则，不触发全市场扫描或 DeepSeek。"
             if candidate_count
-            else f"暂无下一票 Top3：{insufficiency_reason}"
+            else f"{'下一票雷达刷新失败' if radar_status == 'failed' else '暂无下一票 Top3'}：{insufficiency_reason}"
         ),
         "insufficiency_reason": insufficiency_reason,
         "errors": errors,
@@ -3575,7 +3622,13 @@ def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_pr
     scan_state = {
         **(scan_state if isinstance(scan_state, dict) else {}),
         "generated_at": generated_at,
-        "status": status,
+        "updated_at": finished_at,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
+        "timeout_seconds": timeout_seconds,
+        "status": radar_status,
+        "error": errors[0] if errors else None,
         "source_mode": rows_source,
         "source_notes": [
             "满血数据刷新运行综合中心轻量雷达，不跑全市场重扫描。",
@@ -3588,24 +3641,37 @@ def _cc_run_next_ticket_radar(target="", market_type="", price=None, position_pr
     }
     st.session_state["radar_scan_results"] = clone_command_center_packet(scan_state)
     st.session_state["radar_scan_summary"] = clone_command_center_packet(summary)
-    st.session_state["radar_scan_status"] = scan_state["status"]
-    st.session_state["radar_scan_finished_at"] = generated_at
-    st.session_state["command_center_radar_packet"] = legacy_packet_sync_service.sync_legacy_radar_packet(
-        st.session_state,
-        live_packet={"next_ticket": {"updated_at": generated_at, "source": rows_source}},
+    st.session_state["radar_scan_errors"] = clone_command_center_packet(errors)
+    st.session_state["radar_scan_status"] = radar_status
+    st.session_state["radar_scan_started_at"] = started_at
+    st.session_state["radar_scan_finished_at"] = finished_at
+    st.session_state["command_center_radar_packet"] = radar_packet_service.build_command_center_radar_packet(
+        {
+            "radar_scan_status": radar_status,
+            "radar_scan_results": scan_state,
+            "radar_scan_summary": summary,
+            "radar_scan_errors": errors,
+        },
+        live_packet={"next_ticket": {"updated_at": finished_at, "source": rows_source}},
     )
     _cc_mark_module(
         "next_ticket",
-        "已刷新" if candidate_count else "待补充",
+        "已刷新" if radar_status == "ready" else "超时" if radar_status == "timeout" else "失败" if radar_status == "failed" else "无候选",
         rows_source,
         insufficiency_reason,
     )
     return {
         "module": "下一票雷达",
-        "status": "ok",
-        "updated_at": generated_at,
+        "status": "failed" if radar_status == "failed" else radar_status,
+        "ok": radar_status != "failed",
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
+        "updated_at": finished_at,
         "source": rows_source,
         "summary": summary["note"],
+        "message": summary["note"],
+        "error": errors[0] if errors else "",
         "candidate_count": candidate_count,
         "deepseek_called": False,
     }

@@ -145,12 +145,19 @@ def _success_record(
     payload = clone_packet(result)
     payload["refresh_level"] = payload.get("refresh_level") or refresh_level
     updated_at = str(payload.get("updated_at") or payload.get("generated_at") or finished_at)
+    finished_at = str(payload.get("finished_at") or finished_at)
+    duration_seconds = payload.get("duration_seconds")
+    if duration_seconds is None:
+        duration_seconds = _duration_seconds(started_at, finished_at)
     source = str(payload.get("source") or label)
     summary = _summary_from_result(payload, label)
     last_success = {
         "module_key": module_key,
         "module": label,
         "status": payload.get("status") or "ok",
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
         "updated_at": updated_at,
         "source": source,
         "summary": summary,
@@ -164,6 +171,9 @@ def _success_record(
         "ok": True,
         "status": payload.get("status") or "ok",
         "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
+        "message": payload.get("message") or payload.get("summary") or summary,
         "updated_at": updated_at,
         "source": source,
         "summary": summary,
@@ -307,6 +317,9 @@ def safe_refresh_module(
             "ok": False,
             "status": "failed",
             "started_at": started_at,
+            "finished_at": finished_at,
+            "duration_seconds": _duration_seconds(started_at, finished_at),
+            "message": error_text,
             "updated_at": finished_at,
             "source": (previous_success or {}).get("source") or label,
             "summary": (
@@ -499,10 +512,24 @@ def run_refresh_sequence(
     results = []
     errors = []
     for module_key, label, _handler in steps:
+        step_started_at = command_center_now()
         if progress_callback:
             progress_callback("start", label, None)
         result = runner(module_key, label)
+        step_finished_at = command_center_now()
         result["refresh_level"] = result.get("refresh_level") or refresh_level
+        result["started_at"] = result.get("started_at") or step_started_at
+        result["finished_at"] = result.get("finished_at") or result.get("updated_at") or step_finished_at
+        result["duration_seconds"] = result.get("duration_seconds")
+        if result["duration_seconds"] is None:
+            result["duration_seconds"] = _duration_seconds(result["started_at"], result["finished_at"])
+        result["message"] = (
+            result.get("message")
+            or result.get("summary")
+            or result.get("error")
+            or result.get("last_error")
+            or f"{label}刷新完成"
+        )
         results.append(result)
         if result.get("ok"):
             if progress_callback:
@@ -525,3 +552,12 @@ def run_refresh_sequence(
         "refresh_level": refresh_level,
         "deepseek_called": False,
     }
+
+
+def _duration_seconds(started_at: Any, finished_at: Any) -> float:
+    try:
+        start = datetime.datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+        finish = datetime.datetime.fromisoformat(str(finished_at).replace("Z", "+00:00"))
+        return round(max(0.0, (finish - start).total_seconds()), 3)
+    except Exception:
+        return 0.0

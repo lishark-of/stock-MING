@@ -120,9 +120,54 @@ class CommandCenterRadarPacketTests(unittest.TestCase):
         )
 
         self.assertEqual(packet["top_candidates"], [])
+        self.assertEqual(packet["status"], "empty")
+        self.assertEqual(packet["cache_state"], "empty")
         self.assertEqual(len(packet["excluded_candidates"]), 2)
         self.assertFalse(packet["has_actionable_candidates"])
         self.assertIn("本轮轻量雷达未产生可执行候选", packet["summary"])
+        self.assertIn("本轮轻量雷达未产生可执行候选", packet["evidence_summary"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_timeout_packet_keeps_finished_state(self):
+        packet = radar.build_command_center_radar_packet(
+            {
+                "radar_scan_status": "timeout",
+                "radar_scan_results": {
+                    "status": "timeout",
+                    "generated_at": "2026-06-07T10:00:08",
+                    "finished_at": "2026-06-07T10:00:08",
+                    "summary": {"deepseek_called": False, "errors": ["下一票雷达超时"]},
+                    "rule_rows": [],
+                    "errors": ["下一票雷达超时"],
+                },
+                "radar_scan_summary": {"deepseek_called": False, "errors": ["下一票雷达超时"]},
+            }
+        )
+
+        self.assertEqual(packet["status"], "timeout")
+        self.assertEqual(packet["top_candidates"], [])
+        self.assertIn("下一票雷达超时", packet["evidence_summary"])
+        self.assertIn("超时", packet["action_hint"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_failed_packet_surfaces_error_without_candidates(self):
+        packet = radar.build_command_center_radar_packet(
+            {
+                "radar_scan_status": "failed",
+                "radar_scan_results": {
+                    "status": "failed",
+                    "generated_at": "2026-06-07T10:00:08",
+                    "summary": {"deepseek_called": False, "errors": ["scan failed"]},
+                    "rule_rows": [],
+                    "errors": ["scan failed"],
+                },
+            }
+        )
+
+        self.assertEqual(packet["status"], "failed")
+        self.assertEqual(packet["top_candidates"], [])
+        self.assertIn("下一票雷达读取失败", packet["evidence_summary"])
+        self.assertEqual(packet["verification_status"], "阻断决策")
         self.assertFalse(packet["deepseek_called"])
 
     def test_waiting_packet_when_cache_missing(self):

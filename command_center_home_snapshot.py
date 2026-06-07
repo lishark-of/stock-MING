@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
+import time
 from collections.abc import Mapping
 from numbers import Number
 from pathlib import Path
@@ -1127,7 +1129,9 @@ def save_home_action_snapshot(snapshot: Mapping[str, Any], path: str | Path | No
     snapshot_path = Path(path) if path is not None else get_home_snapshot_path(base_dir)
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     payload = sanitize_snapshot_payload(snapshot)
-    temp_path = snapshot_path.with_suffix(snapshot_path.suffix + ".tmp")
+    temp_path = snapshot_path.with_suffix(
+        f"{snapshot_path.suffix}.{os.getpid()}.{time.monotonic_ns()}.tmp"
+    )
     temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     temp_path.replace(snapshot_path)
     return snapshot_path

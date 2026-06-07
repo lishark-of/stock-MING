@@ -505,8 +505,10 @@ def _radar_brief_counts(candidates: Any = None) -> dict[str, int]:
 
 
 def _radar_verification_status(status: str, data_status: str, candidates: Any = None, errors: Any = None) -> str:
-    if status == "failed" or as_list(errors):
+    if status in {"failed", "timeout"} or as_list(errors):
         return "阻断决策" if status == "failed" else "待验证"
+    if status == "empty":
+        return "无可执行候选"
     if data_status == "missing" or not as_list(candidates):
         return "待验证"
     counts = _radar_brief_counts(candidates)
@@ -520,8 +522,12 @@ def _radar_verification_status(status: str, data_status: str, candidates: Any = 
 def _build_radar_packet_evidence_summary(status: str, data_status: str, candidates: Any = None, errors: Any = None) -> str:
     rows = as_list(candidates)
     if not rows:
+        if status == "timeout":
+            return "下一票雷达超时，已保留上次结果。"
         if status == "failed":
             return "下一票雷达读取失败；候选池不能进入执行准备。"
+        if status == "empty":
+            return "本轮轻量雷达未产生可执行候选。"
         return "暂无下一票 Top3；页面打开不会自动全市场扫描，需手动扫描或刷新基础数据。"
     counts = _radar_brief_counts(rows)
     error_count = len(as_list(errors))
@@ -577,6 +583,10 @@ def _radar_action_hint(status: str, candidates: Any = None, errors: Any = None) 
     rows = as_list(candidates)
     if status == "failed":
         return "先处理下一票雷达错误；未恢复前候选池不能进入执行准备。"
+    if status == "timeout":
+        return "下一票雷达超时；保留上次结果，必要时进入高级工具箱手动运行。"
+    if status == "empty":
+        return "本轮轻量雷达未产生可执行候选，可进入高级工具箱运行全量雷达扫描。"
     if not rows:
         return "进入高级工具箱手动运行下一票雷达，或刷新今日基础数据后再查看 Top3。"
     counts = _radar_brief_counts(rows)
@@ -588,7 +598,7 @@ def _radar_action_hint(status: str, candidates: Any = None, errors: Any = None) 
 
 
 def _radar_decision_guardrail(status: str, candidates: Any = None) -> str:
-    if status == "failed" or not as_list(candidates):
+    if status in {"failed", "timeout", "empty"} or not as_list(candidates):
         return "没有可验证 Top3 时，不能把下一票雷达写成买入、追高或加融资依据。"
     return "下一票候选不是买入指令；只有触发条件成立、证据链不阻断、纪律和仓位预算同时通过，才允许进入执行准备。"
 
@@ -702,14 +712,18 @@ def normalize_radar_candidate(row: Any = None, scan_packet: Any = None, live_sec
 
 
 def _packet_status(scan_packet: Mapping[str, Any], rows: list, errors: list, status_raw: str) -> str:
-    if status_raw == "failed":
+    if status_raw in {"failed", "failure"}:
         return "failed"
+    if status_raw in {"timeout", "timed_out"}:
+        return "timeout"
+    if status_raw in {"empty", "skipped", "no_candidates"}:
+        return "empty"
     if status_raw == "partial_failed" or errors:
         return "partial"
     if rows:
         return "ready"
     if scan_packet:
-        return "waiting"
+        return "empty"
     return "waiting"
 
 
@@ -793,7 +807,7 @@ def build_command_center_radar_packet(
     excluded_candidates = split["excluded_candidates"]
     status = _packet_status(scan_packet, rows, errors, status_raw)
     if rows and not top_candidates and status == "ready":
-        status = "waiting"
+        status = "empty"
     generated_at = _first_text(
         scan_packet.get("generated_at"),
         state_map.get("radar_scan_finished_at"),
@@ -801,10 +815,10 @@ def build_command_center_radar_packet(
         default="",
     )
     total_count = len(rows)
-    data_status = "ready" if top_candidates else "missing"
+    data_status = "ready" if top_candidates else "empty" if status == "empty" else "missing"
     packet = {
         "status": status,
-        "cache_state": "ready" if top_candidates else "missing",
+        "cache_state": data_status,
         "source": _first_text(summary.get("source_mode"), scan_packet.get("source_mode"), live_section.get("source"), default="下一票雷达缓存"),
         "generated_at": generated_at,
         "total_count": total_count,

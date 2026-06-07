@@ -43,6 +43,10 @@ class CommandCenterServiceTests(unittest.TestCase):
 
         self.assertEqual(result["refresh_level"], service.REFRESH_LEVEL_MANUAL_BASIC)
         self.assertEqual(result["last_success"]["refresh_level"], service.REFRESH_LEVEL_MANUAL_BASIC)
+        self.assertIn("started_at", result)
+        self.assertIn("finished_at", result)
+        self.assertIn("duration_seconds", result)
+        self.assertIn("message", result)
         self.assertFalse(result["deepseek_called"])
 
     def test_auto_light_build_does_not_call_refresh_handler(self):
@@ -186,6 +190,34 @@ class CommandCenterServiceTests(unittest.TestCase):
                 "source": "unit-source",
             }
         ])
+        self.assertIn("finished_at", summary["results"][0])
+        self.assertIn("duration_seconds", summary["results"][0])
+        self.assertEqual(summary["results"][0]["message"], "boom")
+
+    def test_run_refresh_sequence_records_next_ticket_finished_state(self):
+        def runner(module_key, label):
+            return {
+                "ok": True,
+                "module_key": module_key,
+                "module": label,
+                "status": "empty",
+                "summary": "本轮轻量雷达未产生可执行候选。",
+                "deepseek_called": False,
+            }
+
+        summary = service.run_refresh_sequence(
+            [("next_ticket", "下一票雷达", lambda: {})],
+            runner,
+        )
+        result = summary["results"][0]
+
+        self.assertEqual(result["module_key"], "next_ticket")
+        self.assertEqual(result["status"], "empty")
+        self.assertIn("started_at", result)
+        self.assertIn("finished_at", result)
+        self.assertIn("duration_seconds", result)
+        self.assertEqual(result["message"], "本轮轻量雷达未产生可执行候选。")
+        self.assertFalse(result["deepseek_called"])
 
     def test_get_refresh_label_outputs_expected_states(self):
         today = datetime.datetime.now().isoformat(timespec="seconds")
