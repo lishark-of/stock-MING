@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping
 from numbers import Number
 from typing import Any
@@ -78,6 +79,56 @@ READY_STATUSES = {"ok", "ready", "completed", "complete", "已刷新", "success"
 FAILED_STATUSES = {"failed", "failure", "失败", "error"}
 PARTIAL_STATUSES = {"partial", "partial_failed", "部分刷新", "部分失败"}
 
+USER_MODULE_LABELS = {
+    "market": "市场环境",
+    "市场": "市场环境",
+    "市场环境": "市场环境",
+    "quant": "量化摘要",
+    "量化": "量化摘要",
+    "量化推演": "量化摘要",
+    "discipline": "纪律校验",
+    "纪律": "纪律校验",
+    "交易纪律": "纪律校验",
+    "next_ticket": "下一票雷达",
+    "下一票": "下一票雷达",
+    "下一票雷达": "下一票雷达",
+    "margin_etf": "ETF 配置",
+    "融资 ETF": "ETF 配置",
+    "etf": "ETF 配置",
+    "yfinance 行情": "持仓行情",
+    "AkShare 资金穿透": "资金数据",
+    "Tushare / Supabase 体检": "数据能力体检",
+}
+
+USER_STATUS_LABELS = {
+    "completed": "完成",
+    "cached": "使用缓存",
+    "empty": "无可执行结果",
+    "skipped": "已跳过",
+    "failed": "失败",
+    "timeout": "超时",
+    "waiting": "待刷新",
+    "running": "正在刷新",
+    "partial": "部分完成",
+    "unknown": "待确认",
+}
+
+INTERNAL_TEXT_REPLACEMENTS = (
+    ("command_center_", ""),
+    ("command_center", "综合中心"),
+    ("capability registry", "能力状态"),
+    ("Capability Registry", "能力状态"),
+    ("provider capability", "数据能力"),
+    ("Provider Capability", "数据能力"),
+    ("provider", "数据源"),
+    ("Provider", "数据源"),
+    ("packet", "结构化结果"),
+    ("Packet", "结构化结果"),
+    ("registry", "能力状态"),
+    ("Registry", "能力状态"),
+    ("manual_basic", "标准刷新"),
+)
+
 
 def normalize_refresh_level(refresh_level: Any) -> str:
     if refresh_level is None:
@@ -123,6 +174,271 @@ def _to_int(value: Any, default: int = 0) -> int:
         return int(float(text))
     except ValueError:
         return default
+
+
+def _clean_user_text(value: Any, default: str = "") -> str:
+    text = _to_text(value) or default
+    if not text:
+        return ""
+    for needle, replacement in INTERNAL_TEXT_REPLACEMENTS:
+        text = text.replace(needle, replacement)
+    while "  " in text:
+        text = text.replace("  ", " ")
+    return text.strip(" ｜")
+
+
+def _format_duration_seconds(value: Any) -> str:
+    if value is None or value == "":
+        return "暂无"
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return "暂无"
+    seconds = max(0.0, seconds)
+    if seconds < 0.05:
+        return "0.0s"
+    return f"{seconds:.1f}s"
+
+
+def _parse_time(value: Any) -> datetime.datetime | None:
+    text = _to_text(value)
+    if not text:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _running_too_long(result: Mapping[str, Any], threshold_seconds: int = 90) -> bool:
+    started_at = _parse_time(result.get("started_at"))
+    if not started_at:
+        return False
+    now = datetime.datetime.now(started_at.tzinfo)
+    return (now - started_at).total_seconds() > threshold_seconds
+
+
+def user_refresh_status_label(status: Any, *, module_label: str = "") -> str:
+    normalized = str(status or "").strip().lower()
+    if normalized == "empty" and "下一票" in module_label:
+        return "无可执行候选"
+    return USER_STATUS_LABELS.get(normalized, USER_STATUS_LABELS["unknown"])
+
+
+def _module_user_label(result: Mapping[str, Any]) -> str:
+    raw = _clean_user_text(
+        result.get("module")
+        or result.get("label")
+        or result.get("module_key")
+        or result.get("key")
+        or result.get("source")
+    )
+    if not raw:
+        return "刷新步骤"
+    lower = raw.lower()
+    if "yfinance" in lower or "报价" in raw or "行情" in raw:
+        return "持仓行情"
+    if "akshare" in lower or "资金" in raw:
+        return "资金数据"
+    if "tushare" in lower and "supabase" in lower:
+        return "数据能力体检"
+    return USER_MODULE_LABELS.get(raw, USER_MODULE_LABELS.get(lower, raw))
+
+
+def _step_status_key(result: Mapping[str, Any], module_label: str = "") -> str:
+    raw_status = str(result.get("status") or "").strip()
+    normalized = raw_status.lower()
+    message_text = _to_text(result.get("message") or result.get("summary"))
+    ok_value = result.get("ok")
+
+    if "timeout" in normalized or "超时" in raw_status:
+        return "timeout"
+    if normalized in {"empty", "no_candidates", "no_candidate", "no_actionable"}:
+        return "empty"
+    if normalized in FAILED_STATUSES or raw_status in FAILED_STATUSES or ok_value is False:
+        return "failed"
+    if result.get("stale") or normalized in {"cached", "stale", "cache"} or "使用缓存" in message_text:
+        return "cached"
+    if normalized in {"skipped", "skip", "跳过"}:
+        return "skipped"
+    if normalized in {"running", "刷新中", "in_progress"}:
+        return "running"
+    if normalized in {"waiting", "pending", "待刷新"}:
+        return "waiting"
+    if normalized in PARTIAL_STATUSES or raw_status in PARTIAL_STATUSES:
+        return "partial"
+    if ok_value is True or raw_status in READY_STATUSES or normalized in READY_STATUSES:
+        return "completed"
+    if result.get("finished_at") and not result.get("error") and not result.get("last_error"):
+        return "completed"
+    return "unknown"
+
+
+def _step_user_message(result: Mapping[str, Any], module_label: str, status_key: str) -> str:
+    raw_error = _clean_user_text(result.get("error") or result.get("last_error"))
+    raw_message = _clean_user_text(result.get("message") or result.get("summary"))
+    has_last_success = bool(result.get("last_success") or result.get("stale"))
+
+    if status_key == "timeout":
+        if "下一票" in module_label:
+            return "下一票雷达超时，已保留上次结果。"
+        return f"{module_label}超时，已保留上次结果。"
+    if status_key == "failed":
+        if has_last_success:
+            return f"{module_label}失败，已保留上次成功结果。"
+        if raw_error:
+            return f"{module_label}失败：{raw_error}"
+        return f"{module_label}失败，失败原因待确认。"
+    if status_key == "cached":
+        return f"{module_label}使用缓存，未重新拉取。"
+    if status_key == "empty":
+        if "下一票" in module_label:
+            return "本轮轻量雷达未产生可执行候选。"
+        return f"{module_label}没有生成可执行结果。"
+    if status_key == "skipped":
+        return raw_message or f"{module_label}已跳过；不影响后续步骤继续执行。"
+    if status_key == "running":
+        if _running_too_long(result):
+            return "可能仍在运行；如持续不动，请重新刷新。"
+        return f"{module_label}正在刷新。"
+    if status_key == "completed":
+        return raw_message or f"{module_label}完成。"
+    if status_key == "partial":
+        return raw_message or f"{module_label}部分完成，当前继续使用可用结果。"
+    return raw_message or f"{module_label}待刷新。"
+
+
+def _build_user_refresh_step_item(result: Any) -> dict:
+    payload = as_mapping(result)
+    module_label = _module_user_label(payload)
+    status_key = _step_status_key(payload, module_label)
+    return {
+        "label": module_label,
+        "status": status_key,
+        "status_label": user_refresh_status_label(status_key, module_label=module_label),
+        "duration": _format_duration_seconds(payload.get("duration_seconds")),
+        "message": _step_user_message(payload, module_label, status_key),
+        "started_at": _to_text(payload.get("started_at")),
+        "finished_at": _to_text(payload.get("finished_at") or payload.get("updated_at")),
+    }
+
+
+def _status_group_count(groups: Mapping[str, Any], key: str) -> int:
+    value = groups.get(key)
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return _to_int(value)
+
+
+def _status_group_labels(groups: Mapping[str, Any], key: str) -> list[str]:
+    value = groups.get(key)
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return [_clean_user_text(item) for item in value if _clean_user_text(item)]
+
+
+def _capability_category_status(groups: Mapping[str, Any], keywords: tuple[str, ...], missing_label: str = "未刷新") -> str:
+    order = (
+        ("failed", "失败"),
+        ("no_permission", "权限不足"),
+        ("cached", "使用缓存"),
+        ("no_data", "无数据"),
+        ("available", "已可用"),
+        ("skipped", "未刷新"),
+        ("unknown", missing_label),
+    )
+    for group_key, label in order:
+        for item in _status_group_labels(groups, group_key):
+            lowered = item.lower()
+            if any(keyword.lower() in lowered or keyword in item for keyword in keywords):
+                return label
+    return missing_label
+
+
+def build_user_data_capability_summary(refresh_result: Any = None) -> dict:
+    payload = as_mapping(refresh_result)
+    groups = as_mapping(payload.get("data_capability_status_groups"))
+    counts = {
+        "available": _status_group_count(groups, "available"),
+        "failed": _status_group_count(groups, "failed"),
+        "no_permission": _status_group_count(groups, "no_permission"),
+        "cached": _status_group_count(groups, "cached"),
+        "no_data": _status_group_count(groups, "no_data"),
+        "skipped": _status_group_count(groups, "skipped"),
+        "unknown": _status_group_count(groups, "unknown"),
+    }
+    issue_count = counts["failed"] + counts["no_permission"] + counts["no_data"]
+    soft_issue_count = counts["cached"] + counts["skipped"] + counts["unknown"]
+    if issue_count >= 2 or counts["failed"]:
+        impact = "高"
+    elif issue_count or soft_issue_count:
+        impact = "中"
+    else:
+        impact = "低"
+    return {
+        "line": (
+            f"数据能力：可用 {counts['available']} / 失败 {counts['failed']} / "
+            f"权限不足 {counts['no_permission']} / 使用缓存 {counts['cached']}"
+        ),
+        "counts": counts,
+        "impact": impact,
+        "items": [
+            {"label": "行情数据", "status": _capability_category_status(groups, ("行情", "quote", "price", "yfinance"))},
+            {"label": "资金数据", "status": _capability_category_status(groups, ("资金", "money", "龙虎榜", "融资融券", "margin", "dragon"))},
+            {"label": "ETF 数据", "status": _capability_category_status(groups, ("ETF", "etf"), missing_label="无数据")},
+            {"label": "云端记忆", "status": _capability_category_status(groups, ("Supabase", "云端", "记忆", "历史", "brain"))},
+        ],
+    }
+
+
+def build_user_refresh_summary(refresh_result: Any = None, live_packet: Any = None) -> dict:
+    del live_packet
+    payload = as_mapping(refresh_result)
+    raw_results = payload.get("results") if isinstance(payload.get("results"), (list, tuple)) else []
+    step_items = [_build_user_refresh_step_item(result) for result in raw_results]
+    counts = {
+        "completed": sum(1 for item in step_items if item["status"] == "completed"),
+        "cached": sum(1 for item in step_items if item["status"] == "cached"),
+        "failed": sum(1 for item in step_items if item["status"] == "failed"),
+        "timeout": sum(1 for item in step_items if item["status"] == "timeout"),
+        "empty": sum(1 for item in step_items if item["status"] == "empty"),
+        "skipped": sum(1 for item in step_items if item["status"] == "skipped"),
+        "running": sum(1 for item in step_items if item["status"] == "running"),
+    }
+    if not step_items:
+        headline = "暂无满血数据刷新结果。"
+    else:
+        parts = [f"{counts['completed']} 完成"]
+        if counts["cached"]:
+            parts.append(f"{counts['cached']} 使用缓存")
+        if counts["empty"]:
+            parts.append(f"{counts['empty']} 无可执行结果")
+        if counts["skipped"]:
+            parts.append(f"{counts['skipped']} 跳过")
+        if counts["timeout"]:
+            parts.append(f"{counts['timeout']} 超时")
+        if counts["failed"]:
+            parts.append(f"{counts['failed']} 失败")
+        if counts["running"]:
+            parts.append(f"{counts['running']} 正在刷新")
+        headline = "满血数据刷新结果：" + " / ".join(parts)
+
+    data_summary = build_user_data_capability_summary(payload)
+    deepseek_called = bool(payload.get("deepseek_called"))
+    deepseek_line = "DeepSeek：已解释" if deepseek_called else "DeepSeek：未调用"
+    display_lines = [headline, data_summary["line"], deepseek_line, f"对当前结论影响：{data_summary['impact']}"]
+    return clone_packet(
+        {
+            "has_refresh": bool(step_items or payload),
+            "headline": _clean_user_text(headline),
+            "step_items": step_items,
+            "detail_items": step_items,
+            "data_capability": data_summary,
+            "deepseek": {"status": "已解释" if deepseek_called else "未调用", "line": deepseek_line},
+            "display_lines": [_clean_user_text(line) for line in display_lines],
+            "updated_at": _to_text(payload.get("finished_at") or payload.get("updated_at")),
+        }
+    )
 
 
 def _append_error(errors: list[str], seen: set[str], value: Any, max_errors: int) -> None:
@@ -553,6 +869,7 @@ def build_refresh_summary_view_model(
     )
     a_share_fact_recovery = summarize_a_share_fact_recovery(a_share_fact_recovery_summary)
     latest_recovery_result = summarize_recovery_result_notice(latest_recovery_result_notice)
+    user_summary = build_user_refresh_summary(refresh_result, live_payload)
     view_model = {
         "refresh_level": level,
         "refresh_level_label": refresh_level_label(level),
@@ -583,5 +900,6 @@ def build_refresh_summary_view_model(
             else ""
         ),
         "has_latest_recovery_result": bool(latest_recovery_result),
+        "user_summary": user_summary,
     }
     return clone_packet(view_model)

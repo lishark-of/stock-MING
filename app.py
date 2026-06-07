@@ -6001,13 +6001,39 @@ def _cc_healthcheck_sample_ts_code(target=""):
     return "000001.SZ"
 
 
-def _cc_provider_refresh_result(module, ok=True, message="", source="", updated_at="", error=""):
+def _cc_probe_duration(started_at, finished_at):
+    try:
+        start = datetime.datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+        finish = datetime.datetime.fromisoformat(str(finished_at).replace("Z", "+00:00"))
+        return round(max(0.0, (finish - start).total_seconds()), 3)
+    except Exception:
+        return 0.0
+
+
+def _cc_provider_refresh_result(
+    module,
+    ok=True,
+    message="",
+    source="",
+    updated_at="",
+    error="",
+    started_at="",
+    finished_at="",
+    duration_seconds=None,
+):
+    finished_at = finished_at or updated_at or _cc_now()
+    started_at = started_at or finished_at
+    if duration_seconds is None:
+        duration_seconds = _cc_probe_duration(started_at, finished_at)
     return {
         "module": module,
         "module_key": module,
         "ok": bool(ok),
         "status": "ok" if ok else "failed",
-        "updated_at": updated_at or _cc_now(),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
+        "updated_at": updated_at or finished_at,
         "source": source or module,
         "message": message or ("完成" if ok else error or "失败"),
         "error": "" if ok else str(error or message or "未知错误"),
@@ -6055,6 +6081,8 @@ def _cc_collect_full_data_refresh_probes(target="", market_type=""):
     provider_errors = []
 
     health_result = {}
+    probe_started_at = _cc_now()
+    probe_timer = time.monotonic()
     try:
         health_result = run_data_source_healthcheck(
             sample_ts_code=_cc_healthcheck_sample_ts_code(target),
@@ -6071,16 +6099,33 @@ def _cc_collect_full_data_refresh_probes(target="", market_type=""):
                 message="Tushare / Supabase 体检完成；DeepSeek 仅记录配置，未 ping。",
                 source="run_data_source_healthcheck",
                 updated_at=health_result.get("checked_at"),
+                started_at=probe_started_at,
+                finished_at=health_result.get("checked_at") or _cc_now(),
+                duration_seconds=round(max(0.0, time.monotonic() - probe_timer), 3),
             )
         )
     except Exception as exc:
         error = str(exc)
-        provider_results.append(_cc_provider_refresh_result("数据源体检", ok=False, source="run_data_source_healthcheck", error=error))
-        provider_errors.append({"module": "数据源体检", "message": error, "updated_at": _cc_now(), "source": "run_data_source_healthcheck"})
+        probe_finished_at = _cc_now()
+        provider_results.append(
+            _cc_provider_refresh_result(
+                "数据源体检",
+                ok=False,
+                source="run_data_source_healthcheck",
+                error=error,
+                started_at=probe_started_at,
+                finished_at=probe_finished_at,
+                duration_seconds=round(max(0.0, time.monotonic() - probe_timer), 3),
+            )
+        )
+        provider_errors.append({"module": "数据源体检", "message": error, "updated_at": probe_finished_at, "source": "run_data_source_healthcheck"})
 
     yfinance_snapshot = {}
+    probe_started_at = _cc_now()
+    probe_timer = time.monotonic()
     try:
         yfinance_snapshot = _cc_refresh_yfinance_snapshot(target=target, market_type=market_type)
+        probe_finished_at = _cc_now()
         provider_results.append(
             _cc_provider_refresh_result(
                 "yfinance 行情",
@@ -6089,17 +6134,34 @@ def _cc_collect_full_data_refresh_probes(target="", market_type=""):
                 source=yfinance_snapshot.get("raw_source") or "yfinance",
                 updated_at=yfinance_snapshot.get("updated_at") or yfinance_snapshot.get("data_date"),
                 error=yfinance_snapshot.get("error") or "",
+                started_at=probe_started_at,
+                finished_at=probe_finished_at,
+                duration_seconds=round(max(0.0, time.monotonic() - probe_timer), 3),
             )
         )
     except Exception as exc:
         error = str(exc)
+        probe_finished_at = _cc_now()
         yfinance_snapshot = {"price": None, "raw_source": "yfinance", "warning": error}
-        provider_results.append(_cc_provider_refresh_result("yfinance 行情", ok=False, source="yfinance", error=error))
-        provider_errors.append({"module": "yfinance 行情", "message": error, "updated_at": _cc_now(), "source": "yfinance"})
+        provider_results.append(
+            _cc_provider_refresh_result(
+                "yfinance 行情",
+                ok=False,
+                source="yfinance",
+                error=error,
+                started_at=probe_started_at,
+                finished_at=probe_finished_at,
+                duration_seconds=round(max(0.0, time.monotonic() - probe_timer), 3),
+            )
+        )
+        provider_errors.append({"module": "yfinance 行情", "message": error, "updated_at": probe_finished_at, "source": "yfinance"})
 
     akshare_snapshot = {}
+    probe_started_at = _cc_now()
+    probe_timer = time.monotonic()
     try:
         akshare_snapshot = _cc_refresh_akshare_snapshot(target=target, market_type=market_type)
+        probe_finished_at = _cc_now()
         warnings = akshare_snapshot.get("warnings") if isinstance(akshare_snapshot, dict) else []
         provider_results.append(
             _cc_provider_refresh_result(
@@ -6108,10 +6170,14 @@ def _cc_collect_full_data_refresh_probes(target="", market_type=""):
                 message=(warnings or ["AkShare 探测完成。"])[0],
                 source="cached_money_flow_snapshot",
                 updated_at=akshare_snapshot.get("updated_at") if isinstance(akshare_snapshot, dict) else "",
+                started_at=probe_started_at,
+                finished_at=probe_finished_at,
+                duration_seconds=round(max(0.0, time.monotonic() - probe_timer), 3),
             )
         )
     except Exception as exc:
         error = str(exc)
+        probe_finished_at = _cc_now()
         akshare_snapshot = {
             "source_status": {
                 "individual_fund_flow_primary": {"used": True, "ok": False, "error": error},
@@ -6119,8 +6185,18 @@ def _cc_collect_full_data_refresh_probes(target="", market_type=""):
             },
             "warnings": [error],
         }
-        provider_results.append(_cc_provider_refresh_result("AkShare 资金穿透", ok=False, source="cached_money_flow_snapshot", error=error))
-        provider_errors.append({"module": "AkShare 资金穿透", "message": error, "updated_at": _cc_now(), "source": "cached_money_flow_snapshot"})
+        provider_results.append(
+            _cc_provider_refresh_result(
+                "AkShare 资金穿透",
+                ok=False,
+                source="cached_money_flow_snapshot",
+                error=error,
+                started_at=probe_started_at,
+                finished_at=probe_finished_at,
+                duration_seconds=round(max(0.0, time.monotonic() - probe_timer), 3),
+            )
+        )
+        provider_errors.append({"module": "AkShare 资金穿透", "message": error, "updated_at": probe_finished_at, "source": "cached_money_flow_snapshot"})
 
     return {
         "health_result": health_result,
@@ -7067,6 +7143,62 @@ def _cc_user_source(value, fallback="缓存结果"):
     return text
 
 
+def render_command_center_refresh_result_summary(refresh_summary_view=None):
+    view_model = refresh_summary_view or {}
+    user_summary = view_model.get("user_summary") if isinstance(view_model, dict) else {}
+    if not isinstance(user_summary, dict) or not user_summary.get("has_refresh"):
+        return
+
+    step_items = user_summary.get("step_items") or []
+    data_capability = user_summary.get("data_capability") or {}
+    data_items = data_capability.get("items") or []
+    deepseek = user_summary.get("deepseek") or {}
+    updated_at = user_summary.get("updated_at") or view_model.get("generated_at") or "暂无"
+
+    st.markdown("#### 满血数据刷新结果")
+    st.caption(f"{user_summary.get('headline') or '刷新结果待确认'} ｜ 更新时间：{updated_at}")
+
+    main_items = step_items[:6]
+    if main_items:
+        columns = st.columns(min(3, len(main_items)))
+        for index, item in enumerate(main_items):
+            with columns[index % len(columns)]:
+                st.markdown(
+                    f"""
+                    <div class="cc-metric-card">
+                      <div class="cc-muted-note">{html_escape(str(item.get("label") or "刷新步骤"))}</div>
+                      <div class="cc-metric-value">{html_escape(str(item.get("status_label") or "待确认"))}</div>
+                      <div class="cc-muted-note">耗时 {html_escape(str(item.get("duration") or "暂无"))}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    summary_lines = [
+        line
+        for line in (user_summary.get("display_lines") or [])
+        if line and "DeepSeek" not in str(line)
+    ]
+    for line in summary_lines:
+        st.caption(str(line))
+    st.caption(str(deepseek.get("line") or "DeepSeek：未调用"))
+
+    if data_items:
+        with st.expander("数据能力摘要", expanded=False):
+            for item in data_items:
+                st.write(f"- {item.get('label') or '数据'}：{item.get('status') or '待刷新'}")
+            st.write(f"- 对当前结论影响：{data_capability.get('impact') or '中'}")
+
+    with st.expander("详细刷新记录", expanded=False):
+        for item in user_summary.get("detail_items") or []:
+            st.write(
+                f"- {item.get('label') or '刷新步骤'}："
+                f"{item.get('status_label') or '待确认'}，"
+                f"耗时 {item.get('duration') or '暂无'}；"
+                f"{item.get('message') or '暂无说明'}"
+            )
+
+
 _COMMAND_CENTER_HOME_DEBUG_TERMS = (
     "数据能力",
     "provider",
@@ -8006,9 +8138,21 @@ packet:
         if st.session_state.get(explanation_at_key) or st.session_state.get("command_center_deepseek_projection_generated_at")
         else "未调用"
     )
-    st.caption(
-        f"DeepSeek：{deepseek_status} ｜ 调用次数：{deepseek_called_count} ｜ Token：{deepseek_token_count:,}"
-    )
+    refresh_summary_for_display = st.session_state.get("command_center_refresh_summary") or {}
+    if refresh_summary_for_display:
+        refresh_summary_view_for_display = build_refresh_summary_view_model(
+            live_packet=live_packet,
+            refresh_result=refresh_summary_for_display,
+            refresh_level=refresh_summary_for_display.get("refresh_level") or cc_service.REFRESH_LEVEL_MANUAL_BASIC,
+            generated_at=refresh_summary_for_display.get("finished_at") or refresh_summary_for_display.get("updated_at"),
+            a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
+            latest_recovery_result_notice=_get_latest_recovery_result_notice_from_state(),
+        )
+        render_command_center_refresh_result_summary(refresh_summary_view_for_display)
+    else:
+        st.caption(
+            f"DeepSeek：{deepseek_status} ｜ 调用次数：{deepseek_called_count} ｜ Token：{deepseek_token_count:,}"
+        )
     if isinstance(first_diagnosis_prewarm_packet, dict) and first_diagnosis_prewarm_packet.get("summary"):
         with st.expander("高级诊断状态", expanded=False):
             st.caption(

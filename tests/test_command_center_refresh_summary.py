@@ -226,6 +226,107 @@ class CommandCenterRefreshSummaryTests(unittest.TestCase):
         self.assertTrue(view_model["has_errors"])
         json.dumps(view_model, ensure_ascii=False)
 
+    def test_user_refresh_summary_translates_step_statuses(self):
+        view_model = summary.build_refresh_summary_view_model(
+            refresh_result={
+                "finished_at": "2026-06-07T10:00:08",
+                "deepseek_called": False,
+                "results": [
+                    {"module": "市场环境", "status": "completed", "ok": True, "duration_seconds": 2.14},
+                    {"module": "ETF 配置", "status": "cached", "ok": True, "duration_seconds": 0.33},
+                    {"module": "下一票雷达", "status": "empty", "ok": True, "duration_seconds": 1.0},
+                    {"module": "纪律校验", "status": "failed", "ok": False, "error": "cache missing", "duration_seconds": 0.9},
+                    {"module": "持仓行情", "status": "timeout", "ok": True, "duration_seconds": 8.01},
+                ],
+            }
+        )
+
+        items = {item["label"]: item for item in view_model["user_summary"]["step_items"]}
+        self.assertEqual(items["市场环境"]["status_label"], "完成")
+        self.assertEqual(items["ETF 配置"]["status_label"], "使用缓存")
+        self.assertEqual(items["下一票雷达"]["status_label"], "无可执行候选")
+        self.assertEqual(items["纪律校验"]["status_label"], "失败")
+        self.assertEqual(items["持仓行情"]["status_label"], "超时")
+        self.assertEqual(items["市场环境"]["duration"], "2.1s")
+        self.assertIn("本轮轻量雷达未产生可执行候选", items["下一票雷达"]["message"])
+        self.assertIn("cache missing", items["纪律校验"]["message"])
+        json.dumps(view_model, ensure_ascii=False)
+
+    def test_user_refresh_summary_sanitizes_internal_terms(self):
+        view_model = summary.build_refresh_summary_view_model(
+            refresh_result={
+                "deepseek_called": False,
+                "summary": "满血数据刷新完成：已执行 manual_basic 链路，并回流 provider capability 状态。",
+                "results": [
+                    {
+                        "module": "command_center_next_ticket_packet",
+                        "status": "completed",
+                        "ok": True,
+                        "duration_seconds": 0.2,
+                        "message": "provider packet registry 已回流 command_center_radar_packet",
+                    }
+                ],
+            }
+        )
+
+        user_summary = view_model["user_summary"]
+        visible_text = json.dumps(
+            {
+                "display_lines": user_summary["display_lines"],
+                "step_items": [
+                    {
+                        "label": item["label"],
+                        "status_label": item["status_label"],
+                        "message": item["message"],
+                    }
+                    for item in user_summary["step_items"]
+                ],
+            },
+            ensure_ascii=False,
+        ).lower()
+        for forbidden in ("command_center", "packet", "provider", "registry"):
+            self.assertNotIn(forbidden, visible_text)
+
+    def test_user_refresh_summary_deepseek_status_appears_once(self):
+        user_summary = summary.build_user_refresh_summary(
+            {
+                "deepseek_called": False,
+                "results": [{"module": "市场环境", "status": "ready", "ok": True}],
+            }
+        )
+
+        visible_lines = "\n".join(user_summary["display_lines"])
+        self.assertEqual(visible_lines.count("DeepSeek"), 1)
+        self.assertIn("DeepSeek：未调用", visible_lines)
+
+    def test_user_data_capability_summary_counts_and_impact(self):
+        payload = summary.build_user_data_capability_summary(
+            {
+                "data_capability_status_groups": {
+                    "available": ["yfinance 行情", "Supabase 记忆"],
+                    "failed": ["AkShare 资金穿透"],
+                    "no_permission": ["Tushare 融资融券"],
+                    "cached": ["ETF 配置"],
+                }
+            }
+        )
+
+        self.assertIn("可用 2", payload["line"])
+        self.assertIn("失败 1", payload["line"])
+        self.assertIn("权限不足 1", payload["line"])
+        self.assertEqual(payload["impact"], "高")
+        by_label = {item["label"]: item["status"] for item in payload["items"]}
+        self.assertEqual(by_label["行情数据"], "已可用")
+        self.assertEqual(by_label["资金数据"], "失败")
+        self.assertEqual(by_label["ETF 数据"], "使用缓存")
+        self.assertEqual(by_label["云端记忆"], "已可用")
+
+    def test_user_refresh_summary_missing_fields_do_not_raise(self):
+        for value in (None, {}, {"results": [object(), {"module": None, "duration_seconds": "bad"}]}):
+            payload = summary.build_user_refresh_summary(value)
+            self.assertIsInstance(payload, dict)
+            json.dumps(payload, ensure_ascii=False)
+
     def test_a_share_fact_recovery_summary_is_json_friendly(self):
         recovery_summary = {
             "summary": "A股事实 5 项：已回流 2｜仍受限 1｜待验证 2",
