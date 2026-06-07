@@ -353,18 +353,39 @@ def build_position_risk_notes(
     profile = _as_mapping(position_profile)
     profit_state = _to_text(profile.get("profit_state"), "盈亏未计算")
     pnl_amount = _to_number(profile.get("pnl_amount"))
+    pnl_pct = _first_risk_number(
+        profile.get("pnl_pct"),
+        profile.get("floating_profit_pct"),
+        _as_mapping(profile.get("floating_pnl")).get("pct"),
+    )
     currency = _to_text(profile.get("currency"))
     margin_ratio = _to_number(profile.get("margin_ratio_pct")) or 0
     recommended = _to_number(recommended_margin_ratio)
     risk_level = _to_text(total_risk_level)
     notes: list[str] = []
+    is_loss = (
+        (pnl_amount is not None and pnl_amount < 0)
+        or (pnl_pct is not None and pnl_pct < 0)
+        or "浮亏" in profit_state
+    )
+    is_profit = (
+        (pnl_amount is not None and pnl_amount > 0)
+        or (pnl_pct is not None and pnl_pct > 0)
+        or "浮盈" in profit_state
+    )
 
     if pnl_amount is not None:
         money = _format_position_money(pnl_amount, currency)
-        if pnl_amount < 0 or "浮亏" in profit_state:
-            notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；当前为浮亏持仓，优先控制风险暴露。")
-        elif pnl_amount > 0 or "浮盈" in profit_state:
-            notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；避免盈利回撤变成融资压力。")
+        if is_loss:
+            if margin_ratio > 0:
+                notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；当前为浮亏持仓，融资比例会放大回撤压力，优先控制风险暴露。")
+            else:
+                notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；当前为浮亏持仓，优先控制风险暴露。")
+        elif is_profit:
+            if margin_ratio > 0:
+                notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；当前为浮盈持仓，但融资比例带来杠杆压力，避免让盈利回撤扩大为融资压力。")
+            else:
+                notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；关注盈利回撤风险。")
         else:
             notes.append(f"持仓风险：{profit_state}，盈亏金额 {money}；按纪律边界观察。")
 
@@ -376,8 +397,8 @@ def build_position_risk_notes(
     if margin_ratio > 0 and recommended is not None and margin_ratio > recommended:
         notes.append(f"融资风险：当前融资 {margin_ratio:g}% 高于建议 {recommended:g}%，优先降风险或保现金。")
 
-    if risk_level == "低" and (margin_ratio > 0 or (pnl_amount is not None and pnl_amount < 0)):
-        notes.append("账户总风险低，但单票融资/浮亏风险需单独观察。")
+    if risk_level == "低" and (margin_ratio > 0 or is_loss):
+        notes.append(_risk_context_notice("账户总风险低", is_loss=is_loss, is_profit=is_profit, margin_ratio=margin_ratio))
 
     deduped: list[str] = []
     for item in notes:
@@ -425,6 +446,21 @@ def _max_risk_level(*levels: Any) -> str:
     return max(ranked, key=lambda item: item[0])[1]
 
 
+def _risk_context_notice(prefix: str, *, is_loss: bool = False, is_profit: bool = False, margin_ratio: Any = 0) -> str:
+    margin = _to_number(margin_ratio) or 0
+    if margin > 0 and is_loss:
+        return f"{prefix}，但单票融资/浮亏风险需单独观察。"
+    if margin > 0 and is_profit:
+        return f"{prefix}，但单票融资风险和盈利回撤风险需单独观察。"
+    if margin > 0:
+        return f"{prefix}，但单票融资风险需单独观察。"
+    if is_loss:
+        return f"{prefix}，但单票浮亏风险需单独观察。"
+    if is_profit:
+        return f"{prefix}，但单票盈利回撤风险需单独观察。"
+    return ""
+
+
 def _floating_pnl_values(profile: Mapping[str, Any], price_detail: Mapping[str, Any]) -> tuple[int | float | None, int | float | None]:
     floating = _as_mapping(profile.get("floating_pnl"))
     pnl_pct = _first_risk_number(
@@ -458,6 +494,7 @@ def build_risk_breakdown(
     price_detail: Any = None,
     risk_alerts: Any = None,
     margin_etf_summary: Any = None,
+    data_capability_impact: Any = None,
 ) -> dict:
     decision = _as_mapping(decision_packet)
     profile = _as_mapping(position_profile)
@@ -466,6 +503,7 @@ def build_risk_breakdown(
     detail = _as_mapping(price_detail)
     alerts = _as_mapping(risk_alerts)
     margin_summary = _as_mapping(margin_etf_summary)
+    capability_impact = _as_mapping(data_capability_impact)
     error_list = _as_list(errors)
 
     overall_level = _to_text(decision.get("risk_level"), "中")
@@ -558,11 +596,25 @@ def build_risk_breakdown(
         data_level = "低"
         data_reason = "关键数据状态未显示明显缺口。"
 
+    impact_level = _to_text(capability_impact.get("impact_level"))
+    if impact_level == "高":
+        impact_reason = "关键交易数据可用，但部分辅助数据失败，对结论解释有影响。"
+        data_level = _max_risk_level(data_level, "中高")
+        if data_reason == "关键数据状态未显示明显缺口。":
+            data_reason = impact_reason
+        elif impact_reason not in data_reason:
+            data_reason = f"{data_reason}；{impact_reason}"
+
     consistency_notice = ""
     if _risk_rank(overall_level) <= RISK_RANKS["低"] and (
         _risk_rank(position_level) >= RISK_RANKS["中高"] or _risk_rank(margin_level) >= RISK_RANKS["中高"]
     ):
-        consistency_notice = "账户整体风险较低，但单票融资/浮亏风险需单独观察。"
+        consistency_notice = _risk_context_notice(
+            "账户整体风险较低",
+            is_loss=is_loss,
+            is_profit=(not is_loss and ((pnl_amount is not None and pnl_amount > 0) or (pnl_pct is not None and pnl_pct > 0) or "浮盈" in profit_state)),
+            margin_ratio=margin_ratio,
+        )
     elif _risk_rank(overall_level) <= RISK_RANKS["低"] and _risk_rank(data_level) >= RISK_RANKS["中高"]:
         consistency_notice = "账户整体风险较低，但数据缺口风险需单独观察。"
 
@@ -1086,6 +1138,7 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         errors=snapshot.get("errors") or [],
         risk_alerts=snapshot.get("risk_alerts") or {},
         margin_etf_summary=snapshot.get("margin_etf_summary") or {},
+        data_capability_impact=_as_mapping(snapshot.get("data_capability_brief")).get("user_summary"),
     )
     snapshot["position_risk_budget"] = build_position_risk_budget_guidance(snapshot)
     return snapshot
@@ -7726,6 +7779,7 @@ def build_home_action_snapshot(
             errors=empty.get("errors") or [],
             risk_alerts=empty.get("risk_alerts") or {},
             margin_etf_summary=empty.get("margin_etf_summary") or {},
+            data_capability_impact=_as_mapping(empty.get("data_capability_brief")).get("user_summary"),
         )
         empty["position_risk_budget"] = build_position_risk_budget_guidance(empty)
         return empty
@@ -7791,6 +7845,7 @@ def build_home_action_snapshot(
         errors=snapshot.get("errors") or [],
         risk_alerts=snapshot.get("risk_alerts") or {},
         margin_etf_summary=snapshot.get("margin_etf_summary") or {},
+        data_capability_impact=_as_mapping(snapshot.get("data_capability_brief")).get("user_summary"),
     )
     snapshot["position_risk_budget"] = build_position_risk_budget_guidance(snapshot)
     return sanitize_snapshot_payload(snapshot)

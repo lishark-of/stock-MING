@@ -165,6 +165,42 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("账户总风险低，但单票融资/浮亏风险需单独观察", text)
         self.assertNotIn("盈利回撤", text)
 
+    def test_position_risk_notes_profit_with_margin_do_not_say_loss_risk(self):
+        notes = snapshot.build_position_risk_notes(
+            {
+                "profit_state": "浮盈 30.48%",
+                "pnl_amount": 89500,
+                "currency": "¥",
+                "margin_ratio_pct": 30,
+            },
+            recommended_margin_ratio=20,
+            total_risk_level="低",
+        )
+        text = " ".join(notes)
+
+        self.assertIn("当前为浮盈持仓", text)
+        self.assertIn("杠杆压力", text)
+        self.assertIn("盈利回撤", text)
+        self.assertNotIn("浮亏风险", text)
+
+    def test_position_risk_notes_without_margin_do_not_say_financing_pressure(self):
+        notes = snapshot.build_position_risk_notes(
+            {
+                "profit_state": "浮盈 123.89%",
+                "pnl_amount": 44600,
+                "currency": "¥",
+                "margin_ratio_pct": 0,
+            },
+            recommended_margin_ratio=0,
+            total_risk_level="低",
+        )
+        text = " ".join(notes)
+
+        self.assertIn("盈利回撤风险", text)
+        self.assertNotIn("融资压力", text)
+        self.assertNotIn("杠杆压力", text)
+        self.assertNotIn("浮亏风险", text)
+
     def test_risk_breakdown_marks_thirty_percent_margin_mid_high(self):
         decision = {"risk_level": "低", "reason_summary": "规则总风险仍低。"}
         breakdown = snapshot.build_risk_breakdown(
@@ -188,6 +224,9 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(breakdown["overall"]["level"], "低")
         self.assertIn(breakdown["margin"]["level"], {"中高", "高"})
         self.assertIn("账户整体风险较低", breakdown["consistency_notice"])
+        self.assertIn("单票融资风险", breakdown["consistency_notice"])
+        self.assertIn("盈利回撤风险", breakdown["consistency_notice"])
+        self.assertNotIn("浮亏风险", breakdown["consistency_notice"])
         self.assertFalse(breakdown["deepseek_called"])
 
     def test_refresh_prompt_is_rewritten_for_user_status(self):
@@ -240,6 +279,30 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("当前为浮亏持仓，优先控制风险暴露", dumped)
         self.assertIn("账户整体风险较低", breakdown["consistency_notice"])
         self.assertNotIn("盈利回撤", dumped)
+        self.assertFalse(breakdown["deepseek_called"])
+
+    def test_risk_breakdown_high_data_capability_impact_lifts_data_risk(self):
+        breakdown = snapshot.build_risk_breakdown(
+            {"risk_level": "低"},
+            position_profile={
+                "ticker": "300750.SZ",
+                "cost_price": 180,
+                "current_price": 403,
+                "holding_units": 200,
+                "pnl_pct": 123.89,
+                "pnl_amount": 44600,
+                "margin_ratio_pct": 0,
+                "normalized_position_state": "已持仓",
+                "profit_state": "浮盈 123.89%",
+            },
+            data_freshness={"state": "today"},
+            coverage={"market": "ready", "quant": "ready"},
+            data_capability_impact={"impact_level": "高", "headline": "对当前结论影响：高"},
+        )
+
+        self.assertIn(breakdown["data"]["level"], {"中高", "高"})
+        self.assertIn("对结论解释有影响", breakdown["data"]["reason"])
+        self.assertNotEqual(breakdown["data"]["level"], "中")
         self.assertFalse(breakdown["deepseek_called"])
 
     def test_risk_breakdown_missing_current_price_is_data_risk(self):
