@@ -10,6 +10,11 @@ from openai import OpenAI
 from announcement_provider import get_cn_announcements_fallback, normalize_ts_code
 from announcement_reader import download_and_extract_pdf
 from config import get_deepseek_keys, get_supabase_config
+from deepseek_safety import (
+    DEEPSEEK_SAFETY_REVIEW_MESSAGE,
+    build_deepseek_safety_prompt_clause,
+    find_deepseek_dangerous_words,
+)
 
 
 TARGETS_FILE = "announcement_targets.json"
@@ -47,13 +52,17 @@ def call_deepseek_text(prompt, system_role, max_tokens=1600, temperature=0.1):
             response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": system_role},
+                    {"role": "system", "content": f"{system_role}\n{build_deepseek_safety_prompt_clause()}"},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            return response.choices[0].message.content or ""
+            content = response.choices[0].message.content or ""
+            dangerous_words = find_deepseek_dangerous_words(content)
+            if dangerous_words:
+                print(f"{DEEPSEEK_SAFETY_REVIEW_MESSAGE} 命中：{'、'.join(dangerous_words)}")
+            return content
         except Exception as exc:
             print(f"DeepSeek 公告总结失败，第 {attempt} 次：{exc}")
             time.sleep(delay)

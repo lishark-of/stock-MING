@@ -57,6 +57,11 @@ from command_center_strategy_summary import (
     build_deepseek_latest_explanation_view_model,
     build_strategy_summary_view_model,
 )
+from deepseek_safety import (
+    DEEPSEEK_SAFETY_REVIEW_MESSAGE,
+    build_deepseek_safety_prompt_clause,
+    find_deepseek_dangerous_words,
+)
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
 try:
@@ -2873,7 +2878,7 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
 5. 如果缺少最新舆情、公告或行情，请直接说明“缺少最新数据”。
 """
 
-        final_system_role = system_role + "\n" + time_guard
+        final_system_role = system_role + "\n" + time_guard + "\n" + build_deepseek_safety_prompt_clause()
         log_token_usage(estimate_tokens(final_system_role + prompt), 4000)
 
         client = OpenAI(
@@ -2893,7 +2898,21 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
             max_tokens=4000
         )
 
-        st.write_stream((chunk.choices[0].delta.content or "") for chunk in response)
+        collected_chunks = []
+
+        def stream_chunks():
+            for chunk in response:
+                text = chunk.choices[0].delta.content or ""
+                if text:
+                    collected_chunks.append(text)
+                yield text
+
+        streamed_text = st.write_stream(stream_chunks())
+        output_text = streamed_text if isinstance(streamed_text, str) else "".join(collected_chunks)
+        dangerous_words = find_deepseek_dangerous_words(output_text)
+        if dangerous_words:
+            st.warning(f"{DEEPSEEK_SAFETY_REVIEW_MESSAGE} 命中：{'、'.join(dangerous_words)}")
+        return output_text
 
     except Exception as e:
         st.error(f"⚠️ DeepSeek 调用失败: {e}")
@@ -2916,7 +2935,7 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
 5. 如果缺少最新舆情、公告或行情，请直接说明“缺少最新数据”。
 """
 
-    final_system_role = system_role + "\n" + time_guard
+    final_system_role = system_role + "\n" + time_guard + "\n" + build_deepseek_safety_prompt_clause()
     log_token_usage(estimate_tokens(final_system_role + prompt), max_tokens)
     last_error = None
 
@@ -2947,7 +2966,11 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
                 max_tokens=max_tokens
             )
 
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            dangerous_words = find_deepseek_dangerous_words(content)
+            if dangerous_words:
+                st.warning(f"{DEEPSEEK_SAFETY_REVIEW_MESSAGE} 命中：{'、'.join(dangerous_words)}")
+            return content
 
         except Exception as e:
             last_error = e
@@ -6466,6 +6489,7 @@ def _run_command_center_deepseek_projection_overlay(
 4. 公告/硬风险、减持、融资风险、成本价、持仓数量、当前价必须优先进入风险提示。
 5. DeepSeek 只做解释和路径整理，不给自动下单指令。
 6. 曲线锚定 current_price_anchor；如果没有把握，给 target_pct，不要乱造逐日价格。
+7. {build_deepseek_safety_prompt_clause()}
 
 JSON schema:
 {{

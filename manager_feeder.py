@@ -5,6 +5,11 @@ from openai import OpenAI
 from supabase import create_client, Client
 
 from config import get_deepseek_keys, require_supabase_config
+from deepseek_safety import (
+    DEEPSEEK_SAFETY_REVIEW_MESSAGE,
+    build_deepseek_safety_prompt_clause,
+    find_deepseek_dangerous_words,
+)
 
 
 DEEPSEEK_TOKENS = get_deepseek_keys()
@@ -132,7 +137,8 @@ rule_type 只能从下面选择：
                 messages=[
                     {
                         "role": "system",
-                        "content": "你是专业基金经理研究员，擅长从访谈、季报、新闻标题、RSS摘要、持仓说明中提炼投资规则；不得编造资料外信息。",
+                        "content": "你是专业基金经理研究员，擅长从访谈、季报、新闻标题、RSS摘要、持仓说明中提炼投资规则；不得编造资料外信息。\n"
+                        + build_deepseek_safety_prompt_clause(),
                     },
                     {
                         "role": "user",
@@ -143,7 +149,11 @@ rule_type 只能从下面选择：
                 max_tokens=2200,
             )
 
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            dangerous_words = find_deepseek_dangerous_words(content)
+            if dangerous_words:
+                print(f"{DEEPSEEK_SAFETY_REVIEW_MESSAGE} 命中：{'、'.join(dangerous_words)}")
+            return content
 
         except Exception as e:
             print(f"DeepSeek 调用失败，第 {attempt} 次重试：{e}")

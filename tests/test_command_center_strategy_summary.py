@@ -203,6 +203,22 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(view_model["content"], "当前解释结果")
         self.assertEqual(view_model["call_count"], 1)
         self.assertEqual(view_model["token_estimate"], 3210)
+        self.assertFalse(view_model["safety"]["has_warning"])
+
+    def test_deepseek_latest_explanation_view_model_marks_sensitive_output(self):
+        view_model = summary.build_deepseek_latest_explanation_view_model(
+            {
+                "command_center_deepseek_latest_result": "当前解释包含无风险和满仓等敏感表述。",
+                "command_center_deepseek_latest_ticker": "002008.SZ",
+                "command_center_deepseek_explanation_visible": True,
+            },
+            target="002008.SZ",
+        )
+
+        self.assertTrue(view_model["safety"]["has_warning"])
+        self.assertIn("无风险", view_model["dangerous_words"])
+        self.assertIn("满仓", view_model["dangerous_words"])
+        self.assertIn("需人工复核", view_model["safety_warning"])
 
     def test_deepseek_latest_explanation_view_model_normalizes_a_share_ticker(self):
         view_model = summary.build_deepseek_latest_explanation_view_model(
@@ -292,6 +308,9 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("成本", prompt)
         self.assertIn("持仓", prompt)
         self.assertIn("不得解释成买入信号", prompt)
+        self.assertIn("危险词安全边界", prompt)
+        self.assertIn("不得建议满仓", prompt)
+        self.assertIn("风险未完全排除", prompt)
         self.assertNotIn("DeepSeek：未调用", prompt)
         self.assertIn("资金数据：失败", prompt)
         for forbidden in ("command_center_", "provider", "packet"):

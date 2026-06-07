@@ -6,6 +6,10 @@ from typing import Any
 
 from command_center_data_health_ledger import build_data_health_impact_summary
 from command_center_projection import build_projection_confidence_summary
+from deepseek_safety import (
+    build_deepseek_output_safety_view_model,
+    build_deepseek_safety_prompt_clause,
+)
 
 
 DATA_STATUS_LABELS = {
@@ -236,6 +240,7 @@ def build_command_center_deepseek_explanation_prompt(
 - “一句话结论”必须原文包含：本地规则结论、当前价、成本、持仓、浮盈亏、用户输入融资比例、以及“DeepSeek 只解释，不决定仓位”。
 - 即使融资比例为 0%，也必须明确写出“用户输入融资比例 0%”，不要改写成其他比例。
 - 数据缺口只描述交易数据缺口；不要把“DeepSeek 未调用”写成数据缺口，因为当前就是手动解释调用。
+- {build_deepseek_safety_prompt_clause()}
 
 用户口径结构化摘要：
 标的：{display_ticker}；市场：{_to_text(market_badge, '待确认')}
@@ -600,6 +605,7 @@ def build_deepseek_latest_explanation_view_model(
     tokens = _token_usage_value(token_usage, "estimated_tokens")
     status = "failed" if error and not result else "ready" if result else "empty"
     content = _to_text(result)
+    safety = build_deepseek_output_safety_view_model(content)
     return {
         "title": "DeepSeek 对当前 packet 的解释",
         "status": status,
@@ -613,6 +619,9 @@ def build_deepseek_latest_explanation_view_model(
         "token_estimate": tokens,
         "call_count": calls,
         "refresh_level": latest_refresh_level,
+        "safety": safety,
+        "dangerous_words": safety.get("dangerous_words") or [],
+        "safety_warning": safety.get("message") or "",
         "safe_text": "DeepSeek 只解释当前结构化结果，不参与默认策略生成，不直接决定仓位。",
         "deepseek_called": bool(result or error),
     }

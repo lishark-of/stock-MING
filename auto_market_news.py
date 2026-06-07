@@ -10,6 +10,11 @@ from openai import OpenAI
 from supabase import create_client, Client
 
 from config import get_deepseek_keys, require_supabase_config
+from deepseek_safety import (
+    DEEPSEEK_SAFETY_REVIEW_MESSAGE,
+    build_deepseek_safety_prompt_clause,
+    find_deepseek_dangerous_words,
+)
 
 SUPABASE_URL, SUPABASE_KEY = require_supabase_config()
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -241,7 +246,8 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
                 messages=[
                     {
                         "role": "system",
-                        "content": "你是严谨的股票舆情风控分析员，只能基于给定新闻判断。"
+                        "content": "你是严谨的股票舆情风控分析员，只能基于给定新闻判断。\n"
+                        + build_deepseek_safety_prompt_clause()
                     },
                     {
                         "role": "user",
@@ -253,6 +259,9 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
             )
 
             content = response.choices[0].message.content or ""
+            dangerous_words = find_deepseek_dangerous_words(content)
+            if dangerous_words:
+                print(f"{DEEPSEEK_SAFETY_REVIEW_MESSAGE} 命中：{'、'.join(dangerous_words)}")
 
             break
 

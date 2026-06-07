@@ -10,6 +10,8 @@ from typing import Any, Callable
 import pandas as pd
 import streamlit as st
 
+from deepseek_safety import DEEPSEEK_DANGEROUS_WORDS, build_deepseek_safety_prompt_clause
+
 try:
     import numpy as np
 except Exception:  # pragma: no cover - numpy is optional for sanitizing only
@@ -31,7 +33,7 @@ NEXT_TICKET_VERSION = 1
 
 ALLOWED_BATTLE_STATES = ["可准备", "等验证", "只观察", "暂不纳入", "风险过高"]
 ALLOWED_SWITCH_RELATIONS = ["接力观察", "替代观察", "防守观察", "暂不替代"]
-FORBIDDEN_OUTPUT_WORDS = ["必买", "买入", "满仓", "梭哈", "立即清仓", "保证收益", "预测必涨"]
+FORBIDDEN_OUTPUT_WORDS = list(dict.fromkeys([*DEEPSEEK_DANGEROUS_WORDS, "买入", "立即清仓", "保证收益", "预测必涨"]))
 
 DEFAULT_CANDIDATES = [
     {"ticker": "002837.SZ", "name": "英维克"},
@@ -2576,17 +2578,16 @@ def save_research_report(
 def sanitize_deepseek_result(value: Any) -> tuple[Any, list[str]]:
     found = []
 
-    def clean_text(text: str) -> str:
+    def scan_text(text: str) -> str:
         cleaned = str(text)
         for word in FORBIDDEN_OUTPUT_WORDS:
             if word in cleaned:
                 found.append(word)
-                cleaned = cleaned.replace(word, "【已屏蔽绝对化建议】")
         return cleaned
 
     def walk(item: Any) -> Any:
         if isinstance(item, str):
-            return clean_text(item)
+            return scan_text(item)
         if isinstance(item, dict):
             return {key: walk(val) for key, val in item.items()}
         if isinstance(item, list):
@@ -2639,6 +2640,7 @@ def build_deepseek_prompt(
 4. 与当前持仓票关系只能使用：{", ".join(ALLOWED_SWITCH_RELATIONS)}。
 5. 不能编造事实；缺少事实必须写入数据缺口。
 6. 一句话结论只能判断“是否值得进入作战准备”，不得写交易指令。
+7. {build_deepseek_safety_prompt_clause()}
 
 请严格输出 JSON，不要输出额外解释。JSON schema:
 {{
@@ -2775,7 +2777,7 @@ def _render_result_expander(item: dict[str, Any]) -> None:
         if cached:
             st.warning(f"这是缓存研究结果，生成时间为：{generated_at}；盘中数据变化后请谨慎使用。")
         if item.get("forbidden_words"):
-            st.warning("DeepSeek 输出含绝对化措辞，渲染前已屏蔽：" + "、".join(item["forbidden_words"]))
+            st.warning("DeepSeek 输出含需人工复核的敏感表述：" + "、".join(item["forbidden_words"]))
         if render_next_ticket_research_summary:
             render_next_ticket_research_summary(result, generated_at=generated_at, cached=cached)
         else:

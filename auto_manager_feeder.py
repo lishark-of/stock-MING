@@ -11,6 +11,11 @@ from urllib.parse import quote_plus, unquote_plus
 
 from config import require_supabase_config
 from manager_feeder import feed_manager_from_text, get_deepseek_client
+from deepseek_safety import (
+    DEEPSEEK_SAFETY_REVIEW_MESSAGE,
+    build_deepseek_safety_prompt_clause,
+    find_deepseek_dangerous_words,
+)
 
 
 SUPABASE_URL, SUPABASE_KEY = require_supabase_config()
@@ -404,13 +409,17 @@ def call_deepseek_text(prompt, system_role, max_tokens=1600, temperature=0.2):
             response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": system_role},
+                    {"role": "system", "content": f"{system_role}\n{build_deepseek_safety_prompt_clause()}"},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            return response.choices[0].message.content or ""
+            content = response.choices[0].message.content or ""
+            dangerous_words = find_deepseek_dangerous_words(content)
+            if dangerous_words:
+                print(f"{DEEPSEEK_SAFETY_REVIEW_MESSAGE} 命中：{'、'.join(dangerous_words)}")
+            return content
         except Exception as e:
             print(f"DeepSeek 调用失败，第 {attempt} 次：{e}")
             time.sleep(delay)

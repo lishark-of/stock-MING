@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+from deepseek_safety import build_deepseek_safety_prompt_clause
+
 
 REPORT_TYPE = "margin_etf_daily_research"
 
@@ -39,6 +41,7 @@ def build_margin_etf_research_prompt(packet):
 5. 如果某些 ETF 过热或破位，必须明确写“只观察不追”或“等待回踩验证”。
 6. 必须明确说明：“同赛道 ETF 可能高度重叠，不应简单叠加配置。”
 7. 必须明确说明：“ETF 持仓会随季报/公告变化，Tushare 持仓数据可能有滞后，配置结论必须结合最新行情和风险线。”
+8. {build_deepseek_safety_prompt_clause()}
 
 【输出格式】
 请只输出一个 JSON 对象，字段如下：

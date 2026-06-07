@@ -4820,6 +4820,17 @@ def render_command_center_deepseek_explanation_card(view_model: dict | None = No
     tokens = vm.get("token_estimate") if vm.get("token_estimate") is not None else 0
     content = str(vm.get("content") or "")
     error = str(vm.get("error") or "")
+    safety = vm.get("safety") if isinstance(vm.get("safety"), dict) else {}
+    dangerous_words = safety.get("dangerous_words") or vm.get("dangerous_words") or []
+    safety_warning = str(safety.get("message") or vm.get("safety_warning") or "")
+    safety_html = ""
+    if dangerous_words:
+        safety_html = (
+            "<div class='cc-muted-note' style='color:#b45309;'>"
+            f"{escape(safety_warning or 'DeepSeek 解释包含需人工复核的敏感表述。')}"
+            f" 命中：{escape('、'.join(str(item) for item in dangerous_words))}"
+            "</div>"
+        )
     tone = "danger" if status == "failed" else "success" if content else "warning"
     body = content or error or "暂无最新解释。点击 DeepSeek 综合解释后会显示在这里。"
     st.markdown(
@@ -4839,6 +4850,7 @@ def render_command_center_deepseek_explanation_card(view_model: dict | None = No
             </div>
           </div>
           <div class="cc-strategy-guidance">
+            {safety_html}
             <div class="cc-strategy-text" style="white-space:pre-wrap;">{escape(body)}</div>
             <div class="cc-muted-note">{escape(str(vm.get("safe_text") or "DeepSeek 只解释当前结构化结果，不参与默认策略生成。"))}</div>
           </div>
