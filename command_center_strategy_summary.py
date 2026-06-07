@@ -68,6 +68,196 @@ def _money_text(value: Any) -> str:
         return _to_text(value) or "暂无"
 
 
+def _display_a_share_ticker(value: Any) -> str:
+    text = _to_text(value).upper()
+    if text.endswith(".SS"):
+        return f"{text[:-3]}.SH"
+    if text.isdigit() and len(text) == 6:
+        if text.startswith("6"):
+            return f"{text}.SH"
+        if text.startswith(("0", "3")):
+            return f"{text}.SZ"
+    return text
+
+
+def _first_number(*values: Any) -> int | float | None:
+    for value in values:
+        if value in [None, ""]:
+            continue
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, Number):
+            return value
+        try:
+            return float(str(value).replace("%", "").replace(",", "").strip())
+        except Exception:
+            continue
+    return None
+
+
+def _percent_text(value: Any, fallback: str = "暂无") -> str:
+    number = _first_number(value)
+    if number is None:
+        return fallback
+    return f"{number:g}%"
+
+
+def _short_items(items: Any, formatter, limit: int = 3) -> list[str]:
+    result = []
+    for raw in _as_list(items):
+        item = _as_mapping(raw)
+        text = formatter(item) if item else _to_text(raw)
+        if text:
+            result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _remove_deepseek_status_text(value: Any) -> str:
+    text = _to_text(value)
+    if not text:
+        return ""
+    parts = [
+        part.strip()
+        for part in text.replace("\n", "；").split("；")
+        if part.strip() and "DeepSeek" not in part
+    ]
+    return "；".join(parts)
+
+
+def build_command_center_deepseek_explanation_prompt(
+    *,
+    target: Any = "",
+    market_badge: Any = "",
+    price: Any = None,
+    position_profile: Any = None,
+    home_snapshot: Any = None,
+    live_packet: Any = None,
+) -> dict:
+    snapshot = _as_mapping(home_snapshot)
+    holding = _as_mapping(snapshot.get("holding_action"))
+    profile = _as_mapping(position_profile)
+    today = _as_mapping(snapshot.get("today_action") or snapshot.get("decision_packet"))
+    strategy = _as_mapping(snapshot.get("strategy_packet"))
+    risk = _as_mapping(snapshot.get("risk_breakdown"))
+    margin_summary = _as_mapping(snapshot.get("margin_etf_summary"))
+    projection = _as_mapping(snapshot.get("projection_packet") or _as_mapping(live_packet).get("projection_packet"))
+    risk_alerts = _as_mapping(snapshot.get("risk_alerts"))
+    data_brief = _as_mapping(snapshot.get("data_capability_brief"))
+    data_user_summary = _as_mapping(data_brief.get("user_summary"))
+
+    display_ticker = _display_a_share_ticker(
+        target
+        or holding.get("ticker")
+        or profile.get("ticker")
+        or _as_mapping(live_packet).get("target")
+    )
+    current_price = _first_number(holding.get("current_price"), price)
+    cost = _first_number(holding.get("cost"), holding.get("cost_price"), profile.get("cost"), profile.get("cost_price"))
+    shares = _first_number(holding.get("shares"), holding.get("holding_units"), profile.get("shares"), profile.get("holding_units"))
+    margin_ratio = _first_number(profile.get("margin_ratio_pct"), profile.get("margin_ratio"), margin_summary.get("current_margin_ratio"))
+    floating = _as_mapping(holding.get("floating_pnl"))
+    pnl_text = _to_text(holding.get("floating_pnl_text"))
+    if not pnl_text and floating:
+        pnl_text = f"{_percent_text(floating.get('pct'))} / {_money_text(floating.get('amount'))}"
+
+    risk_lines = _short_items(
+        risk.get("items"),
+        lambda item: f"{_to_text(item.get('label'))}={_to_text(item.get('level'))}（{_to_text(item.get('reason'))}）",
+        limit=4,
+    )
+    if not risk_lines:
+        risk_lines = [
+            f"{label}={_to_text(_as_mapping(risk.get(key)).get('level'), '待评估')}"
+            for key, label in (("overall", "账户整体风险"), ("position", "单票风险"), ("margin", "融资风险"), ("data", "数据风险"))
+        ]
+
+    next_lines = _short_items(
+        snapshot.get("next_ticket_candidates"),
+        lambda item: (
+            f"{_display_a_share_ticker(item.get('ticker'))} {_to_text(item.get('name'))}："
+            f"{_to_text(item.get('action_state') or item.get('status'), '只观察')}，"
+            f"分数/理由={_to_text(item.get('score') or item.get('score_text') or item.get('reason'), '暂无')}"
+        ),
+    )
+    if not next_lines:
+        next_lines = ["暂无可执行下一票候选。"]
+
+    etf_candidates = (
+        _as_list(margin_summary.get("actionable_etfs"))
+        + _as_list(margin_summary.get("watch_etfs"))
+        + _as_list(margin_summary.get("recommended_etfs"))
+    )
+    etf_lines = _short_items(
+        etf_candidates,
+        lambda item: (
+            f"{_to_text(item.get('name')) or _to_text(item.get('code'))}："
+            f"{_to_text(item.get('status') or item.get('action_state'), '观察')}，"
+            f"比例={_to_text(item.get('weight') or item.get('suggested_ratio') or item.get('ratio'), '暂无')}"
+        ),
+    )
+    if not etf_lines:
+        etf_lines = ["暂无 ETF 配置或仅保留观察。"]
+
+    projection_lines = _short_items(
+        projection.get("paths"),
+        lambda item: f"{_to_text(item.get('name'))}：{_to_text(item.get('condition') or item.get('trigger'))} / {_to_text(item.get('action') or item.get('advice'))}",
+    )
+    if not projection_lines:
+        projection_lines = ["趋势路径未生成或仅可作为观察参考。"]
+
+    refresh_lines = _short_items(
+        snapshot.get("full_refresh_steps"),
+        lambda item: f"{_to_text(item.get('name'))}：{_to_text(item.get('label') or item.get('status'))}，{_to_text(item.get('message'))}",
+        limit=6,
+    )
+    data_gap_lines = _short_items(risk_alerts.get("data_gaps"), lambda item: _to_text(item), limit=4)
+    clean_data_summary = _remove_deepseek_status_text(data_user_summary.get("summary"))
+    if data_user_summary.get("headline") or clean_data_summary:
+        data_gap_lines.append(
+            f"{_to_text(data_user_summary.get('headline'))}；{clean_data_summary}".strip("；")
+        )
+    if not data_gap_lines:
+        data_gap_lines = ["当前数据缺口未完全确认；缺失项必须按待验证处理。"]
+
+    add_condition = _to_text(strategy.get("add_condition") or holding.get("add_condition"), "等待数据补齐且规则条件满足后再评估。")
+    reduce_condition = _to_text(strategy.get("reduce_condition") or holding.get("reduce_condition"), "跌破纪律线或风险扩大时优先降风险。")
+    invalidation_condition = _to_text(strategy.get("invalidation_condition") or holding.get("invalidation_condition"), "市场转弱或信号反向时本轮结论失效。")
+    risk_budget = _as_mapping(strategy.get("risk_budget"))
+    prompt = f"""请只基于下面的“用户口径结构化摘要”解释当前综合推演结果，不要引用摘要外事实。
+
+硬性边界：
+- 本地规则结论已经生成；DeepSeek 只做解释和审查，不参与默认策略生成，不直接决定仓位，不覆盖本地结论。
+- 不允许编造价格、公告、新闻、资金流、融资比例、候选票或 ETF；缺失就写“缺失/待验证/使用缓存”。
+- 如果本地结论是“只观察/等待”，不得解释成买入信号；只能给条件式验证清单。
+- 使用用户显示代码 {display_ticker}，不要输出 .SS 后缀。
+- 输出 900 字以内，按固定格式：一句话结论 / 三条依据 / 三条操作条件 / 数据缺口 / 风险提示。
+- “一句话结论”必须原文包含：本地规则结论、当前价、成本、持仓、浮盈亏、用户输入融资比例、以及“DeepSeek 只解释，不决定仓位”。
+- 即使融资比例为 0%，也必须明确写出“用户输入融资比例 0%”，不要改写成其他比例。
+- 数据缺口只描述交易数据缺口；不要把“DeepSeek 未调用”写成数据缺口，因为当前就是手动解释调用。
+
+用户口径结构化摘要：
+标的：{display_ticker}；市场：{_to_text(market_badge, '待确认')}
+当前价：{current_price if current_price is not None else '暂无'}；成本：{cost if cost is not None else '暂无'}；持仓：{shares if shares is not None else '暂无'}；浮盈亏：{pnl_text or '暂无'}
+用户输入融资比例：{_percent_text(margin_ratio)}；默认融资动作（是否新增融资）：{_to_text(today.get('margin_mode'), '待确认')}
+本地规则结论：{_to_text(today.get('overall_action'), '等待')}；主账户动作：{_to_text(today.get('position_mode'), '待确认')}；风险等级：{_to_text(today.get('risk_level'), '待评估')}
+四维风险：{'；'.join(risk_lines)}
+策略条件：加仓={add_condition}；减仓={reduce_condition}；失效={invalidation_condition}
+仓位/风险预算：{_to_text(risk_budget.get('risk_level') or risk_budget.get('position_mode') or risk_budget.get('summary'), '暂无明确预算；按保守风险边界解释')}
+下一票 Top3：{'；'.join(next_lines)}
+ETF/融资执行清单：{'；'.join(etf_lines)}
+未来趋势路径：{'；'.join(projection_lines)}
+刷新步骤摘要：{'；'.join(refresh_lines) if refresh_lines else '暂无刷新步骤'}
+数据缺口/缓存/失败：{'；'.join(data_gap_lines)}
+"""
+    return {
+        "prompt": prompt,
+        "display_ticker": display_ticker,
+        "deepseek_called": False,
+    }
+
+
 def normalize_strategy_status(packet: Any) -> str:
     payload = _as_mapping(packet)
     raw = _to_text(payload.get("status")).lower()
@@ -401,10 +591,10 @@ def build_deepseek_latest_explanation_view_model(
         state_map.get("command_center_deepseek_latest_at")
         or state_map.get(explanation_at_key)
     )
-    ticker = _to_text(state_map.get("command_center_deepseek_latest_ticker") or target)
+    ticker = _display_a_share_ticker(state_map.get("command_center_deepseek_latest_ticker") or target)
     visible = bool(state_map.get("command_center_deepseek_explanation_visible") or result or error)
     latest_refresh_level = _to_text(state_map.get("command_center_deepseek_refresh_level"), "manual_deep")
-    current_target = _to_text(target)
+    current_target = _display_a_share_ticker(target)
     is_current = not current_target or not ticker or ticker == current_target
     calls = _token_usage_value(token_usage, "deepseek_calls")
     tokens = _token_usage_value(token_usage, "estimated_tokens")

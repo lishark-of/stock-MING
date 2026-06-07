@@ -53,6 +53,7 @@ from command_center_module_summary import build_module_summary_view_model
 from command_center_overview_summary import build_command_center_overview_view_model
 from command_center_refresh_summary import build_full_refresh_steps, build_refresh_summary_view_model
 from command_center_strategy_summary import (
+    build_command_center_deepseek_explanation_prompt,
     build_deepseek_latest_explanation_view_model,
     build_strategy_summary_view_model,
 )
@@ -8036,23 +8037,20 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                     position_profile=position_profile,
                 )
                 current_packet["refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
-                prompt = f"""
-请基于以下综合推演中心 packet 输出一段克制解释。
-要求：
-1. 不得把未刷新模块、mock 或投喂资料观点写成事实。
-2. 必须说明 DeepSeek 只辅助解释，不直接决定仓位。
-3. 输出包含：综合结论、需要验证的信号、纪律边界、数据缺口。
-
-当前标的：{target}
-市场：{market_badge}
-当前价：{price}
-packet:
-{json.dumps(current_packet, ensure_ascii=False, indent=2, default=str)}
-"""
+                prompt_payload = build_command_center_deepseek_explanation_prompt(
+                    target=target,
+                    market_badge=market_badge,
+                    price=price,
+                    position_profile=position_profile,
+                    home_snapshot=current_packet.get("home_action_snapshot") or {},
+                    live_packet=current_packet,
+                )
+                prompt = prompt_payload.get("prompt") or ""
+                display_target = prompt_payload.get("display_ticker") or home_snapshot_service.display_a_share_ticker(target)
                 result = call_deepseek_non_stream(
                     prompt,
-                    system_role="你是克制的交易推演解释员，只解释缓存事实和待验证假设，不输出直接交易指令。",
-                    max_tokens=1600,
+                    system_role="你是克制的交易推演解释员。只能解释用户口径结构化摘要，不补充摘要外事实，不输出直接交易指令。",
+                    max_tokens=1000,
                 )
                 generated_at = datetime.datetime.now().isoformat(timespec="seconds")
                 st.session_state[explanation_key] = result or ""
@@ -8060,7 +8058,7 @@ packet:
                 st.session_state[latest_explanation_key] = result or ""
                 st.session_state[latest_explanation_error_key] = ""
                 st.session_state[latest_explanation_at_key] = generated_at
-                st.session_state[latest_explanation_ticker_key] = target
+                st.session_state[latest_explanation_ticker_key] = display_target
                 st.session_state[latest_explanation_visible_key] = True
                 st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
                 if result:

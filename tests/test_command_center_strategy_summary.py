@@ -204,6 +204,18 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(view_model["call_count"], 1)
         self.assertEqual(view_model["token_estimate"], 3210)
 
+    def test_deepseek_latest_explanation_view_model_normalizes_a_share_ticker(self):
+        view_model = summary.build_deepseek_latest_explanation_view_model(
+            {
+                "command_center_deepseek_latest_result": "当前解释结果",
+                "command_center_deepseek_latest_ticker": "688041.SS",
+            },
+            target="688041.SH",
+        )
+
+        self.assertEqual(view_model["ticker"], "688041.SH")
+        self.assertTrue(view_model["is_current_packet"])
+
     def test_deepseek_latest_explanation_view_model_surfaces_failure(self):
         view_model = summary.build_deepseek_latest_explanation_view_model(
             {
@@ -219,6 +231,73 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertTrue(view_model["visible"])
         self.assertEqual(view_model["error"], "network timeout")
         self.assertTrue(view_model["deepseek_called"])
+
+    def test_deepseek_explanation_prompt_is_compact_user_facing_context(self):
+        prompt_payload = summary.build_command_center_deepseek_explanation_prompt(
+            target="688041.SS",
+            market_badge="A股",
+            price=274.06,
+            position_profile={"ticker": "688041.SH", "margin_ratio_pct": 0},
+            home_snapshot={
+                "holding_action": {
+                    "ticker": "688041.SH",
+                    "cost": 120,
+                    "shares": 500,
+                    "current_price": 274.06,
+                    "floating_pnl_text": "浮盈 128.38%",
+                    "add_condition": "回踩不破再评估。",
+                    "reduce_condition": "跌破纪律线先降风险。",
+                    "invalidation_condition": "趋势反向则失效。",
+                },
+                "today_action": {
+                    "overall_action": "只观察",
+                    "position_mode": "持仓观察",
+                    "margin_mode": "不使用融资",
+                    "risk_level": "低",
+                },
+                "risk_breakdown": {
+                    "items": [
+                        {"label": "账户整体风险", "level": "低", "reason": "本地规则保守。"},
+                        {"label": "融资风险", "level": "低", "reason": "当前未使用融资。"},
+                    ]
+                },
+                "next_ticket_candidates": [
+                    {"ticker": "601138.SS", "name": "工业富联", "action_state": "只观察", "score": 61}
+                ],
+                "margin_etf_summary": {"watch_etfs": [{"name": "半导体 ETF", "status": "观察", "weight": "10%"}]},
+                "full_refresh_steps": [
+                    {"name": "下一票雷达", "label": "完成", "message": "已生成候选。"}
+                ],
+                "risk_alerts": {"data_gaps": ["资金流缺失，等待验证。"]},
+                "data_capability_brief": {
+                    "user_summary": {
+                        "headline": "对当前结论影响：中",
+                        "summary": "行情数据：无数据；DeepSeek：未调用；资金数据：失败",
+                    }
+                },
+            },
+            live_packet={"command_center_raw_packet": {"provider": "debug"}},
+        )
+
+        prompt = prompt_payload["prompt"]
+        self.assertEqual(prompt_payload["display_ticker"], "688041.SH")
+        self.assertIn("688041.SH", prompt)
+        self.assertNotIn("688041.SS", prompt)
+        self.assertNotIn("601138.SS", prompt)
+        self.assertIn("601138.SH", prompt)
+        self.assertIn("用户输入融资比例：0%", prompt)
+        self.assertIn("DeepSeek 只做解释和审查", prompt)
+        self.assertIn("DeepSeek 只解释，不决定仓位", prompt)
+        self.assertIn("当前价", prompt)
+        self.assertIn("成本", prompt)
+        self.assertIn("持仓", prompt)
+        self.assertIn("不得解释成买入信号", prompt)
+        self.assertNotIn("DeepSeek：未调用", prompt)
+        self.assertIn("资金数据：失败", prompt)
+        for forbidden in ("command_center_", "provider", "packet"):
+            self.assertNotIn(forbidden, prompt)
+        self.assertLess(len(prompt), 5000)
+        self.assertFalse(prompt_payload["deepseek_called"])
 
     def test_a_share_market_guidance_mentions_money_flow_ma_and_announcements(self):
         view_model = summary.build_strategy_summary_view_model(
