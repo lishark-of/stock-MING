@@ -48,6 +48,7 @@ import command_center_state_adapter as cc_state_adapter
 import command_center_service as cc_service
 import command_center_decision_engine as decision_engine
 import strategy_execution_service as strategy_service
+import trade_review_log as trade_review_log_service
 from command_center_decision_summary import build_decision_summary_view_model
 from command_center_module_summary import build_module_summary_view_model
 from command_center_overview_summary import build_command_center_overview_view_model
@@ -7916,6 +7917,170 @@ def render_command_center_live_cards(live_packet, target="", market_type="", pri
                     st.write(section.get("summary") or module_summary.get("empty_text") or empty_hint)
 
 
+def render_command_center_trade_review_log_panel(
+    *,
+    target="",
+    market_type="",
+    position_profile=None,
+    price_detail=None,
+    home_snapshot=None,
+    decision_packet=None,
+    strategy_packet=None,
+    radar_packet=None,
+    etf_packet=None,
+    projection_packet=None,
+    full_refresh_steps=None,
+    deepseek_view_model=None,
+):
+    profile = position_profile if isinstance(position_profile, dict) else {}
+    detail = price_detail if isinstance(price_detail, dict) else {}
+    decision = decision_packet if isinstance(decision_packet, dict) else {}
+    strategy = strategy_packet if isinstance(strategy_packet, dict) else {}
+    snapshot = dict(home_snapshot) if isinstance(home_snapshot, dict) else {}
+    steps = full_refresh_steps if isinstance(full_refresh_steps, list) else []
+    deepseek_vm = deepseek_view_model if isinstance(deepseek_view_model, dict) else {}
+    deepseek_content = deepseek_vm.get("content") if deepseek_vm.get("status") == "ready" else ""
+    deepseek_used = bool(deepseek_content)
+    try:
+        risk_breakdown = home_snapshot_service.build_risk_breakdown(
+            decision,
+            position_profile=profile,
+            coverage=decision.get("data_coverage") if isinstance(decision.get("data_coverage"), dict) else {},
+            price_detail=detail,
+            errors=detail.get("errors") or [],
+        )
+    except Exception:
+        risk_breakdown = snapshot.get("risk_breakdown") if isinstance(snapshot.get("risk_breakdown"), dict) else {}
+    if risk_breakdown and not snapshot.get("risk_breakdown"):
+        snapshot["risk_breakdown"] = risk_breakdown
+    if steps:
+        data_freshness = snapshot.get("data_freshness") if isinstance(snapshot.get("data_freshness"), dict) else {}
+        snapshot["data_freshness"] = {**data_freshness, "full_refresh_steps": steps}
+
+    preview_record = trade_review_log_service.build_trade_review_record(
+        target=target,
+        name=profile.get("name") or st.session_state.get("current_stock_name") or "",
+        market_type=market_type,
+        position_profile=profile,
+        price_detail=detail,
+        home_snapshot=snapshot,
+        decision_packet=decision,
+        strategy_packet=strategy,
+        radar_packet=radar_packet or st.session_state.get("command_center_radar_packet") or {},
+        etf_packet=etf_packet or st.session_state.get("command_center_etf_packet") or {},
+        projection_packet=projection_packet or st.session_state.get("command_center_projection_packet") or {},
+        full_refresh_steps=steps,
+        deepseek_summary=deepseek_content,
+        deepseek_used=deepseek_used,
+        record_id="preview",
+        created_at=_cc_now(),
+    )
+    risk_items = (preview_record.get("risk_breakdown") or {}).get("items") or []
+    risk_text = " ｜ ".join(
+        f"{item.get('label') or '风险'}：{item.get('level') or '待评估'}"
+        for item in risk_items[:4]
+        if isinstance(item, dict)
+    ) or "风险摘要待刷新"
+    floating_pnl = preview_record.get("floating_pnl")
+    floating_pnl_pct = preview_record.get("floating_pnl_pct")
+    floating_delta = f"{floating_pnl_pct:.2f}%" if isinstance(floating_pnl_pct, (int, float)) else None
+    next_count = len(preview_record.get("next_ticket_top3") or [])
+    etf_count = len(preview_record.get("etf_actions") or [])
+    refresh_count = len((preview_record.get("data_freshness") or {}).get("full_refresh_steps") or [])
+
+    with st.container(border=True):
+        st.markdown("### 保存本次复盘记录")
+        st.caption("只保存当前页面摘要和你的备注；不会调用 DeepSeek、不会刷新数据、不会下单。")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("标的", preview_record.get("ticker") or "待确认")
+        c2.metric("今日动作", preview_record.get("overall_action") or "等待")
+        c3.metric("浮动盈亏", _fmt_price(floating_pnl, profile.get("currency") or ""), floating_delta)
+        c4.metric("DeepSeek", "已手动解释" if deepseek_used else "未参与")
+        st.caption(f"四维风险：{risk_text}")
+        st.caption(
+            f"下一票：{next_count} 个可回看候选 ｜ ETF：{etf_count} 条配置/观察记录 ｜ "
+            f"刷新步骤：{refresh_count} 条"
+        )
+        with st.form("command_center_trade_review_form"):
+            user_decision = st.selectbox(
+                "本次处理",
+                list(trade_review_log_service.USER_DECISIONS),
+                index=0,
+                key="command_center_trade_review_user_decision",
+            )
+            user_note = st.text_area(
+                "复盘备注",
+                key="command_center_trade_review_user_note",
+                placeholder="例如：只观察，等资金流和公告验证；不追高，不新增融资。",
+                height=86,
+            )
+            left, right = st.columns([1, 2])
+            with left:
+                follow_up_date = st.text_input(
+                    "下次验证日期",
+                    key="command_center_trade_review_follow_up_date",
+                    placeholder="YYYY-MM-DD",
+                )
+            with right:
+                validation_text = st.text_area(
+                    "验证条件",
+                    key="command_center_trade_review_validation_conditions",
+                    placeholder="每行一条，例如：站稳 MA20；资金流改善；公告无新增风险",
+                    height=86,
+                )
+            submitted = st.form_submit_button("保存复盘记录", width="stretch")
+        if submitted:
+            validation_conditions = [
+                line.strip()
+                for line in str(validation_text or "").splitlines()
+                if line.strip()
+            ]
+            record = trade_review_log_service.build_trade_review_record(
+                target=target,
+                name=profile.get("name") or st.session_state.get("current_stock_name") or "",
+                market_type=market_type,
+                position_profile=profile,
+                price_detail=detail,
+                home_snapshot=snapshot,
+                decision_packet=decision,
+                strategy_packet=strategy,
+                radar_packet=radar_packet or st.session_state.get("command_center_radar_packet") or {},
+                etf_packet=etf_packet or st.session_state.get("command_center_etf_packet") or {},
+                projection_packet=projection_packet or st.session_state.get("command_center_projection_packet") or {},
+                full_refresh_steps=steps,
+                deepseek_summary=deepseek_content,
+                deepseek_used=deepseek_used,
+                user_decision=user_decision,
+                user_note=user_note,
+                follow_up_date=follow_up_date,
+                validation_conditions=validation_conditions,
+            )
+            saved_record = trade_review_log_service.append_trade_review_record(record)
+            st.session_state["command_center_trade_review_last_saved_id"] = saved_record.get("id")
+            st.success(
+                f"复盘记录已保存：{saved_record.get('ticker') or '当前标的'}｜"
+                f"{saved_record.get('user_decision') or '未执行'}｜{saved_record.get('created_at') or '刚刚'}"
+            )
+        recent_records = trade_review_log_service.load_trade_review_records(limit=5)
+        with st.expander("最近 5 条复盘记录", expanded=False):
+            if not recent_records:
+                st.caption("暂无复盘记录。保存后会显示在这里，重启 App 后仍可读取。")
+            else:
+                summary = trade_review_log_service.summarize_trade_review_records(recent_records)
+                st.caption(f"最近记录 {summary.get('total') or 0} 条；处理结果分布：{summary.get('user_decisions') or {}}")
+                for item in recent_records[:5]:
+                    pnl_pct = item.get("floating_pnl_pct")
+                    pnl_text = f"{pnl_pct:.2f}%" if isinstance(pnl_pct, (int, float)) else "盈亏待验证"
+                    st.write(
+                        f"- {item.get('created_at') or '暂无时间'}｜"
+                        f"{item.get('ticker') or '未知标的'}｜"
+                        f"{item.get('overall_action') or '等待'}｜"
+                        f"{item.get('user_decision') or '未执行'}｜{pnl_text}"
+                    )
+                    if item.get("user_note"):
+                        st.caption(f"备注：{item.get('user_note')}")
+
+
 def render_command_center_2_page(target, market_badge, price, market_type="", position_profile=None, price_detail=None):
     packet_key = "command_center_2_packet"
     explanation_key = "command_center_2_deepseek_explanation"
@@ -8310,6 +8475,20 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     )
     render_home_analysis_methods_strip(
         analysis_methods_service.build_home_analysis_method_summary(analysis_method_packet)
+    )
+    render_command_center_trade_review_log_panel(
+        target=target,
+        market_type=market_type,
+        position_profile=position_profile,
+        price_detail=page_price_detail,
+        home_snapshot=home_snapshot,
+        decision_packet=decision_packet,
+        strategy_packet=strategy_packet,
+        radar_packet=st.session_state.get("command_center_radar_packet") or {},
+        etf_packet=st.session_state.get("command_center_etf_packet") or {},
+        projection_packet=projection_packet,
+        full_refresh_steps=full_refresh_steps_for_display,
+        deepseek_view_model=deepseek_latest_vm,
     )
 
     explanation = st.session_state.get(explanation_key)
