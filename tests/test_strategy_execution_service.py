@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 
@@ -36,6 +37,10 @@ class StrategyExecutionServiceTests(unittest.TestCase):
         self.assertEqual(packet["data_status"]["quant"], "missing")
         self.assertEqual(packet["data_status"]["backtest"], "missing")
         self.assertFalse(packet["deepseek_called"])
+        self.assertIn("strategy_execution_trace", packet)
+        self.assertFalse(packet["strategy_execution_trace"]["deepseek_used"])
+        self.assertIn("量化推演", packet["strategy_execution_trace"]["missing_inputs"])
+        self.assertIn("交易纪律/回测", packet["strategy_execution_trace"]["missing_inputs"])
 
     def test_cached_quant_and_backtest_generate_advice(self):
         state = {
@@ -61,6 +66,9 @@ class StrategyExecutionServiceTests(unittest.TestCase):
         self.assertEqual(packet["data_status"]["quant"], "ready")
         self.assertEqual(packet["data_status"]["backtest"], "ready")
         self.assertFalse(packet["deepseek_called"])
+        trace = packet["strategy_execution_trace"]
+        self.assertFalse(trace["deepseek_used"])
+        self.assertIn("资金/龙虎榜/融资融券", trace["missing_inputs"])
 
     def test_reduce_or_sell_signal_outputs_reduce_risk(self):
         state = {
@@ -138,6 +146,36 @@ class StrategyExecutionServiceTests(unittest.TestCase):
 
         self.assertTrue(expected_keys.issubset(packet.keys()))
         self.assertEqual(len(packet["next_5_10_day_paths"]), 3)
+        self.assertIn("strategy_execution_trace", packet)
+
+    def test_trace_explains_observe_when_quant_is_weak(self):
+        state = {
+            "legacy_quant_result": {"status": "completed", "score": 45, "direction": "防守"},
+            "last_backtest_report": _base_report(max_drawdown=-12),
+        }
+        packet = service.build_strategy_execution_packet(state, target="002008.SZ")
+        trace = packet["strategy_execution_trace"]
+        joined_rules = json.dumps(trace["rules_fired"], ensure_ascii=False)
+
+        self.assertEqual(packet["action"], "只观察")
+        self.assertIn("量化偏弱", joined_rules)
+        self.assertIn("降低", joined_rules + json.dumps(trace, ensure_ascii=False))
+        self.assertFalse(trace["deepseek_used"])
+
+    def test_deepseek_cache_does_not_feed_strategy_packet(self):
+        state = {
+            "legacy_quant_result": {"status": "completed", "score": 68, "direction": "偏积极"},
+            "last_backtest_report": _base_report(),
+            "command_center_2_deepseek_explanation": "大模型解释内容不应参与策略判断",
+            "command_center_deepseek_latest_result": "最新解释缓存也不应参与策略判断",
+        }
+        packet = service.build_strategy_execution_packet(state, target="002008.SZ")
+        serialized = json.dumps(packet, ensure_ascii=False)
+
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["strategy_execution_trace"]["deepseek_used"])
+        self.assertNotIn("大模型解释内容", serialized)
+        self.assertNotIn("最新解释缓存", serialized)
 
     def test_service_does_not_import_streamlit(self):
         self.assertFalse(hasattr(service, "st"))

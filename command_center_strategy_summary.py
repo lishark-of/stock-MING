@@ -45,14 +45,14 @@ def _as_list(value: Any) -> list:
     return [value]
 
 
-def _to_text(value: Any) -> str:
+def _to_text(value: Any, fallback: str = "") -> str:
     if value is None:
-        return ""
+        return fallback
     if isinstance(value, str):
-        return value.strip()
+        return value.strip() or fallback
     if isinstance(value, (bool, Number)):
-        return str(value)
-    return str(value).strip()
+        return str(value) or fallback
+    return str(value).strip() or fallback
 
 
 def _money_text(value: Any) -> str:
@@ -260,6 +260,172 @@ def build_strategy_data_status_items(packet: Any) -> list[dict]:
         {"key": key, "label": label, "state": _to_text(data_status.get(key)) or "missing", "text": _data_status_label(data_status.get(key))}
         for key, label in DATA_STATUS_LABELS.items()
     ]
+
+
+def _strategy_trace_status_label(status: Any) -> str:
+    return DATA_STATUS_STATE_LABELS.get(_to_text(status).lower(), _to_text(status) or "待验证")
+
+
+def _clean_user_trace_text(value: Any, fallback: str = "暂无摘要") -> str:
+    text = _to_text(value) or fallback
+    replacements = {
+        "provider": "数据源",
+        "packet": "结构化结果",
+        "command_center_": "",
+        "legacy_": "旧版",
+        "session_state": "本地缓存",
+        "恢复入口": "待恢复项",
+        "权限": "数据访问",
+        "缓存路径": "本地缓存记录",
+        "旧能力链": "历史结果链",
+    }
+    for raw, friendly in replacements.items():
+        text = text.replace(raw, friendly).replace(raw.upper(), friendly).replace(raw.title(), friendly)
+    return text
+
+
+def build_strategy_execution_trace_view_model(packet: Any) -> dict:
+    payload = _as_mapping(packet)
+    trace = _as_mapping(payload.get("strategy_execution_trace"))
+    data_status = _as_mapping(payload.get("data_status"))
+    if not trace:
+        input_sources = [
+            {
+                "name": DATA_STATUS_LABELS.get(key, key),
+                "status": state or "missing",
+                "used": state in {"ready", "cached"},
+                "summary": f"{DATA_STATUS_LABELS.get(key, key)}：{_data_status_label(state)}。",
+            }
+            for key, state in data_status.items()
+        ]
+        trace = {
+            "decision_source": "rule_based_packet",
+            "deepseek_used": False,
+            "input_sources": input_sources,
+            "rules_fired": [
+                {
+                    "rule": "本地规则汇总",
+                    "result": _to_text(payload.get("action")) or "等待",
+                    "evidence": _to_text(payload.get("summary")) or "策略执行建议按当前结构化结果生成。",
+                    "impact": "只解释当前动作边界，不改变策略结果。",
+                }
+            ],
+            "missing_inputs": [
+                DATA_STATUS_LABELS.get(key, key)
+                for key, state in data_status.items()
+                if state not in {"ready", "cached"}
+            ],
+            "final_reason": _to_text(payload.get("summary")) or "暂无可读原因。",
+            "safe_text": "策略执行建议由本地规则和结构化结果生成；DeepSeek 仅在手动点击后解释，不直接生成仓位建议。",
+        }
+    input_items = []
+    for raw in _as_list(trace.get("input_sources")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        input_items.append(
+            {
+                "name": _clean_user_trace_text(item.get("name"), "数据"),
+                "status": _to_text(item.get("status"), "missing"),
+                "status_label": _strategy_trace_status_label(item.get("status")),
+                "used": bool(item.get("used")),
+                "summary": _clean_user_trace_text(item.get("summary"), "暂无摘要"),
+            }
+        )
+    rules = []
+    for raw in _as_list(trace.get("rules_fired")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        rules.append(
+            {
+                "rule": _clean_user_trace_text(item.get("rule"), "本地规则"),
+                "result": _clean_user_trace_text(item.get("result"), _to_text(payload.get("action")) or "等待"),
+                "evidence": _clean_user_trace_text(item.get("evidence"), "暂无证据摘要"),
+                "impact": _clean_user_trace_text(item.get("impact"), "影响置信度"),
+            }
+        )
+    missing_inputs = [
+        _clean_user_trace_text(item)
+        for item in _as_list(trace.get("missing_inputs"))
+        if _clean_user_trace_text(item)
+    ]
+    deepseek_used = bool(trace.get("deepseek_used") or payload.get("deepseek_called"))
+    final_reason = _clean_user_trace_text(trace.get("final_reason") or payload.get("summary"), "暂无可读原因。")
+    summary = (
+        f"结论由本地规则和结构化结果生成；DeepSeek {'已参与解释' if deepseek_used else '未参与默认结论'}。"
+        f" 当前动作依据：{final_reason}"
+    )
+    return {
+        "title": "为什么是这个策略结果？",
+        "decision_source_label": "本地规则 + 结构化结果",
+        "deepseek_used": deepseek_used,
+        "deepseek_text": "DeepSeek 未参与默认策略；只在手动点击后解释。" if not deepseek_used else "DeepSeek 已手动解释；不直接生成仓位建议。",
+        "input_sources": input_items,
+        "rules_fired": rules,
+        "missing_inputs": missing_inputs,
+        "final_reason": final_reason,
+        "summary": summary,
+        "safe_text": _clean_user_trace_text(
+            trace.get("safe_text"),
+            "策略执行建议由本地规则和结构化结果生成；DeepSeek 仅在手动点击后解释，不直接生成仓位建议。",
+        ),
+    }
+
+
+def _token_usage_value(token_usage: Any, key: str) -> int:
+    usage = _as_mapping(token_usage)
+    value = usage.get(key)
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def build_deepseek_latest_explanation_view_model(
+    state: Any = None,
+    *,
+    target: Any = "",
+    token_usage: Any = None,
+    explanation_key: str = "command_center_2_deepseek_explanation",
+    explanation_at_key: str = "command_center_2_deepseek_generated_at",
+) -> dict:
+    state_map = _as_mapping(state)
+    result = (
+        state_map.get("command_center_deepseek_latest_result")
+        or state_map.get(explanation_key)
+        or ""
+    )
+    error = _to_text(state_map.get("command_center_deepseek_latest_error"))
+    generated_at = _to_text(
+        state_map.get("command_center_deepseek_latest_at")
+        or state_map.get(explanation_at_key)
+    )
+    ticker = _to_text(state_map.get("command_center_deepseek_latest_ticker") or target)
+    visible = bool(state_map.get("command_center_deepseek_explanation_visible") or result or error)
+    latest_refresh_level = _to_text(state_map.get("command_center_deepseek_refresh_level"), "manual_deep")
+    current_target = _to_text(target)
+    is_current = not current_target or not ticker or ticker == current_target
+    calls = _token_usage_value(token_usage, "deepseek_calls")
+    tokens = _token_usage_value(token_usage, "estimated_tokens")
+    status = "failed" if error and not result else "ready" if result else "empty"
+    content = _to_text(result)
+    return {
+        "title": "DeepSeek 对当前 packet 的解释",
+        "status": status,
+        "visible": visible,
+        "content": content,
+        "error": error,
+        "generated_at": generated_at or "暂无",
+        "ticker": ticker or "当前标的",
+        "is_current_packet": is_current,
+        "current_packet_text": "来自当前 packet" if is_current else "不是当前标的的最新解释",
+        "token_estimate": tokens,
+        "call_count": calls,
+        "refresh_level": latest_refresh_level,
+        "safe_text": "DeepSeek 只解释当前结构化结果，不参与默认策略生成，不直接决定仓位。",
+        "deepseek_called": bool(result or error),
+    }
 
 
 def build_market_method_guidance(analysis_method_packet: Any = None) -> dict:
@@ -1233,6 +1399,7 @@ def build_strategy_summary_view_model(
         "discipline_items": build_strategy_discipline_items(payload),
         "risk_budget_items": build_strategy_risk_budget_items(payload),
         "data_status_items": build_strategy_data_status_items(payload),
+        "strategy_execution_trace": build_strategy_execution_trace_view_model(payload),
         "warning_items": _warning_items(payload),
         "market_method_guidance": market_guidance,
         "projection_confidence_summary": projection_confidence,

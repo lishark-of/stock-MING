@@ -52,7 +52,10 @@ from command_center_decision_summary import build_decision_summary_view_model
 from command_center_module_summary import build_module_summary_view_model
 from command_center_overview_summary import build_command_center_overview_view_model
 from command_center_refresh_summary import build_refresh_summary_view_model
-from command_center_strategy_summary import build_strategy_summary_view_model
+from command_center_strategy_summary import (
+    build_deepseek_latest_explanation_view_model,
+    build_strategy_summary_view_model,
+)
 from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
 
 try:
@@ -91,6 +94,7 @@ try:
         "render_price_simulator": "盘中价格情景推演",
         "render_risk_radar_summary": "本地风险雷达摘要",
         "render_signal_confluence_card": "信号共振",
+        "render_command_center_deepseek_explanation_card": "DeepSeek 当前解释卡",
         "render_strategy_execution_command_card": "策略执行操作卡",
         "render_theme_comparison_table": "同赛道 ETF 对比",
     }
@@ -212,6 +216,9 @@ except Exception as module_error:
 
     def render_strategy_execution_command_card(*args, **kwargs):
         _visual_component_unavailable("策略执行操作卡")
+
+    def render_command_center_deepseek_explanation_card(*args, **kwargs):
+        _visual_component_unavailable("DeepSeek 当前解释卡")
 
     def render_theme_comparison_table(*args, **kwargs):
         _visual_component_unavailable("同赛道 ETF 对比")
@@ -7670,6 +7677,11 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     packet_key = "command_center_2_packet"
     explanation_key = "command_center_2_deepseek_explanation"
     explanation_at_key = "command_center_2_deepseek_generated_at"
+    latest_explanation_key = "command_center_deepseek_latest_result"
+    latest_explanation_error_key = "command_center_deepseek_latest_error"
+    latest_explanation_at_key = "command_center_deepseek_latest_at"
+    latest_explanation_ticker_key = "command_center_deepseek_latest_ticker"
+    latest_explanation_visible_key = "command_center_deepseek_explanation_visible"
     if packet_key not in st.session_state:
         st.session_state[packet_key] = get_command_center_mock_packet()
 
@@ -7797,15 +7809,16 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
             manual_deepseek_clicked = True
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
-            current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
-            current_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(current_packet))
-            current_packet["home_action_snapshot"] = st.session_state.get("command_center_home_snapshot") or _build_home_action_snapshot_display(
-                live_packet=current_packet,
-                target=target,
-                position_profile=position_profile,
-            )
-            current_packet["refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
-            prompt = f"""
+            try:
+                current_packet = st.session_state.get("command_center_live_packet") or build_command_center_live_packet(target=target)
+                current_packet = _attach_command_center_decision_packet(_attach_strategy_execution_packet(current_packet))
+                current_packet["home_action_snapshot"] = st.session_state.get("command_center_home_snapshot") or _build_home_action_snapshot_display(
+                    live_packet=current_packet,
+                    target=target,
+                    position_profile=position_profile,
+                )
+                current_packet["refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
+                prompt = f"""
 请基于以下综合推演中心 packet 输出一段克制解释。
 要求：
 1. 不得把未刷新模块、mock 或投喂资料观点写成事实。
@@ -7818,15 +7831,34 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
 packet:
 {json.dumps(current_packet, ensure_ascii=False, indent=2, default=str)}
 """
-            result = call_deepseek_non_stream(
-                prompt,
-                system_role="你是克制的交易推演解释员，只解释缓存事实和待验证假设，不输出直接交易指令。",
-                max_tokens=1600,
-            )
-            st.session_state[explanation_key] = result or ""
-            st.session_state[explanation_at_key] = datetime.datetime.now().isoformat(timespec="seconds")
-            st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
-            status.update(label="DeepSeek 解释已写入 session_state", state="complete")
+                result = call_deepseek_non_stream(
+                    prompt,
+                    system_role="你是克制的交易推演解释员，只解释缓存事实和待验证假设，不输出直接交易指令。",
+                    max_tokens=1600,
+                )
+                generated_at = datetime.datetime.now().isoformat(timespec="seconds")
+                st.session_state[explanation_key] = result or ""
+                st.session_state[explanation_at_key] = generated_at
+                st.session_state[latest_explanation_key] = result or ""
+                st.session_state[latest_explanation_error_key] = ""
+                st.session_state[latest_explanation_at_key] = generated_at
+                st.session_state[latest_explanation_ticker_key] = target
+                st.session_state[latest_explanation_visible_key] = True
+                st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
+                if result:
+                    status.update(label="DeepSeek 解释已生成，并显示在主路径附近", state="complete", expanded=False)
+                else:
+                    st.session_state[latest_explanation_error_key] = "DeepSeek 未返回可展示内容。"
+                    status.update(label="DeepSeek 未返回可展示内容", state="error", expanded=False)
+            except Exception as exc:
+                generated_at = datetime.datetime.now().isoformat(timespec="seconds")
+                st.session_state[latest_explanation_key] = ""
+                st.session_state[latest_explanation_error_key] = str(exc)
+                st.session_state[latest_explanation_at_key] = generated_at
+                st.session_state[latest_explanation_ticker_key] = target
+                st.session_state[latest_explanation_visible_key] = True
+                st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
+                status.update(label="DeepSeek 解释失败，失败原因已显示在主路径附近", state="error", expanded=False)
 
     suppress_auto_refresh = manual_full_refresh_clicked or manual_war_game_clicked or manual_deepseek_clicked
     if not suppress_auto_refresh:
@@ -7993,6 +8025,14 @@ packet:
         show_generate_button=False,
         home_compact=True,
     )
+    deepseek_latest_vm = build_deepseek_latest_explanation_view_model(
+        st.session_state,
+        target=target,
+        token_usage=st.session_state.get("token_usage") or {},
+        explanation_key=explanation_key,
+        explanation_at_key=explanation_at_key,
+    )
+    render_command_center_deepseek_explanation_card(deepseek_latest_vm)
     render_command_center_next_ticket_top3(live_packet)
     render_command_center_etf_config_panel(live_packet, position_profile=position_profile)
     render_command_center_risk_alert_panel(
@@ -8010,7 +8050,8 @@ packet:
 
     explanation = st.session_state.get(explanation_key)
     if explanation:
-        with st.expander("DeepSeek 手动解释缓存", expanded=False):
+        with st.expander("历史解释缓存", expanded=False):
+            st.caption("最新解释已在策略执行实验室附近展示；这里仅保留历史缓存，便于回看。")
             st.caption(f"生成时间：{st.session_state.get(explanation_at_key) or '暂无'}")
             st.markdown(explanation)
     render_command_center_shell_end()
@@ -8246,7 +8287,7 @@ packet:
     render_observation_pool_card(packet)
     render_signal_confluence_card(packet.get("signal_confluence"))
 
-    st.markdown("#### DeepSeek 深度解释缓存")
+    st.markdown("#### DeepSeek 历史解释缓存")
     explanation = st.session_state.get(explanation_key)
     if explanation:
         st.caption(f"生成时间：{st.session_state.get(explanation_at_key) or '暂无'}")

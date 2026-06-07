@@ -53,6 +53,19 @@ def _status_from_payload(payload: Any, ready_keys: tuple[str, ...]) -> str:
     return "cached"
 
 
+def _trace_status(payload: Any, ready_keys: tuple[str, ...] = ("status", "summary")) -> str:
+    return _status_from_payload(payload, ready_keys)
+
+
+def _trace_item(name: str, status: str, used: bool, summary: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": status or "missing",
+        "used": bool(used),
+        "summary": summary or "暂无可读摘要。",
+    }
+
+
 def _extract_quant_context(state: MutableMapping[str, Any], live_packet: dict[str, Any] | None = None) -> dict[str, Any]:
     quant = state.get("legacy_quant_result") or {}
     live_quant = (live_packet or state.get("command_center_live_packet") or {}).get("quant") or {}
@@ -156,6 +169,72 @@ def _build_action(
     return "只观察", "低", "现有缓存只能支持观察，不能证明进攻条件已经成立。"
 
 
+def _build_strategy_execution_trace(
+    state: MutableMapping[str, Any],
+    *,
+    profile: dict[str, Any],
+    live: dict[str, Any],
+    quant: dict[str, Any],
+    backtest: dict[str, Any],
+    action: str,
+    confidence: str,
+    summary: str,
+) -> dict[str, Any]:
+    decision = state.get("command_center_decision_packet") or {}
+    data_capability = state.get("command_center_data_capability_packet") or state.get("data_capability_packet") or {}
+    analysis_method = state.get("command_center_analysis_method_packet") or {}
+    home_snapshot = state.get("command_center_home_snapshot") or {}
+    moneyflow = state.get("command_center_moneyflow_packet") or state.get("moneyflow_packet") or {}
+    dragon_tiger = state.get("command_center_dragon_tiger_packet") or state.get("dragon_tiger_packet") or {}
+    margin = state.get("command_center_margin_packet") or state.get("margin_packet") or {}
+    hard_risk = state.get("command_center_hard_risk_packet") or state.get("hard_risk_packet") or {}
+    position_ready = bool(profile and any(profile.get(key) not in (None, "", [], {}) for key in ("ticker", "shares", "holding_units", "cost_price", "current_price", "normalized_position_state")))
+    live_status = _trace_status(live, ("conclusion", "quant", "discipline"))
+    decision_status = _trace_status(decision, ("overall_action", "status"))
+    data_capability_status = _trace_status(data_capability, ("status_groups", "items", "summary"))
+    analysis_status = _trace_status(analysis_method, ("market", "summary", "methods"))
+    home_status = _trace_status(home_snapshot, ("holding_action", "today_action", "data_freshness"))
+    input_sources = [
+        _trace_item("当前持仓", "ready" if position_ready else "missing", position_ready, profile.get("profit_state") or profile.get("normalized_position_state") or "持仓输入用于生成仓位建议和风险预算。"),
+        _trace_item("行情数据", live_status, live_status in {"ready", "cached"}, "综合推演中心已读取当前本地作战包。" if live_status != "missing" else "行情或综合作战包仍待刷新。"),
+        _trace_item("今日总决策", decision_status, decision_status in {"ready", "cached"}, str(decision.get("overall_action") or decision.get("summary") or "今日总决策用于约束策略方向。")),
+        _trace_item("市场分析方法", analysis_status, analysis_status in {"ready", "cached"}, str(analysis_method.get("market") or analysis_method.get("summary") or "市场类型和验证重点待确认。")),
+        _trace_item("交易纪律/回测", backtest.get("status") or "missing", backtest.get("status") in {"ready", "cached"}, backtest.get("summary") or backtest.get("signal_reason") or "纪律/回测缓存用于判断是否等待或降风险。"),
+        _trace_item("量化推演", quant.get("status") or "missing", quant.get("status") in {"ready", "cached"}, quant.get("summary") or quant.get("direction") or "量化缓存用于判断方向强弱。"),
+        _trace_item("数据能力状态", data_capability_status, data_capability_status in {"ready", "cached"}, str(data_capability.get("summary") or "数据能力影响置信度和能否放大仓位。")),
+        _trace_item("Home Snapshot", home_status, home_status in {"ready", "cached"}, "首页快照用于回填持仓、风险、ETF 和候选状态。" if home_status != "missing" else "首页快照尚未生成。"),
+        _trace_item("资金/龙虎榜/融资融券", _trace_status({"moneyflow": moneyflow, "dragon_tiger": dragon_tiger, "margin": margin}, ("moneyflow", "dragon_tiger", "margin")), any(bool(item) for item in (moneyflow, dragon_tiger, margin)), "A股资金、龙虎榜和融资融券只作为待验证辅助证据。"),
+        _trace_item("公告/硬风险", _trace_status(hard_risk, ("alerts", "items", "summary", "status")), bool(hard_risk), "公告/硬风险未排除前，不支持放大仓位。"),
+    ]
+    missing_inputs = [
+        item["name"]
+        for item in input_sources
+        if item["status"] in {"missing", "waiting", "failed"} or not item["used"]
+    ]
+    rules_fired: list[dict[str, str]] = []
+    if quant.get("status") == "missing" and backtest.get("status") == "missing":
+        rules_fired.append({"rule": "数据不足", "result": "等待", "evidence": "量化推演和交易纪律均未生成", "impact": "不形成新的仓位动作"})
+    if action in {"只观察", "等待"}:
+        rules_fired.append({"rule": "验证不足", "result": action, "evidence": "现有线索不足以升级为进攻动作", "impact": "降低置信度，保留观察路径"})
+    if action == "降风险":
+        rules_fired.append({"rule": "纪律/回撤风险", "result": "降风险", "evidence": summary, "impact": "暂停新增风险，优先保护本金"})
+    if backtest.get("status") == "missing":
+        rules_fired.append({"rule": "纪律缺口", "result": action, "evidence": "交易纪律/回测仍待验证", "impact": "不能把策略结论升级为加仓依据"})
+    if quant.get("weak"):
+        rules_fired.append({"rule": "量化偏弱", "result": action, "evidence": quant.get("summary") or quant.get("direction") or "量化方向偏弱", "impact": "压低进攻倾向"})
+    if not rules_fired:
+        rules_fired.append({"rule": "本地规则汇总", "result": action, "evidence": summary, "impact": f"置信度为{confidence}"})
+    return {
+        "decision_source": "rule_based_packet",
+        "deepseek_used": False,
+        "input_sources": input_sources,
+        "rules_fired": rules_fired,
+        "missing_inputs": missing_inputs,
+        "final_reason": summary,
+        "safe_text": "策略执行建议由本地规则和结构化 packet 生成；DeepSeek 仅在手动点击后解释，不直接生成仓位建议。",
+    }
+
+
 def _build_conditions(action: str, position_profile: dict[str, Any], backtest: dict[str, Any]) -> dict[str, str]:
     position_state = position_profile.get("normalized_position_state") or "未知持仓状态"
     latest_signal = backtest.get("latest_signal") or "暂无"
@@ -221,7 +300,7 @@ def _build_risk_budget(action: str, position_profile: dict[str, Any], backtest: 
 
 
 def _fallback_packet(message: str = "数据不足，先等待刷新量化和纪律结果。") -> dict[str, Any]:
-    return {
+    packet = {
         "status": "waiting",
         "action": "等待",
         "confidence": "低",
@@ -254,6 +333,20 @@ def _fallback_packet(message: str = "数据不足，先等待刷新量化和纪�
         "summary": message,
         "last_error": None,
     }
+    packet["strategy_execution_trace"] = {
+        "decision_source": "rule_based_packet",
+        "deepseek_used": False,
+        "input_sources": [
+            _trace_item("量化推演", "missing", False, "量化缓存不足。"),
+            _trace_item("交易纪律/回测", "missing", False, "纪律/回测缓存不足。"),
+            _trace_item("行情数据", "missing", False, "综合作战包待刷新。"),
+        ],
+        "rules_fired": [{"rule": "数据不足", "result": "等待", "evidence": "量化和纪律缓存不足", "impact": "不形成新的仓位动作"}],
+        "missing_inputs": ["量化推演", "交易纪律/回测", "行情数据"],
+        "final_reason": message,
+        "safe_text": "策略执行建议由本地规则和结构化 packet 生成；DeepSeek 仅在手动点击后解释，不直接生成仓位建议。",
+    }
+    return packet
 
 
 def build_strategy_execution_packet(
@@ -276,6 +369,16 @@ def build_strategy_execution_packet(
 
     action, confidence, summary = _build_action(quant, backtest)
     conditions = _build_conditions(action, profile, backtest)
+    trace = _build_strategy_execution_trace(
+        state,
+        profile=profile,
+        live=live,
+        quant=quant,
+        backtest=backtest,
+        action=action,
+        confidence=confidence,
+        summary=summary,
+    )
     packet = {
         "status": "ready",
         "action": action,
@@ -301,6 +404,7 @@ def build_strategy_execution_packet(
         "updated_at": _now(),
         "source": SOURCE,
         "deepseek_called": False,
+        "strategy_execution_trace": trace,
         "summary": summary,
         "last_error": None,
     }

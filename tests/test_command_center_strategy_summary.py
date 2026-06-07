@@ -140,6 +140,86 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertEqual(view_model["last_error_text"], "timeout")
         self.assertIn("上次生成失败：timeout", view_model["warning_items"])
 
+    def test_strategy_trace_view_model_is_user_readable(self):
+        view_model = summary.build_strategy_summary_view_model({
+            "status": "ready",
+            "action": "只观察",
+            "summary": "command_center_packet 数据缺口导致只观察。",
+            "strategy_execution_trace": {
+                "decision_source": "rule_based_packet",
+                "deepseek_used": False,
+                "input_sources": [
+                    {
+                        "name": "command_center_live_packet",
+                        "status": "ready",
+                        "used": True,
+                        "summary": "provider packet 已就绪。",
+                    },
+                    {
+                        "name": "龙虎榜",
+                        "status": "missing",
+                        "used": False,
+                        "summary": "需要验证。",
+                    },
+                ],
+                "rules_fired": [
+                    {
+                        "rule": "数据不足",
+                        "result": "只观察",
+                        "evidence": "packet 缺少资金和龙虎榜。",
+                        "impact": "降低置信度。",
+                    }
+                ],
+                "missing_inputs": ["龙虎榜"],
+                "final_reason": "command_center_packet 数据缺口导致只观察。",
+            },
+        })
+        trace = view_model["strategy_execution_trace"]
+        serialized = json.dumps(trace, ensure_ascii=False)
+
+        self.assertEqual(trace["decision_source_label"], "本地规则 + 结构化结果")
+        self.assertFalse(trace["deepseek_used"])
+        self.assertIn("为什么是这个策略结果？", trace["title"])
+        self.assertIn("龙虎榜", trace["missing_inputs"])
+        self.assertNotIn("provider", serialized.lower())
+        self.assertNotIn("packet", serialized.lower())
+        self.assertNotIn("command_center", serialized)
+
+    def test_deepseek_latest_explanation_view_model_reads_main_path_result(self):
+        view_model = summary.build_deepseek_latest_explanation_view_model(
+            {
+                "command_center_deepseek_latest_result": "当前解释结果",
+                "command_center_deepseek_latest_at": "2026-06-07T10:20:30",
+                "command_center_deepseek_latest_ticker": "002008.SZ",
+                "command_center_deepseek_explanation_visible": True,
+            },
+            target="002008.SZ",
+            token_usage={"deepseek_calls": 1, "estimated_tokens": 3210},
+        )
+
+        self.assertEqual(view_model["status"], "ready")
+        self.assertTrue(view_model["visible"])
+        self.assertTrue(view_model["is_current_packet"])
+        self.assertEqual(view_model["content"], "当前解释结果")
+        self.assertEqual(view_model["call_count"], 1)
+        self.assertEqual(view_model["token_estimate"], 3210)
+
+    def test_deepseek_latest_explanation_view_model_surfaces_failure(self):
+        view_model = summary.build_deepseek_latest_explanation_view_model(
+            {
+                "command_center_deepseek_latest_error": "network timeout",
+                "command_center_deepseek_latest_at": "2026-06-07T10:20:30",
+                "command_center_deepseek_explanation_visible": True,
+            },
+            target="002008.SZ",
+            token_usage={},
+        )
+
+        self.assertEqual(view_model["status"], "failed")
+        self.assertTrue(view_model["visible"])
+        self.assertEqual(view_model["error"], "network timeout")
+        self.assertTrue(view_model["deepseek_called"])
+
     def test_a_share_market_guidance_mentions_money_flow_ma_and_announcements(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "只观察"},

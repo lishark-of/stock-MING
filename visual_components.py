@@ -4490,6 +4490,7 @@ def render_strategy_execution_command_card(
     evidence_card = vm.get("evidence_radar_card") or {}
     evidence_gate = str(vm.get("evidence_confidence_gate") or evidence_card.get("confidence_gate") or "不可验证")
     projection_confidence = vm.get("projection_confidence_summary") or {}
+    strategy_trace = vm.get("strategy_execution_trace") or {}
     if home_compact:
         with st.container(border=True):
             head_left, head_right = st.columns([2.2, 1])
@@ -4505,6 +4506,21 @@ def render_strategy_execution_command_card(
                 st.metric("置信度", confidence)
                 st.metric("风险", risk_level)
                 st.caption(f"证据门槛：{evidence_gate}")
+
+            if strategy_trace:
+                st.markdown("**为什么是这个策略结果？**")
+                st.write(str(strategy_trace.get("summary") or "结论由本地规则和结构化结果生成。"))
+                st.caption(str(strategy_trace.get("deepseek_text") or "DeepSeek 未参与默认策略；只在手动点击后解释。"))
+                rule_items = [item for item in (strategy_trace.get("rules_fired") or []) if isinstance(item, dict)]
+                if rule_items:
+                    for item in rule_items[:3]:
+                        st.caption(
+                            f"{item.get('rule') or '本地规则'} → {item.get('result') or action}："
+                            f"{item.get('impact') or '影响置信度'}"
+                        )
+                missing_inputs = [str(item) for item in (strategy_trace.get("missing_inputs") or []) if str(item).strip()]
+                if missing_inputs:
+                    st.caption("待验证数据：" + " / ".join(missing_inputs[:6]))
 
             if budget_tiles:
                 st.markdown("**风险预算**")
@@ -4705,6 +4721,38 @@ def render_strategy_execution_command_card(
       {evidence_gate_html}
       <div class="cc-strategy-condition-grid">{evidence_validation_html}</div>
     """
+    trace_input_html = "".join(
+        f"<div class='cc-strategy-status'>"
+        f"<div class='cc-strategy-status-name'>{escape(str(item.get('name') or '数据'))}</div>"
+        f"<div class='cc-strategy-status-value'>{escape(str(item.get('status_label') or '待验证'))}</div>"
+        f"<div class='cc-muted-note'>{escape(str(item.get('summary') or '暂无摘要。'))}</div>"
+        "</div>"
+        for item in (strategy_trace.get("input_sources") or [])[:8]
+        if isinstance(item, dict)
+    )
+    trace_rules_html = "".join(
+        f"<div class='cc-strategy-condition warning'>"
+        f"<div class='cc-strategy-label'>{escape(str(item.get('rule') or '本地规则'))} → {escape(str(item.get('result') or action))}</div>"
+        f"<div class='cc-strategy-text'>{escape(str(item.get('evidence') or '暂无证据摘要。'))}</div>"
+        f"<div class='cc-strategy-check'>影响：{escape(str(item.get('impact') or '影响置信度'))}</div>"
+        "</div>"
+        for item in (strategy_trace.get("rules_fired") or [])[:5]
+        if isinstance(item, dict)
+    )
+    trace_missing_text = "、".join(str(item) for item in (strategy_trace.get("missing_inputs") or [])[:8] if str(item).strip())
+    strategy_trace_html = f"""
+      <div class="cc-strategy-section-title">为什么是这个策略结果？</div>
+      <div class="cc-strategy-guidance">
+        <div class="cc-strategy-guidance-title">{escape(str(strategy_trace.get("decision_source_label") or "本地规则 + 结构化结果"))}</div>
+        <div class="cc-strategy-text">{escape(str(strategy_trace.get("summary") or "结论由本地规则和结构化结果生成。"))}</div>
+        <div class="cc-muted-note">{escape(str(strategy_trace.get("deepseek_text") or "DeepSeek 未参与默认策略；只在手动点击后解释。"))}</div>
+        <div class="cc-muted-note">缺失或待验证：{escape(trace_missing_text or "暂无关键缺口")}</div>
+      </div>
+      <div class="cc-strategy-section-title">已使用 / 待验证数据</div>
+      <div class="cc-strategy-status-row">{trace_input_html}</div>
+      <div class="cc-strategy-section-title">触发的本地规则</div>
+      <div class="cc-strategy-condition-grid">{trace_rules_html}</div>
+    """
     source_footer = "" if home_compact else f"来源：{escape(str(vm.get('source_text') or 'strategy_execution_service / session_state cache'))} ｜"
     html = f"""
     <section class="cc-strategy-card">
@@ -4724,6 +4772,7 @@ def render_strategy_execution_command_card(
         </div>
       </div>
       <div class="cc-strategy-budget-grid">{budget_html}</div>
+      {strategy_trace_html}
       <div class="cc-strategy-section-title">操作条件</div>
       <div class="cc-strategy-condition-grid">{condition_html}</div>
       {guidance_html}
@@ -4755,6 +4804,48 @@ def render_strategy_execution_command_card(
     </section>
     """
     st.markdown(html, unsafe_allow_html=True)
+
+
+def render_command_center_deepseek_explanation_card(view_model: dict | None = None):
+    _inject_command_center_css()
+    vm = view_model or {}
+    if not vm.get("visible"):
+        return
+    status = str(vm.get("status") or "empty")
+    title = str(vm.get("title") or "DeepSeek 对当前 packet 的解释")
+    ticker = str(vm.get("ticker") or "当前标的")
+    generated_at = str(vm.get("generated_at") or "暂无")
+    current_text = str(vm.get("current_packet_text") or "来自当前 packet")
+    calls = vm.get("call_count") if vm.get("call_count") is not None else 0
+    tokens = vm.get("token_estimate") if vm.get("token_estimate") is not None else 0
+    content = str(vm.get("content") or "")
+    error = str(vm.get("error") or "")
+    tone = "danger" if status == "failed" else "success" if content else "warning"
+    body = content or error or "暂无最新解释。点击 DeepSeek 综合解释后会显示在这里。"
+    st.markdown(
+        f"""
+        <section class="cc-strategy-card">
+          <div class="cc-strategy-head">
+            <div>
+              <div class="cc-strategy-kicker">Manual DeepSeek Explanation</div>
+              <h2 class="cc-strategy-action">{escape(title)}</h2>
+              <div class="cc-strategy-pill-row">
+                <span class="cc-strategy-pill {_tone_to_strategy_class(tone)}">{escape(current_text)}</span>
+                <span class="cc-strategy-pill muted">标的：{escape(ticker)}</span>
+                <span class="cc-strategy-pill muted">生成时间：{escape(generated_at)}</span>
+                <span class="cc-strategy-pill muted">调用次数：{escape(str(calls))}</span>
+                <span class="cc-strategy-pill muted">Token：{escape(f"{int(tokens or 0):,}")}</span>
+              </div>
+            </div>
+          </div>
+          <div class="cc-strategy-guidance">
+            <div class="cc-strategy-text" style="white-space:pre-wrap;">{escape(body)}</div>
+            <div class="cc-muted-note">{escape(str(vm.get("safe_text") or "DeepSeek 只解释当前结构化结果，不参与默认策略生成。"))}</div>
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_command_center_decision_hero(packet: dict | None = None, decision_view_model: dict | None = None):
