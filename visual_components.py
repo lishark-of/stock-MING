@@ -6605,7 +6605,7 @@ def render_home_action_snapshot(snapshot: dict | None = None):
           </div>
           <div class="cc-home-item-meta">{escape(_home_text(quant_decision_brief.get("title"), "量化推演执行摘要"))}：{escape(_home_text(quant_decision_brief.get("headline"), "量化待手动生成"))} ｜ 分数：{escape(_home_text(quant_decision_brief.get("score_text"), "待验证"))} ｜ 置信度：{escape(_home_text(quant_decision_brief.get("confidence"), "低"))}</div>
           <div class="cc-home-item-meta">决策保护：{escape(_home_text(quant_decision_brief.get("guardrail_text"), "没有量化缓存时，不能假装已有评分或单票诊断。"))}</div>
-          <div class="cc-home-item-meta">下一步：{escape(_home_text(quant_decision_brief.get("next_action"), "先刷新今日基础数据，或进入高级工具箱手动生成量化推演。"))}</div>
+          <div class="cc-home-item-meta">下一步：{escape(_home_text(quant_decision_brief.get("next_action"), "先刷新今日基础数据，或进入高级工具箱的旧版兼容视图运行量化推演。"))}</div>
           <div class="cc-home-item-meta">证据：{escape(quant_evidence)}</div>
           <div class="cc-home-item-meta">边界：{escape(quant_risks)}</div>
         </div>
@@ -8155,33 +8155,196 @@ def _next_session_status_label(status):
     }.get(str(status or ""), "待验证")
 
 
+def _next_session_action_label(value):
+    return {
+        "hold": "持有",
+        "wait": "等待",
+        "reduce": "条件减仓",
+        "add": "条件补仓",
+        "add_small": "小幅试探",
+        "stop_loss": "风控核验",
+        "take_profit": "止盈观察",
+        "no_action": "不行动",
+        "verify": "核验",
+        "observe": "观察",
+    }.get(str(value or ""), str(value or "观察"))
+
+
+def _next_session_position_change_label(value):
+    return {
+        "none": "不调整",
+        "reduce_10_20_pct": "减仓 10%-20%",
+        "reduce": "减仓",
+        "add_small": "小幅补仓",
+        "add": "补仓",
+        "clear": "清仓",
+    }.get(str(value or ""), str(value or "不调整"))
+
+
+def _next_session_effect_groups(path):
+    effects = [item for item in (path.get("evidence_effects") or []) if isinstance(item, dict)]
+    return {
+        "support": [item for item in effects if item.get("effect") == "support"],
+        "suppress": [item for item in effects if item.get("effect") in {"suppress", "neutral_with_watch"}],
+        "missing": [item for item in effects if item.get("effect") == "missing"],
+        "neutral": [item for item in effects if item.get("effect") == "neutral"],
+    }
+
+
+def _next_session_effect_text(items, fallback):
+    if not items:
+        return fallback
+    lines = []
+    for item in items[:3]:
+        label = str(item.get("label") or item.get("fact_key") or "证据")
+        reason = str(item.get("reason") or "")
+        lines.append(f"{label}：{reason}" if reason else label)
+    return "；".join(lines)
+
+
 def _next_session_path_card(path):
     name = str(path.get("scenario_name") or path.get("scenario_key") or "情景路径")
+    flow_title = str(path.get("operation_flow_title") or name)
     weight = _to_float(path.get("weight"))
     weight_text = f"{weight * 100:.0f}%" if weight is not None and weight <= 1 else f"{weight:.0f}%" if weight is not None else "待验证"
     operation = path.get("operation_plan") if isinstance(path.get("operation_plan"), dict) else {}
     zone = path.get("expected_price_zone") if isinstance(path.get("expected_price_zone"), dict) else {}
-    next_low = _fmt_price(zone.get("next_session_low"))
-    next_high = _fmt_price(zone.get("next_session_high"))
+    limit = path.get("next_session_limit_context") if isinstance(path.get("next_session_limit_context"), dict) else {}
+    key_prices = path.get("key_prices") if isinstance(path.get("key_prices"), dict) else {}
+    if zone.get("next_session_zone_available"):
+        next_range = f"{_fmt_price(zone.get('next_session_low'))} - {_fmt_price(zone.get('next_session_high'))}"
+    else:
+        next_range = "不展示价格区间，按方向和条件应对"
+    extended = zone.get("five_to_ten_day_zone") if isinstance(zone.get("five_to_ten_day_zone"), list) else []
+    extended_text = " - ".join(_fmt_price(value) for value in extended if value is not None) or "待验证"
     trigger = "；".join(str(item) for item in (path.get("trigger_conditions") or [])[:2]) or "等待价格、量能和纪律条件确认。"
     invalid = "；".join(str(item) for item in (path.get("invalid_conditions") or [])[:2]) or "若关键条件反向，本路径失效。"
     action = str(operation.get("primary_action") or "wait")
     change = str(operation.get("position_change") or "none")
-    evidence = "、".join(str(item) for item in (path.get("evidence_used") or [])[:4]) or "真实日线 / 策略执行 / 交易纪律"
-    st.markdown(f"##### {name}")
-    st.markdown(f"<span class='cc-projection-pill blue'>{escape(weight_text)}</span>", unsafe_allow_html=True)
-    st.caption("次日价格区间")
-    st.write(f"{next_low} - {next_high}")
+    strong_action = action in {"reduce", "add", "add_small", "stop_loss", "take_profit"}
+    strong_change = change in {"reduce", "reduce_10_20_pct", "add", "add_small", "clear"}
+    action_prefix = "条件触发动作：" if "条件触发动作" in str(path.get("action_timing_note") or "") and (strong_action or strong_change) else ""
+    effects = _next_session_effect_groups(path)
+    st.markdown(f"##### {flow_title}")
+    st.markdown(f"<span class='cc-projection-pill blue'>{escape(name)} · {escape(weight_text)}</span>", unsafe_allow_html=True)
+    st.caption("适用情景")
+    st.write(" / ".join(str(item) for item in (path.get("applicable_scenarios") or [])[:4]) or "等待盘中形态确认")
     st.caption("触发条件")
     st.write(trigger)
+    st.caption("关键价位")
+    st.write(
+        f"当前 {_fmt_price(key_prices.get('current_price'))}｜"
+        f"支撑 {_fmt_price(key_prices.get('support'))}｜"
+        f"压力 {_fmt_price(key_prices.get('resistance'))}｜"
+        f"涨跌停 {_fmt_price(limit.get('down_limit'))} ~ {_fmt_price(limit.get('up_limit'))}"
+    )
+    st.caption(zone.get("zone_label") or "次日价格区间")
+    st.write(next_range)
+    if zone.get("note"):
+        st.caption(str(zone.get("note")))
+    extended_label = zone.get("five_to_ten_day_zone_label") or "5~10 日情景区间"
+    st.caption(extended_label)
+    st.write(f"{extended_label}：{extended_text}")
+    st.caption("应对动作")
+    st.write(f"{action_prefix}{_next_session_action_label(action)} ｜ 仓位变化：{_next_session_position_change_label(change)}")
+    if path.get("action_timing_note"):
+        st.caption(str(path.get("action_timing_note")))
     st.caption("失效条件")
     st.write(invalid)
-    st.caption("对应操作")
-    st.write(f"{action} ｜ {change}")
-    st.caption("使用证据")
-    st.write(evidence)
+    st.caption("证据影响")
+    st.write("支持因素：" + _next_session_effect_text(effects["support"], "暂无直接支持因素"))
+    st.write("压制因素：" + _next_session_effect_text(effects["suppress"], "暂无直接压制因素"))
+    st.write("缺失/无记录：" + _next_session_effect_text([*effects["missing"], *effects["neutral"]], "暂无关键缺口"))
     if path.get("confidence_note"):
         st.caption(str(path.get("confidence_note")))
+
+
+def _render_next_session_operation_chart(payload):
+    model = payload.get("chart_render_model") if isinstance(payload.get("chart_render_model"), dict) else {}
+    historical = [item for item in (model.get("historical_series") or []) if isinstance(item, dict)]
+    scenarios = [item for item in (model.get("scenario_series") or []) if isinstance(item, dict)]
+    if not historical and not scenarios:
+        st.info("暂无可绘制图谱；先生成次日操作图谱。")
+        return
+    if go is None:
+        chart_frame = _next_session_projection_chart_frame(payload)
+        if not chart_frame.empty:
+            st.line_chart(chart_frame, height=320)
+        return
+    fig = go.Figure()
+    hist_x = list(range(-len(historical) + 1, 1))
+    hist_y = [_to_float(item.get("price")) for item in historical]
+    fig.add_trace(
+        go.Scatter(
+            x=hist_x,
+            y=hist_y,
+            mode="lines",
+            name="真实日线",
+            line=dict(color="#64748b", width=2.6),
+            hovertext=[str(item.get("x") or "") for item in historical],
+        )
+    )
+    stage_x = {"T0": 0, "T+1_open": 0.25, "T+1_intraday": 0.62, "T+1_close": 1.0}
+    colors = {"bullish": "#16a34a", "neutral": "#2563eb", "cautious": "#dc2626"}
+    for scenario in scenarios[:3]:
+        key = str(scenario.get("scenario_key") or "")
+        points = [point for point in (scenario.get("points") or []) if isinstance(point, dict)]
+        x_values = [stage_x.get(str(point.get("x")), 0) for point in points]
+        y_values = [_to_float(point.get("price")) for point in points]
+        fig.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=y_values,
+                mode="lines+markers",
+                name={"bullish": "乐观情景", "neutral": "中性情景", "cautious": "谨慎情景"}.get(key, str(scenario.get("scenario_name") or "情景路径")),
+                line=dict(color=colors.get(key, "#0f172a"), width=2.4, dash="solid" if key == "neutral" else "dash"),
+                marker=dict(size=7),
+            )
+        )
+    y0, y1 = model.get("y_axis_range") or [None, None]
+    for zone in model.get("operation_zone_overlays") or []:
+        if not isinstance(zone, dict):
+            continue
+        price_range = [value for value in (zone.get("price_range") or []) if value is not None]
+        if len(price_range) >= 2 and all(_to_float(value) is not None for value in price_range[:2]):
+            fig.add_hrect(
+                y0=min(_to_float(price_range[0]), _to_float(price_range[1])),
+                y1=max(_to_float(price_range[0]), _to_float(price_range[1])),
+                fillcolor="rgba(14,165,233,0.08)",
+                line_width=0,
+                annotation_text=str(zone.get("zone_name") or "操作区"),
+                annotation_position="top left",
+            )
+    reference_lines = [
+        ("当前价线", model.get("current_price_line"), "#0f172a"),
+        ("成本线", model.get("cost_line"), "#f59e0b"),
+        ("风控线", (model.get("support_lines") or [None])[-1], "#dc2626"),
+    ]
+    for line in model.get("limit_lines") or []:
+        if isinstance(line, dict):
+            reference_lines.append((line.get("label") or "涨跌停参考", line.get("value"), "#7c3aed"))
+    for label, value, color in reference_lines:
+        number = _to_float(value)
+        if number is not None:
+            fig.add_hline(y=number, line_dash="dot", line_color=color, annotation_text=str(label), annotation_position="right")
+    fig.add_vline(x=0, line_dash="dash", line_color="#94a3b8", annotation_text="T0", annotation_position="top")
+    fig.update_layout(
+        height=380,
+        margin=dict(l=18, r=18, t=24, b=18),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis=dict(
+            tickmode="array",
+            tickvals=[hist_x[0] if hist_x else -59, -40, -20, 0, 0.25, 0.62, 1.0],
+            ticktext=["60日前", "40日前", "20日前", "T0", "开盘", "盘中", "收盘"],
+            title="真实历史区 / 次日应对区",
+        ),
+        yaxis=dict(title="价格"),
+        hovermode="x unified",
+    )
+    if y0 is not None and y1 is not None:
+        fig.update_yaxes(range=[y0, y1])
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("非确定性预测，路径用于条件应对。")
 
 
 def render_next_session_operation_projection(packet: dict | None = None):
@@ -8230,33 +8393,17 @@ def render_next_session_operation_projection(packet: dict | None = None):
         daily_trust = trust.get("daily_close") if isinstance(trust.get("daily_close"), dict) else {}
         position_trust = trust.get("position") if isinstance(trust.get("position"), dict) else {}
         deepseek_trust = trust.get("deepseek") if isinstance(trust.get("deepseek"), dict) else {}
-        chips = [
-            f"真实日线：{daily_trust.get('call_status') or 'not_called'}，{daily_trust.get('row_count') or 0} 条",
-            f"持仓：{position_trust.get('call_status') or 'not_called'}",
-            f"DeepSeek：{deepseek_trust.get('status') or 'not_called'}",
+        chips = trust.get("human_summary") or [
+            f"真实日线：已接入，{daily_trust.get('row_count') or 0} 条" if daily_trust.get("call_status") == "verified_present" else "真实日线：缺失",
+            "持仓：存在冲突，需先核验" if position_trust.get("call_status") == "conflict" else "持仓：已确认",
+            "DeepSeek：已整理说明，但不验证输入外事实" if deepseek_trust.get("status") == "success" else "DeepSeek：未调用，当前使用本地规则图谱",
         ]
-        for item in trust_facts[:7]:
-            breakdown = [part for part in (item.get("scope_breakdown") or []) if isinstance(part, dict)]
-            if breakdown:
-                parts = []
-                for part in breakdown:
-                    scope = part.get("scope") or item.get("scope") or "unknown_scope"
-                    status = part.get("call_status") or item.get("call_status") or "not_called"
-                    row_count = part.get("row_count")
-                    suffix = f"，{row_count} 条" if row_count not in (None, "") and int(_to_float(row_count) or 0) else ""
-                    parts.append(f"{scope} {status}{suffix}")
-                chips.append(f"{item.get('fact_name') or item.get('fact_key')}：" + "；".join(parts))
-            else:
-                chips.append(
-                    f"{item.get('fact_name') or item.get('fact_key')}："
-                    f"{item.get('call_status') or 'not_called'}，{item.get('scope') or 'unknown_scope'}"
-                )
         chip_html = "".join(f'<span class="cc-pill">{escape(text)}</span>' for text in chips)
         st.markdown(
             f"""
             <section class="cc-card">
               <div class="cc-card-title">数据可信度摘要</div>
-              <div class="cc-card-caption">区分真实返回、成功无记录、未调用、权限不足、解析失败；图谱只使用已说明来源的数据。</div>
+              <div class="cc-card-caption">默认用人话解释哪些数据真实返回、哪些是成功无记录、哪些仍需复核；机器状态放在技术血缘里。</div>
               <div class="cc-pill-row">{chip_html}</div>
             </section>
             """,
@@ -8287,9 +8434,7 @@ def render_next_session_operation_projection(packet: dict | None = None):
         )
     else:
         st.warning("真实日线缺失，无法生成真实历史段；下方只保留操作情景卡片，不把模型路径当真实历史走势。")
-    chart_frame = _next_session_projection_chart_frame(payload)
-    if not chart_frame.empty:
-        st.line_chart(chart_frame, height=320)
+    _render_next_session_operation_chart(payload)
     paths = [item for item in (payload.get("scenario_paths") or []) if isinstance(item, dict)]
     if paths:
         cols = st.columns(min(3, len(paths)))
@@ -8310,7 +8455,7 @@ def render_next_session_operation_projection(packet: dict | None = None):
                     st.caption(price_text)
                     st.write(str(zone.get("condition") or "等待触发条件。"))
                     st.caption(f"动作：{zone.get('action') or '待验证'}｜来源：{zone.get('source') or '规则'}")
-    with st.expander("数据来源与缺口", expanded=False):
+    with st.expander(trust.get("technical_expander_label") or "展开查看技术血缘", expanded=False):
         fact_summary = lineage.get("a_share_fact_lineage_summary") if isinstance(lineage.get("a_share_fact_lineage_summary"), dict) else {}
         fact_items = [item for item in (fact_summary.get("items") or []) if isinstance(item, dict)]
         if fact_items:

@@ -84,6 +84,7 @@ DEEPSEEK_MERGE_IMMUTABLE_KEYS = {
     "daily_close",
     "historical_series",
     "latest_close",
+    "next_session_limit_context",
     "row_count",
     "source_interface",
     "a_share_fact_lineage_summary",
@@ -93,6 +94,124 @@ DEEPSEEK_MERGE_IMMUTABLE_KEYS = {
     "chart_render_model",
 }
 DEEPSEEK_REQUIRED_STRUCTURED_KEYS = {"scenario_paths", "operation_zones"}
+STRONG_LEGACY_ACTIONS = {
+    "add",
+    "add_small",
+    "reduce",
+    "reduce_10_20_pct",
+    "stop_loss",
+    "take_profit",
+    "clear",
+    "buy",
+    "sell",
+}
+STRONG_LEGACY_ACTION_LABELS = {
+    "分批减仓",
+    "加仓",
+    "补仓",
+    "止损",
+    "止盈",
+    "清仓",
+    "买入",
+    "卖出",
+}
+PASSIVE_MAIN_ACTIONS = {
+    "wait",
+    "observe",
+    "only_observe",
+    "verify",
+    "none",
+    "只观察",
+    "等待",
+    "观察",
+}
+
+
+def _normalize_legacy_action_text(value: Any) -> str:
+    return _to_text(value).strip().lower().replace(" ", "_")
+
+
+def _is_strong_legacy_action(value: Any) -> bool:
+    text = _to_text(value)
+    normalized = _normalize_legacy_action_text(text)
+    if normalized in STRONG_LEGACY_ACTIONS:
+        return True
+    return any(label in text for label in STRONG_LEGACY_ACTION_LABELS)
+
+
+def _is_passive_main_action(value: Any) -> bool:
+    text = _to_text(value)
+    normalized = _normalize_legacy_action_text(text)
+    return normalized in PASSIVE_MAIN_ACTIONS or text in PASSIVE_MAIN_ACTIONS
+
+
+def guard_legacy_projection_action(raw_action: Any, main_action: Any = None, position_context: Any = None) -> dict:
+    raw_text = _to_text(raw_action, "观察")
+    position = _as_mapping(position_context)
+    conflict_flags = [str(item) for item in _as_list(position.get("conflict_flags")) if str(item).strip()]
+    is_strong = _is_strong_legacy_action(raw_text)
+    passive_main = _is_passive_main_action(main_action)
+    if conflict_flags and is_strong:
+        return {
+            "display_action": "核验/观察",
+            "normalized_action": "verify",
+            "is_strong_action": True,
+            "is_condition_only": False,
+            "is_blocked_by_position_conflict": True,
+            "conflict_flags": conflict_flags,
+            "guard_note": "持仓来源冲突：旧模块不输出强操作建议，请先核验持仓。",
+        }
+    if is_strong and passive_main:
+        normalized = "conditional_reduce" if any(word in raw_text for word in ["减", "卖", "reduce", "sell", "止盈"]) else "conditional_action"
+        return {
+            "display_action": f"条件触发动作：{raw_text}",
+            "normalized_action": normalized,
+            "is_strong_action": True,
+            "is_condition_only": True,
+            "is_blocked_by_position_conflict": False,
+            "conflict_flags": conflict_flags,
+            "guard_note": "当前主策略为等待/观察；该动作仅在触发条件满足且持仓核验无冲突后才可考虑。",
+        }
+    return {
+        "display_action": raw_text,
+        "normalized_action": _normalize_legacy_action_text(raw_text) or "observe",
+        "is_strong_action": is_strong,
+        "is_condition_only": False,
+        "is_blocked_by_position_conflict": False,
+        "conflict_flags": conflict_flags,
+        "guard_note": "旧版兼容推演不自动作为交易指令；主判断请以次日操作图谱为准。",
+    }
+
+
+def compare_legacy_position_with_projection(legacy_position: Any, projection_position: Any) -> dict:
+    legacy = _as_mapping(legacy_position)
+    projection = _as_mapping(projection_position)
+
+    def normalize_margin(value: Any) -> float | None:
+        number = _to_number(value)
+        if number is not None and number <= 1:
+            return round(number * 100, 4)
+        return number
+
+    checks = [
+        ("shares_conflict", _to_number(_first(legacy.get("shares"), legacy.get("holding_units"))), _to_number(_first(projection.get("shares"), projection.get("holding_units"))), 0.0001),
+        ("cost_price_conflict", _to_number(_first(legacy.get("cost_price"), legacy.get("cost"))), _to_number(_first(projection.get("cost_price"), projection.get("cost"))), 0.0001),
+        ("financing_ratio_conflict", normalize_margin(_first(legacy.get("financing_ratio"), legacy.get("margin_ratio"), legacy.get("margin_ratio_pct"))), normalize_margin(_first(projection.get("financing_ratio"), projection.get("margin_ratio"), projection.get("margin_ratio_pct"))), 0.0001),
+        ("current_price_conflict", _to_number(legacy.get("current_price")), _to_number(projection.get("current_price")), 0.01),
+    ]
+    flags = []
+    for flag, left, right, tolerance in checks:
+        if left is None or right is None:
+            continue
+        if abs(left - right) > tolerance:
+            flags.append(flag)
+    return {
+        "has_conflict": bool(flags),
+        "conflict_flags": flags,
+        "note": "旧模块持仓口径与次日操作图谱不一致，请先核验持仓。" if flags else "旧模块持仓口径已与次日操作图谱对齐。",
+        "legacy_source": legacy.get("source_packet") or "legacy_module",
+        "projection_source": projection.get("source_packet") or "command_center_next_session_projection_packet.position_context",
+    }
 
 
 def _as_mapping(value: Any) -> dict:
@@ -340,6 +459,105 @@ def _technical_context(rows: list[dict], lineage_items: list[dict]) -> dict:
         "volume_amount_status": _to_text(volume_item.get("status"), "pending"),
         "trend_state": trend_state,
     }
+
+
+def _limit_pct_for_ticker(ts_code: Any) -> float | None:
+    text = _display_a_share_ticker(ts_code)
+    code = text.split(".", 1)[0]
+    if not code:
+        return None
+    if code.startswith(("300", "301", "688")):
+        return 20.0
+    if code.startswith(("0", "2", "6")):
+        return 10.0
+    return None
+
+
+def _next_session_limit_context(*, fact_call_items: list[dict], latest_close: float | None, ts_code: Any = "") -> dict:
+    for item in fact_call_items or []:
+        if item.get("fact_key") != "limit_emotion":
+            continue
+        for section in item.get("sections") or []:
+            section = _as_mapping(section)
+            if section.get("interface") != "tushare.stk_limit":
+                continue
+            up_limit = _to_number(section.get("up_limit"))
+            down_limit = _to_number(section.get("down_limit"))
+            if up_limit is not None or down_limit is not None:
+                limit_pct = None
+                if latest_close and up_limit:
+                    limit_pct = round((up_limit / latest_close - 1) * 100, 2)
+                return {
+                    "source": "tushare.stk_limit",
+                    "up_limit": up_limit,
+                    "down_limit": down_limit,
+                    "limit_pct": limit_pct,
+                    "is_estimated": False,
+                    "note": "使用 Tushare stk_limit 最新可用涨跌停参考；仅作为次日区间约束，不代表价格预测。",
+                }
+    limit_pct = _limit_pct_for_ticker(ts_code)
+    if latest_close and limit_pct:
+        ratio = limit_pct / 100
+        return {
+            "source": "estimated_from_latest_close",
+            "up_limit": round(latest_close * (1 + ratio), 2),
+            "down_limit": round(latest_close * (1 - ratio), 2),
+            "limit_pct": limit_pct,
+            "is_estimated": True,
+            "note": "未取得下一交易日真实涨跌停价；按最新 close 和板块规则估算，需开盘前复核。",
+        }
+    return {
+        "source": "unknown",
+        "up_limit": None,
+        "down_limit": None,
+        "limit_pct": None,
+        "is_estimated": False,
+        "note": "缺少可靠涨跌停约束；不输出次日价格区间，只保留方向与操作条件。",
+    }
+
+
+def _clamp_price(value: float | None, limit_context: Mapping[str, Any]) -> tuple[float | None, bool]:
+    number = _to_number(value)
+    if number is None:
+        return None, False
+    up_limit = _to_number(limit_context.get("up_limit"))
+    down_limit = _to_number(limit_context.get("down_limit"))
+    clamped = number
+    changed = False
+    if down_limit is not None and clamped < down_limit:
+        clamped = down_limit
+        changed = True
+    if up_limit is not None and clamped > up_limit:
+        clamped = up_limit
+        changed = True
+    return round(clamped, 4), changed
+
+
+def _clamp_next_session_zone(zone: dict, limit_context: Mapping[str, Any]) -> dict:
+    result = dict(zone or {})
+    if limit_context.get("source") == "unknown":
+        result["next_session_low"] = None
+        result["next_session_high"] = None
+        result["zone_label"] = "情景方向"
+        result["next_session_zone_available"] = False
+        result["note"] = "缺少涨跌停约束，不展示次日价格区间。"
+        return result
+    low, low_changed = _clamp_price(result.get("next_session_low"), limit_context)
+    high, high_changed = _clamp_price(result.get("next_session_high"), limit_context)
+    if low is not None and high is not None and low > high:
+        low, high = high, low
+    result["next_session_low"] = low
+    result["next_session_high"] = high
+    result["zone_label"] = "次日价格区间"
+    result["next_session_zone_available"] = low is not None and high is not None
+    result["five_to_ten_day_zone_label"] = "5~10 日情景区间"
+    notes = []
+    if low_changed or high_changed:
+        notes.append("原始次日区间超出涨跌停参考，已按上下限截断。")
+    if limit_context.get("is_estimated"):
+        notes.append("涨跌停参考为估算值，开盘前需复核。")
+    result["note"] = "；".join(notes)
+    return result
 
 
 def _lineage_status_from_call_status(call_status: Any, fallback: str = "pending") -> str:
@@ -695,11 +913,18 @@ def _weight_model(action: str, items: list[dict], position: dict, rows: list[dic
     return {key: round(max(value, 0.05) / total, 4) for key, value in weights.items()}, notes
 
 
-def _price_zone(anchor: float | None, technical: Mapping[str, Any], scenario: str) -> dict:
+def _price_zone(anchor: float | None, technical: Mapping[str, Any], scenario: str, limit_context: Mapping[str, Any]) -> dict:
     atr = _to_number(technical.get("atr"))
     vol_pct = _to_number(technical.get("volatility_20d"), 2.0) or 2.0
     if anchor is None:
-        return {"next_session_low": None, "next_session_high": None, "five_to_ten_day_zone": []}
+        return {
+            "next_session_low": None,
+            "next_session_high": None,
+            "five_to_ten_day_zone": [],
+            "zone_label": "情景方向",
+            "five_to_ten_day_zone_label": "5~10 日情景区间",
+            "next_session_zone_available": False,
+        }
     step = atr if atr and atr > 0 else anchor * max(vol_pct / 100, 0.015)
     if scenario == "bullish":
         low, high = anchor + step * 0.15, anchor + step * 1.35
@@ -711,20 +936,149 @@ def _price_zone(anchor: float | None, technical: Mapping[str, Any], scenario: st
         low, high = anchor - step * 0.65, anchor + step * 0.65
         zone = [round(anchor - step * 1.1, 4), round(anchor + step * 1.1, 4)]
     return {
-        "next_session_low": round(low, 4),
-        "next_session_high": round(high, 4),
+        **_clamp_next_session_zone(
+            {
+                "next_session_low": round(low, 4),
+                "next_session_high": round(high, 4),
+                "five_to_ten_day_zone": zone,
+            },
+            limit_context,
+        ),
+        "raw_next_session_low": round(low, 4),
+        "raw_next_session_high": round(high, 4),
         "five_to_ten_day_zone": zone,
     }
 
 
 def _scenario_chart_points(anchor: float | None, zone: Mapping[str, Any], scenario: str) -> list[dict]:
+    low = zone.get("next_session_low")
+    high = zone.get("next_session_high")
+    if scenario == "bullish":
+        intraday = high
+        close = high
+    elif scenario == "cautious":
+        intraday = low
+        close = low
+    else:
+        intraday = high if high is not None else anchor
+        close = anchor
     return [
         {"x": "T0", "price": anchor, "source": "latest_real_close_or_current_price"},
-        {"x": "T+1_open", "price": zone.get("next_session_low") if scenario == "cautious" else anchor, "source": "model_scenario"},
-        {"x": "T+1_close", "price": zone.get("next_session_high") if scenario == "bullish" else zone.get("next_session_low") if scenario == "cautious" else anchor, "source": "model_scenario"},
+        {"x": "T+1_open", "price": anchor, "source": "model_scenario"},
+        {"x": "T+1_intraday", "price": intraday, "source": "model_scenario"},
+        {"x": "T+1_close", "price": close, "source": "model_scenario"},
+    ]
+
+
+def _extended_chart_points(anchor: float | None, zone: Mapping[str, Any], scenario: str) -> list[dict]:
+    extended = zone.get("five_to_ten_day_zone") or []
+    return [
+        {"x": "T0", "price": anchor, "source": "latest_real_close_or_current_price"},
         {"x": "T+5", "price": (zone.get("five_to_ten_day_zone") or [None, None])[-1 if scenario == "bullish" else 0], "source": "model_scenario"},
         {"x": "T+10", "price": (zone.get("five_to_ten_day_zone") or [None, None])[-1 if scenario != "cautious" else 0], "source": "model_scenario"},
     ]
+
+
+def _evidence_effect(item: Mapping[str, Any]) -> dict:
+    key = _to_text(item.get("fact_key"))
+    label = _to_text(item.get("fact_name"), key)
+    status = _to_text(item.get("call_status") or item.get("status"), "not_called")
+    scope = _to_text(item.get("scope"), "target_stock")
+    row_count = int(_to_number(item.get("row_count"), 0) or 0)
+    if status in {"permission_denied", "parameter_error", "parse_error", "missing_packet", "stale_cache", "not_called", "empty_window"}:
+        return {
+            "fact_key": key,
+            "label": label,
+            "status": status,
+            "scope": scope,
+            "effect": "missing",
+            "reason": "未形成可用事实，只能降低路径置信度，不能当作负面事实。",
+        }
+    if status == "verified_no_record":
+        neutral_reasons = {
+            "dragon_tiger": "当日无龙虎榜记录是成功查询结果，代表缺少席位催化，不等于利空。",
+            "margin": "当日无融资融券记录是成功查询结果，代表缺少杠杆确认，不等于利空。",
+            "chip_radar": "当日无筹码/胜率记录，不作为负面，只提示缺少筹码确认。",
+        }
+        return {
+            "fact_key": key,
+            "label": label,
+            "status": status,
+            "scope": scope,
+            "effect": "neutral",
+            "reason": neutral_reasons.get(key, "已查询但无记录，作为中性证据处理。"),
+        }
+    if key == "moneyflow":
+        return {
+            "fact_key": key,
+            "label": label,
+            "status": status,
+            "scope": scope,
+            "effect": "neutral",
+            "reason": "资金流接口已返回；当前图谱只确认返回，未从本字段判定资金方向。",
+        }
+    if key == "hard_risk":
+        return {
+            "fact_key": key,
+            "label": label,
+            "status": status,
+            "scope": scope,
+            "effect": "neutral_with_watch",
+            "reason": f"目标股相关记录已返回 {row_count} 条；需筛选近期有效风险，不等于 {row_count} 条当前硬风险。",
+        }
+    if key == "limit_emotion":
+        if scope == "industry_or_concept" or item.get("is_industry_or_concept_evidence"):
+            reason = "行业/概念情绪已返回，只能作为上下文，不等同于目标股票确认。"
+        else:
+            reason = "个股涨跌停参考已返回，用于约束次日区间，不当作方向预测。"
+        return {"fact_key": key, "label": label, "status": status, "scope": scope, "effect": "neutral", "reason": reason}
+    if key == "volume_amount":
+        return {
+            "fact_key": key,
+            "label": label,
+            "status": status,
+            "scope": scope,
+            "effect": "neutral",
+            "reason": "成交额/成交量已进入真实日线；如未计算放量/缩量方向，先按中性处理。",
+        }
+    return {
+        "fact_key": key,
+        "label": label,
+        "status": status,
+        "scope": scope,
+        "effect": "neutral",
+        "reason": "事实已返回，但未直接改变核心交易动作。",
+    }
+
+
+def _evidence_effects(fact_items: list[dict]) -> list[dict]:
+    effects = []
+    for item in fact_items:
+        if not isinstance(item, Mapping):
+            continue
+        effects.append(_evidence_effect(item))
+        base_scope = _to_text(item.get("scope"))
+        for part in _as_list(item.get("scope_breakdown")):
+            part = _as_mapping(part)
+            part_scope = _to_text(part.get("scope"))
+            if not part_scope or part_scope == base_scope:
+                continue
+            scoped_item = {
+                **dict(item),
+                **part,
+                "fact_key": item.get("fact_key"),
+                "fact_name": item.get("fact_name"),
+            }
+            effects.append(_evidence_effect(scoped_item))
+    deduped = []
+    seen = set()
+    for effect in effects:
+        key = (effect.get("fact_key"), effect.get("scope"), effect.get("status"), effect.get("effect"))
+        if key in seen:
+            continue
+        deduped.append(effect)
+        seen.add(key)
+    return deduped
 
 
 def _scenario_paths(
@@ -733,6 +1087,8 @@ def _scenario_paths(
     technical: dict,
     quant: dict,
     fact_items: list[dict],
+    evidence_effects: list[dict],
+    limit_context: dict,
     trade_lab: dict,
     rows: list[dict],
 ) -> list[dict]:
@@ -751,14 +1107,46 @@ def _scenario_paths(
     ]
     common_evidence = verified_names[:4] or ["真实日线", "策略执行结果", "交易纪律"]
     no_chase = any("追高" in _to_text(note) for note in trade_lab.get("behavior_bias") or []) or (_to_number(position.get("financing_ratio"), 0) or 0) >= 20
-    bullish_zone = _price_zone(anchor, technical, "bullish")
-    neutral_zone = _price_zone(anchor, technical, "neutral")
-    cautious_zone = _price_zone(anchor, technical, "cautious")
+    bullish_zone = _price_zone(anchor, technical, "bullish", limit_context)
+    neutral_zone = _price_zone(anchor, technical, "neutral", limit_context)
+    cautious_zone = _price_zone(anchor, technical, "cautious", limit_context)
     action = _to_text(quant.get("suggested_action"), "等待")
+    action_is_waiting = action in {"等待", "只观察", "持仓观察"}
+    support_effects = [item for item in evidence_effects if item.get("effect") == "support"]
+    suppress_effects = [item for item in evidence_effects if item.get("effect") in {"suppress", "neutral_with_watch"}]
+    missing_effects = [item for item in evidence_effects if item.get("effect") == "missing"]
+    def common_path_fields(zone, scenario):
+        return {
+            "applicable_scenarios": {
+                "bullish": ["高开", "放量突破", "冲高不回落"],
+                "neutral": ["平开", "横盘震荡", "缩量等待"],
+                "cautious": ["低开", "冲高回落", "破位"],
+            }.get(scenario, []),
+            "key_prices": {
+                "current_price": anchor,
+                "support": (technical.get("support_levels") or [None])[-1],
+                "resistance": (technical.get("resistance_levels") or [None])[0],
+                "up_limit": limit_context.get("up_limit"),
+                "down_limit": limit_context.get("down_limit"),
+                "limit_source": limit_context.get("source"),
+            },
+            "action_timing_note": "当前主 action 为等待/观察；任何加仓、减仓或风控动作都只是条件触发动作。"
+            if action_is_waiting
+            else "动作仍需满足触发条件，不自动交易。",
+            "evidence_effects": evidence_effects,
+            "evidence_summary": {
+                "supporting": [item.get("label") for item in support_effects[:3]],
+                "suppressing": [item.get("label") for item in suppress_effects[:3]],
+                "missing_or_unconfirmed": [item.get("label") for item in missing_effects[:3]],
+            },
+            "next_session_limit_context": limit_context,
+            "extended_chart_points": _extended_chart_points(anchor, zone, scenario),
+        }
     paths = [
         {
             "scenario_key": "bullish",
             "scenario_name": "乐观路径",
+            "operation_flow_title": "高开 / 突破应对",
             "weight": weights["bullish"],
             "weight_label": "情景权重" + ("（fallback_weight）" if not rows or len(verified_names) < 2 else ""),
             "path_source": "quant_rule_deterministic_base",
@@ -783,10 +1171,12 @@ def _scenario_paths(
             },
             "evidence_used": common_evidence,
             "confidence_note": "乐观路径仅代表可准备情景，不是买入信号。" + ("；".join(weight_notes[:2]) if weight_notes else ""),
+            **common_path_fields(bullish_zone, "bullish"),
         },
         {
             "scenario_key": "neutral",
             "scenario_name": "中性路径",
+            "operation_flow_title": "平开 / 震荡应对",
             "weight": weights["neutral"],
             "weight_label": "情景权重" + ("（fallback_weight）" if not rows or len(verified_names) < 2 else ""),
             "path_source": "quant_rule_deterministic_base",
@@ -802,10 +1192,12 @@ def _scenario_paths(
             },
             "evidence_used": common_evidence,
             "confidence_note": "中性路径是默认操作基准；不自动改写策略 action。",
+            **common_path_fields(neutral_zone, "neutral"),
         },
         {
             "scenario_key": "cautious",
             "scenario_name": "谨慎路径",
+            "operation_flow_title": "低开 / 破位应对",
             "weight": weights["cautious"],
             "weight_label": "情景权重" + ("（fallback_weight）" if not rows or len(verified_names) < 2 else ""),
             "path_source": "quant_rule_deterministic_base",
@@ -821,6 +1213,7 @@ def _scenario_paths(
             },
             "evidence_used": list(dict.fromkeys([*common_evidence, *blocked_names[:3]])),
             "confidence_note": "谨慎路径用于风控预案；数据缺口越多，越不能忽视该路径。",
+            **common_path_fields(cautious_zone, "cautious"),
         },
     ]
     if position_conflicts:
@@ -894,7 +1287,39 @@ def _operation_zones(position: dict, technical: dict, trade_lab: dict) -> list[d
     ]
 
 
-def _chart_render_model(rows: list[dict], scenarios: list[dict], position: dict, technical: dict, zones: list[dict]) -> dict:
+def _axis_range(rows: list[dict], scenarios: list[dict], position: dict, technical: dict, zones: list[dict], limit_context: Mapping[str, Any]) -> list[float | None]:
+    values = []
+    for item in rows:
+        for key in ("high", "low", "close"):
+            number = _to_number(item.get(key))
+            if number is not None:
+                values.append(number)
+    for line in [position.get("cost_price"), position.get("current_price"), limit_context.get("up_limit"), limit_context.get("down_limit")]:
+        number = _to_number(line)
+        if number is not None:
+            values.append(number)
+    for value in _as_list(technical.get("support_levels")) + _as_list(technical.get("resistance_levels")):
+        number = _to_number(value)
+        if number is not None:
+            values.append(number)
+    for path in scenarios:
+        for point in _as_list(path.get("chart_points")) + _as_list(path.get("extended_chart_points")):
+            number = _to_number(_as_mapping(point).get("price"))
+            if number is not None:
+                values.append(number)
+    for zone in zones:
+        for value in _as_list(_as_mapping(zone).get("price_range")):
+            number = _to_number(value)
+            if number is not None:
+                values.append(number)
+    if not values:
+        return [None, None]
+    low, high = min(values), max(values)
+    pad = max((high - low) * 0.08, high * 0.01, 0.5)
+    return [round(max(low - pad, 0), 4), round(high + pad, 4)]
+
+
+def _chart_render_model(rows: list[dict], scenarios: list[dict], position: dict, technical: dict, zones: list[dict], limit_context: Mapping[str, Any]) -> dict:
     historical = [
         {
             "x": item.get("trade_date") or f"H{index}",
@@ -915,11 +1340,24 @@ def _chart_render_model(rows: list[dict], scenarios: list[dict], position: dict,
             }
             for scenario in scenarios
         ],
+        "extended_scenario_series": [
+            {
+                "scenario_key": scenario.get("scenario_key"),
+                "scenario_name": scenario.get("scenario_name"),
+                "points": scenario.get("extended_chart_points") or [],
+            }
+            for scenario in scenarios
+        ],
         "cost_line": position.get("cost_price"),
         "current_price_line": position.get("current_price"),
+        "limit_lines": [
+            {"label": "涨停参考", "value": limit_context.get("up_limit"), "source": limit_context.get("source")},
+            {"label": "跌停参考", "value": limit_context.get("down_limit"), "source": limit_context.get("source")},
+        ],
         "support_lines": technical.get("support_levels") or [],
         "resistance_lines": technical.get("resistance_levels") or [],
         "operation_zone_overlays": zones,
+        "y_axis_range": _axis_range(rows, scenarios, position, technical, zones, limit_context),
         "annotations": [
             {
                 "text": "图谱用于可视化 next action 和条件路径，不自动改写交易指令。",
@@ -927,6 +1365,74 @@ def _chart_render_model(rows: list[dict], scenarios: list[dict], position: dict,
             }
         ],
     }
+
+
+def _scope_label(scope: Any) -> str:
+    return {
+        "target_stock": "目标股",
+        "market_context": "全市场",
+        "industry_or_concept": "行业/概念",
+        "unknown_scope": "范围待确认",
+    }.get(_to_text(scope), "范围待确认")
+
+
+def _human_fact_line(item: Mapping[str, Any]) -> str:
+    key = _to_text(item.get("fact_key"))
+    name = _to_text(item.get("fact_name"), key)
+    status = _to_text(item.get("call_status"), "not_called")
+    row_count = int(_to_number(item.get("row_count"), 0) or 0)
+    if key == "moneyflow":
+        if status == "verified_present":
+            return f"资金流：已返回，{row_count} 条"
+        return "资金流：已查询但未形成可用方向" if status == "verified_no_record" else f"资金流：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}"
+    if key == "dragon_tiger":
+        return "龙虎榜：已查询，当日无记录" if status == "verified_no_record" else f"龙虎榜：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}"
+    if key == "margin":
+        return "融资融券：已查询，当日无记录" if status == "verified_no_record" else f"融资融券：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}"
+    if key == "hard_risk":
+        if status == "verified_present":
+            return f"公告/硬风险：目标股相关记录已返回，{row_count} 条；需看近期有效风险，不等于 {row_count} 条当前硬风险"
+        return "公告/硬风险：已查询，目标股当前窗口无记录" if status == "verified_no_record" else f"公告/硬风险：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}"
+    if key == "limit_emotion":
+        breakdown = {_to_text(part.get("scope")): part for part in _as_list(item.get("scope_breakdown")) if isinstance(part, Mapping)}
+        target = breakdown.get("target_stock") or {}
+        concept = breakdown.get("industry_or_concept") or {}
+        parts = []
+        if target.get("call_status") == "verified_present":
+            parts.append("个股涨跌停价已返回")
+        elif target.get("call_status") == "verified_no_record":
+            parts.append("个股涨跌停已查询，当日无异动记录")
+        if concept.get("call_status") == "verified_present":
+            parts.append(f"概念/行业情绪已返回 {int(_to_number(concept.get('row_count'), 0) or 0)} 条")
+        return "涨跌停：" + "；".join(parts) if parts else f"涨跌停：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}"
+    if key == "chip_radar":
+        return "筹码/胜率：已查询，当日无记录" if status == "verified_no_record" else f"筹码/胜率：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}"
+    if key == "volume_amount":
+        return "成交量/成交额：已接入" if status == "verified_present" else f"成交量/成交额：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}"
+    return f"{name}：{FACT_CALL_STATUS_LABELS.get(status, '待验证')}，{_scope_label(item.get('scope'))}"
+
+
+def _human_data_trust_lines(daily_lineage: Mapping[str, Any], facts: list[dict], position: Mapping[str, Any], deepseek_status: str) -> list[str]:
+    lines = []
+    if daily_lineage.get("is_real_market_series"):
+        lines.append(
+            f"真实日线：已接入，{daily_lineage.get('row_count') or 0} 条，"
+            f"{daily_lineage.get('start_date') or '暂无'} 至 {daily_lineage.get('end_date') or '暂无'}"
+        )
+    else:
+        lines.append("真实日线：缺失，无法生成真实历史段")
+    by_key = {item.get("fact_key"): item for item in facts}
+    for key, _ in REQUIRED_FACT_KEYS:
+        if key in by_key:
+            lines.append(_human_fact_line(by_key[key]))
+    if deepseek_status == "success":
+        lines.append("DeepSeek：已整理说明，但不验证输入外事实")
+    elif deepseek_status in {"parse_failed", "failed"}:
+        lines.append("DeepSeek：整理失败，当前使用本地规则图谱")
+    else:
+        lines.append("DeepSeek：未调用，当前使用本地规则图谱")
+    lines.append("持仓：存在冲突，需先核验" if position.get("conflict_flags") else "持仓：已确认")
+    return lines
 
 
 def _data_trust_summary(
@@ -957,6 +1463,7 @@ def _data_trust_summary(
         }
         for item in fact_call_ledger_items
     ]
+    human_summary = _human_data_trust_lines(daily_lineage, facts, position, deepseek_status)
     return {
         "schema_version": "next_session_data_trust_summary.v1",
         "daily_close": {
@@ -974,6 +1481,8 @@ def _data_trust_summary(
         },
         "facts": facts,
         "deepseek": {"label": "DeepSeek", "status": deepseek_status},
+        "human_summary": human_summary,
+        "technical_expander_label": "展开查看技术血缘",
         "primary_dependency": [
             item.get("fact_name")
             for item in facts
@@ -1012,21 +1521,30 @@ def build_next_session_operation_projection_packet(
         daily_close_packet=daily_source,
     )
     fact_items = _lineage_items(fact_lineage, fact_call_items)
+    latest_close = daily_lineage.get("latest_close")
+    limit_context = _next_session_limit_context(
+        fact_call_items=fact_call_items,
+        latest_close=_to_number(latest_close),
+        ts_code=target,
+    )
     position = _position_context(
         target=target,
         name=name,
         position_profile=position_profile,
         home_snapshot=home_snapshot,
-        latest_close=daily_lineage.get("latest_close"),
+        latest_close=latest_close,
     )
     technical = _technical_context(rows, fact_items)
     quant = _quant_context(strategy_packet=strategy_packet, decision_packet=decision_packet, home_snapshot=home_snapshot)
     trade_lab = _trade_lab_context(recent_trade_reviews)
+    evidence_effects = _evidence_effects(fact_items)
     scenarios = _scenario_paths(
         position=position,
         technical=technical,
         quant=quant,
         fact_items=fact_items,
+        evidence_effects=evidence_effects,
+        limit_context=limit_context,
         trade_lab=trade_lab,
         rows=rows,
     )
@@ -1067,12 +1585,13 @@ def build_next_session_operation_projection_packet(
             "strategy_execution_packet": {"action": quant.get("suggested_action"), "does_not_modify_action": True},
         },
         "position_context": position,
+        "next_session_limit_context": limit_context,
         "technical_context": technical,
         "quant_context": quant,
         "trade_lab_context": trade_lab,
         "scenario_paths": scenarios,
         "operation_zones": zones,
-        "chart_render_model": _chart_render_model(rows, scenarios, position, technical, zones),
+        "chart_render_model": _chart_render_model(rows, scenarios, position, technical, zones, limit_context),
         "data_trust_summary": data_trust_summary,
         "deepseek_synthesis": {
             "enabled": True,
@@ -1105,6 +1624,7 @@ def build_next_session_deepseek_prompt(packet: Any, *, retry_mode: bool = False)
         "trade_date": payload.get("trade_date"),
         "position_context": position_context,
         "daily_close": daily_close,
+        "next_session_limit_context": payload.get("next_session_limit_context") or {},
         "technical_context": payload.get("technical_context") or {},
         "quant_context": quant_context,
         "trade_lab_context": trade_lab_context,

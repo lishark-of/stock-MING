@@ -1,4 +1,5 @@
 import ast
+import copy
 import json
 import unittest
 from pathlib import Path
@@ -215,6 +216,84 @@ class CommandCenterNextSessionProjectionTests(unittest.TestCase):
         self.assertEqual(breakdown["industry_or_concept"]["call_status"], "verified_present")
         self.assertEqual(breakdown["industry_or_concept"]["row_count"], 21)
 
+    def test_next_session_limit_context_clamps_next_day_zone(self):
+        limit_context = {
+            "source": "estimated_from_latest_close",
+            "up_limit": 132.95,
+            "down_limit": 108.77,
+            "limit_pct": 10,
+            "is_estimated": True,
+        }
+        zone = projection._clamp_next_session_zone(
+            {
+                "next_session_low": 106.91,
+                "next_session_high": 133.85,
+                "five_to_ten_day_zone": [104.0, 140.0],
+            },
+            limit_context,
+        )
+
+        self.assertEqual(zone["next_session_low"], 108.77)
+        self.assertEqual(zone["next_session_high"], 132.95)
+        self.assertIn("已按上下限截断", zone["note"])
+        self.assertEqual(zone["five_to_ten_day_zone"], [104.0, 140.0])
+        self.assertEqual(zone["five_to_ten_day_zone_label"], "5~10 日情景区间")
+
+    def test_chart_points_anchor_at_latest_close_and_axis_is_dynamic(self):
+        packet = self._packet()
+        latest_close = packet["data_lineage"]["daily_close"]["latest_close"]
+        chart = packet["chart_render_model"]
+
+        for path in packet["scenario_paths"]:
+            self.assertEqual(path["chart_points"][0]["price"], latest_close)
+            self.assertEqual(path["chart_points"][0]["x"], "T0")
+            self.assertEqual([point["x"] for point in path["chart_points"]], ["T0", "T+1_open", "T+1_intraday", "T+1_close"])
+            self.assertIn("extended_chart_points", path)
+        self.assertEqual(chart["historical_series"][-1]["source"], "tushare.daily.close")
+        self.assertNotEqual(chart["y_axis_range"], [0, 200])
+
+    def test_human_data_summary_hides_machine_status_by_default(self):
+        packet = self._packet()
+        human = " ".join(packet["data_trust_summary"]["human_summary"])
+
+        self.assertIn("真实日线：已接入", human)
+        self.assertIn("资金流：已返回", human)
+        self.assertNotIn("target_stock verified_present", human)
+        self.assertEqual(packet["data_trust_summary"]["technical_expander_label"], "展开查看技术血缘")
+
+    def test_evidence_effects_do_not_turn_no_record_or_concept_context_negative(self):
+        packet = self._packet()
+        effects = [effect for path in packet["scenario_paths"] for effect in path["evidence_effects"]]
+        by_key_scope = {(item["fact_key"], item["scope"]): item for item in effects}
+
+        self.assertEqual(by_key_scope[("dragon_tiger", "target_stock")]["effect"], "neutral")
+        self.assertEqual(by_key_scope[("limit_emotion", "industry_or_concept")]["effect"], "neutral")
+
+        ledger = copy.deepcopy(CALL_LEDGER)
+        for item in ledger["items"]:
+            if item.get("fact_key") == "hard_risk":
+                item.update(
+                    {
+                        "call_status": "verified_present",
+                        "row_count": 1322,
+                        "target_match_count": 1322,
+                        "market_row_count": 1322,
+                        "scope_breakdown": [
+                            {"scope": "target_stock", "call_status": "verified_present", "row_count": 1322, "target_match_count": 1322}
+                        ],
+                    }
+                )
+        packet = self._packet(a_share_fact_call_ledger=ledger)
+        hard_effects = [
+            effect
+            for path in packet["scenario_paths"]
+            for effect in path["evidence_effects"]
+            if effect.get("fact_key") == "hard_risk"
+        ]
+        self.assertTrue(hard_effects)
+        self.assertNotEqual(hard_effects[0]["effect"], "suppress")
+        self.assertEqual(hard_effects[0]["effect"], "neutral_with_watch")
+
     def test_trade_lab_bias_enters_operation_discipline(self):
         packet = self._packet()
         trade_lab = packet["trade_lab_context"]
@@ -314,6 +393,19 @@ class CommandCenterNextSessionProjectionTests(unittest.TestCase):
             self.assertIn(key, synthesis["blocked_immutable_keys"])
             self.assertIn(key, synthesis["ignored_top_level_keys"])
 
+        enhanced = projection.merge_deepseek_next_session_projection(
+            packet,
+            {
+                "summary": "只整理路径。",
+                "next_session_limit_context": {"up_limit": 999, "down_limit": 1},
+                "scenario_paths": packet["scenario_paths"],
+                "operation_zones": packet["operation_zones"],
+            },
+            called_at="2026-05-28T16:10:00",
+            input_hash="abc123",
+        )
+        self.assertEqual(enhanced["next_session_limit_context"], packet["next_session_limit_context"])
+
     def test_ui_copy_contains_safe_terms_and_avoids_forbidden_terms(self):
         copy = projection.next_session_projection_ui_copy()
         joined = json.dumps(copy, ensure_ascii=False)
@@ -329,9 +421,14 @@ class CommandCenterNextSessionProjectionTests(unittest.TestCase):
         legacy_index = source.index("render_command_center_projection_chart(projection_packet, home_compact=True)")
 
         self.assertLess(next_index, legacy_index)
-        self.assertIn('st.expander("旧版趋势推演兼容视图", expanded=False)', source)
+        self.assertIn('"生成次日操作图谱"', source)
+        self.assertIn('"AI 整理说明"', source)
+        self.assertIn('st.expander("高级操作", expanded=False)', source)
+        self.assertIn('st.expander("高级工具箱 / 开发调试 / 旧版兼容视图", expanded=False)', source)
         self.assertIn("此为旧版兼容视图，主判断请以次日操作图谱为准。", source)
         self.assertIn("示意路径，不是真实价格预测。", source)
+        self.assertNotIn('st.markdown("### 未来 5~10 日趋势推演")', source)
+        self.assertNotIn('"DeepSeek 整理次日操作图谱"', source)
 
     def test_ui_data_trust_summary_shows_scope_and_position_conflict_warning(self):
         source = Path("visual_components.py").read_text()
@@ -340,11 +437,112 @@ class CommandCenterNextSessionProjectionTests(unittest.TestCase):
         scopes = {item["scope"] for item in hard["scope_breakdown"]}
 
         self.assertIn("数据可信度摘要", source)
-        self.assertIn("scope_breakdown", source)
+        self.assertIn("展开查看技术血缘", source)
         self.assertIn("范围", source)
         self.assertIn("市场行数", source)
+        self.assertIn("_next_session_position_change_label", source)
+        self.assertIn("strong_change", source)
+        self.assertIn("5~10 日情景区间", source)
+        self.assertIn("extended_label}：{extended_text}", source)
         self.assertEqual(scopes, {"target_stock", "market_context"})
         self.assertIn("持仓来源冲突：当前仅输出观察/核验路径，不生成强操作建议。", source)
+
+    def test_legacy_action_guard_marks_strong_actions_conditional_for_passive_main_action(self):
+        guarded = projection.guard_legacy_projection_action(
+            "分批减仓",
+            main_action="等待",
+            position_context={"conflict_flags": []},
+        )
+
+        self.assertTrue(guarded["is_strong_action"])
+        self.assertTrue(guarded["is_condition_only"])
+        self.assertIn("条件触发动作", guarded["display_action"])
+        self.assertIn("触发条件满足", guarded["guard_note"])
+
+        add_small = projection.guard_legacy_projection_action("add_small", main_action="observe", position_context={})
+        self.assertIn("条件触发动作", add_small["display_action"])
+
+    def test_legacy_action_guard_blocks_strong_actions_when_position_conflicts(self):
+        guarded = projection.guard_legacy_projection_action(
+            "stop_loss",
+            main_action="只观察",
+            position_context={"conflict_flags": ["shares_conflict"]},
+        )
+
+        self.assertEqual(guarded["normalized_action"], "verify")
+        self.assertEqual(guarded["display_action"], "核验/观察")
+        self.assertTrue(guarded["is_blocked_by_position_conflict"])
+        self.assertIn("持仓来源冲突", guarded["guard_note"])
+
+    def test_legacy_position_compare_detects_projection_conflicts(self):
+        comparison = projection.compare_legacy_position_with_projection(
+            {"holding_units": 4100, "cost_price": 113, "margin_ratio": 0.11, "current_price": 120.86},
+            {"shares": 3000, "cost_price": 98, "financing_ratio": 30, "current_price": 120.86},
+        )
+
+        self.assertTrue(comparison["has_conflict"])
+        self.assertIn("shares_conflict", comparison["conflict_flags"])
+        self.assertIn("cost_price_conflict", comparison["conflict_flags"])
+        self.assertIn("financing_ratio_conflict", comparison["conflict_flags"])
+        self.assertIn("旧模块持仓口径", comparison["note"])
+
+    def test_app_route_helpers_and_entry_buttons_are_wired(self):
+        source = Path("app.py").read_text()
+
+        for name in [
+            "init_command_center_route",
+            "set_command_center_route",
+            "get_command_center_route",
+            "preserve_command_center_route",
+        ]:
+            self.assertIn(f"def {name}", source)
+        self.assertIn('"command_center_route"', source)
+        self.assertIn('"next_session_projection"', source)
+        self.assertIn('"command_center_active_anchor"', source)
+        self.assertIn('"next_session_operation_map"', source)
+        self.assertIn('"next_session_projection_expanded"', source)
+        self.assertIn('st.expander("高级操作", expanded=False)', source)
+        self.assertIn("previous_route = preserve_command_center_route", source)
+
+    def test_unified_base_routes_and_legacy_quant_are_folded(self):
+        source = Path("app.py").read_text()
+
+        for label, route in [
+            ("产业链联动", "structured_data"),
+            ("情景推演", "single_stock_projection"),
+            ("持仓体检", "trade_discipline_lab"),
+            ("资金面", "structured_data"),
+            ("深度挖掘", "advanced_tools"),
+        ]:
+            self.assertIn(label, source)
+            self.assertIn(route, source)
+        self.assertIn("COMMAND_CENTER_BASE_ROUTE_MAP.get(base_view", source)
+        self.assertIn("高级工具箱 / 开发调试 / 旧版量化推演兼容视图", source)
+        self.assertIn("旧版量化推演兼容视图 / 单票作战室", source)
+        self.assertIn('expanded=bool(st.session_state.get("legacy_single_stock_lab_expanded"))', source)
+        self.assertIn("打开旧版量化推演兼容视图", source)
+        self.assertIn('"量化推演"', source)
+        self.assertIn("legacy_compat_active_tab", source)
+
+    def test_deepseek_counter_and_current_projection_status_are_separated(self):
+        source = Path("app.py").read_text()
+
+        self.assertIn("当前图谱 DeepSeek", source)
+        self.assertIn("本会话 DeepSeek 累计调用", source)
+        self.assertIn("高级调试计数器", source)
+        self.assertIn("_command_center_projection_deepseek_status", source)
+        self.assertIn("DeepSeek 全局计数只放入高级调试计数器", source)
+        self.assertNotIn("DeepSeek 调用次数", source)
+
+    def test_legacy_trade_instruction_copy_uses_guarded_reference_language(self):
+        source = Path("app.py").read_text()
+
+        self.assertIn("旧版兼容推演｜不作为当前交易指令", source)
+        self.assertIn("guard_legacy_projection_action", source)
+        self.assertIn("旧规则估值参考", source)
+        self.assertIn('c6.metric("旧规则估值参考"', source)
+        self.assertNotIn("止盈/减仓参考", source)
+        self.assertIn("该价格不是当前减仓触发价", source)
 
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_next_session_projection.py").read_text())

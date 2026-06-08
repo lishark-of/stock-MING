@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 from openai import OpenAI
 from supabase import create_client, Client
@@ -2140,7 +2141,7 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     elif intent == "add":
         one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。加仓后移动止损参考 {stop_text}，不把低成本浮盈当作追高理由。"
     else:
-        one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。移动止损参考 {stop_text}，止盈/减仓参考 {take_text}。"
+        one_line = f"{action}：当前价 {current_text}，相对成本 {cost_text} 为 {pnl_text}；{driver}。移动止损参考 {stop_text}，旧规则估值参考 {take_text}。"
 
     return {
         "action": action,
@@ -2158,15 +2159,28 @@ def build_one_line_trade_instruction(profile, strict_decision, technical=None, s
     }
 
 
-def render_trade_instruction_card(profile, instruction):
+def render_trade_instruction_card(profile, instruction, main_action=None, projection_position_context=None):
     st.markdown("#### 🧾 一句话交易指令卡")
     action = instruction.get("action", "")
-    if any(word in action for word in ["禁止", "止损", "减仓", "降仓"]):
-        st.error(instruction.get("one_line", "暂无交易指令"))
+    guard = next_session_projection_service.guard_legacy_projection_action(
+        action,
+        main_action=main_action,
+        position_context=projection_position_context or profile,
+    )
+    one_line = str(instruction.get("one_line", "暂无交易指令"))
+    st.caption("旧版兼容推演｜不作为当前交易指令｜主判断请以次日操作图谱为准｜强动作需满足触发条件")
+    if guard.get("is_blocked_by_position_conflict"):
+        st.warning(guard.get("guard_note"))
+        st.info(one_line)
+    elif guard.get("is_condition_only"):
+        st.warning(guard.get("guard_note"))
+        st.info(one_line)
+    elif any(word in action for word in ["禁止", "止损", "减仓", "降仓"]):
+        st.error(one_line)
     elif any(word in action for word in ["观望", "防守"]):
-        st.warning(instruction.get("one_line", "暂无交易指令"))
+        st.warning(one_line)
     else:
-        st.success(instruction.get("one_line", "暂无交易指令"))
+        st.success(one_line)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("成本价", _fmt_price(profile.get("cost_price"), profile.get("currency")))
@@ -2175,12 +2189,24 @@ def render_trade_instruction_card(profile, instruction):
     if profile.get("pnl_amount") is not None:
         pnl_delta = _fmt_price(profile.get("pnl_amount"), profile.get("currency"))
     c3.metric("浮动盈亏", profile.get("profit_state", "未计算"), pnl_delta)
-    c4.metric("当前建议", instruction.get("action", "观察"))
+    c4.metric("旧模块动作", guard.get("display_action") or instruction.get("action", "观察"))
 
     c5, c6, c7 = st.columns(3)
-    c5.metric("止损参考", _fmt_price(instruction.get("stop_loss"), profile.get("currency")))
-    c6.metric("止盈/减仓参考", _fmt_price(instruction.get("take_profit"), profile.get("currency")))
+    c5.metric("移动止损 / 保护线", _fmt_price(instruction.get("stop_loss"), profile.get("currency")))
+    c6.metric("旧规则估值参考", _fmt_price(instruction.get("take_profit"), profile.get("currency")))
     c7.metric("风控分", instruction.get("risk_score", 0), f"可信度 {instruction.get('quality_score', 0)}")
+    current = _num(profile.get("current_price"))
+    take_profit = _num(instruction.get("take_profit"))
+    if current and take_profit and take_profit > current * 1.15:
+        st.caption("该价格不是当前减仓触发价；当前动作仅来自旧规则风险分或条件触发，不作为即时交易指令。")
+    if projection_position_context:
+        flags = projection_position_context.get("conflict_flags") or []
+        st.caption(
+            "持仓口径："
+            f"{projection_position_context.get('source_packet') or '旧模块'}｜"
+            f"{projection_position_context.get('source_priority') or '未标注'}｜"
+            f"冲突：{', '.join(flags) if flags else '无'}"
+        )
     st.caption(f"风险因素：{instruction.get('risk_factors', '')}")
     if instruction.get("backtest_summary"):
         st.caption(f"回测反哺：{instruction.get('backtest_summary')}")
@@ -2547,6 +2573,118 @@ def log_token_usage(prompt_tokens_estimate=2000, completion_tokens_estimate=1500
 
 def estimate_tokens(text):
     return max(1, int(len(str(text)) / 1.7))
+
+
+COMMAND_CENTER_ROUTES = {
+    "home",
+    "next_session_projection",
+    "market_environment",
+    "structured_data",
+    "single_stock_projection",
+    "trade_discipline_lab",
+    "trend_conclusion",
+    "advanced_tools",
+    "legacy_quant_projection",
+    "legacy_single_stock_lab",
+    "legacy_deepseek_projection",
+}
+COMMAND_CENTER_BASE_ROUTE_MAP = {
+    "市场环境": "market_environment",
+    "结构化数据": "structured_data",
+    "个股推演": "single_stock_projection",
+    "交易纪律实验室": "trade_discipline_lab",
+    "下一波趋势结论": "next_session_projection",
+    "次日操作图谱": "next_session_projection",
+    "高级工具箱": "advanced_tools",
+    "产业链联动": "structured_data",
+    "估值回归": "structured_data",
+    "实时指标": "structured_data",
+    "情景推演": "single_stock_projection",
+    "近48小时舆情": "structured_data",
+    "持仓体检": "trade_discipline_lab",
+    "资金面": "structured_data",
+    "回测反哺": "trade_discipline_lab",
+    "同行对比": "structured_data",
+    "深度挖掘": "advanced_tools",
+    "禁止买入": "trade_discipline_lab",
+    "可信度": "structured_data",
+    "新鲜度": "structured_data",
+}
+LEGACY_COMPAT_GUARD_TEXT = """
+【旧版兼容护栏】
+1. 本输出是旧版兼容推演，不作为当前交易指令；主判断请以次日操作图谱为准。
+2. 出现买入、卖出、加仓、补仓、分批减仓、止盈、止损、清仓等强动作时，必须写成“条件触发动作”，不得写成当前立即执行。
+3. 如果持仓来源存在冲突，只能输出核验/观察/不行动，不得输出强操作建议。
+4. 非次日操作区间的估值上沿只能称为“旧规则估值参考”或“长周期上沿参考”，不得称为当前减仓触发价。
+"""
+
+
+def init_command_center_route(session_state):
+    if "command_center_route" not in session_state:
+        session_state["command_center_route"] = "home"
+    if session_state.get("command_center_route") not in COMMAND_CENTER_ROUTES:
+        session_state["command_center_route"] = "home"
+
+
+def set_command_center_route(session_state, route, anchor=None):
+    route = route if route in COMMAND_CENTER_ROUTES else "home"
+    session_state["command_center_route"] = route
+    if anchor:
+        session_state["command_center_active_anchor"] = anchor
+    return route
+
+
+def get_command_center_route(session_state):
+    init_command_center_route(session_state)
+    return session_state.get("command_center_route", "home")
+
+
+def preserve_command_center_route(session_state, fallback="home"):
+    route = session_state.get("command_center_route", fallback)
+    if route not in COMMAND_CENTER_ROUTES:
+        route = fallback if fallback in COMMAND_CENTER_ROUTES else "home"
+    session_state["command_center_route"] = route
+    return route
+
+
+def _command_center_projection_deepseek_status(packet=None):
+    payload = packet if isinstance(packet, dict) else st.session_state.get("command_center_next_session_projection_packet") or {}
+    synthesis = payload.get("deepseek_synthesis") if isinstance(payload, dict) else {}
+    status = (synthesis or {}).get("status") or "not_called"
+    label_map = {
+        "not_called": "未调用",
+        "success": "success",
+        "parse_failed": "parse_failed",
+        "failed": "failed",
+        "cached": "cached",
+    }
+    return label_map.get(status, str(status))
+
+
+def _legacy_projection_position_context(position_profile=None):
+    projection_packet = st.session_state.get("command_center_next_session_projection_packet") or {}
+    projection_position = projection_packet.get("position_context") if isinstance(projection_packet, dict) else {}
+    legacy_position = dict(position_profile or {})
+    if projection_position:
+        aligned = dict(legacy_position)
+        for source_key, target_key in [
+            ("shares", "shares"),
+            ("cost_price", "cost_price"),
+            ("current_price", "current_price"),
+            ("financing_ratio", "financing_ratio"),
+        ]:
+            if projection_position.get(source_key) is not None:
+                aligned[target_key] = projection_position.get(source_key)
+        aligned["source_packet"] = projection_position.get("source_packet") or "command_center_next_session_projection_packet.position_context"
+        comparison = next_session_projection_service.compare_legacy_position_with_projection(
+            legacy_position,
+            projection_position,
+        )
+        aligned["conflict_flags"] = comparison.get("conflict_flags") or projection_position.get("conflict_flags") or []
+        aligned["source_priority"] = projection_position.get("source_priority") or "command_center_next_session_projection_packet.position_context"
+        aligned["comparison_note"] = comparison.get("note")
+        return aligned, comparison
+    return legacy_position, {"has_conflict": False, "conflict_flags": [], "note": "暂无次日操作图谱持仓口径，旧模块仅可观察。"}
 
 
 def render_legacy_data_status(module_name, status="未刷新", updated_at="", data_source="未加载", deepseek_status="未调用"):
@@ -3095,7 +3233,7 @@ def get_command_center_mock_packet(cache_version="command_center_2_mock_v1"):
         ],
         "validated_data": [
             "当前页面使用 mock packet；真实数据接入尚未启用。",
-            "DeepSeek 调用次数由顶部 token counter 验证。",
+            "DeepSeek 全局计数只放入高级调试计数器。",
             "旧交易纪律实验室和量化推演页面保留在旧版工作台。",
         ],
         "cautious_inference": [
@@ -6306,6 +6444,19 @@ def _cc_row_matches_ts_code(row, ts_code):
     return False
 
 
+def _cc_extract_limit_bounds(rows, target_ts_code=""):
+    target_rows = [row for row in rows or [] if _cc_row_matches_ts_code(row, target_ts_code)]
+    candidates = target_rows or list(rows or [])
+    for row in candidates:
+        if not isinstance(row, dict):
+            continue
+        up_limit = _num(row.get("up_limit"))
+        down_limit = _num(row.get("down_limit"))
+        if up_limit is not None or down_limit is not None:
+            return up_limit, down_limit
+    return None, None
+
+
 def _cc_first_non_empty(*values):
     for value in values:
         if value not in (None, "", [], {}):
@@ -6329,7 +6480,8 @@ def _cc_fact_call_section(interface, request_params, result, *, target_ts_code="
         call_status = "empty_window"
     else:
         call_status = error_type or "parse_error"
-    return {
+    up_limit, down_limit = _cc_extract_limit_bounds(rows, target_ts_code) if interface == "tushare.stk_limit" else (None, None)
+    section = {
         "interface": interface,
         "request_params": request_params,
         "scope": scope,
@@ -6344,6 +6496,10 @@ def _cc_fact_call_section(interface, request_params, result, *, target_ts_code="
         "error_type": error_type,
         "error_message_safe": error[:180] if error else None,
     }
+    if up_limit is not None or down_limit is not None:
+        section["up_limit"] = up_limit
+        section["down_limit"] = down_limit
+    return section
 
 
 def _cc_status_from_sections(sections):
@@ -7120,6 +7276,30 @@ JSON schema:
         st.session_state["command_center_deepseek_projection_generated_at"] = enhanced.get("updated_at")
         st.session_state["command_center_deepseek_projection_raw"] = raw or ""
     return enhanced, parsed, raw
+
+
+def _command_center_next_session_cache_ready(target="", market_type=""):
+    ts_code = _cc_healthcheck_sample_ts_code(target)
+    daily = st.session_state.get("command_center_daily_close_packet") or {}
+    ledger = (
+        st.session_state.get("command_center_a_share_fact_call_ledger")
+        or st.session_state.get("a_share_fact_call_ledger")
+        or {}
+    )
+    daily_ready = (
+        isinstance(daily, dict)
+        and daily.get("status") == "ready"
+        and daily.get("is_real_market_series")
+        and int(_num(daily.get("row_count"), 0) or 0) >= 2
+    )
+    ledger_items = ledger.get("items") if isinstance(ledger, dict) else []
+    facts_ready = bool(ledger_items) and any(
+        isinstance(item, dict) and item.get("call_status") in {"verified_present", "verified_no_record"}
+        for item in ledger_items
+    )
+    if not target or not (_cc_is_a_share_market_type(market_type) or a_share_manual_checks_service.is_a_share_ts_code(ts_code)):
+        return daily_ready
+    return bool(daily_ready and facts_ready)
 
 
 def _build_command_center_next_session_projection_packet(
@@ -8552,7 +8732,7 @@ def render_command_center_live_cards(live_packet, target="", market_type="", pri
     st.markdown("#### 真实摘要接入")
     cards = [
         ("市场环境", "market", "本轮自动刷新未取得市场环境。", "刷新市场环境"),
-        ("量化推演", "quant", "本轮自动刷新未取得量化摘要。", "生成量化推演"),
+        ("量化推演", "quant", "本轮自动刷新未取得量化摘要。", "进入旧版兼容视图运行"),
         ("交易纪律", "discipline", "本轮自动刷新未取得交易纪律缓存。", "运行纪律校验"),
         ("下一票雷达", "next_ticket", "本轮自动刷新未取得下一票雷达缓存。", "运行下一票雷达"),
         ("融资 ETF", "margin_etf", "本轮自动刷新未取得 ETF 配置。", "刷新 ETF 配置"),
@@ -8784,6 +8964,7 @@ def render_command_center_trade_review_log_panel(
 
 
 def render_command_center_2_page(target, market_badge, price, market_type="", position_profile=None, price_detail=None):
+    init_command_center_route(st.session_state)
     packet_key = "command_center_2_packet"
     explanation_key = "command_center_2_deepseek_explanation"
     explanation_at_key = "command_center_2_deepseek_generated_at"
@@ -8799,6 +8980,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         """
         <style>
         .st-key-btn_cc_refresh_all_basic button,
+        .st-key-btn_cc_generate_next_session_projection button,
         .st-key-btn_cc_full_data_refresh button,
         .st-key-btn_cc_full_war_game button,
         .st-key-btn_cc_moneyflow_capability_check button,
@@ -8808,6 +8990,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         .st-key-btn_cc_chip_capability_check button,
         [class*="st-key-btn_cc_home_evidence_backfill_"] button,
         .st-key-btn_cc_deepseek_explain button,
+        .st-key-btn_cc_deepseek_next_session_projection button,
         .st-key-btn_cc_deepseek_projection_overlay button {
             border-radius: 14px !important;
             border: 1px solid rgba(20, 184, 166, 0.24) !important;
@@ -8816,6 +8999,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             box-shadow: 0 10px 28px rgba(15,23,42,0.06) !important;
         }
         .st-key-btn_cc_deepseek_explain button,
+        .st-key-btn_cc_deepseek_next_session_projection button,
         .st-key-btn_cc_deepseek_projection_overlay button {
             background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(14,165,233,0.10)) !important;
             color: #6d28d9 !important;
@@ -8828,6 +9012,10 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
 
     render_command_center_shell()
     render_process_stepper(active_step=4)
+    active_route = get_command_center_route(st.session_state)
+    if active_route not in {"home", "next_session_projection"}:
+        st.info("该模块已进入，内容待生成 / 请先生成次日操作图谱。")
+        st.caption(f"当前 route：{active_route}")
 
     packet = st.session_state[packet_key]
     page_price_detail = price_detail or {
@@ -8847,76 +9035,131 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     manual_full_refresh_clicked = False
     manual_war_game_clicked = False
     manual_deepseek_clicked = False
-    control_cols = st.columns([1.1, 1.1])
-    with control_cols[0]:
-        if st.button("满血数据刷新", key="btn_cc_full_data_refresh", type="primary", width="stretch"):
-            manual_full_refresh_clicked = True
-            status = st.status("正在执行满血数据刷新...", expanded=True)
-            refresh_summary, live_packet, data_capability_packet = _run_command_center_full_data_refresh(
+    manual_next_session_clicked = False
+    if st.button("生成次日操作图谱", key="btn_cc_generate_next_session_projection", type="primary", width="stretch"):
+        manual_next_session_clicked = True
+        set_command_center_route(st.session_state, "next_session_projection", anchor="next_session_operation_map")
+        st.session_state["next_session_projection_expanded"] = True
+        status = st.status("正在生成次日操作图谱...", expanded=True)
+        refresh_summary = None
+        if _command_center_next_session_cache_ready(target=target, market_type=market_type):
+            status.write("已检测到可用 Tushare / A股事实缓存，直接构建图谱。")
+        else:
+            status.write("缓存缺失或过期，先按满血数据刷新路径只读刷新 Tushare 数据。")
+            refresh_summary, live_packet, _data_capability_packet = _run_command_center_full_data_refresh(
                 target=target,
                 market_type=market_type,
                 price=price,
                 position_profile=position_profile,
                 status=status,
             )
-            refresh_status_view = build_refresh_summary_view_model(
-                live_packet=live_packet,
-                refresh_result=refresh_summary,
-                refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
-                generated_at=refresh_summary.get("finished_at"),
-                a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
-                latest_recovery_result_notice=_get_latest_recovery_result_notice_from_state(),
-            )
-            status.write("刷新结果已写入本轮作战包；诊断细节保留在高级工具箱。")
-            fact_summary_text = refresh_status_view.get("a_share_fact_recovery_summary")
-            if fact_summary_text:
-                status.write("关键证据状态已更新；首页只保留交易结论。")
-            errors = refresh_status_view.get("error_items") or refresh_status_view.get("errors") or []
-            if errors:
-                status.update(label=f"满血数据刷新完成，{len(errors)} 个模块/数据源失败", state="complete", expanded=False)
-            else:
-                status.update(label="满血数据刷新完成", state="complete", expanded=False)
-            page_packet = _run_command_center_auto_page_cycle(
-                target=target,
-                market_type=market_type,
-                price_detail=page_price_detail,
-                position_profile=position_profile,
-                run_refresh=False,
-                run_provider_probes=False,
-                refresh_summary=refresh_summary,
-            )
-            live_packet = page_packet.get("live_packet") or live_packet
+            manual_full_refresh_clicked = True
             _mark_command_center_auto_refresh_guard(
                 auto_refresh_status,
-                reason="manual_full_data_refresh",
+                reason="generate_next_session_projection_refresh",
                 forced=True,
             )
-    with control_cols[1]:
-        if st.button("满血综合推演", key="btn_cc_full_war_game", width="stretch"):
-            manual_war_game_clicked = True
-            status = st.status("正在执行满血综合推演...", expanded=True)
-            summary, live_packet, decision_packet, strategy_packet, projection_packet = _run_command_center_full_war_game(
-                target=target,
-                market_type=market_type,
-                position_profile=position_profile,
-            )
-            status.write("已读取本轮作战包；诊断细节保留在高级工具箱。")
-            status.write(f"策略执行：{strategy_packet.get('overall_action') or strategy_packet.get('status') or '已生成'}")
-            status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}")
-            status.write(f"趋势推演：未来 {summary.get('projection_horizon_days') or 10} 日")
-            status.update(label="满血综合推演完成", state="complete", expanded=False)
-            page_packet = _run_command_center_auto_page_cycle(
-                target=target,
-                market_type=market_type,
-                price_detail=page_price_detail,
-                position_profile=position_profile,
-                run_refresh=False,
-                run_provider_probes=False,
-            )
-            live_packet = page_packet.get("live_packet") or live_packet
+        page_packet = _run_command_center_auto_page_cycle(
+            target=target,
+            market_type=market_type,
+            price_detail=page_price_detail,
+            position_profile=position_profile,
+            run_refresh=False,
+            run_provider_probes=False,
+            refresh_summary=refresh_summary,
+        )
+        live_packet = page_packet.get("live_packet") or live_packet
+        next_session_projection_packet = _build_command_center_next_session_projection_packet(
+            target=target,
+            market_type=market_type,
+            position_profile=position_profile,
+            live_packet=live_packet,
+            decision_packet=page_packet.get("decision_packet") or st.session_state.get("command_center_decision_packet") or {},
+            strategy_packet=page_packet.get("strategy_packet") or st.session_state.get("strategy_execution_packet") or {},
+            projection_packet=page_packet.get("projection_packet") or st.session_state.get("command_center_projection_packet") or {},
+            home_snapshot=page_packet.get("home_snapshot") or st.session_state.get("command_center_home_snapshot") or {},
+        )
+        page_packet["next_session_projection_packet"] = next_session_projection_packet
+        st.session_state["command_center_auto_analysis_packet"] = page_packet
+        st.session_state["command_center_focus_next_session_projection"] = True
+        status.update(label="次日操作图谱已生成", state="complete", expanded=False)
+
     with st.expander("高级操作", expanded=False):
+        st.caption("普通主流程只需要“生成次日操作图谱”。下列按钮用于手动刷新、综合推演或手动解释。")
+        control_cols = st.columns([1.1, 1.1])
+        with control_cols[0]:
+            if st.button("满血数据刷新", key="btn_cc_full_data_refresh", width="stretch"):
+                previous_route = preserve_command_center_route(st.session_state)
+                manual_full_refresh_clicked = True
+                status = st.status("正在执行满血数据刷新...", expanded=True)
+                refresh_summary, live_packet, data_capability_packet = _run_command_center_full_data_refresh(
+                    target=target,
+                    market_type=market_type,
+                    price=price,
+                    position_profile=position_profile,
+                    status=status,
+                )
+                refresh_status_view = build_refresh_summary_view_model(
+                    live_packet=live_packet,
+                    refresh_result=refresh_summary,
+                    refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
+                    generated_at=refresh_summary.get("finished_at"),
+                    a_share_fact_recovery_summary=_get_a_share_fact_recovery_summary_from_state(),
+                    latest_recovery_result_notice=_get_latest_recovery_result_notice_from_state(),
+                )
+                status.write("刷新结果已写入本轮作战包；诊断细节保留在高级工具箱。")
+                fact_summary_text = refresh_status_view.get("a_share_fact_recovery_summary")
+                if fact_summary_text:
+                    status.write("关键证据状态已更新；首页只保留交易结论。")
+                errors = refresh_status_view.get("error_items") or refresh_status_view.get("errors") or []
+                if errors:
+                    status.update(label=f"满血数据刷新完成，{len(errors)} 个模块/数据源失败", state="complete", expanded=False)
+                else:
+                    status.update(label="满血数据刷新完成", state="complete", expanded=False)
+                page_packet = _run_command_center_auto_page_cycle(
+                    target=target,
+                    market_type=market_type,
+                    price_detail=page_price_detail,
+                    position_profile=position_profile,
+                    run_refresh=False,
+                    run_provider_probes=False,
+                    refresh_summary=refresh_summary,
+                )
+                live_packet = page_packet.get("live_packet") or live_packet
+                _mark_command_center_auto_refresh_guard(
+                    auto_refresh_status,
+                    reason="manual_full_data_refresh",
+                    forced=True,
+                )
+                set_command_center_route(st.session_state, previous_route)
+        with control_cols[1]:
+            if st.button("满血综合推演", key="btn_cc_full_war_game", width="stretch"):
+                previous_route = preserve_command_center_route(st.session_state)
+                manual_war_game_clicked = True
+                status = st.status("正在执行满血综合推演...", expanded=True)
+                summary, live_packet, decision_packet, strategy_packet, projection_packet = _run_command_center_full_war_game(
+                    target=target,
+                    market_type=market_type,
+                    position_profile=position_profile,
+                )
+                status.write("已读取本轮作战包；诊断细节保留在高级工具箱。")
+                status.write(f"策略执行：{strategy_packet.get('overall_action') or strategy_packet.get('status') or '已生成'}")
+                status.write(f"今日总决策：{decision_packet.get('overall_action') or '等待'}")
+                status.write(f"趋势推演：未来 {summary.get('projection_horizon_days') or 10} 日")
+                status.update(label="满血综合推演完成", state="complete", expanded=False)
+                page_packet = _run_command_center_auto_page_cycle(
+                    target=target,
+                    market_type=market_type,
+                    price_detail=page_price_detail,
+                    position_profile=position_profile,
+                    run_refresh=False,
+                    run_provider_probes=False,
+                )
+                live_packet = page_packet.get("live_packet") or live_packet
+                set_command_center_route(st.session_state, previous_route)
         st.caption("DeepSeek 只在这里手动触发；不会随刷新、切换页面或规则推演自动调用。")
         if st.button("DeepSeek 综合解释", key="btn_cc_deepseek_explain", width="stretch"):
+            previous_route = preserve_command_center_route(st.session_state)
             manual_deepseek_clicked = True
             status = st.status("正在调用 DeepSeek 生成解释...", expanded=True)
             try:
@@ -8966,8 +9209,9 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 st.session_state[latest_explanation_visible_key] = True
                 st.session_state["command_center_deepseek_refresh_level"] = cc_service.REFRESH_LEVEL_MANUAL_DEEP
                 status.update(label="DeepSeek 解释失败，失败原因已显示在主路径附近", state="error", expanded=False)
+            set_command_center_route(st.session_state, previous_route)
 
-    suppress_auto_refresh = manual_full_refresh_clicked or manual_war_game_clicked or manual_deepseek_clicked
+    suppress_auto_refresh = manual_next_session_clicked or manual_full_refresh_clicked or manual_war_game_clicked or manual_deepseek_clicked
     if not suppress_auto_refresh:
         if auto_refresh_status.get("should_refresh"):
             page_packet = _run_command_center_auto_page_cycle(
@@ -9063,11 +9307,6 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     direct_summary = active_packet.get("summary") or {}
     deepseek_called_count = st.session_state.token_usage.get("deepseek_calls", 0)
     deepseek_token_count = st.session_state.token_usage.get("estimated_tokens", 0)
-    deepseek_status = (
-        "已解释"
-        if st.session_state.get(explanation_at_key) or st.session_state.get("command_center_deepseek_projection_generated_at")
-        else "未调用"
-    )
     full_refresh_steps_for_display = (
         st.session_state.get("command_center_full_refresh_steps")
         or (st.session_state.get("command_center_home_snapshot") or {}).get("full_refresh_steps")
@@ -9092,8 +9331,12 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         )
         render_command_center_refresh_result_summary(refresh_summary_view_for_display)
     else:
+        st.caption(f"当前图谱 DeepSeek：{_command_center_projection_deepseek_status()}")
+    with st.expander("高级调试计数器", expanded=False):
         st.caption(
-            f"DeepSeek：{deepseek_status} ｜ 调用次数：{deepseek_called_count} ｜ Token：{deepseek_token_count:,}"
+            f"本会话 DeepSeek 累计调用：{deepseek_called_count} ｜ "
+            f"估算 Token：{deepseek_token_count:,} ｜ "
+            f"当前图谱 DeepSeek：{_command_center_projection_deepseek_status(st.session_state.get('command_center_next_session_projection_packet') or {})}"
         )
     if isinstance(first_diagnosis_prewarm_packet, dict) and first_diagnosis_prewarm_packet.get("summary"):
         with st.expander("高级诊断状态", expanded=False):
@@ -9116,108 +9359,72 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         price_detail=page_price_detail,
         projection_packet=projection_packet,
     )
-    st.markdown("### 未来 5~10 日趋势推演")
-    with st.expander("高级趋势增强", expanded=False):
-        st.caption("仅在需要大模型整理三路径时手动触发；普通刷新和规则推演不会调用。")
-        if st.button(
-            "DeepSeek 增强趋势推演",
-            key="btn_cc_deepseek_projection_overlay",
-            help="手动调用 DeepSeek，把当前量化推演、交易纪律、持仓和风险证据整理成三路径曲线；不会自动下单，也不会在普通刷新或切换页面时触发。",
-            width="stretch",
-        ):
-            status = st.status("正在手动增强趋势推演...", expanded=True)
-            status.write("先刷新当前标的作战上下文；DeepSeek 暂未调用。")
-            preflight_packet = _run_command_center_auto_page_cycle(
-                target=target,
-                market_type=market_type,
-                price_detail=page_price_detail,
-                position_profile=position_profile,
-                run_refresh=True,
-                run_provider_probes=True,
+    st.markdown("<div id='next_session_operation_map'></div>", unsafe_allow_html=True)
+    active_anchor = st.session_state.pop("command_center_active_anchor", None)
+    if st.session_state.pop("command_center_focus_next_session_projection", False) or active_anchor == "next_session_operation_map":
+        components.html(
+            "<script>window.parent.location.hash='next_session_operation_map';</script>",
+            height=0,
+        )
+    if st.button(
+        "AI 整理说明",
+        key="btn_cc_deepseek_next_session_projection",
+        help="手动调用 DeepSeek，把当前真实日线、量化推演、交易纪律、A股事实血缘整理成结构化操作图谱 JSON；不会自动交易，也不会验证输入之外事实。",
+        width="stretch",
+    ):
+        previous_route = preserve_command_center_route(st.session_state)
+        set_command_center_route(st.session_state, "next_session_projection", anchor="next_session_operation_map")
+        status = st.status("正在手动整理次日操作图谱...", expanded=True)
+        status.write("只读取当前图谱 JSON；DeepSeek 暂未调用外部事实验证。")
+        try:
+            next_session_projection_packet, raw_next_projection = _run_command_center_deepseek_next_session_projection(
+                next_session_projection_packet=next_session_projection_packet,
             )
-            live_packet = preflight_packet.get("live_packet") or live_packet
-            decision_packet = preflight_packet.get("decision_packet") or decision_packet
-            strategy_packet = preflight_packet.get("strategy_packet") or strategy_packet
-            projection_packet = preflight_packet.get("projection_packet") or projection_packet
-            home_snapshot = preflight_packet.get("home_snapshot") or home_snapshot
-            page_price_detail = preflight_packet.get("price_detail") or page_price_detail
-            preflight_errors = preflight_packet.get("errors") or []
-            status.write("已重算策略执行、今日总决策和规则趋势；现在调用 DeepSeek 整理三路径。")
-            if preflight_errors:
-                status.write(f"刷新上下文有 {len(preflight_errors)} 个失败项；将继续使用可用缓存和失败原因。")
-            enhanced_projection, parsed_overlay, raw_overlay = _run_command_center_deepseek_projection_overlay(
-                target=target,
-                market_type=market_type,
-                position_profile=position_profile,
-                live_packet=live_packet,
-                decision_packet=decision_packet,
-                strategy_packet=strategy_packet,
-                projection_packet=projection_packet,
-                home_snapshot=home_snapshot,
-            )
-            if parsed_overlay:
-                projection_packet = enhanced_projection
-                status.write("DeepSeek 已返回结构化三路径；曲线、概率、触发条件和风险提示已合并。")
-                status.update(label="趋势推演已手动增强", state="complete", expanded=False)
+            synthesis = next_session_projection_packet.get("deepseek_synthesis") or {}
+            if synthesis.get("status") == "success":
+                status.update(label="AI 已整理说明", state="complete", expanded=False)
             else:
-                status.write("DeepSeek 未返回可解析 JSON；页面保留原规则趋势推演。")
-                if raw_overlay:
-                    with st.expander("查看 DeepSeek 原始返回", expanded=False):
-                        st.write(raw_overlay)
-                status.update(label="趋势增强未合并，已保留原曲线", state="error", expanded=False)
+                status.write("AI 未返回合法 JSON；页面保留本地确定性图谱。")
+                if raw_next_projection:
+                    with st.expander("查看 AI 原始返回", expanded=False):
+                        st.write(raw_next_projection)
+                status.update(label="AI 整理未合并", state="error", expanded=False)
+        except Exception as exc:
+            status.write(f"AI 整理失败：{exc}")
+            status.update(label="AI 整理失败", state="error", expanded=False)
+        set_command_center_route(st.session_state, previous_route if previous_route != "home" else "next_session_projection")
+    latest_next_projection_synthesis = (
+        (st.session_state.get("command_center_next_session_projection_packet") or {}).get("deepseek_synthesis")
+        if isinstance(st.session_state.get("command_center_next_session_projection_packet"), dict)
+        else {}
+    )
+    if isinstance(latest_next_projection_synthesis, dict) and latest_next_projection_synthesis.get("status") in {"parse_failed", "failed"}:
         if st.button(
-            "DeepSeek 整理次日操作图谱",
-            key="btn_cc_deepseek_next_session_projection",
-            help="手动调用 DeepSeek，把当前真实日线、量化推演、交易纪律、A股事实血缘整理成结构化操作图谱 JSON；不会自动交易，也不会验证输入之外事实。",
+            "重试 JSON 输出",
+            key="btn_cc_deepseek_next_session_projection_retry_json",
+            help="仅在上次 AI 返回非合法 JSON 后手动重试；提示词会更短、更严格，仍不会覆盖真实行情、持仓或策略 action。",
             width="stretch",
         ):
-            status = st.status("正在手动整理次日操作图谱...", expanded=True)
-            status.write("只读取当前图谱 JSON；DeepSeek 暂未调用外部事实验证。")
+            previous_route = preserve_command_center_route(st.session_state)
+            set_command_center_route(st.session_state, "next_session_projection", anchor="next_session_operation_map")
+            status = st.status("正在重试 JSON 输出...", expanded=True)
             try:
                 next_session_projection_packet, raw_next_projection = _run_command_center_deepseek_next_session_projection(
                     next_session_projection_packet=next_session_projection_packet,
+                    retry_json=True,
                 )
                 synthesis = next_session_projection_packet.get("deepseek_synthesis") or {}
                 if synthesis.get("status") == "success":
-                    status.update(label="DeepSeek 已整理次日操作图谱", state="complete", expanded=False)
+                    status.update(label="JSON 重试已合并", state="complete", expanded=False)
                 else:
-                    status.write("DeepSeek 未返回合法 JSON；页面保留本地确定性图谱。")
-                    if raw_next_projection:
-                        with st.expander("查看 DeepSeek 原始返回", expanded=False):
-                            st.write(raw_next_projection)
-                    status.update(label="次日图谱整理未合并", state="error", expanded=False)
+                    status.write(synthesis.get("error_message_safe") or "AI 仍未返回可合并 JSON；保留本地图谱。")
+                    status.update(label="JSON 重试未合并", state="error", expanded=False)
             except Exception as exc:
-                status.write(f"DeepSeek 整理失败：{exc}")
-                status.update(label="次日图谱整理失败", state="error", expanded=False)
-        latest_next_projection_synthesis = (
-            (st.session_state.get("command_center_next_session_projection_packet") or {}).get("deepseek_synthesis")
-            if isinstance(st.session_state.get("command_center_next_session_projection_packet"), dict)
-            else {}
-        )
-        if isinstance(latest_next_projection_synthesis, dict) and latest_next_projection_synthesis.get("status") in {"parse_failed", "failed"}:
-            if st.button(
-                "重试 JSON 输出",
-                key="btn_cc_deepseek_next_session_projection_retry_json",
-                help="仅在上次 DeepSeek 返回非合法 JSON 后手动重试；提示词会更短、更严格，仍不会覆盖真实行情、持仓或策略 action。",
-                width="stretch",
-            ):
-                status = st.status("正在重试 DeepSeek JSON 输出...", expanded=True)
-                try:
-                    next_session_projection_packet, raw_next_projection = _run_command_center_deepseek_next_session_projection(
-                        next_session_projection_packet=next_session_projection_packet,
-                        retry_json=True,
-                    )
-                    synthesis = next_session_projection_packet.get("deepseek_synthesis") or {}
-                    if synthesis.get("status") == "success":
-                        status.update(label="DeepSeek JSON 重试已合并", state="complete", expanded=False)
-                    else:
-                        status.write(synthesis.get("error_message_safe") or "DeepSeek 仍未返回可合并 JSON；保留本地图谱。")
-                        status.update(label="JSON 重试未合并", state="error", expanded=False)
-                except Exception as exc:
-                    status.write(f"DeepSeek JSON 重试失败：{exc}")
-                    status.update(label="JSON 重试失败", state="error", expanded=False)
+                status.write(f"JSON 重试失败：{exc}")
+                status.update(label="JSON 重试失败", state="error", expanded=False)
+            set_command_center_route(st.session_state, previous_route if previous_route != "home" else "next_session_projection")
     render_next_session_operation_projection(next_session_projection_packet)
-    with st.expander("旧版趋势推演兼容视图", expanded=False):
+    with st.expander("高级工具箱 / 开发调试 / 旧版兼容视图", expanded=False):
         st.caption("此为旧版兼容视图，主判断请以次日操作图谱为准。示意路径，不是真实价格预测。")
         render_command_center_projection_chart(projection_packet, home_compact=True)
     st.markdown("### 策略执行实验室")
@@ -9375,10 +9582,9 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                     f"{item.get('source') or '未加载'}"
                 )
     st.caption(
-        f"DeepSeek 调用次数：{st.session_state.token_usage.get('deepseek_calls', 0)} ｜ "
-        f"估算 Token：{st.session_state.token_usage.get('estimated_tokens', 0):,} ｜ "
+        f"当前模块 DeepSeek：{overview_vm.get('deepseek_text') or '未调用'} ｜ "
+        f"当前图谱 DeepSeek：{_command_center_projection_deepseek_status()} ｜ "
         f"解释生成：{st.session_state.get(explanation_at_key) or '未生成'} ｜ "
-        f"{overview_vm.get('deepseek_text') or 'DeepSeek：未调用'} ｜ "
         "页面加载会自动刷新可用基础链路；DeepSeek 仍只手动调用。"
     )
     capability_items = overview_vm.get("data_capability_items") or []
@@ -9615,6 +9821,7 @@ def render_command_center_placeholder(nav_name, message=None):
 
 
 def render_command_center_workspace(target, market_badge, price, market_type="", position_profile=None, price_detail=None):
+    init_command_center_route(st.session_state)
     if "command_center_nav" not in st.session_state:
         st.session_state["command_center_nav"] = "综合推演中心 2.0"
     if st.session_state["command_center_nav"] not in COMMAND_CENTER_NAV_ITEMS:
@@ -9663,6 +9870,8 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
         )
 
     selected_nav = st.session_state.get("command_center_nav", "综合推演中心 2.0")
+    if selected_nav == "高级工具箱入口":
+        set_command_center_route(st.session_state, "advanced_tools")
     with content_col:
         if selected_nav == "综合推演中心 2.0":
             render_command_center_2_page(
@@ -14684,14 +14893,23 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         visual_today_flow = _num((moneyflow_data or {}).get("main_net_yi"))
         visual_five_day_flow = _num((moneyflow_data or {}).get("five_day_main_net_yi"))
         visual_profile = position_profile if isinstance(position_profile, dict) else (globals().get("position_profile") or {})
+        legacy_visual_profile, legacy_visual_comparison = _legacy_projection_position_context(visual_profile)
+        if legacy_visual_profile.get("shares") is not None and not legacy_visual_profile.get("holding_units"):
+            legacy_visual_profile["holding_units"] = legacy_visual_profile.get("shares")
         visual_state = visual_profile.get("normalized_position_state") or position_status
         visual_is_holding = "持" in str(visual_state) and "观望" not in str(visual_state)
-        visual_cost = visual_profile.get("cost_price") if visual_profile.get("cost_price") else None
-        visual_shares = visual_profile.get("holding_units") if visual_profile.get("allow_pnl") else None
+        visual_cost = legacy_visual_profile.get("cost_price") if legacy_visual_profile.get("cost_price") else None
+        visual_shares = legacy_visual_profile.get("holding_units") if visual_profile.get("allow_pnl") else None
 
-        st.markdown("#### 🎮 单票持仓作战室")
-        with st.container():
-            st.caption("先看持仓水位、资金冲突和动作矩阵，再进入次日计划、做T/减仓和外脑推演。所有内容均为辅助判断，不构成买卖建议。")
+        with st.expander(
+            "高级工具箱 / 开发调试 / 旧版量化推演兼容视图 / 单票作战室",
+            expanded=bool(st.session_state.get("legacy_single_stock_lab_expanded")),
+        ):
+            st.caption("此为旧版兼容工具，主判断请以次日操作图谱为准。旧模块输出不自动作为交易指令。")
+            st.caption("旧版兼容推演：先看持仓水位、资金冲突和动作矩阵，再进入次日计划、做T/减仓和外脑深度推演；所有内容均为辅助判断。")
+            if legacy_visual_comparison.get("has_conflict"):
+                st.warning("旧模块持仓口径与次日操作图谱不一致，请先核验持仓。")
+                st.caption("持仓来源冲突：旧模块不输出强操作建议，请先核验持仓。")
             render_position_waterline(
                 price,
                 cost_price=visual_cost,
@@ -14740,14 +14958,23 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
             if war_room_view == "次日计划":
                 st.caption("次日计划是验证清单，不是交易指令。")
                 btn_next_day_plan = st.button("🧾 生成次日交易计划", width="stretch", key="btn_cn_next_day_plan")
+                if btn_next_day_plan:
+                    st.session_state["legacy_single_stock_lab_expanded"] = True
+                    set_command_center_route(st.session_state, "next_session_projection", anchor="next_session_operation_map")
                 next_day_plan_output = st.container()
             if war_room_view == "做T / 减仓推演":
-                st.caption("围绕当前票的持有、做T、减仓条件做推演；换仓雷达仅作为可选横向观察。")
+                st.caption("旧版兼容推演：围绕当前票的持有、做T、减仓条件做推演；强动作仅在触发条件满足且持仓核验无冲突后才可考虑。")
                 btn_war_room = st.button("🎯 生成做T / 减仓推演", width="stretch", key="btn_cn_war_room")
+                if btn_war_room:
+                    st.session_state["legacy_single_stock_lab_expanded"] = True
+                    set_command_center_route(st.session_state, "legacy_single_stock_lab")
                 war_room_output = st.container()
             if war_room_view == "外脑深度推演":
                 st.caption("外脑深度推演需要手动触发，不自动调用 DeepSeek。输出长文收纳在下方折叠区。")
                 btn_deepseek = st.button("🚀 启动外脑深度推演（A股专用）", width="stretch", key="btn_cn_deepseek")
+                if btn_deepseek:
+                    st.session_state["legacy_single_stock_lab_expanded"] = True
+                    set_command_center_route(st.session_state, "legacy_deepseek_projection")
                 deepseek_output = st.container()
         
         if btn_deepseek:
@@ -14776,6 +15003,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 verified_technical_prompt=verified_technical_prompt,
                 unverified_inject=unverified_inject,
             )
+            improved_prompt = LEGACY_COMPAT_GUARD_TEXT + "\n\n" + improved_prompt
             
             with deepseek_output:
                 with st.expander("📋 深度研报 / 长文分析", expanded=False):
@@ -14806,9 +15034,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 fact_packet=next_day_plan_fact_packet,
                 verified_technical_prompt=verified_technical_prompt,
             )
+            plan_prompt = LEGACY_COMPAT_GUARD_TEXT + "\n\n" + plan_prompt
             with next_day_plan_output:
                 plan_status.write("调用 DeepSeek 推理：生成六段式观察计划")
                 st.markdown("### 🧾 次日交易计划")
+                st.caption("旧版兼容推演｜不作为当前交易指令｜强动作需满足触发条件")
                 call_deepseek_stream(
                     plan_prompt,
                     system_role="你是严格的A股次日观察计划生成器，只能基于已验证数据生成观察预案。",
@@ -14839,9 +15069,11 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 fact_packet=single_stock_war_room_fact_packet,
                 verified_technical_prompt=verified_technical_prompt,
             )
+            war_room_prompt = LEGACY_COMPAT_GUARD_TEXT + "\n\n" + war_room_prompt
             with war_room_output:
                 war_room_status.write("调用 DeepSeek 推理：生成单票作战室 / 换仓雷达")
                 st.markdown("### 🎯 单票作战室 / 换仓雷达")
+                st.caption("旧版兼容推演｜不作为当前交易指令｜强动作需满足触发条件")
                 call_deepseek_stream(
                     war_room_prompt,
                     system_role="你是严格的A股单票作战室，只能基于已验证数据生成持仓与换仓观察预案。",
@@ -15119,17 +15351,18 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
 
     st.markdown("---")
 
-    # Token 使用情况显示
-    col_status1, col_status2, col_status3 = st.columns(3)
-    with col_status1:
-        st.markdown(f"<div class='token-counter'>📞 DeepSeek 调用次数: {st.session_state.token_usage['deepseek_calls']}</div>", unsafe_allow_html=True)
-    with col_status2:
-        st.markdown(f"<div class='token-counter'>💰 估计消耗 Token: {st.session_state.token_usage['estimated_tokens']:,}</div>", unsafe_allow_html=True)
-    with col_status3:
-        if st.button("🔄 重置计数器"):
-            st.session_state.token_usage['deepseek_calls'] = 0
-            st.session_state.token_usage['estimated_tokens'] = 0
-            st.rerun()
+    with st.expander("高级调试计数器", expanded=False):
+        col_status1, col_status2, col_status3 = st.columns(3)
+        with col_status1:
+            st.markdown(f"<div class='token-counter'>本会话 DeepSeek 累计调用: {st.session_state.token_usage['deepseek_calls']}</div>", unsafe_allow_html=True)
+        with col_status2:
+            st.markdown(f"<div class='token-counter'>估算 Token: {st.session_state.token_usage['estimated_tokens']:,}</div>", unsafe_allow_html=True)
+        with col_status3:
+            st.caption(f"当前图谱 DeepSeek：{_command_center_projection_deepseek_status()}")
+            if st.button("🔄 重置计数器"):
+                st.session_state.token_usage['deepseek_calls'] = 0
+                st.session_state.token_usage['estimated_tokens'] = 0
+                st.rerun()
 
     st.markdown("---")
     if workspace_mode == "综合推演中心 2.0":
@@ -15143,21 +15376,42 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         )
         st.stop()
 
+    primary_legacy_tabs = [
+        "今日关注池",
+        "天眼风控",
+        "交易纪律实验室",
+        "融资 ETF",
+        "云端外脑",
+        "数据源体检",
+        "下一票雷达",
+    ]
+    if st.session_state.get("legacy_workspace_selected_tab") not in primary_legacy_tabs:
+        st.session_state["legacy_workspace_selected_tab"] = "今日关注池"
     legacy_tab = st.radio(
         "高级工具模块",
-        [
-            "今日关注池",
-            "天眼风控",
-            "交易纪律实验室",
-            "量化推演",
-            "融资 ETF",
-            "云端外脑",
-            "数据源体检",
-            "下一票雷达",
-        ],
+        primary_legacy_tabs,
         horizontal=True,
         key="legacy_workspace_selected_tab",
     )
+    with st.expander(
+        "高级工具箱 / 开发调试 / 旧版量化推演兼容视图",
+        expanded=bool(st.session_state.get("legacy_quant_projection_expanded")),
+    ):
+        st.caption("此为旧版兼容工具，主判断请以次日操作图谱为准。旧模块输出不自动作为交易指令。")
+        st.caption("旧版兼容推演｜不作为当前交易指令｜主判断请以次日操作图谱为准｜强动作需满足触发条件")
+        compat_cols = st.columns([1, 1])
+        with compat_cols[0]:
+            if st.button("打开旧版量化推演兼容视图", key="btn_open_legacy_quant_projection", width="stretch"):
+                st.session_state["legacy_compat_active_tab"] = "量化推演"
+                st.session_state["legacy_quant_projection_expanded"] = True
+                set_command_center_route(st.session_state, "legacy_quant_projection")
+        with compat_cols[1]:
+            if st.button("关闭旧版兼容视图", key="btn_close_legacy_quant_projection", width="stretch"):
+                st.session_state["legacy_compat_active_tab"] = ""
+                st.session_state["legacy_quant_projection_expanded"] = False
+    if st.session_state.get("legacy_compat_active_tab") == "量化推演":
+        legacy_tab = "量化推演"
+        set_command_center_route(st.session_state, "legacy_quant_projection")
 
     recovery_notice = home_snapshot_service.build_tool_recovery_context_notice(st.session_state, selected_tab=legacy_tab)
     if recovery_notice:
@@ -16612,7 +16866,7 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
     # 模块 C：主干量化推演 - 多市场版
     if legacy_tab == "量化推演":
         quant_run_now = st.button(
-            "生成量化推演",
+            "运行旧版量化推演",
             key="btn_legacy_quant_generate",
             type="primary",
             width="stretch",
@@ -17037,7 +17291,20 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 f"｜本地拉取时间：{tushare_verified_source.get('updated_at', '')}"
                 f"｜{tushare_verified_source.get('status', '')}"
             )
-        render_trade_instruction_card(position_profile, trade_instruction)
+        legacy_position_context, legacy_position_comparison = _legacy_projection_position_context(position_profile)
+        main_action_for_legacy = (
+            (st.session_state.get("command_center_next_session_projection_packet") or {}).get("quant_context", {}).get("suggested_action")
+            or (st.session_state.get("strategy_execution_packet") or {}).get("action")
+            or "等待"
+        )
+        if legacy_position_comparison.get("has_conflict"):
+            st.warning("旧模块持仓口径与次日操作图谱不一致，请先核验持仓。")
+        render_trade_instruction_card(
+            position_profile,
+            trade_instruction,
+            main_action=main_action_for_legacy,
+            projection_position_context=legacy_position_context,
+        )
         render_relevant_memory_context(cloud_memory_context)
 
         with st.expander("🧭 统一诊股底座：产业链 / 估值 / 舆情 / 风控", expanded=True):
@@ -17060,6 +17327,14 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
                 ],
                 horizontal=True,
                 key=f"legacy_quant_base_lazy_view_{normalized_target}",
+            )
+            set_command_center_route(
+                st.session_state,
+                COMMAND_CENTER_BASE_ROUTE_MAP.get(base_view, "advanced_tools"),
+            )
+            st.caption(
+                f"当前模块：{base_view}｜route={get_command_center_route(st.session_state)}｜"
+                "该模块已进入，内容待生成 / 请先生成次日操作图谱。"
             )
             if base_view == "产业链联动":
                 render_supply_chain_module(supply_profile, portfolio_health)
