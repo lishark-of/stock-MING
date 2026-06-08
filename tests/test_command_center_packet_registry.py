@@ -39,6 +39,7 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertIn("command_center_decision_packet", keys)
         self.assertIn("command_center_projection_packet", keys)
         self.assertIn("command_center_analysis_method_packet", keys)
+        self.assertIn("command_center_chokepoint_scan_packet", keys)
         self.assertIn("command_center_refresh_summary", keys)
 
     def test_legacy_a_share_evidence_packets_are_manual_or_derived(self):
@@ -65,6 +66,16 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertEqual(spec["deepseek_policy"], "never")
         self.assertFalse(spec["writes_session_state"])
         self.assertIn("P0/P1/P2", spec["description"])
+
+    def test_chokepoint_scan_packet_is_button_gated_manual_deepseek(self):
+        spec = registry.get_command_center_packet_spec("command_center_chokepoint_scan_packet")
+
+        self.assertEqual(spec["area"], "analysis")
+        self.assertEqual(spec["refresh_policy"], "button_gated")
+        self.assertEqual(spec["external_call_policy"], "button_gated")
+        self.assertEqual(spec["deepseek_policy"], "manual_only")
+        self.assertIn("15 维贝叶斯评分", spec["description"])
+        self.assertIn("不写入 strategy action", spec["description"])
 
     def test_recovery_result_timeline_is_read_only_recovery_packet(self):
         spec = registry.get_command_center_packet_spec("command_center_recovery_result_timeline")

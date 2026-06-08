@@ -253,6 +253,7 @@ try:
         build_backtest_explanation_prompt,
         build_counter_argument_prompt,
         build_position_aware_prompt,
+        build_serenity_chokepoint_system_prompt,
         build_strict_risk_decision,
     )
 except Exception as module_error:
@@ -269,6 +270,9 @@ except Exception as module_error:
 
     def build_position_aware_prompt(ticker, price, position_status, capital_plan, base_context, strict_decision, money_flow_text_block, technical=None, scenario=None, data_quality=None, position_profile=None):
         return f"标的：{ticker}，价格：{price}，状态：{position_status}，本金：{capital_plan}\n{base_context}\n{strict_decision}\n{money_flow_text_block}"
+
+    def build_serenity_chokepoint_system_prompt(extra_context=None):
+        return f"分析模块降级：{ANALYSIS_MODULE_ERROR}。请严格按输入证据分析，缺少硬证据必须降级。"
 
     def build_strict_risk_decision(valuation, news_rows, replay_rules="", technical=None, money_flow=None, position_status="未买入 (观望/找买点)", data_quality=None, scenario=None):
         return {"risk_score": 0, "action": "分析模块降级", "reasons": [str(ANALYSIS_MODULE_ERROR)]}
@@ -3124,6 +3128,167 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
 
     st.error(f"⚠️ DeepSeek 调用失败: {last_error}")
     return None
+
+
+def _build_chokepoint_evidence_payload(target="", market_type="", live_packet=None, home_snapshot=None, active_packet=None):
+    evidence = {
+        "target": target,
+        "market_type": market_type,
+        "live_packet_summary": live_packet or {},
+        "home_snapshot_summary": home_snapshot or {},
+        "active_packet_keys": sorted(list((active_packet or {}).keys())) if isinstance(active_packet, dict) else [],
+    }
+    company_evidence = {}
+    if target:
+        company_evidence[target] = {
+            "home_snapshot": home_snapshot or {},
+            "live_packet": live_packet or {},
+        }
+    evidence["company_evidence"] = company_evidence
+    return evidence
+
+
+def _chokepoint_dataframe(rows, columns):
+    normalized = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        normalized.append({label: row.get(key, "") for key, label in columns})
+    return pd.DataFrame(normalized)
+
+
+def _render_chokepoint_scan_result(packet):
+    if not isinstance(packet, dict) or not packet:
+        return
+
+    st.session_state["command_center_chokepoint_scan_packet"] = packet
+    st.caption(
+        f"瓶颈扫描：{packet.get('specificity_status') or '待验证'}｜"
+        f"DeepSeek：{'已调用' if packet.get('deepseek_called') else '未调用'}｜"
+        f"{packet.get('updated_at') or '暂无时间'}"
+    )
+    st.markdown(packet.get("summary") or "暂无扫描摘要。")
+
+    with st.expander("卡脖子论证", expanded=True):
+        nodes_df = _chokepoint_dataframe(
+            packet.get("technical_chokepoint_nodes"),
+            [
+                ("node", "技术卡点"),
+                ("why_it_blocks", "卡住原因"),
+                ("technical_specificity", "具体性"),
+                ("policy_link", "政策/国产替代"),
+                ("a_share_microstructure", "A股短线特征"),
+            ],
+        )
+        if not nodes_df.empty:
+            st.dataframe(nodes_df, width="stretch", hide_index=True)
+        else:
+            st.info("暂未拆出足够具体的技术卡点。")
+
+        candidates_df = _chokepoint_dataframe(
+            packet.get("candidate_stocks"),
+            [
+                ("name", "标的"),
+                ("ticker", "代码"),
+                ("matched_node", "对应节点"),
+                ("tier", "分级"),
+                ("evidence_level", "证据等级"),
+                ("downgrade_notice", "精度降级"),
+            ],
+        )
+        if not candidates_df.empty:
+            st.dataframe(candidates_df, width="stretch", hide_index=True)
+
+    with st.expander("反向伪证硬拷问", expanded=True):
+        for item in packet.get("anti_thesis") or []:
+            st.markdown(f"- {item}")
+        open_checks = packet.get("open_checks") or []
+        if open_checks:
+            st.markdown("**待核验**")
+            for item in open_checks:
+                st.markdown(f"- {item}")
+
+    with st.expander("15 维贝叶斯动态评分卡", expanded=True):
+        score_rows = packet.get("scorecard_rows") or []
+        score_df = pd.DataFrame(score_rows)
+        if not score_df.empty:
+            display_df = score_df.rename(
+                columns={
+                    "label": "维度",
+                    "weight": "权重",
+                    "prior_score": "先验分",
+                    "posterior_score": "后验分",
+                    "delta": "变化",
+                }
+            )[["维度", "权重", "先验分", "后验分", "变化"]]
+            st.dataframe(display_df, width="stretch", hide_index=True)
+            chart_df = display_df.set_index("维度")[["先验分", "后验分"]]
+            st.bar_chart(chart_df)
+        update = packet.get("bayesian_update") or {}
+        if update:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("先验真瓶颈分", update.get("prior_true_bottleneck_score", ""))
+            c2.metric("后验真瓶颈分", update.get("posterior_true_bottleneck_score", ""))
+            c3.metric("后验概率", update.get("posterior_probability", ""))
+            evidence_updates = update.get("evidence_updates") or []
+            if evidence_updates:
+                st.dataframe(
+                    pd.DataFrame(evidence_updates)[["source", "event_type", "direction", "note", "posterior_probability"]],
+                    width="stretch",
+                    hide_index=True,
+                )
+
+
+def _render_chokepoint_scan_panel(target="", market_type="", live_packet=None, home_snapshot=None, active_packet=None):
+    st.markdown("#### 产业链瓶颈扫描")
+    st.caption("分析方法展示，不是交易指令；15 维评分和模型估值不直接改变 strategy action、次日操作图谱或真实交易链路。")
+    default_theme = st.session_state.get("command_center_chokepoint_theme") or "英伟达金刚石散热"
+    theme = st.text_input("题材输入", value=default_theme, key="command_center_chokepoint_theme")
+    if st.button("瓶颈扫描", key="btn_cc_chokepoint_scan", width="stretch"):
+        if not str(theme or "").strip():
+            st.warning("请先输入题材。")
+            return
+        status = st.status("正在执行瓶颈扫描...", expanded=True)
+        evidence_payload = _build_chokepoint_evidence_payload(
+            target=target,
+            market_type=market_type,
+            live_packet=live_packet,
+            home_snapshot=home_snapshot,
+            active_packet=active_packet,
+        )
+        prompt_packet = analysis_methods_service.build_chokepoint_prompt_packet(
+            theme,
+            evidence_payload=evidence_payload,
+            now=datetime.datetime.now(),
+        )
+        status.write("拆解题材到材料、设备、工艺、封装和认证层。")
+        raw_result = call_deepseek_non_stream(
+            prompt_packet.get("prompt") or "",
+            system_role=build_serenity_chokepoint_system_prompt({"target": target, "market_type": market_type}),
+            max_tokens=3000,
+            response_format={"type": "json_object"},
+        )
+        status.write("套入精度降级、反向伪证和 15 维贝叶斯评分。")
+        money_flow_event = {
+            "source": "money_flow_tracker",
+            "event_type": "money_flow",
+            "payload": (live_packet or {}).get("market") if isinstance(live_packet, dict) else {},
+        }
+        scan_packet = analysis_methods_service.build_chokepoint_scan_packet(
+            theme,
+            raw_llm_response=raw_result,
+            evidence_payload=evidence_payload,
+            money_flow_event=money_flow_event,
+            ticker=target or "THEME",
+            now=datetime.datetime.now(),
+        )
+        st.session_state["command_center_chokepoint_scan_packet"] = scan_packet
+        if raw_result:
+            status.update(label="瓶颈扫描完成", state="complete", expanded=False)
+        else:
+            status.update(label="瓶颈扫描已按本地规则降级生成", state="complete", expanded=False)
+
+    _render_chokepoint_scan_result(st.session_state.get("command_center_chokepoint_scan_packet") or {})
 
 # ==========================================
 # ✨ 多交易所智能识别引擎 ✨
@@ -9358,6 +9523,13 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         position_profile=position_profile,
         price_detail=page_price_detail,
         projection_packet=projection_packet,
+    )
+    _render_chokepoint_scan_panel(
+        target=target,
+        market_type=market_type,
+        live_packet=live_packet,
+        home_snapshot=home_snapshot,
+        active_packet=active_packet,
     )
     st.markdown("<div id='next_session_operation_map'></div>", unsafe_allow_html=True)
     active_anchor = st.session_state.pop("command_center_active_anchor", None)

@@ -3,7 +3,7 @@ import unittest
 
 import pandas as pd
 
-from analysis_engine import build_ai_context_payload
+from analysis_engine import build_ai_context_payload, build_serenity_chokepoint_system_prompt
 
 
 class AnalysisEnginePayloadTest(unittest.TestCase):
@@ -75,6 +75,16 @@ class AnalysisEnginePayloadTest(unittest.TestCase):
         self.assertEqual(payload["cloud_memory_context"][0]["match_level"], "ticker")
         self.assertIn("历史", payload["cloud_memory_usage_note"])
         self.assertIn("cloud_memory_context", encoded)
+
+    def test_serenity_chokepoint_system_prompt_is_defensive(self):
+        prompt = build_serenity_chokepoint_system_prompt({"target": "四方达"})
+
+        self.assertIn("该标的当前无实质半导体散热产能支撑，属于情绪蹭热点", prompt)
+        self.assertIn("### 反向加压与伪证模块", prompt)
+        self.assertIn("Bear", prompt)
+        self.assertIn("培育钻石", prompt)
+        self.assertIn("不得写入 strategy action", prompt)
+        self.assertIn("真实交易链路", prompt)
 
 
 if __name__ == "__main__":
