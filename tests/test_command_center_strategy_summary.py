@@ -373,6 +373,55 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertNotIn("行情缺失", prompt)
         self.assertFalse(prompt_payload["deepseek_called"])
 
+    def test_deepseek_prompt_uses_a_share_fact_lineage_summary_for_all_fact_classes(self):
+        lineage_items = [
+            ("moneyflow", "资金流", "verified", "已验证", "2026-06-08", "2026-06-08T10:00:00", ["tushare.moneyflow"]),
+            ("dragon_tiger", "龙虎榜", "missing", "缺失", None, None, ["tushare.top_list", "tushare.top_inst"]),
+            ("margin", "融资融券", "cached", "使用缓存", "2026-06-07", "2026-06-08T10:01:00", ["tushare.margin_detail"]),
+            ("hard_risk", "公告/硬风险", "pending", "待验证", None, "2026-06-08T10:02:00", ["tushare.anns_d"]),
+            ("limit_emotion", "涨跌停/情绪", "blocked", "阻断", "2026-06-08", "2026-06-08T10:03:00", ["tushare.stk_limit"]),
+            ("chip_radar", "筹码/胜率", "stale", "缓存过期", "2026-06-06", "2026-06-08T10:04:00", ["tushare.cyq_perf"]),
+            ("volume_amount", "成交额/成交量", "verified", "已验证", "2026-06-08", "2026-06-08T10:05:00", ["tushare.daily", "tushare.daily_basic"]),
+        ]
+        prompt_payload = summary.build_command_center_deepseek_explanation_prompt(
+            target="002008.SZ",
+            market_badge="A股",
+            price=127.87,
+            position_profile={"ticker": "002008.SZ", "margin_ratio_pct": 30},
+            home_snapshot={
+                "holding_action": {"ticker": "002008.SZ", "cost": 98, "shares": 3000, "current_price": 127.87},
+                "today_action": {"overall_action": "只观察", "margin_mode": "不新增融资"},
+                "a_share_fact_lineage_summary": {
+                    "schema_version": "a_share_fact_lineage_summary.v1",
+                    "items": [
+                        {
+                            "fact_key": key,
+                            "fact_name": name,
+                            "status": status,
+                            "status_label": label,
+                            "data_date": data_date,
+                            "local_fetched_at": fetched_at,
+                            "source_interfaces": interfaces,
+                            "enters_core_action": False,
+                        }
+                        for key, name, status, label, data_date, fetched_at, interfaces in lineage_items
+                    ],
+                    "boundary_note": "A 股事实用于证据链、风险解释和路径置信度说明，不直接覆盖核心交易 action，除非现有策略算法已经显式使用。",
+                    "deepseek_called": False,
+                },
+            },
+        )
+
+        prompt = prompt_payload["prompt"]
+        for label in ("资金流", "龙虎榜", "融资融券", "公告/硬风险", "涨跌停/情绪", "筹码/胜率", "成交额/成交量"):
+            self.assertIn(label, prompt)
+        self.assertIn("数据日期", prompt)
+        self.assertIn("本地拉取时间", prompt)
+        self.assertIn("进入核心 action=否", prompt)
+        self.assertIn("不直接覆盖核心交易 action", prompt)
+        self.assertIn("tushare.daily_basic", prompt)
+        self.assertFalse(prompt_payload["deepseek_called"])
+
     def test_a_share_market_guidance_mentions_money_flow_ma_and_announcements(self):
         view_model = summary.build_strategy_summary_view_model(
             {"status": "ready", "action": "只观察"},

@@ -130,7 +130,7 @@ def _remove_deepseek_status_text(value: Any) -> str:
     return "；".join(parts)
 
 
-A_SHARE_FACT_LABELS = ("资金流", "龙虎榜", "融资融券", "公告/硬风险")
+A_SHARE_FACT_LABELS = ("资金流", "龙虎榜", "融资融券", "公告/硬风险", "涨跌停/情绪", "筹码/胜率", "成交额/成交量")
 
 
 def _clean_data_gap_text(value: Any, *, current_price_available: bool = False) -> str:
@@ -174,6 +174,75 @@ def _a_share_professional_fact_lines(snapshot: Mapping[str, Any], risk_alerts: M
         if label not in state_by_label and label in gaps_text:
             state_by_label[label] = "待验证/缺失"
     return [f"{label}：{state_by_label.get(label, '待验证')}" for label in A_SHARE_FACT_LABELS]
+
+
+def _bool_text(value: Any) -> str:
+    return "是" if bool(value) else "否"
+
+
+def _a_share_fact_lineage_lines(summary: Any = None) -> list[str]:
+    lineage = _as_mapping(summary)
+    result: list[str] = []
+    for raw in _as_list(lineage.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        fact_name = _to_text(item.get("fact_name") or item.get("fact_key"), "A股事实")
+        status = _to_text(item.get("status_label") or item.get("status"), "待验证")
+        data_date = _to_text(item.get("data_date"), "无可靠外部日期")
+        fetched_at = _to_text(item.get("local_fetched_at"), "无本地拉取时间")
+        interfaces = "、".join(_to_text(value) for value in _as_list(item.get("source_interfaces")) if _to_text(value))
+        result.append(
+            f"{fact_name}：状态={status}；数据日期={data_date}；本地拉取时间={fetched_at}；"
+            f"接口={interfaces or '未确认'}；进入核心 action={_bool_text(item.get('enters_core_action'))}"
+        )
+    return result
+
+
+def _lineage_validation_tone(status: Any) -> str:
+    raw = _to_text(status).lower()
+    if raw == "verified":
+        return "success"
+    if raw in {"cached", "stale", "pending"}:
+        return "warning"
+    if raw in {"blocked", "missing"}:
+        return "danger"
+    return "muted"
+
+
+def build_strategy_a_share_fact_lineage_validation_items(a_share_fact_lineage_summary: Any = None) -> list[dict]:
+    summary = _as_mapping(a_share_fact_lineage_summary)
+    items = []
+    for raw in _as_list(summary.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        fact_name = _to_text(item.get("fact_name") or item.get("fact_key"), "A股事实")
+        status = _to_text(item.get("status"))
+        data_date = _to_text(item.get("data_date"), "无可靠外部日期")
+        fetched_at = _to_text(item.get("local_fetched_at"), "无本地拉取时间")
+        items.append(
+            {
+                "key": f"a_share_fact_lineage_{_to_text(item.get('fact_key'), 'fact')}",
+                "label": fact_name,
+                "priority": 2,
+                "evidence_state": status or "pending",
+                "evidence_label": _to_text(item.get("status_label"), "待验证"),
+                "tone": _lineage_validation_tone(status),
+                "check_text": (
+                    f"数据日期：{data_date}；本地拉取：{fetched_at}；"
+                    f"进入核心 action：{_bool_text(item.get('enters_core_action'))}。{_to_text(item.get('usage_note'))}"
+                ),
+                "action_hint": "按状态复核；未验证事实不得升级为买入或加杠杆依据。",
+                "deepseek_called": False,
+            }
+        )
+    return items
+
+
+def build_strategy_a_share_fact_lineage_summary(a_share_fact_lineage_summary: Any = None) -> str:
+    summary = _as_mapping(a_share_fact_lineage_summary)
+    return _to_text(summary.get("summary"))
 
 
 def _projection_lineage_lines(projection: Mapping[str, Any]) -> list[str]:
@@ -305,7 +374,14 @@ def build_command_center_deepseek_explanation_prompt(
         if current_price_available
         else "行情数据：当前价缺失/待刷新"
     )
-    a_share_fact_lines = _a_share_professional_fact_lines(snapshot, risk_alerts)
+    a_share_fact_lineage_summary = _as_mapping(snapshot.get("a_share_fact_lineage_summary"))
+    a_share_fact_lines = _a_share_fact_lineage_lines(a_share_fact_lineage_summary)
+    if not a_share_fact_lines:
+        a_share_fact_lines = _a_share_professional_fact_lines(snapshot, risk_alerts)
+    fact_boundary_note = _to_text(
+        a_share_fact_lineage_summary.get("boundary_note"),
+        "A 股事实用于证据链、风险解释和路径置信度说明，不直接覆盖核心交易 action，除非现有策略算法已经显式使用。",
+    )
     projection_lineage = _projection_lineage_lines(projection)
 
     add_condition = _to_text(strategy.get("add_condition") or holding.get("add_condition"), "等待数据补齐且规则条件满足后再评估。")
@@ -324,6 +400,7 @@ def build_command_center_deepseek_explanation_prompt(
 - 即使融资比例为 0%，也必须明确写出“用户输入融资比例 0%”，不要改写成其他比例。
 - 数据缺口只描述交易数据缺口；不要把“DeepSeek 未调用”写成数据缺口，因为当前就是手动解释调用。
 - 必须区分“行情数据”和“A股专业事实”：如果当前价有值，不得笼统写数据源整体不可用或行情未取到；应写“行情已刷新，但资金流/龙虎榜/融资融券/公告等事实仍待验证”。
+- {fact_boundary_note}
 - {build_deepseek_safety_prompt_clause()}
 
 用户口径结构化摘要：
@@ -337,7 +414,7 @@ def build_command_center_deepseek_explanation_prompt(
 下一票 Top3：{'；'.join(next_lines)}
 ETF/融资执行清单：{'；'.join(etf_lines)}
 未来趋势路径：{'；'.join(projection_lines)}
-数据血缘：{quote_line}；A股专业事实：{'；'.join(a_share_fact_lines)}；{'；'.join(projection_lineage)}
+数据血缘：{quote_line}；A股专业事实：{'；'.join(a_share_fact_lines)}；{fact_boundary_note}；{'；'.join(projection_lineage)}
 刷新步骤摘要：{'；'.join(refresh_lines) if refresh_lines else '暂无刷新步骤'}
 数据缺口/缓存/失败：{'；'.join(data_gap_lines)}
 """
@@ -1512,6 +1589,7 @@ def build_strategy_evidence_validation_items(
     data_health_ledger: Any = None,
     market_type: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    a_share_fact_lineage_summary: Any = None,
     latest_recovery_result_notice: Any = None,
     recovery_result_timeline: Any = None,
 ) -> list[dict]:
@@ -1532,6 +1610,7 @@ def build_strategy_evidence_validation_items(
             }
         )
     items.extend(build_strategy_a_share_fact_recovery_validation_items(a_share_fact_recovery_summary))
+    items.extend(build_strategy_a_share_fact_lineage_validation_items(a_share_fact_lineage_summary))
     items.extend(build_strategy_latest_recovery_validation_items(latest_recovery_result_notice))
     items.extend(build_strategy_recovery_timeline_validation_items(recovery_result_timeline))
     queue = evidence.get("decision_evidence_queue") or []
@@ -1633,6 +1712,7 @@ def build_strategy_summary_view_model(
     a_share_data_console: Any = None,
     data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    a_share_fact_lineage_summary: Any = None,
     latest_recovery_result_notice: Any = None,
     recovery_result_timeline: Any = None,
     surface: str = "full",
@@ -1650,11 +1730,13 @@ def build_strategy_summary_view_model(
         data_health_ledger=data_health_ledger,
         market_type=market_type,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
+        a_share_fact_lineage_summary=a_share_fact_lineage_summary,
         latest_recovery_result_notice=latest_recovery_result_notice,
         recovery_result_timeline=recovery_result_timeline,
     )
     a_share_data_validation_summary = build_strategy_a_share_data_validation_summary(a_share_data_console)
     a_share_fact_recovery_validation_summary = build_strategy_a_share_fact_recovery_summary(a_share_fact_recovery_summary)
+    a_share_fact_lineage_validation_summary = build_strategy_a_share_fact_lineage_summary(a_share_fact_lineage_summary)
     latest_recovery_validation_summary = build_strategy_latest_recovery_summary(latest_recovery_result_notice)
     recovery_timeline_validation_summary = build_strategy_recovery_timeline_summary(recovery_result_timeline)
     evidence_radar_card = _as_mapping(_as_mapping(evidence_radar_packet).get("radar_card"))
@@ -1697,6 +1779,7 @@ def build_strategy_summary_view_model(
         "evidence_validation_summary": _to_text(_as_mapping(evidence_radar_packet).get("decision_summary")) or "支持 0｜阻断 0｜缓存 0｜缺失 0",
         "a_share_data_validation_summary": a_share_data_validation_summary,
         "a_share_fact_recovery_validation_summary": a_share_fact_recovery_validation_summary,
+        "a_share_fact_lineage_validation_summary": a_share_fact_lineage_validation_summary,
         "latest_recovery_validation_summary": latest_recovery_validation_summary,
         "recovery_timeline_validation_summary": recovery_timeline_validation_summary,
         "risk_label": _to_text(_as_mapping(payload.get("risk_budget")).get("risk_level")) or "未知",
@@ -1749,6 +1832,7 @@ def build_strategy_summary_view_model(
                 "evidence_validation_summary": "执行条件已压缩为首页交易视图",
                 "a_share_data_validation_summary": "",
                 "a_share_fact_recovery_validation_summary": "",
+                "a_share_fact_lineage_validation_summary": "",
                 "latest_recovery_validation_summary": "",
                 "recovery_timeline_validation_summary": "",
                 "data_status_items": _home_compact_data_status_items(view_model.get("data_status_items")),

@@ -715,6 +715,37 @@ class CommandCenterDecisionSummaryTests(unittest.TestCase):
         self.assertEqual(view_model["evidence_chain_items"][0]["value"], "市场类型待确认")
         json.dumps(view_model["evidence_chain_items"], ensure_ascii=False)
 
+    def test_decision_view_model_includes_a_share_fact_lineage_basis(self):
+        view_model = summary.build_decision_summary_view_model(
+            {"overall_action": "只观察", "risk_level": "中"},
+            analysis_method_packet={"market": "A股"},
+            a_share_fact_lineage_summary={
+                "summary": "已验证 1｜阻断 1｜缓存 0｜过期 0｜缺失 0｜待验证 0",
+                "items": [
+                    {
+                        "fact_key": "moneyflow",
+                        "fact_name": "资金流",
+                        "status": "verified",
+                        "status_label": "已验证",
+                        "data_date": "2026-06-08",
+                        "local_fetched_at": "2026-06-08T10:00:00",
+                        "source_interfaces": ["tushare.moneyflow"],
+                        "enters_core_action": False,
+                        "usage_note": "进入证据链/风险解释，不直接覆盖核心交易 action。",
+                    }
+                ],
+                "boundary_note": "A股事实只进入解释，不直接覆盖核心交易 action。",
+            },
+        )
+
+        basis = view_model["a_share_fact_lineage_basis_item"]
+        detail = view_model["a_share_fact_lineage_detail_items"][0]
+        self.assertEqual(basis["label"], "A股事实血缘")
+        self.assertIn("已验证 1", basis["value"])
+        self.assertEqual(detail["label"], "资金流")
+        self.assertIn("数据日期：2026-06-08", detail["summary"])
+        self.assertFalse(detail["enters_core_action"])
+
     def test_home_compact_surface_hides_internal_diagnostics_but_keeps_trade_decision(self):
         view_model = summary.build_decision_summary_view_model(
             {

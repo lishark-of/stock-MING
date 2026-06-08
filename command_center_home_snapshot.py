@@ -953,6 +953,10 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
     snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
+    snapshot["a_share_fact_lineage_summary"] = evidence_summary_service.build_a_share_fact_lineage_summary(
+        snapshot,
+        snapshot["command_center_evidence_radar_packet"],
+    )
     snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
     snapshot["data_health_visibility_summary"] = data_health_ledger_service.build_data_health_visibility_summary(
         snapshot["data_health_ledger"]
@@ -1086,6 +1090,10 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
     snapshot["old_workspace_data_absence_ledger"] = build_old_workspace_data_absence_ledger(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
+    snapshot["a_share_fact_lineage_summary"] = evidence_summary_service.build_a_share_fact_lineage_summary(
+        snapshot,
+        snapshot["command_center_evidence_radar_packet"],
+    )
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["next_ticket_evidence_recovery_actions"] = build_next_ticket_evidence_recovery_actions_snapshot(snapshot)
@@ -7764,6 +7772,10 @@ def build_home_action_snapshot(
         empty["home_data_issue_brief"] = build_home_data_issue_brief(empty)
         empty["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(empty)
         empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
+        empty["a_share_fact_lineage_summary"] = evidence_summary_service.build_a_share_fact_lineage_summary(
+            empty,
+            empty["command_center_evidence_radar_packet"],
+        )
         empty["risk_alerts"] = attach_legacy_decision_chain_risk_alerts(
             empty.get("risk_alerts") or {},
             empty.get("legacy_decision_chain_summary") or {},
@@ -7805,6 +7817,10 @@ def build_home_action_snapshot(
     snapshot["home_data_issue_brief"] = build_home_data_issue_brief(snapshot)
     snapshot["a_share_evidence_packet"] = evidence_summary_service.build_a_share_evidence_radar_view_model(snapshot)
     snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
+    snapshot["a_share_fact_lineage_summary"] = evidence_summary_service.build_a_share_fact_lineage_summary(
+        snapshot,
+        snapshot["command_center_evidence_radar_packet"],
+    )
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["next_ticket_evidence_recovery_actions"] = build_next_ticket_evidence_recovery_actions_snapshot(snapshot)

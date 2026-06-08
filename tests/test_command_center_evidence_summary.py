@@ -104,6 +104,94 @@ class CommandCenterEvidenceSummaryTests(unittest.TestCase):
         self.assertIn("缓存只能防白屏", groups["cached"]["summary"])
         self.assertFalse(any(item["deepseek_called"] for item in groups.values()))
 
+    def test_a_share_fact_lineage_verified_moneyflow_uses_packet_dates(self):
+        snapshot = {
+            "moneyflow_packet": {
+                "status": "ready",
+                "data_status": "ready",
+                "date": "2026-06-08",
+                "updated_at": "2026-06-08T10:15:00",
+                "flow_state": "主力净流入",
+            }
+        }
+        evidence = evidence_summary.build_a_share_evidence_radar_view_model(snapshot)
+        lineage = evidence_summary.build_a_share_fact_lineage_summary(snapshot, evidence)
+        by_key = {item["fact_key"]: item for item in lineage["items"]}
+
+        self.assertEqual(by_key["moneyflow"]["status"], "verified")
+        self.assertEqual(by_key["moneyflow"]["data_date"], "2026-06-08")
+        self.assertEqual(by_key["moneyflow"]["local_fetched_at"], "2026-06-08T10:15:00")
+        self.assertFalse(by_key["moneyflow"]["enters_core_action"])
+        self.assertIn("tushare.moneyflow", by_key["moneyflow"]["source_interfaces"])
+        self.assertFalse(lineage["deepseek_called"])
+
+    def test_a_share_fact_lineage_evidence_blocker_overrides_ready_packet(self):
+        snapshot = {
+            "moneyflow_packet": {
+                "status": "ready",
+                "data_status": "ready",
+                "date": "2026-06-08",
+                "updated_at": "2026-06-08T10:15:00",
+            }
+        }
+        lineage = evidence_summary.build_a_share_fact_lineage_summary(
+            snapshot,
+            {
+                "items": [
+                    {
+                        "key": "moneyflow",
+                        "label": "资金流",
+                        "status": "failed",
+                        "data_status": "missing",
+                        "evidence_state": "blocked",
+                    }
+                ]
+            },
+        )
+        moneyflow = {item["fact_key"]: item for item in lineage["items"]}["moneyflow"]
+
+        self.assertEqual(moneyflow["status"], "blocked")
+        self.assertNotEqual(moneyflow["status"], "verified")
+        self.assertIn("不能当作已验证事实", moneyflow["usage_note"])
+
+    def test_a_share_fact_lineage_outputs_missing_placeholder_for_absent_chip_packet(self):
+        lineage = evidence_summary.build_a_share_fact_lineage_summary({})
+        chip = {item["fact_key"]: item for item in lineage["items"]}["chip_radar"]
+
+        self.assertIn(chip["status"], {"missing", "pending"})
+        self.assertIsNone(chip["data_date"])
+        self.assertIsNone(chip["local_fetched_at"])
+        self.assertEqual(chip["source_packet"], "command_center_chip_packet")
+
+    def test_a_share_fact_lineage_hard_risk_does_not_use_updated_at_as_data_date(self):
+        lineage = evidence_summary.build_a_share_fact_lineage_summary(
+            {
+                "hard_risk_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "updated_at": "2026-06-08T16:33:13",
+                    "risk_items": [
+                        {
+                            "type": "公告",
+                            "message": "公告线索",
+                            "date": "2026-06-08T16:33:12",
+                            "ann_date": "",
+                        },
+                        {
+                            "type": "质押",
+                            "message": "质押统计",
+                            "date": "20260605",
+                        },
+                    ],
+                }
+            }
+        )
+        hard_risk = {item["fact_key"]: item for item in lineage["items"]}["hard_risk"]
+
+        self.assertEqual(hard_risk["status"], "verified")
+        self.assertEqual(hard_risk["data_date"], "20260605")
+        self.assertEqual(hard_risk["local_fetched_at"], "2026-06-08T16:33:13")
+
     def test_radar_card_marks_cached_or_missing_as_cautious_validation(self):
         vm = evidence_summary.build_a_share_evidence_radar_view_model(
             {

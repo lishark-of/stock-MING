@@ -4483,6 +4483,11 @@ def render_command_center_decision_card(
         if isinstance(home_snapshot, dict)
         else {}
     ) or {}
+    a_share_fact_lineage_summary = (
+        home_snapshot.get("a_share_fact_lineage_summary")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or {}
     data_health_ledger = (
         home_snapshot.get("data_health_ledger")
         if isinstance(home_snapshot, dict)
@@ -4530,6 +4535,7 @@ def render_command_center_decision_card(
             if isinstance(home_snapshot, dict)
             else {}
         ),
+        a_share_fact_lineage_summary=a_share_fact_lineage_summary,
         surface="home_compact" if home_compact else "full",
     )
     render_command_center_decision_hero(packet, decision_view_model=decision_vm)
@@ -4601,6 +4607,11 @@ def render_strategy_execution_card(
         if isinstance(home_snapshot, dict)
         else {}
     ) or {}
+    a_share_fact_lineage_summary = (
+        home_snapshot.get("a_share_fact_lineage_summary")
+        if isinstance(home_snapshot, dict)
+        else {}
+    ) or {}
     data_health_ledger = (
         home_snapshot.get("data_health_ledger")
         if isinstance(home_snapshot, dict)
@@ -4625,6 +4636,7 @@ def render_strategy_execution_card(
         a_share_data_console=a_share_data_console,
         data_health_ledger=data_health_ledger,
         a_share_fact_recovery_summary=a_share_fact_recovery_summary,
+        a_share_fact_lineage_summary=a_share_fact_lineage_summary,
         latest_recovery_result_notice=latest_recovery_result_notice,
         recovery_result_timeline=recovery_result_timeline,
         surface="home_compact" if home_compact else "full",
@@ -8310,6 +8322,11 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     evidence_radar_vm = active_packet.get("evidence_radar_packet")
     evidence_radar_vm = evidence_radar_vm or evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
     st.session_state["command_center_evidence_radar_packet"] = evidence_radar_vm
+    if isinstance(home_snapshot, dict) and not home_snapshot.get("a_share_fact_lineage_summary"):
+        home_snapshot["a_share_fact_lineage_summary"] = evidence_summary_service.build_a_share_fact_lineage_summary(
+            home_snapshot,
+            evidence_radar_vm,
+        )
     analysis_method_packet = active_packet.get("analysis_method_packet")
     analysis_method_packet = analysis_method_packet or _build_analysis_methods_display_packet(
         live_packet=live_packet,
@@ -8327,6 +8344,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_vm,
         data_health_ledger=home_snapshot.get("data_health_ledger") if isinstance(home_snapshot, dict) else {},
+        a_share_fact_lineage_summary=home_snapshot.get("a_share_fact_lineage_summary") if isinstance(home_snapshot, dict) else {},
         horizon_days=10,
     )
     st.session_state["command_center_projection_packet"] = projection_packet
@@ -8637,6 +8655,11 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     )
     evidence_radar_vm = evidence_summary_service.build_a_share_evidence_radar_view_model(home_snapshot)
     st.session_state["command_center_evidence_radar_packet"] = evidence_radar_vm
+    if isinstance(home_snapshot, dict) and not home_snapshot.get("a_share_fact_lineage_summary"):
+        home_snapshot["a_share_fact_lineage_summary"] = evidence_summary_service.build_a_share_fact_lineage_summary(
+            home_snapshot,
+            evidence_radar_vm,
+        )
     with home_evidence_recovery_slot.container():
         render_home_evidence_backfill_controls(
             evidence_radar_vm,
@@ -8661,6 +8684,7 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         analysis_method_packet=analysis_method_packet,
         evidence_radar_packet=evidence_radar_vm,
         data_health_ledger=home_snapshot.get("data_health_ledger") if isinstance(home_snapshot, dict) else {},
+        a_share_fact_lineage_summary=home_snapshot.get("a_share_fact_lineage_summary") if isinstance(home_snapshot, dict) else {},
         horizon_days=10,
     )
     st.session_state["command_center_projection_packet"] = projection_packet

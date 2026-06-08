@@ -70,6 +70,30 @@ class StrategyExecutionServiceTests(unittest.TestCase):
         self.assertFalse(trace["deepseek_used"])
         self.assertIn("资金/龙虎榜/融资融券", trace["missing_inputs"])
 
+    def test_a_share_fact_lineage_trace_does_not_change_action(self):
+        base_state = {
+            "legacy_quant_result": {"status": "completed", "score": 68, "direction": "偏积极但需验证"},
+            "last_backtest_report": _base_report(),
+            "command_center_live_packet": {"conclusion": {"summary": "基础数据已刷新"}},
+        }
+        with_lineage = {
+            **base_state,
+            "a_share_fact_lineage_summary": {
+                "summary": "已验证 1｜阻断 1｜缓存 0｜过期 0｜缺失 0｜待验证 0",
+                "items": [
+                    {"fact_key": "moneyflow", "fact_name": "资金流", "status": "verified"},
+                    {"fact_key": "dragon_tiger", "fact_name": "龙虎榜", "status": "blocked"},
+                ],
+            },
+        }
+
+        before = service.build_strategy_execution_packet(base_state, target="002008.SZ")
+        after = service.build_strategy_execution_packet(with_lineage, target="002008.SZ")
+
+        self.assertEqual(before["action"], after["action"])
+        self.assertIn("A股事实血缘", [item["name"] for item in after["strategy_execution_trace"]["input_sources"]])
+        self.assertFalse(after["deepseek_called"])
+
     def test_reduce_or_sell_signal_outputs_reduce_risk(self):
         state = {
             "legacy_quant_result": {"status": "completed", "score": 70, "direction": "偏积极"},

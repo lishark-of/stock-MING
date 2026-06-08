@@ -124,6 +124,136 @@ CORE_EVIDENCE_GUARDRAILS = {
 }
 
 
+FACT_LINEAGE_DEFS = (
+    {
+        "fact_key": "moneyflow",
+        "fact_name": "资金流",
+        "source_packet": "command_center_moneyflow_packet",
+        "packet_keys": ("moneyflow_packet", "command_center_moneyflow_packet"),
+        "source_interfaces": ("tushare.moneyflow",),
+        "data_date_keys": ("date", "trade_date"),
+        "local_fetched_at_keys": ("updated_at", "checked_at", "generated_at"),
+        "enters_decision_explanation": True,
+        "enters_strategy_trace": True,
+        "enters_core_action": False,
+        "enters_projection": True,
+        "enters_deepseek_prompt": True,
+    },
+    {
+        "fact_key": "dragon_tiger",
+        "fact_name": "龙虎榜",
+        "source_packet": "command_center_dragon_tiger_packet",
+        "packet_keys": ("dragon_tiger_packet", "command_center_dragon_tiger_packet"),
+        "source_interfaces": ("tushare.top_list", "tushare.top_inst"),
+        "data_date_keys": ("latest_date", "date", "trade_date"),
+        "local_fetched_at_keys": ("updated_at", "checked_at", "generated_at"),
+        "enters_decision_explanation": True,
+        "enters_strategy_trace": True,
+        "enters_core_action": False,
+        "enters_projection": True,
+        "enters_deepseek_prompt": True,
+    },
+    {
+        "fact_key": "margin",
+        "fact_name": "融资融券",
+        "source_packet": "command_center_margin_packet",
+        "packet_keys": ("margin_packet", "command_center_margin_packet"),
+        "source_interfaces": ("tushare.margin_detail",),
+        "data_date_keys": ("date", "trade_date"),
+        "local_fetched_at_keys": ("updated_at", "checked_at", "generated_at"),
+        "enters_decision_explanation": True,
+        "enters_strategy_trace": True,
+        "enters_core_action": False,
+        "enters_projection": True,
+        "enters_deepseek_prompt": True,
+    },
+    {
+        "fact_key": "hard_risk",
+        "fact_name": "公告/硬风险",
+        "source_packet": "command_center_hard_risk_packet",
+        "packet_keys": ("hard_risk_packet", "command_center_hard_risk_packet"),
+        "source_interfaces": (
+            "tushare.anns_d",
+            "tushare.forecast",
+            "tushare.stk_holdertrade",
+            "tushare.share_float",
+            "tushare.pledge_stat",
+            "tushare.pledge_detail",
+            "tushare.stk_surv",
+        ),
+        "data_date_keys": ("date", "ann_date", "trade_date", "end_date", "float_date", "surv_date"),
+        "local_fetched_at_keys": ("updated_at", "checked_at", "generated_at"),
+        "enters_decision_explanation": True,
+        "enters_strategy_trace": True,
+        "enters_core_action": False,
+        "enters_projection": True,
+        "enters_deepseek_prompt": True,
+    },
+    {
+        "fact_key": "limit_emotion",
+        "fact_name": "涨跌停/情绪",
+        "source_packet": "command_center_limit_emotion_packet",
+        "packet_keys": ("limit_emotion_packet", "command_center_limit_emotion_packet"),
+        "source_interfaces": ("tushare.stk_limit", "tushare.limit_list_d", "tushare.limit_cpt_list"),
+        "data_date_keys": ("latest_date", "concept_date", "trade_date", "date"),
+        "local_fetched_at_keys": ("updated_at", "checked_at", "generated_at"),
+        "enters_decision_explanation": True,
+        "enters_strategy_trace": False,
+        "enters_core_action": False,
+        "enters_projection": True,
+        "enters_deepseek_prompt": True,
+    },
+    {
+        "fact_key": "chip_radar",
+        "fact_name": "筹码/胜率",
+        "source_packet": "command_center_chip_packet",
+        "packet_keys": ("chip_packet", "command_center_chip_packet"),
+        "source_interfaces": ("tushare.cyq_perf", "tushare.cyq_chips"),
+        "data_date_keys": ("trade_date", "date"),
+        "local_fetched_at_keys": ("updated_at", "checked_at", "generated_at"),
+        "enters_decision_explanation": True,
+        "enters_strategy_trace": False,
+        "enters_core_action": False,
+        "enters_projection": True,
+        "enters_deepseek_prompt": True,
+    },
+    {
+        "fact_key": "volume_amount",
+        "fact_name": "成交额/成交量",
+        "source_packet": "verified_technical_facts",
+        "packet_keys": ("verified_technical_facts", "technical_snapshot", "market_packet", "facts_packet"),
+        "source_interfaces": ("tushare.daily", "tushare.daily_basic"),
+        "data_date_keys": ("trade_date", "date", "latest_date", "asof"),
+        "local_fetched_at_keys": ("updated_at", "checked_at", "generated_at"),
+        "enters_decision_explanation": True,
+        "enters_strategy_trace": False,
+        "enters_core_action": False,
+        "enters_projection": True,
+        "enters_deepseek_prompt": True,
+    },
+)
+
+
+FACT_LINEAGE_STATUS_LABELS = {
+    "verified": "已验证",
+    "blocked": "阻断",
+    "missing": "缺失",
+    "stale": "缓存过期",
+    "cached": "使用缓存",
+    "pending": "待验证",
+}
+
+
+FACT_LINEAGE_STATUS_PRIORITY = {
+    "verified": 0,
+    "pending": 1,
+    "cached": 2,
+    "stale": 3,
+    "missing": 4,
+    "blocked": 5,
+}
+
+
 def as_mapping(value: Any) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -179,6 +309,244 @@ def _first_number(packet: Mapping[str, Any], keys: tuple[str, ...]) -> int | flo
         if number is not None:
             return number
     return None
+
+
+def _first_text_from_mapping(payload: Mapping[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        text = to_text(payload.get(key))
+        if text:
+            return text
+    return ""
+
+
+def _lineage_payload_candidates(value: Any) -> list[dict]:
+    payload = as_mapping(value)
+    if not payload:
+        return []
+    candidates = [payload]
+    for key in (
+        "items",
+        "rows",
+        "records",
+        "evidence_items",
+        "risk_items",
+        "alerts",
+        "announcements",
+        "sections",
+        "verified_technical_facts",
+        "data",
+    ):
+        raw = payload.get(key)
+        if isinstance(raw, Mapping):
+            candidates.append(as_mapping(raw))
+        for item in as_list(raw):
+            item_map = as_mapping(item)
+            if item_map:
+                candidates.append(item_map)
+                candidates.extend(_lineage_payload_candidates(item_map))
+    return candidates
+
+
+def _is_reliable_external_date_text(value: Any, *, local_fetched_at: str = "") -> bool:
+    text = to_text(value)
+    if not text or text == local_fetched_at:
+        return False
+    # External trade/announcement dates should be date-like. Local fetch timestamps
+    # such as 2026-06-08T16:33:12 must stay in local_fetched_at, not data_date.
+    if "T" in text or ":" in text:
+        return False
+    return True
+
+
+def _extract_lineage_date(payload: Mapping[str, Any], keys: tuple[str, ...], *, local_fetched_at: str = "") -> str:
+    for candidate in _lineage_payload_candidates(payload):
+        text = _first_text_from_mapping(candidate, keys)
+        if _is_reliable_external_date_text(text, local_fetched_at=local_fetched_at):
+            return text
+    return ""
+
+
+def _extract_lineage_local_fetched_at(payload: Mapping[str, Any], keys: tuple[str, ...]) -> str:
+    for candidate in _lineage_payload_candidates(payload):
+        text = _first_text_from_mapping(candidate, keys)
+        if text:
+            return text
+    return ""
+
+
+def _lineage_packet_from_snapshot(snapshot: Mapping[str, Any], packet_keys: tuple[str, ...]) -> dict:
+    for key in packet_keys:
+        payload = as_mapping(snapshot.get(key))
+        if payload:
+            return payload
+    professional = as_mapping(snapshot.get("a_share_professional_facts"))
+    for key in packet_keys:
+        payload = as_mapping(professional.get(key))
+        if payload:
+            return payload
+    verified = as_mapping(professional.get("verified_technical_facts"))
+    if verified and any(key == "verified_technical_facts" for key in packet_keys):
+        return verified
+    return {}
+
+
+def _evidence_item_by_key(evidence_radar_packet: Mapping[str, Any]) -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    for group_key in (
+        "items",
+        "decision_evidence_queue",
+        "support_items",
+        "blocker_items",
+        "cached_items",
+        "missing_items",
+    ):
+        for raw in as_list(evidence_radar_packet.get(group_key)):
+            item = as_mapping(raw)
+            key = to_text(item.get("key"))
+            if key and key not in result:
+                result[key] = item
+    return result
+
+
+def _normalize_lineage_status_from_evidence(item: Mapping[str, Any]) -> str:
+    evidence_state = to_text(item.get("evidence_state") or item.get("recovery_state")).lower()
+    status = to_text(item.get("status")).lower()
+    data_status = to_text(item.get("data_status")).lower()
+    tone = to_text(item.get("tone")).lower()
+    raw_values = {evidence_state, status, data_status, tone}
+    if raw_values & {"blocked", "failed", "danger", "permission_denied", "no_permission", "forbidden"}:
+        return "blocked"
+    if raw_values & {"missing", "empty", "unavailable"}:
+        return "missing"
+    if raw_values & {"stale", "expired"}:
+        return "stale"
+    if raw_values & {"cached", "cache"}:
+        return "cached"
+    if evidence_state == "supporting" or raw_values & {"ready", "verified", "success", "available"}:
+        return "verified"
+    if raw_values & {"waiting", "pending", "partial"}:
+        return "pending"
+    return ""
+
+
+def _normalize_lineage_status_from_packet(packet: Mapping[str, Any]) -> str:
+    if not packet:
+        return "missing"
+    status = to_text(packet.get("status")).lower()
+    data_status = to_text(packet.get("data_status")).lower()
+    tone = to_text(packet.get("tone")).lower()
+    if bool(packet.get("stale")):
+        return "stale"
+    raw_values = {status, data_status, tone}
+    if raw_values & {"blocked", "failed", "danger", "permission_denied", "no_permission", "forbidden"}:
+        return "blocked"
+    if raw_values & {"missing", "empty", "unavailable"}:
+        return "missing"
+    if raw_values & {"stale", "expired"}:
+        return "stale"
+    if raw_values & {"cached", "cache"}:
+        return "cached"
+    if raw_values & {"ready", "verified", "success", "available", "completed"}:
+        return "verified"
+    if raw_values & {"waiting", "pending", "partial"}:
+        return "pending"
+    return "pending"
+
+
+def _merge_lineage_status(*statuses: str) -> str:
+    cleaned = [status for status in statuses if status in FACT_LINEAGE_STATUS_PRIORITY]
+    if not cleaned:
+        return "pending"
+    return max(cleaned, key=lambda status: FACT_LINEAGE_STATUS_PRIORITY.get(status, 0))
+
+
+def _lineage_status_tone(status: str) -> str:
+    if status == "verified":
+        return "success"
+    if status in {"cached", "stale", "pending"}:
+        return "warning"
+    if status in {"blocked", "missing"}:
+        return "danger"
+    return "muted"
+
+
+def _lineage_usage_note(fact_name: str, status: str, enters_core_action: bool) -> str:
+    boundary = "已由现有策略算法显式使用。" if enters_core_action else "进入证据链/风险解释和路径置信度说明，不直接覆盖核心交易 action。"
+    if status != "verified":
+        return f"{fact_name}当前为{FACT_LINEAGE_STATUS_LABELS.get(status, '待验证')}，不能当作已验证事实；{boundary}"
+    return boundary
+
+
+def _build_lineage_item(
+    definition: Mapping[str, Any],
+    snapshot: Mapping[str, Any],
+    evidence_items: Mapping[str, dict],
+) -> dict:
+    fact_key = to_text(definition.get("fact_key"))
+    packet = _lineage_packet_from_snapshot(snapshot, tuple(definition.get("packet_keys") or ()))
+    evidence_status = _normalize_lineage_status_from_evidence(evidence_items.get(fact_key) or {})
+    packet_status = _normalize_lineage_status_from_packet(packet)
+    status = _merge_lineage_status(evidence_status, packet_status)
+    local_fetched_at = _extract_lineage_local_fetched_at(
+        packet,
+        tuple(definition.get("local_fetched_at_keys") or ()),
+    )
+    data_date = _extract_lineage_date(
+        packet,
+        tuple(definition.get("data_date_keys") or ()),
+        local_fetched_at=local_fetched_at,
+    )
+    enters_core_action = bool(definition.get("enters_core_action"))
+    fact_name = to_text(definition.get("fact_name"), fact_key)
+    return {
+        "fact_key": fact_key,
+        "fact_name": fact_name,
+        "status": status,
+        "status_label": FACT_LINEAGE_STATUS_LABELS.get(status, "待验证"),
+        "tone": _lineage_status_tone(status),
+        "data_date": data_date or None,
+        "local_fetched_at": local_fetched_at or None,
+        "source_interfaces": list(definition.get("source_interfaces") or []),
+        "source_packet": to_text(definition.get("source_packet")),
+        "enters_decision_explanation": bool(definition.get("enters_decision_explanation")),
+        "enters_strategy_trace": bool(definition.get("enters_strategy_trace")),
+        "enters_core_action": enters_core_action,
+        "enters_projection": bool(definition.get("enters_projection")),
+        "enters_deepseek_prompt": bool(definition.get("enters_deepseek_prompt")),
+        "usage_note": _lineage_usage_note(fact_name, status, enters_core_action),
+        "deepseek_called": False,
+    }
+
+
+def build_a_share_fact_lineage_summary(snapshot: Any = None, evidence_radar_packet: Any = None) -> dict:
+    payload = as_mapping(snapshot)
+    evidence = as_mapping(evidence_radar_packet) or as_mapping(payload.get("command_center_evidence_radar_packet")) or as_mapping(payload.get("a_share_evidence_packet"))
+    evidence_items = _evidence_item_by_key(evidence)
+    items = [_build_lineage_item(definition, payload, evidence_items) for definition in FACT_LINEAGE_DEFS]
+    counts = {key: 0 for key in FACT_LINEAGE_STATUS_LABELS}
+    for item in items:
+        status = to_text(item.get("status"))
+        if status in counts:
+            counts[status] += 1
+    updated_at = _first_text(
+        *[item.get("local_fetched_at") for item in items if item.get("local_fetched_at")],
+        payload.get("timestamp"),
+        payload.get("updated_at"),
+    )
+    summary = (
+        f"已验证 {counts['verified']}｜阻断 {counts['blocked']}｜缓存 {counts['cached']}｜"
+        f"过期 {counts['stale']}｜缺失 {counts['missing']}｜待验证 {counts['pending']}"
+    )
+    return {
+        "schema_version": "a_share_fact_lineage_summary.v1",
+        "updated_at": updated_at or None,
+        "summary": summary,
+        "items": items,
+        "counts": counts,
+        "boundary_note": "A 股事实用于证据链、风险解释和路径置信度说明，不直接覆盖核心交易 action，除非现有策略算法已经显式使用。",
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
 
 
 def _status_label(status: str, data_status: str) -> str:

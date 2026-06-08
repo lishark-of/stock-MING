@@ -4569,6 +4569,13 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertIn("已刷新", evidence["core_evidence_summary"])
         self.assertIn("command_center_moneyflow_packet", json.dumps(evidence, ensure_ascii=False))
         self.assertFalse(evidence["deepseek_called"])
+        lineage = payload["a_share_fact_lineage_summary"]
+        lineage_by_key = {item["fact_key"]: item for item in lineage["items"]}
+        self.assertEqual(lineage["schema_version"], "a_share_fact_lineage_summary.v1")
+        self.assertEqual(lineage_by_key["moneyflow"]["status"], "verified")
+        self.assertEqual(lineage_by_key["hard_risk"]["status"], "blocked")
+        self.assertFalse(lineage_by_key["moneyflow"]["enters_core_action"])
+        self.assertIn("tushare.moneyflow", lineage_by_key["moneyflow"]["source_interfaces"])
         json.dumps(payload, ensure_ascii=False)
 
     def test_home_snapshot_surfaces_limit_and_chip_evidence_summaries(self):

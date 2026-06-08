@@ -988,6 +988,89 @@ def build_legacy_decision_chain_basis_item(projection_packet: Any = None) -> dic
     }
 
 
+def _lineage_item_tone(status: Any) -> str:
+    raw = _to_text(status).lower()
+    if raw == "verified":
+        return "success"
+    if raw in {"cached", "stale", "pending"}:
+        return "warning"
+    if raw in {"blocked", "missing"}:
+        return "danger"
+    return "muted"
+
+
+def build_a_share_fact_lineage_basis_item(a_share_fact_lineage_summary: Any = None) -> dict:
+    summary = _as_mapping(a_share_fact_lineage_summary)
+    items = [_as_mapping(item) for item in _as_list(summary.get("items")) if _as_mapping(item)]
+    if not items:
+        return {}
+    counts = _as_mapping(summary.get("counts"))
+    verified = counts.get("verified")
+    blocked = counts.get("blocked")
+    missing = counts.get("missing")
+    cached = counts.get("cached")
+    pending = counts.get("pending")
+    stale = counts.get("stale")
+    value = _to_text(summary.get("summary")) or (
+        f"已验证 {verified or 0}｜阻断 {blocked or 0}｜缓存 {cached or 0}｜过期 {stale or 0}｜缺失 {missing or 0}｜待验证 {pending or 0}"
+    )
+    focus = [
+        _to_text(item.get("fact_name"))
+        for item in items
+        if _to_text(item.get("status")) in {"blocked", "missing", "stale", "cached", "pending"}
+    ][:3]
+    tone = "danger" if blocked or missing else "warning" if cached or stale or pending else "success"
+    return {
+        "label": "A股事实血缘",
+        "value": value,
+        "tone": tone,
+        "summary": (
+            f"{'、'.join([item for item in focus if item])}仍需复核；"
+            if focus
+            else ""
+        ) + (_to_text(summary.get("boundary_note")) or "A股事实只进入解释和置信度说明，不直接覆盖核心交易 action。"),
+        "detail_items": build_a_share_fact_lineage_detail_items(summary),
+        "external_call_policy": "not_triggered",
+        "deepseek_called": False,
+    }
+
+
+def build_a_share_fact_lineage_detail_items(a_share_fact_lineage_summary: Any = None) -> list[dict]:
+    summary = _as_mapping(a_share_fact_lineage_summary)
+    result: list[dict] = []
+    for raw in _as_list(summary.get("items")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        status = _to_text(item.get("status"))
+        data_date = _to_text(item.get("data_date")) or "无可靠外部日期"
+        fetched_at = _to_text(item.get("local_fetched_at")) or "无本地拉取时间"
+        interfaces = "、".join(_to_text(value) for value in _as_list(item.get("source_interfaces")) if _to_text(value))
+        result.append(
+            {
+                "label": _to_text(item.get("fact_name")) or _to_text(item.get("fact_key")) or "A股事实",
+                "value": _to_text(item.get("status_label")) or status or "待验证",
+                "tone": _lineage_item_tone(status),
+                "summary": (
+                    f"数据日期：{data_date}；本地拉取：{fetched_at}；接口：{interfaces or '未确认'}；"
+                    f"进入核心 action：{'是' if item.get('enters_core_action') else '否'}；"
+                    f"{_to_text(item.get('usage_note'))}"
+                ),
+                "data_date": item.get("data_date"),
+                "local_fetched_at": item.get("local_fetched_at"),
+                "source_interfaces": item.get("source_interfaces") or [],
+                "enters_core_action": bool(item.get("enters_core_action")),
+                "deepseek_called": False,
+            }
+        )
+    return result
+
+
+def build_a_share_fact_lineage_summary_text(a_share_fact_lineage_summary: Any = None) -> str:
+    summary = _as_mapping(a_share_fact_lineage_summary)
+    return _to_text(summary.get("summary"))
+
+
 def build_decision_evidence_chain_items(
     analysis_method_packet: Any = None,
     projection_packet: Any = None,
@@ -1001,6 +1084,7 @@ def build_decision_evidence_chain_items(
     next_ticket_candidates: Any = None,
     margin_etf_summary: Any = None,
     old_workspace_packet_bridge: Any = None,
+    a_share_fact_lineage_summary: Any = None,
 ) -> list[dict]:
     analysis = _as_mapping(analysis_method_packet)
     market = _to_text(analysis.get("market")) or "市场类型待确认"
@@ -1064,6 +1148,9 @@ def build_decision_evidence_chain_items(
     if fact_recovery_basis:
         items.append(fact_recovery_basis)
         items.extend(fact_recovery_basis.get("detail_items") or [])
+    fact_lineage_basis = build_a_share_fact_lineage_basis_item(a_share_fact_lineage_summary)
+    if fact_lineage_basis:
+        items.append(fact_lineage_basis)
     recovery_timeline_basis = build_recovery_timeline_basis_item(recovery_result_timeline)
     if recovery_timeline_basis:
         items.append(recovery_timeline_basis)
@@ -1120,6 +1207,7 @@ def build_decision_summary_view_model(
     next_ticket_candidates: Any = None,
     margin_etf_summary: Any = None,
     old_workspace_packet_bridge: Any = None,
+    a_share_fact_lineage_summary: Any = None,
     surface: str = "full",
 ) -> dict:
     payload = _as_mapping(packet)
@@ -1165,6 +1253,7 @@ def build_decision_summary_view_model(
             next_ticket_candidates=next_ticket_candidates,
             margin_etf_summary=margin_etf_summary,
             old_workspace_packet_bridge=old_workspace_packet_bridge,
+            a_share_fact_lineage_summary=a_share_fact_lineage_summary,
         ),
         "projection_confidence_summary": projection_confidence,
         "data_capability_brief_basis_item": build_data_capability_brief_basis_item(data_capability_brief),
@@ -1180,6 +1269,9 @@ def build_decision_summary_view_model(
         "a_share_fact_recovery_basis_item": build_a_share_fact_recovery_basis_item(a_share_fact_recovery_summary),
         "a_share_fact_recovery_detail_items": build_a_share_fact_recovery_detail_items(a_share_fact_recovery_summary),
         "a_share_fact_recovery_summary_text": build_a_share_fact_recovery_summary_text(a_share_fact_recovery_summary),
+        "a_share_fact_lineage_basis_item": build_a_share_fact_lineage_basis_item(a_share_fact_lineage_summary),
+        "a_share_fact_lineage_detail_items": build_a_share_fact_lineage_detail_items(a_share_fact_lineage_summary),
+        "a_share_fact_lineage_summary_text": build_a_share_fact_lineage_summary_text(a_share_fact_lineage_summary),
         "latest_recovery_result_basis_item": build_latest_recovery_result_basis_item(latest_recovery_result_notice),
         "latest_recovery_result_summary_text": build_latest_recovery_result_summary_text(latest_recovery_result_notice),
         "recovery_timeline_basis_item": build_recovery_timeline_basis_item(recovery_result_timeline),

@@ -865,6 +865,36 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertLessEqual(enhanced["paths"][1]["points"][-1]["value"], enhanced["base_value"] * 1.18)
         self.assertGreaterEqual(enhanced["paths"][2]["points"][-1]["value"], enhanced["base_value"] * 0.82)
 
+    def test_projection_consumes_a_share_fact_lineage_without_changing_curve_algorithm(self):
+        base_packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "只观察", "confidence": "中"},
+            live_packet={"market": {"current_price": 100}},
+            analysis_method_packet={"market": "A股"},
+            now="2026-06-01T10:00:00",
+        )
+        lineage_packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T10:00:00"},
+            strategy_packet={"action": "只观察", "confidence": "中"},
+            live_packet={"market": {"current_price": 100}},
+            analysis_method_packet={"market": "A股"},
+            a_share_fact_lineage_summary={
+                "summary": "已验证 1｜阻断 1｜缓存 0｜过期 0｜缺失 0｜待验证 0",
+                "items": [
+                    {"fact_key": "moneyflow", "fact_name": "资金流", "status": "verified"},
+                    {"fact_key": "dragon_tiger", "fact_name": "龙虎榜", "status": "blocked"},
+                ],
+                "boundary_note": "A股事实只说明证据链、风险解释和路径置信度，不直接生成价格曲线。",
+            },
+            now="2026-06-01T10:00:00",
+        )
+
+        self.assertEqual(base_packet["paths"][0]["points"], lineage_packet["paths"][0]["points"])
+        self.assertEqual(lineage_packet["path_fact_lineage_status"], "blocked")
+        self.assertIn("龙虎榜", "".join(lineage_packet["lineage_gaps"]))
+        self.assertIn("A股事实", lineage_packet["path_basis"])
+        self.assertIn("a_share_fact_lineage_summary", lineage_packet["future_data_lineage"]["inputs"])
+
     def test_forbidden_imports_are_absent(self):
         tree = ast.parse(Path("command_center_projection.py").read_text())
         imports = []

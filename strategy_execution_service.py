@@ -188,6 +188,19 @@ def _build_strategy_execution_trace(
     dragon_tiger = state.get("command_center_dragon_tiger_packet") or state.get("dragon_tiger_packet") or {}
     margin = state.get("command_center_margin_packet") or state.get("margin_packet") or {}
     hard_risk = state.get("command_center_hard_risk_packet") or state.get("hard_risk_packet") or {}
+    fact_lineage = state.get("a_share_fact_lineage_summary") or home_snapshot.get("a_share_fact_lineage_summary") or {}
+    fact_lineage_items = fact_lineage.get("items") if isinstance(fact_lineage, dict) else []
+    fact_lineage_has_verified = any(
+        isinstance(item, dict) and item.get("status") == "verified"
+        for item in (fact_lineage_items or [])
+    )
+    fact_lineage_status = (
+        "ready"
+        if fact_lineage_has_verified
+        else "cached"
+        if any(isinstance(item, dict) and item.get("status") == "cached" for item in (fact_lineage_items or []))
+        else "missing"
+    )
     position_ready = bool(profile and any(profile.get(key) not in (None, "", [], {}) for key in ("ticker", "shares", "holding_units", "cost_price", "current_price", "normalized_position_state")))
     live_status = _trace_status(live, ("conclusion", "quant", "discipline"))
     decision_status = _trace_status(decision, ("overall_action", "status"))
@@ -205,6 +218,12 @@ def _build_strategy_execution_trace(
         _trace_item("Home Snapshot", home_status, home_status in {"ready", "cached"}, "首页快照用于回填持仓、风险、ETF 和候选状态。" if home_status != "missing" else "首页快照尚未生成。"),
         _trace_item("资金/龙虎榜/融资融券", _trace_status({"moneyflow": moneyflow, "dragon_tiger": dragon_tiger, "margin": margin}, ("moneyflow", "dragon_tiger", "margin")), any(bool(item) for item in (moneyflow, dragon_tiger, margin)), "A股资金、龙虎榜和融资融券只作为待验证辅助证据。"),
         _trace_item("公告/硬风险", _trace_status(hard_risk, ("alerts", "items", "summary", "status")), bool(hard_risk), "公告/硬风险未排除前，不支持放大仓位。"),
+        _trace_item(
+            "A股事实血缘",
+            fact_lineage_status,
+            bool(fact_lineage_items),
+            fact_lineage.get("summary") if isinstance(fact_lineage, dict) else "A股事实血缘待生成；未验证事实不进入加仓依据。",
+        ),
     ]
     missing_inputs = [
         item["name"]

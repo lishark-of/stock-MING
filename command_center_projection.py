@@ -1674,6 +1674,83 @@ def _merge_a_share_fact_recovery_guidance(
     return guided_paths, f"A股事实回流：{recovery['summary']}", recovery["items"], recovery["tone"], detail_items
 
 
+def _a_share_fact_lineage_guidance(a_share_fact_lineage_summary: Any) -> dict:
+    summary = _as_mapping(a_share_fact_lineage_summary)
+    items = [_as_mapping(item) for item in _as_list(summary.get("items")) if _as_mapping(item)]
+    if not items:
+        return {}
+    verified = [item for item in items if _to_text(item.get("status")) == "verified"]
+    blocked = [item for item in items if _to_text(item.get("status")) in {"blocked", "missing"}]
+    pending = [item for item in items if _to_text(item.get("status")) in {"cached", "stale", "pending"}]
+    blocker_names = "、".join(_to_text(item.get("fact_name")) for item in blocked[:3] if _to_text(item.get("fact_name")))
+    pending_names = "、".join(_to_text(item.get("fact_name")) for item in pending[:3] if _to_text(item.get("fact_name")))
+    verified_names = "、".join(_to_text(item.get("fact_name")) for item in verified[:3] if _to_text(item.get("fact_name")))
+    if blocked:
+        status = "blocked"
+        tone = "danger"
+        summary_text = f"阻断/缺失：{blocker_names or 'A股事实'}"
+        gap = f"{blocker_names or 'A股事实'} 不可作为已验证依据，乐观路径需要压制。"
+    elif pending:
+        status = "partial"
+        tone = "warning"
+        summary_text = f"待验证/缓存：{pending_names or 'A股事实'}"
+        gap = f"{pending_names or 'A股事实'} 仍待验证，路径置信度维持中低。"
+    else:
+        status = "ready"
+        tone = "success"
+        summary_text = f"已验证：{verified_names or 'A股事实'}"
+        gap = ""
+    return {
+        "status": status,
+        "tone": tone,
+        "summary": _to_text(summary.get("summary")) or summary_text,
+        "items": items,
+        "gap": gap,
+        "boundary_note": _to_text(
+            summary.get("boundary_note"),
+            "A股事实只说明证据链、风险解释和路径置信度，不直接生成价格曲线。",
+        ),
+        "verified_count": len(verified),
+        "blocked_count": len(blocked),
+        "pending_count": len(pending),
+    }
+
+
+def _merge_a_share_fact_lineage_guidance(
+    paths: list[dict],
+    a_share_fact_lineage_summary: Any,
+    market_type: str,
+) -> tuple[list[dict], dict]:
+    if market_type != "A股":
+        return paths, {}
+    lineage = _a_share_fact_lineage_guidance(a_share_fact_lineage_summary)
+    if not lineage:
+        return paths, {}
+    guided_paths = []
+    for index, path in enumerate(paths):
+        item = dict(path)
+        if lineage["status"] == "blocked":
+            note = "A股事实存在阻断/缺失，乐观路径不能作为加仓依据。"
+            risk = lineage["gap"] or "未验证事实不得支撑放大仓位。"
+        elif lineage["status"] == "partial":
+            note = "A股事实存在缓存或待验证项，路径只保留条件化观察。"
+            risk = lineage["gap"] or "待验证事实补齐前，路径置信度不升级。"
+        else:
+            note = "A股事实血缘已形成，可用于路径置信度说明。"
+            risk = "已验证事实仍不等于未来价格确认，必须按触发条件执行。"
+        if index == 0 and lineage["status"] in {"blocked", "partial"}:
+            item["trigger"] = _append_evidence_text(item.get("trigger"), note)
+            item["risk"] = _append_evidence_text(item.get("risk"), risk)
+        elif index == 1:
+            item["trigger"] = _append_evidence_text(item.get("trigger"), f"复核事实血缘：{lineage['summary']}。")
+        elif index == 2 and lineage["status"] in {"blocked", "partial"}:
+            item["risk"] = _append_evidence_text(item.get("risk"), "A股事实未完全验证时，谨慎路径优先保现金和降杠杆。")
+        item["fact_lineage_note"] = lineage["summary"]
+        item["risk_note"] = item.get("risk")
+        guided_paths.append(item)
+    return guided_paths, lineage
+
+
 def build_projection_confidence_summary(projection_packet: Any = None) -> dict:
     packet = _as_mapping(projection_packet)
     if not packet:
@@ -1754,6 +1831,15 @@ def build_projection_confidence_summary(projection_packet: Any = None) -> dict:
     elif fact_summary:
         support_items.append(fact_summary)
 
+    fact_lineage_status = _to_text(packet.get("path_fact_lineage_status"))
+    fact_lineage_summary = _to_text(packet.get("path_fact_lineage_summary"))
+    if fact_lineage_status == "blocked":
+        blocker_items.append(fact_lineage_summary or "A股事实血缘存在阻断/缺失")
+    elif fact_lineage_status == "partial":
+        pending_items.append(fact_lineage_summary or "A股事实血缘仍待验证")
+    elif fact_lineage_status == "ready":
+        support_items.append(fact_lineage_summary or "A股事实血缘已形成")
+
     legacy_chain_status = _to_text(packet.get("path_legacy_decision_chain_status"))
     legacy_chain_summary = _to_text(packet.get("path_legacy_decision_chain_summary"))
     legacy_chain_label = _to_text(packet.get("path_legacy_decision_chain_label"), "旧能力决策链")
@@ -1827,6 +1913,7 @@ def build_projection_packet(
     a_share_data_console: Any = None,
     data_health_ledger: Any = None,
     a_share_fact_recovery_summary: Any = None,
+    a_share_fact_lineage_summary: Any = None,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     base_date: Any = None,
     now: Any = None,
@@ -1883,6 +1970,8 @@ def build_projection_packet(
         fact_recovery,
         market_type,
     )
+    fact_lineage = _as_mapping(a_share_fact_lineage_summary) or _as_mapping(snapshot.get("a_share_fact_lineage_summary"))
+    paths, fact_lineage_guidance = _merge_a_share_fact_lineage_guidance(paths, fact_lineage, market_type)
     legacy_decision_chain = _as_mapping(snapshot.get("legacy_decision_chain_summary"))
     paths, legacy_decision_chain_basis, legacy_decision_chain_guidance = _merge_legacy_decision_chain_guidance(
         paths,
@@ -1902,6 +1991,7 @@ def build_projection_packet(
             "command_center_decision_packet",
             "analysis_method_packet",
             "a_share_evidence_radar",
+            "a_share_fact_lineage_summary",
             "data_capability",
             "risk_budget",
             "current_price",
@@ -1909,7 +1999,19 @@ def build_projection_packet(
         ],
         "gaps": ["未来路径不是未来真实价格；必须按触发条件验证。"],
     }
-    lineage_gaps = list(dict.fromkeys([*(historical_lineage.get("gaps") or []), *(future_lineage.get("gaps") or [])]))
+    fact_lineage_gap = _to_text(fact_lineage_guidance.get("gap")) if fact_lineage_guidance else ""
+    fact_lineage_basis = (
+        f"A股事实血缘：{_to_text(fact_lineage_guidance.get('summary'))}"
+        if fact_lineage_guidance and _to_text(fact_lineage_guidance.get("summary"))
+        else ""
+    )
+    lineage_gaps = list(dict.fromkeys(
+        [
+            *(historical_lineage.get("gaps") or []),
+            *(future_lineage.get("gaps") or []),
+            *([fact_lineage_gap] if fact_lineage_gap else []),
+        ]
+    ))
     data_lineage = {
         "historical": historical_lineage,
         "future": future_lineage,
@@ -1934,6 +2036,7 @@ def build_projection_packet(
                     data_capability_basis,
                     data_health_basis,
                     fact_recovery_basis,
+                    fact_lineage_basis,
                     legacy_decision_chain_basis,
                 ]
                 if item
@@ -1954,6 +2057,10 @@ def build_projection_packet(
         "path_fact_recovery_items": fact_recovery_items,
         "path_fact_recovery_detail_items": fact_recovery_detail_items,
         "path_fact_recovery_tone": fact_recovery_tone,
+        "path_fact_lineage_summary": _to_text(fact_lineage_guidance.get("summary")) if fact_lineage_guidance else "",
+        "path_fact_lineage_status": _to_text(fact_lineage_guidance.get("status")) if fact_lineage_guidance else "",
+        "path_fact_lineage_items": fact_lineage_guidance.get("items") if fact_lineage_guidance else [],
+        "path_fact_lineage_boundary": _to_text(fact_lineage_guidance.get("boundary_note")) if fact_lineage_guidance else "",
         "path_legacy_decision_chain_summary": _to_text(legacy_decision_chain_guidance.get("summary")),
         "path_legacy_decision_chain_status": _to_text(legacy_decision_chain_guidance.get("status")),
         "path_legacy_decision_chain_label": _to_text(legacy_decision_chain_guidance.get("label")),
@@ -2000,6 +2107,7 @@ def build_projection_packet_from_state(
         a_share_data_console=state_map.get("command_center_a_share_data_console") or _status_console_from_snapshot(snapshot),
         data_health_ledger=state_map.get("command_center_data_health_ledger") or snapshot.get("data_health_ledger"),
         a_share_fact_recovery_summary=state_map.get("command_center_a_share_fact_recovery_summary") or _fact_recovery_from_snapshot(snapshot),
+        a_share_fact_lineage_summary=state_map.get("a_share_fact_lineage_summary") or snapshot.get("a_share_fact_lineage_summary"),
         horizon_days=horizon_days,
         now=now,
     )
