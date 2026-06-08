@@ -101,6 +101,28 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("不新增融资追高", packet["paths"][0]["risk"])
         self.assertFalse(packet["deepseek_called"])
 
+    def test_projection_lineage_marks_current_price_anchored_history_as_synthetic(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "只观察", "updated_at": "2026-06-01T09:30:00"},
+            strategy_packet={"action": "等待"},
+            home_snapshot={
+                "holding_action": {
+                    "ticker": "002008.SZ",
+                    "shares": 3000,
+                    "cost": 98,
+                    "current_price": 127.87,
+                }
+            },
+        )
+
+        lineage = packet["data_lineage"]
+        self.assertEqual(packet["historical_source"], "current_price_anchored_synthetic")
+        self.assertFalse(packet["historical_data_lineage"]["uses_real_daily_close"])
+        self.assertEqual(packet["future_source"], "rule_scenario_projection")
+        self.assertEqual(packet["paths"][0]["source"], "rule_scenario_projection")
+        self.assertIn("不是 Tushare 日线 close", packet["historical_data_lineage"]["summary"])
+        self.assertIn("未来段：规则情景推演", lineage["summary"])
+
     def test_missing_current_price_uses_normalized_projection_not_cost_price(self):
         packet = projection.build_projection_packet(
             decision_packet={"overall_action": "等待", "updated_at": "2026-06-01T09:30:00"},
@@ -122,6 +144,26 @@ class CommandCenterProjectionTests(unittest.TestCase):
         self.assertIn("归一化路径", packet["paths"][0]["action"])
         self.assertIn("归一化", packet["paths"][0]["target_label"])
         self.assertIsNone(packet["paths"][0]["target_pnl_amount"])
+        self.assertEqual(packet["historical_source"], "normalized_synthetic")
+        self.assertTrue(packet["historical_data_lineage"]["is_normalized"])
+
+    def test_real_close_history_is_marked_as_real_daily_close_when_packet_provides_it(self):
+        packet = projection.build_projection_packet(
+            decision_packet={"overall_action": "等待", "updated_at": "2026-06-01T09:30:00"},
+            home_snapshot={
+                "historical_close_source": "Tushare daily close",
+                "historical_close_points": [
+                    {"date": "2026-05-20", "close": 120.1, "source": "Tushare daily close"},
+                    {"date": "2026-05-21", "close": 121.2, "source": "Tushare daily close"},
+                    {"date": "2026-05-22", "close": 122.3, "source": "Tushare daily close"},
+                ],
+            },
+        )
+
+        self.assertEqual(packet["historical_source"], "real_daily_close")
+        self.assertTrue(packet["historical_data_lineage"]["uses_real_daily_close"])
+        self.assertEqual(packet["historical"][0]["source"], "real_daily_close")
+        self.assertIn("Tushare daily close", packet["historical_data_lineage"]["summary"])
 
     def test_deepseek_called_is_always_false_for_projection_build(self):
         packet = projection.build_projection_packet(

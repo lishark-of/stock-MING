@@ -8143,6 +8143,30 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
     legacy_chain_summary = str(payload.get("path_legacy_decision_chain_summary") or "")
     legacy_chain_status = str(payload.get("path_legacy_decision_chain_status") or "")
     legacy_chain_label = str(payload.get("path_legacy_decision_chain_label") or "旧能力链")
+    data_lineage = payload.get("data_lineage") if isinstance(payload.get("data_lineage"), dict) else {}
+    historical_lineage = data_lineage.get("historical") if isinstance(data_lineage.get("historical"), dict) else {}
+    future_lineage = data_lineage.get("future") if isinstance(data_lineage.get("future"), dict) else {}
+    historical_lineage_label = str(
+        historical_lineage.get("label")
+        or payload.get("historical_source_label")
+        or "历史段来源待确认"
+    )
+    future_lineage_label = str(
+        future_lineage.get("label")
+        or payload.get("future_source_label")
+        or "规则情景推演"
+    )
+    lineage_updated_at = str(data_lineage.get("updated_at") or updated_at or "暂无")
+    lineage_gaps = [
+        str(item).strip()
+        for item in (data_lineage.get("gaps") or payload.get("lineage_gaps") or [])
+        if str(item).strip()
+    ]
+    lineage_gap_text = "；".join(lineage_gaps[:2]) if lineage_gaps else "暂无显式血缘缺口"
+    lineage_summary = (
+        f"历史段：{historical_lineage_label}｜未来段：{future_lineage_label}｜"
+        f"更新：{lineage_updated_at}｜缺口：{lineage_gap_text}"
+    )
     position_context = payload.get("position_context") if isinstance(payload.get("position_context"), dict) else {}
     reference_lines = [item for item in (payload.get("reference_lines") or []) if isinstance(item, dict)]
     price_basis = str(position_context.get("price_basis") or "normalized")
@@ -8266,6 +8290,14 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           <div class="projection-fact-pills">{fact_pills_html}</div>
         </div>
         """
+    lineage_strip_html = f"""
+    <div class="projection-fact-strip">
+      <span class="projection-fact-title">数据血缘</span>
+      <span class="projection-fact-summary blue">历史段：{escape(historical_lineage_label)}</span>
+      <span class="projection-fact-summary green">未来段：{escape(future_lineage_label)}</span>
+      <span class="projection-fact-summary gray">缺口：{escape(lineage_gap_text)}</span>
+    </div>
+    """
     position_title = f"{ticker_text} {name_text}".strip()
     position_strip_html = f"""
     <div class="projection-position-strip">
@@ -8279,7 +8311,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
       <span class="projection-position-note">{escape(position_summary or "趋势路径按当前持仓条件化展示。")}</span>
     </div>
     """
-    projection_subtitle = f"{note} ｜ 最后更新时间：{updated_at}"
+    projection_subtitle = f"{note} ｜ {lineage_summary}"
     if deepseek_called or not home_compact:
         projection_subtitle += f" ｜ DeepSeek：{deepseek_status_text}"
     projection_badge = (
@@ -8397,6 +8429,7 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
           <div class="projection-badge">{escape(projection_badge)}</div>
         </div>
         {position_strip_html}
+        {lineage_strip_html}
         {fact_strip_html}
         <div id="projection-chart"></div>
       </section>
@@ -8528,12 +8561,13 @@ def render_command_center_projection_chart(projection_packet: dict | None = None
             st.line_chart(frame, height=320)
     if home_compact:
         if deepseek_called:
-            st.caption("路径推演不是投资建议；DeepSeek 仅在手动按钮触发后整理三路径，不自动交易、不绑定 rerun。")
+            st.caption(f"路径推演不是投资建议；DeepSeek 仅在手动按钮触发后整理三路径，不自动交易、不绑定 rerun。数据血缘：{lineage_summary}")
         else:
-            st.caption("路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。")
+            st.caption(f"路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。数据血缘：{lineage_summary}")
     else:
         st.caption(
             f"路径依据来自：{payload.get('path_basis') or '市场类型待确认 / 数据待验证'} ｜ "
+            f"数据血缘：{lineage_summary} ｜ "
             f"路径推演不是投资建议；未刷新或缓存状态下仅用于观察验证。来源：{source}"
         )
     _projection_path_cards(paths)

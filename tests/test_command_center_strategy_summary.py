@@ -312,10 +312,65 @@ class CommandCenterStrategySummaryTests(unittest.TestCase):
         self.assertIn("不得建议满仓", prompt)
         self.assertIn("风险未完全排除", prompt)
         self.assertNotIn("DeepSeek：未调用", prompt)
+        self.assertIn("行情数据：已刷新", prompt)
+        self.assertIn("行情数据：当前价已刷新", prompt)
+        self.assertNotIn("行情数据：无数据", prompt)
+        self.assertNotIn("行情缺失", prompt)
+        self.assertIn("A股专业事实", prompt)
+        self.assertIn("资金流：待验证/缺失", prompt)
+        self.assertIn("龙虎榜：待验证", prompt)
+        self.assertIn("融资融券：待验证", prompt)
+        self.assertIn("公告/硬风险：待验证", prompt)
         self.assertIn("资金数据：失败", prompt)
         for forbidden in ("command_center_", "provider", "packet"):
             self.assertNotIn(forbidden, prompt)
         self.assertLess(len(prompt), 5000)
+        self.assertFalse(prompt_payload["deepseek_called"])
+
+    def test_deepseek_prompt_separates_quote_from_a_share_fact_gaps_and_projection_lineage(self):
+        prompt_payload = summary.build_command_center_deepseek_explanation_prompt(
+            target="002008.SZ",
+            market_badge="A股",
+            price=127.87,
+            position_profile={"ticker": "002008.SZ", "margin_ratio_pct": 30},
+            home_snapshot={
+                "holding_action": {
+                    "ticker": "002008.SZ",
+                    "cost": 98,
+                    "shares": 3000,
+                    "current_price": 127.87,
+                    "floating_pnl_text": "浮盈 30.48%",
+                },
+                "today_action": {"overall_action": "只观察", "margin_mode": "不新增融资"},
+                "risk_alerts": {"data_gaps": ["资金流缺失", "龙虎榜待验证"]},
+                "data_capability_brief": {
+                    "user_summary": {
+                        "headline": "对当前结论影响：高",
+                        "summary": "行情数据：无数据；DeepSeek：未调用；融资融券：失败",
+                    }
+                },
+                "projection_packet": {
+                    "data_lineage": {
+                        "historical": {"label": "当前价锚定的模拟历史段"},
+                        "future": {"label": "规则情景推演"},
+                        "gaps": ["历史段不是 Tushare 日线 close"],
+                    }
+                },
+            },
+        )
+
+        prompt = prompt_payload["prompt"]
+
+        self.assertIn("行情数据：已刷新，当前价 127.87", prompt)
+        self.assertIn("行情数据：当前价已刷新", prompt)
+        self.assertIn("A股专业事实：资金流：待验证/缺失", prompt)
+        self.assertIn("龙虎榜：待验证/缺失", prompt)
+        self.assertIn("趋势图历史段：当前价锚定的模拟历史段", prompt)
+        self.assertIn("趋势图未来段：规则情景推演", prompt)
+        self.assertIn("不是未来真实价格", prompt)
+        self.assertNotIn("行情数据：无数据", prompt)
+        self.assertNotIn("Tushare 数据缺失", prompt)
+        self.assertNotIn("行情缺失", prompt)
         self.assertFalse(prompt_payload["deepseek_called"])
 
     def test_a_share_market_guidance_mentions_money_flow_ma_and_announcements(self):

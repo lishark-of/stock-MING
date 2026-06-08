@@ -328,7 +328,106 @@ def _merge_position_context_into_paths(
     return guided_paths
 
 
-def _historical_points(base_value: float, market_bias: str = "", days: int = HISTORICAL_DAYS) -> list[dict]:
+def _historical_point_payload(t: int, value: float, source: str, source_label: str, date: Any = "") -> dict:
+    item = {
+        "t": t,
+        "value": round(value, 4),
+        "source": source,
+        "source_label": source_label,
+    }
+    date_text = _to_text(date)
+    if date_text:
+        item["date"] = date_text
+    return item
+
+
+def _historical_close_candidates(home_snapshot: Mapping[str, Any], live_packet: Mapping[str, Any]) -> tuple[list, str, str]:
+    sources = [
+        (home_snapshot.get("historical_close_points"), home_snapshot.get("historical_close_source"), home_snapshot.get("historical_close_updated_at")),
+        (home_snapshot.get("price_history_close"), home_snapshot.get("price_history_source"), home_snapshot.get("price_history_updated_at")),
+        (live_packet.get("historical_close_points"), live_packet.get("historical_close_source"), live_packet.get("historical_close_updated_at")),
+        (_as_mapping(live_packet.get("market")).get("historical_close_points"), _as_mapping(live_packet.get("market")).get("historical_close_source"), _as_mapping(live_packet.get("market")).get("historical_close_updated_at")),
+    ]
+    for raw, source, updated_at in sources:
+        items = _as_list(raw)
+        if len(items) >= 2:
+            return items, _to_text(source, "真实日线 close"), _to_text(updated_at)
+    return [], "", ""
+
+
+def _real_historical_points(home_snapshot: Mapping[str, Any], live_packet: Mapping[str, Any], days: int = HISTORICAL_DAYS) -> tuple[list[dict], dict]:
+    candidates, source, updated_at = _historical_close_candidates(home_snapshot, live_packet)
+    if len(candidates) < 2:
+        return [], {}
+    rows = []
+    for raw in candidates:
+        item = _as_mapping(raw)
+        value = _to_number(item.get("close") or item.get("value") or item.get("price"))
+        if value is None:
+            continue
+        rows.append(
+            {
+                "value": value,
+                "date": _to_text(item.get("date") or item.get("trade_date") or item.get("asof")),
+                "source": _to_text(item.get("source") or source, source or "真实日线 close"),
+            }
+        )
+    if len(rows) < 2:
+        return [], {}
+    rows = rows[-(days + 1):]
+    offset = len(rows) - 1
+    points = [
+        _historical_point_payload(
+            index - offset,
+            row["value"],
+            "real_daily_close",
+            "真实日线 close",
+            row.get("date"),
+        )
+        for index, row in enumerate(rows)
+    ]
+    lineage = {
+        "source": "real_daily_close",
+        "label": "真实日线 close",
+        "data_source": source or rows[-1].get("source") or "真实行情",
+        "uses_real_daily_close": True,
+        "is_normalized": False,
+        "updated_at": updated_at,
+        "summary": f"历史段使用 {source or '真实行情'} close 序列。",
+        "gaps": [],
+    }
+    return points, lineage
+
+
+def _synthetic_historical_lineage(price_basis: str) -> dict:
+    if price_basis == "real_price":
+        return {
+            "source": "current_price_anchored_synthetic",
+            "label": "当前价锚定的模拟历史段",
+            "data_source": "本地规则曲线",
+            "uses_real_daily_close": False,
+            "is_normalized": False,
+            "summary": "历史段按当前价锚定生成，用于连接 T0，不是 Tushare 日线 close。",
+            "gaps": ["未接入真实日线 close 序列；历史段不是实际历史走势。"],
+        }
+    return {
+        "source": "normalized_synthetic",
+        "label": "归一化历史路径",
+        "data_source": "本地规则曲线",
+        "uses_real_daily_close": False,
+        "is_normalized": True,
+        "summary": "当前价缺失时使用 100 归一化路径，不代表实际历史价格。",
+        "gaps": ["当前价或真实日线 close 缺失；历史段为归一化路径。"],
+    }
+
+
+def _historical_points(
+    base_value: float,
+    market_bias: str = "",
+    days: int = HISTORICAL_DAYS,
+    source: str = "current_price_anchored_synthetic",
+    source_label: str = "当前价锚定的模拟历史段",
+) -> list[dict]:
     if "偏强" in market_bias:
         start_offset = -3.0
         wiggle = 0.55
@@ -343,7 +442,7 @@ def _historical_points(base_value: float, market_bias: str = "", days: int = HIS
         progress = index / days
         wave = ((index % 3) - 1) * wiggle
         value = base_value * (1 + (start_offset * (1 - progress) + wave) / 100)
-        points.append({"t": t, "value": round(value, 4)})
+        points.append(_historical_point_payload(t, value, source, source_label))
     points[-1]["value"] = round(base_value, 4)
     return points
 
@@ -598,6 +697,8 @@ def merge_deepseek_projection_overlay(
             item["deepseek_rationale"] = rationale
         item["deepseek_enhanced"] = True
         item["deepseek_source"] = "manual_projection_overlay"
+        item["source"] = "manual_deepseek_overlay"
+        item["source_label"] = "DeepSeek 手动增强路径"
         enhanced_paths.append(item)
 
     summary = _bounded_text(
@@ -644,6 +745,30 @@ def merge_deepseek_projection_overlay(
         "token_estimate": token_estimate,
         "raw_text_available": bool(_to_text(raw_text)),
     }
+    data_lineage = _as_mapping(payload.get("data_lineage"))
+    historical_lineage = _as_mapping(data_lineage.get("historical") or payload.get("historical_data_lineage"))
+    future_lineage = {
+        "source": "manual_deepseek_overlay",
+        "label": "DeepSeek 手动增强路径",
+        "data_source": "本地规则三路径 + 手动 DeepSeek 解释增强",
+        "uses_real_future_price": False,
+        "summary": "未来段由本地规则先生成，再由手动 DeepSeek 整理触发条件和路径说明；不代表未来真实价格。",
+        "inputs": ["规则情景推演", "策略执行", "今日总决策", "量化推演", "交易纪律", "风险提示"],
+        "gaps": ["DeepSeek 只解释和整理路径，不验证摘要外事实。"],
+    }
+    payload["future_source"] = future_lineage["source"]
+    payload["future_source_label"] = future_lineage["label"]
+    payload["future_data_lineage"] = future_lineage
+    payload["data_lineage"] = {
+        "historical": historical_lineage,
+        "future": future_lineage,
+        "updated_at": payload["updated_at"],
+        "summary": f"历史段：{historical_lineage.get('label') or '待确认'}；未来段：{future_lineage['label']}。",
+        "gaps": list(dict.fromkeys([*(historical_lineage.get("gaps") or []), *(future_lineage.get("gaps") or [])])),
+        "deepseek_called": True,
+    }
+    payload["lineage_summary"] = payload["data_lineage"]["summary"]
+    payload["lineage_gaps"] = payload["data_lineage"]["gaps"]
     payload["path_basis"] = _append_evidence_text(payload.get("path_basis"), f"DeepSeek 手动增强：{summary}")
     payload["note"] = "DeepSeek 手动增强曲线；只整理路径、触发条件和纪律边界，不自动交易。"
     payload["is_fallback"] = False
@@ -1716,6 +1841,15 @@ def build_projection_packet(
     base = _base_value(snapshot, live)
     position_context = _position_projection_context(snapshot, live, base)
     market_bias = _to_text(decision.get("market_bias") or _as_mapping(snapshot.get("today_action")).get("market_bias"), "未刷新")
+    historical, historical_lineage = _real_historical_points(snapshot, live)
+    if not historical:
+        historical_lineage = _synthetic_historical_lineage(_to_text(position_context.get("price_basis"), "normalized"))
+        historical = _historical_points(
+            base,
+            market_bias,
+            source=historical_lineage["source"],
+            source_label=historical_lineage["label"],
+        )
     probabilities = _probabilities(decision, strategy)
     targets = _path_targets(decision, strategy)
     path_meta = _default_path_meta(strategy)
@@ -1732,6 +1866,9 @@ def build_projection_packet(
                 "trigger": meta.get("trigger") or "等待验证。",
                 "risk": meta.get("risk") or "不追高、不满仓。",
                 "color": colors[index],
+                "source": "rule_scenario_projection",
+                "source_label": "规则情景推演",
+                "is_future_projection": True,
             }
         )
     paths, market_type, path_basis = _merge_path_guidance(paths, analysis_method_packet)
@@ -1754,11 +1891,38 @@ def build_projection_packet(
     paths = _merge_position_context_into_paths(paths, position_context, base)
     fallback = status == "waiting" or not _has_payload(decision, strategy, live, snapshot)
     note = "示例路径 / 待刷新" if fallback else "基于现有结构化 packet 的条件化路径推演"
+    future_lineage = {
+        "source": "rule_scenario_projection",
+        "label": "规则情景推演",
+        "data_source": "本地规则 + 结构化结果",
+        "uses_real_future_price": False,
+        "summary": "未来三路径由本地规则情景生成，叠加今日总决策、策略执行、市场分析方法、A股证据/数据能力和持仓风险预算。",
+        "inputs": [
+            "strategy_execution_packet",
+            "command_center_decision_packet",
+            "analysis_method_packet",
+            "a_share_evidence_radar",
+            "data_capability",
+            "risk_budget",
+            "current_price",
+            "cost_price",
+        ],
+        "gaps": ["未来路径不是未来真实价格；必须按触发条件验证。"],
+    }
+    lineage_gaps = list(dict.fromkeys([*(historical_lineage.get("gaps") or []), *(future_lineage.get("gaps") or [])]))
+    data_lineage = {
+        "historical": historical_lineage,
+        "future": future_lineage,
+        "updated_at": updated_at,
+        "summary": f"历史段：{historical_lineage.get('label')}；未来段：{future_lineage.get('label')}。",
+        "gaps": lineage_gaps,
+        "deepseek_called": False,
+    }
     return {
         "status": status,
         "horizon_days": horizon,
         "base_date": _date_text(base_date or updated_at, now=now),
-        "historical": _historical_points(base, market_bias),
+        "historical": historical,
         "paths": paths,
         "market_type": market_type,
         "path_basis": " ｜ ".join(
@@ -1798,6 +1962,15 @@ def build_projection_packet(
         "reference_lines": position_context.get("reference_lines") or [],
         "position_context_summary": _to_text(position_context.get("summary")),
         "market_method_summary": _to_text(_as_mapping(analysis_method_packet).get("summary"), "分析方法待验证"),
+        "historical_source": historical_lineage.get("source"),
+        "historical_source_label": historical_lineage.get("label"),
+        "historical_data_lineage": historical_lineage,
+        "future_source": future_lineage.get("source"),
+        "future_source_label": future_lineage.get("label"),
+        "future_data_lineage": future_lineage,
+        "data_lineage": data_lineage,
+        "lineage_summary": data_lineage["summary"],
+        "lineage_gaps": lineage_gaps,
         "source": SOURCE_FALLBACK if fallback else SOURCE_READY,
         "updated_at": updated_at,
         "deepseek_called": False,

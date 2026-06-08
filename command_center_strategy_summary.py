@@ -130,6 +130,71 @@ def _remove_deepseek_status_text(value: Any) -> str:
     return "；".join(parts)
 
 
+A_SHARE_FACT_LABELS = ("资金流", "龙虎榜", "融资融券", "公告/硬风险")
+
+
+def _clean_data_gap_text(value: Any, *, current_price_available: bool = False) -> str:
+    text = _remove_deepseek_status_text(value)
+    if current_price_available:
+        replacements = {
+            "行情数据：无数据": "行情数据：当前价已刷新",
+            "行情数据:无数据": "行情数据：当前价已刷新",
+            "行情数据：失败": "行情数据：当前价已刷新；辅助行情失败",
+            "行情数据:失败": "行情数据：当前价已刷新；辅助行情失败",
+            "行情数据待刷新": "行情数据：当前价已刷新；辅助行情待验证",
+        }
+        for raw, friendly in replacements.items():
+            text = text.replace(raw, friendly)
+    return text
+
+
+def _fact_state_label(item: Mapping[str, Any]) -> str:
+    raw = _to_text(item.get("recovery_state") or item.get("evidence_state") or item.get("status") or item.get("tone")).lower()
+    label = _to_text(item.get("status_label") or item.get("evidence_label"))
+    if raw in {"recovered", "ready", "supporting", "success", "available"}:
+        return label or "已验证"
+    if raw in {"blocked", "failed", "danger", "permission_denied"}:
+        return label or "受限/缺失"
+    if raw in {"cached", "stale"}:
+        return label or "使用缓存"
+    return label or "待验证"
+
+
+def _a_share_professional_fact_lines(snapshot: Mapping[str, Any], risk_alerts: Mapping[str, Any]) -> list[str]:
+    state_by_label: dict[str, str] = {}
+    recovery = _as_mapping(snapshot.get("a_share_fact_recovery_summary"))
+    for raw in _as_list(recovery.get("items")):
+        item = _as_mapping(raw)
+        label_text = _to_text(item.get("label") or item.get("key"))
+        for label in A_SHARE_FACT_LABELS:
+            if label in label_text and label not in state_by_label:
+                state_by_label[label] = _fact_state_label(item)
+    gaps_text = "；".join(_to_text(item) for item in _as_list(risk_alerts.get("data_gaps")) if _to_text(item))
+    for label in A_SHARE_FACT_LABELS:
+        if label not in state_by_label and label in gaps_text:
+            state_by_label[label] = "待验证/缺失"
+    return [f"{label}：{state_by_label.get(label, '待验证')}" for label in A_SHARE_FACT_LABELS]
+
+
+def _projection_lineage_lines(projection: Mapping[str, Any]) -> list[str]:
+    lineage = _as_mapping(projection.get("data_lineage"))
+    historical = _as_mapping(lineage.get("historical") or projection.get("historical_data_lineage"))
+    future = _as_mapping(lineage.get("future") or projection.get("future_data_lineage"))
+    historical_label = _to_text(historical.get("label") or projection.get("historical_source_label"), "历史段来源待确认")
+    future_label = _to_text(future.get("label") or projection.get("future_source_label"), "规则情景推演")
+    gaps = [
+        _to_text(item)
+        for item in _as_list(lineage.get("gaps") or projection.get("lineage_gaps"))
+        if _to_text(item)
+    ]
+    gap_text = "；".join(gaps[:2]) if gaps else "暂无显式血缘缺口"
+    return [
+        f"趋势图历史段：{historical_label}",
+        f"趋势图未来段：{future_label}，不是未来真实价格",
+        f"趋势图血缘缺口：{gap_text}",
+    ]
+
+
 def build_command_center_deepseek_explanation_prompt(
     *,
     target: Any = "",
@@ -217,13 +282,31 @@ def build_command_center_deepseek_explanation_prompt(
         limit=6,
     )
     data_gap_lines = _short_items(risk_alerts.get("data_gaps"), lambda item: _to_text(item), limit=4)
-    clean_data_summary = _remove_deepseek_status_text(data_user_summary.get("summary"))
+    current_price_available = current_price is not None
+    clean_data_summary = _clean_data_gap_text(
+        data_user_summary.get("summary"),
+        current_price_available=current_price_available,
+    )
     if data_user_summary.get("headline") or clean_data_summary:
         data_gap_lines.append(
             f"{_to_text(data_user_summary.get('headline'))}；{clean_data_summary}".strip("；")
         )
     if not data_gap_lines:
         data_gap_lines = ["当前数据缺口未完全确认；缺失项必须按待验证处理。"]
+    data_gap_lines = [
+        _clean_data_gap_text(item, current_price_available=current_price_available)
+        for item in data_gap_lines
+        if _clean_data_gap_text(item, current_price_available=current_price_available)
+    ]
+    if not data_gap_lines:
+        data_gap_lines = ["当前数据缺口未完全确认；缺失项必须按待验证处理。"]
+    quote_line = (
+        f"行情数据：已刷新，当前价 {current_price}"
+        if current_price_available
+        else "行情数据：当前价缺失/待刷新"
+    )
+    a_share_fact_lines = _a_share_professional_fact_lines(snapshot, risk_alerts)
+    projection_lineage = _projection_lineage_lines(projection)
 
     add_condition = _to_text(strategy.get("add_condition") or holding.get("add_condition"), "等待数据补齐且规则条件满足后再评估。")
     reduce_condition = _to_text(strategy.get("reduce_condition") or holding.get("reduce_condition"), "跌破纪律线或风险扩大时优先降风险。")
@@ -240,6 +323,7 @@ def build_command_center_deepseek_explanation_prompt(
 - “一句话结论”必须原文包含：本地规则结论、当前价、成本、持仓、浮盈亏、用户输入融资比例、以及“DeepSeek 只解释，不决定仓位”。
 - 即使融资比例为 0%，也必须明确写出“用户输入融资比例 0%”，不要改写成其他比例。
 - 数据缺口只描述交易数据缺口；不要把“DeepSeek 未调用”写成数据缺口，因为当前就是手动解释调用。
+- 必须区分“行情数据”和“A股专业事实”：如果当前价有值，不得笼统写数据源整体不可用或行情未取到；应写“行情已刷新，但资金流/龙虎榜/融资融券/公告等事实仍待验证”。
 - {build_deepseek_safety_prompt_clause()}
 
 用户口径结构化摘要：
@@ -253,6 +337,7 @@ def build_command_center_deepseek_explanation_prompt(
 下一票 Top3：{'；'.join(next_lines)}
 ETF/融资执行清单：{'；'.join(etf_lines)}
 未来趋势路径：{'；'.join(projection_lines)}
+数据血缘：{quote_line}；A股专业事实：{'；'.join(a_share_fact_lines)}；{'；'.join(projection_lineage)}
 刷新步骤摘要：{'；'.join(refresh_lines) if refresh_lines else '暂无刷新步骤'}
 数据缺口/缓存/失败：{'；'.join(data_gap_lines)}
 """
