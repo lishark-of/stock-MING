@@ -17,6 +17,7 @@ import numpy as np
 import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
+import command_center_next_session_projection as next_session_projection_service
 import command_center_radar_packet as radar_packet_service
 import command_center_etf_packet as etf_packet_service
 import command_center_packet_registry as packet_registry_service
@@ -73,6 +74,7 @@ try:
         "render_command_center_account_budget_card": "账户金额与预算",
         "render_command_center_decision_hero": "今日总决策主卡",
         "render_command_center_projection_chart": "趋势推演主视觉",
+        "render_next_session_operation_projection": "次日操作图谱",
         "render_analysis_methods_card": "市场分析方法",
         "render_command_center_packet_registry_card": "综合中心能力地图",
         "render_command_center_shell": "综合推演中心框架",
@@ -136,6 +138,9 @@ except Exception as module_error:
 
     def render_command_center_projection_chart(*args, **kwargs):
         _visual_component_unavailable("趋势推演主视觉")
+
+    def render_next_session_operation_projection(*args, **kwargs):
+        _visual_component_unavailable("次日操作图谱")
 
     def render_analysis_methods_card(*args, **kwargs):
         _visual_component_unavailable("市场分析方法")
@@ -2919,7 +2924,7 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
         st.error(f"⚠️ DeepSeek 调用失败: {e}")
 
 
-def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理。", max_tokens=2000):
+def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理。", max_tokens=2000, response_format=None):
     if not st.session_state.get("ds_keys"):
         st.warning("缺少 DeepSeek key，本次只展示行情、回测和结构化分析，不调用模型。")
         return None
@@ -2956,16 +2961,19 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
                 timeout=timeout_seconds,
             )
 
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
+            request = {
+                "model": "deepseek-chat",
+                "messages": [
                     {"role": "system", "content": final_system_role},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
-                stream=False,
-                temperature=0.5,
-                max_tokens=max_tokens
-            )
+                "stream": False,
+                "temperature": 0.5,
+                "max_tokens": max_tokens,
+            }
+            if response_format:
+                request["response_format"] = response_format
+            response = client.chat.completions.create(**request)
 
             content = response.choices[0].message.content
             dangerous_words = find_deepseek_dangerous_words(content)
@@ -4315,6 +4323,20 @@ def _persist_home_action_snapshot(live_packet=None, target="", position_profile=
         data_capability_packet=_get_command_center_data_capability_packet(),
         facts_packet=_get_command_center_facts_packet(target=target),
     )
+    daily_close_packet = (
+        (live_packet or {}).get("daily_close_packet")
+        if isinstance(live_packet, dict)
+        else {}
+    ) or st.session_state.get("command_center_daily_close_packet") or {}
+    if isinstance(daily_close_packet, dict) and daily_close_packet:
+        rows = daily_close_packet.get("rows") or []
+        snapshot["command_center_daily_close_packet"] = home_snapshot_service.sanitize_snapshot_payload(daily_close_packet)
+        snapshot["historical_close_points"] = home_snapshot_service.sanitize_snapshot_payload(rows)
+        snapshot["historical_close_source"] = "Tushare daily.close"
+        snapshot["historical_close_updated_at"] = daily_close_packet.get("local_fetched_at") or daily_close_packet.get("updated_at")
+    fact_call_ledger = st.session_state.get("command_center_a_share_fact_call_ledger") or st.session_state.get("a_share_fact_call_ledger") or {}
+    if isinstance(fact_call_ledger, dict) and fact_call_ledger:
+        snapshot["a_share_fact_call_ledger"] = home_snapshot_service.sanitize_snapshot_payload(fact_call_ledger)
     home_snapshot_service.save_home_action_snapshot(snapshot)
     st.session_state["command_center_home_snapshot"] = snapshot
     return snapshot
@@ -6096,6 +6118,504 @@ def _cc_provider_refresh_result(
     }
 
 
+def _cc_daily_close_rows_from_frame(frame, limit=60):
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    data = frame.copy()
+    if "date" in data.columns:
+        data = data.sort_values("date")
+    rows = []
+    for _, row in data.tail(limit).iterrows():
+        close = _num(row.get("close"))
+        if close is None or close <= 0:
+            continue
+        date_value = row.get("date")
+        if hasattr(date_value, "date"):
+            date_text = date_value.date().isoformat()
+        else:
+            date_text = str(date_value or row.get("trade_date") or "")[:10]
+        rows.append(
+            {
+                "trade_date": date_text,
+                "open": _num(row.get("open")),
+                "high": _num(row.get("high")),
+                "low": _num(row.get("low")),
+                "close": round(float(close), 4),
+                "vol": _num(row.get("volume") if row.get("volume") is not None else row.get("vol")),
+                "amount": _num(row.get("amount")),
+                "source": row.get("source") or "tushare.daily",
+            }
+        )
+    return rows
+
+
+def _cc_fetch_tushare_daily_close_packet(target="", market_type="", *, limit=60):
+    ts_code = _cc_healthcheck_sample_ts_code(target)
+    started_at = _cc_now()
+    timer = time.monotonic()
+    if not target or not (_cc_is_a_share_market_type(market_type) or a_share_manual_checks_service.is_a_share_ts_code(ts_code)):
+        return {
+            "status": "skipped",
+            "ts_code": ts_code,
+            "rows": [],
+            "row_count": 0,
+            "source_interface": "tushare.daily",
+            "message": "非 A 股标的，真实日线本轮跳过。",
+            "updated_at": started_at,
+            "local_fetched_at": started_at,
+            "is_real_market_series": False,
+            "deepseek_called": False,
+        }
+    try:
+        end_date = datetime.date.today()
+        start_date = end_date - datetime.timedelta(days=max(140, limit * 3))
+        tushare_only_fetch = getattr(globals().get("_data_fetcher"), "_fetch_ohlcv_tushare", None)
+        if not callable(tushare_only_fetch):
+            raise RuntimeError("data_fetcher 缺少 Tushare-only 日线路径。")
+        frame = tushare_only_fetch(
+            ts_code,
+            start=start_date.isoformat(),
+            end=(end_date + datetime.timedelta(days=1)).isoformat(),
+            adjust="qfq",
+        )
+        rows = _cc_daily_close_rows_from_frame(frame, limit=limit)
+        finished_at = _cc_now()
+        warning = ""
+        try:
+            warning = frame.attrs.get("warning") or ""
+        except Exception:
+            warning = ""
+        packet = {
+            "status": "ready" if rows else "missing",
+            "ts_code": ts_code,
+            "rows": rows,
+            "row_count": len(rows),
+            "source_interface": "tushare.daily",
+            "source_packet": "command_center_daily_close_packet",
+            "start_date": rows[0].get("trade_date") if rows else None,
+            "end_date": rows[-1].get("trade_date") if rows else None,
+            "latest_close": rows[-1].get("close") if rows else None,
+            "local_fetched_at": finished_at,
+            "updated_at": finished_at,
+            "duration_seconds": round(max(0.0, time.monotonic() - timer), 3),
+            "is_real_market_series": bool(rows),
+            "message": f"Tushare 真实日线读取 {len(rows)} 行。" if rows else (warning or "Tushare daily 暂无可用日线。"),
+            "warning": warning,
+            "deepseek_called": False,
+        }
+        st.session_state["command_center_daily_close_packet"] = packet
+        st.session_state["command_center_historical_close_points"] = rows
+        return packet
+    except Exception as exc:
+        finished_at = _cc_now()
+        packet = {
+            "status": "failed",
+            "ts_code": ts_code,
+            "rows": [],
+            "row_count": 0,
+            "source_interface": "tushare.daily",
+            "source_packet": "command_center_daily_close_packet",
+            "local_fetched_at": finished_at,
+            "updated_at": finished_at,
+            "duration_seconds": round(max(0.0, time.monotonic() - timer), 3),
+            "is_real_market_series": False,
+            "message": "Tushare 真实日线读取失败，图谱不画真实历史段。",
+            "error": str(exc),
+            "deepseek_called": False,
+        }
+        st.session_state["command_center_daily_close_packet"] = packet
+        return packet
+
+
+def _cc_attach_daily_close_packet(live_packet=None, daily_close_packet=None):
+    payload = dict(live_packet or {})
+    packet = daily_close_packet or st.session_state.get("command_center_daily_close_packet") or {}
+    if not isinstance(packet, dict) or not packet:
+        return payload
+    rows = packet.get("rows") or []
+    payload["daily_close_packet"] = packet
+    payload["historical_close_points"] = rows
+    payload["historical_close_source"] = "Tushare daily.close"
+    payload["historical_close_updated_at"] = packet.get("local_fetched_at") or packet.get("updated_at")
+    market = dict(payload.get("market") or {})
+    market["daily_close_packet"] = packet
+    market["historical_close_points"] = rows
+    market["historical_close_source"] = "Tushare daily.close"
+    market["historical_close_updated_at"] = packet.get("local_fetched_at") or packet.get("updated_at")
+    payload["market"] = market
+    return payload
+
+
+def _cc_tushare_date_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.strftime("%Y%m%d")
+    text = str(value).strip()
+    return text.replace("-", "")[:8]
+
+
+def _cc_tushare_rows_from_result(result):
+    if not isinstance(result, dict) or not result.get("ok"):
+        return []
+    data = result.get("data")
+    if data is None or getattr(data, "empty", True):
+        return []
+    try:
+        cleaned = data.where(data.notna(), None)
+        return cleaned.to_dict("records")
+    except Exception:
+        return []
+
+
+def _cc_tushare_error_type(message):
+    text = str(message or "").lower()
+    if any(word in text for word in ["权限", "permission", "积分", "无权限", "没有访问"]):
+        return "permission_denied"
+    if any(word in text for word in ["参数", "parameter", "invalid"]):
+        return "parameter_error"
+    if "解析" in text or "parse" in text:
+        return "parse_error"
+    return "parse_error" if text else None
+
+
+def _cc_extract_row_date(rows, keys=("trade_date", "date", "ann_date", "end_date", "float_date")):
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        for key in keys:
+            value = row.get(key)
+            if value not in (None, ""):
+                return str(value).replace("-", "")[:8]
+    return None
+
+
+def _cc_row_matches_ts_code(row, ts_code):
+    if not isinstance(row, dict):
+        return False
+    target = str(ts_code or "").strip().upper().replace(".SS", ".SH")
+    if not target:
+        return False
+    for key in ("ts_code", "symbol", "code"):
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip().upper().replace(".SS", ".SH")
+        if text == target:
+            return True
+    return False
+
+
+def _cc_first_non_empty(*values):
+    for value in values:
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _cc_fact_call_section(interface, request_params, result, *, target_ts_code="", scope="target_stock", no_record_meaningful=True):
+    rows = _cc_tushare_rows_from_result(result)
+    target_match_count = sum(1 for row in rows if _cc_row_matches_ts_code(row, target_ts_code))
+    symbol_filter_applied = bool((request_params or {}).get("ts_code"))
+    ok = bool(isinstance(result, dict) and result.get("ok"))
+    error = "" if ok else str((result or {}).get("error") or "")
+    error_type = _cc_tushare_error_type(error)
+    scoped_count = target_match_count if scope == "target_stock" and symbol_filter_applied else len(rows)
+    if ok and scoped_count:
+        call_status = "verified_present"
+    elif ok and no_record_meaningful:
+        call_status = "verified_no_record"
+    elif ok:
+        call_status = "empty_window"
+    else:
+        call_status = error_type or "parse_error"
+    return {
+        "interface": interface,
+        "request_params": request_params,
+        "scope": scope,
+        "target_ts_code": target_ts_code or None,
+        "symbol_filter_applied": symbol_filter_applied,
+        "target_match_count": target_match_count,
+        "market_row_count": len(rows),
+        "call_status": call_status,
+        "row_count": scoped_count,
+        "data_date": _cc_extract_row_date(rows),
+        "local_fetched_at": (result or {}).get("updated_at") or _cc_now(),
+        "error_type": error_type,
+        "error_message_safe": error[:180] if error else None,
+    }
+
+
+def _cc_status_from_sections(sections):
+    statuses = [section.get("call_status") for section in sections if isinstance(section, dict)]
+    if any(status == "verified_present" for status in statuses):
+        return "verified_present"
+    if statuses and all(status == "verified_no_record" for status in statuses):
+        return "verified_no_record"
+    if any(status == "permission_denied" for status in statuses):
+        return "permission_denied"
+    if any(status == "parameter_error" for status in statuses):
+        return "parameter_error"
+    if any(status == "parse_error" for status in statuses):
+        return "parse_error"
+    if any(status == "empty_window" for status in statuses):
+        return "empty_window"
+    return "not_called"
+
+
+def _cc_aggregate_fact_call_item(fact_key, fact_name, source_packet, source_interfaces, request_params, sections, *, target_ts_code="", default_scope="target_stock"):
+    target_sections = [section for section in sections if isinstance(section, dict) and section.get("scope") == "target_stock"]
+    context_scopes = {}
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        section_scope = section.get("scope") or "unknown_scope"
+        if section_scope in {"market_context", "industry_or_concept", "unknown_scope"}:
+            context_scopes.setdefault(section_scope, []).append(section)
+        elif int(_num(section.get("market_row_count"), 0) or 0) > int(_num(section.get("row_count"), 0) or 0):
+            context_scopes.setdefault("market_context", []).append(section)
+    primary_sections = target_sections or [section for section in sections if isinstance(section, dict)]
+    call_status = _cc_status_from_sections(primary_sections)
+    row_count = sum(int(_num(section.get("row_count"), 0) or 0) for section in primary_sections if isinstance(section, dict))
+    target_match_count = sum(int(_num(section.get("target_match_count"), 0) or 0) for section in sections if isinstance(section, dict))
+    market_row_count = sum(int(_num(_cc_first_non_empty(section.get("market_row_count"), section.get("row_count")), 0) or 0) for section in sections if isinstance(section, dict))
+    scope_breakdown = [
+        {
+            "scope": "target_stock",
+            "call_status": call_status,
+            "row_count": row_count,
+            "target_match_count": target_match_count,
+            "is_target_stock_evidence": call_status in {"verified_present", "verified_no_record"},
+        }
+    ]
+    for scope_name, scoped_sections in context_scopes.items():
+        scoped_status = _cc_status_from_sections(scoped_sections)
+        scope_breakdown.append(
+            {
+                "scope": scope_name,
+                "call_status": scoped_status,
+                "row_count": sum(int(_num(_cc_first_non_empty(section.get("row_count"), section.get("market_row_count")), 0) or 0) for section in scoped_sections),
+                "target_match_count": sum(int(_num(section.get("target_match_count"), 0) or 0) for section in scoped_sections),
+                "is_market_context_evidence": scope_name == "market_context" and scoped_status in {"verified_present", "verified_no_record"},
+                "is_industry_or_concept_evidence": scope_name == "industry_or_concept" and scoped_status in {"verified_present", "verified_no_record"},
+            }
+        )
+    data_date = next((section.get("data_date") for section in primary_sections if section.get("data_date")), None)
+    fetched_at = next((section.get("local_fetched_at") for section in sections if section.get("local_fetched_at")), _cc_now())
+    error_section = next((section for section in sections if section.get("error_message_safe")), {})
+    symbol_filter_applied = any(bool(section.get("symbol_filter_applied")) for section in primary_sections if isinstance(section, dict))
+    context_present = any(scope in context_scopes for scope in {"market_context", "industry_or_concept", "unknown_scope"})
+    scope_note = ""
+    if context_present and row_count == 0:
+        scope_note = "目标股无记录；市场/行业/概念上下文另列，不能当作目标股事实。"
+    elif default_scope == "target_stock":
+        scope_note = "目标股事实；已按 ts_code 或返回行匹配核验。"
+    else:
+        scope_note = "市场上下文事实，不等同于目标股自身事实。"
+    return {
+        "fact_key": fact_key,
+        "fact_name": fact_name,
+        "scope": "target_stock" if target_sections else default_scope,
+        "target_ts_code": target_ts_code or request_params.get("ts_code"),
+        "symbol_filter_applied": symbol_filter_applied,
+        "target_match_count": target_match_count,
+        "market_row_count": market_row_count,
+        "source_interfaces": list(source_interfaces or []),
+        "source_packet": source_packet,
+        "request_params": request_params,
+        "call_status": call_status,
+        "row_count": row_count,
+        "data_date": data_date,
+        "local_fetched_at": fetched_at,
+        "error_type": error_section.get("error_type"),
+        "error_message_safe": error_section.get("error_message_safe"),
+        "lineage_status": next_session_projection_service.FACT_CALL_STATUS_TO_LINEAGE_STATUS.get(call_status, "pending"),
+        "is_market_absence_meaningful": call_status == "verified_no_record",
+        "is_target_stock_evidence": call_status in {"verified_present", "verified_no_record"} and (target_sections or default_scope == "target_stock"),
+        "is_market_context_evidence": any(
+            scope == "market_context" and _cc_status_from_sections(scoped_sections) in {"verified_present", "verified_no_record"}
+            for scope, scoped_sections in context_scopes.items()
+        ),
+        "is_industry_or_concept_evidence": any(
+            scope == "industry_or_concept" and _cc_status_from_sections(scoped_sections) in {"verified_present", "verified_no_record"}
+            for scope, scoped_sections in context_scopes.items()
+        ),
+        "scope_note": scope_note,
+        "scope_breakdown": scope_breakdown,
+        "sections": sections,
+    }
+
+
+def _cc_fetch_tushare_fact_call_ledger(target="", market_type="", daily_close_packet=None):
+    ts_code = _cc_healthcheck_sample_ts_code(target)
+    fetched_at = _cc_now()
+    daily = daily_close_packet or st.session_state.get("command_center_daily_close_packet") or {}
+    trade_date = _cc_tushare_date_text((daily or {}).get("latest_trade_date") or (daily or {}).get("end_date") or datetime.date.today())
+    end_date = trade_date or datetime.date.today().strftime("%Y%m%d")
+    try:
+        base_date = datetime.datetime.strptime(end_date, "%Y%m%d").date()
+    except Exception:
+        base_date = datetime.date.today()
+    start_30 = (base_date - datetime.timedelta(days=45)).strftime("%Y%m%d")
+    start_90 = (base_date - datetime.timedelta(days=120)).strftime("%Y%m%d")
+    start_180 = (base_date - datetime.timedelta(days=210)).strftime("%Y%m%d")
+    if not target or not (_cc_is_a_share_market_type(market_type) or a_share_manual_checks_service.is_a_share_ts_code(ts_code)):
+        items = [
+            {
+                "fact_key": key,
+                "fact_name": name,
+                "source_interfaces": next_session_projection_service.FACT_DEFAULT_INTERFACES.get(key, []),
+                "source_packet": f"command_center_{key}_packet",
+                "request_params": {},
+                "call_status": "not_called",
+                "row_count": 0,
+                "data_date": None,
+                "local_fetched_at": fetched_at,
+                "lineage_status": "pending",
+                "is_market_absence_meaningful": False,
+                "sections": [],
+            }
+            for key, name in next_session_projection_service.REQUIRED_FACT_KEYS
+        ]
+        return {"schema_version": "a_share_fact_call_ledger.v1", "updated_at": fetched_at, "ts_code": ts_code, "items": items}
+    if _tushare_adapter is None:
+        error = str(TUSHARE_ADAPTER_MODULE_ERROR) or "tushare_adapter 不可用"
+        items = []
+        for key, name in next_session_projection_service.REQUIRED_FACT_KEYS:
+            items.append(
+                {
+                    "fact_key": key,
+                    "fact_name": name,
+                    "source_interfaces": next_session_projection_service.FACT_DEFAULT_INTERFACES.get(key, []),
+                    "source_packet": f"command_center_{key}_packet",
+                    "request_params": {"ts_code": ts_code, "trade_date": trade_date},
+                    "call_status": "parse_error",
+                    "row_count": 0,
+                    "data_date": None,
+                    "local_fetched_at": fetched_at,
+                    "error_type": "parse_error",
+                    "error_message_safe": error,
+                    "lineage_status": "blocked",
+                    "is_market_absence_meaningful": False,
+                    "sections": [],
+                }
+            )
+        return {"schema_version": "a_share_fact_call_ledger.v1", "updated_at": fetched_at, "ts_code": ts_code, "items": items}
+
+    def safe_call(method_name, **params):
+        try:
+            method = getattr(_tushare_adapter, method_name)
+        except Exception:
+            return {"ok": False, "api": method_name.replace("get_", ""), "updated_at": _cc_now(), "error": f"tushare_adapter 未接入 {method_name}"}
+        try:
+            return method(**params)
+        except Exception as exc:
+            return {"ok": False, "api": method_name.replace("get_", ""), "updated_at": _cc_now(), "error": str(exc)}
+
+    items = []
+    items.append(
+        _cc_aggregate_fact_call_item(
+            "moneyflow",
+            "资金流",
+            "command_center_moneyflow_packet",
+            ["tushare.moneyflow"],
+            {"ts_code": ts_code, "trade_date": trade_date},
+            [_cc_fact_call_section("tushare.moneyflow", {"ts_code": ts_code, "trade_date": trade_date}, safe_call("get_moneyflow", ts_code=ts_code, trade_date=trade_date), target_ts_code=ts_code, scope="target_stock")],
+            target_ts_code=ts_code,
+        )
+    )
+    dragon_sections = [
+        _cc_fact_call_section("tushare.top_list", {"trade_date": trade_date, "ts_code": ts_code}, safe_call("get_top_list", trade_date=trade_date, ts_code=ts_code), target_ts_code=ts_code, scope="target_stock"),
+        _cc_fact_call_section("tushare.top_inst", {"trade_date": trade_date, "ts_code": ts_code}, safe_call("get_top_inst", trade_date=trade_date, ts_code=ts_code), target_ts_code=ts_code, scope="target_stock"),
+    ]
+    items.append(_cc_aggregate_fact_call_item("dragon_tiger", "龙虎榜", "command_center_dragon_tiger_packet", ["tushare.top_list", "tushare.top_inst"], {"trade_date": trade_date, "ts_code": ts_code}, dragon_sections, target_ts_code=ts_code))
+    items.append(
+        _cc_aggregate_fact_call_item(
+            "margin",
+            "融资融券",
+            "command_center_margin_packet",
+            ["tushare.margin_detail"],
+            {"ts_code": ts_code, "trade_date": trade_date},
+            [_cc_fact_call_section("tushare.margin_detail", {"ts_code": ts_code, "trade_date": trade_date}, safe_call("get_margin_detail", ts_code=ts_code, trade_date=trade_date), target_ts_code=ts_code, scope="target_stock")],
+            target_ts_code=ts_code,
+        )
+    )
+    hard_specs = [
+        ("tushare.anns_d", "get_anns_d", {"ts_code": ts_code, "start_date": start_90, "end_date": end_date}),
+        ("tushare.forecast", "get_forecast", {"ts_code": ts_code, "start_date": start_180, "end_date": end_date}),
+        ("tushare.stk_holdertrade", "get_stk_holdertrade", {"ts_code": ts_code, "start_date": start_180, "end_date": end_date}),
+        ("tushare.share_float", "get_share_float", {"ts_code": ts_code, "start_date": end_date, "end_date": (base_date + datetime.timedelta(days=180)).strftime("%Y%m%d")}),
+        ("tushare.pledge_stat", "get_pledge_stat", {"ts_code": ts_code}),
+        ("tushare.pledge_detail", "get_pledge_detail", {"ts_code": ts_code}),
+        ("tushare.stk_surv", "get_stk_surv", {"ts_code": ts_code, "start_date": start_90, "end_date": end_date}),
+    ]
+    hard_sections = [_cc_fact_call_section(interface, params, safe_call(method, **params), target_ts_code=ts_code, scope="target_stock") for interface, method, params in hard_specs]
+    items.append(_cc_aggregate_fact_call_item("hard_risk", "公告/硬风险", "command_center_hard_risk_packet", [spec[0] for spec in hard_specs], {"ts_code": ts_code, "start_date": start_180, "end_date": end_date}, hard_sections, target_ts_code=ts_code))
+    limit_specs = [
+        ("tushare.stk_limit", "get_stk_limit", {"ts_code": ts_code, "trade_date": trade_date}),
+        ("tushare.limit_list_d", "get_limit_list_d", {"ts_code": ts_code, "trade_date": trade_date}),
+        ("tushare.limit_cpt_list", "get_limit_cpt_list", {"trade_date": trade_date}),
+    ]
+    limit_sections = [
+        _cc_fact_call_section(
+            interface,
+            params,
+            safe_call(method, **params),
+            target_ts_code=ts_code,
+            scope="target_stock" if params.get("ts_code") else ("industry_or_concept" if interface == "tushare.limit_cpt_list" else "market_context"),
+        )
+        for interface, method, params in limit_specs
+    ]
+    items.append(_cc_aggregate_fact_call_item("limit_emotion", "涨跌停/情绪", "command_center_limit_emotion_packet", [spec[0] for spec in limit_specs], {"ts_code": ts_code, "trade_date": trade_date}, limit_sections, target_ts_code=ts_code))
+    chip_specs = [
+        ("tushare.cyq_perf", "get_cyq_perf", {"ts_code": ts_code, "trade_date": trade_date}),
+        ("tushare.cyq_chips", "get_cyq_chips", {"ts_code": ts_code, "trade_date": trade_date}),
+    ]
+    chip_sections = [_cc_fact_call_section(interface, params, safe_call(method, **params), target_ts_code=ts_code, scope="target_stock") for interface, method, params in chip_specs]
+    items.append(_cc_aggregate_fact_call_item("chip_radar", "筹码/胜率", "command_center_chip_packet", [spec[0] for spec in chip_specs], {"ts_code": ts_code, "trade_date": trade_date}, chip_sections, target_ts_code=ts_code))
+    daily_row_count = int(_num((daily or {}).get("row_count"), 0) or 0)
+    volume_status = "verified_present" if (daily or {}).get("is_real_market_series") and daily_row_count else "missing_packet"
+    items.append(
+        {
+            "fact_key": "volume_amount",
+            "fact_name": "成交额/成交量",
+            "scope": "target_stock",
+            "target_ts_code": ts_code,
+            "symbol_filter_applied": True,
+            "target_match_count": daily_row_count,
+            "market_row_count": daily_row_count,
+            "source_interfaces": ["tushare.daily", "tushare.daily_basic"],
+            "source_packet": "command_center_daily_close_packet",
+            "request_params": (daily or {}).get("request_params") or {"ts_code": ts_code, "trade_date": trade_date},
+            "call_status": volume_status,
+            "row_count": daily_row_count,
+            "data_date": (daily or {}).get("latest_trade_date") or (daily or {}).get("end_date"),
+            "local_fetched_at": (daily or {}).get("local_fetched_at") or fetched_at,
+            "error_type": None,
+            "error_message_safe": None,
+            "lineage_status": next_session_projection_service.FACT_CALL_STATUS_TO_LINEAGE_STATUS.get(volume_status, "pending"),
+            "is_market_absence_meaningful": False,
+            "is_target_stock_evidence": volume_status == "verified_present",
+            "is_market_context_evidence": False,
+            "scope_note": "目标股真实日线成交量/成交额。",
+            "scope_breakdown": [
+                {
+                    "scope": "target_stock",
+                    "call_status": volume_status,
+                    "row_count": daily_row_count,
+                    "target_match_count": daily_row_count,
+                    "is_target_stock_evidence": volume_status == "verified_present",
+                }
+            ],
+            "sections": [],
+        }
+    )
+    ledger = {"schema_version": "a_share_fact_call_ledger.v1", "updated_at": _cc_now(), "ts_code": ts_code, "trade_date": trade_date, "items": items}
+    st.session_state["a_share_fact_call_ledger"] = ledger
+    st.session_state["command_center_a_share_fact_call_ledger"] = ledger
+    return ledger
+
+
 def _cc_refresh_yfinance_snapshot(target="", market_type=""):
     if not target:
         return {
@@ -6324,6 +6844,43 @@ def _run_command_center_full_data_refresh(target="", market_type="", price=None,
         target=target,
         refresh_level=cc_service.REFRESH_LEVEL_MANUAL_BASIC,
     )
+    daily_close_packet = _cc_fetch_tushare_daily_close_packet(target=target, market_type=market_type)
+    live_packet = _cc_attach_daily_close_packet(live_packet, daily_close_packet)
+    fact_call_ledger = _cc_fetch_tushare_fact_call_ledger(
+        target=target,
+        market_type=market_type,
+        daily_close_packet=daily_close_packet,
+    )
+    live_packet["a_share_fact_call_ledger"] = fact_call_ledger
+    refresh_summary.setdefault("results", []).append(
+        _cc_provider_refresh_result(
+            "Tushare 真实日线",
+            ok=daily_close_packet.get("status") == "ready",
+            message=daily_close_packet.get("message") or "",
+            source="tushare.daily",
+            updated_at=daily_close_packet.get("updated_at") or daily_close_packet.get("local_fetched_at") or "",
+            error=daily_close_packet.get("error") or "",
+            duration_seconds=daily_close_packet.get("duration_seconds"),
+        )
+    )
+    refresh_summary.setdefault("results", []).append(
+        _cc_provider_refresh_result(
+            "Tushare A股专业事实",
+            ok=any((item or {}).get("call_status") in {"verified_present", "verified_no_record"} for item in fact_call_ledger.get("items") or []),
+            message="；".join(
+                f"{item.get('fact_name')}={item.get('call_status')}"
+                for item in (fact_call_ledger.get("items") or [])[:7]
+                if isinstance(item, dict)
+            ),
+            source="tushare.fact_call_ledger",
+            updated_at=fact_call_ledger.get("updated_at") or "",
+            duration_seconds=None,
+        )
+    )
+    if status is not None:
+        status.write(
+            f"Tushare 真实日线：{daily_close_packet.get('message') or ('完成' if daily_close_packet.get('status') == 'ready' else '暂无可用日线')}"
+        )
     live_packet = _sync_command_center_home_candidate_packets(live_packet)
     first_snapshot = _persist_home_action_snapshot(
         live_packet=live_packet,
@@ -6412,6 +6969,16 @@ def _run_command_center_full_war_game(target="", market_type="", position_profil
         horizon_days=10,
     )
     st.session_state["command_center_projection_packet"] = projection_packet
+    next_session_projection_packet = _build_command_center_next_session_projection_packet(
+        target=target,
+        market_type=market_type,
+        position_profile=position_profile,
+        live_packet=live_packet,
+        decision_packet=decision_packet,
+        strategy_packet=strategy_packet,
+        projection_packet=projection_packet,
+        home_snapshot=home_snapshot,
+    )
     st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
     st.session_state["command_center_evidence_radar_packet"] = evidence_radar_packet
     summary = {
@@ -6421,6 +6988,7 @@ def _run_command_center_full_war_game(target="", market_type="", position_profil
         "strategy_status": strategy_packet.get("status") or "unknown",
         "decision_action": decision_packet.get("overall_action") or "等待",
         "projection_horizon_days": projection_packet.get("horizon_days") or 10,
+        "next_session_projection_status": next_session_projection_packet.get("status"),
         "deepseek_called": False,
         "deepseek_note": "本轮未调用 DeepSeek；如需解释请手动点击 DeepSeek 综合解释。",
     }
@@ -6554,6 +7122,116 @@ JSON schema:
     return enhanced, parsed, raw
 
 
+def _build_command_center_next_session_projection_packet(
+    *,
+    target="",
+    market_type="",
+    position_profile=None,
+    live_packet=None,
+    decision_packet=None,
+    strategy_packet=None,
+    projection_packet=None,
+    home_snapshot=None,
+):
+    del projection_packet
+    snapshot = home_snapshot or st.session_state.get("command_center_home_snapshot") or {}
+    daily_close_packet = (
+        st.session_state.get("command_center_daily_close_packet")
+        or (snapshot or {}).get("command_center_daily_close_packet")
+        or (live_packet or {}).get("daily_close_packet")
+        or {}
+    )
+    fact_call_ledger = (
+        st.session_state.get("command_center_a_share_fact_call_ledger")
+        or st.session_state.get("a_share_fact_call_ledger")
+        or (snapshot or {}).get("a_share_fact_call_ledger")
+        or (live_packet or {}).get("a_share_fact_call_ledger")
+        or {}
+    )
+    try:
+        recent_trade_reviews = trade_review_log_service.load_trade_review_records(limit=8)
+    except Exception:
+        recent_trade_reviews = []
+    packet = next_session_projection_service.build_next_session_operation_projection_packet(
+        target=target,
+        name=(position_profile or {}).get("name") if isinstance(position_profile, dict) else "",
+        trade_date=(daily_close_packet or {}).get("end_date") or (daily_close_packet or {}).get("trade_date"),
+        daily_close_packet=daily_close_packet,
+        home_snapshot=snapshot,
+        live_packet=live_packet or st.session_state.get("command_center_live_packet") or {},
+        decision_packet=decision_packet or st.session_state.get("command_center_decision_packet") or {},
+        strategy_packet=strategy_packet or st.session_state.get("strategy_execution_packet") or {},
+        a_share_fact_lineage_summary=(snapshot or {}).get("a_share_fact_lineage_summary") if isinstance(snapshot, dict) else {},
+        a_share_fact_call_ledger=fact_call_ledger,
+        position_profile=position_profile,
+        recent_trade_reviews=recent_trade_reviews,
+        now=_cc_now(),
+    )
+    st.session_state["command_center_next_session_projection_packet"] = packet
+    if isinstance(snapshot, dict):
+        snapshot["command_center_next_session_projection_packet"] = packet
+    return packet
+
+
+def _run_command_center_deepseek_next_session_projection(
+    *,
+    next_session_projection_packet=None,
+    retry_json=False,
+):
+    base_packet = next_session_projection_packet or st.session_state.get("command_center_next_session_projection_packet") or {}
+    prompt_payload = next_session_projection_service.build_next_session_deepseek_prompt(base_packet, retry_mode=retry_json)
+    cache_key = (prompt_payload.get("cache_key") or prompt_payload.get("input_hash") or "") + ("|retry_json" if retry_json else "")
+    projection_cache = st.session_state.setdefault("command_center_next_session_projection_deepseek_cache", {})
+    cached = projection_cache.get(cache_key) if isinstance(projection_cache, dict) else None
+    if isinstance(cached, dict) and cached.get("status") in {"success", "cached"} and cached.get("raw_json"):
+        enhanced = next_session_projection_service.merge_deepseek_next_session_projection(
+            base_packet,
+            cached.get("raw_json"),
+            called_at=cached.get("called_at") or _cc_now(),
+            model=cached.get("model") or "deepseek-chat",
+            input_hash=prompt_payload.get("input_hash") or "",
+        )
+        synthesis = dict(enhanced.get("deepseek_synthesis") or {})
+        synthesis["status"] = "cached"
+        synthesis["cache_key"] = cache_key
+        enhanced["deepseek_synthesis"] = synthesis
+        st.session_state["command_center_next_session_projection_packet"] = enhanced
+        return enhanced, ""
+    raw = call_deepseek_non_stream(
+        prompt_payload.get("user_prompt") or "",
+        system_role=prompt_payload.get("system_prompt") or "你是克制的 A 股交易操作图谱整理器，只输出合法 JSON。",
+        max_tokens=1400 if retry_json else 2200,
+        response_format={"type": "json_object"},
+    )
+    enhanced = next_session_projection_service.merge_deepseek_next_session_projection(
+        base_packet,
+        raw,
+        called_at=_cc_now(),
+        model="deepseek-chat",
+        input_hash=prompt_payload.get("input_hash") or "",
+    )
+    synthesis = enhanced.get("deepseek_synthesis") or {}
+    if isinstance(projection_cache, dict) and cache_key:
+        projection_cache[cache_key] = {
+            "cache_key": cache_key,
+            "called_at": synthesis.get("called_at"),
+            "model": synthesis.get("model"),
+            "input_hash": synthesis.get("input_hash"),
+            "output_hash": synthesis.get("output_hash"),
+            "status": synthesis.get("status"),
+            "summary": synthesis.get("summary"),
+            "raw_json": synthesis.get("raw_json"),
+            "raw_output_hash": synthesis.get("raw_output_hash"),
+            "error_message_safe": synthesis.get("error_message_safe"),
+            "retry_json": bool(retry_json),
+        }
+        synthesis["cache_key"] = cache_key
+        enhanced["deepseek_synthesis"] = synthesis
+    st.session_state["command_center_next_session_projection_packet"] = enhanced
+    st.session_state["command_center_next_session_deepseek_raw"] = raw or ""
+    return enhanced, raw
+
+
 def _enrich_position_profile_for_command_center(profile=None, *, horizon="", margin_ratio_pct=0):
     enriched = dict(profile or {})
     margin_ratio = _num(margin_ratio_pct, 0) or 0
@@ -6638,6 +7316,16 @@ def _run_command_center_analysis_chain(target="", market_type="", position_profi
             horizon_days=10,
         )
         st.session_state["command_center_projection_packet"] = projection_packet
+        next_session_projection_packet = _build_command_center_next_session_projection_packet(
+            target=target,
+            market_type=market_type,
+            position_profile=position_profile,
+            live_packet=live_packet,
+            decision_packet=decision_packet,
+            strategy_packet=strategy_packet,
+            projection_packet=projection_packet,
+            home_snapshot=home_snapshot,
+        )
         st.session_state["command_center_analysis_method_packet"] = analysis_method_packet
         st.session_state["command_center_evidence_radar_packet"] = evidence_radar_packet
         _status_write("已生成未来 5-10 日趋势推演。")
@@ -6645,6 +7333,7 @@ def _run_command_center_analysis_chain(target="", market_type="", position_profi
         evidence_radar_packet = st.session_state.get("command_center_evidence_radar_packet") or {}
         analysis_method_packet = st.session_state.get("command_center_analysis_method_packet") or {}
         projection_packet = st.session_state.get("command_center_projection_packet") or {}
+        next_session_projection_packet = st.session_state.get("command_center_next_session_projection_packet") or {}
         errors.append(f"趋势推演失败：{exc}")
 
     st.session_state["command_center_live_packet"] = live_packet
@@ -6656,6 +7345,7 @@ def _run_command_center_analysis_chain(target="", market_type="", position_profi
         "evidence_radar_packet": evidence_radar_packet,
         "analysis_method_packet": analysis_method_packet,
         "projection_packet": projection_packet,
+        "next_session_projection_packet": next_session_projection_packet,
         "errors": errors,
         "deepseek_called": False,
     }
@@ -8348,6 +9038,21 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
         horizon_days=10,
     )
     st.session_state["command_center_projection_packet"] = projection_packet
+    next_session_projection_packet = (
+        active_packet.get("next_session_projection_packet")
+        or st.session_state.get("command_center_next_session_projection_packet")
+        or _build_command_center_next_session_projection_packet(
+            target=target,
+            market_type=market_type,
+            position_profile=position_profile,
+            live_packet=live_packet,
+            decision_packet=decision_packet,
+            strategy_packet=strategy_packet,
+            projection_packet=projection_packet,
+            home_snapshot=home_snapshot,
+        )
+    )
+    st.session_state["command_center_next_session_projection_packet"] = next_session_projection_packet
     live_packet = cc_state_adapter.attach_command_center_child_packets_for_display(
         live_packet,
         strategy_execution_packet=strategy_packet,
@@ -8460,7 +9165,61 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                     with st.expander("查看 DeepSeek 原始返回", expanded=False):
                         st.write(raw_overlay)
                 status.update(label="趋势增强未合并，已保留原曲线", state="error", expanded=False)
-    render_command_center_projection_chart(projection_packet, home_compact=True)
+        if st.button(
+            "DeepSeek 整理次日操作图谱",
+            key="btn_cc_deepseek_next_session_projection",
+            help="手动调用 DeepSeek，把当前真实日线、量化推演、交易纪律、A股事实血缘整理成结构化操作图谱 JSON；不会自动交易，也不会验证输入之外事实。",
+            width="stretch",
+        ):
+            status = st.status("正在手动整理次日操作图谱...", expanded=True)
+            status.write("只读取当前图谱 JSON；DeepSeek 暂未调用外部事实验证。")
+            try:
+                next_session_projection_packet, raw_next_projection = _run_command_center_deepseek_next_session_projection(
+                    next_session_projection_packet=next_session_projection_packet,
+                )
+                synthesis = next_session_projection_packet.get("deepseek_synthesis") or {}
+                if synthesis.get("status") == "success":
+                    status.update(label="DeepSeek 已整理次日操作图谱", state="complete", expanded=False)
+                else:
+                    status.write("DeepSeek 未返回合法 JSON；页面保留本地确定性图谱。")
+                    if raw_next_projection:
+                        with st.expander("查看 DeepSeek 原始返回", expanded=False):
+                            st.write(raw_next_projection)
+                    status.update(label="次日图谱整理未合并", state="error", expanded=False)
+            except Exception as exc:
+                status.write(f"DeepSeek 整理失败：{exc}")
+                status.update(label="次日图谱整理失败", state="error", expanded=False)
+        latest_next_projection_synthesis = (
+            (st.session_state.get("command_center_next_session_projection_packet") or {}).get("deepseek_synthesis")
+            if isinstance(st.session_state.get("command_center_next_session_projection_packet"), dict)
+            else {}
+        )
+        if isinstance(latest_next_projection_synthesis, dict) and latest_next_projection_synthesis.get("status") in {"parse_failed", "failed"}:
+            if st.button(
+                "重试 JSON 输出",
+                key="btn_cc_deepseek_next_session_projection_retry_json",
+                help="仅在上次 DeepSeek 返回非合法 JSON 后手动重试；提示词会更短、更严格，仍不会覆盖真实行情、持仓或策略 action。",
+                width="stretch",
+            ):
+                status = st.status("正在重试 DeepSeek JSON 输出...", expanded=True)
+                try:
+                    next_session_projection_packet, raw_next_projection = _run_command_center_deepseek_next_session_projection(
+                        next_session_projection_packet=next_session_projection_packet,
+                        retry_json=True,
+                    )
+                    synthesis = next_session_projection_packet.get("deepseek_synthesis") or {}
+                    if synthesis.get("status") == "success":
+                        status.update(label="DeepSeek JSON 重试已合并", state="complete", expanded=False)
+                    else:
+                        status.write(synthesis.get("error_message_safe") or "DeepSeek 仍未返回可合并 JSON；保留本地图谱。")
+                        status.update(label="JSON 重试未合并", state="error", expanded=False)
+                except Exception as exc:
+                    status.write(f"DeepSeek JSON 重试失败：{exc}")
+                    status.update(label="JSON 重试失败", state="error", expanded=False)
+    render_next_session_operation_projection(next_session_projection_packet)
+    with st.expander("旧版趋势推演兼容视图", expanded=False):
+        st.caption("此为旧版兼容视图，主判断请以次日操作图谱为准。示意路径，不是真实价格预测。")
+        render_command_center_projection_chart(projection_packet, home_compact=True)
     st.markdown("### 策略执行实验室")
     live_packet = render_strategy_execution_card(
         live_packet,

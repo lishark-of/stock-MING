@@ -8114,6 +8114,234 @@ def _projection_static_frame(packet):
     return pd.DataFrame.from_dict(rows, orient="index").sort_index()
 
 
+def _next_session_projection_chart_frame(packet):
+    payload = packet or {}
+    model = payload.get("chart_render_model") if isinstance(payload.get("chart_render_model"), dict) else {}
+    rows = {}
+    historical = model.get("historical_series") or []
+    for index, item in enumerate(historical):
+        if not isinstance(item, dict):
+            continue
+        price = _to_float(item.get("price"))
+        if price is None:
+            continue
+        label = str(item.get("x") or f"H{index}")
+        rows.setdefault(label, {})["真实日线 close"] = price
+    for scenario in model.get("scenario_series") or []:
+        if not isinstance(scenario, dict):
+            continue
+        name = str(scenario.get("scenario_name") or scenario.get("scenario_key") or "情景路径")
+        for point in scenario.get("points") or []:
+            if not isinstance(point, dict):
+                continue
+            price = _to_float(point.get("price"))
+            if price is None:
+                continue
+            label = str(point.get("x") or "")
+            if not label:
+                continue
+            rows.setdefault(label, {})[name] = price
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame.from_dict(rows, orient="index")
+
+
+def _next_session_status_label(status):
+    return {
+        "ready": "真实日线已接入",
+        "missing_daily_close": "真实日线缺失",
+        "cached": "使用缓存",
+        "failed": "失败",
+    }.get(str(status or ""), "待验证")
+
+
+def _next_session_path_card(path):
+    name = str(path.get("scenario_name") or path.get("scenario_key") or "情景路径")
+    weight = _to_float(path.get("weight"))
+    weight_text = f"{weight * 100:.0f}%" if weight is not None and weight <= 1 else f"{weight:.0f}%" if weight is not None else "待验证"
+    operation = path.get("operation_plan") if isinstance(path.get("operation_plan"), dict) else {}
+    zone = path.get("expected_price_zone") if isinstance(path.get("expected_price_zone"), dict) else {}
+    next_low = _fmt_price(zone.get("next_session_low"))
+    next_high = _fmt_price(zone.get("next_session_high"))
+    trigger = "；".join(str(item) for item in (path.get("trigger_conditions") or [])[:2]) or "等待价格、量能和纪律条件确认。"
+    invalid = "；".join(str(item) for item in (path.get("invalid_conditions") or [])[:2]) or "若关键条件反向，本路径失效。"
+    action = str(operation.get("primary_action") or "wait")
+    change = str(operation.get("position_change") or "none")
+    evidence = "、".join(str(item) for item in (path.get("evidence_used") or [])[:4]) or "真实日线 / 策略执行 / 交易纪律"
+    st.markdown(f"##### {name}")
+    st.markdown(f"<span class='cc-projection-pill blue'>{escape(weight_text)}</span>", unsafe_allow_html=True)
+    st.caption("次日价格区间")
+    st.write(f"{next_low} - {next_high}")
+    st.caption("触发条件")
+    st.write(trigger)
+    st.caption("失效条件")
+    st.write(invalid)
+    st.caption("对应操作")
+    st.write(f"{action} ｜ {change}")
+    st.caption("使用证据")
+    st.write(evidence)
+    if path.get("confidence_note"):
+        st.caption(str(path.get("confidence_note")))
+
+
+def render_next_session_operation_projection(packet: dict | None = None):
+    _inject_command_center_css()
+    payload = packet or {}
+    copy = {
+        "title": "次日操作图谱：真实日线 + 量化推演 + 交易纪律 + DeepSeek 整理",
+        "not_called": "当前为本地量化规则图谱，可手动调用 DeepSeek 整理路径说明",
+        "called": "DeepSeek 已整理路径，但不验证输入外事实",
+        "guardrail": "图谱用于可视化 next action 和条件路径，不自动改写交易指令。",
+        "prediction_boundary": "非确定性预测",
+    }
+    model = payload.get("chart_render_model") if isinstance(payload.get("chart_render_model"), dict) else {}
+    lineage = payload.get("data_lineage") if isinstance(payload.get("data_lineage"), dict) else {}
+    daily = lineage.get("daily_close") if isinstance(lineage.get("daily_close"), dict) else {}
+    position = payload.get("position_context") if isinstance(payload.get("position_context"), dict) else {}
+    technical = payload.get("technical_context") if isinstance(payload.get("technical_context"), dict) else {}
+    quant = payload.get("quant_context") if isinstance(payload.get("quant_context"), dict) else {}
+    trade_lab = payload.get("trade_lab_context") if isinstance(payload.get("trade_lab_context"), dict) else {}
+    deepseek = payload.get("deepseek_synthesis") if isinstance(payload.get("deepseek_synthesis"), dict) else {}
+    deepseek_line = copy["called"] if deepseek.get("status") == "success" else copy["not_called"]
+    status_label = _next_session_status_label(payload.get("status"))
+    ticker = str(payload.get("ts_code") or position.get("ticker") or "当前标的")
+    current = _fmt_price(position.get("current_price"))
+    cost = _fmt_price(position.get("cost_price"))
+    margin = _to_float(position.get("financing_ratio"))
+    margin_text = f"{margin:.0f}%" if margin is not None else "暂无"
+    header_html = f"""
+    <section class="cc-card">
+      <div class="cc-card-title">{escape(copy["title"])}</div>
+      <div class="cc-card-caption">{escape(copy["prediction_boundary"])}｜{escape(deepseek_line)}｜{escape(copy["guardrail"])}</div>
+      <div class="cc-pill-row">
+        <span class="cc-pill green">{escape(ticker)}</span>
+        <span class="cc-pill">状态：{escape(status_label)}</span>
+        <span class="cc-pill">当前：{escape(current)}</span>
+        <span class="cc-pill">成本：{escape(cost)}</span>
+        <span class="cc-pill">融资：{escape(margin_text)}</span>
+        <span class="cc-pill">动作：{escape(str(quant.get("suggested_action") or "等待"))}</span>
+      </div>
+    </section>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
+    trust = payload.get("data_trust_summary") if isinstance(payload.get("data_trust_summary"), dict) else {}
+    trust_facts = [item for item in (trust.get("facts") or []) if isinstance(item, dict)]
+    if trust:
+        daily_trust = trust.get("daily_close") if isinstance(trust.get("daily_close"), dict) else {}
+        position_trust = trust.get("position") if isinstance(trust.get("position"), dict) else {}
+        deepseek_trust = trust.get("deepseek") if isinstance(trust.get("deepseek"), dict) else {}
+        chips = [
+            f"真实日线：{daily_trust.get('call_status') or 'not_called'}，{daily_trust.get('row_count') or 0} 条",
+            f"持仓：{position_trust.get('call_status') or 'not_called'}",
+            f"DeepSeek：{deepseek_trust.get('status') or 'not_called'}",
+        ]
+        for item in trust_facts[:7]:
+            breakdown = [part for part in (item.get("scope_breakdown") or []) if isinstance(part, dict)]
+            if breakdown:
+                parts = []
+                for part in breakdown:
+                    scope = part.get("scope") or item.get("scope") or "unknown_scope"
+                    status = part.get("call_status") or item.get("call_status") or "not_called"
+                    row_count = part.get("row_count")
+                    suffix = f"，{row_count} 条" if row_count not in (None, "") and int(_to_float(row_count) or 0) else ""
+                    parts.append(f"{scope} {status}{suffix}")
+                chips.append(f"{item.get('fact_name') or item.get('fact_key')}：" + "；".join(parts))
+            else:
+                chips.append(
+                    f"{item.get('fact_name') or item.get('fact_key')}："
+                    f"{item.get('call_status') or 'not_called'}，{item.get('scope') or 'unknown_scope'}"
+                )
+        chip_html = "".join(f'<span class="cc-pill">{escape(text)}</span>' for text in chips)
+        st.markdown(
+            f"""
+            <section class="cc-card">
+              <div class="cc-card-title">数据可信度摘要</div>
+              <div class="cc-card-caption">区分真实返回、成功无记录、未调用、权限不足、解析失败；图谱只使用已说明来源的数据。</div>
+              <div class="cc-pill-row">{chip_html}</div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+        conflicts = position_trust.get("conflict_flags") or position.get("conflict_flags") or []
+        if conflicts:
+            st.warning("持仓来源冲突：当前仅输出观察/核验路径，不生成强操作建议。")
+            st.caption(
+                "采用来源："
+                f"{position.get('source_packet') or position_trust.get('source_packet') or '暂无'}｜"
+                f"冲突字段：{'、'.join(str(item) for item in conflicts)}｜"
+                f"当前采用：{_fmt_price(position.get('shares'))} 股 / 成本 {_fmt_price(position.get('cost_price'))} / "
+                f"融资 {position.get('financing_ratio') if position.get('financing_ratio') is not None else '暂无'}%"
+            )
+    if daily.get("is_real_market_series"):
+        latest_history = (model.get("historical_series") or [])[-1] if model.get("historical_series") else {}
+        volume_text = _fmt_money(latest_history.get("vol")) if latest_history.get("vol") is not None else "暂无"
+        amount_text = _fmt_money(latest_history.get("amount")) if latest_history.get("amount") is not None else "暂无"
+        st.caption(
+            "真实日线："
+            f"{daily.get('source_interface') or 'tushare.daily'} ｜ "
+            f"{daily.get('row_count') or 0} 行 ｜ "
+            f"{daily.get('start_date') or '暂无'} 至 {daily.get('end_date') or '暂无'} ｜ "
+            f"最新 close {_fmt_price(daily.get('latest_close'))} ｜ "
+            f"成交量 {volume_text} ｜ 成交额 {amount_text} ｜ "
+            f"本地拉取 {daily.get('local_fetched_at') or '暂无'}"
+        )
+    else:
+        st.warning("真实日线缺失，无法生成真实历史段；下方只保留操作情景卡片，不把模型路径当真实历史走势。")
+    chart_frame = _next_session_projection_chart_frame(payload)
+    if not chart_frame.empty:
+        st.line_chart(chart_frame, height=320)
+    paths = [item for item in (payload.get("scenario_paths") or []) if isinstance(item, dict)]
+    if paths:
+        cols = st.columns(min(3, len(paths)))
+        for col, path in zip(cols, paths[:3]):
+            with col:
+                with st.container(border=True):
+                    _next_session_path_card(path)
+    zones = [item for item in (payload.get("operation_zones") or []) if isinstance(item, dict)]
+    if zones:
+        st.markdown("#### 操作区域")
+        zone_cols = st.columns(min(3, len(zones)))
+        for index, zone in enumerate(zones[:6]):
+            with zone_cols[index % len(zone_cols)]:
+                with st.container(border=True):
+                    price_range = zone.get("price_range") if isinstance(zone.get("price_range"), list) else []
+                    price_text = " - ".join(_fmt_price(value) for value in price_range if value is not None) or "按条件触发"
+                    st.markdown(f"##### {zone.get('zone_name') or zone.get('zone_key') or '操作区'}")
+                    st.caption(price_text)
+                    st.write(str(zone.get("condition") or "等待触发条件。"))
+                    st.caption(f"动作：{zone.get('action') or '待验证'}｜来源：{zone.get('source') or '规则'}")
+    with st.expander("数据来源与缺口", expanded=False):
+        fact_summary = lineage.get("a_share_fact_lineage_summary") if isinstance(lineage.get("a_share_fact_lineage_summary"), dict) else {}
+        fact_items = [item for item in (fact_summary.get("items") or []) if isinstance(item, dict)]
+        if fact_items:
+            rows = [
+                {
+                    "事实": item.get("fact_name"),
+                    "状态": item.get("status"),
+                    "调用状态": item.get("call_status"),
+                    "范围": item.get("scope"),
+                    "目标匹配": item.get("target_match_count"),
+                    "市场行数": item.get("market_row_count"),
+                    "行数": item.get("row_count"),
+                    "数据日期": item.get("data_date"),
+                    "本地时间": item.get("local_fetched_at"),
+                    "进入图谱": "是" if item.get("enters_projection") else "否",
+                    "核心动作": "是" if item.get("enters_core_action") else "否",
+                }
+                for item in fact_items
+            ]
+            st.dataframe(rows, width="stretch", hide_index=True)
+        st.caption(
+            f"MA5 {technical.get('ma5') or '暂无'}｜MA20 {technical.get('ma20') or '暂无'}｜"
+            f"ATR {technical.get('atr') or '暂无'}｜趋势 {technical.get('trend_state') or 'unknown'}"
+        )
+        notes = trade_lab.get("discipline_notes") or []
+        if notes:
+            st.caption("交易纪律：" + "；".join(str(item) for item in notes[:3]))
+        for warning in payload.get("warnings") or []:
+            st.caption(str(warning))
+
+
 def render_command_center_projection_chart(projection_packet: dict | None = None, home_compact=False):
     _inject_command_center_css()
     payload = projection_packet or {}
