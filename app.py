@@ -24,6 +24,7 @@ import command_center_etf_packet as etf_packet_service
 import command_center_packet_registry as packet_registry_service
 import command_center_desktop_frontend_readiness as desktop_readiness_service
 import command_center_analysis_methods as analysis_methods_service
+import command_center_serenity_method_radar as serenity_method_radar_service
 import command_center_facts_packet as facts_packet_service
 import command_center_discipline_packet as discipline_packet_service
 import command_center_market_packet as market_packet_service
@@ -3157,6 +3158,89 @@ def _chokepoint_dataframe(rows, columns):
     return pd.DataFrame(normalized)
 
 
+def _render_serenity_method_radar_panel():
+    github_probe = st.session_state.get("command_center_serenity_method_radar_github_probe") or {}
+    packet = serenity_method_radar_service.build_serenity_method_radar_packet(github_probe=github_probe)
+    st.session_state["command_center_serenity_method_radar_packet"] = packet
+
+    st.markdown("#### Serenity 方法雷达")
+    st.caption(
+        "本区只展示用户截图本地基线和可选 GitHub 当前状态；不调用 DeepSeek，不进入瓶颈评分、策略动作或次日图谱。"
+    )
+    status_cols = st.columns(4)
+    status_cols[0].metric("来源", "用户截图基线")
+    status_cols[1].metric("GitHub 当前状态", "已校验" if github_probe else "未校验")
+    status_cols[2].metric("DeepSeek", "不调用")
+    status_cols[3].metric("决策使用", "只读说明")
+    if st.button("校验 GitHub 当前状态", key="btn_cc_serenity_method_radar_github_probe", width="stretch"):
+        status = st.status("正在手动校验 GitHub 当前状态...", expanded=True)
+        status.write("只读取公开仓库元数据；不覆盖截图特色、方法贡献或防幻觉演进。")
+        probe = serenity_method_radar_service.probe_github_repositories(timeout_seconds=8)
+        st.session_state["command_center_serenity_method_radar_github_probe"] = probe
+        packet = serenity_method_radar_service.build_serenity_method_radar_packet(github_probe=probe)
+        st.session_state["command_center_serenity_method_radar_packet"] = packet
+        failed_count = len([item for item in probe.values() if item.get("http_status") != 200])
+        if failed_count:
+            status.update(label=f"GitHub 校验完成，{failed_count} 个仓库未返回 200", state="complete", expanded=False)
+        else:
+            status.update(label="GitHub 校验完成", state="complete", expanded=False)
+
+    st.info("截图特色不是 GitHub stars；截图里的方法评价不是官方评价；GitHub stars 只代表公开关注度，不代表方法质量、投资有效性或交易胜率。")
+
+    with st.expander("截图本地基线仓库", expanded=False):
+        repo_rows = []
+        for item in packet.get("repositories") or []:
+            probe = item.get("github_probe") or {}
+            repo_rows.append(
+                {
+                    "#": item.get("rank"),
+                    "仓库": item.get("repo"),
+                    "截图特色": item.get("screenshot_feature"),
+                    "来源": item.get("source_type"),
+                    "GitHub状态": probe.get("probe_status", "未校验"),
+                    "HTTP": probe.get("http_status", ""),
+                    "GitHub stars": probe.get("github_stars", ""),
+                    "GitHub forks": probe.get("github_forks", ""),
+                    "pushed_at": probe.get("pushed_at", ""),
+                    "错误": probe.get("error_message_safe", ""),
+                }
+            )
+        st.dataframe(pd.DataFrame(repo_rows), width="stretch", hide_index=True)
+
+    with st.expander("防幻觉机制演进", expanded=False):
+        evolution_rows = _chokepoint_dataframe(
+            packet.get("hallucination_defense_evolution"),
+            [
+                ("generation", "代际"),
+                ("representative_repo", "代表仓库"),
+                ("mechanism", "机制"),
+                ("effect", "效果"),
+                ("source_type", "来源"),
+            ],
+        )
+        st.dataframe(evolution_rows, width="stretch", hide_index=True)
+
+    with st.expander("方法贡献归纳", expanded=False):
+        summary_rows = []
+        for item in packet.get("method_summaries") or []:
+            representatives = item.get("representative_repo") or " / ".join(item.get("representative_repos") or [])
+            summary_rows.append(
+                {
+                    "模块": item.get("label"),
+                    "代表仓库": representatives,
+                    "要点": "；".join(item.get("points") or []),
+                    "来源": item.get("source_type"),
+                }
+            )
+        st.dataframe(pd.DataFrame(summary_rows), width="stretch", hide_index=True)
+
+    with st.expander("决策边界", expanded=False):
+        policy = packet.get("decision_usage_policy") or {}
+        st.json(policy, expanded=False)
+        for note in packet.get("source_notes") or []:
+            st.markdown(f"- {note}")
+
+
 def _render_chokepoint_scan_result(packet):
     if not isinstance(packet, dict) or not packet:
         return
@@ -3242,6 +3326,7 @@ def _render_chokepoint_scan_result(packet):
 def _render_chokepoint_scan_panel(target="", market_type="", live_packet=None, home_snapshot=None, active_packet=None):
     st.markdown("#### 产业链瓶颈扫描")
     st.caption("分析方法展示，不是交易指令；15 维评分和模型估值不直接改变 strategy action、次日操作图谱或真实交易链路。")
+    _render_serenity_method_radar_panel()
     default_theme = st.session_state.get("command_center_chokepoint_theme") or "英伟达金刚石散热"
     theme = st.text_input("题材输入", value=default_theme, key="command_center_chokepoint_theme")
     if st.button("瓶颈扫描", key="btn_cc_chokepoint_scan", width="stretch"):
