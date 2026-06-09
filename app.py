@@ -3421,15 +3421,39 @@ def _render_factor_research_lab_panel(target="", market_type=""):
         if not isinstance(hub, dict) or not hub:
             st.info("暂无已缓存的 2.0 多因子量化图谱。")
             return
+
+        def _factor_table_dataframe(rows):
+            display_rows = []
+            for item in rows or []:
+                if not isinstance(item, dict):
+                    continue
+                row = {}
+                for key, value in item.items():
+                    if isinstance(value, bool):
+                        row[key] = "是" if value else "否"
+                    elif isinstance(value, (dict, list, tuple, set)):
+                        row[key] = json.dumps(value, ensure_ascii=False, default=str)
+                    elif value is None:
+                        row[key] = ""
+                    else:
+                        row[key] = str(value)
+                display_rows.append(row)
+            return pd.DataFrame(display_rows)
+
         runtime = hub.get("runtime") or {}
         score = hub.get("score") or {}
         bridge = hub.get("next_session_bridge") or {}
         deepseek = hub.get("deepseek_explanation") or {}
+        missing_count = max(0, int(runtime.get("missing_count") or 0))
+        available_count = runtime.get("available_count")
+        if available_count is None:
+            available_count = len(runtime.get("factor_values") or []) - missing_count
+        available_count = max(0, int(available_count or 0))
         summary_cols = st.columns(6)
         summary_cols[0].metric("模式", hub.get("mode") or "cache_only")
         summary_cols[1].metric("覆盖率", f"{float(runtime.get('coverage') or 0) * 100:.1f}%")
-        summary_cols[2].metric("可用因子", len(runtime.get("factor_values") or []) - int(runtime.get("missing_count") or 0))
-        summary_cols[3].metric("缺失因子", runtime.get("missing_count", 0))
+        summary_cols[2].metric("可用因子", available_count)
+        summary_cols[3].metric("缺失因子", missing_count)
         summary_cols[4].metric("评分带", score.get("score_band") or "missing")
         summary_cols[5].metric("DeepSeek", "已整理" if deepseek.get("called") else "未调用")
         st.caption(
@@ -3448,22 +3472,22 @@ def _render_factor_research_lab_panel(target="", market_type=""):
                 }
                 for item in ((hub.get("factor_library") or {}).get("factors") or [])
             ]
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            st.dataframe(_factor_table_dataframe(rows), width="stretch", hide_index=True)
         with factor_tabs[1]:
             ledger_rows = (hub.get("data_ledger") or {}).get("ledger_rows") or []
-            st.dataframe(pd.DataFrame(ledger_rows), width="stretch", hide_index=True)
-            st.dataframe(pd.DataFrame(hub.get("call_ledger") or []), width="stretch", hide_index=True)
+            st.dataframe(_factor_table_dataframe(ledger_rows), width="stretch", hide_index=True)
+            st.dataframe(_factor_table_dataframe(hub.get("call_ledger") or []), width="stretch", hide_index=True)
         with factor_tabs[2]:
-            st.dataframe(pd.DataFrame(runtime.get("factor_values") or []), width="stretch", hide_index=True)
+            st.dataframe(_factor_table_dataframe(runtime.get("factor_values") or []), width="stretch", hide_index=True)
         with factor_tabs[3]:
             score_rows = []
             for label, key_name in [("支持", "support_factors"), ("压制", "suppress_factors"), ("中性", "neutral_factors"), ("缺失", "missing_factors")]:
                 for item in score.get(key_name) or []:
                     score_rows.append({"分组": label, "factor_key": item.get("factor_key"), "因子": item.get("factor_name"), "说明": item.get("status_note"), "影响": item.get("score_impact")})
-            st.dataframe(pd.DataFrame(score_rows), width="stretch", hide_index=True)
+            st.dataframe(_factor_table_dataframe(score_rows), width="stretch", hide_index=True)
         with factor_tabs[4]:
             st.markdown("#### 因子共振 / 冲突")
-            st.dataframe(pd.DataFrame(score.get("conflict_factors") or []), width="stretch", hide_index=True)
+            st.dataframe(_factor_table_dataframe(score.get("conflict_factors") or []), width="stretch", hide_index=True)
             for warning in hub.get("warnings") or []:
                 st.markdown(f"- {warning}")
         with factor_tabs[5]:
