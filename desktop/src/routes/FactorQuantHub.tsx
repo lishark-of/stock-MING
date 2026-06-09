@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { EChartsOption } from "echarts";
 import { getFactorQuantCache, postTask } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
@@ -13,7 +14,7 @@ export default function FactorQuantHub() {
   }, []);
 
   const score = packet.score ?? {};
-  const option = {
+  const option: EChartsOption = {
     tooltip: {},
     xAxis: { type: "category", data: ["支持", "压制", "中性", "缺失", "冲突"] },
     yAxis: { type: "value" },
