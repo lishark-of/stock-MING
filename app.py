@@ -10127,7 +10127,11 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
         )
 
     selected_nav = st.session_state.get("command_center_nav", "综合推演中心 2.0")
-    if selected_nav == "高级工具箱入口":
+    if selected_nav == "综合推演中心 2.0":
+        active_route = get_command_center_route(st.session_state)
+        if active_route not in {"home", "next_session_projection"}:
+            set_command_center_route(st.session_state, "home")
+    elif selected_nav == "高级工具箱入口":
         set_command_center_route(st.session_state, "advanced_tools")
     with content_col:
         if selected_nav == "综合推演中心 2.0":

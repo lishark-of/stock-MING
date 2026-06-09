@@ -504,6 +504,16 @@ class CommandCenterNextSessionProjectionTests(unittest.TestCase):
         self.assertIn('st.expander("高级操作", expanded=False)', source)
         self.assertIn("previous_route = preserve_command_center_route", source)
 
+    def test_command_center_home_clears_legacy_route_without_resetting_next_session(self):
+        source = Path("app.py").read_text()
+
+        self.assertIn('if selected_nav == "综合推演中心 2.0":', source)
+        self.assertIn("active_route = get_command_center_route(st.session_state)", source)
+        self.assertIn('if active_route not in {"home", "next_session_projection"}:', source)
+        self.assertIn('set_command_center_route(st.session_state, "home")', source)
+        self.assertIn('elif selected_nav == "高级工具箱入口":', source)
+        self.assertIn('set_command_center_route(st.session_state, "advanced_tools")', source)
+
     def test_unified_base_routes_and_legacy_quant_are_folded(self):
         source = Path("app.py").read_text()
 
