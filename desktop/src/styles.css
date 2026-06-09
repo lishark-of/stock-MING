@@ -1,0 +1,163 @@
+:root {
+  color: #17202a;
+  background: #f5f7fa;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #17202a;
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #111827;
+  color: #f8fafc;
+  padding: 20px;
+}
+
+.brand {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+
+.sidebar nav {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar button {
+  background: transparent;
+  color: #cbd5e1;
+  border-color: #334155;
+  text-align: left;
+}
+
+.sidebar button.nav-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.sidebar-note {
+  color: #94a3b8;
+  font-size: 13px;
+  margin-top: 28px;
+}
+
+.content {
+  padding: 24px;
+}
+
+.page-head,
+.packet-card-title {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.packet-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.packet-card h3 {
+  margin: 0;
+}
+
+.packet-card p {
+  color: #475569;
+}
+
+.status-badge {
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.status-good {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-warn {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.status-bad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-neutral {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.chart-panel {
+  height: 260px;
+  width: 100%;
+}
+
+.table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+  padding: 8px;
+  text-align: left;
+}
+
+pre {
+  background: #0f172a;
+  border-radius: 8px;
+  color: #e2e8f0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.risk-note {
+  border-left: 3px solid #2563eb;
+  padding-left: 10px;
+}

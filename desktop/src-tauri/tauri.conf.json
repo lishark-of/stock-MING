@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "stock-MING Command Center",
+  "version": "3.0.0",
+  "identifier": "com.stockming.commandcenter",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "stock-MING Command Center 3.0",
+        "width": 1280,
+        "height": 820,
+        "resizable": true
+      }
+    ]
+  }
+}
