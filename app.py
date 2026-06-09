@@ -3251,7 +3251,231 @@ def _render_serenity_method_radar_panel():
             st.markdown(f"- {note}")
 
 
-def _render_factor_research_lab_panel():
+def _render_factor_research_lab_panel(target="", market_type=""):
+    def _factor_available_packets():
+        return {
+            key: st.session_state.get(key)
+            for key in list(st.session_state.keys())
+            if str(key).endswith("_packet") or str(key) in {"daily_close_packet", "verified_technical_facts"}
+        }
+
+    def _factor_rows_from_result(result, limit=120):
+        data = (result or {}).get("data") if isinstance(result, dict) else None
+        if data is None:
+            return []
+        try:
+            rows = data.to_dict("records")
+        except Exception:
+            rows = data if isinstance(data, list) else []
+        return [dict(row) for row in rows[-limit:] if isinstance(row, dict)]
+
+    def _factor_call_ledger_entry(api, result=None, packet=None, ts_code="", data_date=None):
+        now_text = _cc_now()
+        payload = packet if isinstance(packet, dict) else {}
+        result_map = result if isinstance(result, dict) else {}
+        if result_map:
+            rows = _factor_rows_from_result(result_map)
+            ok = bool(result_map.get("ok"))
+            error = result_map.get("error") or ""
+            status = "verified_present" if ok and rows else ("verified_no_record" if ok else "blocked")
+            fetched_at = result_map.get("updated_at") or now_text
+            row_count = len(rows)
+        else:
+            rows = payload.get("rows") or []
+            row_count = int(_num(payload.get("row_count"), len(rows)) or 0)
+            ok = payload.get("status") == "ready"
+            error = payload.get("error") or ""
+            status = "verified_present" if ok and row_count else ("missing" if not error else "blocked")
+            fetched_at = payload.get("local_fetched_at") or payload.get("updated_at") or now_text
+        return {
+            "api": api,
+            "source_interfaces": [f"tushare.{api}"],
+            "ts_code": ts_code,
+            "row_count": row_count,
+            "data_date": _cc_tushare_date_text(data_date or payload.get("latest_trade_date") or payload.get("end_date") or payload.get("trade_date")),
+            "local_fetched_at": fetched_at,
+            "call_status": status,
+            "error_message_safe": str(error or "")[:300],
+        }
+
+    def _refresh_factor_data_packets(target="", market_type=""):
+        ts_code = _cc_healthcheck_sample_ts_code(target)
+        daily_packet = _cc_fetch_tushare_daily_close_packet(target=target, market_type=market_type)
+        daily_basic_packet = {
+            "status": "not_called",
+            "rows": [],
+            "row_count": 0,
+            "source_interface": "tushare.daily_basic",
+            "source_packet": "command_center_factor_daily_basic_packet",
+            "local_fetched_at": _cc_now(),
+            "deepseek_called": False,
+        }
+        daily_basic_result = {}
+        if _tushare_adapter is None:
+            daily_basic_packet.update(
+                {
+                    "status": "blocked",
+                    "message": "tushare_adapter 不可用，daily_basic 未刷新。",
+                    "error": str(TUSHARE_ADAPTER_MODULE_ERROR or "tushare_adapter unavailable"),
+                }
+            )
+        else:
+            trade_date = _cc_tushare_date_text(daily_packet.get("end_date") or daily_packet.get("latest_trade_date") or datetime.date.today())
+            try:
+                daily_basic_result = _tushare_adapter.get_daily_basic(ts_code=ts_code, start_date=trade_date, end_date=trade_date)
+            except Exception as exc:
+                daily_basic_result = {"ok": False, "api": "daily_basic", "updated_at": _cc_now(), "error": str(exc)}
+            rows = _factor_rows_from_result(daily_basic_result, limit=20)
+            daily_basic_packet.update(
+                {
+                    "status": "ready" if daily_basic_result.get("ok") and rows else ("empty" if daily_basic_result.get("ok") else "blocked"),
+                    "rows": rows,
+                    "row_count": len(rows),
+                    "trade_date": trade_date,
+                    "local_fetched_at": daily_basic_result.get("updated_at") or _cc_now(),
+                    "message": f"Tushare daily_basic 读取 {len(rows)} 行。" if rows else "Tushare daily_basic 暂无可用记录。",
+                    "error": daily_basic_result.get("error") or "",
+                }
+            )
+        st.session_state["command_center_factor_daily_basic_packet"] = daily_basic_packet
+        fact_ledger = _cc_fetch_tushare_fact_call_ledger(target=target, market_type=market_type, daily_close_packet=daily_packet)
+        call_ledger = [
+            _factor_call_ledger_entry("daily", packet=daily_packet, ts_code=ts_code),
+            _factor_call_ledger_entry("daily_basic", result=daily_basic_result, packet=daily_basic_packet, ts_code=ts_code, data_date=daily_basic_packet.get("trade_date")),
+        ]
+        for item in fact_ledger.get("items") or []:
+            if isinstance(item, dict):
+                call_ledger.append(
+                    {
+                        "api": item.get("fact_key") or item.get("source_packet"),
+                        "source_interfaces": list(item.get("source_interfaces") or []),
+                        "ts_code": item.get("target_ts_code") or ts_code,
+                        "row_count": int(_num(item.get("row_count"), 0) or 0),
+                        "data_date": item.get("data_date") or item.get("trade_date"),
+                        "local_fetched_at": item.get("local_fetched_at") or fact_ledger.get("updated_at"),
+                        "call_status": item.get("call_status") or "not_called",
+                        "error_message_safe": item.get("error_message_safe") or "",
+                    }
+                )
+        st.session_state["command_center_factor_call_ledger"] = call_ledger
+        return {"daily_close_packet": daily_packet, "daily_basic_packet": daily_basic_packet, "fact_call_ledger": fact_ledger, "call_ledger": call_ledger}
+
+    def _build_factor_quant_hub(mode="cache_only", refreshed=None):
+        refreshed = refreshed if isinstance(refreshed, dict) else {}
+        home_snapshot = st.session_state.get("command_center_home_snapshot") or {}
+        live_packet = st.session_state.get("command_center_live_packet") or {}
+        library_packet = factor_research_service.build_factor_library_packet()
+        ledger_packet = factor_research_service.build_factor_data_ledger_packet(
+            factor_library=library_packet,
+            available_packets=_factor_available_packets(),
+        )
+        universe = {"type": "current_target", "items": [_cc_healthcheck_sample_ts_code(target)], "size": 1}
+        try:
+            trade_records = trade_review_log_service.load_trade_review_records(limit=20)
+            trade_summary = trade_review_log_service.summarize_trade_review_records(trade_records)
+        except Exception:
+            trade_summary = {}
+        hub = factor_research_service.build_factor_quant_hub_packet(
+            mode=mode,
+            universe=universe,
+            factor_library=library_packet,
+            data_ledger=ledger_packet,
+            daily_close_packet=refreshed.get("daily_close_packet") or st.session_state.get("command_center_daily_close_packet") or {},
+            daily_basic_packet=refreshed.get("daily_basic_packet") or st.session_state.get("command_center_factor_daily_basic_packet") or {},
+            moneyflow_packet=st.session_state.get("command_center_moneyflow_packet") or {},
+            hard_risk_packet=st.session_state.get("command_center_hard_risk_packet") or {},
+            limit_emotion_packet=st.session_state.get("command_center_limit_emotion_packet") or {},
+            chip_packet=st.session_state.get("command_center_chip_packet") or {},
+            a_share_fact_lineage_summary=(home_snapshot or {}).get("a_share_fact_lineage_summary") or {},
+            next_session_projection_packet=st.session_state.get("command_center_next_session_projection_packet") or {},
+            strategy_execution_packet=st.session_state.get("strategy_execution_packet") or {},
+            decision_packet=st.session_state.get("command_center_decision_packet") or {},
+            trade_review_summary=trade_summary,
+            legacy_quant_packet=(live_packet or {}).get("quant") or st.session_state.get("command_center_quant_packet") or {},
+            chokepoint_packet=st.session_state.get("command_center_chokepoint_scan_packet") or {},
+            serenity_packet=st.session_state.get("command_center_serenity_method_radar_packet") or {},
+            call_ledger=refreshed.get("call_ledger") or st.session_state.get("command_center_factor_call_ledger") or [],
+            now=_cc_now(),
+        )
+        st.session_state["command_center_factor_library_packet"] = library_packet
+        st.session_state["command_center_factor_data_ledger_packet"] = ledger_packet
+        st.session_state["command_center_factor_runtime_packet"] = hub.get("runtime")
+        st.session_state["command_center_factor_test_packet"] = hub.get("factor_tests")
+        st.session_state["command_center_factor_score_packet"] = hub.get("score")
+        st.session_state["command_center_factor_quant_hub_packet"] = hub
+        return hub
+
+    def _factor_data_cache_ready():
+        daily = st.session_state.get("command_center_daily_close_packet") or {}
+        daily_basic = st.session_state.get("command_center_factor_daily_basic_packet") or {}
+        call_ledger = st.session_state.get("command_center_factor_call_ledger") or []
+        return bool(
+            isinstance(daily, dict)
+            and daily.get("status") == "ready"
+            and isinstance(daily_basic, dict)
+            and daily_basic.get("status") in {"ready", "empty"}
+            and isinstance(call_ledger, list)
+        )
+
+    def _render_factor_quant_hub_packet(hub):
+        if not isinstance(hub, dict) or not hub:
+            st.info("暂无已缓存的 2.0 多因子量化图谱。")
+            return
+        runtime = hub.get("runtime") or {}
+        score = hub.get("score") or {}
+        bridge = hub.get("next_session_bridge") or {}
+        deepseek = hub.get("deepseek_explanation") or {}
+        summary_cols = st.columns(6)
+        summary_cols[0].metric("模式", hub.get("mode") or "cache_only")
+        summary_cols[1].metric("覆盖率", f"{float(runtime.get('coverage') or 0) * 100:.1f}%")
+        summary_cols[2].metric("可用因子", len(runtime.get("factor_values") or []) - int(runtime.get("missing_count") or 0))
+        summary_cols[3].metric("缺失因子", runtime.get("missing_count", 0))
+        summary_cols[4].metric("评分带", score.get("score_band") or "missing")
+        summary_cols[5].metric("DeepSeek", "已整理" if deepseek.get("called") else "未调用")
+        st.caption(
+            "多因子量化不是交易建议；当前只进入 evidence_effects 预览，不修改 strategy action、价格、持仓或 operation_zones。"
+        )
+        factor_tabs = st.tabs(["因子库", "数据血缘", "因子运行值", "因子评分", "冲突/共振", "次日图谱关系", "治理边界", "DeepSeek 解释"])
+        with factor_tabs[0]:
+            rows = [
+                {
+                    "factor_key": item.get("factor_key"),
+                    "因子": item.get("factor_name"),
+                    "类别": item.get("category"),
+                    "公式摘要": item.get("formula_summary"),
+                    "用途": item.get("first_stage_usage"),
+                    "PIT要求": item.get("pit_requirement"),
+                }
+                for item in ((hub.get("factor_library") or {}).get("factors") or [])
+            ]
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        with factor_tabs[1]:
+            ledger_rows = (hub.get("data_ledger") or {}).get("ledger_rows") or []
+            st.dataframe(pd.DataFrame(ledger_rows), width="stretch", hide_index=True)
+            st.dataframe(pd.DataFrame(hub.get("call_ledger") or []), width="stretch", hide_index=True)
+        with factor_tabs[2]:
+            st.dataframe(pd.DataFrame(runtime.get("factor_values") or []), width="stretch", hide_index=True)
+        with factor_tabs[3]:
+            score_rows = []
+            for label, key_name in [("支持", "support_factors"), ("压制", "suppress_factors"), ("中性", "neutral_factors"), ("缺失", "missing_factors")]:
+                for item in score.get(key_name) or []:
+                    score_rows.append({"分组": label, "factor_key": item.get("factor_key"), "因子": item.get("factor_name"), "说明": item.get("status_note"), "影响": item.get("score_impact")})
+            st.dataframe(pd.DataFrame(score_rows), width="stretch", hide_index=True)
+        with factor_tabs[4]:
+            st.markdown("#### 因子共振 / 冲突")
+            st.dataframe(pd.DataFrame(score.get("conflict_factors") or []), width="stretch", hide_index=True)
+            for warning in hub.get("warnings") or []:
+                st.markdown(f"- {warning}")
+        with factor_tabs[5]:
+            st.json(bridge, expanded=False)
+            st.caption("factor evidence 只作为 evidence_effects 预览，不写回现有次日操作图谱 packet。")
+        with factor_tabs[6]:
+            st.json(hub.get("governance") or {}, expanded=False)
+            for item in (hub.get("factor_library") or {}).get("risk_boundaries") or []:
+                st.markdown(f"- {item}")
+        with factor_tabs[7]:
+            st.json(deepseek, expanded=False)
+
     available_packets = {
         key: st.session_state.get(key)
         for key in list(st.session_state.keys())
@@ -3267,74 +3491,76 @@ def _render_factor_research_lab_panel():
     st.session_state["command_center_factor_data_ledger_packet"] = ledger_packet
     st.session_state["command_center_factor_governance_packet"] = governance_packet
 
-    st.markdown("### Factor Research Lab / 因子研究实验室")
+    st.markdown("### 2.0 多因子量化图谱")
     st.caption(
-        "Phase 1 只展示因子定义与数据血缘；尚未计算因子值，尚未完成 IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益检验；不调用 Tushare，不调用 DeepSeek，不回测，不生成交易动作。"
+        "MVP light mode：联动 Tushare/A股事实/次日图谱/交易记录/旧量化/瓶颈扫描/Serenity；不是交易建议，不修改 strategy action。"
     )
-    status_cols = st.columns(4)
-    status_cols[0].metric("因子库", f"{library_packet.get('factor_count', 0)} 个已定义")
-    status_cols[1].metric("数据血缘", "只读")
-    status_cols[2].metric("DeepSeek", "不调用")
-    status_cols[3].metric("交易动作", "不参与")
-    st.info("当前 26 个因子只是研究库定义，不是已验证因子信号；PIT requirement 已声明但验证待完成，不作为买卖依据。")
+    action_cols = st.columns(5)
+    with action_cols[0]:
+        cache_only_clicked = st.button("查看已缓存多因子图谱（不刷新）", key="btn_cc_factor_quant_cache_only", width="stretch")
+        st.caption("只读 session/cache；不调用 Tushare、DeepSeek、GitHub。")
+    with action_cols[1]:
+        generate_clicked = st.button("生成 2.0 多因子量化图谱", key="btn_cc_factor_quant_generate", type="primary", width="stretch")
+        st.caption("缺失时允许 Tushare 补齐必要数据；不调用 DeepSeek。")
+    with action_cols[2]:
+        refresh_clicked = st.button("刷新因子数据", key="btn_cc_factor_quant_refresh_data", width="stretch")
+        st.caption("按钮门控 Tushare；写入 call_ledger。")
+    with action_cols[3]:
+        light_clicked = st.button("运行 light mode 因子计算", key="btn_cc_factor_quant_light_mode", width="stretch")
+        st.caption("只算当前标的/持仓/关注池；不跑全市场重回测。")
+    with action_cols[4]:
+        deepseek_clicked = st.button("DeepSeek 整理因子解释", key="btn_cc_factor_quant_deepseek_explain", width="stretch")
+        st.caption("只解释已有结构化结果，不覆盖数值。")
 
-    tab_library, tab_ledger, tab_governance, tab_future = st.tabs(["因子库", "数据血缘", "治理边界", "后续检验"])
-    with tab_library:
-        factor_rows = []
-        for factor in library_packet.get("factors") or []:
-            factor_rows.append(
-                {
-                    "factor_key": factor.get("factor_key"),
-                    "因子": factor.get("factor_name"),
-                    "类别": factor.get("category"),
-                    "公式摘要": factor.get("formula_summary"),
-                    "数据接口": " / ".join(factor.get("source_interfaces") or []),
-                    "依赖 packet": " / ".join(factor.get("required_packets") or []),
-                    "PIT要求": factor.get("pit_requirement"),
-                    "PIT已验证": "否",
-                    "第一阶段用途": factor.get("first_stage_usage"),
-                    "核心动作": "禁止",
-                }
-            )
-        st.dataframe(pd.DataFrame(factor_rows), width="stretch", hide_index=True)
+    hub_packet = st.session_state.get("command_center_factor_quant_hub_packet") or {}
+    if cache_only_clicked:
+        if hub_packet:
+            st.success("已打开已缓存多因子图谱；本次不刷新、不外联。")
+        else:
+            st.warning("当前没有已缓存的多因子图谱。请在允许 Tushare 的情况下点击“生成 2.0 多因子量化图谱”。")
+    if refresh_clicked:
+        status = st.status("正在刷新因子数据...", expanded=True)
+        refreshed = _refresh_factor_data_packets(target=target, market_type=market_type)
+        status.write(f"call_ledger 写入 {len(refreshed.get('call_ledger') or [])} 条；DeepSeek 未调用。")
+        hub_packet = _build_factor_quant_hub(mode="light", refreshed=refreshed)
+        status.update(label="因子数据刷新完成", state="complete", expanded=False)
+    if generate_clicked:
+        status = st.status("正在生成 2.0 多因子量化图谱...", expanded=True)
+        refreshed = {}
+        if not _factor_data_cache_ready():
+            status.write("缓存缺少必要因子数据，按钮门控触发 Tushare 补齐。")
+            refreshed = _refresh_factor_data_packets(target=target, market_type=market_type)
+        hub_packet = _build_factor_quant_hub(mode="light", refreshed=refreshed)
+        status.write("已生成 factor quant hub packet；DeepSeek 未调用，不修改 action。")
+        status.update(label="2.0 多因子量化图谱已生成", state="complete", expanded=False)
+    if light_clicked:
+        hub_packet = _build_factor_quant_hub(mode="light")
+        st.success("light mode 因子计算完成；不跑全市场重回测，不交易。")
+    if deepseek_clicked:
+        base_hub = hub_packet or _build_factor_quant_hub(mode="cache_only")
+        prompt_packet = factor_research_service.build_factor_deepseek_explanation_prompt(base_hub)
+        raw_result = call_deepseek_non_stream(
+            prompt_packet.get("user_prompt") or "",
+            system_role=prompt_packet.get("system_prompt") or "你是多因子研究结果整理器，只输出 JSON。",
+            max_tokens=1000,
+            response_format={"type": "json_object"},
+        )
+        explanation = factor_research_service.sanitize_factor_deepseek_explanation(raw_result)
+        hub_packet = dict(base_hub)
+        hub_packet["deepseek_explanation"] = explanation
+        hub_packet["deepseek_called"] = True
+        st.session_state["command_center_factor_quant_hub_packet"] = hub_packet
+        st.success("DeepSeek 已整理因子解释；数值、价格、持仓和 action 未被覆盖。")
 
-    with tab_ledger:
-        ledger_rows = []
-        for row in ledger_packet.get("ledger_rows") or []:
-            ledger_rows.append(
-                {
-                    "factor_key": row.get("factor_key"),
-                    "因子": row.get("factor_name"),
-                    "状态": row.get("status"),
-                    "说明": row.get("status_note"),
-                    "接口": " / ".join(row.get("source_interfaces") or []),
-                    "依赖 packet": " / ".join(row.get("required_packets") or []),
-                    "PIT已验证": "是" if row.get("pit_validated") else "否",
-                    "未来函数风险说明": row.get("lookahead_risk_note"),
-                    "缺失率": row.get("missing_rate"),
-                }
-            )
-        st.dataframe(pd.DataFrame(ledger_rows), width="stretch", hide_index=True)
-        st.caption("未加载不等于无数据；财务类因子必须用公告日期 / 实际可得日期，Phase 1 不把 PIT requirement 说成 PIT 已验证。")
-
-    with tab_governance:
-        policy = governance_packet.get("decision_usage_policy") or {}
-        policy_cols = st.columns(4)
-        policy_cols[0].metric("Research display", "允许" if governance_packet.get("allow_research_display") else "禁止")
-        policy_cols[1].metric("Evidence effects", "禁止")
-        policy_cols[2].metric("Strategy trace", "禁止")
-        policy_cols[3].metric("Core action", "禁止")
-        st.json(policy, expanded=False)
-        with st.expander("风险边界", expanded=False):
-            for item in governance_packet.get("risk_boundaries") or []:
-                st.markdown(f"- {item}")
-
-    with tab_future:
-        st.markdown("#### Phase 2 以后才启用")
-        st.markdown("- 单因子 IC / Rank IC / ICIR")
-        st.markdown("- 分组收益、多空收益、换手率、最大回撤")
-        st.markdown("- 行业 / 市值中性化、样本外、近期衰减、交易成本后表现")
-        st.markdown("- 通过治理后才可进入 evidence_effects；仍不直接进入 core action")
+    if not hub_packet:
+        hub_packet = factor_research_service.build_factor_quant_hub_packet(
+            mode="cache_only",
+            factor_library=library_packet,
+            data_ledger=ledger_packet,
+            now=_cc_now(),
+        )
+        st.session_state["command_center_factor_quant_hub_packet"] = hub_packet
+    _render_factor_quant_hub_packet(hub_packet)
 
 
 def _render_chokepoint_scan_result(packet):
@@ -10281,7 +10507,7 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
                 live_packet=toolbox_live_packet,
                 key_prefix="toolbox",
             )
-            _render_factor_research_lab_panel()
+            _render_factor_research_lab_panel(target=target, market_type=market_type)
             render_command_center_toolbox_entry()
             data_capability_packet = _get_command_center_data_capability_packet()
             capability_items = data_capability_packet.get("items") if isinstance(data_capability_packet, dict) else []

@@ -43,6 +43,10 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertIn("command_center_serenity_method_radar_packet", keys)
         self.assertIn("command_center_factor_library_packet", keys)
         self.assertIn("command_center_factor_data_ledger_packet", keys)
+        self.assertIn("command_center_factor_runtime_packet", keys)
+        self.assertIn("command_center_factor_test_packet", keys)
+        self.assertIn("command_center_factor_score_packet", keys)
+        self.assertIn("command_center_factor_quant_hub_packet", keys)
         self.assertIn("command_center_refresh_summary", keys)
 
     def test_legacy_a_share_evidence_packets_are_manual_or_derived(self):
@@ -104,6 +108,25 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertEqual(ledger["external_call_policy"], "not_triggered")
         self.assertEqual(ledger["deepseek_policy"], "never")
         self.assertIn("不自动取数", ledger["description"])
+
+    def test_factor_quant_hub_packets_are_button_gated_without_auto_calls(self):
+        runtime = registry.get_command_center_packet_spec("command_center_factor_runtime_packet")
+        tests = registry.get_command_center_packet_spec("command_center_factor_test_packet")
+        score = registry.get_command_center_packet_spec("command_center_factor_score_packet")
+        hub = registry.get_command_center_packet_spec("command_center_factor_quant_hub_packet")
+
+        for spec in [runtime, tests, score]:
+            self.assertEqual(spec["area"], "analysis")
+            self.assertEqual(spec["refresh_policy"], "derived_display")
+            self.assertEqual(spec["external_call_policy"], "not_triggered")
+            self.assertEqual(spec["deepseek_policy"], "never")
+
+        self.assertEqual(hub["area"], "analysis")
+        self.assertEqual(hub["refresh_policy"], "button_gated")
+        self.assertEqual(hub["external_call_policy"], "button_gated")
+        self.assertEqual(hub["deepseek_policy"], "manual_only")
+        self.assertIn("只进入 evidence_effects 预览", hub["description"])
+        self.assertIn("不修改 strategy action", hub["description"])
 
     def test_recovery_result_timeline_is_read_only_recovery_packet(self):
         spec = registry.get_command_center_packet_spec("command_center_recovery_result_timeline")
