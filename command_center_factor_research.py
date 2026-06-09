@@ -2,16 +2,35 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import math
+import statistics
 from collections.abc import Mapping
+from numbers import Number
 from typing import Any
 
 
 LIBRARY_PACKET_KEY = "command_center_factor_library_packet"
 LEDGER_PACKET_KEY = "command_center_factor_data_ledger_packet"
 GOVERNANCE_PACKET_KEY = "command_center_factor_governance_packet"
+RUNTIME_PACKET_KEY = "command_center_factor_runtime_packet"
+TEST_PACKET_KEY = "command_center_factor_test_packet"
+SCORE_PACKET_KEY = "command_center_factor_score_packet"
+QUANT_HUB_PACKET_KEY = "command_center_factor_quant_hub_packet"
 
 PHASE = "phase_1_research_ledger_library"
+MVP_PHASE = "phase_2_light_factor_quant_hub"
 SOURCE_TYPE = "local_factor_research_scaffold"
+QUANT_HUB_SCHEMA_VERSION = "factor_quant_hub.v1"
+
+DEEPSEEK_EXPLANATION_ALLOWED_KEYS = {
+    "summary",
+    "support_notes",
+    "suppress_notes",
+    "conflict_notes",
+    "missing_data_notes",
+    "discipline_notes",
+}
+SCORE_EXCLUDED_FACTOR_KEYS = {"chokepoint_method_hint", "serenity_method_source"}
 
 DECISION_USAGE_POLICY = {
     "display_only": True,
@@ -330,11 +349,72 @@ FACTOR_RESEARCH_LIBRARY = [
         "known_risks": ["方法论不是因子收益"],
         "first_stage_usage": "research_only",
     },
+    {
+        "factor_key": "serenity_method_source",
+        "factor_name": "Serenity 方法来源",
+        "category": "Serenity 方法来源",
+        "formula_summary": "本地方法来源基线与防幻觉机制标签",
+        "source_interfaces": ["local.command_center_serenity_method_radar_packet"],
+        "required_packets": ["command_center_serenity_method_radar_packet"],
+        "PIT_safe": "n/a",
+        "known_risks": ["方法来源不是因子收益", "不进入交易评分"],
+        "first_stage_usage": "research_only",
+    },
 ]
 
 
 def _copy_json(value: Any) -> Any:
     return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
+def _as_mapping(value: Any) -> dict:
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {}
+
+
+def _as_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]
+
+
+def _to_number(value: Any, default: float | None = None) -> float | None:
+    if value in (None, "") or isinstance(value, bool):
+        return default
+    if isinstance(value, Number):
+        number = float(value)
+        return number if math.isfinite(number) else default
+    text = str(value).strip().replace(",", "").replace("%", "")
+    if not text or text in {"--", "N/A", "None", "nan", "暂无"}:
+        return default
+    try:
+        number = float(text)
+    except Exception:
+        return default
+    return number if math.isfinite(number) else default
+
+
+def _safe_round(value: Any, digits: int = 6) -> float | None:
+    number = _to_number(value)
+    if number is None:
+        return None
+    return round(number, digits)
+
+
+def _date_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (_dt.datetime, _dt.date)):
+        return value.strftime("%Y-%m-%d")
+    text = str(value).strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    return text[:10] if len(text) >= 10 else text
 
 
 def _now_iso(now: Any = None) -> str:
@@ -518,4 +598,737 @@ def build_factor_governance_packet(now: Any = None) -> dict:
         "deepseek_called": False,
         "tushare_called": False,
         "external_calls_triggered": False,
+    }
+
+
+def _clean_daily_rows(daily_close_packet: Any = None) -> list[dict]:
+    packet = _as_mapping(daily_close_packet)
+    rows = []
+    for raw in _as_list(packet.get("rows") or packet.get("historical_series") or packet.get("data")):
+        item = _as_mapping(raw)
+        close = _to_number(item.get("close") or item.get("value") or item.get("price"))
+        if close is None or close <= 0:
+            continue
+        rows.append(
+            {
+                "trade_date": _date_text(item.get("trade_date") or item.get("date") or item.get("asof")),
+                "open": _to_number(item.get("open")),
+                "high": _to_number(item.get("high")),
+                "low": _to_number(item.get("low")),
+                "close": close,
+                "vol": _to_number(item.get("vol") or item.get("volume")),
+                "amount": _to_number(item.get("amount")),
+            }
+        )
+    rows.sort(key=lambda item: item.get("trade_date") or "")
+    return rows
+
+
+def _clean_daily_basic_rows(daily_basic_packet: Any = None) -> list[dict]:
+    packet = _as_mapping(daily_basic_packet)
+    rows = []
+    for raw in _as_list(packet.get("rows") or packet.get("data")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        row = dict(item)
+        row["trade_date"] = _date_text(item.get("trade_date") or item.get("date"))
+        rows.append(row)
+    rows.sort(key=lambda item: item.get("trade_date") or "")
+    return rows
+
+
+def _factor_missing(factor: Mapping[str, Any], *, reason: str, now: str, status: str = "missing") -> dict:
+    return {
+        "factor_key": factor.get("factor_key"),
+        "factor_name": factor.get("factor_name"),
+        "category": factor.get("category"),
+        "raw_value": None,
+        "zscore": None,
+        "rank_pct": None,
+        "direction": "missing",
+        "coverage": 0.0,
+        "data_status": status,
+        "status_note": reason,
+        "calculated_at": now,
+        "pit_validated": False,
+        "effect": "missing",
+        "score_impact": 0.0,
+        "excluded_from_score": factor.get("factor_key") in SCORE_EXCLUDED_FACTOR_KEYS,
+        "enters_composite_score": False,
+    }
+
+
+def _factor_value(
+    factor: Mapping[str, Any],
+    *,
+    raw_value: Any,
+    direction: str,
+    effect: str,
+    score_impact: float,
+    now: str,
+    coverage: float = 1.0,
+    data_status: str = "ready",
+    status_note: str = "",
+    pit_validated: bool = True,
+) -> dict:
+    excluded = factor.get("factor_key") in SCORE_EXCLUDED_FACTOR_KEYS
+    if not pit_validated and effect == "support":
+        effect = "neutral"
+        score_impact = 0.0
+        status_note = (status_note + "；" if status_note else "") + "PIT 未验证，不能成为强 support。"
+    return {
+        "factor_key": factor.get("factor_key"),
+        "factor_name": factor.get("factor_name"),
+        "category": factor.get("category"),
+        "raw_value": _safe_round(raw_value),
+        "zscore": None,
+        "rank_pct": None,
+        "direction": direction,
+        "coverage": round(max(0.0, min(1.0, float(coverage or 0))), 4),
+        "data_status": data_status,
+        "status_note": status_note or "light mode 已计算；样本不足时不生成横截面 zscore/rank。",
+        "calculated_at": now,
+        "pit_validated": bool(pit_validated),
+        "effect": "neutral" if excluded else effect,
+        "score_impact": 0.0 if excluded else round(float(score_impact or 0.0), 4),
+        "excluded_from_score": excluded,
+        "enters_composite_score": bool(not excluded and data_status in {"ready", "degraded"} and effect in {"support", "suppress", "neutral"}),
+    }
+
+
+def _pct_change(rows: list[dict], periods: int) -> float | None:
+    if len(rows) <= periods:
+        return None
+    latest = _to_number(rows[-1].get("close"))
+    base = _to_number(rows[-periods - 1].get("close"))
+    if latest is None or base in (None, 0):
+        return None
+    return latest / base - 1
+
+
+def _daily_returns(rows: list[dict]) -> list[float]:
+    returns = []
+    for idx in range(1, len(rows)):
+        prev = _to_number(rows[idx - 1].get("close"))
+        curr = _to_number(rows[idx].get("close"))
+        if prev not in (None, 0) and curr is not None:
+            returns.append(curr / prev - 1)
+    return returns
+
+
+def _effect_from_signed_value(value: float, *, positive_threshold: float, negative_threshold: float | None = None) -> tuple[str, str, float]:
+    negative_threshold = -positive_threshold if negative_threshold is None else negative_threshold
+    if value >= positive_threshold:
+        return "positive", "support", 1.0
+    if value <= negative_threshold:
+        return "negative", "suppress", -1.0
+    return "flat", "neutral", 0.0
+
+
+def _latest_daily_basic_value(rows: list[dict], key: str) -> float | None:
+    if not rows:
+        return None
+    return _to_number(rows[-1].get(key))
+
+
+def _packet_number(packet: Any, *keys: str) -> float | None:
+    mapping = _as_mapping(packet)
+    candidates = [mapping]
+    for key in ("data", "summary", "latest", "metrics"):
+        nested = _as_mapping(mapping.get(key))
+        if nested:
+            candidates.append(nested)
+    for candidate in candidates:
+        for key in keys:
+            number = _to_number(candidate.get(key))
+            if number is not None:
+                return number
+    return None
+
+
+def _call_ledger_rows(call_ledger: Any = None) -> list[dict]:
+    if isinstance(call_ledger, Mapping):
+        rows = call_ledger.get("items") or call_ledger.get("call_ledger") or []
+    else:
+        rows = call_ledger
+    cleaned = []
+    for raw in _as_list(rows):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        cleaned.append(
+            {
+                "api": item.get("api") or item.get("source_interface") or item.get("fact_key"),
+                "source_interfaces": list(item.get("source_interfaces") or ([] if not item.get("source_interface") else [item.get("source_interface")])),
+                "ts_code": item.get("ts_code") or item.get("target_ts_code"),
+                "row_count": int(_to_number(item.get("row_count"), 0) or 0),
+                "data_date": _date_text(item.get("data_date") or item.get("trade_date")),
+                "local_fetched_at": item.get("local_fetched_at") or item.get("updated_at"),
+                "call_status": item.get("call_status") or item.get("status") or "not_called",
+                "error_message_safe": item.get("error_message_safe") or item.get("error") or "",
+            }
+        )
+    return cleaned
+
+
+def _calculate_factor_value(
+    factor: Mapping[str, Any],
+    *,
+    rows: list[dict],
+    daily_basic_rows: list[dict],
+    moneyflow_packet: Any = None,
+    hard_risk_packet: Any = None,
+    limit_emotion_packet: Any = None,
+    chip_packet: Any = None,
+    now: str,
+) -> dict:
+    key = str(factor.get("factor_key") or "")
+    if key in SCORE_EXCLUDED_FACTOR_KEYS:
+        return _factor_value(
+            factor,
+            raw_value=None,
+            direction="research_context",
+            effect="neutral",
+            score_impact=0.0,
+            now=now,
+            data_status="research_context",
+            status_note="方法来源/产业链上下文只进入 research_context，不进入 composite score。",
+            pit_validated=False,
+        )
+    if key in {"momentum_5d", "momentum_20d", "momentum_60d"}:
+        period = int(key.split("_")[1].replace("d", ""))
+        value = _pct_change(rows, period)
+        if value is None:
+            return _factor_missing(factor, reason=f"真实日线不足 {period + 1} 条。", now=now)
+        direction, effect, impact = _effect_from_signed_value(value, positive_threshold=0.03 if period <= 20 else 0.06)
+        return _factor_value(factor, raw_value=value, direction=direction, effect=effect, score_impact=impact, now=now)
+    if key in {"reversal_1d", "reversal_5d"}:
+        period = 1 if key == "reversal_1d" else 5
+        change = _pct_change(rows, period)
+        if change is None:
+            return _factor_missing(factor, reason=f"真实日线不足 {period + 1} 条。", now=now)
+        value = -change
+        direction, effect, impact = _effect_from_signed_value(value, positive_threshold=0.025 if period == 1 else 0.05)
+        return _factor_value(factor, raw_value=value, direction=direction, effect=effect, score_impact=impact, now=now)
+    if key == "breakout_20d":
+        if len(rows) < 20:
+            return _factor_missing(factor, reason="真实日线不足 20 条。", now=now)
+        latest = _to_number(rows[-1].get("close"))
+        highs = [_to_number(item.get("high")) for item in rows[-20:]]
+        highs = [value for value in highs if value is not None and value > 0]
+        if latest is None or not highs:
+            return _factor_missing(factor, reason="缺少 high/close 字段。", now=now)
+        value = latest / max(highs) - 1
+        direction, effect, impact = _effect_from_signed_value(value, positive_threshold=-0.005, negative_threshold=-0.08)
+        return _factor_value(factor, raw_value=value, direction=direction, effect=effect, score_impact=impact, now=now)
+    if key == "bias_ma20":
+        if len(rows) < 20:
+            return _factor_missing(factor, reason="真实日线不足 20 条。", now=now)
+        closes = [_to_number(item.get("close")) for item in rows[-20:]]
+        closes = [value for value in closes if value is not None and value > 0]
+        latest = _to_number(rows[-1].get("close"))
+        if latest is None or len(closes) < 20:
+            return _factor_missing(factor, reason="缺少 close 字段。", now=now)
+        value = latest / statistics.fmean(closes) - 1
+        direction, effect, impact = _effect_from_signed_value(value, positive_threshold=0.03, negative_threshold=-0.08)
+        return _factor_value(factor, raw_value=value, direction=direction, effect=effect, score_impact=impact, now=now)
+    if key == "volatility_20d":
+        returns = _daily_returns(rows)[-20:]
+        if len(returns) < 10:
+            return _factor_missing(factor, reason="收益率样本不足。", now=now)
+        value = statistics.pstdev(returns)
+        if value >= 0.055:
+            return _factor_value(factor, raw_value=value, direction="high_risk", effect="suppress", score_impact=-1.0, now=now)
+        return _factor_value(factor, raw_value=value, direction="normal", effect="neutral", score_impact=0.0, now=now)
+    if key == "atr_pct_14d":
+        if len(rows) < 15:
+            return _factor_missing(factor, reason="真实日线不足 15 条。", now=now)
+        true_ranges = []
+        for idx in range(1, len(rows)):
+            high = _to_number(rows[idx].get("high"))
+            low = _to_number(rows[idx].get("low"))
+            prev_close = _to_number(rows[idx - 1].get("close"))
+            if high is None or low is None or prev_close is None:
+                continue
+            true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+        latest = _to_number(rows[-1].get("close"))
+        if latest in (None, 0) or len(true_ranges) < 14:
+            return _factor_missing(factor, reason="缺 high/low/close，无法计算 ATR。", now=now)
+        value = statistics.fmean(true_ranges[-14:]) / latest
+        effect = "suppress" if value >= 0.08 else "neutral"
+        return _factor_value(factor, raw_value=value, direction="high_risk" if effect == "suppress" else "normal", effect=effect, score_impact=-0.8 if effect == "suppress" else 0.0, now=now)
+    if key == "max_drawdown_60d":
+        closes = [_to_number(item.get("close")) for item in rows[-60:]]
+        closes = [value for value in closes if value is not None and value > 0]
+        if len(closes) < 20:
+            return _factor_missing(factor, reason="真实日线不足 20 条。", now=now)
+        peak = closes[0]
+        drawdowns = []
+        for close in closes:
+            peak = max(peak, close)
+            drawdowns.append(close / peak - 1)
+        value = min(drawdowns)
+        effect = "suppress" if value <= -0.22 else "neutral"
+        return _factor_value(factor, raw_value=value, direction="drawdown_risk" if effect == "suppress" else "normal", effect=effect, score_impact=-1.0 if effect == "suppress" else 0.0, now=now)
+    if key == "amount_20d_rank":
+        amounts = [_to_number(item.get("amount")) for item in rows[-20:]]
+        amounts = [value for value in amounts if value is not None and value > 0]
+        if len(amounts) < 10:
+            return _factor_missing(factor, reason="成交额样本不足。", now=now)
+        return _factor_value(factor, raw_value=statistics.fmean(amounts), direction="liquidity_context", effect="neutral", score_impact=0.0, now=now, data_status="degraded", status_note="light mode 无横截面 universe，成交额分位降级为 20 日均额。")
+    if key == "volume_ratio_20d":
+        vols = [_to_number(item.get("vol")) for item in rows[-21:]]
+        vols = [value for value in vols if value is not None and value > 0]
+        if len(vols) < 11:
+            return _factor_missing(factor, reason="成交量样本不足。", now=now)
+        latest = vols[-1]
+        base = statistics.fmean(vols[:-1]) if len(vols) > 1 else None
+        if not base:
+            return _factor_missing(factor, reason="成交量均值不可用。", now=now)
+        value = latest / base
+        effect = "support" if value >= 1.5 else ("suppress" if value <= 0.55 else "neutral")
+        return _factor_value(factor, raw_value=value, direction="volume_expansion" if effect == "support" else ("volume_shrink" if effect == "suppress" else "normal"), effect=effect, score_impact=0.7 if effect == "support" else (-0.5 if effect == "suppress" else 0), now=now)
+    if key == "turnover_rate":
+        value = _latest_daily_basic_value(daily_basic_rows, "turnover_rate")
+        if value is None:
+            return _factor_missing(factor, reason="daily_basic.turnover_rate 缺失。", now=now)
+        return _factor_value(factor, raw_value=value, direction="liquidity_context", effect="neutral", score_impact=0.0, now=now, data_status="degraded", status_note="light mode 只展示换手率原值，不生成交易分。")
+    if key in {"pe_ttm_rank", "pb_rank", "ps_ttm_rank"}:
+        field = {"pe_ttm_rank": "pe_ttm", "pb_rank": "pb", "ps_ttm_rank": "ps_ttm"}[key]
+        value = _latest_daily_basic_value(daily_basic_rows, field)
+        if value is None:
+            return _factor_missing(factor, reason=f"daily_basic.{field} 缺失。", now=now)
+        return _factor_value(factor, raw_value=value, direction="valuation_context", effect="neutral", score_impact=0.0, now=now, data_status="degraded", status_note="light mode 无行业横截面，估值分位降级为原值展示。")
+    if key in {"main_net_5d", "retail_net_5d"}:
+        field_candidates = ("main_net_yi", "net_mf_amount", "buy_lg_amount", "buy_elg_amount") if key == "main_net_5d" else ("small_net_yi", "buy_sm_amount", "sell_sm_amount")
+        value = _packet_number(moneyflow_packet, *field_candidates)
+        if value is None:
+            return _factor_missing(factor, reason="资金流 packet 缺失或字段不可用。", now=now)
+        direction, effect, impact = _effect_from_signed_value(value, positive_threshold=0.0)
+        return _factor_value(factor, raw_value=value, direction=direction, effect=effect, score_impact=0.8 * impact, now=now)
+    if key in {"roe_latest", "gross_margin_latest", "revenue_growth_yoy", "profit_growth_yoy"}:
+        return _factor_missing(factor, reason="财务类因子尚未完成公告日期 / 实际可得日期 PIT 校验。", now=now, status="pending_pit")
+    if key == "hard_risk_flag":
+        packet = _as_mapping(hard_risk_packet)
+        flags = _as_list(packet.get("risk_flags") or packet.get("warnings") or packet.get("alerts"))
+        if not packet:
+            return _factor_missing(factor, reason="硬风险 packet 未加载；缺失不等于无风险。", now=now)
+        value = len(flags)
+        if value > 0:
+            return _factor_value(factor, raw_value=value, direction="risk_present", effect="suppress", score_impact=-1.0, now=now)
+        return _factor_value(factor, raw_value=0, direction="no_verified_risk_record", effect="neutral", score_impact=0.0, now=now, status_note="当前无可见硬风险记录；不把无记录当正面。")
+    if key == "limit_heat_score":
+        value = _packet_number(limit_emotion_packet, "limit_heat_score", "heat_score", "record_count", "target_match_count")
+        if value is None:
+            return _factor_missing(factor, reason="涨跌停/情绪 packet 缺失。", now=now)
+        effect = "support" if value > 0 else "neutral"
+        return _factor_value(factor, raw_value=value, direction="emotion_heat" if effect == "support" else "neutral", effect=effect, score_impact=0.6 if effect == "support" else 0, now=now)
+    if key == "chip_winner_rate":
+        value = _packet_number(chip_packet, "winner_rate", "chip_winner_rate", "profit_ratio")
+        if value is None:
+            return _factor_missing(factor, reason="筹码/胜率 packet 缺失。", now=now)
+        effect = "suppress" if value >= 85 else ("support" if value <= 35 else "neutral")
+        return _factor_value(factor, raw_value=value, direction="crowded_profit" if effect == "suppress" else ("low_winner_rate" if effect == "support" else "neutral"), effect=effect, score_impact=-0.6 if effect == "suppress" else (0.4 if effect == "support" else 0), now=now)
+    return _factor_missing(factor, reason="MVP light mode 暂不计算该因子。", now=now, status="pending")
+
+
+def build_factor_runtime_packet(
+    *,
+    factor_library: Any = None,
+    daily_close_packet: Any = None,
+    daily_basic_packet: Any = None,
+    moneyflow_packet: Any = None,
+    hard_risk_packet: Any = None,
+    limit_emotion_packet: Any = None,
+    chip_packet: Any = None,
+    mode: str = "light",
+    universe: Any = None,
+    now: Any = None,
+) -> dict:
+    now_text = _now_iso(now)
+    library = factor_library if isinstance(factor_library, Mapping) else build_factor_library_packet(now=now_text)
+    factors = [_as_mapping(item) for item in _as_list(library.get("factors")) if _as_mapping(item)]
+    rows = _clean_daily_rows(daily_close_packet)
+    daily_basic_rows = _clean_daily_basic_rows(daily_basic_packet)
+    factor_values = [
+        _calculate_factor_value(
+            factor,
+            rows=rows,
+            daily_basic_rows=daily_basic_rows,
+            moneyflow_packet=moneyflow_packet,
+            hard_risk_packet=hard_risk_packet,
+            limit_emotion_packet=limit_emotion_packet,
+            chip_packet=chip_packet,
+            now=now_text,
+        )
+        for factor in factors
+    ]
+    missing_count = sum(1 for item in factor_values if item.get("effect") == "missing")
+    usable_count = sum(1 for item in factor_values if item.get("data_status") in {"ready", "degraded", "research_context"})
+    coverage = usable_count / len(factor_values) if factor_values else 0.0
+    status = "ready" if factor_values and missing_count == 0 else ("partial" if factor_values and usable_count else "not_run")
+    universe_map = _as_mapping(universe)
+    return {
+        "packet_key": RUNTIME_PACKET_KEY,
+        "schema_version": "factor_runtime.v1",
+        "phase": MVP_PHASE,
+        "mode": mode if mode in {"cache_only", "light", "full", "research"} else "light",
+        "universe": {
+            "type": universe_map.get("type") or "current_target",
+            "items": list(universe_map.get("items") or []),
+            "size": int(_to_number(universe_map.get("size"), len(universe_map.get("items") or [])) or 0),
+        },
+        "status": status,
+        "factor_values": factor_values,
+        "coverage": round(coverage, 4),
+        "missing_count": missing_count,
+        "calculated_at": now_text,
+        "warnings": ["light mode 无全市场横截面，zscore/rank_pct 缺省时必须按降级解释。"],
+        "deepseek_called": False,
+        "tushare_called": False,
+        "external_calls_triggered": False,
+    }
+
+
+def build_factor_test_packet(*, mode: str = "light", now: Any = None) -> dict:
+    return {
+        "packet_key": TEST_PACKET_KEY,
+        "schema_version": "factor_test.v1",
+        "phase": MVP_PHASE,
+        "mode": mode,
+        "status": "not_run",
+        "items": [],
+        "summary": "MVP light mode 不运行全市场 IC/Rank IC/ICIR/分组收益/换手/成本后检验。",
+        "updated_at": _now_iso(now),
+        "deepseek_called": False,
+        "tushare_called": False,
+        "external_calls_triggered": False,
+    }
+
+
+def build_factor_score_packet(*, runtime_packet: Any = None, now: Any = None) -> dict:
+    now_text = _now_iso(now)
+    runtime = _as_mapping(runtime_packet)
+    values = [_as_mapping(item) for item in _as_list(runtime.get("factor_values")) if _as_mapping(item)]
+    support = [item for item in values if item.get("effect") == "support" and item.get("enters_composite_score")]
+    suppress = [item for item in values if item.get("effect") == "suppress" and item.get("enters_composite_score")]
+    neutral = [item for item in values if item.get("effect") == "neutral" and not item.get("excluded_from_score")]
+    missing = [item for item in values if item.get("effect") == "missing"]
+    conflict = []
+    if support and suppress:
+        conflict.append(
+            {
+                "conflict_key": "support_and_suppress_coexist",
+                "summary": "支持因子与压制因子同时存在，需要进入人工核验。",
+                "support_count": len(support),
+                "suppress_count": len(suppress),
+            }
+        )
+    scoreable = [item for item in values if item.get("enters_composite_score")]
+    if scoreable:
+        avg = statistics.fmean(float(item.get("score_impact") or 0.0) for item in scoreable)
+        composite = round(50 + avg * 25, 2)
+    else:
+        avg = 0.0
+        composite = None
+    if composite is None:
+        band = "missing"
+    elif avg >= 0.65:
+        band = "strong"
+    elif avg >= 0.2:
+        band = "positive"
+    elif avg <= -0.2:
+        band = "weak"
+    else:
+        band = "neutral"
+    coverage = _to_number(runtime.get("coverage"), 0.0) or 0.0
+    strength = "high" if coverage >= 0.7 and len(scoreable) >= 6 else ("medium" if coverage >= 0.35 and len(scoreable) >= 3 else "low")
+    return {
+        "packet_key": SCORE_PACKET_KEY,
+        "schema_version": "factor_score.v1",
+        "phase": MVP_PHASE,
+        "status": "ready" if values else "not_run",
+        "composite_score": composite,
+        "score_band": band,
+        "support_factors": support,
+        "suppress_factors": suppress,
+        "neutral_factors": neutral,
+        "missing_factors": missing,
+        "conflict_factors": conflict,
+        "evidence_strength": strength,
+        "updated_at": now_text,
+        "warnings": [
+            "缺失/无记录不作为负面。",
+            "pit_validated=False 的因子不能成为强 support。",
+            "Serenity/瓶颈方法来源不进入 composite score。",
+        ],
+        "deepseek_called": False,
+        "tushare_called": False,
+        "external_calls_triggered": False,
+    }
+
+
+def _build_factor_evidence_preview(score_packet: Mapping[str, Any]) -> list[dict]:
+    preview = []
+    for effect_key, effect in (("support_factors", "support"), ("suppress_factors", "suppress")):
+        for item in _as_list(score_packet.get(effect_key))[:4]:
+            factor = _as_mapping(item)
+            if not factor:
+                continue
+            preview.append(
+                {
+                    "source": SCORE_PACKET_KEY,
+                    "factor_key": factor.get("factor_key"),
+                    "label": factor.get("factor_name"),
+                    "effect": effect,
+                    "summary": factor.get("status_note") or factor.get("direction") or "",
+                    "enters_evidence_effects": True,
+                    "does_not_modify_action": True,
+                    "does_not_modify_operation_zones": True,
+                }
+            )
+    for item in _as_list(score_packet.get("conflict_factors")):
+        conflict = _as_mapping(item)
+        preview.append(
+            {
+                "source": SCORE_PACKET_KEY,
+                "factor_key": conflict.get("conflict_key"),
+                "label": "因子冲突",
+                "effect": "conflict",
+                "summary": conflict.get("summary"),
+                "enters_evidence_effects": True,
+                "does_not_modify_action": True,
+                "does_not_modify_operation_zones": True,
+            }
+        )
+    return preview
+
+
+def _research_context(chokepoint_packet: Any = None, serenity_packet: Any = None) -> dict:
+    chokepoint = _as_mapping(chokepoint_packet)
+    serenity = _as_mapping(serenity_packet)
+    return {
+        "chokepoint": {
+            "available": bool(chokepoint),
+            "summary": chokepoint.get("summary") or "",
+            "source_packet": "command_center_chokepoint_scan_packet",
+            "enters_composite_score": False,
+        },
+        "serenity": {
+            "available": bool(serenity),
+            "summary": serenity.get("summary") or "",
+            "source_packet": "command_center_serenity_method_radar_packet",
+            "enters_composite_score": False,
+        },
+    }
+
+
+def build_factor_quant_hub_packet(
+    *,
+    mode: str = "cache_only",
+    universe: Any = None,
+    factor_library: Any = None,
+    data_ledger: Any = None,
+    runtime_packet: Any = None,
+    factor_test_packet: Any = None,
+    score_packet: Any = None,
+    daily_close_packet: Any = None,
+    daily_basic_packet: Any = None,
+    moneyflow_packet: Any = None,
+    hard_risk_packet: Any = None,
+    limit_emotion_packet: Any = None,
+    chip_packet: Any = None,
+    a_share_fact_lineage_summary: Any = None,
+    next_session_projection_packet: Any = None,
+    strategy_execution_packet: Any = None,
+    decision_packet: Any = None,
+    trade_review_summary: Any = None,
+    legacy_quant_packet: Any = None,
+    chokepoint_packet: Any = None,
+    serenity_packet: Any = None,
+    call_ledger: Any = None,
+    deepseek_explanation: Any = None,
+    now: Any = None,
+) -> dict:
+    now_text = _now_iso(now)
+    selected_mode = mode if mode in {"cache_only", "light", "full", "research"} else "cache_only"
+    library = factor_library if isinstance(factor_library, Mapping) else build_factor_library_packet(now=now_text)
+    ledger = data_ledger if isinstance(data_ledger, Mapping) else build_factor_data_ledger_packet(factor_library=library, now=now_text)
+    if isinstance(runtime_packet, Mapping):
+        runtime = dict(runtime_packet)
+    elif selected_mode == "light":
+        runtime = build_factor_runtime_packet(
+            factor_library=library,
+            daily_close_packet=daily_close_packet,
+            daily_basic_packet=daily_basic_packet,
+            moneyflow_packet=moneyflow_packet,
+            hard_risk_packet=hard_risk_packet,
+            limit_emotion_packet=limit_emotion_packet,
+            chip_packet=chip_packet,
+            mode="light",
+            universe=universe,
+            now=now_text,
+        )
+    else:
+        runtime = {
+            "packet_key": RUNTIME_PACKET_KEY,
+            "schema_version": "factor_runtime.v1",
+            "status": "not_run",
+            "factor_values": [],
+            "coverage": 0.0,
+            "missing_count": len(library.get("factors") or []),
+            "calculated_at": now_text,
+        }
+    tests = factor_test_packet if isinstance(factor_test_packet, Mapping) else build_factor_test_packet(mode=selected_mode, now=now_text)
+    score = score_packet if isinstance(score_packet, Mapping) else build_factor_score_packet(runtime_packet=runtime, now=now_text)
+    sanitized_deepseek = sanitize_factor_deepseek_explanation(deepseek_explanation) if deepseek_explanation else {"called": False, "payload": None}
+    universe_map = _as_mapping(universe)
+    governance_state = "evidence_effect_only" if score.get("status") == "ready" else "research_only"
+    bridge_preview = _build_factor_evidence_preview(score)
+    warnings = list(score.get("warnings") or [])
+    if runtime.get("coverage", 0) < 0.35:
+        warnings.append("多因子覆盖率偏低，仅可作为研究解释。")
+    return {
+        "packet_key": QUANT_HUB_PACKET_KEY,
+        "schema_version": QUANT_HUB_SCHEMA_VERSION,
+        "phase": MVP_PHASE,
+        "mode": selected_mode,
+        "universe": {
+            "type": universe_map.get("type") or "current_target",
+            "items": list(universe_map.get("items") or []),
+            "size": int(_to_number(universe_map.get("size"), len(universe_map.get("items") or [])) or 0),
+        },
+        "data_ledger": _copy_json(ledger),
+        "factor_library": _copy_json(library),
+        "runtime": _copy_json(runtime),
+        "factor_tests": _copy_json(tests),
+        "score": _copy_json(score),
+        "governance": {
+            "state": governance_state,
+            "allow_evidence_effects": True,
+            "allow_strategy_trace": False,
+            "allow_core_action": False,
+        },
+        "next_session_bridge": {
+            "enters_evidence_effects": True,
+            "does_not_modify_action": True,
+            "does_not_modify_prices": True,
+            "does_not_modify_holdings": True,
+            "does_not_modify_operation_zones": True,
+            "preview": bridge_preview,
+            "source_packet": "command_center_factor_score_packet",
+        },
+        "deepseek_explanation": sanitized_deepseek,
+        "research_context": _research_context(chokepoint_packet, serenity_packet),
+        "linked_packets": {
+            "a_share_fact_lineage_summary": bool(_as_mapping(a_share_fact_lineage_summary)),
+            "command_center_daily_close_packet": bool(_as_mapping(daily_close_packet)),
+            "command_center_next_session_projection_packet": bool(_as_mapping(next_session_projection_packet)),
+            "strategy_execution_packet": bool(_as_mapping(strategy_execution_packet)),
+            "decision_packet": bool(_as_mapping(decision_packet)),
+            "trade_review_summary": bool(_as_mapping(trade_review_summary)),
+            "legacy_quant_packet": bool(_as_mapping(legacy_quant_packet)),
+        },
+        "warnings": warnings,
+        "call_ledger": _call_ledger_rows(call_ledger),
+        "updated_at": now_text,
+        "deepseek_called": bool(_as_mapping(sanitized_deepseek).get("called")),
+        "tushare_called": bool(_call_ledger_rows(call_ledger)),
+        "external_calls_triggered": bool(_call_ledger_rows(call_ledger)),
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_next_session_operation_zones": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def build_factor_deepseek_explanation_prompt(hub_packet: Any) -> dict:
+    hub = _as_mapping(hub_packet)
+    score = _as_mapping(hub.get("score"))
+    prompt_payload = {
+        "schema": sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS),
+        "mode": hub.get("mode"),
+        "coverage": _as_mapping(hub.get("runtime")).get("coverage"),
+        "score_band": score.get("score_band"),
+        "support_factors": [
+            {"factor_key": item.get("factor_key"), "factor_name": item.get("factor_name"), "direction": item.get("direction")}
+            for item in _as_list(score.get("support_factors"))[:6]
+            if isinstance(item, Mapping)
+        ],
+        "suppress_factors": [
+            {"factor_key": item.get("factor_key"), "factor_name": item.get("factor_name"), "direction": item.get("direction")}
+            for item in _as_list(score.get("suppress_factors"))[:6]
+            if isinstance(item, Mapping)
+        ],
+        "conflict_factors": _as_list(score.get("conflict_factors"))[:4],
+        "missing_factors": [
+            {"factor_key": item.get("factor_key"), "factor_name": item.get("factor_name"), "status_note": item.get("status_note")}
+            for item in _as_list(score.get("missing_factors"))[:8]
+            if isinstance(item, Mapping)
+        ],
+        "discipline": {
+            "does_not_modify_action": True,
+            "does_not_output_price_or_position": True,
+            "not_trading_advice": True,
+        },
+    }
+    return {
+        "system_prompt": "你是多因子研究结果整理器。只解释用户提供的结构化因子结果，不生成或覆盖任何数值，不输出交易动作。",
+        "user_prompt": (
+            "请只输出 JSON object，顶层键只能是 summary、support_notes、suppress_notes、"
+            "conflict_notes、missing_data_notes、discipline_notes。不得输出价格、持仓、因子值、strategy action、买卖指令或完整 packet。\n\n"
+            + json.dumps(prompt_payload, ensure_ascii=False, indent=2, default=str)
+        ),
+        "allowed_top_level_keys": sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS),
+        "enters_deepseek_prompt": True,
+        "does_not_include_full_packet": True,
+    }
+
+
+def _extract_json_object_text(value: str) -> str:
+    text = value.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    if text.startswith("{") and text.endswith("}"):
+        return text
+    start = text.find("{")
+    end = text.rfind("}")
+    return text[start : end + 1] if start >= 0 and end > start else ""
+
+
+def sanitize_factor_deepseek_explanation(payload: Any) -> dict:
+    parsed = payload if isinstance(payload, Mapping) else {}
+    parse_error = ""
+    if isinstance(payload, str):
+        text = _extract_json_object_text(payload)
+        try:
+            parsed = json.loads(text) if text else {}
+        except Exception as exc:
+            parsed = {}
+            parse_error = f"DeepSeek JSON 解析失败：{exc}"
+    sanitized = {}
+    ignored_keys = []
+    for key, value in _as_mapping(parsed).items():
+        if key not in DEEPSEEK_EXPLANATION_ALLOWED_KEYS:
+            ignored_keys.append(str(key))
+            continue
+        if key == "summary":
+            sanitized[key] = str(value or "")[:500]
+        else:
+            sanitized[key] = [str(item)[:240] for item in _as_list(value)[:8] if str(item).strip()]
+    for key in DEEPSEEK_EXPLANATION_ALLOWED_KEYS:
+        sanitized.setdefault(key, "" if key == "summary" else [])
+    return {
+        "called": bool(payload),
+        "status": "success" if sanitized.get("summary") or any(sanitized.get(key) for key in DEEPSEEK_EXPLANATION_ALLOWED_KEYS if key != "summary") else "parse_failed",
+        "payload": sanitized,
+        "ignored_keys": sorted(ignored_keys),
+        "error_message_safe": parse_error,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
     }

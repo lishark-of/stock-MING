@@ -6,6 +6,37 @@ import command_center_factor_research as factor_research
 
 
 class CommandCenterFactorResearchTests(unittest.TestCase):
+    def _daily_packet(self, count=70):
+        rows = []
+        for idx in range(count):
+            close = 10 + idx * 0.1
+            rows.append(
+                {
+                    "trade_date": f"2026-03-{(idx % 28) + 1:02d}",
+                    "open": close - 0.05,
+                    "high": close + 0.12,
+                    "low": close - 0.18,
+                    "close": close,
+                    "vol": 1000 + idx * 10,
+                    "amount": 5000 + idx * 30,
+                }
+            )
+        return {"status": "ready", "rows": rows, "row_count": len(rows), "is_real_market_series": True}
+
+    def _daily_basic_packet(self):
+        return {
+            "status": "ready",
+            "rows": [
+                {
+                    "trade_date": "20260608",
+                    "turnover_rate": 3.2,
+                    "pe_ttm": 28.5,
+                    "pb": 2.1,
+                    "ps_ttm": 4.3,
+                }
+            ],
+        }
+
     def test_factor_library_is_local_research_only_scaffold(self):
         packet = factor_research.build_factor_library_packet(now="2026-06-09T10:00:00")
 
@@ -16,6 +47,8 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertGreaterEqual(packet["factor_count"], 20)
         self.assertLessEqual(packet["factor_count"], 30)
+        keys = {item["factor_key"] for item in packet["factors"]}
+        self.assertIn("serenity_method_source", keys)
         json.dumps(packet, ensure_ascii=False)
 
     def test_every_factor_has_required_research_fields_and_no_core_action_usage(self):
@@ -117,6 +150,123 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertNotIn("运行因子回测", app_source)
         self.assertNotIn("按因子买入", app_source)
         self.assertNotIn("按因子卖出", app_source)
+
+    def test_quant_hub_cache_only_schema_does_not_call_external_sources(self):
+        packet = factor_research.build_factor_quant_hub_packet(mode="cache_only", now="2026-06-09T11:00:00")
+
+        self.assertEqual(packet["packet_key"], "command_center_factor_quant_hub_packet")
+        self.assertEqual(packet["schema_version"], "factor_quant_hub.v1")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
+        self.assertTrue(packet["next_session_bridge"]["does_not_modify_operation_zones"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_light_runtime_computes_daily_factors_and_degrades_rank_without_universe(self):
+        library = factor_research.build_factor_library_packet()
+        runtime = factor_research.build_factor_runtime_packet(
+            factor_library=library,
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            moneyflow_packet={"main_net_yi": 1.2},
+            mode="light",
+            now="2026-06-09T11:05:00",
+        )
+        values = {item["factor_key"]: item for item in runtime["factor_values"]}
+
+        self.assertIn(values["momentum_20d"]["effect"], {"support", "neutral", "suppress"})
+        self.assertEqual(values["amount_20d_rank"]["data_status"], "degraded")
+        self.assertIsNone(values["amount_20d_rank"]["zscore"])
+        self.assertIsNone(values["amount_20d_rank"]["rank_pct"])
+        self.assertEqual(values["turnover_rate"]["raw_value"], 3.2)
+        self.assertEqual(values["roe_latest"]["data_status"], "pending_pit")
+        self.assertFalse(values["roe_latest"]["pit_validated"])
+
+    def test_missing_factors_enter_missing_not_suppress(self):
+        runtime = factor_research.build_factor_runtime_packet(
+            daily_close_packet={"rows": []},
+            daily_basic_packet={},
+            mode="light",
+            now="2026-06-09T11:10:00",
+        )
+        score = factor_research.build_factor_score_packet(runtime_packet=runtime)
+
+        self.assertGreater(len(score["missing_factors"]), 0)
+        missing_keys = {item["factor_key"] for item in score["missing_factors"]}
+        suppress_keys = {item["factor_key"] for item in score["suppress_factors"]}
+        self.assertFalse(missing_keys & suppress_keys)
+
+    def test_serenity_and_chokepoint_stay_research_context_and_out_of_composite_score(self):
+        runtime = factor_research.build_factor_runtime_packet(
+            daily_close_packet=self._daily_packet(),
+            mode="light",
+            now="2026-06-09T11:15:00",
+        )
+        values = {item["factor_key"]: item for item in runtime["factor_values"]}
+        score = factor_research.build_factor_score_packet(runtime_packet=runtime)
+        score_keys = {
+            item["factor_key"]
+            for group in ("support_factors", "suppress_factors", "neutral_factors")
+            for item in score[group]
+        }
+
+        self.assertTrue(values["chokepoint_method_hint"]["excluded_from_score"])
+        self.assertTrue(values["serenity_method_source"]["excluded_from_score"])
+        self.assertNotIn("chokepoint_method_hint", score_keys)
+        self.assertNotIn("serenity_method_source", score_keys)
+
+    def test_quant_hub_links_research_context_and_builds_evidence_preview_only(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            chokepoint_packet={"summary": "瓶颈仅研究解释"},
+            serenity_packet={"summary": "方法来源基线"},
+            call_ledger=[{"api": "daily", "row_count": 70, "data_date": "20260608", "call_status": "verified_present"}],
+            now="2026-06-09T11:20:00",
+        )
+
+        self.assertTrue(packet["research_context"]["chokepoint"]["available"])
+        self.assertFalse(packet["research_context"]["chokepoint"]["enters_composite_score"])
+        self.assertTrue(packet["research_context"]["serenity"]["available"])
+        self.assertFalse(packet["research_context"]["serenity"]["enters_composite_score"])
+        self.assertTrue(packet["next_session_bridge"]["enters_evidence_effects"])
+        self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
+        self.assertTrue(packet["tushare_called"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "daily")
+
+    def test_deepseek_prompt_and_sanitizer_are_explanation_only(self):
+        hub = factor_research.build_factor_quant_hub_packet(mode="cache_only")
+        prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)
+        sanitized = factor_research.sanitize_factor_deepseek_explanation(
+            {
+                "summary": "只解释",
+                "support_notes": ["量能支持"],
+                "strategy_action": "买入",
+                "price": 99,
+                "factor_values": [{"raw_value": 1}],
+            }
+        )
+
+        self.assertEqual(
+            set(prompt["allowed_top_level_keys"]),
+            {
+                "summary",
+                "support_notes",
+                "suppress_notes",
+                "conflict_notes",
+                "missing_data_notes",
+                "discipline_notes",
+            },
+        )
+        self.assertIn("strategy_action", sanitized["ignored_keys"])
+        self.assertIn("price", sanitized["ignored_keys"])
+        self.assertIn("factor_values", sanitized["ignored_keys"])
+        self.assertEqual(sanitized["payload"]["summary"], "只解释")
+        self.assertTrue(sanitized["does_not_override_numeric_values"])
 
 
 if __name__ == "__main__":
