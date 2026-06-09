@@ -41,6 +41,8 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertIn("command_center_analysis_method_packet", keys)
         self.assertIn("command_center_chokepoint_scan_packet", keys)
         self.assertIn("command_center_serenity_method_radar_packet", keys)
+        self.assertIn("command_center_factor_library_packet", keys)
+        self.assertIn("command_center_factor_data_ledger_packet", keys)
         self.assertIn("command_center_refresh_summary", keys)
 
     def test_legacy_a_share_evidence_packets_are_manual_or_derived(self):
@@ -86,6 +88,22 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
         self.assertEqual(spec["external_call_policy"], "button_gated")
         self.assertEqual(spec["deepseek_policy"], "never")
         self.assertIn("不进入交易评分或策略动作", spec["description"])
+
+    def test_factor_research_packets_are_derived_without_deepseek_or_external_calls(self):
+        library = registry.get_command_center_packet_spec("command_center_factor_library_packet")
+        ledger = registry.get_command_center_packet_spec("command_center_factor_data_ledger_packet")
+
+        self.assertEqual(library["area"], "analysis")
+        self.assertEqual(library["refresh_policy"], "derived_display")
+        self.assertEqual(library["external_call_policy"], "not_triggered")
+        self.assertEqual(library["deepseek_policy"], "never")
+        self.assertIn("不回测、不评分、不进入 strategy action", library["description"])
+
+        self.assertEqual(ledger["area"], "data_governance")
+        self.assertEqual(ledger["refresh_policy"], "derived_display")
+        self.assertEqual(ledger["external_call_policy"], "not_triggered")
+        self.assertEqual(ledger["deepseek_policy"], "never")
+        self.assertIn("不自动取数", ledger["description"])
 
     def test_recovery_result_timeline_is_read_only_recovery_packet(self):
         spec = registry.get_command_center_packet_spec("command_center_recovery_result_timeline")

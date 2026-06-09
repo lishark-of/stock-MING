@@ -25,6 +25,7 @@ import command_center_packet_registry as packet_registry_service
 import command_center_desktop_frontend_readiness as desktop_readiness_service
 import command_center_analysis_methods as analysis_methods_service
 import command_center_serenity_method_radar as serenity_method_radar_service
+import command_center_factor_research as factor_research_service
 import command_center_facts_packet as facts_packet_service
 import command_center_discipline_packet as discipline_packet_service
 import command_center_market_packet as market_packet_service
@@ -3239,6 +3240,92 @@ def _render_serenity_method_radar_panel():
         st.json(policy, expanded=False)
         for note in packet.get("source_notes") or []:
             st.markdown(f"- {note}")
+
+
+def _render_factor_research_lab_panel():
+    available_packets = {
+        key: st.session_state.get(key)
+        for key in list(st.session_state.keys())
+        if str(key).endswith("_packet") or str(key) in {"daily_close_packet", "verified_technical_facts"}
+    }
+    library_packet = factor_research_service.build_factor_library_packet()
+    ledger_packet = factor_research_service.build_factor_data_ledger_packet(
+        factor_library=library_packet,
+        available_packets=available_packets,
+    )
+    governance_packet = factor_research_service.build_factor_governance_packet()
+    st.session_state["command_center_factor_library_packet"] = library_packet
+    st.session_state["command_center_factor_data_ledger_packet"] = ledger_packet
+    st.session_state["command_center_factor_governance_packet"] = governance_packet
+
+    st.markdown("### Factor Research Lab / 因子研究实验室")
+    st.caption(
+        "Phase 1 只展示因子定义与数据血缘；尚未计算因子值，尚未完成 IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益检验；不调用 Tushare，不调用 DeepSeek，不回测，不生成交易动作。"
+    )
+    status_cols = st.columns(4)
+    status_cols[0].metric("因子库", f"{library_packet.get('factor_count', 0)} 个已定义")
+    status_cols[1].metric("数据血缘", "只读")
+    status_cols[2].metric("DeepSeek", "不调用")
+    status_cols[3].metric("交易动作", "不参与")
+    st.info("当前 26 个因子只是研究库定义，不是已验证因子信号；PIT requirement 已声明但验证待完成，不作为买卖依据。")
+
+    tab_library, tab_ledger, tab_governance, tab_future = st.tabs(["因子库", "数据血缘", "治理边界", "后续检验"])
+    with tab_library:
+        factor_rows = []
+        for factor in library_packet.get("factors") or []:
+            factor_rows.append(
+                {
+                    "factor_key": factor.get("factor_key"),
+                    "因子": factor.get("factor_name"),
+                    "类别": factor.get("category"),
+                    "公式摘要": factor.get("formula_summary"),
+                    "数据接口": " / ".join(factor.get("source_interfaces") or []),
+                    "依赖 packet": " / ".join(factor.get("required_packets") or []),
+                    "PIT要求": factor.get("pit_requirement"),
+                    "PIT已验证": "否",
+                    "第一阶段用途": factor.get("first_stage_usage"),
+                    "核心动作": "禁止",
+                }
+            )
+        st.dataframe(pd.DataFrame(factor_rows), width="stretch", hide_index=True)
+
+    with tab_ledger:
+        ledger_rows = []
+        for row in ledger_packet.get("ledger_rows") or []:
+            ledger_rows.append(
+                {
+                    "factor_key": row.get("factor_key"),
+                    "因子": row.get("factor_name"),
+                    "状态": row.get("status"),
+                    "说明": row.get("status_note"),
+                    "接口": " / ".join(row.get("source_interfaces") or []),
+                    "依赖 packet": " / ".join(row.get("required_packets") or []),
+                    "PIT已验证": "是" if row.get("pit_validated") else "否",
+                    "未来函数风险说明": row.get("lookahead_risk_note"),
+                    "缺失率": row.get("missing_rate"),
+                }
+            )
+        st.dataframe(pd.DataFrame(ledger_rows), width="stretch", hide_index=True)
+        st.caption("未加载不等于无数据；财务类因子必须用公告日期 / 实际可得日期，Phase 1 不把 PIT requirement 说成 PIT 已验证。")
+
+    with tab_governance:
+        policy = governance_packet.get("decision_usage_policy") or {}
+        policy_cols = st.columns(4)
+        policy_cols[0].metric("Research display", "允许" if governance_packet.get("allow_research_display") else "禁止")
+        policy_cols[1].metric("Evidence effects", "禁止")
+        policy_cols[2].metric("Strategy trace", "禁止")
+        policy_cols[3].metric("Core action", "禁止")
+        st.json(policy, expanded=False)
+        with st.expander("风险边界", expanded=False):
+            for item in governance_packet.get("risk_boundaries") or []:
+                st.markdown(f"- {item}")
+
+    with tab_future:
+        st.markdown("#### Phase 2 以后才启用")
+        st.markdown("- 单因子 IC / Rank IC / ICIR")
+        st.markdown("- 分组收益、多空收益、换手率、最大回撤")
+        st.markdown("- 行业 / 市值中性化、样本外、近期衰减、交易成本后表现")
+        st.markdown("- 通过治理后才可进入 evidence_effects；仍不直接进入 core action")
 
 
 def _render_chokepoint_scan_result(packet):
@@ -10153,6 +10240,7 @@ def render_command_center_workspace(target, market_badge, price, market_type="",
                 live_packet=toolbox_live_packet,
                 key_prefix="toolbox",
             )
+            _render_factor_research_lab_panel()
             render_command_center_toolbox_entry()
             data_capability_packet = _get_command_center_data_capability_packet()
             capability_items = data_capability_packet.get("items") if isinstance(data_capability_packet, dict) else []
