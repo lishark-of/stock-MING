@@ -14,6 +14,7 @@ class CommandCenterSerenityMethodRadarTests(unittest.TestCase):
         self.assertEqual(packet["github_probe"], {})
         self.assertFalse(packet["deepseek_called"])
         self.assertEqual(packet["source_type"], "user_screenshot_baseline")
+        self.assertIn("本地方法来源基线", packet["summary"])
         self.assertEqual(packet["updated_at"], "2026-06-08T22:00:00")
         for item in packet["repositories"]:
             self.assertEqual(item["source_type"], "user_screenshot_baseline")
@@ -141,9 +142,17 @@ class CommandCenterSerenityMethodRadarTests(unittest.TestCase):
         app_source = Path("app.py").read_text(encoding="utf-8")
         self.assertIn("_render_serenity_method_radar_panel", app_source)
         self.assertIn("serenity_method_radar_service.build_serenity_method_radar_packet", app_source)
-        self.assertIn('st.expander("截图本地基线仓库", expanded=False)', app_source)
+        self.assertIn("Serenity 方法来源雷达", app_source)
+        self.assertIn("一次性本地方法基线", app_source)
+        self.assertIn('st.expander("仓库方法雷达", expanded=False)', app_source)
+        self.assertIn('"方法特色": item.get("screenshot_feature")', app_source)
         self.assertIn('metric("DeepSeek", "不调用")', app_source)
-        self.assertIn('metric("决策使用", "只读说明")', app_source)
+        self.assertIn('metric("决策使用", "只读说明，不参与交易评分")', app_source)
+        self.assertNotIn("截图板块", app_source)
+        self.assertNotIn("截图展示区", app_source)
+        self.assertNotIn("上传截图", app_source)
+        self.assertNotIn("等待更多截图", app_source)
+        self.assertNotIn('st.expander("截图本地基线仓库", expanded=False)', app_source)
         self.assertNotIn("serenity_method_radar_service.build_serenity_method_radar_packet(", app_source.split("def _build_chokepoint_evidence_payload", 1)[1].split("def _render_serenity_method_radar_panel", 1)[0])
 
 

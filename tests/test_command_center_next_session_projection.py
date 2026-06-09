@@ -494,6 +494,7 @@ class CommandCenterNextSessionProjectionTests(unittest.TestCase):
             "set_command_center_route",
             "get_command_center_route",
             "preserve_command_center_route",
+            "open_next_session_projection_cache_view",
         ]:
             self.assertIn(f"def {name}", source)
         self.assertIn('"command_center_route"', source)
@@ -503,6 +504,27 @@ class CommandCenterNextSessionProjectionTests(unittest.TestCase):
         self.assertIn('"next_session_projection_expanded"', source)
         self.assertIn('st.expander("高级操作", expanded=False)', source)
         self.assertIn("previous_route = preserve_command_center_route", source)
+        self.assertIn('"查看已缓存次日图谱（不刷新）"', source)
+        self.assertIn('"btn_cc_open_next_session_projection_cache_only"', source)
+        self.assertIn("缓存缺失或过期时，该按钮会触发 Tushare 只读刷新。", source)
+        self.assertIn("当前没有已缓存的次日操作图谱", source)
+
+    def test_cache_only_next_session_entry_is_route_only_without_refresh_flags(self):
+        source = Path("app.py").read_text()
+        helper_body = source.split("def open_next_session_projection_cache_view", 1)[1].split(
+            "def _command_center_projection_deepseek_status", 1
+        )[0]
+
+        self.assertIn('"next_session_projection"', helper_body)
+        self.assertIn('"next_session_operation_map"', helper_body)
+        self.assertIn('"next_session_projection_expanded"', helper_body)
+        self.assertNotIn("refresh", helper_body.lower())
+        self.assertNotIn("tushare", helper_body.lower())
+        self.assertNotIn("deepseek", helper_body.lower())
+        self.assertNotIn("github", helper_body.lower())
+        self.assertIn("cache_only_projection_clicked", source)
+        self.assertIn("or cache_only_projection_clicked", source)
+        self.assertIn("if not next_session_projection_packet and not cache_only_projection_clicked:", source)
 
     def test_command_center_home_clears_legacy_route_without_resetting_next_session(self):
         source = Path("app.py").read_text()

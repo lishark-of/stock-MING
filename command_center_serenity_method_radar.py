@@ -167,8 +167,8 @@ SERENITY_METHOD_SUMMARIES = [
 ]
 
 RADAR_SOURCE_NOTES = [
-    "本地基线来自用户本次上传截图；不是实时 GitHub 校验结果。",
-    "截图特色不是 GitHub stars，截图里的方法评价不是官方评价。",
+    "本地方法基线来自用户一次性提供的材料；不是实时 GitHub 校验结果。",
+    "方法特色不是 GitHub stars，本地方法评价不是官方评价。",
     "GitHub stars 只代表公开关注度，不代表方法质量、投资有效性或交易胜率。",
     "本模块不调用 DeepSeek，不进入交易评分、策略动作或次日操作图谱。",
 ]
@@ -305,7 +305,7 @@ def build_serenity_method_radar_packet(github_probe: Any = None, now: Any = None
         "packet_key": PACKET_KEY,
         "title": "Serenity 方法雷达",
         "status": "ready",
-        "summary": "本地截图基线已加载；GitHub 当前状态仅在手动校验后显示，且不覆盖截图方法评价。",
+        "summary": "本地方法来源基线已加载；GitHub 当前状态仅在手动校验后显示，且不覆盖本地方法评价。",
         "repositories": repositories,
         "hallucination_defense_evolution": _copy_json(HALLUCINATION_DEFENSE_EVOLUTION),
         "method_summaries": _copy_json(SERENITY_METHOD_SUMMARIES),

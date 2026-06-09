@@ -2653,6 +2653,15 @@ def preserve_command_center_route(session_state, fallback="home"):
     return route
 
 
+def open_next_session_projection_cache_view(session_state):
+    set_command_center_route(
+        session_state,
+        "next_session_projection",
+        anchor="next_session_operation_map",
+    )
+    session_state["next_session_projection_expanded"] = True
+
+
 def _command_center_projection_deepseek_status(packet=None):
     payload = packet if isinstance(packet, dict) else st.session_state.get("command_center_next_session_projection_packet") or {}
     synthesis = payload.get("deepseek_synthesis") if isinstance(payload, dict) else {}
@@ -3164,18 +3173,18 @@ def _render_serenity_method_radar_panel():
     packet = serenity_method_radar_service.build_serenity_method_radar_packet(github_probe=github_probe)
     st.session_state["command_center_serenity_method_radar_packet"] = packet
 
-    st.markdown("#### Serenity 方法雷达")
+    st.markdown("#### Serenity 方法来源雷达")
     st.caption(
-        "本区只展示用户截图本地基线和可选 GitHub 当前状态；不调用 DeepSeek，不进入瓶颈评分、策略动作或次日图谱。"
+        "本区只展示一次性本地方法基线和可选 GitHub 当前状态；不调用 DeepSeek，不进入瓶颈评分、策略动作或次日图谱。"
     )
     status_cols = st.columns(4)
-    status_cols[0].metric("来源", "用户截图基线")
+    status_cols[0].metric("来源", "一次性本地方法基线")
     status_cols[1].metric("GitHub 当前状态", "已校验" if github_probe else "未校验")
     status_cols[2].metric("DeepSeek", "不调用")
-    status_cols[3].metric("决策使用", "只读说明")
+    status_cols[3].metric("决策使用", "只读说明，不参与交易评分")
     if st.button("校验 GitHub 当前状态", key="btn_cc_serenity_method_radar_github_probe", width="stretch"):
         status = st.status("正在手动校验 GitHub 当前状态...", expanded=True)
-        status.write("只读取公开仓库元数据；不覆盖截图特色、方法贡献或防幻觉演进。")
+        status.write("只读取公开仓库元数据；不覆盖方法特色、方法贡献或防幻觉演进。")
         probe = serenity_method_radar_service.probe_github_repositories(timeout_seconds=8)
         st.session_state["command_center_serenity_method_radar_github_probe"] = probe
         packet = serenity_method_radar_service.build_serenity_method_radar_packet(github_probe=probe)
@@ -3186,9 +3195,9 @@ def _render_serenity_method_radar_panel():
         else:
             status.update(label="GitHub 校验完成", state="complete", expanded=False)
 
-    st.info("截图特色不是 GitHub stars；截图里的方法评价不是官方评价；GitHub stars 只代表公开关注度，不代表方法质量、投资有效性或交易胜率。")
+    st.info("方法特色来自一次性本地方法基线，不是 GitHub stars；方法评价不是官方评价；GitHub stars 只代表公开关注度，不代表方法质量、投资有效性或交易胜率。")
 
-    with st.expander("截图本地基线仓库", expanded=False):
+    with st.expander("仓库方法雷达", expanded=False):
         repo_rows = []
         for item in packet.get("repositories") or []:
             probe = item.get("github_probe") or {}
@@ -3196,7 +3205,7 @@ def _render_serenity_method_radar_panel():
                 {
                     "#": item.get("rank"),
                     "仓库": item.get("repo"),
-                    "截图特色": item.get("screenshot_feature"),
+                    "方法特色": item.get("screenshot_feature"),
                     "来源": item.get("source_type"),
                     "GitHub状态": probe.get("probe_status", "未校验"),
                     "HTTP": probe.get("http_status", ""),
@@ -3221,7 +3230,7 @@ def _render_serenity_method_radar_panel():
         )
         st.dataframe(evolution_rows, width="stretch", hide_index=True)
 
-    with st.expander("方法贡献归纳", expanded=False):
+    with st.expander("方法归纳", expanded=False):
         summary_rows = []
         for item in packet.get("method_summaries") or []:
             representatives = item.get("representative_repo") or " / ".join(item.get("representative_repos") or [])
@@ -3235,7 +3244,7 @@ def _render_serenity_method_radar_panel():
             )
         st.dataframe(pd.DataFrame(summary_rows), width="stretch", hide_index=True)
 
-    with st.expander("决策边界", expanded=False):
+    with st.expander("技术血缘 / 决策边界", expanded=False):
         policy = packet.get("decision_usage_policy") or {}
         st.json(policy, expanded=False)
         for note in packet.get("source_notes") or []:
@@ -9373,10 +9382,34 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     manual_war_game_clicked = False
     manual_deepseek_clicked = False
     manual_next_session_clicked = False
-    if st.button("生成次日操作图谱", key="btn_cc_generate_next_session_projection", type="primary", width="stretch"):
+    cache_only_projection_clicked = False
+    cached_projection_packet = st.session_state.get("command_center_next_session_projection_packet") or {}
+    action_cols = st.columns([1.05, 0.95])
+    with action_cols[0]:
+        generate_next_session_clicked = st.button(
+            "生成次日操作图谱",
+            key="btn_cc_generate_next_session_projection",
+            type="primary",
+            width="stretch",
+        )
+        st.caption("缓存缺失或过期时，该按钮会触发 Tushare 只读刷新。")
+    with action_cols[1]:
+        cache_only_projection_clicked = st.button(
+            "查看已缓存次日图谱（不刷新）",
+            key="btn_cc_open_next_session_projection_cache_only",
+            width="stretch",
+        )
+        st.caption("只切换到缓存视图，不触发 Tushare、DeepSeek、GitHub、满血刷新或下一票雷达。")
+    if cache_only_projection_clicked:
+        open_next_session_projection_cache_view(st.session_state)
+        st.session_state["command_center_focus_next_session_projection"] = True
+        if cached_projection_packet:
+            st.success("已打开已缓存的次日操作图谱；本次未刷新数据。")
+        else:
+            st.warning("当前没有已缓存的次日操作图谱。请在允许 Tushare 只读刷新的情况下点击“生成次日操作图谱”。")
+    if generate_next_session_clicked:
         manual_next_session_clicked = True
-        set_command_center_route(st.session_state, "next_session_projection", anchor="next_session_operation_map")
-        st.session_state["next_session_projection_expanded"] = True
+        open_next_session_projection_cache_view(st.session_state)
         status = st.status("正在生成次日操作图谱...", expanded=True)
         refresh_summary = None
         if _command_center_next_session_cache_ready(target=target, market_type=market_type):
@@ -9548,7 +9581,13 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
                 status.update(label="DeepSeek 解释失败，失败原因已显示在主路径附近", state="error", expanded=False)
             set_command_center_route(st.session_state, previous_route)
 
-    suppress_auto_refresh = manual_next_session_clicked or manual_full_refresh_clicked or manual_war_game_clicked or manual_deepseek_clicked
+    suppress_auto_refresh = (
+        manual_next_session_clicked
+        or manual_full_refresh_clicked
+        or manual_war_game_clicked
+        or manual_deepseek_clicked
+        or cache_only_projection_clicked
+    )
     if not suppress_auto_refresh:
         if auto_refresh_status.get("should_refresh"):
             page_packet = _run_command_center_auto_page_cycle(
@@ -9622,7 +9661,9 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
     next_session_projection_packet = (
         active_packet.get("next_session_projection_packet")
         or st.session_state.get("command_center_next_session_projection_packet")
-        or _build_command_center_next_session_projection_packet(
+    )
+    if not next_session_projection_packet and not cache_only_projection_clicked:
+        next_session_projection_packet = _build_command_center_next_session_projection_packet(
             target=target,
             market_type=market_type,
             position_profile=position_profile,
@@ -9632,8 +9673,8 @@ def render_command_center_2_page(target, market_badge, price, market_type="", po
             projection_packet=projection_packet,
             home_snapshot=home_snapshot,
         )
-    )
-    st.session_state["command_center_next_session_projection_packet"] = next_session_projection_packet
+    if next_session_projection_packet:
+        st.session_state["command_center_next_session_projection_packet"] = next_session_projection_packet
     live_packet = cc_state_adapter.attach_command_center_child_packets_for_display(
         live_packet,
         strategy_execution_packet=strategy_packet,
