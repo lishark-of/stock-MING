@@ -2016,6 +2016,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(desktop["data"]["does_not_modify_strategy_action"])
         self.assertTrue(desktop["data"]["does_not_execute_trades"])
         self.assertEqual(desktop["data"]["call_ledger"][0]["api"], "local_desktop_shell_preflight_cache")
+        self.assertEqual(desktop["call_ledger"][0]["api"], "local_desktop_shell_preflight_cache")
+        self.assertFalse(desktop["call_ledger"][0]["external"])
+        self.assertIn("GET /api/desktop/preflight-cache", desktop["warnings"][0])
 
         recovery = self.client.get("/api/recovery/cache").json()
         self.assertTrue(recovery["ok"])

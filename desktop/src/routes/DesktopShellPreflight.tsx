@@ -12,14 +12,22 @@ function rows(value: unknown): Array<Record<string, unknown>> {
 
 export default function DesktopShellPreflight() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getDesktopPreflightCache().then((res) => setCache(res.data));
+    void getDesktopPreflightCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
   return (
     <>
@@ -39,7 +47,9 @@ export default function DesktopShellPreflight() {
           { label: "Tauri dev", value: runtime.tauri_dev_ready === true ? "ready" : "needs Rust", tone: runtime.tauri_dev_ready === true ? "good" : "warn" },
           { label: "node_modules", value: runtime.node_modules_present === true ? "present" : "missing", tone: runtime.node_modules_present === true ? "good" : "warn" },
           { label: "dist", value: runtime.dist_present === true ? "present" : "missing" },
-          { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" }
+          { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -66,8 +76,16 @@ export default function DesktopShellPreflight() {
         <DataLineageTable rows={rows(cache.command_rows)} />
       </PacketCard>
 
-      <PacketCard title="调用血缘" subtitle="local_desktop_shell_preflight_cache；不外联" status="lineage">
-        <DataLineageTable rows={rows(cache.call_ledger)} />
+      <PacketCard title="调用血缘" subtitle="payload 内部 local_desktop_shell_preflight_cache；不外联" status="lineage">
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET desktop preflight envelope call_ledger" subtitle="GET /api/desktop/preflight-cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheEnvelopeLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET desktop preflight envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning }))} />
       </PacketCard>
 
       <PacketCard title="原始 desktop preflight cache payload" subtitle="调试用 JSON；不含 token/key" status="safe">
