@@ -21,6 +21,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "NextSessionChart.tsx",
             ROOT / "src" / "components" / "DeepSeekModelStrategyLedger.tsx",
             ROOT / "src" / "components" / "TaskLaunchReceipt.tsx",
+            ROOT / "src" / "components" / "TaskBoundarySummary.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "AShareEvidenceRadar.tsx",
             ROOT / "src" / "routes" / "CallLedgerAudit.tsx",
@@ -487,6 +488,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
         panel = (ROOT / "src" / "components" / "TaskStatusPanel.tsx").read_text(encoding="utf-8")
         receipt = (ROOT / "src" / "components" / "TaskLaunchReceipt.tsx").read_text(encoding="utf-8")
+        boundary = (ROOT / "src" / "components" / "TaskBoundarySummary.tsx").read_text(encoding="utf-8")
         model_strategy_ledger = (ROOT / "src" / "components" / "DeepSeekModelStrategyLedger.tsx").read_text(encoding="utf-8")
 
         self.assertIn("/api/tasks", client)
@@ -509,7 +511,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("created_at", panel)
         self.assertIn("started_at", panel)
         self.assertIn("finished_at", panel)
-        self.assertIn("error_message_safe", panel)
+        self.assertIn("error_message_safe", boundary)
         self.assertIn("任务状态读取失败", panel)
         self.assertIn("GET /api/tasks/", panel)
         self.assertIn("task lookup call_ledger", panel)
@@ -517,21 +519,21 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("call_ledger", panel)
         self.assertIn("status_history", panel)
         self.assertIn("statusHistory.length", panel)
-        self.assertIn("external_calls_triggered", panel)
-        self.assertIn("does_not_execute_trades", panel)
-        self.assertIn("does_not_modify_strategy_action", panel)
+        self.assertIn("TaskBoundarySummary", panel)
         self.assertIn("DataLineageTable", panel)
         self.assertIn("DeepSeekModelStrategyLedger", panel)
         self.assertIn("任务创建回执", receipt)
-        self.assertIn("task_type", receipt)
-        self.assertIn("output_packet_key", receipt)
-        self.assertIn("external_calls_triggered", receipt)
-        self.assertIn("tushare_called", receipt)
-        self.assertIn("deepseek_called", receipt)
-        self.assertIn("github_called", receipt)
-        self.assertIn("does_not_execute_trades", receipt)
-        self.assertIn("does_not_modify_strategy_action", receipt)
-        self.assertIn("error_message_safe", receipt)
+        self.assertIn("TaskBoundarySummary", receipt)
+        self.assertIn("task_type", boundary)
+        self.assertIn("output_packet_key", boundary)
+        self.assertIn("external_calls_triggered", boundary)
+        self.assertIn("tushare_called", boundary)
+        self.assertIn("deepseek_called", boundary)
+        self.assertIn("github_called", boundary)
+        self.assertIn("does_not_execute_trades", boundary)
+        self.assertIn("does_not_modify_strategy_action", boundary)
+        self.assertIn("error_message_safe", boundary)
+        self.assertIn("task-boundary-summary", boundary)
         self.assertIn("top_level_call_ledger", receipt)
         self.assertIn("task_call_ledger", receipt)
         self.assertIn("modelStrategyCallLedger", receipt)
