@@ -14,7 +14,8 @@ router = APIRouter(prefix="/api/next-session")
 
 @router.get("/cache")
 def get_next_session_cache() -> dict:
-    return envelope(next_session_service.read_next_session_cache())
+    packet = next_session_service.read_next_session_cache()
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
 @router.post("/generate")

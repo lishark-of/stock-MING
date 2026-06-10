@@ -20,10 +20,17 @@ function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<stri
 
 export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  const refreshCache = () => void getNextSessionCache().then((res) => setPacket(res.data));
+  const refreshCache = () =>
+    void getNextSessionCache().then((res) => {
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+      setPacket(res.data);
+    });
   const launchTask = () =>
     void postTask("/api/next-session/generate").then((res) => {
       setTaskReceipt(res);
@@ -40,6 +47,9 @@ export default function NextSessionMap() {
   const referenceRows = rowsFromArray(chartPayload?.reference_lines);
   const operationRows = rowsFromArray(chartPayload?.operation_zones);
   const warningRows = rowsFromArray(chartPayload?.warnings, "warning");
+  const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
   const scenarioRows = rowsFromArray(chartPayload?.scenario_series).map((row) => ({
     scenario_key: row.scenario_key ?? row.scenario_name,
     scenario_name: row.scenario_name,
@@ -77,6 +87,8 @@ export default function NextSessionMap() {
           { label: "参考线", value: referenceRows.length },
           { label: "操作区", value: operationRows.length },
           { label: "历史点样例", value: historicalRows.length },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length },
           { label: "修改 action", value: packet.does_not_modify_action === false ? "会" : "不会", tone: packet.does_not_modify_action === false ? "bad" : "good" },
           { label: "修改 operation_zones", value: packet.does_not_modify_operation_zones === false ? "会" : "不会", tone: packet.does_not_modify_operation_zones === false ? "bad" : "good" }
         ]}
@@ -85,6 +97,10 @@ export default function NextSessionMap() {
       <NextSessionChart payload={chartPayload} />
       <h3>缓存边界</h3>
       <DataLineageTable rows={cacheBoundaryRows} />
+      <h3>GET cache envelope call_ledger</h3>
+      <DataLineageTable rows={cacheCallLedger} />
+      <h3>GET cache envelope warnings</h3>
+      <DataLineageTable rows={rowsFromArray(cacheWarnings, "warning")} />
       <h3>情景路径</h3>
       <DataLineageTable rows={scenarioRows} />
       <h3>参考线</h3>

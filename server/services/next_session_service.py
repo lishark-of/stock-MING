@@ -17,7 +17,15 @@ def _now_iso() -> str:
 
 
 def read_next_session_cache() -> dict[str, Any]:
-    return packet_service.build_next_session_cache()
+    packet = dict(packet_service.build_next_session_cache())
+    packet.setdefault("call_ledger", _next_session_cache_call_ledger(packet, _now_iso()))
+    packet.setdefault(
+        "warnings",
+        [
+            "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
+        ],
+    )
+    return packet
 
 
 def _safe_error_message(exc: Exception) -> str:

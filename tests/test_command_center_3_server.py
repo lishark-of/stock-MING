@@ -1740,6 +1740,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         next_session = self.client.get("/api/next-session/cache").json()
         self.assertTrue(next_session["ok"])
         self.assertFalse(next_session["data"]["external_calls_triggered"])
+        self.assertEqual(next_session["call_ledger"][0]["api"], "local_next_session_cache")
+        self.assertFalse(next_session["call_ledger"][0]["external"])
+        self.assertIn("GET /api/next-session/cache", next_session["warnings"][0])
 
         storage = self.client.get("/api/storage/factor-values").json()
         self.assertTrue(storage["ok"])
@@ -2420,6 +2423,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(cache["data"]["status"], "ready")
         self.assertFalse(cache["data"]["external_calls_triggered"])
         self.assertTrue(cache["data"]["does_not_modify_action"])
+        self.assertEqual(cache["call_ledger"][0]["api"], "local_next_session_cache")
+        self.assertIn(cache["call_ledger"][0]["call_status"], {"cache_read", "exact_cache_read"})
+        self.assertFalse(cache["call_ledger"][0]["external"])
 
     def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
         self._with_meta_store()
