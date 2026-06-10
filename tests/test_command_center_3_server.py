@@ -723,6 +723,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_quant_backtest_cache")
+        self.assertIn("GET /api/quant/cache", packet["warnings"][0])
         json.dumps(packet, ensure_ascii=False)
 
     def test_strategy_trace_cache_reads_strategy_and_decision_without_mutating_action(self):
@@ -1908,6 +1909,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(quant["data"]["tushare_called"])
         self.assertFalse(quant["data"]["deepseek_called"])
         self.assertTrue(quant["data"]["does_not_modify_strategy_action"])
+        self.assertEqual(quant["call_ledger"][0]["api"], "local_quant_backtest_cache")
+        self.assertFalse(quant["call_ledger"][0]["external"])
+        self.assertIn("GET /api/quant/cache", quant["warnings"][0])
 
         strategy = self.client.get("/api/strategy/cache").json()
         self.assertTrue(strategy["ok"])
@@ -2080,6 +2084,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["does_not_run_backtest"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_execute_trades"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_quant_backtest_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/quant/cache", response["warnings"][0])
 
     def test_market_context_cache_endpoint_returns_local_market_context(self):
         self._with_snapshot_cache(
