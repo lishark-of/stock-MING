@@ -1132,6 +1132,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def test_smoke_script_includes_task_status_index(self):
         script = Path("scripts/smoke_3_0.sh").read_text(encoding="utf-8")
 
+        self.assertIn("def assert_cache_safety", script)
+        self.assertIn("external_calls_triggered", script)
+        self.assertIn("does_not_execute_trades", script)
         self.assertIn("build_task_status_index", script)
         self.assertIn("task_status_index:", script)
         self.assertIn('task_index["call_ledger_count"]', script)
