@@ -93,6 +93,10 @@ export function getQuantCache() {
   return request<Record<string, unknown>>("/api/quant/cache");
 }
 
+export function getStrategyCache() {
+  return request<Record<string, unknown>>("/api/strategy/cache");
+}
+
 export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }

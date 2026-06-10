@@ -4,6 +4,7 @@
 |---|---|---|---|---|---|
 | 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing` | 是，POST 当前 stub |
 | Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
+| 策略执行 / 今日决策 | `strategy_execution_service.py`, `command_center_decision_engine.py`, `command_center_strategy_summary.py` | `GET /api/strategy/cache` | `StrategyTrace.tsx` | cache GET 只读展示 `strategy_execution_packet` / `command_center_decision_packet`，不生成新动作 | 后续任务化；当前不提供 POST |
 | A 股事实血缘 | `command_center_evidence_summary.py`, `command_center_*_packet.py` | `GET /api/evidence/cache`, `/api/packets/{packet_key}` 与后续 fact refresh task | `AShareEvidenceRadar.tsx` | cache 不重算，支持本地快照别名 | 后续任务化 |
 | 数据能力/数据源体检 | `command_center_data_capability_console.py`, `command_center_data_health_ledger.py`, `app.py` | `GET /api/data-capability/cache`，后续 provider refresh task | `DataCapabilityConsole.tsx` | cache GET 不检测；只读本地能力 packet | 后续任务化 |
 | Tushare 数据刷新 | `tushare_adapter.py`, `app.py` | 后续 `refresh_tushare_facts` task | Factor / Next Session / Evidence / Data Capability pages | 是 | 是，当前 stub |
@@ -31,6 +32,7 @@
 - `/api/storage`
 - `/api/storage/factor-values`
 - `/api/storage/{dataset}`
+- `/api/strategy/cache`
 - `/api/trade-review/cache`
 - `/api/quant/cache`
 - `/api/tasks/{task_id}`
@@ -41,6 +43,8 @@
 `/api/evidence/cache` 已接入 A 股证据雷达与事实血缘只读迁移：读取本地 `command_center_evidence_radar_packet` / `a_share_fact_lineage_summary` 或用本地 builder 生成缓存视图；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
 `/api/data-capability/cache` 已接入数据能力/数据源体检只读迁移：读取本地 `data_capability`、`data_capability_console` 与 `data_health_ledger`，或用本地 builder 生成安全空态；不 ping Tushare/AkShare/yfinance/Supabase，不调用 DeepSeek/GitHub，不执行真实交易，不修改 `strategy_execution_packet.action`。
+
+`/api/strategy/cache` 已接入策略执行 / 今日决策只读迁移：读取本地 `strategy_execution_packet` 与 `command_center_decision_packet`，输出 action 来源、策略 trace、决策摘要和调用血缘；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action` 或 `command_center_decision_packet`。
 
 ## 当前 stub API
 

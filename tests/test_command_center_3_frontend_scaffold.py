@@ -27,6 +27,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
+            ROOT / "src" / "routes" / "StrategyTrace.tsx",
             ROOT / "src" / "routes" / "TaskCatalog.tsx",
             ROOT / "src" / "routes" / "TradeReviewLab.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
@@ -100,6 +101,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
             "TaskCatalog.tsx",
+            "StrategyTrace.tsx",
             "TradeReviewLab.tsx",
             "LegacyTools.tsx",
         ]
@@ -144,6 +146,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
         self.assertIn("TaskCatalog", app_source)
+        self.assertIn("StrategyTrace", app_source)
         self.assertIn("TradeReviewLab", app_source)
         self.assertIn('"health"', layout_source)
         self.assertIn('"evidence"', layout_source)
@@ -153,6 +156,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
         self.assertIn('"tasks"', layout_source)
+        self.assertIn('"strategy"', layout_source)
         self.assertIn('"tradeReview"', layout_source)
         self.assertIn("健康", layout_source)
         self.assertIn("证据雷达", layout_source)
@@ -162,6 +166,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
         self.assertIn("任务目录", layout_source)
+        self.assertIn("策略 Trace", layout_source)
         self.assertIn("交易复盘", layout_source)
 
     def test_task_panel_polls_fastapi_task_endpoint(self):
@@ -263,6 +268,27 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不能直接修改 strategy action", page)
         self.assertIn("回测收益不代表未来收益", page)
         self.assertIn("local_quant_backtest_cache", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_strategy_trace_page_reads_strategy_cache_without_action_mutation(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "StrategyTrace.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/strategy/cache", client)
+        self.assertIn("getStrategyCache", page)
+        self.assertIn("GET /api/strategy/cache", page)
+        self.assertIn("strategy_execution_packet", page)
+        self.assertIn("command_center_decision_packet", page)
+        self.assertIn("不会调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不自动下单", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertIn("local_strategy_trace_cache", page)
+        self.assertIn("action_source", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

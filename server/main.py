@@ -15,6 +15,7 @@ from server.api import (
     routes_quant,
     routes_serenity,
     routes_storage,
+    routes_strategy,
     routes_tasks,
     routes_trade_review,
 )
@@ -45,5 +46,6 @@ app.include_router(routes_factor_quant.router)
 app.include_router(routes_chokepoint.router)
 app.include_router(routes_serenity.router)
 app.include_router(routes_storage.router)
+app.include_router(routes_strategy.router)
 app.include_router(routes_tasks.router)
 app.include_router(routes_trade_review.router)

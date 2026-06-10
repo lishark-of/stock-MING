@@ -13,6 +13,7 @@ import PacketRegistry from "./routes/PacketRegistry";
 import QuantBacktestLab from "./routes/QuantBacktestLab";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 import StorageOverview from "./routes/StorageOverview";
+import StrategyTrace from "./routes/StrategyTrace";
 import TaskCatalog from "./routes/TaskCatalog";
 import TradeReviewLab from "./routes/TradeReviewLab";
 
@@ -32,6 +33,7 @@ export default function App() {
       {route === "migration" ? <MigrationStatus /> : null}
       {route === "storage" ? <StorageOverview /> : null}
       {route === "tasks" ? <TaskCatalog /> : null}
+      {route === "strategy" ? <StrategyTrace /> : null}
       {route === "quant" ? <QuantBacktestLab /> : null}
       {route === "tradeReview" ? <TradeReviewLab /> : null}
       {route === "legacy" ? <LegacyTools /> : null}
