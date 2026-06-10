@@ -1133,6 +1133,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         script = Path("scripts/smoke_3_0.sh").read_text(encoding="utf-8")
 
         self.assertIn("def assert_cache_safety", script)
+        self.assertIn("TestClient", script)
+        self.assertIn("/api/chokepoint/run", script)
+        self.assertIn("task_creation_api:", script)
+        self.assertIn("created.get(\"call_ledger\")", script)
         self.assertIn("external_calls_triggered", script)
         self.assertIn("does_not_execute_trades", script)
         self.assertIn("build_task_status_index", script)

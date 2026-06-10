@@ -3,6 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
+from fastapi.testclient import TestClient
+
+from server.main import app
 from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, model_strategy_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services.task_service import create_task_stub
 
@@ -36,6 +39,15 @@ for key in [
 task = create_task_stub("smoke_3_0")
 assert_cache_safety("task_stub", task)
 print("task_id:", task["task_id"])
+client = TestClient(app)
+created = client.post("/api/chokepoint/run", json={"smoke": "task_creation_lineage"}).json()
+if not created.get("ok"):
+    raise AssertionError(f"task_creation_api failed: {created.get('error')}")
+if not created.get("call_ledger"):
+    raise AssertionError("task_creation_api.call_ledger must be exposed at envelope top level")
+created_task = created.get("data", {}).get("task", {})
+assert_cache_safety("task_creation_api", created_task)
+print("task_creation_api:", created["data"]["task_id"], created["call_ledger"][0]["call_status"])
 migration = migration_status_service.build_migration_status()
 assert_cache_safety("migration_status", migration)
 print("migration_status:", migration["status"], len(migration["progress_baseline"]))
