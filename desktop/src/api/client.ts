@@ -69,6 +69,10 @@ export function getEvidenceCache() {
   return request<Record<string, unknown>>("/api/evidence/cache");
 }
 
+export function getDataCapabilityCache() {
+  return request<Record<string, unknown>>("/api/data-capability/cache");
+}
+
 export function getFactorQuantCache() {
   return request<Record<string, unknown>>("/api/factor-quant/cache");
 }

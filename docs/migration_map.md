@@ -5,7 +5,8 @@
 | 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing` | 是，POST 当前 stub |
 | Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | A 股事实血缘 | `command_center_evidence_summary.py`, `command_center_*_packet.py` | `GET /api/evidence/cache`, `/api/packets/{packet_key}` 与后续 fact refresh task | `AShareEvidenceRadar.tsx` | cache 不重算，支持本地快照别名 | 后续任务化 |
-| Tushare 数据刷新 | `tushare_adapter.py`, `app.py` | 后续 `refresh_tushare_facts` task | Factor / Next Session / Evidence pages | 是 | 是，当前 stub |
+| 数据能力/数据源体检 | `command_center_data_capability_console.py`, `command_center_data_health_ledger.py`, `app.py` | `GET /api/data-capability/cache`，后续 provider refresh task | `DataCapabilityConsole.tsx` | cache GET 不检测；只读本地能力 packet | 后续任务化 |
+| Tushare 数据刷新 | `tushare_adapter.py`, `app.py` | 后续 `refresh_tushare_facts` task | Factor / Next Session / Evidence / Data Capability pages | 是 | 是，当前 stub |
 | 交易记录实验室 | `trade_review_log.py`, `app.py` | `GET /api/trade-review/cache` | `TradeReviewLab.tsx` | 否，cache-only 读取本地 `trade_review_log.jsonl` | 否 |
 | 旧量化/回测 | `command_center_quant_packet.py`, `backtester.py` | `GET /api/quant/cache`，后续 `/api/backtest/run` | `QuantBacktestLab.tsx` | cache GET 不重算；后续 POST task 才可运行回测 | 后续任务化 |
 | 产业链瓶颈扫描 | `command_center_analysis_methods.py`, `analysis_engine.py`, `app.py` | `GET /api/chokepoint/cache`, `POST /api/chokepoint/run` | `ChokepointScan.tsx` | cache GET 不外联；没有精确 packet 时只返回缺口和旧分析摘要 | 是，POST 当前 stub |
@@ -22,6 +23,7 @@
 - `/api/packets`
 - `/api/packets/{packet_key}`
 - `/api/evidence/cache`
+- `/api/data-capability/cache`
 - `/api/next-session/cache`
 - `/api/factor-quant/cache`
 - `/api/serenity/cache`
@@ -37,6 +39,8 @@
 `GET` 类 cache API 当前已可读取 `.stock_ming_cache/command_center_latest.json` 中的本地快照或本地 builder 结果，不调用 Tushare、DeepSeek、GitHub。精确 packet 缺失时返回 `cache_missing`，并附带可审计的 legacy 快照摘要。
 
 `/api/evidence/cache` 已接入 A 股证据雷达与事实血缘只读迁移：读取本地 `command_center_evidence_radar_packet` / `a_share_fact_lineage_summary` 或用本地 builder 生成缓存视图；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action`。
+
+`/api/data-capability/cache` 已接入数据能力/数据源体检只读迁移：读取本地 `data_capability`、`data_capability_console` 与 `data_health_ledger`，或用本地 builder 生成安全空态；不 ping Tushare/AkShare/yfinance/Supabase，不调用 DeepSeek/GitHub，不执行真实交易，不修改 `strategy_execution_packet.action`。
 
 ## 当前 stub API
 

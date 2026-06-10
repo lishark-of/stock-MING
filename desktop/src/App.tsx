@@ -3,6 +3,7 @@ import Layout, { type RouteKey } from "./components/Layout";
 import AShareEvidenceRadar from "./routes/AShareEvidenceRadar";
 import ChokepointScan from "./routes/ChokepointScan";
 import CommandCenterHome from "./routes/CommandCenterHome";
+import DataCapabilityConsole from "./routes/DataCapabilityConsole";
 import FactorQuantHub from "./routes/FactorQuantHub";
 import HealthStatus from "./routes/HealthStatus";
 import LegacyTools from "./routes/LegacyTools";
@@ -22,6 +23,7 @@ export default function App() {
       {route === "home" ? <CommandCenterHome /> : null}
       {route === "health" ? <HealthStatus /> : null}
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
+      {route === "dataCapability" ? <DataCapabilityConsole /> : null}
       {route === "next" ? <NextSessionMap /> : null}
       {route === "factor" ? <FactorQuantHub /> : null}
       {route === "chokepoint" ? <ChokepointScan /> : null}
