@@ -14,6 +14,7 @@ import HealthStatus from "./routes/HealthStatus";
 import LegacyTools from "./routes/LegacyTools";
 import MarketContext from "./routes/MarketContext";
 import MigrationStatus from "./routes/MigrationStatus";
+import ModelStrategy from "./routes/ModelStrategy";
 import NextSessionMap from "./routes/NextSessionMap";
 import PacketRegistry from "./routes/PacketRegistry";
 import PositionContext from "./routes/PositionContext";
@@ -33,6 +34,7 @@ const ROUTE_KEYS: RouteKey[] = [
   "health",
   "audit",
   "market",
+  "models",
   "discipline",
   "evidence",
   "dataCapability",
@@ -119,6 +121,7 @@ export default function App() {
       {route === "health" ? <HealthStatus /> : null}
       {route === "audit" ? <CallLedgerAudit /> : null}
       {route === "market" ? <MarketContext /> : null}
+      {route === "models" ? <ModelStrategy /> : null}
       {route === "discipline" ? <DisciplineLoop /> : null}
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}

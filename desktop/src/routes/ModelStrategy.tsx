@@ -1,0 +1,76 @@
+import { useEffect, useState } from "react";
+import { getModelStrategyCache } from "../api/client";
+import DataLineageTable from "../components/DataLineageTable";
+import JsonDetails from "../components/JsonDetails";
+import MetricGrid from "../components/MetricGrid";
+import PacketCard from "../components/PacketCard";
+import StatusBadge from "../components/StatusBadge";
+
+function rows(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
+}
+
+export default function ModelStrategy() {
+  const [cache, setCache] = useState<Record<string, unknown>>({});
+
+  useEffect(() => {
+    void getModelStrategyCache().then((res) => setCache(res.data));
+  }, []);
+
+  const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
+  const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
+  const groups = (cache.purpose_groups as Record<string, unknown> | undefined) ?? {};
+
+  return (
+    <>
+      <div className="page-head">
+        <h1>DeepSeek 模型策略</h1>
+        <StatusBadge label={String(cache.status ?? "cache_missing")} tone={cache.status === "ready" ? "good" : "warn"} />
+      </div>
+
+      <MetricGrid
+        items={[
+          { label: "mode", value: cache.mode as string | undefined },
+          { label: "purposes", value: counts.purpose_count as number | undefined },
+          { label: "configured", value: counts.configured_count as number | undefined },
+          { label: "safe defaults", value: counts.safe_default_count as number | undefined },
+          { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
+          { label: "DeepSeek call", value: cache.deepseek_called === true ? "已调用" : "未调用", tone: cache.deepseek_called === true ? "bad" : "good" },
+          { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
+          { label: "contains secret", value: cache.contains_secret === true ? "是" : "否", tone: cache.contains_secret === true ? "bad" : "good" }
+        ]}
+      />
+
+      <div className="grid">
+        <PacketCard title="模型策略边界" subtitle="GET /api/model-strategy/cache 只读；不触发模型调用" status="cache_only">
+          <p>{String(cache.summary ?? "DeepSeek 模型策略只读展示。")}</p>
+          <p>模型名通过 DEEPSEEK_EXPLAIN_MODEL、DEEPSEEK_FAST_MODEL、DEEPSEEK_DEFAULT_MODEL 配置，调用点不得硬编码模型名。</p>
+          <p>本页不读取凭据、不会调用 DeepSeek、不调用 Tushare/GitHub、不执行真实交易、不修改 strategy action。</p>
+        </PacketCard>
+
+        <PacketCard title="用途分组" subtitle="解释类默认走更强模型，轻量检查走 fast 模型" status="purpose_groups">
+          <p>explain grade: {rows(groups.explain_grade).length ? JSON.stringify(groups.explain_grade) : String(groups.explain_grade ?? "--")}</p>
+          <p>fast grade: {rows(groups.fast_grade).length ? JSON.stringify(groups.fast_grade) : String(groups.fast_grade ?? "--")}</p>
+          <p>does_not_call_deepseek: {String(policy.does_not_call_deepseek ?? true)}</p>
+          <p>post_task_required_for_model_call: {String(policy.post_task_required_for_model_call ?? true)}</p>
+        </PacketCard>
+      </div>
+
+      <PacketCard title="用途到模型映射" subtitle="model_rows；只展示模型名和配置键名，不展示凭据" status="models">
+        <DataLineageTable rows={rows(cache.model_rows)} />
+      </PacketCard>
+
+      <PacketCard title="安全策略" subtitle="cache API 永不外联；DeepSeek 只能按钮门控" status="policy">
+        <DataLineageTable rows={[policy]} />
+      </PacketCard>
+
+      <PacketCard title="调用血缘" subtitle="local_deepseek_model_strategy_cache；不外联" status="lineage">
+        <DataLineageTable rows={rows(cache.call_ledger)} />
+      </PacketCard>
+
+      <PacketCard title="原始 model strategy payload" subtitle="调试用 JSON；不含凭据" status="safe">
+        <JsonDetails title="model strategy raw" data={cache} />
+      </PacketCard>
+    </>
+  );
+}

@@ -69,6 +69,10 @@ export function getMigrationStatus() {
   return request<Record<string, unknown>>("/api/migration/status");
 }
 
+export function getModelStrategyCache() {
+  return request<Record<string, unknown>>("/api/model-strategy/cache");
+}
+
 export function getNextSessionCache() {
   return request<Record<string, unknown>>("/api/next-session/cache");
 }

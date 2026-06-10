@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
-from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service, worker_service
+from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, model_strategy_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services.task_service import create_task_stub
 
 print("health: import ok")
@@ -18,6 +18,8 @@ task = create_task_stub("smoke_3_0")
 print("task_id:", task["task_id"])
 migration = migration_status_service.build_migration_status()
 print("migration_status:", migration["status"], len(migration["progress_baseline"]))
+model_strategy = model_strategy_service.read_deepseek_model_strategy_cache()
+print("model_strategy:", model_strategy["status"], model_strategy["mode"], model_strategy["counts"]["purpose_count"])
 audit = audit_service.read_call_ledger_audit_cache()
 print("call_ledger_audit:", audit["status"], audit["mode"], audit["counts"]["call_ledger_count"])
 legacy = legacy_service.read_legacy_bridge_cache()

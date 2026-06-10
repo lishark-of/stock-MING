@@ -58,6 +58,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/migration/status`
 - `GET /api/packets`
 - `GET /api/packets/{packet_key}`
+- `GET /api/model-strategy/cache`
 - `GET /api/next-session/cache`
 - `POST /api/next-session/generate`
 - `GET /api/factor-quant/cache`
@@ -77,7 +78,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 规则：
 
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
-- `/health` 返回当前 DeepSeek 模型策略摘要，便于前端展示 explain/fast/default 模型名；该摘要不包含 token/key，不触发模型调用。
+- `/health` 返回启动安全摘要；`GET /api/model-strategy/cache` 返回当前 DeepSeek 模型策略、用途映射和配置来源。二者都不包含 token/key，不触发模型调用。
 - `/api/migration/status` 返回用户给定的 3.0 长期迁移进度基线、目标技术栈和安全原则；该接口只读、不外联、不重新估算进度。
 - `/api/tasks/catalog` 返回按钮门控任务目录、可能外部源、call ledger 要求和交易边界；该接口只读，不创建任务。
 - `GET .../cache` 优先读取 `.stock_ming_cache/command_center_latest.json` 中已有本地快照；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
@@ -88,6 +89,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `POST /api/factor-quant/deepseek-explain` 已接入 guarded explanation pipeline：读取 Factor Quant Hub cache，准备未发送的安全 prompt 预览；如提供本地解释 payload，仅按六个白名单字段清洗并写回 SQLite cache，不真实调用 DeepSeek、不覆盖数值、不修改 `strategy action`。
 - 任务生命周期已同步写入 SQLite metadata store；内存状态丢失后，`/api/tasks/{task_id}` 仍可从本地 SQLite fallback 读回任务状态。
 - `/api/packets` 已暴露 SQLite packet/task metadata 摘要，便于前端判断哪些 packet 来自持久化 cache。
+- `/api/model-strategy/cache` 已独立暴露 DeepSeek 模型策略：`default/explain/projection/factor_explain` 默认走解释级模型，`fast/healthcheck/feeder` 默认走 fast 模型；模型名统一从 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 或集中默认值读取，调用点不得硬编码。
 - `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`moneyflow` 只读状态；缺文件返回 `missing`，不触发 Tushare 或因子计算。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。

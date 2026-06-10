@@ -5,6 +5,7 @@ export type RouteKey =
   | "health"
   | "audit"
   | "market"
+  | "models"
   | "discipline"
   | "evidence"
   | "dataCapability"
@@ -33,6 +34,7 @@ const ROUTES: Array<{ key: RouteKey; label: string }> = [
   { key: "health", label: "健康" },
   { key: "audit", label: "调用审计" },
   { key: "market", label: "市场环境" },
+  { key: "models", label: "模型策略" },
   { key: "discipline", label: "交易纪律" },
   { key: "evidence", label: "证据雷达" },
   { key: "dataCapability", label: "数据能力" },

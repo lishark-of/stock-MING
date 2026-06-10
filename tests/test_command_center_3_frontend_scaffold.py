@@ -30,6 +30,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "HealthStatus.tsx",
             ROOT / "src" / "routes" / "MarketContext.tsx",
             ROOT / "src" / "routes" / "MigrationStatus.tsx",
+            ROOT / "src" / "routes" / "ModelStrategy.tsx",
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "PositionContext.tsx",
             ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
@@ -61,6 +62,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("/api/factor-quant/cache", client)
         self.assertIn("/api/migration/status", client)
+        self.assertIn("/api/model-strategy/cache", client)
         self.assertIn("/api/storage", client)
         self.assertIn("/api/desktop/preflight-cache", client)
         self.assertIn("/api/factor-quant/refresh-data", source)
@@ -110,7 +112,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"factor"', source)
         self.assertIn('"next"', source)
         self.assertIn('"desktop"', source)
+        self.assertIn('"models"', source)
         self.assertIn("DesktopShellPreflight", source)
+        self.assertIn("ModelStrategy", source)
         self.assertNotIn("streamlit", source.lower())
 
     def test_read_only_pages_render_structured_cache_without_direct_python_calls(self):
@@ -127,6 +131,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "HealthStatus.tsx",
             "MarketContext.tsx",
             "NextSessionMap.tsx",
+            "ModelStrategy.tsx",
             "FactorQuantHub.tsx",
             "ChokepointScan.tsx",
             "SerenityMethodRadar.tsx",
@@ -159,7 +164,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("Command Center 3.0 迁移基线", home_source)
         self.assertIn("只读展示，不重新估算", home_source)
         self.assertIn("DeepSeek 模型策略", home_source)
-        self.assertIn("deepseek_model_strategy", home_source)
+        self.assertIn("getModelStrategyCache", home_source)
+        self.assertIn("model_rows", home_source)
         self.assertIn("progress_baseline", home_source)
         self.assertIn("external_calls_triggered", home_source)
         self.assertIn("不展示 token/key", home_source)
@@ -179,6 +185,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("HealthStatus", app_source)
         self.assertIn("CallLedgerAudit", app_source)
         self.assertIn("MarketContext", app_source)
+        self.assertIn("ModelStrategy", app_source)
         self.assertIn("DisciplineLoop", app_source)
         self.assertIn("AShareEvidenceRadar", app_source)
         self.assertIn("CandidateRadar", app_source)
@@ -199,6 +206,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"health"', layout_source)
         self.assertIn('"audit"', layout_source)
         self.assertIn('"market"', layout_source)
+        self.assertIn('"models"', layout_source)
         self.assertIn('"discipline"', layout_source)
         self.assertIn('"evidence"', layout_source)
         self.assertIn('"candidates"', layout_source)
@@ -235,7 +243,36 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("交易复盘", layout_source)
         self.assertIn("Worker", layout_source)
         self.assertIn("市场环境", layout_source)
+        self.assertIn("模型策略", layout_source)
         self.assertIn("交易纪律", layout_source)
+
+    def test_model_strategy_page_reads_configured_models_without_model_call(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "ModelStrategy.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/model-strategy/cache", client)
+        self.assertIn("getModelStrategyCache", client)
+        self.assertIn("getModelStrategyCache", home)
+        self.assertIn("DeepSeek 模型策略", home)
+        self.assertIn("getModelStrategyCache", page)
+        self.assertIn("GET /api/model-strategy/cache", page)
+        self.assertIn("DEEPSEEK_EXPLAIN_MODEL", page)
+        self.assertIn("DEEPSEEK_FAST_MODEL", page)
+        self.assertIn("DEEPSEEK_DEFAULT_MODEL", page)
+        self.assertIn("调用点不得硬编码模型名", page)
+        self.assertIn("does_not_call_deepseek", page)
+        self.assertIn("post_task_required_for_model_call", page)
+        self.assertIn("local_deepseek_model_strategy_cache", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertIn("不会调用 DeepSeek", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("TUSHARE_TOKEN", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+        self.assertNotIn("fetch(", page)
 
     def test_desktop_shell_preflight_page_is_cache_only_and_read_only(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")

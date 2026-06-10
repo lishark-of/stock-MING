@@ -17,6 +17,7 @@ from server.api import (
     routes_legacy,
     routes_market,
     routes_migration,
+    routes_model_strategy,
     routes_next_session,
     routes_packets,
     routes_position,
@@ -51,6 +52,7 @@ app.include_router(routes_audit.router)
 app.include_router(routes_legacy.router)
 app.include_router(routes_market.router)
 app.include_router(routes_migration.router)
+app.include_router(routes_model_strategy.router)
 app.include_router(routes_packets.router)
 app.include_router(routes_candidate.router)
 app.include_router(routes_data_capability.router)

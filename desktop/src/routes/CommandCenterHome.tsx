@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
+import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -23,6 +23,7 @@ export default function CommandCenterHome() {
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
   const [migration, setMigration] = useState<Record<string, unknown>>({});
+  const [modelStrategy, setModelStrategy] = useState<Record<string, unknown>>({});
   const [legacyBridge, setLegacyBridge] = useState<Record<string, unknown>>({});
   const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
   const [workerRuntime, setWorkerRuntime] = useState<Record<string, unknown>>({});
@@ -46,6 +47,7 @@ export default function CommandCenterHome() {
     void getChokepointCache().then((res) => setChokepoint(res.data));
     void getStorageOverview().then((res) => setStorageOverview(res.data));
     void getMigrationStatus().then((res) => setMigration(res.data));
+    void getModelStrategyCache().then((res) => setModelStrategy(res.data));
     void getLegacyBridgeCache().then((res) => setLegacyBridge(res.data));
     void getTaskCatalog().then((res) => setTaskCatalog(res.data));
     void getWorkerRuntimeCache().then((res) => setWorkerRuntime(res.data));
@@ -63,7 +65,9 @@ export default function CommandCenterHome() {
   const disciplinePacket = discipline.discipline_packet as Record<string, unknown> | undefined;
   const storageStatus = storageOverview.dataset_status as Record<string, unknown> | undefined;
   const storageDatasets = storageOverview.datasets as Array<Record<string, unknown>> | undefined;
-  const deepseekModelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
+  const deepseekModelRows = modelStrategy.model_rows as Array<Record<string, unknown>> | undefined;
+  const deepseekModelCounts = modelStrategy.counts as Record<string, unknown> | undefined;
+  const deepseekModelByPurpose = new Map((deepseekModelRows ?? []).map((row) => [String(row.purpose), row]));
   const migrationProgress = migration.progress_baseline as Array<Record<string, unknown>> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
@@ -98,8 +102,8 @@ export default function CommandCenterHome() {
           { label: "daily parquet", value: String(storageStatus?.daily ?? "missing") },
           { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
           { label: "迁移基线", value: String(migration.status ?? "loading") },
-          { label: "DeepSeek explain", value: String(deepseekModelStrategy?.explain ?? "--") },
-          { label: "DeepSeek fast", value: String(deepseekModelStrategy?.fast ?? "--") },
+          { label: "DeepSeek explain", value: String(deepseekModelByPurpose.get("explain")?.model ?? "--") },
+          { label: "DeepSeek fast", value: String(deepseekModelByPurpose.get("fast")?.model ?? "--") },
           { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" }
         ]}
       />
@@ -180,11 +184,12 @@ export default function CommandCenterHome() {
           <p>DeepSeek: 不调用</p>
           <p>repositories: {String((serenity.repositories as unknown[] | undefined)?.length ?? 0)}</p>
         </PacketCard>
-        <PacketCard title="DeepSeek 模型策略" subtitle="只读配置摘要；不展示 token/key，不触发模型调用" status={deepseekModelStrategy?.contains_secret === true ? "check" : "safe"}>
-          <p>explain: {String(deepseekModelStrategy?.explain ?? "--")}</p>
-          <p>fast: {String(deepseekModelStrategy?.fast ?? "--")}</p>
-          <p>default: {String(deepseekModelStrategy?.default ?? "--")}</p>
-          <p>source: {String(deepseekModelStrategy?.source ?? "DEEPSEEK_*_MODEL config")}</p>
+        <PacketCard title="DeepSeek 模型策略" subtitle="独立 cache；不展示 token/key，不触发模型调用" status={modelStrategy.contains_secret === true ? "check" : "safe"}>
+          <p>purpose count: {String(deepseekModelCounts?.purpose_count ?? 0)}</p>
+          <p>explain: {String(deepseekModelByPurpose.get("explain")?.model ?? "--")}</p>
+          <p>fast: {String(deepseekModelByPurpose.get("fast")?.model ?? "--")}</p>
+          <p>default: {String(deepseekModelByPurpose.get("default")?.model ?? "--")}</p>
+          <p>external calls: {String(modelStrategy.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="产业链瓶颈扫描 cache" subtitle="GET cache 不触发 DeepSeek" status={String(chokepoint.status ?? "cache")}>
           <p>{String(chokepoint.summary ?? "等待缓存")}</p>

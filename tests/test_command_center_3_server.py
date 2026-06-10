@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
+from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -63,6 +63,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         next_session = packet_service.build_next_session_cache()
         migration = migration_status_service.build_migration_status()
         desktop = desktop_service.read_desktop_shell_preflight_cache()
+        model_strategy = model_strategy_service.read_deepseek_model_strategy_cache()
 
         self.assertEqual(factor["packet_key"], "command_center_factor_quant_hub_packet")
         self.assertFalse(factor["deepseek_called"])
@@ -118,7 +119,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("GITHUB_TOKEN", desktop_dump)
         self.assertNotIn("COMMAND_CENTER_REDIS_URL", desktop_dump)
 
-        json.dumps({"factor": factor, "serenity": serenity, "next": next_session, "migration": migration, "desktop": desktop}, ensure_ascii=False)
+        self.assertEqual(model_strategy["packet_key"], "command_center_3_deepseek_model_strategy_cache")
+        self.assertEqual(model_strategy["mode"], "cache_only")
+        self.assertTrue(model_strategy["cache_only"])
+        self.assertTrue(model_strategy["read_only"])
+        self.assertEqual(model_strategy["counts"]["purpose_count"], 7)
+        self.assertFalse(model_strategy["external_calls_triggered"])
+        self.assertFalse(model_strategy["tushare_called"])
+        self.assertFalse(model_strategy["deepseek_called"])
+        self.assertFalse(model_strategy["github_called"])
+        self.assertTrue(model_strategy["policy"]["does_not_call_deepseek"])
+        self.assertTrue(model_strategy["policy"]["model_names_are_configurable"])
+        self.assertFalse(model_strategy["policy"]["callsite_hardcoding_allowed"])
+        self.assertTrue(model_strategy["does_not_execute_trades"])
+        self.assertTrue(model_strategy["does_not_modify_strategy_action"])
+        self.assertEqual(model_strategy["call_ledger"][0]["api"], "local_deepseek_model_strategy_cache")
+        strategy_dump = json.dumps(model_strategy, ensure_ascii=False).lower()
+        self.assertNotIn("deepseek_api_key", strategy_dump)
+        self.assertNotIn("tushare_token", strategy_dump)
+        self.assertNotIn("github_token", strategy_dump)
+        self.assertNotIn("bearer ", strategy_dump)
+
+        json.dumps({"factor": factor, "serenity": serenity, "next": next_session, "migration": migration, "desktop": desktop, "model_strategy": model_strategy}, ensure_ascii=False)
 
     def test_packet_service_reads_snapshot_alias_without_external_calls(self):
         self._with_snapshot_cache(
@@ -1465,6 +1487,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(migration["data"]["api_policy"]["cache_only"])
         self.assertFalse(migration["data"]["api_policy"]["external_calls_triggered"])
         self.assertTrue(migration["data"]["api_policy"]["does_not_execute_trades"])
+
+        model_strategy = self.client.get("/api/model-strategy/cache").json()
+        self.assertTrue(model_strategy["ok"])
+        self.assertTrue(model_strategy["data"]["cache_only"])
+        self.assertTrue(model_strategy["data"]["read_only"])
+        self.assertEqual(model_strategy["data"]["mode"], "cache_only")
+        self.assertEqual(model_strategy["data"]["counts"]["purpose_count"], 7)
+        self.assertFalse(model_strategy["data"]["external_calls_triggered"])
+        self.assertFalse(model_strategy["data"]["tushare_called"])
+        self.assertFalse(model_strategy["data"]["deepseek_called"])
+        self.assertFalse(model_strategy["data"]["github_called"])
+        self.assertTrue(model_strategy["data"]["policy"]["does_not_call_deepseek"])
+        self.assertTrue(model_strategy["data"]["policy"]["does_not_read_api_keys"])
+        self.assertTrue(model_strategy["data"]["policy"]["model_names_are_configurable"])
+        self.assertFalse(model_strategy["data"]["policy"]["callsite_hardcoding_allowed"])
+        self.assertEqual(model_strategy["data"]["call_ledger"][0]["api"], "local_deepseek_model_strategy_cache")
 
         legacy = self.client.get("/api/legacy/cache").json()
         self.assertTrue(legacy["ok"])
