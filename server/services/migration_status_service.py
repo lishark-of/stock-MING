@@ -38,6 +38,8 @@ MIGRATION_PRINCIPLES = [
     "所有外部请求必须有 call_ledger。",
     "不执行真实交易，不自动下单。",
     "不泄露 token/key。",
+    "不使用 git add .。",
+    "不 push，等待用户确认。",
 ]
 
 
