@@ -68,6 +68,7 @@ api_cache_paths = [
     "/api/audit/cache",
     "/api/legacy/cache",
     "/api/worker/cache",
+    "/api/storage/sqlite-meta",
     "/api/tasks",
     "/api/tasks/catalog",
 ]

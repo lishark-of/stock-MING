@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getFactorValuesStorage, getStorageDataset, getStorageOverview } from "../api/client";
+import { getFactorValuesStorage, getSQLiteMetaStorage, getStorageDataset, getStorageOverview } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -9,11 +9,13 @@ import StatusBadge from "../components/StatusBadge";
 export default function StorageOverview() {
   const [overview, setOverview] = useState<Record<string, unknown>>({});
   const [factorValues, setFactorValues] = useState<Record<string, unknown>>({});
+  const [sqliteMeta, setSqliteMeta] = useState<Record<string, unknown>>({});
   const [datasetDetails, setDatasetDetails] = useState<Record<string, Record<string, unknown>>>({});
 
   useEffect(() => {
     void getStorageOverview().then((res) => setOverview(res.data));
     void getFactorValuesStorage().then((res) => setFactorValues(res.data));
+    void getSQLiteMetaStorage().then((res) => setSqliteMeta(res.data));
     void Promise.all(["daily", "moneyflow"].map((dataset) => getStorageDataset(dataset).then((res) => [dataset, res.data] as const))).then((items) =>
       setDatasetDetails(Object.fromEntries(items))
     );
@@ -29,6 +31,8 @@ export default function StorageOverview() {
   const factorMetadata = factorValues.metadata as Record<string, unknown> | undefined;
   const factorQuery = factorValues.query as Record<string, unknown> | undefined;
   const factorRows = (factorQuery?.rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const packetMetadataRows = (sqliteMeta.packet_metadata as Array<Record<string, unknown>> | undefined) ?? [];
+  const taskMetadataRows = (sqliteMeta.task_metadata as Array<Record<string, unknown>> | undefined) ?? [];
   const previewRows = datasetCards.flatMap((item) => {
     const query = item.packet.query as Record<string, unknown> | undefined;
     const rows = (query?.rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -54,7 +58,10 @@ export default function StorageOverview() {
           { label: "修改 action", value: overview.does_not_modify_strategy_action === false ? "可能" : "不会", tone: overview.does_not_modify_strategy_action === false ? "bad" : "good" },
           { label: "factor_values", value: String(datasetStatus?.factor_values ?? "missing") },
           { label: "daily", value: String(datasetStatus?.daily ?? "missing") },
-          { label: "moneyflow", value: String(datasetStatus?.moneyflow ?? "missing") }
+          { label: "moneyflow", value: String(datasetStatus?.moneyflow ?? "missing") },
+          { label: "sqlite meta", value: String(overview.metadata_status ?? sqliteMeta.status ?? "missing") },
+          { label: "packets", value: overview.packet_metadata_count ?? sqliteMeta.packet_count ?? 0 },
+          { label: "tasks", value: overview.task_metadata_count ?? sqliteMeta.task_count ?? 0 }
         ]}
       />
 
@@ -69,6 +76,13 @@ export default function StorageOverview() {
           <p>row_count: {String(factorValues.row_count ?? factorQuery?.row_count ?? 0)}</p>
           <p>path: {String(factorValues.path ?? factorMetadata?.path ?? "--")}</p>
           <p>cache_only: {String(factorValues.cache_only ?? true)}</p>
+        </PacketCard>
+
+        <PacketCard title="SQLite Metadata" subtitle="packet/task 元数据；不返回 payload_json" status={String(sqliteMeta.status ?? overview.metadata_status ?? "missing")}>
+          <p>path: {String(sqliteMeta.path ?? "--")}</p>
+          <p>packet_count: {String(sqliteMeta.packet_count ?? overview.packet_metadata_count ?? 0)}</p>
+          <p>task_count: {String(sqliteMeta.task_count ?? overview.task_metadata_count ?? 0)}</p>
+          <p>does_not_return_payload_json: {String(sqliteMeta.does_not_return_payload_json ?? true)}</p>
         </PacketCard>
       </div>
 
@@ -100,6 +114,14 @@ export default function StorageOverview() {
         <DataLineageTable rows={factorRows} />
       </PacketCard>
 
+      <PacketCard title="SQLite packet metadata" subtitle="只展示 packet_key/status/mode/updated_at/payload_bytes，不展示 payload_json" status="sqlite_meta">
+        <DataLineageTable rows={packetMetadataRows} />
+      </PacketCard>
+
+      <PacketCard title="SQLite task metadata" subtitle="只展示 task_id/status/current_step/output_packet_key，不展示 payload_json" status="sqlite_meta">
+        <DataLineageTable rows={taskMetadataRows} />
+      </PacketCard>
+
       <PacketCard title="daily / moneyflow 样例" subtitle="只读本地 Parquet 样例；无缓存时为空表" status="preview">
         <DataLineageTable rows={previewRows} />
       </PacketCard>
@@ -107,6 +129,7 @@ export default function StorageOverview() {
       <PacketCard title="原始 storage payload" subtitle="调试用 JSON；cache API 永不外联" status="safe">
         <JsonDetails title="storage overview raw" data={overview} />
         <JsonDetails title="factor values raw" data={factorValues} />
+        <JsonDetails title="sqlite meta raw" data={sqliteMeta} />
         <JsonDetails title="daily raw" data={datasetDetails.daily ?? {}} />
         <JsonDetails title="moneyflow raw" data={datasetDetails.moneyflow ?? {}} />
       </PacketCard>

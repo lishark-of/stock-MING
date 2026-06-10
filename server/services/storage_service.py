@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from storage import duckdb_store, parquet_store
+from storage.sqlite_meta import SQLiteMetaStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PARQUET_ROOT = PROJECT_ROOT / ".stock_ming_3" / "parquet"
+SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -74,13 +76,68 @@ def factor_values_status(*, limit: int = 100) -> dict[str, Any]:
     return packet
 
 
+def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
+    path = SQLITE_META_PATH
+    base = {
+        "schema_version": "command_center_3_storage_sqlite_meta.v1",
+        "store": "sqlite_meta",
+        "path": _path_label(path),
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+    if not path.exists():
+        return {
+            **base,
+            "status": "missing",
+            "packet_count": 0,
+            "task_count": 0,
+            "packet_metadata": [],
+            "task_metadata": [],
+        }
+    try:
+        store = SQLiteMetaStore(path)
+        packet_metadata = store.list_packet_metadata()
+        task_metadata = store.list_task_metadata()
+    except Exception as exc:
+        return {
+            **base,
+            "status": "read_failed",
+            "packet_count": 0,
+            "task_count": 0,
+            "packet_metadata": [],
+            "task_metadata": [],
+            "error_message_safe": _safe_error_message(exc),
+        }
+    return {
+        **base,
+        "status": "ready",
+        "packet_count": len(packet_metadata),
+        "task_count": len(task_metadata),
+        "packet_metadata": packet_metadata[:limit],
+        "task_metadata": task_metadata[:limit],
+        "metadata_is_payload_only": False,
+        "does_not_return_payload_json": True,
+    }
+
+
 def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     datasets = [parquet_dataset_status(name, limit=limit) for name in ("factor_values", "daily", "moneyflow")]
+    sqlite_meta = sqlite_meta_status(limit=limit)
     return {
         "schema_version": "command_center_3_storage_overview.v1",
         "store": "parquet_duckdb",
+        "metadata_store": "sqlite_meta",
         "datasets": datasets,
         "dataset_status": {item["dataset"]: item["metadata"]["status"] for item in datasets},
+        "sqlite_meta": sqlite_meta,
+        "metadata_status": sqlite_meta["status"],
+        "packet_metadata_count": sqlite_meta["packet_count"],
+        "task_metadata_count": sqlite_meta["task_count"],
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,

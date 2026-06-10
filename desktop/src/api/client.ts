@@ -175,6 +175,10 @@ export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }
 
+export function getSQLiteMetaStorage() {
+  return request<Record<string, unknown>>("/api/storage/sqlite-meta");
+}
+
 export function getStorageDataset(dataset: string) {
   return request<Record<string, unknown>>(`/api/storage/${encodeURIComponent(dataset)}`);
 }

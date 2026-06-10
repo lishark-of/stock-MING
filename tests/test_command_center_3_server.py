@@ -27,17 +27,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         original_factor_path = factor_service.SQLITE_META_PATH
         original_next_session_path = next_session_service.SQLITE_META_PATH
         original_task_path = task_service.SQLITE_META_PATH
+        original_storage_path = storage_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         packet_service.SQLITE_META_PATH = db_path
         factor_service.SQLITE_META_PATH = db_path
         next_session_service.SQLITE_META_PATH = db_path
         task_service.SQLITE_META_PATH = db_path
+        storage_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
         self.addCleanup(setattr, next_session_service, "SQLITE_META_PATH", original_next_session_path)
         self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
+        self.addCleanup(setattr, storage_service, "SQLITE_META_PATH", original_storage_path)
         return db_path
 
     def _with_parquet_root(self):
@@ -523,6 +526,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def test_storage_overview_covers_daily_moneyflow_and_factor_values(self):
         self._with_parquet_root()
+        self._with_meta_store()
 
         overview = storage_service.storage_overview()
 
@@ -532,6 +536,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(overview["external_calls_triggered"])
         self.assertFalse(overview["tushare_called"])
         self.assertTrue(overview["does_not_execute_trades"])
+        self.assertIn("sqlite_meta", overview)
+        self.assertEqual(overview["metadata_store"], "sqlite_meta")
+        self.assertEqual(overview["metadata_status"], "missing")
+
+    def test_storage_sqlite_meta_status_lists_metadata_without_payloads(self):
+        db_path = self._with_meta_store()
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        store = SQLiteMetaStore(db_path)
+        store.write_packet("command_center_factor_quant_hub_packet", {"packet_key": "command_center_factor_quant_hub_packet", "status": "ready", "token": "SHOULD_DROP"})
+        task_service.create_task_stub("refresh_factor_data", payload={"api_key": "DROP"})
+
+        status = storage_service.sqlite_meta_status()
+
+        self.assertEqual(status["store"], "sqlite_meta")
+        self.assertEqual(status["status"], "ready")
+        self.assertEqual(status["packet_count"], 1)
+        self.assertGreaterEqual(status["task_count"], 1)
+        self.assertTrue(status["cache_only"])
+        self.assertTrue(status["does_not_return_payload_json"])
+        self.assertFalse(status["external_calls_triggered"])
+        self.assertFalse(status["tushare_called"])
+        self.assertTrue(status["does_not_execute_trades"])
+        self.assertIn("packet_key", status["packet_metadata"][0])
+        self.assertNotIn("payload_json", status["packet_metadata"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(status, ensure_ascii=False))
 
     def test_storage_dataset_rejects_unsupported_names_without_external_calls(self):
         self._with_parquet_root()
@@ -1137,6 +1167,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("def assert_api_cache_endpoint", script)
         self.assertIn("api_cache_paths", script)
         self.assertIn("/api/factor-quant/cache", script)
+        self.assertIn("/api/storage/sqlite-meta", script)
         self.assertIn("/api/tasks/catalog", script)
         self.assertIn("api_cache:", script)
         self.assertIn("/api/chokepoint/run", script)
@@ -1653,9 +1684,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(storage["data"]["cache_only"])
         self.assertFalse(storage["data"]["external_calls_triggered"])
 
+        sqlite_meta = self.client.get("/api/storage/sqlite-meta").json()
+        self.assertTrue(sqlite_meta["ok"])
+        self.assertTrue(sqlite_meta["data"]["cache_only"])
+        self.assertFalse(sqlite_meta["data"]["external_calls_triggered"])
+        self.assertTrue(sqlite_meta["data"].get("does_not_return_payload_json", True))
+
         storage_overview = self.client.get("/api/storage").json()
         self.assertTrue(storage_overview["ok"])
         self.assertEqual(set(storage_overview["data"]["dataset_status"]), {"factor_values", "daily", "moneyflow"})
+        self.assertIn("sqlite_meta", storage_overview["data"])
         self.assertFalse(storage_overview["data"]["external_calls_triggered"])
 
         daily_storage = self.client.get("/api/storage/daily").json()
