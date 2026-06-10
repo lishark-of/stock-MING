@@ -533,7 +533,18 @@ def create_task_stub(
 
 
 def read_task_status(task_id: str) -> dict[str, Any] | None:
-    return _TASKS.get(str(task_id)) or _read_persisted_task(str(task_id))
+    task_key = str(task_id)
+    memory_task = _TASKS.get(task_key)
+    persisted_task = _read_persisted_task(task_key)
+    if memory_task is not None:
+        row = dict(memory_task)
+        row["storage_source"] = "memory_and_sqlite" if persisted_task is not None else "memory"
+        return row
+    if persisted_task is not None:
+        row = dict(persisted_task)
+        row["storage_source"] = "sqlite_meta"
+        return row
+    return None
 
 
 def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
