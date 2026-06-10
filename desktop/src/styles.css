@@ -77,6 +77,11 @@ button {
   gap: 16px;
 }
 
+.compact-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin: 12px 0;
+}
+
 .packet-card {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -124,6 +129,33 @@ button {
   flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.metric-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  min-height: 72px;
+  padding: 10px;
+}
+
+.metric-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.metric-card strong {
+  color: #0f172a;
+  font-size: 18px;
 }
 
 .chart-panel {
@@ -174,6 +206,17 @@ pre {
   color: #e2e8f0;
   overflow: auto;
   padding: 12px;
+}
+
+.json-details {
+  margin-top: 12px;
+}
+
+.json-details summary {
+  color: #334155;
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 8px;
 }
 
 .risk-note {

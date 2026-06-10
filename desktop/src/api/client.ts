@@ -73,3 +73,7 @@ export function postTask(path: string, payload: Record<string, unknown> = {}) {
 export function getTask(taskId: string) {
   return request<TaskRecord>(`/api/tasks/${taskId}`);
 }
+
+export function getTasks() {
+  return request<{ tasks: TaskRecord[] }>("/api/tasks");
+}

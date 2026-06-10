@@ -15,6 +15,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "vite.config.ts",
             ROOT / "src" / "App.tsx",
             ROOT / "src" / "api" / "client.ts",
+            ROOT / "src" / "components" / "JsonDetails.tsx",
+            ROOT / "src" / "components" / "MetricGrid.tsx",
+            ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
             ROOT / "src-tauri" / "src" / "main.rs",
@@ -43,6 +46,39 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("tushare_adapter", source)
         self.assertNotIn("DEEPSEEK", source)
         self.assertNotIn("GITHUB_TOKEN", source)
+
+    def test_read_only_pages_render_structured_cache_without_direct_python_calls(self):
+        route_dir = ROOT / "src" / "routes"
+        page_names = [
+            "CommandCenterHome.tsx",
+            "NextSessionMap.tsx",
+            "FactorQuantHub.tsx",
+            "ChokepointScan.tsx",
+            "SerenityMethodRadar.tsx",
+            "LegacyTools.tsx",
+        ]
+        forbidden = ["tushare_adapter", "akshare", "DeepSeek(", "GITHUB_TOKEN", "process.env"]
+        for name in page_names:
+            source = (route_dir / name).read_text(encoding="utf-8")
+            with self.subTest(page=name):
+                self.assertIn("PacketCard", source)
+                for needle in forbidden:
+                    self.assertNotIn(needle, source)
+
+        self.assertIn("MetricGrid", (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8"))
+        self.assertIn("does_not_modify_action", (route_dir / "NextSessionMap.tsx").read_text(encoding="utf-8"))
+        self.assertIn("allow_core_action", (route_dir / "FactorQuantHub.tsx").read_text(encoding="utf-8"))
+        self.assertIn("enters_strategy_action", (route_dir / "ChokepointScan.tsx").read_text(encoding="utf-8"))
+        self.assertIn("enters_chokepoint_score", (route_dir / "SerenityMethodRadar.tsx").read_text(encoding="utf-8"))
+
+    def test_task_panel_polls_fastapi_task_endpoint(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        panel = (ROOT / "src" / "components" / "TaskStatusPanel.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/tasks", client)
+        self.assertIn("getTask(taskId)", panel)
+        self.assertIn("setInterval", panel)
+        self.assertIn("local_fallback", panel)
 
 
 if __name__ == "__main__":
