@@ -1908,6 +1908,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(strategy["data"]["policy"]["does_not_run_backtest"])
         self.assertTrue(strategy["data"]["does_not_modify_strategy_action"])
         self.assertTrue(strategy["data"]["does_not_execute_trades"])
+        self.assertEqual(strategy["call_ledger"][0]["api"], "local_strategy_trace_cache")
+        self.assertFalse(strategy["call_ledger"][0]["external"])
+        self.assertIn("GET /api/strategy/cache", strategy["warnings"][0])
 
         position = self.client.get("/api/position/cache").json()
         self.assertTrue(position["ok"])
@@ -2171,6 +2174,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_strategy_trace_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/strategy/cache", response["warnings"][0])
 
     def test_position_context_cache_endpoint_returns_position_without_external_work(self):
         self._with_snapshot_cache(
