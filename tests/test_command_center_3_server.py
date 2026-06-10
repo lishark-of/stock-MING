@@ -2708,6 +2708,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(persisted_status["data"]["backend"], "local_fallback")
         self.assertEqual(persisted_status["call_ledger"][0]["call_status"], "stub_not_called")
 
+    def test_missing_task_detail_and_cancel_return_safe_local_lineage(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        missing = self.client.get("/api/tasks/token=SHOULD_DROP").json()
+
+        self.assertFalse(missing["ok"])
+        self.assertEqual(missing["error"], "task_not_found")
+        self.assertEqual(missing["call_ledger"][0]["api"], "local_task_status_lookup")
+        self.assertEqual(missing["call_ledger"][0]["call_status"], "task_not_found_no_external_call")
+        self.assertEqual(missing["call_ledger"][0]["error_message_safe"], "task_not_found")
+        self.assertEqual(missing["call_ledger"][0]["request_params_safe"]["task_id"], "[redacted_sensitive_text]")
+        self.assert_local_ledger_boundary(missing["call_ledger"][0])
+        self.assertIn("GET /api/tasks/{task_id}", missing["warnings"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(missing, ensure_ascii=False))
+
+        cancelled = self.client.post("/api/tasks/token=SHOULD_DROP/cancel", json={"reason": "token=SHOULD_DROP"}).json()
+
+        self.assertFalse(cancelled["ok"])
+        self.assertEqual(cancelled["error"], "task_not_found")
+        self.assertEqual(cancelled["call_ledger"][0]["api"], "local_task_cancel")
+        self.assertEqual(cancelled["call_ledger"][0]["call_status"], "task_not_found_no_external_call")
+        self.assertEqual(cancelled["call_ledger"][0]["request_params_safe"]["task_id"], "[redacted_sensitive_text]")
+        self.assert_local_ledger_boundary(cancelled["call_ledger"][0])
+        self.assertIn("POST /api/tasks/{task_id}/cancel", cancelled["warnings"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cancelled, ensure_ascii=False))
+
     def test_button_gated_stub_task_endpoints_expose_top_level_lineage(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)

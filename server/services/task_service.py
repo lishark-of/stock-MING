@@ -301,6 +301,33 @@ def _cancel_call_ledger(task_id: str, now: str, *, reason_safe: str = "") -> dic
     }
 
 
+def task_not_found_call_ledger(task_id: str, *, api: str = "local_task_status_lookup") -> list[dict[str, Any]]:
+    return [
+        {
+            "api": api,
+            "request_params_safe": {"task_id": _safe_text(task_id, limit=120)},
+            "row_count": 0,
+            "data_date": None,
+            "local_fetched_at": _now_iso(),
+            "call_status": "task_not_found_no_external_call",
+            "error_message_safe": "task_not_found",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def task_not_found_warnings(route: str) -> list[str]:
+    return [
+        f"{route} 只执行本地任务状态查询；任务不存在时不调用 Tushare、DeepSeek、GitHub、Redis 或真实交易接口。"
+    ]
+
+
 def build_task_record(
     task_type: str,
     *,

@@ -28,7 +28,13 @@ def get_task_catalog() -> dict:
 def get_task(task_id: str) -> dict:
     task = task_service.read_task_status(task_id)
     if task is None:
-        return envelope({}, ok=False, error="task_not_found")
+        return envelope(
+            {},
+            ok=False,
+            error="task_not_found",
+            call_ledger=task_service.task_not_found_call_ledger(task_id),
+            warnings=task_service.task_not_found_warnings("GET /api/tasks/{task_id}"),
+        )
     return envelope(task, call_ledger=task.get("call_ledger"), warnings=task.get("warnings"))
 
 
@@ -36,5 +42,11 @@ def get_task(task_id: str) -> dict:
 def cancel_task(task_id: str, payload: dict[str, Any] | None = None) -> dict:
     task = task_service.cancel_task(task_id, payload)
     if task is None:
-        return envelope({}, ok=False, error="task_not_found")
+        return envelope(
+            {},
+            ok=False,
+            error="task_not_found",
+            call_ledger=task_service.task_not_found_call_ledger(task_id, api="local_task_cancel"),
+            warnings=task_service.task_not_found_warnings("POST /api/tasks/{task_id}/cancel"),
+        )
     return task_envelope(task)
