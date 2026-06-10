@@ -41,7 +41,11 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         strategy = config.get_deepseek_model_strategy()
 
         self.assertEqual(strategy["explain"], "deepseek-v4-pro")
+        self.assertEqual(strategy["projection"], "deepseek-v4-pro")
+        self.assertEqual(strategy["factor_explain"], "deepseek-v4-pro")
         self.assertEqual(strategy["fast"], "deepseek-v4-flash")
+        self.assertEqual(strategy["healthcheck"], "deepseek-v4-flash")
+        self.assertEqual(strategy["feeder"], "deepseek-v4-flash")
         self.assertFalse(strategy["contains_secret"])
 
     def test_env_overrides_model_strategy_without_hardcoded_callsite_names(self):

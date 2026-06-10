@@ -124,14 +124,15 @@ def get_deepseek_model(purpose="default", default=None):
 def get_deepseek_model_strategy():
     """Return the current model strategy for diagnostics without any token/key material."""
 
-    return {
-        "default": get_deepseek_model("default"),
-        "explain": get_deepseek_model("explain"),
-        "fast": get_deepseek_model("fast"),
-        "healthcheck": get_deepseek_model("healthcheck"),
+    strategy = {
+        purpose: get_deepseek_model(purpose)
+        for purpose in DEEPSEEK_MODEL_DEFAULTS
+    }
+    strategy.update({
         "source": "DEEPSEEK_*_MODEL config or safe defaults",
         "contains_secret": False,
-    }
+    })
+    return strategy
 
 
 def get_supabase_config():
