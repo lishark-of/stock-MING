@@ -20,7 +20,8 @@ def list_tasks() -> dict:
 
 @router.get("/catalog")
 def get_task_catalog() -> dict:
-    return envelope(task_service.build_task_catalog())
+    catalog = task_service.build_task_catalog()
+    return envelope(catalog, call_ledger=catalog.get("call_ledger"), warnings=catalog.get("warnings"))
 
 
 @router.get("/{task_id}")

@@ -124,6 +124,21 @@ def build_task_catalog() -> dict[str, Any]:
         "tushare_called": False,
         "deepseek_called": False,
         "github_called": False,
+        "call_ledger": [
+            {
+                "api": "local_task_catalog_cache",
+                "request_params_safe": {},
+                "row_count": len(TASK_CATALOG),
+                "data_date": None,
+                "local_fetched_at": _now_iso(),
+                "call_status": "cache_read",
+                "error_message_safe": "",
+                "external": False,
+            }
+        ],
+        "warnings": [
+            "GET /api/tasks/catalog 只读取本地任务目录；不会调用 Tushare、DeepSeek、GitHub、Redis 或真实交易接口。"
+        ],
     }
 
 

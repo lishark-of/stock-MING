@@ -8,18 +8,28 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function TaskCatalog() {
   const [catalog, setCatalog] = useState<Record<string, unknown>>({});
+  const [catalogEnvelopeLedger, setCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [catalogEnvelopeWarnings, setCatalogEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
+  const [taskIndexEnvelopeLedger, setTaskIndexEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [taskIndexEnvelopeWarnings, setTaskIndexEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
 
   const refreshTasks = () => {
     void getTasks().then((res) => {
+      setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
+      setTaskIndexEnvelopeWarnings(res.warnings ?? []);
       setTaskIndex(res.data);
       setTaskRecords(res.data.tasks ?? []);
     });
   };
 
   useEffect(() => {
-    void getTaskCatalog().then((res) => setCatalog(res.data));
+    void getTaskCatalog().then((res) => {
+      setCatalogEnvelopeLedger(res.call_ledger ?? []);
+      setCatalogEnvelopeWarnings(res.warnings ?? []);
+      setCatalog(res.data);
+    });
     refreshTasks();
   }, []);
 
@@ -28,6 +38,12 @@ export default function TaskCatalog() {
   const externalSources = catalog.external_sources as unknown[] | undefined;
   const taskIndexPolicy = taskIndex?.policy ?? {};
   const taskStatusRows = Object.entries(taskIndex?.status_counts ?? {}).map(([status, count]) => ({ status, count }));
+  const catalogPayloadLedger = (catalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const catalogCallLedger = catalogEnvelopeLedger.length ? catalogEnvelopeLedger : catalogPayloadLedger;
+  const catalogWarnings = catalogEnvelopeWarnings.length ? catalogEnvelopeWarnings : ((catalog.warnings as Array<unknown> | undefined) ?? []);
+  const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
+  const taskIndexCallLedger = taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger;
+  const taskIndexWarnings = taskIndexEnvelopeWarnings.length ? taskIndexEnvelopeWarnings : (taskIndex?.warnings ?? []);
   const taskRows = taskRecords.map((task) => ({
     task_id: task.task_id,
     task_type: task.task_type,
@@ -57,6 +73,10 @@ export default function TaskCatalog() {
           { label: "任务数量", value: catalog.task_count as number | undefined },
           { label: "任务记录", value: taskIndex?.task_count ?? taskRecords.length },
           { label: "任务 call_ledger", value: taskIndex?.call_ledger_count ?? 0 },
+          { label: "catalog envelope ledger", value: catalogCallLedger.length },
+          { label: "catalog warnings", value: catalogWarnings.length },
+          { label: "task index envelope ledger", value: taskIndexCallLedger.length },
+          { label: "task index warnings", value: taskIndexWarnings.length },
           { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
           { label: "任务真实交易", value: taskIndex?.does_not_execute_trades === false ? "可能" : "禁止", tone: taskIndex?.does_not_execute_trades === false ? "bad" : "good" },
           { label: "全部按钮门控", value: policy?.all_tasks_button_gated, tone: policy?.all_tasks_button_gated === false ? "bad" : "good" },
@@ -89,9 +109,13 @@ export default function TaskCatalog() {
         <DataLineageTable rows={catalogTasks ?? []} />
       </PacketCard>
 
+      <PacketCard title="任务目录 envelope call_ledger" subtitle="GET /api/tasks/catalog 顶层响应血缘；只读、不外联、不交易" status="lineage">
+        <DataLineageTable rows={catalogCallLedger} />
+      </PacketCard>
+
       <PacketCard title="任务状态总览" subtitle="GET /api/tasks 返回 command_center_3_task_status_index；只读汇总" status="task_status_index">
         <DataLineageTable rows={taskStatusRows} />
-        <DataLineageTable rows={taskIndex?.call_ledger ?? []} />
+        <DataLineageTable rows={taskIndexCallLedger} />
       </PacketCard>
 
       <PacketCard title="任务记录" subtitle="GET /api/tasks 只读状态；不会创建任务" status="read_only">
