@@ -80,12 +80,15 @@ npm run dev
 Tauri 开发：
 
 ```bash
+scripts/check_tauri_env.sh
+scripts/dev_server.sh
 cd desktop
 npm install
 npm run tauri dev
 ```
 
-如果本机未安装 Rust/Tauri CLI，只运行 Vite 前端即可。
+`scripts/check_tauri_env.sh` 只做本地环境预检，不安装依赖、不启动 Tauri、不调用 Tushare/DeepSeek/GitHub、不读取 token/key。
+如果本机未安装 Rust/Cargo，只运行 Vite 前端即可；Tauri dev mode 需要安装 Rust 后再执行 `npm run tauri dev`。
 
 ### Worker / Scheduler
 
@@ -126,5 +129,6 @@ scripts/run_scheduler.sh
 1. 把当前本地快照 cache 读取进一步落到 SQLite/Redis 持久化 packet。
 2. 把 `refresh_factor_data` 等 local fallback task stub 迁移到 Celery worker，并保留相同任务状态合同。
 3. 将 `refresh_factor_data` 接入真实 Tushare 按钮任务，并把 daily / daily_basic / moneyflow 结果写入 DuckDB/Parquet。
-4. 把 Streamlit 页面逐块迁移到 React/ECharts。
-5. 最后将 Streamlit 仅保留为 legacy/admin/debug。
+4. 安装 Rust 后验证 Tauri dev mode；生产打包放到后续阶段。
+5. 把 Streamlit 页面逐块迁移到 React/ECharts。
+6. 最后将 Streamlit 仅保留为 legacy/admin/debug。
