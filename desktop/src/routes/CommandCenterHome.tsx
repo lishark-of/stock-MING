@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, type TaskStatusIndex } from "../api/client";
+import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -9,6 +10,7 @@ export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [audit, setAudit] = useState<Record<string, unknown>>({});
   const [packets, setPackets] = useState<Record<string, unknown>>({});
+  const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [market, setMarket] = useState<Record<string, unknown>>({});
   const [discipline, setDiscipline] = useState<Record<string, unknown>>({});
   const [factor, setFactor] = useState<Record<string, unknown>>({});
@@ -26,14 +28,19 @@ export default function CommandCenterHome() {
   const [modelStrategy, setModelStrategy] = useState<Record<string, unknown>>({});
   const [legacyBridge, setLegacyBridge] = useState<Record<string, unknown>>({});
   const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
+  const [taskCatalogEnvelopeLedger, setTaskCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
+  const [taskIndexEnvelopeLedger, setTaskIndexEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [workerRuntime, setWorkerRuntime] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     void getHealth().then((res) => setHealth(res.data));
     void getAuditCache().then((res) => setAudit(res.data));
-    void getPackets().then((res) => setPackets(res.data));
+    void getPackets().then((res) => {
+      setPacketEnvelopeLedger(res.call_ledger ?? []);
+      setPackets(res.data);
+    });
     void getMarketContextCache().then((res) => setMarket(res.data));
     void getDisciplineLoopCache().then((res) => setDiscipline(res.data));
     void getFactorQuantCache().then((res) => setFactor(res.data));
@@ -50,9 +57,13 @@ export default function CommandCenterHome() {
     void getMigrationStatus().then((res) => setMigration(res.data));
     void getModelStrategyCache().then((res) => setModelStrategy(res.data));
     void getLegacyBridgeCache().then((res) => setLegacyBridge(res.data));
-    void getTaskCatalog().then((res) => setTaskCatalog(res.data));
+    void getTaskCatalog().then((res) => {
+      setTaskCatalogEnvelopeLedger(res.call_ledger ?? []);
+      setTaskCatalog(res.data);
+    });
     void getWorkerRuntimeCache().then((res) => setWorkerRuntime(res.data));
     void getTasks().then((res) => {
+      setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
       setTaskIndex(res.data);
       setTasks(res.data.tasks ?? []);
     });
@@ -86,6 +97,14 @@ export default function CommandCenterHome() {
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
+  const packetPayloadLedger = (packets.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
+  const envelopeLedgerRows = [
+    ...(packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).map((row) => ({ scope: "packet_index", ...row })),
+    ...(taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).map((row) => ({ scope: "task_catalog", ...row })),
+    ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
+  ];
 
   return (
     <>
@@ -98,9 +117,12 @@ export default function CommandCenterHome() {
           { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
           { label: "cache keys", value: packetKeys?.length ?? 0 },
+          { label: "packet envelope ledger", value: (packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).length },
           { label: "任务记录", value: taskIndex?.task_count ?? tasks.length },
           { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
           { label: "任务目录", value: taskCatalogItems?.length ?? 0 },
+          { label: "task catalog ledger", value: (taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).length },
+          { label: "task index ledger", value: (taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).length },
           { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
           { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
           { label: "factor parquet", value: String(storageStatus?.factor_values ?? "missing") },
@@ -129,6 +151,12 @@ export default function CommandCenterHome() {
           <p>endpoint / task: {String(auditCounts?.cache_endpoint_count ?? 0)} / {String(auditCounts?.task_count ?? 0)}</p>
           <p>call ledger: {String(auditCounts?.call_ledger_count ?? 0)}</p>
           <p>external calls: {String(audit.external_calls_triggered ?? false)}</p>
+        </PacketCard>
+        <PacketCard title="3.0 envelope 血缘总览" subtitle="首页优先读取 FastAPI 顶层 call_ledger；不钻 payload 也能判断只读边界" status="lineage">
+          <p>packet / catalog / task index: {String(packetEnvelopeLedger.length)} / {String(taskCatalogEnvelopeLedger.length)} / {String(taskIndexEnvelopeLedger.length)}</p>
+          <p>fallback payload ledger: {String(packetPayloadLedger.length + taskCatalogPayloadLedger.length + taskIndexPayloadLedger.length)}</p>
+          <p>GET cache 仍不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。</p>
+          <DataLineageTable rows={envelopeLedgerRows} />
         </PacketCard>
         <PacketCard title="Legacy bridge cache" subtitle="GET cache，只读旧工作台桥接，不运行旧工具" status={String(legacyBridge.status ?? "cache")}>
           <p>checklist done/pending: {String(legacyCounts?.checklist_done_count ?? 0)} / {String(legacyCounts?.checklist_pending_count ?? 0)}</p>
