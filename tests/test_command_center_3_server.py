@@ -1778,6 +1778,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(catalog["external_sources"]), {"deepseek", "github", "tushare"})
         by_type = {item["task_type"]: item for item in catalog["tasks"]}
         route_coverage = catalog["route_coverage"]
+        implementation_status = catalog["implementation_status"]
         self.assertEqual(route_coverage["known_post_route_count"], 7)
         self.assertEqual(route_coverage["task_creation_route_count"], 6)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 1)
@@ -1785,6 +1786,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
         self.assertTrue(route_coverage["call_ledger_required_for_all_known_post_routes"])
         self.assertFalse(route_coverage["cancel_routes_external_calls"])
+        self.assertEqual(implementation_status["status"], "partial_migration")
+        self.assertEqual(implementation_status["task_count"], 6)
+        self.assertEqual(implementation_status["stub_task_count"], 3)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 2)
+        self.assertEqual(implementation_status["guarded_local_task_count"], 1)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 3)
+        self.assertEqual(implementation_status["external_capable_task_count"], 4)
+        self.assertEqual(
+            set(implementation_status["stub_task_types"]),
+            {"refresh_factor_data", "run_chokepoint_scan", "probe_serenity_github"},
+        )
+        self.assertEqual(
+            set(implementation_status["local_pipeline_task_types"]),
+            {"run_factor_light", "build_next_session_projection"},
+        )
+        self.assertEqual(implementation_status["guarded_local_task_types"], ["run_deepseek_factor_explanation"])
+        self.assertEqual(
+            set(implementation_status["implemented_local_task_types"]),
+            {"run_factor_light", "build_next_session_projection", "run_deepseek_factor_explanation"},
+        )
+        self.assertTrue(implementation_status["all_external_capable_tasks_are_button_gated"])
+        self.assertTrue(implementation_status["all_external_capable_tasks_require_call_ledger"])
+        self.assertIn("local_fallback_stub", implementation_status["backend_counts"])
+        self.assertTrue(catalog["policy"]["implementation_status_is_read_only"])
+        self.assertTrue(catalog["policy"]["stub_tasks_must_not_be_reported_as_complete"])
+        self.assertIn("误读为完整生产迁移", implementation_status["note"])
         self.assertIn("POST /api/tasks/{task_id}/cancel", route_coverage["known_post_routes"])
         self.assertEqual(catalog["task_lifecycle_routes"][0]["route"], "POST /api/tasks/{task_id}/cancel")
         self.assertEqual(catalog["task_lifecycle_routes"][0]["external_call_policy"], "local_cancel_no_external_call")

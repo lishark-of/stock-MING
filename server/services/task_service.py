@@ -151,6 +151,56 @@ def _build_route_coverage() -> dict[str, Any]:
     }
 
 
+def _build_implementation_status() -> dict[str, Any]:
+    backend_counts: dict[str, int] = {}
+    stub_task_types: list[str] = []
+    local_pipeline_task_types: list[str] = []
+    guarded_local_task_types: list[str] = []
+    external_capable_task_types: list[str] = []
+
+    for item in TASK_CATALOG:
+        task_type = str(item.get("task_type") or "")
+        backend = str(item.get("current_backend") or "unknown")
+        backend_counts[backend] = backend_counts.get(backend, 0) + 1
+        if "stub" in backend:
+            stub_task_types.append(task_type)
+        if "pipeline" in backend:
+            local_pipeline_task_types.append(task_type)
+        if "guarded" in backend or "sanitizer" in backend:
+            guarded_local_task_types.append(task_type)
+        if item.get("possible_external_sources"):
+            external_capable_task_types.append(task_type)
+
+    implemented_local_task_types = sorted(set(local_pipeline_task_types + guarded_local_task_types))
+    return {
+        "status": "partial_migration",
+        "scope": "command_center_3_task_backend_implementation",
+        "task_count": len(TASK_CATALOG),
+        "backend_counts": backend_counts,
+        "stub_task_count": len(stub_task_types),
+        "local_pipeline_task_count": len(local_pipeline_task_types),
+        "guarded_local_task_count": len(guarded_local_task_types),
+        "implemented_local_task_count": len(implemented_local_task_types),
+        "external_capable_task_count": len(external_capable_task_types),
+        "stub_task_types": stub_task_types,
+        "local_pipeline_task_types": local_pipeline_task_types,
+        "guarded_local_task_types": guarded_local_task_types,
+        "implemented_local_task_types": implemented_local_task_types,
+        "external_capable_task_types": external_capable_task_types,
+        "all_external_capable_tasks_are_button_gated": all(
+            bool(item.get("button_gated"))
+            for item in TASK_CATALOG
+            if item.get("possible_external_sources")
+        ),
+        "all_external_capable_tasks_require_call_ledger": all(
+            bool(item.get("call_ledger_required"))
+            for item in TASK_CATALOG
+            if item.get("possible_external_sources")
+        ),
+        "note": "任务目录展示实现状态，避免把 stub/guarded/local pipeline 误读为完整生产迁移。",
+    }
+
+
 def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
     row = dict(item)
     purpose = row.get("deepseek_model_strategy_purpose")
@@ -164,6 +214,7 @@ def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
 
 def build_task_catalog() -> dict[str, Any]:
     route_coverage = _build_route_coverage()
+    implementation_status = _build_implementation_status()
     return {
         "packet_key": "command_center_3_task_catalog",
         "schema_version": "command_center_3_task_catalog.v1",
@@ -171,6 +222,7 @@ def build_task_catalog() -> dict[str, Any]:
         "tasks": [_catalog_task_item(item) for item in TASK_CATALOG],
         "task_lifecycle_routes": [dict(item) for item in TASK_LIFECYCLE_POST_ROUTES],
         "route_coverage": route_coverage,
+        "implementation_status": implementation_status,
         "task_count": len(TASK_CATALOG),
         "policy": {
             "get_catalog_cache_only": True,
@@ -178,6 +230,8 @@ def build_task_catalog() -> dict[str, Any]:
             "all_known_post_routes_button_gated": bool(route_coverage["all_known_post_routes_button_gated"]),
             "call_ledger_required_for_all": all(bool(item.get("call_ledger_required")) for item in TASK_CATALOG),
             "call_ledger_required_for_all_known_post_routes": bool(route_coverage["call_ledger_required_for_all_known_post_routes"]),
+            "implementation_status_is_read_only": True,
+            "stub_tasks_must_not_be_reported_as_complete": True,
             "supports_local_task_cancel": True,
             "cancel_task_external_calls": False,
             "cancel_route_in_lifecycle_catalog": True,

@@ -41,6 +41,7 @@ export default function TaskCatalog() {
   const catalogTasks = catalog.tasks as Array<Record<string, unknown>> | undefined;
   const taskLifecycleRoutes = catalog.task_lifecycle_routes as Array<Record<string, unknown>> | undefined;
   const routeCoverage = catalog.route_coverage as Record<string, unknown> | undefined;
+  const implementationStatus = catalog.implementation_status as Record<string, unknown> | undefined;
   const externalSources = catalog.external_sources as unknown[] | undefined;
   const knownPostRouteRows = Array.isArray(routeCoverage?.known_post_routes)
     ? (routeCoverage?.known_post_routes as unknown[]).map((route, index) => ({ index: index + 1, route: String(route), coverage: "known_post_route" }))
@@ -58,6 +59,16 @@ export default function TaskCatalog() {
   const taskIndexWarnings = taskIndexEnvelopeWarnings.length ? taskIndexEnvelopeWarnings : (taskIndex?.warnings ?? []);
   const taskPersistence = taskIndex?.persistence ?? {};
   const taskPersistenceRows = taskIndex?.persistence_source_rows ?? [];
+  const backendCountRows = Object.entries((implementationStatus?.backend_counts as Record<string, unknown> | undefined) ?? {}).map(([backend, count]) => ({
+    backend,
+    count
+  }));
+  const implementationTypeRows = [
+    { kind: "stub", count: implementationStatus?.stub_task_count, task_types: Array.isArray(implementationStatus?.stub_task_types) ? (implementationStatus?.stub_task_types as unknown[]).join(" / ") : "" },
+    { kind: "local_pipeline", count: implementationStatus?.local_pipeline_task_count, task_types: Array.isArray(implementationStatus?.local_pipeline_task_types) ? (implementationStatus?.local_pipeline_task_types as unknown[]).join(" / ") : "" },
+    { kind: "guarded_local", count: implementationStatus?.guarded_local_task_count, task_types: Array.isArray(implementationStatus?.guarded_local_task_types) ? (implementationStatus?.guarded_local_task_types as unknown[]).join(" / ") : "" },
+    { kind: "external_capable", count: implementationStatus?.external_capable_task_count, task_types: Array.isArray(implementationStatus?.external_capable_task_types) ? (implementationStatus?.external_capable_task_types as unknown[]).join(" / ") : "" }
+  ];
   const deepseekModelStrategyRows = (catalogTasks ?? [])
     .filter((item) => Array.isArray(item.possible_external_sources) && item.possible_external_sources.includes("deepseek"))
     .map((item) => {
@@ -128,6 +139,10 @@ export default function TaskCatalog() {
           { label: "任务数量", value: catalog.task_count as number | undefined },
           { label: "任务记录", value: taskIndex?.task_count ?? taskRecords.length },
           { label: "任务 call_ledger", value: taskIndex?.call_ledger_count ?? 0 },
+          { label: "stub tasks", value: implementationStatus?.stub_task_count as number | undefined },
+          { label: "local pipelines", value: implementationStatus?.local_pipeline_task_count as number | undefined },
+          { label: "guarded local", value: implementationStatus?.guarded_local_task_count as number | undefined },
+          { label: "external capable", value: implementationStatus?.external_capable_task_count as number | undefined },
           { label: "memory tasks", value: taskPersistence.memory_task_count as number | undefined },
           { label: "sqlite tasks", value: taskPersistence.sqlite_task_count as number | undefined },
           { label: "去重任务", value: taskPersistence.deduplicated_task_count as number | undefined },
@@ -157,6 +172,17 @@ export default function TaskCatalog() {
           <p>does_not_execute_trades 与 does_not_modify_strategy_action 必须保持为 true。</p>
           <p>task_status_index: {String(taskIndex?.packet_key ?? "--")}；get_tasks_cache_only: {String(taskIndexPolicy.get_tasks_cache_only ?? true)}</p>
           <p>storage_backend: {String(taskPersistence.storage_backend ?? "memory_plus_sqlite_fallback")}；task rows include storage_source: {String(taskPersistence.task_rows_include_storage_source ?? true)}</p>
+        </PacketCard>
+
+        <PacketCard title="任务实现状态" subtitle="区分 stub、local pipeline 与 guarded local，避免把 3.0 skeleton 误读成完整迁移" status={String(implementationStatus?.status ?? "partial_migration")}>
+          <p>implementation scope: {String(implementationStatus?.scope ?? "command_center_3_task_backend_implementation")}</p>
+          <p>implemented local task count: {String(implementationStatus?.implemented_local_task_count ?? 0)}</p>
+          <p>stub tasks must not be reported as complete: {String(policy?.stub_tasks_must_not_be_reported_as_complete ?? true)}</p>
+          <p>external capable tasks button gated: {String(implementationStatus?.all_external_capable_tasks_are_button_gated ?? true)}</p>
+          <p>external capable tasks require call ledger: {String(implementationStatus?.all_external_capable_tasks_require_call_ledger ?? true)}</p>
+          <DataLineageTable rows={implementationTypeRows} />
+          <h3>backend counts</h3>
+          <DataLineageTable rows={backendCountRows} />
         </PacketCard>
 
         <PacketCard title="外部请求策略" subtitle="GET catalog 不外联；按钮任务才可能进入外部源" status={String(policy?.post_task_may_trigger_external_request ?? true)}>
