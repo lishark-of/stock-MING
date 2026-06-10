@@ -95,24 +95,70 @@ TASK_CATALOG = [
     },
 ]
 
+TASK_LIFECYCLE_POST_ROUTES = [
+    {
+        "route": "POST /api/tasks/{task_id}/cancel",
+        "label": "取消本地任务",
+        "route_type": "local_lifecycle",
+        "button_gated": True,
+        "current_backend": "local_status_update_only",
+        "external_call_policy": "local_cancel_no_external_call",
+        "possible_external_sources": [],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+]
+
 
 def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
 
+def _build_route_coverage() -> dict[str, Any]:
+    task_routes = [str(item.get("route") or "") for item in TASK_CATALOG]
+    lifecycle_routes = [str(item.get("route") or "") for item in TASK_LIFECYCLE_POST_ROUTES]
+    known_post_routes = task_routes + lifecycle_routes
+    return {
+        "status": "ready",
+        "scope": "command_center_3_button_gated_post_routes",
+        "task_creation_route_count": len(task_routes),
+        "local_lifecycle_route_count": len(lifecycle_routes),
+        "known_post_route_count": len(known_post_routes),
+        "task_creation_routes": task_routes,
+        "local_lifecycle_routes": lifecycle_routes,
+        "known_post_routes": known_post_routes,
+        "uncovered_post_routes": [],
+        "all_known_post_routes_button_gated": all(bool(item.get("button_gated")) for item in TASK_CATALOG + TASK_LIFECYCLE_POST_ROUTES),
+        "call_ledger_required_for_all_known_post_routes": all(
+            bool(item.get("call_ledger_required")) for item in TASK_CATALOG + TASK_LIFECYCLE_POST_ROUTES
+        ),
+        "cache_reads_create_no_tasks": True,
+        "cancel_routes_external_calls": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def build_task_catalog() -> dict[str, Any]:
+    route_coverage = _build_route_coverage()
     return {
         "packet_key": "command_center_3_task_catalog",
         "schema_version": "command_center_3_task_catalog.v1",
         "status": "ready",
         "tasks": [dict(item) for item in TASK_CATALOG],
+        "task_lifecycle_routes": [dict(item) for item in TASK_LIFECYCLE_POST_ROUTES],
+        "route_coverage": route_coverage,
         "task_count": len(TASK_CATALOG),
         "policy": {
             "get_catalog_cache_only": True,
             "all_tasks_button_gated": all(bool(item.get("button_gated")) for item in TASK_CATALOG),
+            "all_known_post_routes_button_gated": bool(route_coverage["all_known_post_routes_button_gated"]),
             "call_ledger_required_for_all": all(bool(item.get("call_ledger_required")) for item in TASK_CATALOG),
+            "call_ledger_required_for_all_known_post_routes": bool(route_coverage["call_ledger_required_for_all_known_post_routes"]),
             "supports_local_task_cancel": True,
             "cancel_task_external_calls": False,
+            "cancel_route_in_lifecycle_catalog": True,
             "post_task_may_trigger_external_request": True,
             "cache_api_external_calls": False,
             "does_not_execute_trades": True,

@@ -39,6 +39,8 @@ export default function TaskCatalog() {
 
   const policy = catalog.policy as Record<string, unknown> | undefined;
   const catalogTasks = catalog.tasks as Array<Record<string, unknown>> | undefined;
+  const taskLifecycleRoutes = catalog.task_lifecycle_routes as Array<Record<string, unknown>> | undefined;
+  const routeCoverage = catalog.route_coverage as Record<string, unknown> | undefined;
   const externalSources = catalog.external_sources as unknown[] | undefined;
   const taskIndexPolicy = taskIndex?.policy ?? {};
   const taskStatusRows = Object.entries(taskIndex?.status_counts ?? {}).map(([status, count]) => ({ status, count }));
@@ -64,6 +66,26 @@ export default function TaskCatalog() {
     does_not_execute_trades: task.does_not_execute_trades !== false,
     does_not_modify_strategy_action: task.does_not_modify_strategy_action !== false
   }));
+  const routeCoverageRows = [
+    ...(catalogTasks ?? []).map((item) => ({
+      route_type: "task_creation",
+      route: item.route,
+      task_type: item.task_type,
+      button_gated: item.button_gated,
+      call_ledger_required: item.call_ledger_required,
+      external_call_policy: item.external_call_policy,
+      possible_external_sources: Array.isArray(item.possible_external_sources) ? item.possible_external_sources.join(" / ") : ""
+    })),
+    ...(taskLifecycleRoutes ?? []).map((item) => ({
+      route_type: item.route_type ?? "local_lifecycle",
+      route: item.route,
+      task_type: "local_task_lifecycle",
+      button_gated: item.button_gated,
+      call_ledger_required: item.call_ledger_required,
+      external_call_policy: item.external_call_policy,
+      possible_external_sources: Array.isArray(item.possible_external_sources) ? item.possible_external_sources.join(" / ") : ""
+    }))
+  ];
 
   return (
     <>
@@ -77,6 +99,8 @@ export default function TaskCatalog() {
           { label: "任务数量", value: catalog.task_count as number | undefined },
           { label: "任务记录", value: taskIndex?.task_count ?? taskRecords.length },
           { label: "任务 call_ledger", value: taskIndex?.call_ledger_count ?? 0 },
+          { label: "已登记 POST", value: routeCoverage?.known_post_route_count as number | undefined },
+          { label: "未覆盖 POST", value: (routeCoverage?.uncovered_post_routes as unknown[] | undefined)?.length ?? 0, tone: (routeCoverage?.uncovered_post_routes as unknown[] | undefined)?.length ? "bad" : "good" },
           { label: "catalog envelope ledger", value: catalogCallLedger.length },
           { label: "catalog warnings", value: catalogWarnings.length },
           { label: "task index envelope ledger", value: taskIndexCallLedger.length },
@@ -84,6 +108,7 @@ export default function TaskCatalog() {
           { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
           { label: "任务真实交易", value: taskIndex?.does_not_execute_trades === false ? "可能" : "禁止", tone: taskIndex?.does_not_execute_trades === false ? "bad" : "good" },
           { label: "全部按钮门控", value: policy?.all_tasks_button_gated, tone: policy?.all_tasks_button_gated === false ? "bad" : "good" },
+          { label: "POST 全部登记", value: policy?.all_known_post_routes_button_gated, tone: policy?.all_known_post_routes_button_gated === false ? "bad" : "good" },
           { label: "call ledger required", value: policy?.call_ledger_required_for_all, tone: policy?.call_ledger_required_for_all === false ? "bad" : "good" },
           { label: "cache API 外联", value: policy?.cache_api_external_calls === true ? "存在" : "无", tone: policy?.cache_api_external_calls === true ? "bad" : "good" },
           { label: "真实交易", value: policy?.does_not_execute_trades === false ? "可能" : "禁止", tone: policy?.does_not_execute_trades === false ? "bad" : "good" },
@@ -111,6 +136,13 @@ export default function TaskCatalog() {
 
       <PacketCard title="任务清单" subtitle="按钮门控、可能外部源和输出 packet" status="catalog">
         <DataLineageTable rows={catalogTasks ?? []} />
+      </PacketCard>
+
+      <PacketCard title="POST 路由覆盖" subtitle="任务创建 POST 与本地生命周期 POST 分开登记；cache GET 不创建任务" status="route_coverage">
+        <p>known_post_route_count: {String(routeCoverage?.known_post_route_count ?? 0)}</p>
+        <p>uncovered_post_routes: {String((routeCoverage?.uncovered_post_routes as unknown[] | undefined)?.length ?? 0)}</p>
+        <p>cancel_routes_external_calls: {String(routeCoverage?.cancel_routes_external_calls ?? false)}</p>
+        <DataLineageTable rows={routeCoverageRows} />
       </PacketCard>
 
       <PacketCard title="任务目录 envelope call_ledger" subtitle="GET /api/tasks/catalog 顶层响应血缘；只读、不外联、不交易" status="lineage">
