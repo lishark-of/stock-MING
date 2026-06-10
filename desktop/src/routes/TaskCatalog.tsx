@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getTaskCatalog } from "../api/client";
+import { getTaskCatalog, getTasks, type TaskRecord } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -8,14 +8,28 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function TaskCatalog() {
   const [catalog, setCatalog] = useState<Record<string, unknown>>({});
+  const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
 
   useEffect(() => {
     void getTaskCatalog().then((res) => setCatalog(res.data));
+    void getTasks().then((res) => setTaskRecords(res.data.tasks ?? []));
   }, []);
 
   const policy = catalog.policy as Record<string, unknown> | undefined;
-  const tasks = catalog.tasks as Array<Record<string, unknown>> | undefined;
+  const catalogTasks = catalog.tasks as Array<Record<string, unknown>> | undefined;
   const externalSources = catalog.external_sources as unknown[] | undefined;
+  const taskRows = taskRecords.map((task) => ({
+    task_id: task.task_id,
+    task_type: task.task_type,
+    status: task.status,
+    progress: task.progress,
+    current_step: task.current_step,
+    output_packet_key: task.output_packet_key,
+    backend: task.backend ?? "local_fallback",
+    call_ledger_count: task.call_ledger?.length ?? 0,
+    does_not_execute_trades: true,
+    does_not_modify_strategy_action: true
+  }));
 
   return (
     <>
@@ -27,6 +41,7 @@ export default function TaskCatalog() {
       <MetricGrid
         items={[
           { label: "任务数量", value: catalog.task_count as number | undefined },
+          { label: "任务记录", value: taskRecords.length },
           { label: "全部按钮门控", value: policy?.all_tasks_button_gated, tone: policy?.all_tasks_button_gated === false ? "bad" : "good" },
           { label: "call ledger required", value: policy?.call_ledger_required_for_all, tone: policy?.call_ledger_required_for_all === false ? "bad" : "good" },
           { label: "cache API 外联", value: policy?.cache_api_external_calls === true ? "存在" : "无", tone: policy?.cache_api_external_calls === true ? "bad" : "good" },
@@ -39,7 +54,7 @@ export default function TaskCatalog() {
 
       <div className="grid">
         <PacketCard title="任务边界" subtitle="只读任务目录；不会创建任务；POST task 才可能触发外部请求" status="read_only">
-          <p>本页只读取 FastAPI 的任务目录 cache，不调用 Tushare、DeepSeek 或 GitHub。</p>
+          <p>本页只读取 FastAPI 的任务目录 cache 和 GET /api/tasks 任务记录，不调用 Tushare、DeepSeek 或 GitHub。</p>
           <p>任务执行必须由对应 POST API 按钮触发，并且需要写入 call_ledger_required_for_all 对应的审计记录。</p>
           <p>does_not_execute_trades 与 does_not_modify_strategy_action 必须保持为 true。</p>
         </PacketCard>
@@ -53,11 +68,16 @@ export default function TaskCatalog() {
       </div>
 
       <PacketCard title="任务清单" subtitle="按钮门控、可能外部源和输出 packet" status="catalog">
-        <DataLineageTable rows={tasks ?? []} />
+        <DataLineageTable rows={catalogTasks ?? []} />
+      </PacketCard>
+
+      <PacketCard title="任务记录" subtitle="GET /api/tasks 只读状态；不会创建任务" status="read_only">
+        <DataLineageTable rows={taskRows} />
       </PacketCard>
 
       <PacketCard title="原始目录 payload" subtitle="调试用 JSON；不含 token/key" status="safe">
         <JsonDetails title="task catalog raw" data={catalog} />
+        <JsonDetails title="task records raw" data={taskRecords} />
       </PacketCard>
     </>
   );

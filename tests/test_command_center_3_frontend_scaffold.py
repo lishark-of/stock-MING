@@ -136,6 +136,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         task_catalog_page = (ROOT / "src" / "routes" / "TaskCatalog.tsx").read_text(encoding="utf-8")
         self.assertIn("getTaskCatalog", task_catalog_page)
+        self.assertIn("getTasks", task_catalog_page)
+        self.assertIn("GET /api/tasks", task_catalog_page)
+        self.assertIn("任务记录", task_catalog_page)
         self.assertIn("call_ledger_required_for_all", task_catalog_page)
         self.assertIn("POST task 才可能触发外部请求", task_catalog_page)
         self.assertIn("does_not_execute_trades", task_catalog_page)
