@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from server.api.task_response import task_envelope
 from server.schemas.packets import envelope
 from server.services import packet_service
 from server.services.task_service import create_task_stub
@@ -25,4 +26,4 @@ def probe_serenity_github(payload: dict[str, Any] | None = None) -> dict:
         payload=payload,
         current_step="serenity_github_probe_task_stub_created",
     )
-    return envelope({"task_id": task["task_id"], "task": task})
+    return task_envelope(task)

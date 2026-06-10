@@ -2220,6 +2220,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(created["ok"])
         task_id = created["data"]["task_id"]
         self.assertTrue(task_id.startswith("local-"))
+        self.assertEqual(created["call_ledger"][0]["call_status"], "stub_not_called")
+        self.assertIn("本地 lifecycle stub", created["warnings"][0])
 
         status = self.client.get(f"/api/tasks/{task_id}").json()
         self.assertTrue(status["ok"])
@@ -2251,6 +2253,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(persisted_status["data"]["backend"], "local_fallback")
         self.assertEqual(persisted_status["call_ledger"][0]["call_status"], "stub_not_called")
 
+    def test_button_gated_stub_task_endpoints_expose_top_level_lineage(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        for path in ("/api/chokepoint/run", "/api/serenity/github-probe"):
+            response = self.client.post(path, json={"token": "SHOULD_DROP"}).json()
+            self.assertTrue(response["ok"])
+            self.assertTrue(response["data"]["task_id"].startswith("local-"))
+            self.assertEqual(response["call_ledger"][0]["call_status"], "stub_not_called")
+            self.assertIn("本地 lifecycle stub", response["warnings"][0])
+            self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
     def test_next_session_generate_endpoint_uses_local_cache_pipeline(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -2277,6 +2291,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["current_step"], "next_session_cache_written_to_sqlite")
         self.assertEqual(task["call_ledger"][0]["api"], "local_next_session_cache")
         self.assertEqual(task["call_ledger"][0]["call_status"], "exact_cache_read")
+        self.assertEqual(created["call_ledger"][0]["call_status"], "exact_cache_read")
+        self.assertIn("当前只执行本地 cache pipeline", created["warnings"][0])
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
         self.assertFalse(task["deepseek_called"])
@@ -2373,6 +2389,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
         self.assertEqual(task["call_ledger"][0]["call_status"], "cache_read")
+        self.assertEqual(created["call_ledger"][0]["call_status"], "cache_read")
+        self.assertIn("light mode 仅读取本地 cache", created["warnings"][0])
         self.assertIn("local_parquet_factor_values", {item.get("api") for item in task["call_ledger"]})
         self.assertNotIn("token", task["payload_safe"])
 
@@ -2404,6 +2422,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         task = created["data"]["task"]
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["call_ledger"][0]["call_status"], "provided_payload_sanitized")
+        self.assertEqual(created["call_ledger"][0]["call_status"], "provided_payload_sanitized")
+        self.assertIn("DeepSeek 因子解释任务本轮不调用模型", created["warnings"][0])
         self.assertEqual(task["payload_safe"], {"provided_explanation_payload": True})
         self.assertFalse(task["deepseek_called"])
         self.assertFalse(task["external_calls_triggered"])
