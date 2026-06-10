@@ -470,6 +470,78 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["chart_payload"]["is_exact_next_session_packet"])
         self.assertEqual(packet["chart_payload"]["historical_points"][0]["price"], 10.4)
 
+    def test_serenity_cache_reads_persisted_sqlite_packet_without_probe(self):
+        self._with_meta_store()
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(packet_service.SQLITE_META_PATH).write_packet(
+            "command_center_serenity_method_radar_packet",
+            {
+                "packet_key": "command_center_serenity_method_radar_packet",
+                "schema_version": "serenity_method_radar.v1",
+                "status": "ready",
+                "github_status": "not_checked",
+                "repositories": [{"repo": "muxuuu/serenity-skill", "source_type": "user_screenshot_baseline"}],
+                "decision_usage_policy": {"display_only": True, "enters_strategy_action": False},
+                "deepseek_called": False,
+                "github_called": False,
+            },
+        )
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).get("/api/serenity/cache").json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["data"]["cache_source"], "sqlite_meta")
+        self.assertEqual(response["data"]["repositories"][0]["repo"], "muxuuu/serenity-skill")
+        self.assertFalse(response["data"]["github_called"])
+        self.assertFalse(response["data"]["deepseek_called"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_serenity_method_radar_cache")
+        self.assertEqual(response["call_ledger"][0]["request_params_safe"]["cache_source"], "sqlite_meta")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertFalse(response["call_ledger"][0]["github_called"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertIn("GET /api/serenity/cache", response["warnings"][0])
+
+    def test_chokepoint_cache_reads_persisted_sqlite_packet_without_deepseek(self):
+        self._with_meta_store()
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(packet_service.SQLITE_META_PATH).write_packet(
+            "command_center_chokepoint_scan_packet",
+            {
+                "packet_key": "command_center_chokepoint_scan_packet",
+                "schema_version": "chokepoint_scan.v1",
+                "status": "ready",
+                "theme": "英伟达金刚石散热",
+                "technical_nodes": [{"name": "半导体级 CVD 衬底"}],
+                "enters_strategy_action": False,
+                "enters_next_session_projection": False,
+                "deepseek_called": False,
+            },
+        )
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).get("/api/chokepoint/cache").json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["data"]["cache_source"], "sqlite_meta")
+        self.assertEqual(response["data"]["theme"], "英伟达金刚石散热")
+        self.assertFalse(response["data"]["deepseek_called"])
+        self.assertFalse(response["data"]["enters_strategy_action"])
+        self.assertFalse(response["data"]["enters_next_session_projection"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_chokepoint_scan_cache")
+        self.assertEqual(response["call_ledger"][0]["request_params_safe"]["cache_source"], "sqlite_meta")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(response["call_ledger"][0]["tushare_called"])
+        self.assertFalse(response["call_ledger"][0]["github_called"])
+        self.assertIn("GET /api/chokepoint/cache", response["warnings"][0])
+
     def test_packet_index_exposes_snapshot_keys(self):
         self._with_snapshot_cache({"moneyflow_packet": {"status": "ready"}})
 

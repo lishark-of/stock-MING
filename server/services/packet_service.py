@@ -612,6 +612,11 @@ def build_factor_quant_cache() -> dict[str, Any]:
 
 
 def build_serenity_cache() -> dict[str, Any]:
+    persisted = _read_persisted_packet("command_center_serenity_method_radar_packet")
+    if persisted:
+        persisted.setdefault("call_ledger", serenity_cache_call_ledger(persisted))
+        persisted.setdefault("warnings", ["GET /api/serenity/cache 只读取本地方法来源基线；不会调用 GitHub、DeepSeek、Tushare 或真实交易接口。"])
+        return persisted
     cached = _read_snapshot_packet("command_center_serenity_method_radar_packet")
     if cached:
         cached.setdefault("call_ledger", serenity_cache_call_ledger(cached))
@@ -689,6 +694,13 @@ def build_next_session_cache() -> dict[str, Any]:
 
 
 def build_chokepoint_cache() -> dict[str, Any]:
+    persisted = _read_persisted_packet("command_center_chokepoint_scan_packet")
+    if persisted:
+        persisted.setdefault("enters_strategy_action", False)
+        persisted.setdefault("enters_next_session_projection", False)
+        persisted.setdefault("call_ledger", chokepoint_cache_call_ledger(persisted))
+        persisted.setdefault("warnings", ["GET /api/chokepoint/cache 只读取本地瓶颈扫描 cache；不会调用 DeepSeek、Tushare、GitHub 或真实交易接口。"])
+        return persisted
     cached = _read_snapshot_packet("command_center_chokepoint_scan_packet")
     if cached:
         cached.setdefault("enters_strategy_action", False)
