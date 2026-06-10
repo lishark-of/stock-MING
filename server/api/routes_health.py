@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from config import get_deepseek_model_strategy
 from server.schemas.packets import envelope
 
 
@@ -20,5 +21,6 @@ def health() -> dict:
             "deepseek_called": False,
             "github_called": False,
             "real_trading_enabled": False,
+            "deepseek_model_strategy": get_deepseek_model_strategy(),
         }
     )

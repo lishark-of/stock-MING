@@ -492,6 +492,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         health = self.client.get("/health").json()
         self.assertTrue(health["ok"])
         self.assertFalse(health["data"]["external_calls_on_startup"])
+        self.assertFalse(health["data"]["deepseek_called"])
+        self.assertFalse(health["data"]["tushare_called"])
+        model_strategy = health["data"]["deepseek_model_strategy"]
+        self.assertTrue(model_strategy["explain"])
+        self.assertTrue(model_strategy["fast"])
+        self.assertTrue(model_strategy["default"])
+        self.assertFalse(model_strategy["contains_secret"])
+        self.assertNotIn("token", json.dumps(model_strategy, ensure_ascii=False).lower())
+        self.assertNotIn("api_key", json.dumps(model_strategy, ensure_ascii=False).lower())
 
         factor = self.client.get("/api/factor-quant/cache").json()
         self.assertTrue(factor["ok"])

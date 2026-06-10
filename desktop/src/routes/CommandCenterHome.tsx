@@ -33,6 +33,7 @@ export default function CommandCenterHome() {
   const sqliteTasks = sqliteMeta?.task_metadata as unknown[] | undefined;
   const storageStatus = storageOverview.dataset_status as Record<string, unknown> | undefined;
   const storageDatasets = storageOverview.datasets as Array<Record<string, unknown>> | undefined;
+  const deepseekModelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
 
   return (
     <>
@@ -51,6 +52,8 @@ export default function CommandCenterHome() {
           { label: "factor parquet", value: String(storageStatus?.factor_values ?? "missing") },
           { label: "daily parquet", value: String(storageStatus?.daily ?? "missing") },
           { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
+          { label: "DeepSeek explain", value: String(deepseekModelStrategy?.explain ?? "--") },
+          { label: "DeepSeek fast", value: String(deepseekModelStrategy?.fast ?? "--") },
           { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" }
         ]}
       />
@@ -73,6 +76,12 @@ export default function CommandCenterHome() {
         <PacketCard title="Serenity 方法雷达 cache" subtitle="本地方法来源基线" status={String(serenity.github_status ?? "local")}>
           <p>DeepSeek: 不调用</p>
           <p>repositories: {String((serenity.repositories as unknown[] | undefined)?.length ?? 0)}</p>
+        </PacketCard>
+        <PacketCard title="DeepSeek 模型策略" subtitle="只读配置摘要；不展示 token/key，不触发模型调用" status={deepseekModelStrategy?.contains_secret === true ? "check" : "safe"}>
+          <p>explain: {String(deepseekModelStrategy?.explain ?? "--")}</p>
+          <p>fast: {String(deepseekModelStrategy?.fast ?? "--")}</p>
+          <p>default: {String(deepseekModelStrategy?.default ?? "--")}</p>
+          <p>source: {String(deepseekModelStrategy?.source ?? "DEEPSEEK_*_MODEL config")}</p>
         </PacketCard>
         <PacketCard title="产业链瓶颈扫描 cache" subtitle="GET cache 不触发 DeepSeek" status={String(chokepoint.status ?? "cache")}>
           <p>{String(chokepoint.summary ?? "等待缓存")}</p>
