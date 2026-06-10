@@ -28,6 +28,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "PositionContext.tsx",
             ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
+            ROOT / "src" / "routes" / "RiskGuardrails.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
             ROOT / "src" / "routes" / "StrategyTrace.tsx",
             ROOT / "src" / "routes" / "TaskCatalog.tsx",
@@ -102,6 +103,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "PacketRegistry.tsx",
             "PositionContext.tsx",
             "QuantBacktestLab.tsx",
+            "RiskGuardrails.tsx",
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
             "TaskCatalog.tsx",
@@ -149,6 +151,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("PacketRegistry", app_source)
         self.assertIn("PositionContext", app_source)
         self.assertIn("QuantBacktestLab", app_source)
+        self.assertIn("RiskGuardrails", app_source)
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
         self.assertIn("TaskCatalog", app_source)
@@ -161,6 +164,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"packets"', layout_source)
         self.assertIn('"position"', layout_source)
         self.assertIn('"quant"', layout_source)
+        self.assertIn('"risk"', layout_source)
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
         self.assertIn('"tasks"', layout_source)
@@ -173,6 +177,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("Packet", layout_source)
         self.assertIn("持仓画像", layout_source)
         self.assertIn("量化回测", layout_source)
+        self.assertIn("风险护栏", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
         self.assertIn("任务目录", layout_source)
@@ -328,6 +333,32 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不修改 strategy action", page)
         self.assertIn("local_candidate_radar_cache", page)
         self.assertIn("does_not_scan_market", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_risk_guardrails_page_reads_cache_without_clearing_risks(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "RiskGuardrails.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/risk/cache", client)
+        self.assertIn("getRiskGuardrailsCache", page)
+        self.assertIn("getRiskGuardrailsCache", home)
+        self.assertIn("GET /api/risk/cache", page)
+        self.assertIn("risk_alerts", page)
+        self.assertIn("execution_guardrail_overview", page)
+        self.assertIn("legacy_decision_chain_summary", page)
+        self.assertIn("local_risk_guardrails_cache", page)
+        self.assertIn("不会调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不自动下单", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertIn("不清除风险标记", page)
+        self.assertIn("风险护栏不是交易指令", page)
+        self.assertIn("does_not_modify_holdings", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

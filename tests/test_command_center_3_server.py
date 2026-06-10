@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -449,6 +449,56 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_candidate_radar_cache")
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_risk_guardrails_cache_reads_local_risk_fields_without_external_work(self):
+        self._with_snapshot_cache(
+            {
+                "risk_alerts": {
+                    "recovery_priority_summary": "先补齐数据缺口，再看执行护栏。",
+                    "data_gaps": ["资金流缺口", {"label": "硬风险公告", "status": "missing", "api_key": "SHOULD_DROP"}],
+                    "must_not_do": ["不要追高", {"guardrail": "不越过安全线", "authorization": "Bearer SHOULD_DROP"}],
+                    "reduce_conditions": ["跌破安全线降风险"],
+                    "hard_risk_alerts": [{"label": "减持公告待核验", "status": "pending"}],
+                    "token": "SHOULD_DROP",
+                },
+                "safety_line": "安全线 100 元",
+                "execution_guardrail_overview": {"blocked_count": 2, "headline": "执行被阻断"},
+                "legacy_decision_chain_summary": {"blocked_count": 1, "waiting_count": 3, "items": [{"label": "旧链待恢复"}]},
+                "strategy_prerequisite_recovery_ledger": {"blocked_count": 1, "items": [{"label": "先补证"}]},
+                "position_risk_budget": {"risk_level": "中", "allow_add": False},
+                "risk_breakdown": {"items": [{"label": "数据风险", "level": "高"}], "authorization": "Bearer SHOULD_DROP"},
+            }
+        )
+
+        packet = risk_service.read_risk_guardrails_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_risk_guardrails_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertIn("risk_alerts", packet["source_packet_keys"])
+        self.assertEqual(packet["counts"]["data_gap_count"], 2)
+        self.assertEqual(packet["counts"]["must_not_do_count"], 2)
+        self.assertEqual(packet["counts"]["reduce_condition_count"], 1)
+        self.assertEqual(packet["counts"]["hard_risk_alert_count"], 1)
+        self.assertEqual(packet["counts"]["execution_blocked_count"], 2)
+        self.assertEqual(packet["must_not_do_rows"][0]["guardrail"], "不要追高")
+        self.assertEqual(packet["data_gap_rows"][1]["label"], "硬风险公告")
+        self.assertEqual(packet["risk_rows"][0]["label"], "数据风险")
+        self.assertNotIn("token", packet["risk_alerts"])
+        self.assertNotIn("authorization", packet["risk_breakdown"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_clear_risk_flags"])
+        self.assertTrue(packet["policy"]["risk_guardrails_are_not_trade_orders"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_risk_guardrails_cache")
         json.dumps(packet, ensure_ascii=False)
 
     def test_a_share_evidence_cache_builds_lineage_without_external_calls(self):
@@ -968,6 +1018,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(candidate["data"]["does_not_modify_strategy_action"])
         self.assertTrue(candidate["data"]["does_not_execute_trades"])
 
+        risk = self.client.get("/api/risk/cache").json()
+        self.assertTrue(risk["ok"])
+        self.assertTrue(risk["data"]["cache_only"])
+        self.assertFalse(risk["data"]["external_calls_triggered"])
+        self.assertFalse(risk["data"]["tushare_called"])
+        self.assertFalse(risk["data"]["deepseek_called"])
+        self.assertTrue(risk["data"]["policy"]["does_not_clear_risk_flags"])
+        self.assertTrue(risk["data"]["policy"]["risk_guardrails_are_not_trade_orders"])
+        self.assertTrue(risk["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(risk["data"]["does_not_modify_holdings"])
+        self.assertTrue(risk["data"]["does_not_execute_trades"])
+
         evidence = self.client.get("/api/evidence/cache").json()
         self.assertTrue(evidence["ok"])
         self.assertTrue(evidence["data"]["cache_only"])
@@ -1128,6 +1190,41 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_risk_guardrails_cache_endpoint_returns_local_risk_boundaries(self):
+        self._with_snapshot_cache(
+            {
+                "risk_alerts": {
+                    "data_gaps": ["资金流缺口"],
+                    "must_not_do": ["不追高"],
+                    "reduce_conditions": ["跌破安全线降风险"],
+                    "hard_risk_alerts": ["公告待核验"],
+                    "authorization": "Bearer SHOULD_DROP",
+                },
+                "safety_line": "安全线 100 元",
+                "execution_guardrail_overview": {"blocked_count": 1, "headline": "执行护栏"},
+                "legacy_decision_chain_summary": {"blocked_count": 0, "waiting_count": 1},
+            }
+        )
+
+        response = self.client.get("/api/risk/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_risk_guardrails_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["counts"]["data_gap_count"], 1)
+        self.assertEqual(packet["counts"]["must_not_do_count"], 1)
+        self.assertEqual(packet["must_not_do_rows"][0]["guardrail"], "不追高")
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_call_tushare"])
+        self.assertTrue(packet["policy"]["does_not_clear_risk_flags"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
 
     def test_evidence_cache_endpoint_returns_lineage_without_external_work(self):
         self._with_snapshot_cache(

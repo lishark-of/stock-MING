@@ -13,6 +13,7 @@ import NextSessionMap from "./routes/NextSessionMap";
 import PacketRegistry from "./routes/PacketRegistry";
 import PositionContext from "./routes/PositionContext";
 import QuantBacktestLab from "./routes/QuantBacktestLab";
+import RiskGuardrails from "./routes/RiskGuardrails";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 import StorageOverview from "./routes/StorageOverview";
 import StrategyTrace from "./routes/StrategyTrace";
@@ -30,6 +31,7 @@ export default function App() {
       {route === "next" ? <NextSessionMap /> : null}
       {route === "position" ? <PositionContext /> : null}
       {route === "candidates" ? <CandidateRadar /> : null}
+      {route === "risk" ? <RiskGuardrails /> : null}
       {route === "factor" ? <FactorQuantHub /> : null}
       {route === "chokepoint" ? <ChokepointScan /> : null}
       {route === "serenity" ? <SerenityMethodRadar /> : null}

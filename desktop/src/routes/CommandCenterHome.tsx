@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, getChokepointCache, getFactorQuantCache, getHealth, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
+import { getCandidateRadarCache, getChokepointCache, getFactorQuantCache, getHealth, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -12,6 +12,7 @@ export default function CommandCenterHome() {
   const [next, setNext] = useState<Record<string, unknown>>({});
   const [position, setPosition] = useState<Record<string, unknown>>({});
   const [candidates, setCandidates] = useState<Record<string, unknown>>({});
+  const [risk, setRisk] = useState<Record<string, unknown>>({});
   const [serenity, setSerenity] = useState<Record<string, unknown>>({});
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
@@ -26,6 +27,7 @@ export default function CommandCenterHome() {
     void getNextSessionCache().then((res) => setNext(res.data));
     void getPositionCache().then((res) => setPosition(res.data));
     void getCandidateRadarCache().then((res) => setCandidates(res.data));
+    void getRiskGuardrailsCache().then((res) => setRisk(res.data));
     void getSerenityCache().then((res) => setSerenity(res.data));
     void getChokepointCache().then((res) => setChokepoint(res.data));
     void getStorageOverview().then((res) => setStorageOverview(res.data));
@@ -48,6 +50,7 @@ export default function CommandCenterHome() {
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
+  const riskCounts = risk.counts as Record<string, unknown> | undefined;
 
   return (
     <>
@@ -99,6 +102,11 @@ export default function CommandCenterHome() {
           <p>candidate count: {String(candidateCounts?.candidate_count ?? 0)}</p>
           <p>ready / observe / verify: {String(candidateCounts?.ready_count ?? 0)} / {String(candidateCounts?.observe_count ?? 0)} / {String(candidateCounts?.verify_count ?? 0)}</p>
           <p>external calls: {String(candidates.external_calls_triggered ?? false)}</p>
+        </PacketCard>
+        <PacketCard title="风险护栏 cache" subtitle="GET cache，只读风险边界，不清除风险标记" status={String(risk.status ?? "cache")}>
+          <p>data gaps: {String(riskCounts?.data_gap_count ?? 0)}</p>
+          <p>must not do / reduce: {String(riskCounts?.must_not_do_count ?? 0)} / {String(riskCounts?.reduce_condition_count ?? 0)}</p>
+          <p>external calls: {String(risk.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="Factor Quant Hub cache" subtitle="多因子量化图谱 cache-only" status={String((factor.runtime as Record<string, unknown> | undefined)?.status ?? "cache")}>
           <p>mode: {String(factor.mode ?? "cache_only")}</p>
