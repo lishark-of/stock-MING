@@ -9,10 +9,17 @@ import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function ChokepointScan() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  const refreshCache = () => void getChokepointCache().then((res) => setPacket(res.data));
+  const refreshCache = () =>
+    void getChokepointCache().then((res) => {
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+      setPacket(res.data);
+    });
   const launchTask = () =>
     void postTask("/api/chokepoint/run").then((res) => {
       setTaskReceipt(res);
@@ -24,6 +31,9 @@ export default function ChokepointScan() {
   }, []);
 
   const legacy = packet.legacy_analysis_method_cache as Record<string, unknown> | undefined;
+  const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
   const boundaryRows = [
     { boundary: "GET /api/chokepoint/cache", value: "cache_only", note: "只读本地缓存，不调用 DeepSeek/Tushare/GitHub。" },
     { boundary: "POST /api/chokepoint/run", value: "button_gated_task", note: "手动 POST task 才能创建瓶颈扫描任务。" },
@@ -58,7 +68,9 @@ export default function ChokepointScan() {
           { label: "本地快照", value: Boolean(packet.source_snapshot_available), tone: packet.source_snapshot_available ? "good" : "warn" },
           { label: "DeepSeek", value: packet.deepseek_called === true ? "已调用" : "不调用", tone: packet.deepseek_called === true ? "bad" : "good" },
           { label: "进入 action", value: packet.enters_strategy_action === true ? "会" : "不会", tone: packet.enters_strategy_action === true ? "bad" : "good" },
-          { label: "进入次日图谱", value: packet.enters_next_session_projection === true ? "会" : "不会", tone: packet.enters_next_session_projection === true ? "bad" : "good" }
+          { label: "进入次日图谱", value: packet.enters_next_session_projection === true ? "会" : "不会", tone: packet.enters_next_session_projection === true ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
       <p className="risk-note">{String(packet.summary ?? "GET cache 不运行瓶颈扫描。")}</p>
@@ -66,6 +78,10 @@ export default function ChokepointScan() {
       <DataLineageTable rows={boundaryRows} />
       <h3>缓存血缘</h3>
       <DataLineageTable rows={sourceRows} />
+      <h3>GET cache envelope call_ledger</h3>
+      <DataLineageTable rows={cacheCallLedger} />
+      <h3>GET cache envelope warnings</h3>
+      <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning: String(warning ?? "") }))} />
       {legacy?.available ? <JsonDetails title="旧分析方法摘要" data={legacy} /> : null}
       <JsonDetails title="Chokepoint packet" data={packet} />
     </PacketCard>

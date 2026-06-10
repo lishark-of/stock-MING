@@ -569,10 +569,12 @@ def build_chokepoint_cache() -> dict[str, Any]:
     if cached:
         cached.setdefault("enters_strategy_action", False)
         cached.setdefault("enters_next_session_projection", False)
+        cached.setdefault("call_ledger", chokepoint_cache_call_ledger(cached))
+        cached.setdefault("warnings", ["GET /api/chokepoint/cache 只读取本地瓶颈扫描 cache；不会调用 DeepSeek、Tushare、GitHub 或真实交易接口。"])
         return cached
     snapshot = load_snapshot_cache()
     analysis_method = _snapshot_value("analysis_method_packet", snapshot)
-    return _cache_missing_packet(
+    packet = _cache_missing_packet(
         "command_center_chokepoint_scan_packet",
         "产业链瓶颈扫描未发现精确 packet 缓存；运行必须由按钮任务触发，GET cache 不调用 DeepSeek。",
         schema_version="chokepoint_scan.cache.v1",
@@ -581,6 +583,34 @@ def build_chokepoint_cache() -> dict[str, Any]:
         enters_strategy_action=False,
         enters_next_session_projection=False,
     )
+    packet["call_ledger"] = chokepoint_cache_call_ledger(packet)
+    packet["warnings"] = ["GET /api/chokepoint/cache 只读取本地瓶颈扫描 cache；不会调用 DeepSeek、Tushare、GitHub 或真实交易接口。"]
+    return packet
+
+
+def chokepoint_cache_call_ledger(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    legacy = packet.get("legacy_analysis_method_cache") if isinstance(packet.get("legacy_analysis_method_cache"), dict) else {}
+    return [
+        {
+            "api": "local_chokepoint_scan_cache",
+            "request_params_safe": {
+                "packet_key": packet.get("packet_key"),
+                "status": packet.get("status"),
+                "cache_source": packet.get("cache_source"),
+                "legacy_analysis_method_available": bool(legacy.get("available")),
+            },
+            "row_count": 1 if legacy.get("available") else 0,
+            "data_date": None,
+            "local_fetched_at": _now_iso(),
+            "call_status": "cache_missing" if packet.get("status") == "cache_missing" else "cache_read",
+            "error_message_safe": "",
+            "external": False,
+            "deepseek_called": False,
+            "tushare_called": False,
+            "github_called": False,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
 
 
 PACKET_BUILDERS = {

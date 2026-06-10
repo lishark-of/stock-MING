@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/chokepoint")
 
 @router.get("/cache")
 def get_chokepoint_cache() -> dict:
-    return envelope(packet_service.build_chokepoint_cache())
+    packet = packet_service.build_chokepoint_cache()
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
 @router.post("/run")

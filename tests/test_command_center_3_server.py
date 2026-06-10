@@ -1745,6 +1745,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(serenity["call_ledger"][0]["github_called"])
         self.assertIn("GET /api/serenity/cache", serenity["warnings"][0])
 
+        chokepoint = self.client.get("/api/chokepoint/cache").json()
+        self.assertTrue(chokepoint["ok"])
+        self.assertFalse(chokepoint["data"]["deepseek_called"])
+        self.assertFalse(chokepoint["data"]["enters_strategy_action"])
+        self.assertEqual(chokepoint["call_ledger"][0]["api"], "local_chokepoint_scan_cache")
+        self.assertFalse(chokepoint["call_ledger"][0]["external"])
+        self.assertFalse(chokepoint["call_ledger"][0]["deepseek_called"])
+        self.assertIn("GET /api/chokepoint/cache", chokepoint["warnings"][0])
+
         next_session = self.client.get("/api/next-session/cache").json()
         self.assertTrue(next_session["ok"])
         self.assertFalse(next_session["data"]["external_calls_triggered"])
