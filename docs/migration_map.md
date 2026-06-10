@@ -97,7 +97,7 @@
 - `/api/serenity/github-probe`
 
 这些 stub 只返回 `task_id` 和安全任务状态，不调用 Tushare、DeepSeek、GitHub，也不执行真实交易。
-任务状态已经包含 `pending/running/success/failed/cancelled` 合同、`progress`、`current_step`、`error_message_safe`、`output_packet_key`、`call_ledger` 和本地 fallback backend；React 页面可通过 `/api/tasks/{task_id}` 轮询。
+`/api/tasks` 已返回 `command_center_3_task_status_index`：包含本地任务列表、`pending/running/success/failed/cancelled` 状态计数、最新任务、`call_ledger_count`、外部调用标志和交易边界；React 页面可通过 `/api/tasks/{task_id}` 轮询单个任务。
 `/api/tasks/{task_id}/cancel` 已接入本地任务生命周期控制：只将 pending/running 任务标记为 `cancelled`，写入 `local_task_cancel` 调用血缘；终态任务取消请求记录为 no-op；不调用 Tushare/DeepSeek/GitHub，不执行真实交易，不修改 `strategy_execution_packet.action`。
 任务生命周期现在同步写入 `.stock_ming_3/meta.sqlite`；内存 fallback 丢失时，`/api/tasks/{task_id}` 仍可从 SQLite 读回任务状态。`/api/packets` 同时暴露 SQLite packet/task metadata 摘要，供 3.0 前端识别持久化 cache 来源。
 

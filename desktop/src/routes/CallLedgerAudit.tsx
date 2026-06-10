@@ -64,6 +64,7 @@ export default function CallLedgerAudit() {
       </PacketCard>
 
       <PacketCard title="任务审计" subtitle="GET /api/tasks 只读任务状态；不创建任务" status="tasks">
+        <p>任务状态 index（command_center_3_task_status_index）会作为 cache endpoint 进入审计，同时任务明细会单独聚合 call_ledger。</p>
         <DataLineageTable rows={rows(cache.task_rows)} />
       </PacketCard>
 

@@ -356,6 +356,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("GET /api/audit/cache", page)
         self.assertIn("local_call_ledger_audit_cache", page)
         self.assertIn("cache API 与 task call_ledger", page)
+        self.assertIn("command_center_3_task_status_index", page)
+        self.assertIn("任务状态 index", page)
         self.assertIn("不调用 Tushare、DeepSeek、GitHub 或 Redis", page)
         self.assertIn("不刷新数据", page)
         self.assertIn("不运行回测", page)
