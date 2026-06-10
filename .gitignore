@@ -17,6 +17,12 @@ dist/
 build/
 *.spec
 
+# Command Center 3 frontend / Tauri generated artifacts
+node_modules/
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+
 # Local secrets
 .streamlit/secrets.toml
 .streamlit/secrets.toml.save

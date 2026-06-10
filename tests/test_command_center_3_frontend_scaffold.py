@@ -58,6 +58,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("react", package["dependencies"])
         self.assertIn("echarts", package["dependencies"])
 
+    def test_frontend_generated_artifacts_are_gitignored(self):
+        gitignore = Path(".gitignore").read_text(encoding="utf-8")
+
+        self.assertIn("node_modules/", gitignore)
+        self.assertIn("desktop/node_modules/", gitignore)
+        self.assertIn("desktop/dist/", gitignore)
+        self.assertIn("desktop/src-tauri/target/", gitignore)
+
     def test_frontend_network_boundary_is_centralized_in_api_client(self):
         src_root = ROOT / "src"
         client_path = src_root / "api" / "client.ts"
