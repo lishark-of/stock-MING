@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from supabase import create_client, Client
 
-from config import get_deepseek_keys, require_supabase_config
+from config import get_deepseek_keys, get_deepseek_model, require_supabase_config
 from deepseek_safety import (
     DEEPSEEK_SAFETY_REVIEW_MESSAGE,
     build_deepseek_safety_prompt_clause,
@@ -242,7 +242,7 @@ sentiment: 从下面选择一个：利好 / 利空 / 中性 / 不确定
                 break
 
             response = client.chat.completions.create(
-                model="deepseek-chat",
+                model=get_deepseek_model("feeder"),
                 messages=[
                     {
                         "role": "system",

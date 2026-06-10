@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from supabase import create_client
 
-from config import get_deepseek_keys, get_supabase_config
+from config import get_deepseek_keys, get_deepseek_model, get_supabase_config
 from deepseek_safety import (
     DEEPSEEK_SAFETY_REVIEW_MESSAGE,
     build_deepseek_safety_prompt_clause,
@@ -73,7 +73,7 @@ def call_deepseek_text(prompt, system_role, max_tokens=1600, temperature=0.1):
             if client is None:
                 return ""
             response = client.chat.completions.create(
-                model="deepseek-chat",
+                model=get_deepseek_model("feeder"),
                 messages=[
                     {"role": "system", "content": f"{system_role}\n{build_deepseek_safety_prompt_clause()}"},
                     {"role": "user", "content": prompt},

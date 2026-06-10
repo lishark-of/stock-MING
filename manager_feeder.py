@@ -4,7 +4,7 @@ import time
 from openai import OpenAI
 from supabase import create_client, Client
 
-from config import get_deepseek_keys, require_supabase_config
+from config import get_deepseek_keys, get_deepseek_model, require_supabase_config
 from deepseek_safety import (
     DEEPSEEK_SAFETY_REVIEW_MESSAGE,
     build_deepseek_safety_prompt_clause,
@@ -133,7 +133,7 @@ rule_type 只能从下面选择：
                 return "其他|needs_ai_extract：未调用模型，仅保存原始摘要/待提炼状态。"
 
             response = client.chat.completions.create(
-                model="deepseek-chat",
+                model=get_deepseek_model("feeder"),
                 messages=[
                     {
                         "role": "system",

@@ -10,12 +10,35 @@ except ModuleNotFoundError:
 
 CONFIG_NAMES = {
     "DEEPSEEK_API_KEY",
+    "DEEPSEEK_DEFAULT_MODEL",
+    "DEEPSEEK_EXPLAIN_MODEL",
+    "DEEPSEEK_FAST_MODEL",
     "DEEPSEEK_TOKEN_1",
     "DEEPSEEK_TOKEN_2",
     "SUPABASE_URL",
     "SUPABASE_KEY",
     "DATABASE_URL",
     "TUSHARE_TOKEN",
+}
+
+DEEPSEEK_MODEL_DEFAULTS = {
+    "default": "deepseek-v4-pro",
+    "explain": "deepseek-v4-pro",
+    "projection": "deepseek-v4-pro",
+    "factor_explain": "deepseek-v4-pro",
+    "fast": "deepseek-v4-flash",
+    "healthcheck": "deepseek-v4-flash",
+    "feeder": "deepseek-v4-flash",
+}
+
+DEEPSEEK_MODEL_CONFIG_KEYS = {
+    "default": ("DEEPSEEK_DEFAULT_MODEL",),
+    "explain": ("DEEPSEEK_EXPLAIN_MODEL", "DEEPSEEK_DEFAULT_MODEL"),
+    "projection": ("DEEPSEEK_EXPLAIN_MODEL", "DEEPSEEK_DEFAULT_MODEL"),
+    "factor_explain": ("DEEPSEEK_EXPLAIN_MODEL", "DEEPSEEK_DEFAULT_MODEL"),
+    "fast": ("DEEPSEEK_FAST_MODEL", "DEEPSEEK_DEFAULT_MODEL"),
+    "healthcheck": ("DEEPSEEK_FAST_MODEL", "DEEPSEEK_DEFAULT_MODEL"),
+    "feeder": ("DEEPSEEK_FAST_MODEL", "DEEPSEEK_DEFAULT_MODEL"),
 }
 
 
@@ -82,6 +105,33 @@ def get_deepseek_keys(extra_keys=None):
         if key and key not in cleaned:
             cleaned.append(key)
     return cleaned
+
+
+def get_deepseek_model(purpose="default", default=None):
+    """Read DeepSeek model selection from secrets/env without exposing credentials."""
+
+    selected_purpose = str(purpose or "default").strip().lower()
+    config_keys = DEEPSEEK_MODEL_CONFIG_KEYS.get(selected_purpose, DEEPSEEK_MODEL_CONFIG_KEYS["default"])
+    for key in config_keys:
+        value = get_config_value(key)
+        if value:
+            return value
+    if default:
+        return _clean_value(default, DEEPSEEK_MODEL_DEFAULTS["default"])
+    return DEEPSEEK_MODEL_DEFAULTS.get(selected_purpose, DEEPSEEK_MODEL_DEFAULTS["default"])
+
+
+def get_deepseek_model_strategy():
+    """Return the current model strategy for diagnostics without any token/key material."""
+
+    return {
+        "default": get_deepseek_model("default"),
+        "explain": get_deepseek_model("explain"),
+        "fast": get_deepseek_model("fast"),
+        "healthcheck": get_deepseek_model("healthcheck"),
+        "source": "DEEPSEEK_*_MODEL config or safe defaults",
+        "contains_secret": False,
+    }
 
 
 def get_supabase_config():

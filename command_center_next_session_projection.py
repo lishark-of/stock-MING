@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from numbers import Number
 from typing import Any
 
+from config import get_deepseek_model
+
 
 SCHEMA_VERSION = "next_session_operation_projection.v1"
 PACKET_KEY = "command_center_next_session_projection_packet"
@@ -1776,9 +1778,10 @@ def merge_deepseek_next_session_projection(
     deepseek_payload: Any,
     *,
     called_at: Any = None,
-    model: Any = "deepseek-chat",
+    model: Any = None,
     input_hash: Any = "",
 ) -> dict:
+    model = model or get_deepseek_model("projection")
     base = dict(_as_mapping(packet))
     parsed, parse_error = extract_deepseek_projection_json(deepseek_payload)
     synthesis = dict(_as_mapping(base.get("deepseek_synthesis")))

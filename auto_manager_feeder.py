@@ -9,7 +9,7 @@ from supabase import create_client, Client
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus, unquote_plus
 
-from config import require_supabase_config
+from config import get_deepseek_model, require_supabase_config
 from manager_feeder import feed_manager_from_text, get_deepseek_client
 from deepseek_safety import (
     DEEPSEEK_SAFETY_REVIEW_MESSAGE,
@@ -407,7 +407,7 @@ def call_deepseek_text(prompt, system_role, max_tokens=1600, temperature=0.2):
             if client is None:
                 return ""
             response = client.chat.completions.create(
-                model="deepseek-chat",
+                model=get_deepseek_model("feeder"),
                 messages=[
                     {"role": "system", "content": f"{system_role}\n{build_deepseek_safety_prompt_clause()}"},
                     {"role": "user", "content": prompt},

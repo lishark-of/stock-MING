@@ -74,7 +74,7 @@ from deepseek_safety import (
     build_deepseek_safety_prompt_clause,
     find_deepseek_dangerous_words,
 )
-from config import get_config_value as read_config_value, get_deepseek_keys, get_supabase_config
+from config import get_config_value as read_config_value, get_deepseek_keys, get_deepseek_model, get_supabase_config
 
 try:
     import visual_components as _visual_components
@@ -3065,7 +3065,7 @@ def call_deepseek_stream(prompt, system_role="作为顶级量化基金经理。"
         )
 
         response = client.chat.completions.create(
-            model="deepseek-chat",
+            model=get_deepseek_model("explain"),
             messages=[
                 {"role": "system", "content": final_system_role},
                 {"role": "user", "content": prompt}
@@ -3133,7 +3133,7 @@ def call_deepseek_non_stream(prompt, system_role="作为顶级量化基金经理
             )
 
             request = {
-                "model": "deepseek-chat",
+                "model": get_deepseek_model("explain"),
                 "messages": [
                     {"role": "system", "content": final_system_role},
                     {"role": "user", "content": prompt},
@@ -7878,7 +7878,7 @@ JSON schema:
         base_projection,
         parsed,
         now=_cc_now(),
-        model="deepseek-chat",
+        model=get_deepseek_model("projection"),
         raw_text=raw,
         token_estimate=estimate_tokens(raw or ""),
     )
@@ -7982,7 +7982,7 @@ def _run_command_center_deepseek_next_session_projection(
             base_packet,
             cached.get("raw_json"),
             called_at=cached.get("called_at") or _cc_now(),
-            model=cached.get("model") or "deepseek-chat",
+            model=cached.get("model") or get_deepseek_model("projection"),
             input_hash=prompt_payload.get("input_hash") or "",
         )
         synthesis = dict(enhanced.get("deepseek_synthesis") or {})
@@ -8001,7 +8001,7 @@ def _run_command_center_deepseek_next_session_projection(
         base_packet,
         raw,
         called_at=_cc_now(),
-        model="deepseek-chat",
+        model=get_deepseek_model("projection"),
         input_hash=prompt_payload.get("input_hash") or "",
     )
     synthesis = enhanced.get("deepseek_synthesis") or {}
@@ -10791,7 +10791,7 @@ else:
                     timeout=20.0,
                 )
                 client.chat.completions.create(
-                    model="deepseek-chat",
+                    model=get_deepseek_model("healthcheck"),
                     messages=[{"role": "user", "content": "ping"}],
                     stream=False,
                     temperature=0,

@@ -1,0 +1,73 @@
+import os
+import unittest
+
+import command_center_next_session_projection as next_session_projection
+import command_center_projection as projection
+import config
+
+
+class DeepSeekModelConfigTests(unittest.TestCase):
+    def setUp(self):
+        self._original_env = {
+            key: os.environ.get(key)
+            for key in ("DEEPSEEK_DEFAULT_MODEL", "DEEPSEEK_EXPLAIN_MODEL", "DEEPSEEK_FAST_MODEL")
+        }
+        self._original_loader = config._load_local_streamlit_secrets
+        self._original_streamlit_secret = config._get_streamlit_secret
+        config._load_local_streamlit_secrets = lambda: {}
+        config._get_streamlit_secret = lambda name, default=None: default
+        for key in self._original_env:
+            os.environ.pop(key, None)
+
+    def tearDown(self):
+        for key, value in self._original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        config._load_local_streamlit_secrets = self._original_loader
+        config._get_streamlit_secret = self._original_streamlit_secret
+
+    def test_default_strategy_uses_pro_for_explain_and_flash_for_fast(self):
+        self.assertEqual(config.get_deepseek_model("default"), "deepseek-v4-pro")
+        self.assertEqual(config.get_deepseek_model("explain"), "deepseek-v4-pro")
+        self.assertEqual(config.get_deepseek_model("projection"), "deepseek-v4-pro")
+        self.assertEqual(config.get_deepseek_model("fast"), "deepseek-v4-flash")
+        self.assertEqual(config.get_deepseek_model("healthcheck"), "deepseek-v4-flash")
+
+        strategy = config.get_deepseek_model_strategy()
+
+        self.assertEqual(strategy["explain"], "deepseek-v4-pro")
+        self.assertEqual(strategy["fast"], "deepseek-v4-flash")
+        self.assertFalse(strategy["contains_secret"])
+
+    def test_env_overrides_model_strategy_without_hardcoded_callsite_names(self):
+        os.environ["DEEPSEEK_DEFAULT_MODEL"] = "custom-default"
+        os.environ["DEEPSEEK_EXPLAIN_MODEL"] = "custom-explain"
+        os.environ["DEEPSEEK_FAST_MODEL"] = "custom-fast"
+
+        self.assertEqual(config.get_deepseek_model("default"), "custom-default")
+        self.assertEqual(config.get_deepseek_model("explain"), "custom-explain")
+        self.assertEqual(config.get_deepseek_model("projection"), "custom-explain")
+        self.assertEqual(config.get_deepseek_model("feeder"), "custom-fast")
+        self.assertEqual(config.get_deepseek_model("healthcheck"), "custom-fast")
+
+    def test_projection_merges_default_to_configured_model(self):
+        os.environ["DEEPSEEK_EXPLAIN_MODEL"] = "custom-projection-model"
+
+        packet = projection.merge_deepseek_projection_overlay(
+            {"paths": [{"name": "乐观路径"}, {"name": "中性路径"}, {"name": "谨慎路径"}]},
+            {"paths": []},
+            raw_text="{}",
+        )
+        self.assertEqual(packet["deepseek_projection"]["model"], "custom-projection-model")
+
+        next_packet = next_session_projection.merge_deepseek_next_session_projection(
+            {"packet_key": "command_center_next_session_projection_packet"},
+            "{}",
+        )
+        self.assertEqual(next_packet["deepseek_synthesis"]["model"], "custom-projection-model")
+
+
+if __name__ == "__main__":
+    unittest.main()

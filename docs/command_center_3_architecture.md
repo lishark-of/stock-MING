@@ -16,6 +16,24 @@ Tauri desktop shell
 
 Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为长期正式主入口；页面顶部已显示 Command Center 3.0 正式入口和 legacy/admin/debug 边界提示。
 
+## 迁移进度基线
+
+后续规划以这张基线为准，不在每轮重新估算方向：
+
+| 模块 | 当前程度 |
+|---|---:|
+| Streamlit 保留为 legacy | 70% |
+| FastAPI 后端骨架 | 60% |
+| FastAPI 真实 cache API | 40%-50% |
+| React/Vite 前端骨架 | 60% |
+| React 页面可用化 | 30%-40% |
+| Tauri 桌面壳 | 20% |
+| Worker / Task 系统 | 35%-45% |
+| Storage 层 | 40% |
+| Factor Quant Hub 3.0 化 | 50% |
+| ECharts 次日图谱 | 30%-40% |
+| 完全替代 Streamlit 主流程 | 20%-30% |
+
 ## 为什么迁移
 
 - Streamlit 的全局 rerun 容易让路由、按钮状态和重计算纠缠在一起。
@@ -68,6 +86,21 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`moneyflow` 只读状态；缺文件返回 `missing`，不触发 Tushare 或因子计算。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
+
+### DeepSeek 模型策略
+
+DeepSeek 模型名不在调用点硬编码，统一从 `.streamlit/secrets.toml` 或环境变量读取：
+
+```text
+DEEPSEEK_EXPLAIN_MODEL=deepseek-v4-pro
+DEEPSEEK_FAST_MODEL=deepseek-v4-flash
+DEEPSEEK_DEFAULT_MODEL=deepseek-v4-pro
+```
+
+- `explain/projection/factor_explain`：优先使用 `DEEPSEEK_EXPLAIN_MODEL`，再退回 `DEEPSEEK_DEFAULT_MODEL`。
+- `fast/feeder/healthcheck`：优先使用 `DEEPSEEK_FAST_MODEL`，再退回 `DEEPSEEK_DEFAULT_MODEL`。
+- 未配置时使用安全默认策略：解释类走 pro，轻量/体检/feeder 类走 flash。
+- 模型配置只记录模型名，不包含 token/key；是否调用 DeepSeek 仍由按钮门控或显式任务控制。
 
 ### Desktop
 

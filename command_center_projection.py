@@ -6,6 +6,7 @@ from numbers import Number
 from typing import Any
 
 from command_center_data_health_ledger import build_data_health_impact_summary
+from config import get_deepseek_model
 
 
 DEFAULT_HORIZON_DAYS = 10
@@ -636,11 +637,12 @@ def merge_deepseek_projection_overlay(
     overlay_packet: Any = None,
     *,
     now: Any = None,
-    model: str = "deepseek-chat",
+    model: str | None = None,
     raw_text: Any = None,
     token_estimate: Any = None,
 ) -> dict:
     """Merge a manually-triggered DeepSeek projection overlay into a safe local packet."""
+    model = model or get_deepseek_model("projection")
     payload = dict(_as_mapping(projection_packet) or build_projection_packet(now=now))
     overlay = _as_mapping(overlay_packet)
     if not overlay:
