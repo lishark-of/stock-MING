@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, type TaskStatusIndex } from "../api/client";
+import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -38,6 +38,9 @@ export default function CommandCenterHome() {
   const [chokepointEnvelopeLedger, setChokepointEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [chokepointEnvelopeWarnings, setChokepointEnvelopeWarnings] = useState<Array<string>>([]);
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
+  const [storageCatalog, setStorageCatalog] = useState<Record<string, unknown>>({});
+  const [storageCatalogEnvelopeLedger, setStorageCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [storageCatalogEnvelopeWarnings, setStorageCatalogEnvelopeWarnings] = useState<Array<string>>([]);
   const [migration, setMigration] = useState<Record<string, unknown>>({});
   const [modelStrategy, setModelStrategy] = useState<Record<string, unknown>>({});
   const [legacyBridge, setLegacyBridge] = useState<Record<string, unknown>>({});
@@ -96,6 +99,11 @@ export default function CommandCenterHome() {
       setChokepoint(res.data);
     });
     void getStorageOverview().then((res) => setStorageOverview(res.data));
+    void getStorageCatalog().then((res) => {
+      setStorageCatalogEnvelopeLedger(res.call_ledger ?? []);
+      setStorageCatalogEnvelopeWarnings(res.warnings ?? []);
+      setStorageCatalog(res.data);
+    });
     void getMigrationStatus().then((res) => setMigration(res.data));
     void getModelStrategyCache().then((res) => setModelStrategy(res.data));
     void getLegacyBridgeCache().then((res) => setLegacyBridge(res.data));
@@ -122,6 +130,10 @@ export default function CommandCenterHome() {
   const disciplinePacket = discipline.discipline_packet as Record<string, unknown> | undefined;
   const storageStatus = storageOverview.dataset_status as Record<string, unknown> | undefined;
   const storageDatasets = storageOverview.datasets as Array<Record<string, unknown>> | undefined;
+  const storageCatalogRows = storageCatalog.dataset_catalog as Array<Record<string, unknown>> | undefined;
+  const storageCatalogPayloadLedger = (storageCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const storageCatalogLedger = storageCatalogEnvelopeLedger.length ? storageCatalogEnvelopeLedger : storageCatalogPayloadLedger;
+  const storageCatalogWarnings = storageCatalogEnvelopeWarnings.length ? storageCatalogEnvelopeWarnings : ((storageCatalog.warnings as Array<string> | undefined) ?? []);
   const deepseekModelRows = modelStrategy.model_rows as Array<Record<string, unknown>> | undefined;
   const deepseekModelCounts = modelStrategy.counts as Record<string, unknown> | undefined;
   const deepseekModelByPurpose = new Map((deepseekModelRows ?? []).map((row) => [String(row.purpose), row]));
@@ -200,6 +212,8 @@ export default function CommandCenterHome() {
           { label: "daily_basic parquet", value: String(storageStatus?.daily_basic ?? "missing") },
           { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
           { label: "backtest parquet", value: String(storageStatus?.backtest_results ?? "missing") },
+          { label: "storage catalog", value: storageCatalogRows?.length ?? 0 },
+          { label: "storage catalog ledger", value: storageCatalogLedger.length },
           { label: "迁移基线", value: String(migration.status ?? "loading") },
           { label: "DeepSeek explain", value: String(deepseekModelByPurpose.get("explain")?.model ?? "--") },
           { label: "DeepSeek fast", value: String(deepseekModelByPurpose.get("fast")?.model ?? "--") },
@@ -310,12 +324,17 @@ export default function CommandCenterHome() {
         </PacketCard>
         <PacketCard title="Parquet / DuckDB Storage" subtitle="daily / daily_basic / moneyflow / factor_values / backtest_results 只读状态，不触发刷新" status={String(storageOverview.store ?? "parquet_duckdb")}>
           <p>datasets: {String(storageDatasets?.length ?? 0)}</p>
+          <p>dataset catalog: {String(storageCatalogRows?.length ?? storageOverview.dataset_count ?? 0)}</p>
+          <p>catalog envelope ledger / warnings: {String(storageCatalogLedger.length)} / {String(storageCatalogWarnings.length)}</p>
           <p>factor_values: {String(storageStatus?.factor_values ?? "missing")}</p>
           <p>daily: {String(storageStatus?.daily ?? "missing")}</p>
           <p>daily_basic: {String(storageStatus?.daily_basic ?? "missing")}</p>
           <p>moneyflow: {String(storageStatus?.moneyflow ?? "missing")}</p>
           <p>backtest_results: {String(storageStatus?.backtest_results ?? "missing")}</p>
+          <DataLineageTable rows={storageCatalogRows ?? []} />
+          <DataLineageTable rows={storageCatalogLedger} />
           <JsonDetails title="storage overview" data={storageOverview} />
+          <JsonDetails title="storage catalog" data={storageCatalog} />
         </PacketCard>
         <PacketCard title="任务状态" subtitle="POST 返回 task_id，页面轮询 FastAPI" status="local">
           <p>task_status_index: {String(taskIndex?.packet_key ?? "--")}</p>
