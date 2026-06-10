@@ -205,6 +205,27 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK", page)
         self.assertNotIn("GITHUB_TOKEN", page)
 
+    def test_serenity_page_shows_local_baseline_and_decision_boundaries(self):
+        page = (ROOT / "src" / "routes" / "SerenityMethodRadar.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("getSerenityCache", page)
+        self.assertIn("/api/serenity/github-probe", page)
+        self.assertIn("本地方法来源基线", page)
+        self.assertIn("GitHub 当前状态为未校验", page)
+        self.assertIn("手动 POST task", page)
+        self.assertIn("防幻觉演进", page)
+        self.assertIn("方法归纳", page)
+        self.assertIn("决策边界", page)
+        self.assertIn("技术血缘", page)
+        self.assertIn("source_type", page)
+        self.assertIn("user_screenshot_baseline", page)
+        self.assertIn("enters_strategy_action", page)
+        self.assertIn("enters_chokepoint_score", page)
+        self.assertIn("enters_next_session_projection", page)
+        self.assertIn("enters_deepseek_prompt", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+
     def test_legacy_page_declares_streamlit_as_guarded_legacy_surface(self):
         page = (ROOT / "src" / "routes" / "LegacyTools.tsx").read_text(encoding="utf-8")
 
