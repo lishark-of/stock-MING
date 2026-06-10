@@ -16,10 +16,20 @@ def query_factor_values(parquet_path: str | Path, *, limit: int = 1000) -> dict[
     status = dependency_status()
     if not status["available"]:
         return {"status": "dependency_missing", "rows": [], **status}
+    path = Path(parquet_path)
+    if not path.exists():
+        return {
+            "status": "missing",
+            "rows": [],
+            "row_count": 0,
+            "path": str(path),
+            "error_message_safe": "",
+            "external_calls_triggered": False,
+        }
     import duckdb
 
     safe_limit = max(1, min(int(limit or 1000), 10000))
-    path_text = str(parquet_path).replace("'", "''")
+    path_text = str(path).replace("'", "''")
     sql = f"SELECT * FROM read_parquet('{path_text}') LIMIT {safe_limit}"
     rows = duckdb.sql(sql).df().to_dict("records")
-    return {"status": "ready", "rows": rows, "row_count": len(rows)}
+    return {"status": "ready", "rows": rows, "row_count": len(rows), "path": str(path), "external_calls_triggered": False}

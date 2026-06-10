@@ -56,6 +56,9 @@ class CommandCenter3StorageTests(unittest.TestCase):
             result = duckdb_store.query_factor_values("missing.parquet")
             self.assertEqual(result["status"], "dependency_missing")
             return
+        missing = duckdb_store.query_factor_values("missing.parquet")
+        self.assertEqual(missing["status"], "missing")
+        self.assertEqual(missing["row_count"], 0)
         if not parquet_store.dependency_status()["available"]:
             self.skipTest("pyarrow/pandas parquet dependency missing")
         with tempfile.TemporaryDirectory() as tmp:
@@ -63,6 +66,16 @@ class CommandCenter3StorageTests(unittest.TestCase):
             result = duckdb_store.query_factor_values(out["path"])
             self.assertEqual(result["status"], "ready")
             self.assertEqual(result["row_count"], 1)
+
+    def test_factor_values_metadata_is_cache_only(self):
+        from storage import parquet_store
+
+        with tempfile.TemporaryDirectory() as tmp:
+            metadata = parquet_store.factor_values_metadata(root=tmp)
+
+        self.assertEqual(metadata["status"], "missing")
+        self.assertFalse(metadata["exists"])
+        self.assertFalse(metadata["external_calls_triggered"])
 
 
 if __name__ == "__main__":

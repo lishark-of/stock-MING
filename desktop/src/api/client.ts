@@ -63,6 +63,10 @@ export function getChokepointCache() {
   return request<Record<string, unknown>>("/api/chokepoint/cache");
 }
 
+export function getFactorValuesStorage() {
+  return request<Record<string, unknown>>("/api/storage/factor-values");
+}
+
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
   return request<{ task_id: string; task: TaskRecord }>(path, {
     method: "POST",

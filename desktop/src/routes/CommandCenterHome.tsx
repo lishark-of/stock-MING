@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getChokepointCache, getFactorQuantCache, getHealth, getNextSessionCache, getPackets, getSerenityCache, getTasks } from "../api/client";
+import { getChokepointCache, getFactorQuantCache, getFactorValuesStorage, getHealth, getNextSessionCache, getPackets, getSerenityCache, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -12,6 +12,7 @@ export default function CommandCenterHome() {
   const [next, setNext] = useState<Record<string, unknown>>({});
   const [serenity, setSerenity] = useState<Record<string, unknown>>({});
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
+  const [factorValuesStorage, setFactorValuesStorage] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
@@ -21,6 +22,7 @@ export default function CommandCenterHome() {
     void getNextSessionCache().then((res) => setNext(res.data));
     void getSerenityCache().then((res) => setSerenity(res.data));
     void getChokepointCache().then((res) => setChokepoint(res.data));
+    void getFactorValuesStorage().then((res) => setFactorValuesStorage(res.data));
     void getTasks().then((res) => setTasks(res.data.tasks ?? []));
   }, []);
 
@@ -29,6 +31,7 @@ export default function CommandCenterHome() {
   const sqliteMeta = packets.sqlite_meta as Record<string, unknown> | undefined;
   const sqlitePackets = sqliteMeta?.packet_metadata as unknown[] | undefined;
   const sqliteTasks = sqliteMeta?.task_metadata as unknown[] | undefined;
+  const factorValuesMetadata = factorValuesStorage.metadata as Record<string, unknown> | undefined;
 
   return (
     <>
@@ -44,6 +47,7 @@ export default function CommandCenterHome() {
           { label: "任务记录", value: tasks.length },
           { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
           { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
+          { label: "factor parquet", value: String(factorValuesMetadata?.status ?? "missing") },
           { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" }
         ]}
       />
@@ -69,6 +73,11 @@ export default function CommandCenterHome() {
         </PacketCard>
         <PacketCard title="产业链瓶颈扫描 cache" subtitle="GET cache 不触发 DeepSeek" status={String(chokepoint.status ?? "cache")}>
           <p>{String(chokepoint.summary ?? "等待缓存")}</p>
+        </PacketCard>
+        <PacketCard title="Factor Values Storage" subtitle="Parquet/DuckDB 只读状态，不触发刷新" status={String(factorValuesMetadata?.status ?? "missing")}>
+          <p>store: {String(factorValuesStorage.store ?? "parquet_duckdb")}</p>
+          <p>rows: {String(factorValuesStorage.row_count ?? 0)}</p>
+          <JsonDetails title="factor_values storage" data={factorValuesStorage} />
         </PacketCard>
         <PacketCard title="任务状态" subtitle="POST 返回 task_id，页面轮询 FastAPI" status="local">
           <p>最近任务数：{tasks.length}</p>

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import factor_service, packet_service, task_service
+from server.services import factor_service, packet_service, storage_service, task_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
 
@@ -35,6 +35,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
         self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
         return db_path
+
+    def _with_parquet_root(self):
+        original_root = storage_service.PARQUET_ROOT
+        temp_dir = tempfile.TemporaryDirectory()
+        storage_service.PARQUET_ROOT = Path(temp_dir.name) / "parquet"
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, storage_service, "PARQUET_ROOT", original_root)
+        return storage_service.PARQUET_ROOT
 
     def test_cache_builders_do_not_call_external_sources(self):
         factor = packet_service.build_factor_quant_cache()
@@ -158,6 +166,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("command_center_factor_quant_hub_packet", index["available_cache_keys"])
         self.assertEqual(index["sqlite_meta"]["packet_metadata"][0]["schema_version"], "factor_quant_hub.v1")
         self.assertFalse(index["cache_api_policy"]["get_cache_external_calls"])
+
+    def test_storage_factor_values_status_is_cache_only(self):
+        self._with_parquet_root()
+
+        status = storage_service.factor_values_status()
+
+        self.assertEqual(status["dataset"], "factor_values")
+        self.assertTrue(status["cache_only"])
+        self.assertFalse(status["external_calls_triggered"])
+        self.assertFalse(status["tushare_called"])
+        self.assertFalse(status["deepseek_called"])
+        self.assertTrue(status["does_not_execute_trades"])
+        self.assertIn(status["metadata"]["status"], {"missing", "ready"})
 
     def test_task_stub_records_safe_status_without_external_work(self):
         self._with_meta_store()
@@ -355,6 +376,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
         return db_path
 
+    def _with_parquet_root(self):
+        original_root = storage_service.PARQUET_ROOT
+        temp_dir = tempfile.TemporaryDirectory()
+        storage_service.PARQUET_ROOT = Path(temp_dir.name) / "parquet"
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, storage_service, "PARQUET_ROOT", original_root)
+        return storage_service.PARQUET_ROOT
+
     def test_health_and_cache_endpoints(self):
         health = self.client.get("/health").json()
         self.assertTrue(health["ok"])
@@ -372,6 +401,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         next_session = self.client.get("/api/next-session/cache").json()
         self.assertTrue(next_session["ok"])
         self.assertFalse(next_session["data"]["external_calls_triggered"])
+
+        storage = self.client.get("/api/storage/factor-values").json()
+        self.assertTrue(storage["ok"])
+        self.assertTrue(storage["data"]["cache_only"])
+        self.assertFalse(storage["data"]["external_calls_triggered"])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()

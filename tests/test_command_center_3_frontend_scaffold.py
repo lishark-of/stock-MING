@@ -40,6 +40,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
 
         self.assertIn("/api/factor-quant/cache", client)
+        self.assertIn("/api/storage/factor-values", client)
         self.assertIn("/api/factor-quant/refresh-data", source)
         self.assertIn("/api/factor-quant/run-light", source)
         self.assertIn("/api/factor-quant/deepseek-explain", source)
@@ -70,6 +71,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("MetricGrid", (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8"))
         self.assertIn("sqlite_meta", (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8"))
+        self.assertIn("Factor Values Storage", (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8"))
         self.assertIn("does_not_modify_action", (route_dir / "NextSessionMap.tsx").read_text(encoding="utf-8"))
         self.assertIn("allow_core_action", (route_dir / "FactorQuantHub.tsx").read_text(encoding="utf-8"))
         self.assertIn("enters_strategy_action", (route_dir / "ChokepointScan.tsx").read_text(encoding="utf-8"))

@@ -12,6 +12,7 @@
 | Serenity 方法雷达 | `command_center_serenity_method_radar.py`, `app.py` | `GET /api/serenity/cache`, `POST /api/serenity/github-probe` | `SerenityMethodRadar.tsx` | cache 使用本地方法基线；probe 后续外联 | 是，POST 当前 stub |
 | DeepSeek 解释器 | `analysis_engine.py`, `deepseek_safety.py`, `command_center_*` | `POST /api/factor-quant/deepseek-explain` 等 | 页面按钮 | 只解释已有结构化结果 | 是，当前 stub |
 | Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否 | 否 |
+| Factor values storage | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage/factor-values` | `CommandCenterHome.tsx` | 否，只读 Parquet/DuckDB 状态 | 否 |
 | Streamlit 旧工作台 | `app.py`, `visual_components.py` | 无新增主 API；作为 legacy | `LegacyTools.tsx` | 旧入口保留 | 不新增 |
 
 ## 当前可用 API
@@ -23,6 +24,7 @@
 - `/api/factor-quant/cache`
 - `/api/serenity/cache`
 - `/api/chokepoint/cache`
+- `/api/storage/factor-values`
 - `/api/tasks/{task_id}`
 - `/api/tasks`
 
