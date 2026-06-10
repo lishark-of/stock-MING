@@ -15,6 +15,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "vite.config.ts",
             ROOT / "src" / "App.tsx",
             ROOT / "src" / "api" / "client.ts",
+            ROOT / "src" / "components" / "ChartSafetyStrip.tsx",
             ROOT / "src" / "components" / "JsonDetails.tsx",
             ROOT / "src" / "components" / "MetricGrid.tsx",
             ROOT / "src" / "components" / "NextSessionChart.tsx",
@@ -129,6 +130,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
     def test_factor_quant_page_renders_structured_research_boundaries(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
+        chart_safety = (ROOT / "src" / "components" / "ChartSafetyStrip.tsx").read_text(encoding="utf-8")
 
         self.assertIn("factor_library", source)
         self.assertIn("runtime.factor_values", source)
@@ -146,22 +148,23 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("deepseek_called", source)
         self.assertIn("github_called", source)
         self.assertIn("does_not_execute_trades", source)
+        self.assertIn("ChartSafetyStrip", source)
         self.assertIn("chart external", source)
         self.assertIn("chart Tushare", source)
         self.assertIn("chart DeepSeek", source)
         self.assertIn("chart GitHub", source)
         self.assertIn("chart real trade", source)
-        self.assertIn("chart-safety-strip", source)
-        self.assertIn("来源：", source)
-        self.assertIn("外部调用：", source)
-        self.assertIn("Tushare：", source)
-        self.assertIn("DeepSeek：", source)
-        self.assertIn("GitHub：", source)
-        self.assertIn("真实交易：", source)
-        self.assertIn("前端算交易动作：", source)
-        self.assertIn("改 action：", source)
-        self.assertIn("改操作区：", source)
-        self.assertIn("改因子分数：", source)
+        self.assertIn("chart-safety-strip", chart_safety)
+        self.assertIn("来源：", chart_safety)
+        self.assertIn("外部调用：", chart_safety)
+        self.assertIn("Tushare：", chart_safety)
+        self.assertIn("DeepSeek：", chart_safety)
+        self.assertIn("GitHub：", chart_safety)
+        self.assertIn("真实交易：", chart_safety)
+        self.assertIn("前端算交易动作：", chart_safety)
+        self.assertIn("改 action：", chart_safety)
+        self.assertIn("改操作区：", chart_safety)
+        self.assertIn("改因子分数", source)
         self.assertIn("<button onClick={refreshCache}>查看缓存</button>", source)
         self.assertNotIn("getFactorQuantCache().then((res) => setPacket(res.data))", source)
         self.assertIn("governance", source)
@@ -1426,17 +1429,17 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("operationLegend", chart)
         self.assertIn("参考线图例", chart)
         self.assertIn("操作区图例", chart)
-        self.assertIn("chart-safety-strip", chart)
+        self.assertIn("ChartSafetyStrip", chart)
         self.assertIn("chart-empty-state", chart)
         self.assertIn("external_calls_triggered", chart)
         self.assertIn("tushare_called", chart)
         self.assertIn("deepseek_called", chart)
         self.assertIn("github_called", chart)
         self.assertIn("does_not_execute_trades", chart)
-        self.assertIn("外部调用", chart)
-        self.assertIn("真实交易", chart)
-        self.assertIn("前端算交易动作", chart)
-        self.assertIn("改操作区", chart)
+        self.assertIn("外部调用", (ROOT / "src" / "components" / "ChartSafetyStrip.tsx").read_text(encoding="utf-8"))
+        self.assertIn("真实交易", (ROOT / "src" / "components" / "ChartSafetyStrip.tsx").read_text(encoding="utf-8"))
+        self.assertIn("前端算交易动作", (ROOT / "src" / "components" / "ChartSafetyStrip.tsx").read_text(encoding="utf-8"))
+        self.assertIn("改操作区", (ROOT / "src" / "components" / "ChartSafetyStrip.tsx").read_text(encoding="utf-8"))
         self.assertIn("GET cache 只读返回缺口提示", chart)
         self.assertIn("只读区域", chart)
         self.assertIn("T0 分割线", chart)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { EChartsOption } from "echarts";
 import { getFactorQuantCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import ChartSafetyStrip from "../components/ChartSafetyStrip";
 import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
 import JsonDetails from "../components/JsonDetails";
@@ -119,18 +120,13 @@ export default function FactorQuantHub() {
         ]}
       />
       <EChartPanel option={option} />
-      <div className="chart-safety-strip">
-        <span>来源：{String(scoreChartContract.source_packet ?? scoreChart.source_packet ?? "factor_quant_cache")}</span>
-        <span>外部调用：{scoreChartContract.external_calls_triggered === true ? "存在" : "无"}</span>
-        <span>Tushare：{scoreChartContract.tushare_called === true ? "已调用" : "未调用"}</span>
-        <span>DeepSeek：{scoreChartContract.deepseek_called === true ? "已调用" : "未调用"}</span>
-        <span>GitHub：{scoreChartContract.github_called === true ? "已调用" : "未调用"}</span>
-        <span>真实交易：{scoreChartContract.does_not_execute_trades === false ? "可能" : "禁止"}</span>
-        <span>前端算交易动作：{scoreChartContract.frontend_computes_trade_action === true ? "是" : "否"}</span>
-        <span>改 action：{scoreChartContract.does_not_modify_action === false ? "可能" : "不会"}</span>
-        <span>改操作区：{scoreChartContract.does_not_modify_operation_zones === false ? "可能" : "不会"}</span>
-        <span>改因子分数：{scoreChartContract.does_not_modify_factor_score === false ? "可能" : "不会"}</span>
-      </div>
+      <ChartSafetyStrip
+        contract={scoreChartContract}
+        source={scoreChart.source_packet ?? "factor_quant_cache"}
+        extraItems={[
+          { label: "改因子分数", value: scoreChartContract.does_not_modify_factor_score === false ? "可能" : "不会" }
+        ]}
+      />
       <h3>评分图表数据合同</h3>
       <DataLineageTable rows={scoreChartContractRows} />
       <h3>评分图表 buckets</h3>

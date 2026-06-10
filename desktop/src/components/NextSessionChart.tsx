@@ -1,4 +1,5 @@
 import type { EChartsOption, MarkAreaComponentOption, SeriesOption } from "echarts";
+import ChartSafetyStrip from "./ChartSafetyStrip";
 import EChartPanel from "./EChartPanel";
 
 type ChartPoint = {
@@ -97,7 +98,6 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   const referenceLines = payload?.reference_lines ?? [];
   const operationZones = payload?.operation_zones ?? [];
   const contract = payload?.chart_contract;
-  const mayModifyOperationZones = Object.is(contract?.does_not_modify_operation_zones, false);
 
   if (!payload || payload.status === "missing" || (!historical.length && !scenarioSeries.length)) {
     return (
@@ -234,19 +234,14 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   return (
     <>
       <EChartPanel option={option} />
-      <div className="chart-safety-strip">
-        <span>来源：{String(contract?.source_packet ?? payload.source_packet ?? "cache_payload")}</span>
-        <span>精确图谱：{payload.is_exact_next_session_packet === true ? "是" : "否"}</span>
-        <span>真实 close：{payload.uses_real_daily_close === true ? "是" : "待验证"}</span>
-        <span>外部调用：{contract?.external_calls_triggered === true ? "存在" : "无"}</span>
-        <span>Tushare：{contract?.tushare_called === true ? "已调用" : "未调用"}</span>
-        <span>DeepSeek：{contract?.deepseek_called === true ? "已调用" : "未调用"}</span>
-        <span>GitHub：{contract?.github_called === true ? "已调用" : "未调用"}</span>
-        <span>真实交易：{contract?.does_not_execute_trades === false ? "可能" : "禁止"}</span>
-        <span>前端算交易动作：{contract?.frontend_computes_trade_action === true ? "是" : "否"}</span>
-        <span>改 action：{contract?.does_not_modify_action === false ? "可能" : "不会"}</span>
-        <span>改操作区：{mayModifyOperationZones ? "可能" : "不会"}</span>
-      </div>
+      <ChartSafetyStrip
+        contract={contract}
+        source={payload.source_packet}
+        extraItems={[
+          { label: "精确图谱", value: payload.is_exact_next_session_packet === true ? "是" : "否" },
+          { label: "真实 close", value: payload.uses_real_daily_close === true ? "是" : "待验证" }
+        ]}
+      />
       {referenceLegend.length || operationLegend.length ? (
         <div className="chart-legend-grid">
           <div className="chart-legend-block">
