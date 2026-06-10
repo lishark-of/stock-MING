@@ -2223,6 +2223,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(status["data"]["status"], "success")
         self.assertEqual(status["data"]["progress"], 1.0)
         self.assertEqual(status["data"]["call_ledger"][0]["call_status"], "stub_not_called")
+        self.assertEqual(status["call_ledger"][0]["call_status"], "stub_not_called")
+        self.assertIn("本地 lifecycle stub", status["warnings"][0])
 
         listing = self.client.get("/api/tasks").json()
         self.assertTrue(listing["ok"])
@@ -2244,6 +2246,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(persisted_status["ok"])
         self.assertEqual(persisted_status["data"]["task_id"], task_id)
         self.assertEqual(persisted_status["data"]["backend"], "local_fallback")
+        self.assertEqual(persisted_status["call_ledger"][0]["call_status"], "stub_not_called")
 
     def test_next_session_generate_endpoint_uses_local_cache_pipeline(self):
         self._with_meta_store()
