@@ -771,7 +771,7 @@ def list_packets() -> dict[str, Any]:
     packet_source_rows = [
         {
             "packet_key": key,
-            "read_priority": "snapshot > sqlite_meta > local_builder > missing",
+            "read_priority": "sqlite_meta > snapshot > local_builder > missing",
             "snapshot": key in snapshot_keys,
             "snapshot_alias": key in alias_keys,
             "sqlite_meta": key in persisted_keys,
@@ -804,12 +804,12 @@ def list_packets() -> dict[str, Any]:
 
 
 def read_packet(packet_key: str) -> dict[str, Any]:
-    cached = _read_snapshot_packet(str(packet_key))
-    if cached:
-        return cached
     persisted = _read_persisted_packet(str(packet_key))
     if persisted:
         return persisted
+    cached = _read_snapshot_packet(str(packet_key))
+    if cached:
+        return cached
     builder = PACKET_BUILDERS.get(str(packet_key))
     if builder is None:
         return _cache_missing_packet(

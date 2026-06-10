@@ -1222,7 +1222,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("cache API 永不外联", page)
         self.assertIn("packet_source_rows", page)
         self.assertIn("read_priority", page)
-        self.assertIn("snapshot > sqlite_meta > local_builder > missing", page)
+        self.assertIn("sqlite_meta > snapshot > local_builder > missing", page)
         self.assertIn("读取优先级固定", page)
         self.assertIn("setIndexEnvelopeLedger(res.call_ledger ?? [])", page)
         self.assertIn("setPacketEnvelopeLedger(res.call_ledger ?? [])", page)

@@ -578,7 +578,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         source_row = next(row for row in index["packet_source_rows"] if row["packet_key"] == packet_key)
         self.assertTrue(source_row["sqlite_meta"])
         self.assertFalse(source_row["local_builder"])
-        self.assertIn("sqlite_meta", source_row["read_priority"])
+        self.assertEqual(source_row["read_priority"], "sqlite_meta > snapshot > local_builder > missing")
         self.assertEqual(index["sqlite_meta"]["packet_metadata"][0]["schema_version"], "custom.v1")
         self.assertFalse(index["cache_api_policy"]["get_cache_external_calls"])
 
@@ -615,6 +615,43 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(response["call_ledger"][0]["external"])
         self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
         self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
+
+    def test_packet_endpoint_prefers_sqlite_packet_over_snapshot(self):
+        self._with_meta_store()
+        self._with_snapshot_cache(
+            {
+                "custom_priority_packet": {
+                    "packet_key": "custom_priority_packet",
+                    "status": "stale_snapshot",
+                    "value": "snapshot",
+                }
+            }
+        )
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(packet_service.SQLITE_META_PATH).write_packet(
+            "custom_priority_packet",
+            {
+                "packet_key": "custom_priority_packet",
+                "schema_version": "custom.sqlite.v1",
+                "status": "fresh_sqlite",
+                "value": "sqlite",
+            },
+        )
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).get("/api/packets/custom_priority_packet").json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["data"]["status"], "fresh_sqlite")
+        self.assertEqual(response["data"]["value"], "sqlite")
+        self.assertEqual(response["data"]["cache_source"], "sqlite_meta")
+        self.assertEqual(response["call_ledger"][0]["cache_source"], "sqlite_meta")
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(response["call_ledger"][0]["tushare_called"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
 
     def test_packet_endpoint_missing_packet_redacts_sensitive_packet_key(self):
         from fastapi.testclient import TestClient

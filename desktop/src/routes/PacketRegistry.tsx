@@ -69,7 +69,7 @@ export default function PacketRegistry() {
     ? packetSourceRows
     : keys.map((packetKey) => ({
         packet_key: packetKey,
-        read_priority: "snapshot > sqlite_meta > local_builder > missing",
+        read_priority: "sqlite_meta > snapshot > local_builder > missing",
         sqlite_meta: persistedKeys.includes(packetKey),
         snapshot: snapshotKeys.includes(packetKey),
         snapshot_alias: aliasKeys.includes(packetKey)
