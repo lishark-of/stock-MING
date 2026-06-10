@@ -122,6 +122,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     scheduled_refresh_enabled = os.getenv("COMMAND_CENTER_ENABLE_SCHEDULED_REFRESH") == "1"
     redis_configured = bool(os.getenv("COMMAND_CENTER_REDIS_URL"))
     catalog = task_service.build_task_catalog()
+    task_implementation_status = catalog.get("implementation_status") or {}
     task_index = task_service.build_task_status_index()
     task_persistence = task_index.get("persistence") or {}
     task_persistence_source_rows = task_index.get("persistence_source_rows") or []
@@ -162,7 +163,13 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "all_tasks_button_gated": bool(catalog.get("policy", {}).get("all_tasks_button_gated")),
             "call_ledger_required_for_all": bool(catalog.get("policy", {}).get("call_ledger_required_for_all")),
             "supports_local_task_cancel": bool(catalog.get("policy", {}).get("supports_local_task_cancel")),
+            "implementation_status": task_implementation_status.get("status"),
+            "stub_task_count": task_implementation_status.get("stub_task_count", 0),
+            "local_pipeline_task_count": task_implementation_status.get("local_pipeline_task_count", 0),
+            "guarded_local_task_count": task_implementation_status.get("guarded_local_task_count", 0),
+            "implemented_local_task_count": task_implementation_status.get("implemented_local_task_count", 0),
         },
+        "task_implementation_status": task_implementation_status,
         "task_status_summary": {
             "packet_key": task_index.get("packet_key"),
             "task_count": task_index.get("task_count", 0),
@@ -192,6 +199,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "task_count": catalog.get("task_count", 0),
             "task_status_count": task_index.get("task_count", 0),
             "task_status_call_ledger_count": task_index.get("call_ledger_count", 0),
+            "stub_task_count": task_implementation_status.get("stub_task_count", 0),
+            "local_pipeline_task_count": task_implementation_status.get("local_pipeline_task_count", 0),
+            "guarded_local_task_count": task_implementation_status.get("guarded_local_task_count", 0),
+            "implemented_local_task_count": task_implementation_status.get("implemented_local_task_count", 0),
             "memory_task_count": task_persistence.get("memory_task_count", 0),
             "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
             "deduplicated_task_count": task_persistence.get("deduplicated_task_count", task_index.get("task_count", 0)),
@@ -209,6 +220,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
             "post_task_required_for_work": True,
             "worker_runtime_is_diagnostic_only": True,
+            "task_implementation_status_is_read_only": True,
+            "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
         },
         "call_ledger": [

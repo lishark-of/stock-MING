@@ -25,12 +25,19 @@ export default function WorkerRuntime() {
 
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
   const summary = (cache.task_catalog_summary as Record<string, unknown> | undefined) ?? {};
+  const taskImplementation = (cache.task_implementation_status as Record<string, unknown> | undefined) ?? {};
   const taskStatus = (cache.task_status_summary as Record<string, unknown> | undefined) ?? {};
   const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? ((taskStatus.persistence as Record<string, unknown> | undefined) ?? {});
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const implementationRows = [
+    { kind: "stub", count: taskImplementation.stub_task_count, task_types: Array.isArray(taskImplementation.stub_task_types) ? (taskImplementation.stub_task_types as unknown[]).join(" / ") : "" },
+    { kind: "local_pipeline", count: taskImplementation.local_pipeline_task_count, task_types: Array.isArray(taskImplementation.local_pipeline_task_types) ? (taskImplementation.local_pipeline_task_types as unknown[]).join(" / ") : "" },
+    { kind: "guarded_local", count: taskImplementation.guarded_local_task_count, task_types: Array.isArray(taskImplementation.guarded_local_task_types) ? (taskImplementation.guarded_local_task_types as unknown[]).join(" / ") : "" },
+    { kind: "external_capable", count: taskImplementation.external_capable_task_count, task_types: Array.isArray(taskImplementation.external_capable_task_types) ? (taskImplementation.external_capable_task_types as unknown[]).join(" / ") : "" }
+  ];
 
   return (
     <>
@@ -47,6 +54,10 @@ export default function WorkerRuntime() {
           { label: "ready modules", value: counts.worker_module_ready_count as number | undefined },
           { label: "task catalog", value: counts.task_count as number | undefined },
           { label: "task status", value: counts.task_status_count as number | undefined },
+          { label: "stub tasks", value: counts.stub_task_count as number | undefined },
+          { label: "local pipelines", value: counts.local_pipeline_task_count as number | undefined },
+          { label: "guarded local", value: counts.guarded_local_task_count as number | undefined },
+          { label: "implemented local", value: counts.implemented_local_task_count as number | undefined },
           { label: "memory tasks", value: counts.memory_task_count as number | undefined },
           { label: "sqlite tasks", value: counts.sqlite_task_count as number | undefined },
           { label: "dedup tasks", value: counts.deduplicated_task_count as number | undefined },
@@ -72,9 +83,19 @@ export default function WorkerRuntime() {
 
         <PacketCard title="Task catalog 摘要" subtitle="全部重任务仍必须由 POST task 按钮触发" status="catalog">
           <p>task count: {String(summary.task_count ?? 0)}</p>
+          <p>implementation status: {String(summary.implementation_status ?? taskImplementation.status ?? "partial_migration")}</p>
+          <p>stub / local pipeline / guarded: {String(summary.stub_task_count ?? 0)} / {String(summary.local_pipeline_task_count ?? 0)} / {String(summary.guarded_local_task_count ?? 0)}</p>
           <p>all button gated: {String(summary.all_tasks_button_gated ?? true)}</p>
           <p>call ledger required: {String(summary.call_ledger_required_for_all ?? true)}</p>
           <p>supports local cancel: {String(summary.supports_local_task_cancel ?? true)}</p>
+        </PacketCard>
+
+        <PacketCard title="Task implementation status" subtitle="只读展示 stub / local pipeline / guarded local，避免把 worker scaffold 误读成完整迁移" status={String(taskImplementation.status ?? "partial_migration")}>
+          <p>implemented local task count: {String(taskImplementation.implemented_local_task_count ?? 0)}</p>
+          <p>stub tasks must not be reported as complete: {String(policy.stub_tasks_must_not_be_reported_as_complete ?? true)}</p>
+          <p>external capable tasks button gated: {String(taskImplementation.all_external_capable_tasks_are_button_gated ?? true)}</p>
+          <p>external capable tasks require call ledger: {String(taskImplementation.all_external_capable_tasks_require_call_ledger ?? true)}</p>
+          <DataLineageTable rows={implementationRows} />
         </PacketCard>
 
         <PacketCard title="Task status index 摘要" subtitle="GET /api/tasks 的本地状态汇总；不创建任务、不外联" status="task_status_index">
