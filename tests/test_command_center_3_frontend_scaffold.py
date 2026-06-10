@@ -453,6 +453,30 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("res.call_ledger", panel)
         self.assertIn("不调用 Tushare、DeepSeek 或 GitHub", receipt)
 
+    def test_every_post_task_route_displays_task_receipt_and_status_panel(self):
+        route_dir = ROOT / "src" / "routes"
+        post_task_pages = []
+        for path in sorted(route_dir.glob("*.tsx")):
+            source = path.read_text(encoding="utf-8")
+            if "postTask(" not in source:
+                continue
+            post_task_pages.append(path.name)
+            with self.subTest(page=path.name):
+                self.assertIn("TaskCreationEnvelope", source)
+                self.assertIn("TaskLaunchReceipt", source)
+                self.assertIn("TaskStatusPanel", source)
+                self.assertIn("taskId", source)
+                self.assertIn("taskReceipt", source)
+                self.assertIn("setTaskReceipt(res)", source)
+                self.assertIn("if (res.ok) setTaskId(res.data.task_id)", source)
+                self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", source)
+                self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", source)
+
+        self.assertEqual(
+            post_task_pages,
+            ["ChokepointScan.tsx", "FactorQuantHub.tsx", "NextSessionMap.tsx", "SerenityMethodRadar.tsx"],
+        )
+
     def test_health_page_reads_startup_state_without_external_calls(self):
         page = (ROOT / "src" / "routes" / "HealthStatus.tsx").read_text(encoding="utf-8")
 
