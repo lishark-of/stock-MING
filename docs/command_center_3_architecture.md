@@ -71,6 +71,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/storage`
 - `GET /api/storage/factor-values`
 - `GET /api/storage/{dataset}`，当前白名单为 `factor_values`、`daily`、`moneyflow`
+- `GET /api/tasks/catalog`
 - `GET /api/tasks/{task_id}`
 
 规则：
@@ -78,6 +79,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
 - `/health` 返回当前 DeepSeek 模型策略摘要，便于前端展示 explain/fast/default 模型名；该摘要不包含 token/key，不触发模型调用。
 - `/api/migration/status` 返回用户给定的 3.0 长期迁移进度基线、目标技术栈和安全原则；该接口只读、不外联、不重新估算进度。
+- `/api/tasks/catalog` 返回按钮门控任务目录、可能外部源、call ledger 要求和交易边界；该接口只读，不创建任务。
 - `GET .../cache` 优先读取 `.stock_ming_cache/command_center_latest.json` 中已有本地快照；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
 - `/api/packets/{packet_key}` 支持部分 2.0 本地快照别名，例如 `command_center_moneyflow_packet` → `moneyflow_packet`、`strategy_execution_packet` → `strategy_packet`。
 - `POST` 默认返回 local fallback task，不在请求线程跑重计算；任务可通过 `/api/tasks/{task_id}` 轮询，记录 `pending → running → success` 状态历史、`progress`、`current_step`、`error_message_safe`、`output_packet_key` 和 `call_ledger`。

@@ -316,6 +316,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["task_id"], task["task_id"])
         self.assertEqual(task_service.list_task_statuses()[0]["task_id"], task["task_id"])
 
+    def test_task_catalog_documents_button_gated_external_boundaries(self):
+        catalog = task_service.build_task_catalog()
+
+        self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
+        self.assertEqual(catalog["task_count"], 6)
+        self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
+        self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
+        self.assertTrue(catalog["policy"]["call_ledger_required_for_all"])
+        self.assertFalse(catalog["external_calls_triggered"])
+        self.assertFalse(catalog["tushare_called"])
+        self.assertFalse(catalog["deepseek_called"])
+        self.assertFalse(catalog["github_called"])
+        self.assertTrue(catalog["policy"]["does_not_execute_trades"])
+        self.assertTrue(catalog["policy"]["does_not_modify_strategy_action"])
+        self.assertEqual(set(catalog["external_sources"]), {"deepseek", "github", "tushare"})
+        by_type = {item["task_type"]: item for item in catalog["tasks"]}
+        self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
+        self.assertIn("tushare", by_type["refresh_factor_data"]["possible_external_sources"])
+        self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
+        self.assertIn("github", by_type["probe_serenity_github"]["possible_external_sources"])
+        self.assertEqual(by_type["run_factor_light"]["possible_external_sources"], [])
+
     def test_task_status_update_supports_failed_state_without_secret_leak(self):
         self._with_meta_store()
         task = create_task_stub("run_factor_light", payload={"authorization": "Bearer secret", "ts_code": "002008.SZ"})
@@ -550,6 +572,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(migration["data"]["api_policy"]["cache_only"])
         self.assertFalse(migration["data"]["api_policy"]["external_calls_triggered"])
         self.assertTrue(migration["data"]["api_policy"]["does_not_execute_trades"])
+
+        task_catalog = self.client.get("/api/tasks/catalog").json()
+        self.assertTrue(task_catalog["ok"])
+        self.assertEqual(task_catalog["data"]["task_count"], 6)
+        self.assertTrue(task_catalog["data"]["policy"]["get_catalog_cache_only"])
+        self.assertTrue(task_catalog["data"]["policy"]["all_tasks_button_gated"])
+        self.assertTrue(task_catalog["data"]["policy"]["call_ledger_required_for_all"])
+        self.assertFalse(task_catalog["data"]["external_calls_triggered"])
+        self.assertFalse(task_catalog["data"]["tushare_called"])
+        self.assertFalse(task_catalog["data"]["deepseek_called"])
+        self.assertFalse(task_catalog["data"]["github_called"])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()

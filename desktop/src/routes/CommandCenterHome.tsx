@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getChokepointCache, getFactorQuantCache, getHealth, getMigrationStatus, getNextSessionCache, getPackets, getSerenityCache, getStorageOverview, getTasks } from "../api/client";
+import { getChokepointCache, getFactorQuantCache, getHealth, getMigrationStatus, getNextSessionCache, getPackets, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -14,6 +14,7 @@ export default function CommandCenterHome() {
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
   const [migration, setMigration] = useState<Record<string, unknown>>({});
+  const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
@@ -25,6 +26,7 @@ export default function CommandCenterHome() {
     void getChokepointCache().then((res) => setChokepoint(res.data));
     void getStorageOverview().then((res) => setStorageOverview(res.data));
     void getMigrationStatus().then((res) => setMigration(res.data));
+    void getTaskCatalog().then((res) => setTaskCatalog(res.data));
     void getTasks().then((res) => setTasks(res.data.tasks ?? []));
   }, []);
 
@@ -38,6 +40,8 @@ export default function CommandCenterHome() {
   const deepseekModelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
   const migrationProgress = migration.progress_baseline as Array<Record<string, unknown>> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
+  const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
+  const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
 
   return (
     <>
@@ -51,6 +55,7 @@ export default function CommandCenterHome() {
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
           { label: "cache keys", value: packetKeys?.length ?? 0 },
           { label: "任务记录", value: tasks.length },
+          { label: "任务目录", value: taskCatalogItems?.length ?? 0 },
           { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
           { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
           { label: "factor parquet", value: String(storageStatus?.factor_values ?? "missing") },
@@ -107,6 +112,12 @@ export default function CommandCenterHome() {
         <PacketCard title="任务状态" subtitle="POST 返回 task_id，页面轮询 FastAPI" status="local">
           <p>最近任务数：{tasks.length}</p>
           <JsonDetails title="任务列表" data={tasks} />
+        </PacketCard>
+        <PacketCard title="任务目录" subtitle="只读 catalog；POST task 才可能触发外部请求" status={String(taskCatalog.status ?? "catalog")}>
+          <p>catalog tasks: {String(taskCatalogItems?.length ?? 0)}</p>
+          <p>all button gated: {String(taskCatalogPolicy?.all_tasks_button_gated ?? true)}</p>
+          <p>call ledger required: {String(taskCatalogPolicy?.call_ledger_required_for_all ?? true)}</p>
+          <JsonDetails title="任务目录明细" data={taskCatalogItems ?? []} />
         </PacketCard>
       </div>
     </>

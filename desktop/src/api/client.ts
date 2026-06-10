@@ -89,3 +89,7 @@ export function getTask(taskId: string) {
 export function getTasks() {
   return request<{ tasks: TaskRecord[] }>("/api/tasks");
 }
+
+export function getTaskCatalog() {
+  return request<Record<string, unknown>>("/api/tasks/catalog");
+}

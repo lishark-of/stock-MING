@@ -13,9 +13,115 @@ TASK_STATUSES = {"pending", "running", "success", "failed", "cancelled"}
 SECRET_KEYWORDS = ("token", "api_key", "secret", "password", "authorization", "bearer", "cookie")
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
 
+TASK_CATALOG = [
+    {
+        "task_type": "refresh_factor_data",
+        "route": "POST /api/factor-quant/refresh-data",
+        "label": "刷新因子数据",
+        "output_packet_key": "command_center_factor_quant_hub_packet",
+        "button_gated": True,
+        "current_backend": "local_fallback_stub",
+        "external_call_policy": "button_gated_tushare_capable",
+        "possible_external_sources": ["tushare"],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
+        "task_type": "run_factor_light",
+        "route": "POST /api/factor-quant/run-light",
+        "label": "运行 light mode 因子计算",
+        "output_packet_key": "command_center_factor_quant_hub_packet",
+        "button_gated": True,
+        "current_backend": "local_light_pipeline",
+        "external_call_policy": "local_cache_only_current_mvp",
+        "possible_external_sources": [],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
+        "task_type": "run_deepseek_factor_explanation",
+        "route": "POST /api/factor-quant/deepseek-explain",
+        "label": "DeepSeek 整理因子解释",
+        "output_packet_key": "command_center_factor_quant_hub_packet",
+        "button_gated": True,
+        "current_backend": "guarded_prompt_or_payload_sanitizer",
+        "external_call_policy": "manual_deepseek_capable_current_no_model_call",
+        "possible_external_sources": ["deepseek"],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
+        "task_type": "build_next_session_projection",
+        "route": "POST /api/next-session/generate",
+        "label": "生成次日操作图谱",
+        "output_packet_key": "command_center_next_session_projection_packet",
+        "button_gated": True,
+        "current_backend": "local_fallback_stub",
+        "external_call_policy": "button_gated_refresh_capable",
+        "possible_external_sources": ["tushare"],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
+        "task_type": "run_chokepoint_scan",
+        "route": "POST /api/chokepoint/run",
+        "label": "运行产业链瓶颈扫描",
+        "output_packet_key": "command_center_chokepoint_scan_packet",
+        "button_gated": True,
+        "current_backend": "local_fallback_stub",
+        "external_call_policy": "manual_deepseek_capable",
+        "possible_external_sources": ["deepseek"],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
+        "task_type": "probe_serenity_github",
+        "route": "POST /api/serenity/github-probe",
+        "label": "校验 Serenity GitHub 当前状态",
+        "output_packet_key": "command_center_serenity_method_radar_packet",
+        "button_gated": True,
+        "current_backend": "local_fallback_stub",
+        "external_call_policy": "manual_github_probe_capable",
+        "possible_external_sources": ["github"],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+]
+
 
 def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
+
+
+def build_task_catalog() -> dict[str, Any]:
+    return {
+        "packet_key": "command_center_3_task_catalog",
+        "schema_version": "command_center_3_task_catalog.v1",
+        "status": "ready",
+        "tasks": [dict(item) for item in TASK_CATALOG],
+        "task_count": len(TASK_CATALOG),
+        "policy": {
+            "get_catalog_cache_only": True,
+            "all_tasks_button_gated": all(bool(item.get("button_gated")) for item in TASK_CATALOG),
+            "call_ledger_required_for_all": all(bool(item.get("call_ledger_required")) for item in TASK_CATALOG),
+            "post_task_may_trigger_external_request": True,
+            "cache_api_external_calls": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        },
+        "external_sources": sorted({source for item in TASK_CATALOG for source in item.get("possible_external_sources", [])}),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+    }
 
 
 def _is_secret_key(key: Any) -> bool:

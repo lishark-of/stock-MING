@@ -14,6 +14,11 @@ def list_tasks() -> dict:
     return envelope({"tasks": task_service.list_task_statuses()})
 
 
+@router.get("/catalog")
+def get_task_catalog() -> dict:
+    return envelope(task_service.build_task_catalog())
+
+
 @router.get("/{task_id}")
 def get_task(task_id: str) -> dict:
     task = task_service.read_task_status(task_id)

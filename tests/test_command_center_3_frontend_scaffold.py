@@ -106,6 +106,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         panel = (ROOT / "src" / "components" / "TaskStatusPanel.tsx").read_text(encoding="utf-8")
 
         self.assertIn("/api/tasks", client)
+        self.assertIn("/api/tasks/catalog", client)
         self.assertIn("getTask(taskId)", panel)
         self.assertIn("setInterval", panel)
         self.assertIn("local_fallback", panel)
@@ -113,6 +114,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         factor_page = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
         self.assertIn("onSuccess={refreshCache}", factor_page)
+        home_source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        self.assertIn("getTaskCatalog", home_source)
+        self.assertIn("POST task 才可能触发外部请求", home_source)
+        self.assertIn("call_ledger_required_for_all", home_source)
 
     def test_next_session_chart_uses_cache_payload_without_trade_mutation(self):
         page = (ROOT / "src" / "routes" / "NextSessionMap.tsx").read_text(encoding="utf-8")
