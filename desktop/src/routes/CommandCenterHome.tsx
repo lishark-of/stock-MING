@@ -137,6 +137,15 @@ export default function CommandCenterHome() {
   const deepseekModelRows = modelStrategy.model_rows as Array<Record<string, unknown>> | undefined;
   const deepseekModelCounts = modelStrategy.counts as Record<string, unknown> | undefined;
   const deepseekModelByPurpose = new Map((deepseekModelRows ?? []).map((row) => [String(row.purpose), row]));
+  const deepseekPurposeGroups = (modelStrategy.purpose_groups as Record<string, unknown> | undefined) ?? {};
+  const deepseekHomeRows = (deepseekModelRows ?? []).map((row) => ({
+    purpose: row.purpose,
+    model: row.model,
+    config_keys: Array.isArray(row.config_keys) ? row.config_keys.join(" / ") : row.config_keys,
+    no_hardcoded_model: row.does_not_hardcode_model === true,
+    contains_secret: row.contains_secret === true,
+    cache_read_external_call: row.external_call_on_cache_read === true
+  }));
   const migrationProgress = migration.progress_baseline as Array<Record<string, unknown>> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
@@ -313,10 +322,13 @@ export default function CommandCenterHome() {
         </PacketCard>
         <PacketCard title="DeepSeek 模型策略" subtitle="独立 cache；不展示 token/key，不触发模型调用" status={modelStrategy.contains_secret === true ? "check" : "safe"}>
           <p>purpose count: {String(deepseekModelCounts?.purpose_count ?? 0)}</p>
-          <p>explain: {String(deepseekModelByPurpose.get("explain")?.model ?? "--")}</p>
-          <p>fast: {String(deepseekModelByPurpose.get("fast")?.model ?? "--")}</p>
-          <p>default: {String(deepseekModelByPurpose.get("default")?.model ?? "--")}</p>
+          <p>explain grade: {JSON.stringify(deepseekPurposeGroups.explain_grade ?? [])}</p>
+          <p>fast grade: {JSON.stringify(deepseekPurposeGroups.fast_grade ?? [])}</p>
+          <p>projection: {String(deepseekModelByPurpose.get("projection")?.model ?? "--")}</p>
+          <p>factor_explain: {String(deepseekModelByPurpose.get("factor_explain")?.model ?? "--")}</p>
+          <p>healthcheck / feeder: {String(deepseekModelByPurpose.get("healthcheck")?.model ?? "--")} / {String(deepseekModelByPurpose.get("feeder")?.model ?? "--")}</p>
           <p>external calls: {String(modelStrategy.external_calls_triggered ?? false)}</p>
+          <DataLineageTable rows={deepseekHomeRows} />
         </PacketCard>
         <PacketCard title="产业链瓶颈扫描 cache" subtitle="GET cache 不触发 DeepSeek" status={String(chokepoint.status ?? "cache")}>
           <p>{String(chokepoint.summary ?? "等待缓存")}</p>
