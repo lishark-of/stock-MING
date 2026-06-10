@@ -1134,6 +1134,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         self.assertIn("def assert_cache_safety", script)
         self.assertIn("TestClient", script)
+        self.assertIn("def assert_api_cache_endpoint", script)
+        self.assertIn("api_cache_paths", script)
+        self.assertIn("/api/factor-quant/cache", script)
+        self.assertIn("/api/tasks/catalog", script)
+        self.assertIn("api_cache:", script)
         self.assertIn("/api/chokepoint/run", script)
         self.assertIn("task_creation_api:", script)
         self.assertIn("created.get(\"call_ledger\")", script)

@@ -27,6 +27,17 @@ def assert_cache_safety(name, packet):
         assert_true_when_present(name, packet, key)
 
 
+def assert_api_cache_endpoint(client, path):
+    response = client.get(path).json()
+    if not response.get("ok"):
+        raise AssertionError(f"{path} failed: {response.get('error')}")
+    data = response.get("data") or {}
+    if not isinstance(data, dict):
+        raise AssertionError(f"{path}.data must be a dict")
+    assert_cache_safety(path, data)
+    return data
+
+
 print("health: import ok")
 for key in [
     "command_center_factor_quant_hub_packet",
@@ -48,6 +59,21 @@ if not created.get("call_ledger"):
 created_task = created.get("data", {}).get("task", {})
 assert_cache_safety("task_creation_api", created_task)
 print("task_creation_api:", created["data"]["task_id"], created["call_ledger"][0]["call_status"])
+api_cache_paths = [
+    "/api/factor-quant/cache",
+    "/api/next-session/cache",
+    "/api/serenity/cache",
+    "/api/chokepoint/cache",
+    "/api/model-strategy/cache",
+    "/api/audit/cache",
+    "/api/legacy/cache",
+    "/api/worker/cache",
+    "/api/tasks",
+    "/api/tasks/catalog",
+]
+for path in api_cache_paths:
+    data = assert_api_cache_endpoint(client, path)
+    print("api_cache:", path, data.get("status") or data.get("mode") or data.get("packet_key"))
 migration = migration_status_service.build_migration_status()
 assert_cache_safety("migration_status", migration)
 print("migration_status:", migration["status"], len(migration["progress_baseline"]))
