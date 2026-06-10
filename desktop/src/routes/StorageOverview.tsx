@@ -48,6 +48,10 @@ export default function StorageOverview() {
     const rows = (query?.rows as Array<Record<string, unknown>> | undefined) ?? [];
     return rows.slice(0, 5).map((row, index) => ({ dataset: item.label, sample_index: index + 1, ...row }));
   });
+  const datasetCallLedgerRows = [
+    ...datasetCards.flatMap((item) => ((item.packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? []).map((row) => ({ dataset: item.label, ...row }))),
+    ...((sqliteMeta.call_ledger as Array<Record<string, unknown>> | undefined) ?? []).map((row) => ({ dataset: "sqlite_meta", ...row }))
+  ];
 
   return (
     <>
@@ -120,6 +124,10 @@ export default function StorageOverview() {
 
       <PacketCard title="GET storage envelope call_ledger" subtitle="GET /api/storage 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
         <DataLineageTable rows={cacheCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="数据集 call_ledger 汇总" subtitle="GET /api/storage/factor-values、daily、moneyflow、sqlite-meta 的本地读取血缘" status="lineage">
+        <DataLineageTable rows={datasetCallLedgerRows} />
       </PacketCard>
 
       <PacketCard title="GET storage envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
