@@ -180,6 +180,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(status["does_not_execute_trades"])
         self.assertIn(status["metadata"]["status"], {"missing", "ready"})
 
+    def test_storage_overview_covers_daily_moneyflow_and_factor_values(self):
+        self._with_parquet_root()
+
+        overview = storage_service.storage_overview()
+
+        self.assertEqual(overview["store"], "parquet_duckdb")
+        self.assertEqual(set(overview["dataset_status"]), {"factor_values", "daily", "moneyflow"})
+        self.assertTrue(overview["cache_only"])
+        self.assertFalse(overview["external_calls_triggered"])
+        self.assertFalse(overview["tushare_called"])
+        self.assertTrue(overview["does_not_execute_trades"])
+
+    def test_storage_dataset_rejects_unsupported_names_without_external_calls(self):
+        self._with_parquet_root()
+
+        status = storage_service.parquet_dataset_status("../secret")
+
+        self.assertEqual(status["status"], "unsupported_dataset")
+        self.assertEqual(set(status["supported_datasets"]), {"factor_values", "daily", "moneyflow"})
+        self.assertFalse(status["external_calls_triggered"])
+        self.assertFalse(status["tushare_called"])
+
     def test_task_stub_records_safe_status_without_external_work(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -406,6 +428,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(storage["ok"])
         self.assertTrue(storage["data"]["cache_only"])
         self.assertFalse(storage["data"]["external_calls_triggered"])
+
+        storage_overview = self.client.get("/api/storage").json()
+        self.assertTrue(storage_overview["ok"])
+        self.assertEqual(set(storage_overview["data"]["dataset_status"]), {"factor_values", "daily", "moneyflow"})
+        self.assertFalse(storage_overview["data"]["external_calls_triggered"])
+
+        daily_storage = self.client.get("/api/storage/daily").json()
+        self.assertTrue(daily_storage["ok"])
+        self.assertEqual(daily_storage["data"]["dataset"], "daily")
+        self.assertFalse(daily_storage["data"]["external_calls_triggered"])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()

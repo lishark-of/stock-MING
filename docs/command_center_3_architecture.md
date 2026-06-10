@@ -49,7 +49,9 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `POST /api/chokepoint/run`
 - `GET /api/serenity/cache`
 - `POST /api/serenity/github-probe`
+- `GET /api/storage`
 - `GET /api/storage/factor-values`
+- `GET /api/storage/{dataset}`，当前白名单为 `factor_values`、`daily`、`moneyflow`
 - `GET /api/tasks/{task_id}`
 
 规则：
@@ -63,7 +65,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `POST /api/factor-quant/deepseek-explain` 已接入 guarded explanation pipeline：读取 Factor Quant Hub cache，准备未发送的安全 prompt 预览；如提供本地解释 payload，仅按六个白名单字段清洗并写回 SQLite cache，不真实调用 DeepSeek、不覆盖数值、不修改 `strategy action`。
 - 任务生命周期已同步写入 SQLite metadata store；内存状态丢失后，`/api/tasks/{task_id}` 仍可从本地 SQLite fallback 读回任务状态。
 - `/api/packets` 已暴露 SQLite packet/task metadata 摘要，便于前端判断哪些 packet 来自持久化 cache。
-- `GET /api/storage/factor-values` 暴露 Parquet/DuckDB factor_values 只读状态；缺文件返回 `missing`，不触发 Tushare 或因子计算。
+- `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`moneyflow` 只读状态；缺文件返回 `missing`，不触发 Tushare 或因子计算。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
 
@@ -109,8 +111,8 @@ scripts/run_scheduler.sh
 ### Storage
 
 - SQLite：packet 元数据、任务状态、用户配置。当前已落地 packet payload、packet metadata 和 task lifecycle metadata。
-- Parquet：daily、daily_basic、moneyflow、factor_values、backtest_results。当前已提供 factor_values 文件状态接口。
-- DuckDB：直接查询 Parquet。当前已提供 factor_values 缺文件安全查询和只读状态 API。
+- Parquet：daily、daily_basic、moneyflow、factor_values、backtest_results。当前已提供 `factor_values`、`daily`、`moneyflow` 文件状态接口。
+- DuckDB：直接查询 Parquet。当前已提供 `factor_values`、`daily`、`moneyflow` 缺文件安全查询和只读状态 API。
 - Redis：Celery broker、任务状态、热点 packet cache；未安装时可使用 memory fallback。
 
 ## 边界

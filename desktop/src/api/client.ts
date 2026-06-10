@@ -67,6 +67,10 @@ export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }
 
+export function getStorageOverview() {
+  return request<Record<string, unknown>>("/api/storage");
+}
+
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
   return request<{ task_id: string; task: TaskRecord }>(path, {
     method: "POST",

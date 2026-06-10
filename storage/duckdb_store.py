@@ -12,7 +12,7 @@ def dependency_status() -> dict[str, Any]:
     return {"available": True, "error_message_safe": ""}
 
 
-def query_factor_values(parquet_path: str | Path, *, limit: int = 1000) -> dict[str, Any]:
+def query_parquet_dataset(parquet_path: str | Path, *, limit: int = 1000) -> dict[str, Any]:
     status = dependency_status()
     if not status["available"]:
         return {"status": "dependency_missing", "rows": [], **status}
@@ -33,3 +33,7 @@ def query_factor_values(parquet_path: str | Path, *, limit: int = 1000) -> dict[
     sql = f"SELECT * FROM read_parquet('{path_text}') LIMIT {safe_limit}"
     rows = duckdb.sql(sql).df().to_dict("records")
     return {"status": "ready", "rows": rows, "row_count": len(rows), "path": str(path), "external_calls_triggered": False}
+
+
+def query_factor_values(parquet_path: str | Path, *, limit: int = 1000) -> dict[str, Any]:
+    return query_parquet_dataset(parquet_path, limit=limit)

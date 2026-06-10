@@ -9,6 +9,16 @@ from server.services import storage_service
 router = APIRouter(prefix="/api/storage")
 
 
+@router.get("")
+def get_storage_overview(limit: int = 20) -> dict:
+    return envelope(storage_service.storage_overview(limit=limit))
+
+
 @router.get("/factor-values")
 def get_factor_values_status(limit: int = 100) -> dict:
     return envelope(storage_service.factor_values_status(limit=limit))
+
+
+@router.get("/{dataset}")
+def get_parquet_dataset_status(dataset: str, limit: int = 100) -> dict:
+    return envelope(storage_service.parquet_dataset_status(dataset, limit=limit))

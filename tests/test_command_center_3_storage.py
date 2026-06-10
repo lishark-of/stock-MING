@@ -41,13 +41,16 @@ class CommandCenter3StorageTests(unittest.TestCase):
 
         status = parquet_store.dependency_status()
         if not status["available"]:
-            result = parquet_store.write_factor_values(pd.DataFrame({"a": [1]}))
+            result = parquet_store.write_dataset(pd.DataFrame({"a": [1]}), name="daily")
             self.assertEqual(result["status"], "dependency_missing")
             return
         with tempfile.TemporaryDirectory() as tmp:
-            result = parquet_store.write_factor_values(pd.DataFrame({"a": [1]}), root=tmp)
+            result = parquet_store.write_dataset(pd.DataFrame({"a": [1]}), root=tmp, name="daily")
             self.assertEqual(result["status"], "written")
             self.assertEqual(result["row_count"], 1)
+            self.assertFalse(result["external_calls_triggered"])
+            metadata = parquet_store.dataset_metadata(root=tmp, name="daily")
+            self.assertEqual(metadata["status"], "ready")
 
     def test_duckdb_store_gracefully_handles_dependency(self):
         from storage import duckdb_store, parquet_store
@@ -66,6 +69,9 @@ class CommandCenter3StorageTests(unittest.TestCase):
             result = duckdb_store.query_factor_values(out["path"])
             self.assertEqual(result["status"], "ready")
             self.assertEqual(result["row_count"], 1)
+            generic = duckdb_store.query_parquet_dataset(out["path"])
+            self.assertEqual(generic["status"], "ready")
+            self.assertFalse(generic["external_calls_triggered"])
 
     def test_factor_values_metadata_is_cache_only(self):
         from storage import parquet_store
