@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Layout, { type RouteKey } from "./components/Layout";
 import AShareEvidenceRadar from "./routes/AShareEvidenceRadar";
+import CandidateRadar from "./routes/CandidateRadar";
 import ChokepointScan from "./routes/ChokepointScan";
 import CommandCenterHome from "./routes/CommandCenterHome";
 import DataCapabilityConsole from "./routes/DataCapabilityConsole";
@@ -28,6 +29,7 @@ export default function App() {
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}
       {route === "next" ? <NextSessionMap /> : null}
       {route === "position" ? <PositionContext /> : null}
+      {route === "candidates" ? <CandidateRadar /> : null}
       {route === "factor" ? <FactorQuantHub /> : null}
       {route === "chokepoint" ? <ChokepointScan /> : null}
       {route === "serenity" ? <SerenityMethodRadar /> : null}

@@ -20,6 +20,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "NextSessionChart.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "AShareEvidenceRadar.tsx",
+            ROOT / "src" / "routes" / "CandidateRadar.tsx",
             ROOT / "src" / "routes" / "DataCapabilityConsole.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src" / "routes" / "HealthStatus.tsx",
@@ -91,6 +92,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         page_names = [
             "CommandCenterHome.tsx",
             "AShareEvidenceRadar.tsx",
+            "CandidateRadar.tsx",
             "DataCapabilityConsole.tsx",
             "HealthStatus.tsx",
             "NextSessionMap.tsx",
@@ -142,6 +144,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
         self.assertIn("HealthStatus", app_source)
         self.assertIn("AShareEvidenceRadar", app_source)
+        self.assertIn("CandidateRadar", app_source)
         self.assertIn("DataCapabilityConsole", app_source)
         self.assertIn("PacketRegistry", app_source)
         self.assertIn("PositionContext", app_source)
@@ -153,6 +156,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("TradeReviewLab", app_source)
         self.assertIn('"health"', layout_source)
         self.assertIn('"evidence"', layout_source)
+        self.assertIn('"candidates"', layout_source)
         self.assertIn('"dataCapability"', layout_source)
         self.assertIn('"packets"', layout_source)
         self.assertIn('"position"', layout_source)
@@ -164,6 +168,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"tradeReview"', layout_source)
         self.assertIn("健康", layout_source)
         self.assertIn("证据雷达", layout_source)
+        self.assertIn("候选雷达", layout_source)
         self.assertIn("数据能力", layout_source)
         self.assertIn("Packet", layout_source)
         self.assertIn("持仓画像", layout_source)
@@ -298,6 +303,31 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不修改持仓或 strategy action", page)
         self.assertIn("local_position_context_cache", page)
         self.assertIn("does_not_modify_holdings", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_candidate_radar_page_reads_candidate_cache_without_market_scan(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "CandidateRadar.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/candidate-radar/cache", client)
+        self.assertIn("getCandidateRadarCache", page)
+        self.assertIn("getCandidateRadarCache", home)
+        self.assertIn("GET /api/candidate-radar/cache", page)
+        self.assertIn("radar_packet", page)
+        self.assertIn("next_ticket_candidates", page)
+        self.assertIn("不会自动全市场扫描", page)
+        self.assertIn("候选不是买入指令", page)
+        self.assertIn("不会调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不自动下单", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertIn("local_candidate_radar_cache", page)
+        self.assertIn("does_not_scan_market", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

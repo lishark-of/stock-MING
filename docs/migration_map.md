@@ -6,6 +6,7 @@
 | Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | 策略执行 / 今日决策 | `strategy_execution_service.py`, `command_center_decision_engine.py`, `command_center_strategy_summary.py` | `GET /api/strategy/cache` | `StrategyTrace.tsx` | cache GET 只读展示 `strategy_execution_packet` / `command_center_decision_packet`，不生成新动作 | 后续任务化；当前不提供 POST |
 | 持仓画像 / 标的上下文 | `command_center_home_snapshot.py`, `strategy_execution_service.py`, `app.py` | `GET /api/position/cache` | `PositionContext.tsx` | cache GET 只读展示 `holding_action`、风险预算和首页快照摘要，不刷新价格 | 否；后续可接按钮任务 |
+| 下一票候选雷达 | `command_center_radar_packet.py`, `command_center_home_snapshot.py`, `app.py` | `GET /api/candidate-radar/cache` | `CandidateRadar.tsx` | cache GET 只读展示 `radar_packet` 与 `next_ticket_candidates`，不扫描全市场 | 后续任务化；当前不提供 POST |
 | A 股事实血缘 | `command_center_evidence_summary.py`, `command_center_*_packet.py` | `GET /api/evidence/cache`, `/api/packets/{packet_key}` 与后续 fact refresh task | `AShareEvidenceRadar.tsx` | cache 不重算，支持本地快照别名 | 后续任务化 |
 | 数据能力/数据源体检 | `command_center_data_capability_console.py`, `command_center_data_health_ledger.py`, `app.py` | `GET /api/data-capability/cache`，后续 provider refresh task | `DataCapabilityConsole.tsx` | cache GET 不检测；只读本地能力 packet | 后续任务化 |
 | Tushare 数据刷新 | `tushare_adapter.py`, `app.py` | 后续 `refresh_tushare_facts` task | Factor / Next Session / Evidence / Data Capability pages | 是 | 是，当前 stub |
@@ -35,6 +36,7 @@
 - `/api/storage/{dataset}`
 - `/api/strategy/cache`
 - `/api/position/cache`
+- `/api/candidate-radar/cache`
 - `/api/trade-review/cache`
 - `/api/quant/cache`
 - `/api/tasks/{task_id}`
@@ -49,6 +51,8 @@
 `/api/strategy/cache` 已接入策略执行 / 今日决策只读迁移：读取本地 `strategy_execution_packet` 与 `command_center_decision_packet`，输出 action 来源、策略 trace、决策摘要和调用血缘；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action` 或 `command_center_decision_packet`。
 
 `/api/position/cache` 已接入持仓画像 / 标的上下文只读迁移：读取本地 home snapshot 中的 `holding_action`、`position_risk_budget`、`risk_breakdown`、`safety_line` 和策略上下文；不刷新价格、不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
+
+`/api/candidate-radar/cache` 已接入下一票候选雷达只读迁移：读取本地 `radar_packet`、`next_ticket_candidates` 和候选证据恢复动作，输出候选分层、补证路线和调用血缘；不扫描全市场、不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不把候选分数写入 `strategy_execution_packet.action`。
 
 ## 当前 stub API
 

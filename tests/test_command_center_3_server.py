@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -400,6 +400,55 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_holdings"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_position_context_cache")
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_candidate_radar_cache_reads_local_candidates_without_market_scan(self):
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {
+                    "status": "ready",
+                    "summary": "Top3 候选缓存",
+                    "manual_required_text": "页面打开不会自动全市场扫描。",
+                    "api_key": "SHOULD_DROP",
+                },
+                "next_ticket_candidates": [
+                    {
+                        "rank": 1,
+                        "ticker": "002837.SZ",
+                        "name": "英维克",
+                        "score": 47,
+                        "status_label": "只观察",
+                        "action_state": "只观察",
+                        "trigger_condition": "待验证",
+                        "authorization": "Bearer SHOULD_DROP",
+                    }
+                ],
+                "candidate_execution_evidence_overview": {"headline": "仍待验证"},
+                "next_ticket_evidence_recovery_actions": [{"label": "涨跌停/情绪", "status": "missing"}],
+            }
+        )
+
+        packet = candidate_service.read_candidate_radar_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_candidate_radar_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["counts"]["candidate_count"], 1)
+        self.assertEqual(packet["candidate_rows"][0]["ticker"], "002837.SZ")
+        self.assertEqual(packet["candidate_rows"][0]["action_state"], "只观察")
+        self.assertNotIn("authorization", packet["candidates"][0])
+        self.assertNotIn("api_key", packet["radar_packet"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_scan_market"])
+        self.assertTrue(packet["policy"]["candidate_is_not_buy_instruction"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_candidate_radar_cache")
         json.dumps(packet, ensure_ascii=False)
 
     def test_a_share_evidence_cache_builds_lineage_without_external_calls(self):
@@ -908,6 +957,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(position["data"]["does_not_modify_holdings"])
         self.assertTrue(position["data"]["does_not_execute_trades"])
 
+        candidate = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(candidate["ok"])
+        self.assertTrue(candidate["data"]["cache_only"])
+        self.assertFalse(candidate["data"]["external_calls_triggered"])
+        self.assertFalse(candidate["data"]["tushare_called"])
+        self.assertFalse(candidate["data"]["deepseek_called"])
+        self.assertTrue(candidate["data"]["policy"]["does_not_scan_market"])
+        self.assertTrue(candidate["data"]["policy"]["candidate_is_not_buy_instruction"])
+        self.assertTrue(candidate["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(candidate["data"]["does_not_execute_trades"])
+
         evidence = self.client.get("/api/evidence/cache").json()
         self.assertTrue(evidence["ok"])
         self.assertTrue(evidence["data"]["cache_only"])
@@ -1044,6 +1104,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_holdings"])
+
+    def test_candidate_radar_cache_endpoint_returns_candidates_without_external_work(self):
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存", "authorization": "Bearer SHOULD_DROP"},
+                "next_ticket_candidates": [
+                    {"rank": 1, "ticker": "002837.SZ", "name": "英维克", "score": 47, "action_state": "只观察"}
+                ],
+            }
+        )
+
+        response = self.client.get("/api/candidate-radar/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_candidate_radar_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["candidate_rows"][0]["ticker"], "002837.SZ")
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_scan_market"])
+        self.assertTrue(packet["policy"]["candidate_is_not_buy_instruction"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_evidence_cache_endpoint_returns_lineage_without_external_work(self):
         self._with_snapshot_cache(

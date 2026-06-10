@@ -101,6 +101,10 @@ export function getPositionCache() {
   return request<Record<string, unknown>>("/api/position/cache");
 }
 
+export function getCandidateRadarCache() {
+  return request<Record<string, unknown>>("/api/candidate-radar/cache");
+}
+
 export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }
