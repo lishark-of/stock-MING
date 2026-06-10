@@ -108,7 +108,10 @@ def read_trade_review_cache(limit: int = 20, path: Any = None) -> dict[str, Any]
     safe_limit = max(1, min(int(limit or 20), 100))
     source_exists = log_path.exists()
     call_status = "cache_missing"
-    warnings: list[str] = []
+    warnings: list[str] = [
+        "GET /api/trade-review/cache 只读展示本地交易复盘日志；不会创建记录、刷新数据或执行交易。",
+        "复盘记录只作为纪律反馈和行为审计，不会修改 strategy_execution_packet.action。",
+    ]
     records: list[dict[str, Any]] = []
     summary: dict[str, Any] = trade_review_log.summarize_trade_review_records([])
     status = "cache_missing"

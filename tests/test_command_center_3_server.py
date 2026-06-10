@@ -677,6 +677,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
         self.assertEqual(packet["call_ledger"][0]["api"], "local_trade_review_log")
         self.assertEqual(packet["call_ledger"][0]["call_status"], "cache_read")
+        self.assertIn("GET /api/trade-review/cache", packet["warnings"][0])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -1895,6 +1896,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(trade_review["data"]["tushare_called"])
         self.assertFalse(trade_review["data"]["deepseek_called"])
         self.assertTrue(trade_review["data"]["does_not_execute_trades"])
+        self.assertEqual(trade_review["call_ledger"][0]["api"], "local_trade_review_log")
+        self.assertFalse(trade_review["call_ledger"][0]["external"])
+        self.assertIn("GET /api/trade-review/cache", trade_review["warnings"][0])
 
         quant = self.client.get("/api/quant/cache").json()
         self.assertTrue(quant["ok"])
@@ -2047,6 +2051,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_trade_review_log")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/trade-review/cache", response["warnings"][0])
 
     def test_quant_cache_endpoint_returns_cached_quant_without_external_work(self):
         self._with_snapshot_cache(
