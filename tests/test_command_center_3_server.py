@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import factor_service, packet_service, storage_service, task_service, trade_review_service
+from server.services import factor_service, packet_service, quant_service, storage_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -263,6 +263,43 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_write_cache"])
         self.assertFalse(packet["contains_secret"])
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_quant_cache_reads_local_quant_packet_without_running_backtest(self):
+        self._with_snapshot_cache(
+            {
+                "quant_packet": {
+                    "status": "ready",
+                    "score": 68,
+                    "confidence": "中",
+                    "action_state": "轻仓验证",
+                    "data_status": "ready",
+                    "summary": "量化缓存可参考",
+                    "evidence_items": ["量化分数：68"],
+                    "risk_notes": ["回测收益不代表未来收益"],
+                    "decision_brief": {"status": "ready", "headline": "量化可进入证据链"},
+                    "api_key": "SHOULD_DROP",
+                }
+            }
+        )
+
+        packet = quant_service.read_quant_backtest_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_quant_backtest_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertEqual(packet["source_packet_key"], "command_center_quant_packet")
+        self.assertEqual(packet["quant_packet"]["score"], 68)
+        self.assertNotIn("api_key", packet["quant_packet"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_run_backtest"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_quant_backtest_cache")
         json.dumps(packet, ensure_ascii=False)
 
     def test_factor_value_rows_keep_safe_scalar_contract(self):
@@ -655,6 +692,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(trade_review["data"]["deepseek_called"])
         self.assertTrue(trade_review["data"]["does_not_execute_trades"])
 
+        quant = self.client.get("/api/quant/cache").json()
+        self.assertTrue(quant["ok"])
+        self.assertTrue(quant["data"]["cache_only"])
+        self.assertTrue(quant["data"]["policy"]["does_not_run_backtest"])
+        self.assertFalse(quant["data"]["external_calls_triggered"])
+        self.assertFalse(quant["data"]["tushare_called"])
+        self.assertFalse(quant["data"]["deepseek_called"])
+        self.assertTrue(quant["data"]["does_not_modify_strategy_action"])
+
     def test_trade_review_cache_endpoint_returns_sanitized_local_records(self):
         self._with_trade_review_log(
             [
@@ -682,6 +728,32 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_quant_cache_endpoint_returns_cached_quant_without_external_work(self):
+        self._with_snapshot_cache(
+            {
+                "quant_packet": {
+                    "status": "ready",
+                    "score": 71,
+                    "confidence": "中",
+                    "action_state": "只观察",
+                    "authorization": "Bearer SHOULD_DROP",
+                }
+            }
+        )
+
+        response = self.client.get("/api/quant/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_quant_backtest_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["quant_packet"]["score"], 71)
+        self.assertNotIn("authorization", packet["quant_packet"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_run_backtest"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["does_not_execute_trades"])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()

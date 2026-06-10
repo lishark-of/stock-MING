@@ -81,6 +81,10 @@ export function getTradeReviewCache() {
   return request<Record<string, unknown>>("/api/trade-review/cache");
 }
 
+export function getQuantCache() {
+  return request<Record<string, unknown>>("/api/quant/cache");
+}
+
 export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }

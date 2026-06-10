@@ -10,6 +10,7 @@ from server.api import (
     routes_migration,
     routes_next_session,
     routes_packets,
+    routes_quant,
     routes_serenity,
     routes_storage,
     routes_tasks,
@@ -35,6 +36,7 @@ app.include_router(routes_health.router)
 app.include_router(routes_migration.router)
 app.include_router(routes_packets.router)
 app.include_router(routes_next_session.router)
+app.include_router(routes_quant.router)
 app.include_router(routes_factor_quant.router)
 app.include_router(routes_chokepoint.router)
 app.include_router(routes_serenity.router)

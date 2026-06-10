@@ -23,6 +23,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "HealthStatus.tsx",
             ROOT / "src" / "routes" / "MigrationStatus.tsx",
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
+            ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
             ROOT / "src" / "routes" / "TaskCatalog.tsx",
             ROOT / "src" / "routes" / "TradeReviewLab.tsx",
@@ -91,6 +92,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "ChokepointScan.tsx",
             "SerenityMethodRadar.tsx",
             "PacketRegistry.tsx",
+            "QuantBacktestLab.tsx",
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
             "TaskCatalog.tsx",
@@ -132,18 +134,21 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
         self.assertIn("HealthStatus", app_source)
         self.assertIn("PacketRegistry", app_source)
+        self.assertIn("QuantBacktestLab", app_source)
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
         self.assertIn("TaskCatalog", app_source)
         self.assertIn("TradeReviewLab", app_source)
         self.assertIn('"health"', layout_source)
         self.assertIn('"packets"', layout_source)
+        self.assertIn('"quant"', layout_source)
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
         self.assertIn('"tasks"', layout_source)
         self.assertIn('"tradeReview"', layout_source)
         self.assertIn("健康", layout_source)
         self.assertIn("Packet", layout_source)
+        self.assertIn("量化回测", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
         self.assertIn("任务目录", layout_source)
@@ -229,6 +234,25 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不执行真实交易", page)
         self.assertIn("不会修改 strategy_execution_packet.action", page)
         self.assertIn("local_trade_review_log", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_quant_backtest_page_reads_quant_cache_without_running_backtester(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "QuantBacktestLab.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/quant/cache", client)
+        self.assertIn("getQuantCache", page)
+        self.assertIn("GET /api/quant/cache", page)
+        self.assertIn("command_center_quant_packet", page)
+        self.assertIn("不运行 backtester", page)
+        self.assertIn("不调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不能直接修改 strategy action", page)
+        self.assertIn("回测收益不代表未来收益", page)
+        self.assertIn("local_quant_backtest_cache", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

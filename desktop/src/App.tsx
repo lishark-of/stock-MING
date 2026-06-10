@@ -8,6 +8,7 @@ import LegacyTools from "./routes/LegacyTools";
 import MigrationStatus from "./routes/MigrationStatus";
 import NextSessionMap from "./routes/NextSessionMap";
 import PacketRegistry from "./routes/PacketRegistry";
+import QuantBacktestLab from "./routes/QuantBacktestLab";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 import StorageOverview from "./routes/StorageOverview";
 import TaskCatalog from "./routes/TaskCatalog";
@@ -27,6 +28,7 @@ export default function App() {
       {route === "migration" ? <MigrationStatus /> : null}
       {route === "storage" ? <StorageOverview /> : null}
       {route === "tasks" ? <TaskCatalog /> : null}
+      {route === "quant" ? <QuantBacktestLab /> : null}
       {route === "tradeReview" ? <TradeReviewLab /> : null}
       {route === "legacy" ? <LegacyTools /> : null}
     </Layout>
