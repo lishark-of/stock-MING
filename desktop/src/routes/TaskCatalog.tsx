@@ -31,8 +31,12 @@ export default function TaskCatalog() {
     output_packet_key: task.output_packet_key,
     backend: task.backend ?? "local_fallback",
     call_ledger_count: task.call_ledger?.length ?? 0,
-    does_not_execute_trades: true,
-    does_not_modify_strategy_action: true
+    external_calls_triggered: task.external_calls_triggered === true,
+    tushare_called: task.tushare_called === true,
+    deepseek_called: task.deepseek_called === true,
+    github_called: task.github_called === true,
+    does_not_execute_trades: task.does_not_execute_trades !== false,
+    does_not_modify_strategy_action: task.does_not_modify_strategy_action !== false
   }));
 
   return (
