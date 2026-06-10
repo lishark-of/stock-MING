@@ -225,6 +225,11 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "renderer": "ECharts",
         "source_packet": payload.get("source_packet"),
         "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
         "frontend_computes_trade_action": False,
         "does_not_modify_action": True,
         "does_not_modify_operation_zones": True,
@@ -269,6 +274,11 @@ def _next_session_chart_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "does_not_modify_action": contract.get("does_not_modify_action") is not False,
         "does_not_modify_operation_zones": contract.get("does_not_modify_operation_zones") is not False,
         "cache_only": contract.get("cache_only") is not False,
+        "external_calls_triggered": bool(contract.get("external_calls_triggered")),
+        "tushare_called": bool(contract.get("tushare_called")),
+        "deepseek_called": bool(contract.get("deepseek_called")),
+        "github_called": bool(contract.get("github_called")),
+        "does_not_execute_trades": contract.get("does_not_execute_trades") is not False,
     }
 
 
