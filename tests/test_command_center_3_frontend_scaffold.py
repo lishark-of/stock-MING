@@ -1063,6 +1063,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("NextSessionChart", page)
         self.assertIn("chart_payload", page)
+        self.assertIn("chart_contract", page)
+        self.assertIn("ECharts 图表数据合同", page)
+        self.assertIn("frontend_computes_trade_action", page)
+        self.assertIn("图表合同", page)
         self.assertIn("GET /api/next-session/cache", page)
         self.assertIn("POST /api/next-session/generate", page)
         self.assertIn("const refreshCache", page)

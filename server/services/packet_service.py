@@ -208,6 +208,38 @@ def _chart_y_axis_range(payload: dict[str, Any]) -> list[float | None]:
     return [round(low - padding, 4), round(high + padding, 4)]
 
 
+def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "contract_key": "next_session_echarts_payload",
+        "schema_version": "next_session_echarts_payload.v1",
+        "renderer": "ECharts",
+        "source_packet": payload.get("source_packet"),
+        "cache_only": True,
+        "frontend_computes_trade_action": False,
+        "does_not_modify_action": True,
+        "does_not_modify_operation_zones": True,
+        "requires_button_task_for_refresh": True,
+        "series_counts": {
+            "historical_points": len(payload.get("historical_points") or []),
+            "scenario_series": len(payload.get("scenario_series") or []),
+            "reference_lines": len(payload.get("reference_lines") or []),
+            "operation_zones": len(payload.get("operation_zones") or []),
+        },
+        "required_fields": [
+            "historical_points",
+            "scenario_series",
+            "reference_lines",
+            "operation_zones",
+            "y_axis_range",
+        ],
+        "guardrails": [
+            "GET /api/next-session/cache 不触发 Tushare、DeepSeek 或 GitHub。",
+            "React/ECharts 只读渲染 cache payload，不计算或覆盖交易动作。",
+            "前端不得修改 strategy action、价格、持仓或 operation_zones。",
+        ],
+    }
+
+
 def _operation_zone_overlay(item: Any) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
@@ -323,6 +355,7 @@ def _legacy_projection_chart_payload(projection: Any) -> dict[str, Any]:
         ],
     }
     payload["y_axis_range"] = _chart_y_axis_range(payload)
+    payload["chart_contract"] = _next_session_echarts_contract(payload)
     return payload
 
 
@@ -366,6 +399,7 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
         "warnings": ["图表只读展示，不修改 strategy action、价格、持仓或 operation_zones。"],
     }
     payload["y_axis_range"] = model.get("y_axis_range") or _chart_y_axis_range(payload)
+    payload["chart_contract"] = _next_session_echarts_contract(payload)
     return payload
 
 

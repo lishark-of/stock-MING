@@ -43,10 +43,26 @@ export default function NextSessionMap() {
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
   const chartPayload = packet.chart_payload as Record<string, unknown> | undefined;
+  const chartContract = chartPayload?.chart_contract as Record<string, unknown> | undefined;
+  const chartContractCounts = chartContract?.series_counts as Record<string, unknown> | undefined;
   const historicalRows = rowsFromArray(chartPayload?.historical_points).slice(0, 20);
   const referenceRows = rowsFromArray(chartPayload?.reference_lines);
   const operationRows = rowsFromArray(chartPayload?.operation_zones);
   const warningRows = rowsFromArray(chartPayload?.warnings, "warning");
+  const chartContractRows = chartContract
+    ? [
+        { field: "schema_version", value: chartContract.schema_version, note: "ECharts payload 合同版本" },
+        { field: "renderer", value: chartContract.renderer, note: "前端渲染器" },
+        { field: "cache_only", value: String(chartContract.cache_only === true), note: "只读 cache 数据" },
+        { field: "frontend_computes_trade_action", value: String(chartContract.frontend_computes_trade_action === true), note: "必须为 false" },
+        { field: "does_not_modify_action", value: String(chartContract.does_not_modify_action !== false), note: "不得改 strategy action" },
+        { field: "does_not_modify_operation_zones", value: String(chartContract.does_not_modify_operation_zones !== false), note: "不得改 operation_zones" },
+        { field: "historical_points", value: chartContractCounts?.historical_points ?? 0, note: "历史 close 点数" },
+        { field: "scenario_series", value: chartContractCounts?.scenario_series ?? 0, note: "情景路径数量" },
+        { field: "reference_lines", value: chartContractCounts?.reference_lines ?? 0, note: "参考线数量" },
+        { field: "operation_zones", value: chartContractCounts?.operation_zones ?? 0, note: "操作区数量" }
+      ]
+    : [];
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -83,6 +99,7 @@ export default function NextSessionMap() {
           { label: "旧 projection", value: Boolean(legacy?.available), tone: legacy?.available ? "warn" : "neutral" },
           { label: "精确图谱", value: chartPayload?.is_exact_next_session_packet === true, tone: chartPayload?.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "真实 close", value: chartPayload?.uses_real_daily_close === true, tone: chartPayload?.uses_real_daily_close === true ? "good" : "warn" },
+          { label: "图表合同", value: String(chartContract?.schema_version ?? "missing"), tone: chartContract ? "good" : "warn" },
           { label: "情景路径", value: scenarioRows.length },
           { label: "参考线", value: referenceRows.length },
           { label: "操作区", value: operationRows.length },
@@ -95,6 +112,8 @@ export default function NextSessionMap() {
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
       <NextSessionChart payload={chartPayload} />
+      <h3>ECharts 图表数据合同</h3>
+      <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>
       <DataLineageTable rows={cacheBoundaryRows} />
       <h3>GET cache envelope call_ledger</h3>

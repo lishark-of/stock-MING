@@ -227,6 +227,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["chart_payload"]["historical_points"][0]["x"], "T-1")
         self.assertEqual(packet["chart_payload"]["scenario_series"][0]["scenario_name"], "中性路径")
         self.assertIn("前端不得据此计算交易动作", " ".join(packet["chart_payload"]["warnings"]))
+        contract = packet["chart_payload"]["chart_contract"]
+        self.assertEqual(contract["schema_version"], "next_session_echarts_payload.v1")
+        self.assertEqual(contract["renderer"], "ECharts")
+        self.assertFalse(contract["frontend_computes_trade_action"])
+        self.assertTrue(contract["does_not_modify_action"])
+        self.assertTrue(contract["does_not_modify_operation_zones"])
+        self.assertEqual(contract["series_counts"]["historical_points"], 2)
 
     def test_next_session_cache_maps_exact_chart_render_model_for_echarts(self):
         self._with_snapshot_cache(
@@ -281,6 +288,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_action"])
         self.assertTrue(packet["does_not_modify_operation_zones"])
         self.assertFalse(packet["external_calls_triggered"])
+        contract = chart["chart_contract"]
+        self.assertEqual(contract["source_packet"], "command_center_next_session_projection_packet")
+        self.assertEqual(contract["series_counts"]["scenario_series"], 1)
+        self.assertEqual(contract["series_counts"]["reference_lines"], 6)
+        self.assertEqual(contract["series_counts"]["operation_zones"], 1)
+        self.assertIn("前端不得修改 strategy action", " ".join(contract["guardrails"]))
 
     def test_next_session_cache_reads_persisted_sqlite_packet_without_snapshot(self):
         self._with_meta_store()
