@@ -55,6 +55,10 @@ export default function FactorQuantHub() {
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
   const deepseek = packet.deepseek_explanation ?? {};
+  const scoreChart = packet.score_chart_payload ?? {};
+  const scoreChartContract = scoreChart.chart_contract ?? {};
+  const scoreChartRows = toRows(scoreChart.bucket_rows);
+  const scoreChartContractRows = objectRows(scoreChartContract as Record<string, unknown>, "chart_contract");
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -74,20 +78,9 @@ export default function FactorQuantHub() {
   }));
   const option: EChartsOption = {
     tooltip: {},
-    xAxis: { type: "category", data: ["支持", "压制", "中性", "缺失", "冲突"] },
+    xAxis: { type: "category", data: scoreChart.x_axis_labels ?? ["支持", "压制", "中性", "缺失", "冲突"] },
     yAxis: { type: "value" },
-    series: [
-      {
-        type: "bar",
-        data: [
-          score.support_factors?.length ?? 0,
-          score.suppress_factors?.length ?? 0,
-          score.neutral_factors?.length ?? 0,
-          score.missing_factors?.length ?? 0,
-          score.conflict_factors?.length ?? 0
-        ]
-      }
-    ]
+    series: Array.isArray(scoreChart.series) ? scoreChart.series : [{ type: "bar", data: [] }]
   };
 
   return (
@@ -108,6 +101,8 @@ export default function FactorQuantHub() {
           { label: "coverage", value: runtime.coverage ?? 0 },
           { label: "missing", value: runtime.missing_count ?? 0 },
           { label: "score band", value: score.score_band ?? "missing" },
+          { label: "score chart", value: scoreChartContract.schema_version ?? "missing", tone: scoreChartContract.schema_version ? "good" : "warn" },
+          { label: "frontend_computes_trade_action", value: scoreChartContract.frontend_computes_trade_action === true ? "会" : "不会", tone: scoreChartContract.frontend_computes_trade_action === true ? "bad" : "good" },
           { label: "core action", value: governance.allow_core_action === true ? "允许" : "禁止", tone: governance.allow_core_action === true ? "bad" : "good" },
           { label: "evidence preview", value: bridge.enters_evidence_effects === true ? "预览" : "关闭" },
           { label: "modify action", value: bridge.does_not_modify_action === false ? "会" : "不会", tone: bridge.does_not_modify_action === false ? "bad" : "good" },
@@ -119,6 +114,10 @@ export default function FactorQuantHub() {
         ]}
       />
       <EChartPanel option={option} />
+      <h3>评分图表数据合同</h3>
+      <DataLineageTable rows={scoreChartContractRows} />
+      <h3>评分图表 buckets</h3>
+      <DataLineageTable rows={scoreChartRows} />
       <div className="grid compact-grid">
         <PacketCard title="支持 / 压制" subtitle="只用于 evidence_effects 预览">
           <p>support: {String(score.support_factors?.length ?? 0)}</p>

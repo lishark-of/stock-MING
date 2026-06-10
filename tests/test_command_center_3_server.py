@@ -1629,6 +1629,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload={"ts_code": "002008.SZ", "api_key": "SHOULD_DROP"},
         )
         packet = packet_service.build_factor_quant_cache()
+        cache_packet = factor_service.read_factor_quant_cache()
 
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
@@ -1655,6 +1656,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("serenity_method_source", support_keys | suppress_keys)
         self.assertNotIn("chokepoint_method_hint", support_keys | suppress_keys)
         self.assertIn("roe_latest", {item.get("factor_key") for item in packet["score"]["missing_factors"]})
+        chart_payload = cache_packet["score_chart_payload"]
+        self.assertEqual(chart_payload["chart_type"], "factor_score_bucket_bar")
+        self.assertEqual(chart_payload["chart_contract"]["schema_version"], "factor_quant_score_echarts_payload.v1")
+        self.assertFalse(chart_payload["chart_contract"]["frontend_computes_trade_action"])
+        self.assertTrue(chart_payload["chart_contract"]["does_not_modify_action"])
+        self.assertTrue(chart_payload["chart_contract"]["does_not_modify_operation_zones"])
+        self.assertEqual(chart_payload["chart_contract"]["series_counts"]["bucket_rows"], 5)
+        self.assertEqual(chart_payload["chart_contract"]["series_counts"]["missing"], len(packet["score"]["missing_factors"]))
+        self.assertIn("因子图表不得修改 strategy action", " ".join(chart_payload["chart_contract"]["guardrails"]))
 
     def test_deepseek_explanation_task_prepares_prompt_without_model_call(self):
         self._with_meta_store()

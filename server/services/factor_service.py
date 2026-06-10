@@ -21,6 +21,7 @@ def _now_iso() -> str:
 
 def read_factor_quant_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_factor_quant_cache())
+    packet["score_chart_payload"] = _factor_score_chart_payload(packet)
     cache_ledger = _factor_quant_cache_call_ledger(packet, _now_iso())
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
@@ -29,6 +30,74 @@ def read_factor_quant_cache() -> dict[str, Any]:
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
     packet["warnings"] = [cache_warning] + [item for item in existing_warnings if item != cache_warning]
     return packet
+
+
+def _score_items(score: dict[str, Any], key: str) -> list[Any]:
+    items = score.get(key)
+    return items if isinstance(items, list) else []
+
+
+def _factor_score_chart_payload(packet: dict[str, Any]) -> dict[str, Any]:
+    score = packet.get("score") if isinstance(packet.get("score"), dict) else {}
+    buckets = [
+        ("support", "支持", "support_factors"),
+        ("suppress", "压制", "suppress_factors"),
+        ("neutral", "中性", "neutral_factors"),
+        ("missing", "缺失", "missing_factors"),
+        ("conflict", "冲突", "conflict_factors"),
+    ]
+    bucket_rows = [
+        {
+            "bucket_key": bucket_key,
+            "bucket_label": label,
+            "count": len(_score_items(score, score_key)),
+            "source_field": f"score.{score_key}",
+        }
+        for bucket_key, label, score_key in buckets
+    ]
+    return {
+        "status": "ready" if score else "missing",
+        "source_packet": packet.get("packet_key") or "command_center_factor_quant_hub_packet",
+        "renderer": "ECharts",
+        "chart_type": "factor_score_bucket_bar",
+        "bucket_rows": bucket_rows,
+        "x_axis_labels": [row["bucket_label"] for row in bucket_rows],
+        "series": [
+            {
+                "name": "因子桶数量",
+                "type": "bar",
+                "data": [row["count"] for row in bucket_rows],
+            }
+        ],
+        "chart_contract": {
+            "contract_key": "factor_quant_score_echarts_payload",
+            "schema_version": "factor_quant_score_echarts_payload.v1",
+            "renderer": "ECharts",
+            "cache_only": True,
+            "frontend_computes_trade_action": False,
+            "does_not_modify_action": True,
+            "does_not_modify_next_session_projection": True,
+            "does_not_modify_operation_zones": True,
+            "does_not_modify_factor_score": True,
+            "series_counts": {
+                "bucket_rows": len(bucket_rows),
+                "support": bucket_rows[0]["count"],
+                "suppress": bucket_rows[1]["count"],
+                "neutral": bucket_rows[2]["count"],
+                "missing": bucket_rows[3]["count"],
+                "conflict": bucket_rows[4]["count"],
+            },
+            "guardrails": [
+                "GET /api/factor-quant/cache 不触发 Tushare、DeepSeek 或 GitHub。",
+                "React/ECharts 只读渲染 score buckets，不计算或覆盖交易动作。",
+                "因子图表不得修改 strategy action、次日图谱、operation_zones 或 composite_score。",
+            ],
+        },
+        "warnings": [
+            "多因子柱状图只展示 score bucket 数量，不是交易建议。",
+            "缺失因子只进入 missing bucket，不得作为 suppress 或卖出理由。",
+        ],
+    }
 
 
 def _factor_quant_cache_call_ledger(packet: dict[str, Any], now: str) -> list[dict[str, Any]]:
