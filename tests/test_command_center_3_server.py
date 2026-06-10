@@ -2518,6 +2518,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(factor["data"]["mode"], "light")
         self.assertEqual(factor["data"]["cache_source"], "sqlite_meta")
         self.assertFalse(factor["data"]["external_calls_triggered"])
+        self.assertEqual(factor["call_ledger"][0]["api"], "local_factor_quant_cache")
+        self.assertEqual(factor["call_ledger"][0]["call_status"], "cache_read")
+        self.assertFalse(factor["call_ledger"][0]["external"])
+        self.assertIn("GET /api/factor-quant/cache", factor["warnings"][0])
+        self.assertIn("local_parquet_factor_values", {item.get("api") for item in factor["call_ledger"]})
         self.assertEqual(factor["data"]["factor_values_storage"]["dataset"], "factor_values")
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
 

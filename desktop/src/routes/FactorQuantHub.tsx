@@ -25,10 +25,17 @@ function objectRows(record: Record<string, unknown>, labelKey = "field") {
 
 export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  const refreshCache = () => void getFactorQuantCache().then((res) => setPacket(res.data));
+  const refreshCache = () =>
+    void getFactorQuantCache().then((res) => {
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+      setPacket(res.data);
+    });
   const launchTask = (path: string) =>
     void postTask(path).then((res) => {
       setTaskReceipt(res);
@@ -48,6 +55,9 @@ export default function FactorQuantHub() {
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
   const deepseek = packet.deepseek_explanation ?? {};
+  const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
   const scoreRows = [
     ...toRows(score.support_factors, "support"),
     ...toRows(score.suppress_factors, "suppress"),
@@ -102,6 +112,8 @@ export default function FactorQuantHub() {
           { label: "evidence preview", value: bridge.enters_evidence_effects === true ? "预览" : "关闭" },
           { label: "modify action", value: bridge.does_not_modify_action === false ? "会" : "不会", tone: bridge.does_not_modify_action === false ? "bad" : "good" },
           { label: "modify operation_zones", value: bridge.does_not_modify_operation_zones === false ? "会" : "不会", tone: bridge.does_not_modify_operation_zones === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length },
           { label: "DeepSeek", value: deepseek.status ?? "not_called", tone: deepseek.called === true ? "warn" : "good" },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" }
         ]}
@@ -140,6 +152,10 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={riskRows} />
       <h3>数据血缘</h3>
       <DataLineageTable rows={dataLedger.ledger_rows ?? []} />
+      <h3>GET cache envelope call_ledger</h3>
+      <DataLineageTable rows={cacheCallLedger} />
+      <h3>GET cache envelope warnings</h3>
+      <DataLineageTable rows={toRows(cacheWarnings, "warning")} />
       <JsonDetails title="Factor Quant Hub packet" data={packet} />
     </PacketCard>
   );

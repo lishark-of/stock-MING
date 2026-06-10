@@ -20,7 +20,38 @@ def _now_iso() -> str:
 
 
 def read_factor_quant_cache() -> dict[str, Any]:
-    return packet_service.build_factor_quant_cache()
+    packet = dict(packet_service.build_factor_quant_cache())
+    cache_ledger = _factor_quant_cache_call_ledger(packet, _now_iso())
+    existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
+    packet["cache_call_ledger"] = cache_ledger
+    packet["call_ledger"] = cache_ledger + list(existing_ledger)
+    cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
+    existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
+    packet["warnings"] = [cache_warning] + [item for item in existing_warnings if item != cache_warning]
+    return packet
+
+
+def _factor_quant_cache_call_ledger(packet: dict[str, Any], now: str) -> list[dict[str, Any]]:
+    runtime = packet.get("runtime") if isinstance(packet.get("runtime"), dict) else {}
+    values = runtime.get("factor_values") if isinstance(runtime.get("factor_values"), list) else []
+    return [
+        {
+            "api": "local_factor_quant_cache",
+            "request_params_safe": {
+                "packet_key": packet.get("packet_key"),
+                "mode": packet.get("mode"),
+                "status": packet.get("status"),
+                "cache_source": packet.get("cache_source"),
+                "runtime_status": runtime.get("status"),
+            },
+            "row_count": len(values),
+            "data_date": packet.get("trade_date") or packet.get("data_date"),
+            "local_fetched_at": now,
+            "call_status": "cache_missing" if packet.get("status") == "cache_missing" else "cache_read",
+            "error_message_safe": "",
+            "external": False,
+        }
+    ]
 
 
 def _snapshot_value(snapshot: dict[str, Any], key: str) -> Any:

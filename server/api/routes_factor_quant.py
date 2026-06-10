@@ -14,7 +14,8 @@ router = APIRouter(prefix="/api/factor-quant")
 
 @router.get("/cache")
 def get_factor_quant_cache() -> dict:
-    return envelope(factor_service.read_factor_quant_cache())
+    packet = factor_service.read_factor_quant_cache()
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
 @router.post("/refresh-data")
