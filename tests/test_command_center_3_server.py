@@ -1922,6 +1922,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(position["data"]["does_not_modify_strategy_action"])
         self.assertTrue(position["data"]["does_not_modify_holdings"])
         self.assertTrue(position["data"]["does_not_execute_trades"])
+        self.assertEqual(position["call_ledger"][0]["api"], "local_position_context_cache")
+        self.assertFalse(position["call_ledger"][0]["external"])
+        self.assertIn("GET /api/position/cache", position["warnings"][0])
 
         candidate = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(candidate["ok"])
@@ -2210,6 +2213,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_position_context_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/position/cache", response["warnings"][0])
 
     def test_candidate_radar_cache_endpoint_returns_candidates_without_external_work(self):
         self._with_snapshot_cache(

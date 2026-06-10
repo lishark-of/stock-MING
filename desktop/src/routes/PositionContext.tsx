@@ -12,9 +12,15 @@ function objectRows(value: unknown): Array<Record<string, unknown>> {
 
 export default function PositionContext() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getPositionCache().then((res) => setCache(res.data));
+    void getPositionCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const summary = (cache.position_summary as Record<string, unknown> | undefined) ?? {};
@@ -25,7 +31,10 @@ export default function PositionContext() {
   const todayAction = (cache.today_action as Record<string, unknown> | undefined) ?? {};
   const strategyContext = (cache.strategy_context as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
 
   return (
     <>
@@ -45,7 +54,9 @@ export default function PositionContext() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "修改持仓", value: cache.does_not_modify_holdings === false ? "可能" : "不会", tone: cache.does_not_modify_holdings === false ? "bad" : "good" },
-          { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" }
+          { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -85,7 +96,15 @@ export default function PositionContext() {
       </PacketCard>
 
       <PacketCard title="调用血缘" subtitle="local_position_context_cache；不外联、不写回" status="lineage">
-        <DataLineageTable rows={callLedger} />
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET position envelope call_ledger" subtitle="GET /api/position/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET position envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={warningRows} />
       </PacketCard>
 
       <PacketCard title="原始 position context cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
