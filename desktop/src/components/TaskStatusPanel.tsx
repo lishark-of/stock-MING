@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cancelTask, getTask, type ApiEnvelope, type TaskRecord } from "../api/client";
 import DataLineageTable from "./DataLineageTable";
+import DeepSeekModelStrategyLedger from "./DeepSeekModelStrategyLedger";
 import StatusBadge from "./StatusBadge";
 
 type Props = {
@@ -147,6 +148,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       {cancelMessage ? <p className="risk-note">{cancelMessage}</p> : null}
       {task.error_message_safe ? <p className="risk-note">error_message_safe: {task.error_message_safe}</p> : null}
       {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
+      <DeepSeekModelStrategyLedger callLedger={callLedger} />
       {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无 call_ledger 记录。</p>}
       {statusHistory.length ? (
         <>

@@ -18,6 +18,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "JsonDetails.tsx",
             ROOT / "src" / "components" / "MetricGrid.tsx",
             ROOT / "src" / "components" / "NextSessionChart.tsx",
+            ROOT / "src" / "components" / "DeepSeekModelStrategyLedger.tsx",
             ROOT / "src" / "components" / "TaskLaunchReceipt.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "AShareEvidenceRadar.tsx",
@@ -442,6 +443,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
         panel = (ROOT / "src" / "components" / "TaskStatusPanel.tsx").read_text(encoding="utf-8")
         receipt = (ROOT / "src" / "components" / "TaskLaunchReceipt.tsx").read_text(encoding="utf-8")
+        model_strategy_ledger = (ROOT / "src" / "components" / "DeepSeekModelStrategyLedger.tsx").read_text(encoding="utf-8")
 
         self.assertIn("/api/tasks", client)
         self.assertIn("/api/tasks/catalog", client)
@@ -475,10 +477,20 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("does_not_execute_trades", panel)
         self.assertIn("does_not_modify_strategy_action", panel)
         self.assertIn("DataLineageTable", panel)
+        self.assertIn("DeepSeekModelStrategyLedger", panel)
         self.assertIn("任务创建回执", receipt)
         self.assertIn("top_level_call_ledger", receipt)
+        self.assertIn("DeepSeekModelStrategyLedger", receipt)
         self.assertIn("res.call_ledger", panel)
         self.assertIn("不调用 Tushare、DeepSeek 或 GitHub", receipt)
+        self.assertIn("extractDeepSeekModelStrategyRows", model_strategy_ledger)
+        self.assertIn("request_params_safe.deepseek_model_strategy", model_strategy_ledger)
+        self.assertIn("does_not_hardcode_model", model_strategy_ledger)
+        self.assertIn("contains_secret", model_strategy_ledger)
+        self.assertIn("external_call_on_cache_read", model_strategy_ledger)
+        self.assertIn("只读展示，不调用模型", model_strategy_ledger)
+        self.assertNotIn("DEEPSEEK_API_KEY", model_strategy_ledger)
+        self.assertNotIn("TUSHARE_TOKEN", model_strategy_ledger)
 
     def test_every_post_task_route_displays_task_receipt_and_status_panel(self):
         route_dir = ROOT / "src" / "routes"
