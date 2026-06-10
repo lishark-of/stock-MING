@@ -20,6 +20,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "NextSessionChart.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
+            ROOT / "src" / "routes" / "MigrationStatus.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
             ROOT / "src-tauri" / "src" / "main.rs",
         ]
@@ -60,6 +61,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "FactorQuantHub.tsx",
             "ChokepointScan.tsx",
             "SerenityMethodRadar.tsx",
+            "MigrationStatus.tsx",
             "LegacyTools.tsx",
         ]
         forbidden = ["tushare_adapter", "akshare", "DeepSeek(", "GITHUB_TOKEN", "process.env"]
@@ -87,6 +89,17 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("allow_core_action", (route_dir / "FactorQuantHub.tsx").read_text(encoding="utf-8"))
         self.assertIn("enters_strategy_action", (route_dir / "ChokepointScan.tsx").read_text(encoding="utf-8"))
         self.assertIn("enters_chokepoint_score", (route_dir / "SerenityMethodRadar.tsx").read_text(encoding="utf-8"))
+        migration_source = (route_dir / "MigrationStatus.tsx").read_text(encoding="utf-8")
+        self.assertIn("getMigrationStatus", migration_source)
+        self.assertIn("只读、不重新估算、不外联", migration_source)
+        self.assertIn("does_not_execute_trades", migration_source)
+        self.assertNotIn("postTask", migration_source)
+
+        app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+        layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+        self.assertIn("MigrationStatus", app_source)
+        self.assertIn('"migration"', layout_source)
+        self.assertIn("迁移状态", layout_source)
 
     def test_task_panel_polls_fastapi_task_endpoint(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")

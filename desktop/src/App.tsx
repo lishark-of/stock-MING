@@ -4,6 +4,7 @@ import ChokepointScan from "./routes/ChokepointScan";
 import CommandCenterHome from "./routes/CommandCenterHome";
 import FactorQuantHub from "./routes/FactorQuantHub";
 import LegacyTools from "./routes/LegacyTools";
+import MigrationStatus from "./routes/MigrationStatus";
 import NextSessionMap from "./routes/NextSessionMap";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 
@@ -16,6 +17,7 @@ export default function App() {
       {route === "factor" ? <FactorQuantHub /> : null}
       {route === "chokepoint" ? <ChokepointScan /> : null}
       {route === "serenity" ? <SerenityMethodRadar /> : null}
+      {route === "migration" ? <MigrationStatus /> : null}
       {route === "legacy" ? <LegacyTools /> : null}
     </Layout>
   );
