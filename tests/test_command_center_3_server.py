@@ -461,6 +461,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("moneyflow_packet", index["snapshot_available_keys"])
         self.assertIn("command_center_moneyflow_packet", index["snapshot_alias_keys"])
         self.assertIn("command_center_moneyflow_packet", index["available_cache_keys"])
+        self.assertEqual(index["storage_catalog"]["cache_endpoint"], "GET /api/storage/catalog")
+        self.assertEqual(index["storage_catalog"]["dataset_count"], 5)
+        self.assertEqual({item["dataset"] for item in index["storage_catalog"]["dataset_catalog"]}, {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
+        self.assertFalse(index["storage_catalog"]["external_calls_triggered"])
+        self.assertFalse(index["storage_catalog"]["tushare_called"])
+        self.assertTrue(index["storage_catalog"]["does_not_execute_trades"])
+        self.assertEqual(index["call_ledger"][0]["storage_dataset_count"], 5)
 
     def test_packet_index_exposes_sqlite_packet_metadata(self):
         self._with_meta_store()
@@ -558,6 +565,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
         self.assertEqual(response["data"]["call_ledger"][0]["api"], "local_packet_registry_cache")
         self.assertIn("command_center_moneyflow_packet", response["data"]["available_cache_keys"])
+        self.assertEqual(response["data"]["storage_catalog"]["dataset_count"], 5)
+        self.assertEqual(response["call_ledger"][0]["storage_dataset_count"], 5)
 
     def test_market_context_cache_reads_market_packets_without_refreshing_quotes(self):
         self._with_snapshot_cache(

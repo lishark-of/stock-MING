@@ -40,6 +40,8 @@ export default function PacketRegistry() {
   const keys = (index.available_cache_keys as string[] | undefined) ?? [];
   const policy = index.cache_api_policy as Record<string, unknown> | undefined;
   const sqliteMeta = index.sqlite_meta as Record<string, unknown> | undefined;
+  const storageCatalog = index.storage_catalog as Record<string, unknown> | undefined;
+  const storageCatalogRows = (storageCatalog?.dataset_catalog as Array<Record<string, unknown>> | undefined) ?? [];
   const packetMetadata = (sqliteMeta?.packet_metadata as Array<Record<string, unknown>> | undefined) ?? [];
   const taskMetadata = (sqliteMeta?.task_metadata as Array<Record<string, unknown>> | undefined) ?? [];
   const persistedKeys = (index.persisted_packet_keys as string[] | undefined) ?? [];
@@ -88,6 +90,7 @@ export default function PacketRegistry() {
           { label: "persisted packets", value: persistedKeys.length },
           { label: "SQLite packet meta", value: packetMetadata.length },
           { label: "SQLite task meta", value: taskMetadata.length },
+          { label: "storage datasets", value: storageCatalog?.dataset_count as number | undefined },
           { label: "index envelope ledger", value: indexCallLedger.length },
           { label: "index warnings", value: indexWarnings.length },
           { label: "selected envelope ledger", value: selectedCallLedger.length },
@@ -127,6 +130,13 @@ export default function PacketRegistry() {
 
       <PacketCard title="Packet index envelope call_ledger" subtitle="GET /api/packets 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
         <DataLineageTable rows={indexCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="Storage catalog summary" subtitle="来自 GET /api/storage/catalog 的只读数据集目录摘要；Packet Registry 不读取 Parquet 数据" status={String(storageCatalog?.status ?? "cache")}>
+        <p>dataset count: {String(storageCatalog?.dataset_count ?? 0)}</p>
+        <p>cache endpoint: {String(storageCatalog?.cache_endpoint ?? "GET /api/storage/catalog")}</p>
+        <p>external calls: {String(storageCatalog?.external_calls_triggered ?? false)}</p>
+        <DataLineageTable rows={storageCatalogRows} />
       </PacketCard>
 
       <PacketCard title="选中 Packet 边界" subtitle="结构化展示外联、交易和 action 边界；不依赖 raw JSON" status="guardrail">

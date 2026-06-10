@@ -10,6 +10,7 @@ import command_center_next_session_projection as next_session_projection
 import command_center_packet_registry as packet_registry
 import command_center_serenity_method_radar as serenity_radar
 from storage.sqlite_meta import SQLiteMetaStore
+from . import storage_service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT_CACHE_PATH = PROJECT_ROOT / ".stock_ming_cache" / "command_center_latest.json"
@@ -506,6 +507,27 @@ def _sqlite_metadata() -> dict[str, Any]:
     }
 
 
+def _storage_catalog_summary() -> dict[str, Any]:
+    catalog = storage_service.storage_dataset_catalog()
+    rows = catalog.get("dataset_catalog") if isinstance(catalog.get("dataset_catalog"), list) else []
+    return {
+        "status": catalog.get("status"),
+        "mode": catalog.get("mode"),
+        "dataset_count": catalog.get("dataset_count", len(rows)),
+        "supported_datasets": catalog.get("supported_datasets", []),
+        "supported_aliases": catalog.get("supported_aliases", []),
+        "dataset_catalog": rows,
+        "cache_endpoint": "GET /api/storage/catalog",
+        "cache_only": bool(catalog.get("cache_only", True)),
+        "external_calls_triggered": bool(catalog.get("external_calls_triggered", False)),
+        "tushare_called": bool(catalog.get("tushare_called", False)),
+        "deepseek_called": bool(catalog.get("deepseek_called", False)),
+        "github_called": bool(catalog.get("github_called", False)),
+        "does_not_execute_trades": bool(catalog.get("does_not_execute_trades", True)),
+        "does_not_modify_strategy_action": bool(catalog.get("does_not_modify_strategy_action", True)),
+    }
+
+
 def build_packet_registry_cache() -> dict[str, Any]:
     cached = _read_snapshot_packet("command_center_packet_registry")
     if cached:
@@ -702,6 +724,7 @@ def list_packets() -> dict[str, Any]:
     snapshot_keys = sorted(snapshot)
     alias_keys = sorted(api_key for api_key, source_key in SNAPSHOT_PACKET_ALIASES.items() if source_key in snapshot)
     sqlite_meta = _sqlite_metadata()
+    storage_catalog = _storage_catalog_summary()
     persisted_keys = sorted(str(item.get("packet_key")) for item in sqlite_meta.get("packet_metadata", []) if item.get("packet_key"))
     available_keys = sorted(set(PACKET_BUILDERS) | set(snapshot_keys) | set(alias_keys) | set(persisted_keys))
     packet_source_rows = [
@@ -724,6 +747,7 @@ def list_packets() -> dict[str, Any]:
         "snapshot_available_keys": snapshot_keys,
         "snapshot_alias_keys": alias_keys,
         "sqlite_meta": sqlite_meta,
+        "storage_catalog": storage_catalog,
         "persisted_packet_keys": persisted_keys,
         "registry_count": len(specs) if isinstance(specs, list) else 0,
         "registry": registry,
@@ -731,6 +755,7 @@ def list_packets() -> dict[str, Any]:
             "get_cache_external_calls": False,
             "post_tasks_button_gated": True,
             "does_not_modify_strategy_action": True,
+            "storage_catalog_cache_endpoint": "GET /api/storage/catalog",
         },
     }
     index["call_ledger"] = packet_index_call_ledger(index)
@@ -756,12 +781,14 @@ def read_packet(packet_key: str) -> dict[str, Any]:
 
 def packet_index_call_ledger(index: dict[str, Any]) -> list[dict[str, Any]]:
     sqlite_meta = index.get("sqlite_meta") if isinstance(index.get("sqlite_meta"), dict) else {}
+    storage_catalog = index.get("storage_catalog") if isinstance(index.get("storage_catalog"), dict) else {}
     return [
         {
             "api": "local_packet_registry_cache",
             "source_type": "local_cache_index",
             "call_status": "cache_ready",
             "packet_count": len(index.get("available_cache_keys") or []),
+            "storage_dataset_count": storage_catalog.get("dataset_count", 0),
             "snapshot_available": bool(index.get("snapshot_available")),
             "sqlite_meta_available": bool(sqlite_meta.get("sqlite_meta_available")),
             "loaded_at": _now_iso(),
