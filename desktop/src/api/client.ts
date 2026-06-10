@@ -137,6 +137,10 @@ export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }
 
+export function getStorageDataset(dataset: string) {
+  return request<Record<string, unknown>>(`/api/storage/${encodeURIComponent(dataset)}`);
+}
+
 export function getStorageOverview() {
   return request<Record<string, unknown>>("/api/storage");
 }

@@ -328,11 +328,19 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
     def test_storage_page_reads_storage_cache_without_external_calls(self):
         page = (ROOT / "src" / "routes" / "StorageOverview.tsx").read_text(encoding="utf-8")
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
 
         self.assertIn("getStorageOverview", page)
         self.assertIn("getFactorValuesStorage", page)
+        self.assertIn("getStorageDataset", page)
+        self.assertIn("/api/storage/${encodeURIComponent(dataset)}", client)
         self.assertIn("Parquet / DuckDB Storage", page)
         self.assertIn("daily / moneyflow / factor_values", page)
+        self.assertIn("GET /api/storage/{dataset}", page)
+        self.assertIn("数据集明细", page)
+        self.assertIn("daily / moneyflow 样例", page)
+        self.assertIn('"daily"', page)
+        self.assertIn('"moneyflow"', page)
         self.assertIn("cache API 永不外联", page)
         self.assertIn("external_calls_triggered", page)
         self.assertIn("does_not_execute_trades", page)
