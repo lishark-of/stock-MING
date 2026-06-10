@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getTask, type TaskRecord } from "../api/client";
+import { cancelTask, getTask, type TaskRecord } from "../api/client";
 import DataLineageTable from "./DataLineageTable";
 import JsonDetails from "./JsonDetails";
 import StatusBadge from "./StatusBadge";
@@ -17,7 +17,15 @@ function toneForStatus(status: TaskRecord["status"]) {
 
 export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const [task, setTask] = useState<TaskRecord | null>(null);
+  const [cancelMessage, setCancelMessage] = useState("");
   const successNotified = useRef("");
+
+  const loadTask = () => {
+    if (!taskId) return;
+    void getTask(taskId).then((res) => {
+      if (res.ok) setTask(res.data);
+    });
+  };
 
   useEffect(() => {
     if (!taskId) return undefined;
@@ -48,6 +56,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   if (!task) return <p>任务状态读取中：{taskId}</p>;
   const callLedger = task.call_ledger ?? [];
   const statusHistory = task.status_history ?? [];
+  const cancellable = task.status === "pending" || task.status === "running";
 
   return (
     <div className="task-panel">
@@ -65,6 +74,18 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <p>does_not_execute_trades: {String(task.does_not_execute_trades ?? true)}</p>
       <p>does_not_modify_strategy_action: {String(task.does_not_modify_strategy_action ?? true)}</p>
       <p>call_ledger: {callLedger.length}</p>
+      <button
+        disabled={!cancellable}
+        onClick={() =>
+          void cancelTask(task.task_id, "manual_cancel_from_task_status_panel").then((res) => {
+            setCancelMessage(res.ok ? "本地取消请求已写入任务状态，不调用 Tushare、DeepSeek 或 GitHub。" : String(res.error ?? "cancel_failed"));
+            loadTask();
+          })
+        }
+      >
+        本地取消任务
+      </button>
+      {cancelMessage ? <p className="risk-note">{cancelMessage}</p> : null}
       {task.error_message_safe ? <p className="risk-note">{task.error_message_safe}</p> : null}
       {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
       {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无 call_ledger 记录。</p>}
