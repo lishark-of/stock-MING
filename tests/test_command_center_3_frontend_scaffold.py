@@ -830,6 +830,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("chart_payload", page)
         self.assertIn("GET /api/next-session/cache", page)
         self.assertIn("POST /api/next-session/generate", page)
+        self.assertIn("const refreshCache", page)
+        self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
         self.assertIn("cache_only", page)
         self.assertIn("does_not_modify_action", page)
         self.assertIn("does_not_modify_operation_zones", page)

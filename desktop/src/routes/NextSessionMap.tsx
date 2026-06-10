@@ -21,8 +21,10 @@ export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
   const [taskId, setTaskId] = useState("");
 
+  const refreshCache = () => void getNextSessionCache().then((res) => setPacket(res.data));
+
   useEffect(() => {
-    void getNextSessionCache().then((res) => setPacket(res.data));
+    refreshCache();
   }, []);
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
@@ -51,10 +53,10 @@ export default function NextSessionMap() {
   return (
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
       <div className="actions">
-        <button onClick={() => void getNextSessionCache().then((res) => setPacket(res.data))}>查看缓存</button>
+        <button onClick={refreshCache}>查看缓存</button>
         <button onClick={() => void postTask("/api/next-session/generate").then((res) => setTaskId(res.data.task_id))}>生成任务</button>
       </div>
-      <TaskStatusPanel taskId={taskId} />
+      <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[
           { label: "状态", value: String(packet.status ?? "cache") },
