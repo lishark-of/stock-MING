@@ -22,6 +22,15 @@ export default function HealthStatus() {
   }, []);
 
   const modelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
+  const modelStrategyRows = [
+    { purpose: "default", model: modelStrategy?.default ?? "--", grade: "解释默认" },
+    { purpose: "explain", model: modelStrategy?.explain ?? "--", grade: "解释" },
+    { purpose: "projection", model: modelStrategy?.projection ?? "--", grade: "次日图谱解释" },
+    { purpose: "factor_explain", model: modelStrategy?.factor_explain ?? "--", grade: "因子解释" },
+    { purpose: "fast", model: modelStrategy?.fast ?? "--", grade: "轻量" },
+    { purpose: "healthcheck", model: modelStrategy?.healthcheck ?? "--", grade: "健康检查" },
+    { purpose: "feeder", model: modelStrategy?.feeder ?? "--", grade: "自动喂数" }
+  ];
   const progress = (migration.progress_baseline as Array<Record<string, unknown>> | undefined) ?? [];
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
@@ -56,9 +65,7 @@ export default function HealthStatus() {
         </PacketCard>
 
         <PacketCard title="DeepSeek 模型策略" subtitle="可配置模型名；不在调用点硬编码；不展示密钥" status="config">
-          <p>explain: {String(modelStrategy?.explain ?? "--")}</p>
-          <p>fast: {String(modelStrategy?.fast ?? "--")}</p>
-          <p>default: {String(modelStrategy?.default ?? "--")}</p>
+          <DataLineageTable rows={modelStrategyRows} />
           <p>contains_secret: {String(modelStrategy?.contains_secret ?? false)}</p>
           <p>source: {String(modelStrategy?.source ?? "config")}</p>
         </PacketCard>
