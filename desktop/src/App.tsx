@@ -5,6 +5,7 @@ import CandidateRadar from "./routes/CandidateRadar";
 import ChokepointScan from "./routes/ChokepointScan";
 import CommandCenterHome from "./routes/CommandCenterHome";
 import DataCapabilityConsole from "./routes/DataCapabilityConsole";
+import DisciplineLoop from "./routes/DisciplineLoop";
 import FactorQuantHub from "./routes/FactorQuantHub";
 import HealthStatus from "./routes/HealthStatus";
 import LegacyTools from "./routes/LegacyTools";
@@ -29,6 +30,7 @@ export default function App() {
       {route === "home" ? <CommandCenterHome /> : null}
       {route === "health" ? <HealthStatus /> : null}
       {route === "market" ? <MarketContext /> : null}
+      {route === "discipline" ? <DisciplineLoop /> : null}
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}
       {route === "recovery" ? <RecoveryCenter /> : null}

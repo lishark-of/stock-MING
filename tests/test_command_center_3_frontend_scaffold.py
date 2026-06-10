@@ -22,6 +22,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "AShareEvidenceRadar.tsx",
             ROOT / "src" / "routes" / "CandidateRadar.tsx",
             ROOT / "src" / "routes" / "DataCapabilityConsole.tsx",
+            ROOT / "src" / "routes" / "DisciplineLoop.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src" / "routes" / "HealthStatus.tsx",
             ROOT / "src" / "routes" / "MarketContext.tsx",
@@ -97,6 +98,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "AShareEvidenceRadar.tsx",
             "CandidateRadar.tsx",
             "DataCapabilityConsole.tsx",
+            "DisciplineLoop.tsx",
             "HealthStatus.tsx",
             "MarketContext.tsx",
             "NextSessionMap.tsx",
@@ -150,6 +152,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
         self.assertIn("HealthStatus", app_source)
         self.assertIn("MarketContext", app_source)
+        self.assertIn("DisciplineLoop", app_source)
         self.assertIn("AShareEvidenceRadar", app_source)
         self.assertIn("CandidateRadar", app_source)
         self.assertIn("DataCapabilityConsole", app_source)
@@ -165,6 +168,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("TradeReviewLab", app_source)
         self.assertIn('"health"', layout_source)
         self.assertIn('"market"', layout_source)
+        self.assertIn('"discipline"', layout_source)
         self.assertIn('"evidence"', layout_source)
         self.assertIn('"candidates"', layout_source)
         self.assertIn('"dataCapability"', layout_source)
@@ -193,6 +197,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("策略 Trace", layout_source)
         self.assertIn("交易复盘", layout_source)
         self.assertIn("市场环境", layout_source)
+        self.assertIn("交易纪律", layout_source)
 
     def test_task_panel_polls_fastapi_task_endpoint(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
@@ -418,6 +423,32 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不会执行真实交易", page)
         self.assertIn("不修改 strategy action", page)
         self.assertIn("市场环境不是交易指令", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_discipline_loop_page_reads_cache_without_running_backtest(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "DisciplineLoop.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/discipline/cache", client)
+        self.assertIn("getDisciplineLoopCache", page)
+        self.assertIn("getDisciplineLoopCache", home)
+        self.assertIn("GET /api/discipline/cache", page)
+        self.assertIn("discipline_packet", page)
+        self.assertIn("decision_loop_status", page)
+        self.assertIn("today_action", page)
+        self.assertIn("full_refresh_steps", page)
+        self.assertIn("local_discipline_loop_cache", page)
+        self.assertIn("不会运行回测", page)
+        self.assertIn("不会满血刷新", page)
+        self.assertIn("不会重算 action", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertIn("不会执行真实交易", page)
+        self.assertIn("纪律分数和胜率不是买卖指令", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

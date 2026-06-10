@@ -5,6 +5,7 @@
 | 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing` | 是，POST 当前 stub |
 | Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | 市场环境 / 盘面证据 | `command_center_*_packet.py`, `app.py` | `GET /api/market/cache` | `MarketContext.tsx` | cache GET 只读展示市场状态、资金流、两融、涨跌停情绪、龙虎榜、筹码和 ETF 替代，不刷新行情 | 后续任务化；当前不提供 POST |
+| 交易纪律 / 决策闭环 | `strategy_execution_service.py`, `command_center_decision_engine.py`, `app.py` | `GET /api/discipline/cache` | `DisciplineLoop.tsx` | cache GET 只读展示纪律 packet、决策闭环、今日动作和满血刷新步骤，不运行回测 | 后续任务化；当前不提供 POST |
 | 策略执行 / 今日决策 | `strategy_execution_service.py`, `command_center_decision_engine.py`, `command_center_strategy_summary.py` | `GET /api/strategy/cache` | `StrategyTrace.tsx` | cache GET 只读展示 `strategy_execution_packet` / `command_center_decision_packet`，不生成新动作 | 后续任务化；当前不提供 POST |
 | 持仓画像 / 标的上下文 | `command_center_home_snapshot.py`, `strategy_execution_service.py`, `app.py` | `GET /api/position/cache` | `PositionContext.tsx` | cache GET 只读展示 `holding_action`、风险预算和首页快照摘要，不刷新价格 | 否；后续可接按钮任务 |
 | 下一票候选雷达 | `command_center_radar_packet.py`, `command_center_home_snapshot.py`, `app.py` | `GET /api/candidate-radar/cache` | `CandidateRadar.tsx` | cache GET 只读展示 `radar_packet` 与 `next_ticket_candidates`，不扫描全市场 | 后续任务化；当前不提供 POST |
@@ -29,6 +30,7 @@
 - `/api/packets`
 - `/api/packets/{packet_key}`
 - `/api/market/cache`
+- `/api/discipline/cache`
 - `/api/evidence/cache`
 - `/api/data-capability/cache`
 - `/api/recovery/cache`
@@ -51,6 +53,8 @@
 `GET` 类 cache API 当前已可读取 `.stock_ming_cache/command_center_latest.json` 中的本地快照或本地 builder 结果，不调用 Tushare、DeepSeek、GitHub。精确 packet 缺失时返回 `cache_missing`，并附带可审计的 legacy 快照摘要。
 
 `/api/market/cache` 已接入市场环境 / 盘面证据只读迁移：读取本地 `market_packet`、`market_profile_evidence`、`moneyflow_packet`、`margin_packet`、`dragon_tiger_packet`、`limit_emotion_packet`、`chip_packet`、`etf_packet` 和 `margin_etf_summary`，输出盘面状态、资金流、两融、龙虎榜、涨跌停情绪、筹码和 ETF 替代说明；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不刷新行情或资金流、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
+
+`/api/discipline/cache` 已接入交易纪律 / 决策闭环只读迁移：读取本地 `discipline_packet`、`decision_loop_status`、`today_action`、`decision_packet`、`strategy_packet`、`full_refresh_steps`、`home_data_issue_brief` 和 `data_issue_explainer`，输出纪律指标、关键规则、闭环条目、恢复队列和刷新步骤；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不运行回测或满血刷新、不重算 action、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
 
 `/api/evidence/cache` 已接入 A 股证据雷达与事实血缘只读迁移：读取本地 `command_center_evidence_radar_packet` / `a_share_fact_lineage_summary` 或用本地 builder 生成缓存视图；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action`。
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, getChokepointCache, getFactorQuantCache, getHealth, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
+import { getCandidateRadarCache, getChokepointCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -9,6 +9,7 @@ export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [market, setMarket] = useState<Record<string, unknown>>({});
+  const [discipline, setDiscipline] = useState<Record<string, unknown>>({});
   const [factor, setFactor] = useState<Record<string, unknown>>({});
   const [next, setNext] = useState<Record<string, unknown>>({});
   const [recovery, setRecovery] = useState<Record<string, unknown>>({});
@@ -26,6 +27,7 @@ export default function CommandCenterHome() {
     void getHealth().then((res) => setHealth(res.data));
     void getPackets().then((res) => setPackets(res.data));
     void getMarketContextCache().then((res) => setMarket(res.data));
+    void getDisciplineLoopCache().then((res) => setDiscipline(res.data));
     void getFactorQuantCache().then((res) => setFactor(res.data));
     void getNextSessionCache().then((res) => setNext(res.data));
     void getRecoveryCenterCache().then((res) => setRecovery(res.data));
@@ -46,6 +48,8 @@ export default function CommandCenterHome() {
   const sqlitePackets = sqliteMeta?.packet_metadata as unknown[] | undefined;
   const sqliteTasks = sqliteMeta?.task_metadata as unknown[] | undefined;
   const marketCounts = market.counts as Record<string, unknown> | undefined;
+  const disciplineCounts = discipline.counts as Record<string, unknown> | undefined;
+  const disciplinePacket = discipline.discipline_packet as Record<string, unknown> | undefined;
   const storageStatus = storageOverview.dataset_status as Record<string, unknown> | undefined;
   const storageDatasets = storageOverview.datasets as Array<Record<string, unknown>> | undefined;
   const deepseekModelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
@@ -99,6 +103,11 @@ export default function CommandCenterHome() {
           <p>trade date: {String(market.trade_date ?? "--")}</p>
           <p>packets ready/missing: {String(marketCounts?.ready_count ?? 0)} / {String(marketCounts?.missing_count ?? 0)}</p>
           <p>external calls: {String(market.external_calls_triggered ?? false)}</p>
+        </PacketCard>
+        <PacketCard title="交易纪律 cache" subtitle="GET cache，只读纪律闭环，不运行回测" status={String(discipline.status ?? "cache")}>
+          <p>discipline score: {String(disciplinePacket?.score ?? "--")}</p>
+          <p>loop ready / blocked: {String(disciplineCounts?.loop_ready_count ?? 0)} / {String(disciplineCounts?.loop_blocked_count ?? 0)}</p>
+          <p>refresh steps: {String(disciplineCounts?.refresh_step_count ?? 0)}</p>
         </PacketCard>
         <PacketCard title="次日操作图谱 cache" subtitle="GET cache，不刷新，不改 action" status={String(next.status ?? "cache")}>
           <p>{String(next.summary ?? "等待缓存")}</p>

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, evidence_service, factor_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, discipline_service, evidence_service, factor_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -240,6 +240,72 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_holdings"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_market_context_cache")
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_discipline_loop_cache_reads_local_discipline_without_running_backtest(self):
+        self._with_snapshot_cache(
+            {
+                "discipline_packet": {
+                    "status": "ready",
+                    "score": 72,
+                    "win_rate": 0.58,
+                    "max_drawdown": -0.12,
+                    "metric_items": [{"label": "胜率", "value": 0.58, "api_key": "SHOULD_DROP"}],
+                    "key_rules": ["不追高", {"rule": "不裸露强动作", "authorization": "Bearer SHOULD_DROP"}],
+                    "token": "SHOULD_DROP",
+                },
+                "decision_loop_status": {
+                    "status": "ready",
+                    "ready_count": 2,
+                    "blocked_count": 1,
+                    "waiting_count": 3,
+                    "items": [{"label": "策略已生成"}],
+                    "recovery_queue": [{"label": "补数据"}],
+                    "recovery_actions": [{"label": "手动刷新"}],
+                },
+                "today_action": {"overall_action": "只观察", "risk_level": "中"},
+                "decision_packet": {"overall_action": "只观察", "api_key": "SHOULD_DROP"},
+                "strategy_packet": {"action": "等待", "authorization": "Bearer SHOULD_DROP"},
+                "full_refresh_steps": [
+                    {"key": "market", "status": "completed", "label": "完成"},
+                    {"key": "discipline", "status": "skipped", "label": "已跳过"},
+                    {"key": "risk", "status": "failed", "error": "Traceback token=SHOULD_DROP"},
+                ],
+            }
+        )
+
+        packet = discipline_service.read_discipline_loop_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_discipline_loop_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["discipline_packet"]["score"], 72)
+        self.assertEqual(packet["counts"]["discipline_metric_count"], 1)
+        self.assertEqual(packet["counts"]["discipline_rule_count"], 2)
+        self.assertEqual(packet["counts"]["decision_loop_item_count"], 1)
+        self.assertEqual(packet["counts"]["recovery_queue_count"], 1)
+        self.assertEqual(packet["counts"]["refresh_step_count"], 3)
+        self.assertEqual(packet["counts"]["refresh_completed_count"], 1)
+        self.assertEqual(packet["counts"]["refresh_skipped_count"], 1)
+        self.assertEqual(packet["counts"]["refresh_failed_count"], 1)
+        self.assertEqual(packet["counts"]["loop_blocked_count"], 1)
+        self.assertNotIn("token", packet["discipline_packet"])
+        self.assertNotIn("authorization", packet["strategy_packet"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_run_backtest"])
+        self.assertTrue(packet["policy"]["does_not_run_full_refresh"])
+        self.assertTrue(packet["policy"]["does_not_recompute_action"])
+        self.assertTrue(packet["policy"]["discipline_cache_is_not_trade_instruction"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_decision_packet"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_discipline_loop_cache")
         json.dumps(packet, ensure_ascii=False)
 
     def test_storage_factor_values_status_is_cache_only(self):
@@ -1035,6 +1101,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(market["data"]["does_not_modify_strategy_action"])
         self.assertTrue(market["data"]["does_not_execute_trades"])
 
+        discipline = self.client.get("/api/discipline/cache").json()
+        self.assertTrue(discipline["ok"])
+        self.assertTrue(discipline["data"]["cache_only"])
+        self.assertFalse(discipline["data"]["external_calls_triggered"])
+        self.assertFalse(discipline["data"]["tushare_called"])
+        self.assertFalse(discipline["data"]["deepseek_called"])
+        self.assertTrue(discipline["data"]["policy"]["does_not_run_backtest"])
+        self.assertTrue(discipline["data"]["policy"]["does_not_recompute_action"])
+        self.assertTrue(discipline["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(discipline["data"]["does_not_execute_trades"])
+
         serenity = self.client.get("/api/serenity/cache").json()
         self.assertTrue(serenity["ok"])
         self.assertFalse(serenity["data"]["deepseek_called"])
@@ -1241,6 +1318,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         self.assertTrue(packet["policy"]["does_not_call_tushare"])
         self.assertTrue(packet["policy"]["does_not_refresh_moneyflow"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_discipline_loop_cache_endpoint_returns_local_discipline_context(self):
+        self._with_snapshot_cache(
+            {
+                "discipline_packet": {"status": "ready", "score": 66, "key_rules": ["不追高"]},
+                "decision_loop_status": {"status": "ready", "ready_count": 1, "blocked_count": 0},
+                "full_refresh_steps": [{"key": "market", "status": "completed"}],
+                "decision_packet": {"overall_action": "只观察", "authorization": "Bearer SHOULD_DROP"},
+            }
+        )
+
+        response = self.client.get("/api/discipline/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_discipline_loop_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["discipline_packet"]["score"], 66)
+        self.assertEqual(packet["counts"]["discipline_rule_count"], 1)
+        self.assertEqual(packet["counts"]["refresh_step_count"], 1)
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_run_backtest"])
+        self.assertTrue(packet["policy"]["does_not_run_full_refresh"])
+        self.assertTrue(packet["policy"]["does_not_recompute_action"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
