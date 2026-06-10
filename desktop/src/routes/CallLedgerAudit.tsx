@@ -30,6 +30,7 @@ export default function CallLedgerAudit() {
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<unknown> | undefined) ?? []);
+  const modelStrategyRows = rows(cache.model_strategy_rows);
 
   return (
     <>
@@ -51,6 +52,8 @@ export default function CallLedgerAudit() {
           { label: "external calls", value: counts.external_call_count as number | undefined, tone: Number(counts.external_call_count ?? 0) > 0 ? "bad" : "good" },
           { label: "action risk", value: counts.action_risk_count as number | undefined, tone: Number(counts.action_risk_count ?? 0) > 0 ? "bad" : "good" },
           { label: "missing ledger", value: counts.missing_call_ledger_count as number | undefined, tone: Number(counts.missing_call_ledger_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "model strategy purposes", value: counts.model_strategy_purpose_count as number | undefined },
+          { label: "model cache外联", value: counts.model_strategy_cache_read_external_call_count as number | undefined, tone: Number(counts.model_strategy_cache_read_external_call_count ?? 0) > 0 ? "bad" : "good" },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -90,6 +93,12 @@ export default function CallLedgerAudit() {
       <PacketCard title="任务审计" subtitle="GET /api/tasks 只读任务状态；不创建任务" status="tasks">
         <p>任务状态 index（command_center_3_task_status_index）会作为 cache endpoint 进入审计，同时任务明细会单独聚合 call_ledger。</p>
         <DataLineageTable rows={rows(cache.task_rows)} />
+      </PacketCard>
+
+      <PacketCard title="DeepSeek 模型策略审计" subtitle="从 local_deepseek_model_strategy_cache 提取；cache read 不外联、不含凭据" status="model_strategy">
+        <p>model_strategy_purpose_count: {String(counts.model_strategy_purpose_count ?? 0)}</p>
+        <p>model_strategy_cache_read_external_call_count: {String(counts.model_strategy_cache_read_external_call_count ?? 0)}</p>
+        <DataLineageTable rows={modelStrategyRows} />
       </PacketCard>
 
       <div className="grid">

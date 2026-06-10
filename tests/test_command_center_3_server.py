@@ -1733,6 +1733,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreater(packet["counts"]["cache_endpoint_count"], 10)
         self.assertGreaterEqual(packet["counts"]["task_count"], 1)
         self.assertGreaterEqual(packet["counts"]["call_ledger_count"], 1)
+        self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
+        self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
         endpoint_by_source = {row["source"]: row for row in packet["endpoint_rows"]}
@@ -1754,6 +1756,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(endpoint_by_source["task_status_index"]["call_ledger_count"], 1)
         self.assertIn("local_health_check", {row.get("api") for row in packet["endpoint_call_ledger_rows"]})
         self.assertIn("local_task_status_index", {row.get("api") for row in packet["endpoint_call_ledger_rows"]})
+        model_rows = {row["purpose"]: row for row in packet["model_strategy_rows"]}
+        self.assertEqual(
+            set(model_rows),
+            {"default", "explain", "projection", "factor_explain", "fast", "healthcheck", "feeder"},
+        )
+        self.assertTrue(all(row["does_not_hardcode_model"] for row in model_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in model_rows.values()))
+        self.assertFalse(any(row["external_call_on_cache_read"] for row in model_rows.values()))
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])

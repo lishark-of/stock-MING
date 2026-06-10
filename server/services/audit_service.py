@@ -314,9 +314,30 @@ def _task_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return task_rows, task_ledger_rows
 
 
+def _model_strategy_rows() -> list[dict[str, Any]]:
+    packet = model_strategy_service.read_deepseek_model_strategy_cache()
+    rows = []
+    for row in _as_list(packet.get("model_rows")):
+        item = _as_dict(_safe_value(row))
+        rows.append(
+            {
+                "purpose": item.get("purpose"),
+                "model": item.get("model"),
+                "config_keys": item.get("config_keys"),
+                "active_config_key": item.get("active_config_key"),
+                "does_not_hardcode_model": item.get("does_not_hardcode_model") is True,
+                "contains_secret": item.get("contains_secret") is True,
+                "external_call_on_cache_read": item.get("external_call_on_cache_read") is True,
+                "call_policy": item.get("call_policy"),
+            }
+        )
+    return rows
+
+
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
+    model_strategy_rows = _model_strategy_rows()
     get_route_coverage = _get_route_coverage(endpoint_rows)
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
@@ -343,6 +364,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "call_ledger_rows": all_ledger_rows,
         "endpoint_call_ledger_rows": endpoint_ledger_rows[:160],
         "task_call_ledger_rows": task_ledger_rows[:160],
+        "model_strategy_rows": model_strategy_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -355,6 +377,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "call_ledger_count": len(all_ledger_rows),
             "endpoint_call_ledger_count": len(endpoint_ledger_rows),
             "task_call_ledger_count": len(task_ledger_rows),
+            "model_strategy_purpose_count": len(model_strategy_rows),
+            "model_strategy_cache_read_external_call_count": sum(
+                1 for row in model_strategy_rows if row.get("external_call_on_cache_read")
+            ),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
