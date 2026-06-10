@@ -1936,6 +1936,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(candidate["data"]["policy"]["candidate_is_not_buy_instruction"])
         self.assertTrue(candidate["data"]["does_not_modify_strategy_action"])
         self.assertTrue(candidate["data"]["does_not_execute_trades"])
+        self.assertEqual(candidate["call_ledger"][0]["api"], "local_candidate_radar_cache")
+        self.assertFalse(candidate["call_ledger"][0]["external"])
+        self.assertIn("GET /api/candidate-radar/cache", candidate["warnings"][0])
 
         risk = self.client.get("/api/risk/cache").json()
         self.assertTrue(risk["ok"])
@@ -2243,6 +2246,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_candidate_radar_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/candidate-radar/cache", response["warnings"][0])
 
     def test_risk_guardrails_cache_endpoint_returns_local_risk_boundaries(self):
         self._with_snapshot_cache(

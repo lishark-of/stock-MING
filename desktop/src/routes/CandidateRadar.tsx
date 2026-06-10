@@ -16,16 +16,25 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
 
 export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getCandidateRadarCache().then((res) => setCache(res.data));
+    void getCandidateRadarCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const overview = (cache.candidate_execution_evidence_overview as Record<string, unknown> | undefined) ?? {};
   const radarPacket = (cache.radar_packet as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
 
   return (
     <>
@@ -45,7 +54,9 @@ export default function CandidateRadar() {
           { label: "市场扫描", value: policy.does_not_scan_market === true ? "不会" : "可能", tone: policy.does_not_scan_market === true ? "good" : "bad" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
+          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -92,7 +103,15 @@ export default function CandidateRadar() {
       </div>
 
       <PacketCard title="调用血缘" subtitle="local_candidate_radar_cache；不外联、不写回" status="lineage">
-        <DataLineageTable rows={callLedger} />
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET candidate envelope call_ledger" subtitle="GET /api/candidate-radar/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET candidate envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={warningRows} />
       </PacketCard>
 
       <PacketCard title="原始 candidate radar cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
