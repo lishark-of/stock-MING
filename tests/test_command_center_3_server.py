@@ -2369,6 +2369,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["policy"]["does_not_ping_tushare"])
         self.assertTrue(packet["does_not_execute_trades"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_data_capability_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/data-capability/cache", response["warnings"][0])
 
     def test_data_health_cache_endpoint_returns_provider_timeline_without_ping(self):
         self._with_snapshot_cache(
