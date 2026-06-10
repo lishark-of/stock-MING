@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
-import { getChokepointCache, postTask } from "../api/client";
+import { getChokepointCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function ChokepointScan() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
   const [taskId, setTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshCache = () => void getChokepointCache().then((res) => setPacket(res.data));
+  const launchTask = () =>
+    void postTask("/api/chokepoint/run").then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -39,8 +46,9 @@ export default function ChokepointScan() {
     <PacketCard title="产业链瓶颈扫描" subtitle="运行必须按钮触发；DeepSeek 不作为数据源" status={String(packet.status ?? "cache")}>
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
-        <button onClick={() => void postTask("/api/chokepoint/run").then((res) => setTaskId(res.data.task_id))}>运行任务</button>
+        <button onClick={launchTask}>运行任务</button>
       </div>
+      <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <p className="risk-note">GET cache 不运行瓶颈扫描；cache API 永不外联。运行任务必须手动 POST task，且只进入研究解释层。</p>
       <MetricGrid

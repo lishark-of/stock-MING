@@ -18,6 +18,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "JsonDetails.tsx",
             ROOT / "src" / "components" / "MetricGrid.tsx",
             ROOT / "src" / "components" / "NextSessionChart.tsx",
+            ROOT / "src" / "components" / "TaskLaunchReceipt.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "AShareEvidenceRadar.tsx",
             ROOT / "src" / "routes" / "CallLedgerAudit.tsx",
@@ -68,6 +69,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("/api/factor-quant/refresh-data", source)
         self.assertIn("/api/factor-quant/run-light", source)
         self.assertIn("/api/factor-quant/deepseek-explain", source)
+        self.assertIn("TaskLaunchReceipt", source)
+        self.assertIn("TaskCreationEnvelope", source)
         self.assertIn("多因子量化不是交易建议", source)
         self.assertIn("只整理已有结构化结果", source)
         self.assertIn("summary / support_notes / suppress_notes", source)
@@ -310,9 +313,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
     def test_task_panel_polls_fastapi_task_endpoint(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
         panel = (ROOT / "src" / "components" / "TaskStatusPanel.tsx").read_text(encoding="utf-8")
+        receipt = (ROOT / "src" / "components" / "TaskLaunchReceipt.tsx").read_text(encoding="utf-8")
 
         self.assertIn("/api/tasks", client)
         self.assertIn("/api/tasks/catalog", client)
+        self.assertIn("TaskCreationEnvelope", client)
         self.assertIn("/api/tasks/${encodeURIComponent(taskId)}/cancel", client)
         self.assertIn("getTask(taskId)", panel)
         self.assertIn("mergeTaskEnvelope", panel)
@@ -332,6 +337,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("does_not_execute_trades", panel)
         self.assertIn("does_not_modify_strategy_action", panel)
         self.assertIn("DataLineageTable", panel)
+        self.assertIn("任务创建回执", receipt)
+        self.assertIn("top_level_call_ledger", receipt)
+        self.assertIn("res.call_ledger", panel)
+        self.assertIn("不调用 Tushare、DeepSeek 或 GitHub", receipt)
 
     def test_health_page_reads_startup_state_without_external_calls(self):
         page = (ROOT / "src" / "routes" / "HealthStatus.tsx").read_text(encoding="utf-8")
@@ -763,6 +772,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("getChokepointCache", page)
         self.assertIn("/api/chokepoint/run", page)
         self.assertIn("const refreshCache", page)
+        self.assertIn("TaskLaunchReceipt", page)
+        self.assertIn("TaskCreationEnvelope", page)
         self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
         self.assertIn("GET cache 不运行瓶颈扫描", page)
         self.assertIn("cache API 永不外联", page)
@@ -809,6 +820,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("getSerenityCache", page)
         self.assertIn("/api/serenity/github-probe", page)
         self.assertIn("const refreshCache", page)
+        self.assertIn("TaskLaunchReceipt", page)
+        self.assertIn("TaskCreationEnvelope", page)
         self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
         self.assertIn("本地方法来源基线", page)
         self.assertIn("GitHub 当前状态为未校验", page)
@@ -863,6 +876,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("GET /api/next-session/cache", page)
         self.assertIn("POST /api/next-session/generate", page)
         self.assertIn("const refreshCache", page)
+        self.assertIn("TaskLaunchReceipt", page)
+        self.assertIn("TaskCreationEnvelope", page)
         self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
         self.assertIn("cache_only", page)
         self.assertIn("does_not_modify_action", page)

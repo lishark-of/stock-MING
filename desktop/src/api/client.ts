@@ -52,6 +52,13 @@ export type TaskStatusIndex = {
   warnings: string[];
 };
 
+export type TaskCreationData = {
+  task_id: string;
+  task: TaskRecord;
+};
+
+export type TaskCreationEnvelope = ApiEnvelope<TaskCreationData>;
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710";
 
 async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
@@ -177,14 +184,14 @@ export function getStorageOverview() {
 }
 
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
-  return request<{ task_id: string; task: TaskRecord }>(path, {
+  return request<TaskCreationData>(path, {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
 export function cancelTask(taskId: string, reason = "manual_cancel_from_task_catalog") {
-  return request<{ task_id: string; task: TaskRecord }>(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
+  return request<TaskCreationData>(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
     method: "POST",
     body: JSON.stringify({ reason })
   });

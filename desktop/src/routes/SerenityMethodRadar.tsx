@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
-import { getSerenityCache, postTask } from "../api/client";
+import { getSerenityCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function SerenityMethodRadar() {
   const [packet, setPacket] = useState<Record<string, any>>({});
   const [taskId, setTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshCache = () => void getSerenityCache().then((res) => setPacket(res.data));
+  const launchTask = () =>
+    void postTask("/api/serenity/github-probe").then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -36,9 +43,10 @@ export default function SerenityMethodRadar() {
     <PacketCard title="Serenity 方法来源雷达" subtitle="一次性本地方法基线；只读说明，不参与交易评分" status={String(packet.github_status ?? "unverified")}>
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
-        <button onClick={() => void postTask("/api/serenity/github-probe").then((res) => setTaskId(res.data.task_id))}>GitHub 校验任务</button>
+        <button onClick={launchTask}>GitHub 校验任务</button>
       </div>
       <p className="risk-note">默认只读本地方法来源基线；GitHub 当前状态为未校验。GitHub 校验只在手动 POST task 后进入任务队列。</p>
+      <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[

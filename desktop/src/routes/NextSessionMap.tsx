@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { getNextSessionCache, postTask } from "../api/client";
+import { getNextSessionCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import NextSessionChart from "../components/NextSessionChart";
 import PacketCard from "../components/PacketCard";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
 function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<string, unknown>> {
@@ -20,8 +21,14 @@ function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<stri
 export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
   const [taskId, setTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshCache = () => void getNextSessionCache().then((res) => setPacket(res.data));
+  const launchTask = () =>
+    void postTask("/api/next-session/generate").then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -54,8 +61,9 @@ export default function NextSessionMap() {
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
-        <button onClick={() => void postTask("/api/next-session/generate").then((res) => setTaskId(res.data.task_id))}>生成任务</button>
+        <button onClick={launchTask}>生成任务</button>
       </div>
+      <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[
