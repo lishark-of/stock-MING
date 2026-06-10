@@ -8,6 +8,8 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
+  const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [healthEnvelopeWarnings, setHealthEnvelopeWarnings] = useState<Array<string>>([]);
   const [audit, setAudit] = useState<Record<string, unknown>>({});
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -35,7 +37,11 @@ export default function CommandCenterHome() {
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
-    void getHealth().then((res) => setHealth(res.data));
+    void getHealth().then((res) => {
+      setHealth(res.data);
+      setHealthEnvelopeLedger(res.call_ledger ?? []);
+      setHealthEnvelopeWarnings(res.warnings ?? []);
+    });
     void getAuditCache().then((res) => setAudit(res.data));
     void getPackets().then((res) => {
       setPacketEnvelopeLedger(res.call_ledger ?? []);
@@ -97,10 +103,12 @@ export default function CommandCenterHome() {
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
+  const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
   const packetPayloadLedger = (packets.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
   const envelopeLedgerRows = [
+    ...healthEnvelopeLedger.map((row) => ({ scope: "health", ...row })),
     ...(packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).map((row) => ({ scope: "packet_index", ...row })),
     ...(taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).map((row) => ({ scope: "task_catalog", ...row })),
     ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
@@ -115,6 +123,8 @@ export default function CommandCenterHome() {
       <MetricGrid
         items={[
           { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
+          { label: "health envelope ledger", value: healthEnvelopeLedger.length },
+          { label: "health warnings", value: healthWarnings.length },
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
           { label: "cache keys", value: packetKeys?.length ?? 0 },
           { label: "packet envelope ledger", value: (packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).length },
@@ -153,7 +163,8 @@ export default function CommandCenterHome() {
           <p>external calls: {String(audit.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="3.0 envelope 血缘总览" subtitle="首页优先读取 FastAPI 顶层 call_ledger；不钻 payload 也能判断只读边界" status="lineage">
-          <p>packet / catalog / task index: {String(packetEnvelopeLedger.length)} / {String(taskCatalogEnvelopeLedger.length)} / {String(taskIndexEnvelopeLedger.length)}</p>
+          <p>health / packet / catalog / task index: {String(healthEnvelopeLedger.length)} / {String(packetEnvelopeLedger.length)} / {String(taskCatalogEnvelopeLedger.length)} / {String(taskIndexEnvelopeLedger.length)}</p>
+          <p>health warnings: {String(healthWarnings.length)}</p>
           <p>fallback payload ledger: {String(packetPayloadLedger.length + taskCatalogPayloadLedger.length + taskIndexPayloadLedger.length)}</p>
           <p>GET cache 仍不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。</p>
           <DataLineageTable rows={envelopeLedgerRows} />
