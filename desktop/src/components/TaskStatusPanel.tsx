@@ -125,6 +125,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <p>{task.current_step}</p>
       <p>task_id: {task.task_id}</p>
       <p>backend: {task.backend ?? "local_fallback"}</p>
+      <p>storage_source: {task.storage_source ?? "memory_or_sqlite_fallback"}</p>
       <p>output_packet_key: {task.output_packet_key || "--"}</p>
       <p>created_at: {task.created_at ?? "--"}</p>
       <p>started_at: {task.started_at ?? "--"}</p>

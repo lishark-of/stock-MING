@@ -536,23 +536,55 @@ def read_task_status(task_id: str) -> dict[str, Any] | None:
     return _TASKS.get(str(task_id)) or _read_persisted_task(str(task_id))
 
 
-def list_task_statuses() -> list[dict[str, Any]]:
+def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    persisted_tasks = _list_persisted_tasks()
+    persisted_ids = {str(task.get("task_id") or "") for task in persisted_tasks if task.get("task_id")}
+    memory_ids = {str(task_id) for task_id in _TASKS}
+    shared_ids = persisted_ids & memory_ids
+
     merged: dict[str, dict[str, Any]] = {}
-    for task in _list_persisted_tasks():
+    for task in persisted_tasks:
         task_id = str(task.get("task_id") or "")
-        if task_id:
-            merged[task_id] = task
+        if not task_id:
+            continue
+        row = dict(task)
+        row["storage_source"] = "sqlite_meta"
+        merged[task_id] = row
     for task_id, task in _TASKS.items():
-        merged[str(task_id)] = task
-    return sorted(
+        row = dict(task)
+        row["storage_source"] = "memory_and_sqlite" if str(task_id) in persisted_ids else "memory"
+        merged[str(task_id)] = row
+
+    sorted_tasks = sorted(
         merged.values(),
         key=lambda item: str(item.get("finished_at") or item.get("started_at") or item.get("created_at") or ""),
         reverse=True,
     )
+    persistence = {
+        "storage_backend": "memory_plus_sqlite_fallback",
+        "sqlite_fallback_enabled": True,
+        "sqlite_meta_path_label": ".stock_ming_3/meta.sqlite",
+        "memory_task_count": len(memory_ids),
+        "sqlite_task_count": len(persisted_ids),
+        "deduplicated_task_count": len(sorted_tasks),
+        "memory_only_task_count": len(memory_ids - persisted_ids),
+        "sqlite_only_task_count": len(persisted_ids - memory_ids),
+        "memory_and_sqlite_task_count": len(shared_ids),
+        "task_rows_include_storage_source": True,
+        "cache_read_external_calls": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return sorted_tasks, persistence
+
+
+def list_task_statuses() -> list[dict[str, Any]]:
+    tasks, _ = _merge_task_statuses()
+    return tasks
 
 
 def build_task_status_index() -> dict[str, Any]:
-    tasks = list_task_statuses()
+    tasks, persistence = _merge_task_statuses()
     status_counts = {status: 0 for status in sorted(TASK_STATUSES)}
     for task in tasks:
         status = str(task.get("status") or "pending")
@@ -577,10 +609,17 @@ def build_task_status_index() -> dict[str, Any]:
         "latest_task_type": latest_task.get("task_type"),
         "latest_task_status": latest_task.get("status"),
         "call_ledger_count": call_ledger_count,
+        "persistence": persistence,
+        "persistence_source_rows": [
+            {"source": "memory", "task_count": persistence["memory_task_count"], "external": False},
+            {"source": "sqlite_meta", "task_count": persistence["sqlite_task_count"], "external": False},
+            {"source": "deduplicated", "task_count": persistence["deduplicated_task_count"], "external": False},
+        ],
         "policy": {
             "get_tasks_cache_only": True,
             "does_not_create_tasks": True,
             "does_not_call_external_sources": True,
+            "reads_memory_and_sqlite_fallback": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
@@ -596,6 +635,10 @@ def build_task_status_index() -> dict[str, Any]:
                 "api": "local_task_status_index",
                 "request_params_safe": {},
                 "row_count": len(tasks),
+                "memory_task_count": persistence["memory_task_count"],
+                "sqlite_task_count": persistence["sqlite_task_count"],
+                "deduplicated_task_count": persistence["deduplicated_task_count"],
+                "storage_backend": persistence["storage_backend"],
                 "data_date": None,
                 "local_fetched_at": _now_iso(),
                 "call_status": "cache_read",

@@ -17,6 +17,7 @@ export type TaskRecord = {
   current_step: string;
   error_message_safe?: string;
   output_packet_key: string;
+  storage_source?: string;
   call_ledger?: Array<Record<string, unknown>>;
   status_history?: Array<Record<string, unknown>>;
   backend?: string;
@@ -41,6 +42,8 @@ export type TaskStatusIndex = {
   latest_task_type?: string;
   latest_task_status?: string;
   call_ledger_count: number;
+  persistence?: Record<string, unknown>;
+  persistence_source_rows?: Array<Record<string, unknown>>;
   policy: Record<string, unknown>;
   external_calls_triggered: boolean;
   tushare_called: boolean;
