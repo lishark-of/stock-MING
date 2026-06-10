@@ -56,6 +56,18 @@ export default function TaskCatalog() {
   const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
   const taskIndexCallLedger = taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger;
   const taskIndexWarnings = taskIndexEnvelopeWarnings.length ? taskIndexEnvelopeWarnings : (taskIndex?.warnings ?? []);
+  const deepseekModelStrategyRows = (catalogTasks ?? [])
+    .filter((item) => Array.isArray(item.possible_external_sources) && item.possible_external_sources.includes("deepseek"))
+    .map((item) => ({
+      task_type: item.task_type,
+      route: item.route,
+      model_purpose: item.deepseek_model_strategy_purpose ?? "not_declared",
+      config_keys: Array.isArray(item.deepseek_model_config_keys) ? item.deepseek_model_config_keys.join(" / ") : "",
+      model_source: item.deepseek_model_source ?? "",
+      no_hardcoded_model: item.does_not_hardcode_deepseek_model === true,
+      button_gated: item.button_gated === true,
+      call_ledger_required: item.call_ledger_required === true
+    }));
   const taskRows = taskRecords.map((task) => ({
     task_id: task.task_id,
     task_type: task.task_type,
@@ -142,6 +154,12 @@ export default function TaskCatalog() {
 
       <PacketCard title="任务清单" subtitle="按钮门控、可能外部源和输出 packet" status="catalog">
         <DataLineageTable rows={catalogTasks ?? []} />
+      </PacketCard>
+
+      <PacketCard title="DeepSeek 任务模型策略" subtitle="只读展示按钮任务的模型用途；真实调用仍需 POST task 和 call_ledger" status="model_strategy">
+        <p>DeepSeek 相关任务必须通过 DEEPSEEK_EXPLAIN_MODEL / DEEPSEEK_DEFAULT_MODEL 等集中配置选择模型，不能在任务或页面里硬编码模型名。</p>
+        <p>本卡片只读取 GET /api/tasks/catalog，不调用 DeepSeek、不读取 token/key、不执行真实交易。</p>
+        <DataLineageTable rows={deepseekModelStrategyRows} />
       </PacketCard>
 
       <PacketCard title="POST 路由覆盖" subtitle="任务创建 POST 与本地生命周期 POST 分开登记；cache GET 不创建任务" status="route_coverage">
