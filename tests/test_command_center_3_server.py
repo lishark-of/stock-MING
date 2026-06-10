@@ -272,6 +272,44 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_operation_zones"])
         self.assertFalse(packet["external_calls_triggered"])
 
+    def test_next_session_cache_reads_persisted_sqlite_packet_without_snapshot(self):
+        self._with_meta_store()
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(packet_service.SQLITE_META_PATH).write_packet(
+            "command_center_next_session_projection_packet",
+            {
+                "packet_key": "command_center_next_session_projection_packet",
+                "status": "ready",
+                "trade_date": "20260610",
+                "chart_render_model": {
+                    "historical_series": [{"x": "2026-06-10", "price": 10.4}],
+                    "scenario_series": [
+                        {
+                            "scenario_key": "neutral",
+                            "scenario_name": "中性路径",
+                            "points": [{"x": "T+1", "price": 10.8}],
+                        }
+                    ],
+                    "current_price_line": 10.4,
+                    "cost_line": 9.8,
+                },
+            },
+        )
+
+        packet = packet_service.build_next_session_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_next_session_projection_packet")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["cache_source"], "sqlite_meta")
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["does_not_modify_action"])
+        self.assertTrue(packet["does_not_modify_operation_zones"])
+        self.assertTrue(packet["chart_payload"]["is_exact_next_session_packet"])
+        self.assertEqual(packet["chart_payload"]["historical_points"][0]["price"], 10.4)
+
     def test_packet_index_exposes_snapshot_keys(self):
         self._with_snapshot_cache({"moneyflow_packet": {"status": "ready"}})
 

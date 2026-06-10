@@ -497,6 +497,12 @@ def build_serenity_cache() -> dict[str, Any]:
 
 
 def build_next_session_cache() -> dict[str, Any]:
+    persisted = _read_persisted_packet(next_session_projection.PACKET_KEY)
+    if persisted:
+        persisted.setdefault("chart_payload", _exact_next_session_chart_payload(persisted))
+        persisted.setdefault("does_not_modify_action", True)
+        persisted.setdefault("does_not_modify_operation_zones", True)
+        return persisted
     cached = _read_snapshot_packet(next_session_projection.PACKET_KEY)
     if cached:
         cached.setdefault("chart_payload", _exact_next_session_chart_payload(cached))
