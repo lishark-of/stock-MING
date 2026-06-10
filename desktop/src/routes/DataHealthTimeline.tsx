@@ -16,16 +16,23 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
 
 export default function DataHealthTimeline() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getDataHealthCache().then((res) => setCache(res.data));
+    void getDataHealthCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const visibility = (cache.data_health_visibility_summary as Record<string, unknown> | undefined) ?? {};
   const providerCockpit = (cache.provider_data_capability_cockpit as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
   return (
     <>
@@ -47,7 +54,9 @@ export default function DataHealthTimeline() {
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "provider ping", value: policy.post_task_required_for_provider_probe === true ? "需任务" : "可能直接", tone: policy.post_task_required_for_provider_probe === true ? "good" : "bad" },
           { label: "刷新数据", value: policy.does_not_refresh_data === true ? "不会" : "可能", tone: policy.does_not_refresh_data === true ? "good" : "bad" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
+          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -97,8 +106,16 @@ export default function DataHealthTimeline() {
         <DataLineageTable rows={[policy]} />
       </PacketCard>
 
-      <PacketCard title="调用血缘" subtitle="local_data_health_timeline_cache；不外联、不写回" status="lineage">
-        <DataLineageTable rows={callLedger} />
+      <PacketCard title="调用血缘" subtitle="payload 内部 local_data_health_timeline_cache；不外联、不写回" status="lineage">
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET data health envelope call_ledger" subtitle="GET /api/data-health/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheEnvelopeLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET data health envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning }))} />
       </PacketCard>
 
       <PacketCard title="原始 data health cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">

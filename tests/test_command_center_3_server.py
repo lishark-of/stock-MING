@@ -2402,6 +2402,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["post_task_required_for_provider_probe"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_data_health_timeline_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/data-health/cache", response["warnings"][0])
 
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(
