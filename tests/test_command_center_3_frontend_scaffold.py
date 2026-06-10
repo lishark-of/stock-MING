@@ -20,6 +20,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "NextSessionChart.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "AShareEvidenceRadar.tsx",
+            ROOT / "src" / "routes" / "CallLedgerAudit.tsx",
             ROOT / "src" / "routes" / "CandidateRadar.tsx",
             ROOT / "src" / "routes" / "DataCapabilityConsole.tsx",
             ROOT / "src" / "routes" / "DataHealthTimeline.tsx",
@@ -98,6 +99,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         page_names = [
             "CommandCenterHome.tsx",
             "AShareEvidenceRadar.tsx",
+            "CallLedgerAudit.tsx",
             "CandidateRadar.tsx",
             "DataCapabilityConsole.tsx",
             "DataHealthTimeline.tsx",
@@ -155,6 +157,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
         layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
         self.assertIn("HealthStatus", app_source)
+        self.assertIn("CallLedgerAudit", app_source)
         self.assertIn("MarketContext", app_source)
         self.assertIn("DisciplineLoop", app_source)
         self.assertIn("AShareEvidenceRadar", app_source)
@@ -173,6 +176,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("TradeReviewLab", app_source)
         self.assertIn("WorkerRuntime", app_source)
         self.assertIn('"health"', layout_source)
+        self.assertIn('"audit"', layout_source)
         self.assertIn('"market"', layout_source)
         self.assertIn('"discipline"', layout_source)
         self.assertIn('"evidence"', layout_source)
@@ -191,6 +195,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"tradeReview"', layout_source)
         self.assertIn('"worker"', layout_source)
         self.assertIn("健康", layout_source)
+        self.assertIn("调用审计", layout_source)
         self.assertIn("证据雷达", layout_source)
         self.assertIn("候选雷达", layout_source)
         self.assertIn("数据能力", layout_source)
@@ -238,6 +243,30 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("deepseek_model_strategy", page)
         self.assertIn("不在调用点硬编码", page)
         self.assertIn("不展示密钥", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_call_ledger_audit_page_reads_local_audit_without_external_work(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "CallLedgerAudit.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/audit/cache", client)
+        self.assertIn("getAuditCache", page)
+        self.assertIn("getAuditCache", home)
+        self.assertIn("GET /api/audit/cache", page)
+        self.assertIn("local_call_ledger_audit_cache", page)
+        self.assertIn("cache API 与 task call_ledger", page)
+        self.assertIn("不调用 Tushare、DeepSeek、GitHub 或 Redis", page)
+        self.assertIn("不刷新数据", page)
+        self.assertIn("不运行回测", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertIn("audit_is_read_only", page)
+        self.assertIn("post_task_required_for_external_work", page)
+        self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)
         self.assertNotIn("DEEPSEEK_API_KEY", page)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
+import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -7,6 +7,7 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
+  const [audit, setAudit] = useState<Record<string, unknown>>({});
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [market, setMarket] = useState<Record<string, unknown>>({});
   const [discipline, setDiscipline] = useState<Record<string, unknown>>({});
@@ -28,6 +29,7 @@ export default function CommandCenterHome() {
 
   useEffect(() => {
     void getHealth().then((res) => setHealth(res.data));
+    void getAuditCache().then((res) => setAudit(res.data));
     void getPackets().then((res) => setPackets(res.data));
     void getMarketContextCache().then((res) => setMarket(res.data));
     void getDisciplineLoopCache().then((res) => setDiscipline(res.data));
@@ -49,6 +51,7 @@ export default function CommandCenterHome() {
   }, []);
 
   const packetKeys = packets.available_cache_keys as unknown[] | undefined;
+  const auditCounts = audit.counts as Record<string, unknown> | undefined;
   const snapshotAvailable = Boolean(packets.snapshot_available);
   const sqliteMeta = packets.sqlite_meta as Record<string, unknown> | undefined;
   const sqlitePackets = sqliteMeta?.packet_metadata as unknown[] | undefined;
@@ -108,6 +111,11 @@ export default function CommandCenterHome() {
           <p>cache only: {String(migrationPolicy?.cache_only ?? true)}</p>
           <p>external calls: {String(migrationPolicy?.external_calls_triggered ?? false)}</p>
           <JsonDetails title="迁移进度基线" data={migrationProgress ?? []} />
+        </PacketCard>
+        <PacketCard title="调用审计 cache" subtitle="GET cache，聚合本地 call_ledger，不触发外部请求" status={String(audit.status ?? "cache")}>
+          <p>endpoint / task: {String(auditCounts?.cache_endpoint_count ?? 0)} / {String(auditCounts?.task_count ?? 0)}</p>
+          <p>call ledger: {String(auditCounts?.call_ledger_count ?? 0)}</p>
+          <p>external calls: {String(audit.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="Legacy bridge cache" subtitle="GET cache，只读旧工作台桥接，不运行旧工具" status={String(legacyBridge.status ?? "cache")}>
           <p>checklist done/pending: {String(legacyCounts?.checklist_done_count ?? 0)} / {String(legacyCounts?.checklist_pending_count ?? 0)}</p>

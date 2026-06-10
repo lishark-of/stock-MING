@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
+from server.services import audit_service, candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -1019,6 +1019,60 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("COMMAND_CENTER_REDIS_URL", json.dumps(packet, ensure_ascii=False))
         json.dumps(packet, ensure_ascii=False)
 
+    def test_call_ledger_audit_cache_aggregates_local_ledgers_without_external_work(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task = task_service.create_task_record(
+            "build_next_session_projection",
+            output_packet_key="command_center_next_session_projection_packet",
+            payload={"api_key": "SHOULD_DROP", "ts_code": "002008.SZ"},
+        )
+        update_task_status(
+            task["task_id"],
+            status="success",
+            progress=1.0,
+            current_step="local audit fixture",
+            call_ledger=[
+                {
+                    "api": "local_test_task",
+                    "call_status": "cache_read",
+                    "error_message_safe": "Traceback token=SHOULD_DROP",
+                    "external": False,
+                }
+            ],
+        )
+        self._with_snapshot_cache(
+            {
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "call_ledger": [{"api": "local_moneyflow_cache", "call_status": "cache_read"}],
+                    "authorization": "Bearer SHOULD_DROP",
+                }
+            }
+        )
+
+        packet = audit_service.read_call_ledger_audit_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_call_ledger_audit_cache")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertGreater(packet["counts"]["cache_endpoint_count"], 10)
+        self.assertGreaterEqual(packet["counts"]["task_count"], 1)
+        self.assertGreaterEqual(packet["counts"]["call_ledger_count"], 1)
+        self.assertEqual(packet["counts"]["external_call_count"], 0)
+        self.assertEqual(packet["counts"]["action_risk_count"], 0)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["policy"]["audit_is_read_only"])
+        self.assertTrue(packet["policy"]["post_task_required_for_external_work"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_call_ledger_audit_cache")
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        json.dumps(packet, ensure_ascii=False)
+
     def test_cancel_task_marks_pending_task_without_external_work(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -1257,6 +1311,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(model_strategy["contains_secret"])
         self.assertNotIn("token", json.dumps(model_strategy, ensure_ascii=False).lower())
         self.assertNotIn("api_key", json.dumps(model_strategy, ensure_ascii=False).lower())
+
+        audit = self.client.get("/api/audit/cache").json()
+        self.assertTrue(audit["ok"])
+        self.assertTrue(audit["data"]["cache_only"])
+        self.assertFalse(audit["data"]["external_calls_triggered"])
+        self.assertFalse(audit["data"]["tushare_called"])
+        self.assertFalse(audit["data"]["deepseek_called"])
+        self.assertFalse(audit["data"]["github_called"])
+        self.assertTrue(audit["data"]["policy"]["audit_is_read_only"])
+        self.assertTrue(audit["data"]["policy"]["post_task_required_for_external_work"])
+        self.assertTrue(audit["data"]["does_not_execute_trades"])
+        self.assertTrue(audit["data"]["does_not_modify_strategy_action"])
 
         factor = self.client.get("/api/factor-quant/cache").json()
         self.assertTrue(factor["ok"])
@@ -1896,6 +1962,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["runtime"]["scheduler_started"])
         self.assertTrue(packet["policy"]["post_task_required_for_work"])
         self.assertTrue(packet["policy"]["worker_runtime_is_diagnostic_only"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_call_ledger_audit_cache_endpoint_returns_read_only_audit(self):
+        response = self.client.get("/api/audit/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_call_ledger_audit_cache")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertGreater(packet["counts"]["cache_endpoint_count"], 10)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["policy"]["audit_is_read_only"])
+        self.assertTrue(packet["policy"]["does_not_refresh_data"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
 

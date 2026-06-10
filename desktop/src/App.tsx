@@ -3,6 +3,7 @@ import Layout, { type RouteKey } from "./components/Layout";
 import AShareEvidenceRadar from "./routes/AShareEvidenceRadar";
 import CandidateRadar from "./routes/CandidateRadar";
 import ChokepointScan from "./routes/ChokepointScan";
+import CallLedgerAudit from "./routes/CallLedgerAudit";
 import CommandCenterHome from "./routes/CommandCenterHome";
 import DataCapabilityConsole from "./routes/DataCapabilityConsole";
 import DataHealthTimeline from "./routes/DataHealthTimeline";
@@ -31,6 +32,7 @@ export default function App() {
     <Layout active={route} onNavigate={setRoute}>
       {route === "home" ? <CommandCenterHome /> : null}
       {route === "health" ? <HealthStatus /> : null}
+      {route === "audit" ? <CallLedgerAudit /> : null}
       {route === "market" ? <MarketContext /> : null}
       {route === "discipline" ? <DisciplineLoop /> : null}
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
