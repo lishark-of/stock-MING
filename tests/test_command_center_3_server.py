@@ -1129,6 +1129,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(index["does_not_modify_strategy_action"])
         self.assertEqual(index["call_ledger"][0]["api"], "local_task_status_index")
 
+    def test_smoke_script_includes_task_status_index(self):
+        script = Path("scripts/smoke_3_0.sh").read_text(encoding="utf-8")
+
+        self.assertIn("build_task_status_index", script)
+        self.assertIn("task_status_index:", script)
+        self.assertIn('task_index["call_ledger_count"]', script)
+
     def test_next_session_generate_task_writes_exact_cache_packet_without_external_work(self):
         db_path = self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)

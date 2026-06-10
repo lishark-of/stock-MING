@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
+import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, type TaskStatusIndex } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -26,6 +26,7 @@ export default function CommandCenterHome() {
   const [modelStrategy, setModelStrategy] = useState<Record<string, unknown>>({});
   const [legacyBridge, setLegacyBridge] = useState<Record<string, unknown>>({});
   const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
+  const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const [workerRuntime, setWorkerRuntime] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
@@ -51,7 +52,10 @@ export default function CommandCenterHome() {
     void getLegacyBridgeCache().then((res) => setLegacyBridge(res.data));
     void getTaskCatalog().then((res) => setTaskCatalog(res.data));
     void getWorkerRuntimeCache().then((res) => setWorkerRuntime(res.data));
-    void getTasks().then((res) => setTasks(res.data.tasks ?? []));
+    void getTasks().then((res) => {
+      setTaskIndex(res.data);
+      setTasks(res.data.tasks ?? []);
+    });
   }, []);
 
   const packetKeys = packets.available_cache_keys as unknown[] | undefined;
@@ -94,7 +98,8 @@ export default function CommandCenterHome() {
           { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
           { label: "cache keys", value: packetKeys?.length ?? 0 },
-          { label: "任务记录", value: tasks.length },
+          { label: "任务记录", value: taskIndex?.task_count ?? tasks.length },
+          { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
           { label: "任务目录", value: taskCatalogItems?.length ?? 0 },
           { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
           { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
@@ -202,7 +207,14 @@ export default function CommandCenterHome() {
           <JsonDetails title="storage overview" data={storageOverview} />
         </PacketCard>
         <PacketCard title="任务状态" subtitle="POST 返回 task_id，页面轮询 FastAPI" status="local">
-          <p>最近任务数：{tasks.length}</p>
+          <p>task_status_index: {String(taskIndex?.packet_key ?? "--")}</p>
+          <p>最近任务数：{String(taskIndex?.task_count ?? tasks.length)}</p>
+          <p>status counts: {JSON.stringify(taskIndex?.status_counts ?? {})}</p>
+          <p>call ledger: {String(taskIndex?.call_ledger_count ?? 0)}</p>
+          <p>external calls: {String(taskIndex?.external_calls_triggered ?? false)}</p>
+          <p>does_not_execute_trades: {String(taskIndex?.does_not_execute_trades ?? true)}</p>
+          <p>does_not_modify_strategy_action: {String(taskIndex?.does_not_modify_strategy_action ?? true)}</p>
+          <JsonDetails title="任务状态总览" data={taskIndex ?? {}} />
           <JsonDetails title="任务列表" data={tasks} />
         </PacketCard>
         <PacketCard title="任务目录" subtitle="只读 catalog；POST task 才可能触发外部请求" status={String(taskCatalog.status ?? "catalog")}>

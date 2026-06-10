@@ -373,6 +373,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("onSuccess={refreshCache}", factor_page)
         home_source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
         self.assertIn("getTaskCatalog", home_source)
+        self.assertIn("type TaskStatusIndex", home_source)
+        self.assertIn("setTaskIndex", home_source)
+        self.assertIn("task_status_index", home_source)
+        self.assertIn("taskIndex?.call_ledger_count", home_source)
+        self.assertIn("taskIndex?.external_calls_triggered", home_source)
+        self.assertIn("does_not_execute_trades", home_source)
         self.assertIn("POST task 才可能触发外部请求", home_source)
         self.assertIn("call_ledger_required_for_all", home_source)
 
