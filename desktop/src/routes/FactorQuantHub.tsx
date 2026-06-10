@@ -8,6 +8,20 @@ import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
+function toRows(items: unknown, bucket?: string): Array<Record<string, unknown>> {
+  if (!Array.isArray(items)) return [];
+  return items.map((item, index) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      return bucket ? { bucket, ...(item as Record<string, unknown>) } : (item as Record<string, unknown>);
+    }
+    return { bucket: bucket ?? "item", index: index + 1, value: String(item ?? "") };
+  });
+}
+
+function objectRows(record: Record<string, unknown>, labelKey = "field") {
+  return Object.entries(record).map(([key, value]) => ({ [labelKey]: key, value: String(value) }));
+}
+
 export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
   const [taskId, setTaskId] = useState("");
@@ -22,8 +36,25 @@ export default function FactorQuantHub() {
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
+  const factorLibrary = packet.factor_library ?? {};
+  const dataLedger = packet.data_ledger ?? {};
+  const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
   const deepseek = packet.deepseek_explanation ?? {};
+  const scoreRows = [
+    ...toRows(score.support_factors, "support"),
+    ...toRows(score.suppress_factors, "suppress"),
+    ...toRows(score.neutral_factors, "neutral"),
+    ...toRows(score.missing_factors, "missing"),
+    ...toRows(score.conflict_factors, "conflict")
+  ];
+  const bridgeRows = objectRows(bridge, "next_session_bridge");
+  const governanceRows = objectRows(governance, "governance");
+  const riskRows = toRows(factorLibrary.risk_boundaries).map((row) => ({ risk_boundary: row.value ?? row.item ?? "", ...row }));
+  const researchRows = Object.entries(researchContext).map(([key, value]) => ({
+    context: key,
+    ...(value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : { value: String(value ?? "") })
+  }));
   const option: EChartsOption = {
     tooltip: {},
     xAxis: { type: "category", data: ["支持", "压制", "中性", "缺失", "冲突"] },
@@ -61,6 +92,8 @@ export default function FactorQuantHub() {
           { label: "score band", value: score.score_band ?? "missing" },
           { label: "core action", value: governance.allow_core_action === true ? "允许" : "禁止", tone: governance.allow_core_action === true ? "bad" : "good" },
           { label: "evidence preview", value: bridge.enters_evidence_effects === true ? "预览" : "关闭" },
+          { label: "modify action", value: bridge.does_not_modify_action === false ? "会" : "不会", tone: bridge.does_not_modify_action === false ? "bad" : "good" },
+          { label: "modify operation_zones", value: bridge.does_not_modify_operation_zones === false ? "会" : "不会", tone: bridge.does_not_modify_operation_zones === false ? "bad" : "good" },
           { label: "DeepSeek", value: deepseek.status ?? "not_called", tone: deepseek.called === true ? "warn" : "good" },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" }
         ]}
@@ -83,8 +116,22 @@ export default function FactorQuantHub() {
         <p>status: {String(deepseek.status ?? "not_called")}</p>
         <p>allowed: summary / support_notes / suppress_notes / conflict_notes / missing_data_notes / discipline_notes</p>
       </PacketCard>
+      <h3>因子库</h3>
+      <DataLineageTable rows={toRows(factorLibrary.factors)} />
+      <h3>运行值</h3>
+      <DataLineageTable rows={toRows(runtime.factor_values)} />
+      <h3>评分桶</h3>
+      <DataLineageTable rows={scoreRows} />
+      <h3>治理边界</h3>
+      <DataLineageTable rows={governanceRows} />
+      <h3>次日图谱桥接</h3>
+      <DataLineageTable rows={bridgeRows} />
+      <h3>研究上下文</h3>
+      <DataLineageTable rows={researchRows} />
+      <h3>风险边界</h3>
+      <DataLineageTable rows={riskRows} />
       <h3>数据血缘</h3>
-      <DataLineageTable rows={packet.data_ledger?.ledger_rows ?? []} />
+      <DataLineageTable rows={dataLedger.ledger_rows ?? []} />
       <JsonDetails title="Factor Quant Hub packet" data={packet} />
     </PacketCard>
   );

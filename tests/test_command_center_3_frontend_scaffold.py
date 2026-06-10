@@ -57,6 +57,29 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK", source)
         self.assertNotIn("GITHUB_TOKEN", source)
 
+    def test_factor_quant_page_renders_structured_research_boundaries(self):
+        source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("factor_library", source)
+        self.assertIn("runtime.factor_values", source)
+        self.assertIn("support_factors", source)
+        self.assertIn("suppress_factors", source)
+        self.assertIn("missing_factors", source)
+        self.assertIn("conflict_factors", source)
+        self.assertIn("governance", source)
+        self.assertIn("next_session_bridge", source)
+        self.assertIn("does_not_modify_operation_zones", source)
+        self.assertIn("research_context", source)
+        self.assertIn("risk_boundaries", source)
+        self.assertIn("因子库", source)
+        self.assertIn("运行值", source)
+        self.assertIn("评分桶", source)
+        self.assertIn("治理边界", source)
+        self.assertIn("次日图谱桥接", source)
+        self.assertIn("风险边界", source)
+        self.assertIn("DataLineageTable", source)
+        self.assertNotIn("strategy_execution_packet.action =", source)
+
     def test_read_only_pages_render_structured_cache_without_direct_python_calls(self):
         route_dir = ROOT / "src" / "routes"
         page_names = [
