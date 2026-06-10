@@ -94,6 +94,21 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("DataLineageTable", source)
         self.assertNotIn("strategy_execution_packet.action =", source)
 
+    def test_app_persists_desktop_route_without_streamlit_rerun(self):
+        source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("stock_ming_command_center_3_route", source)
+        self.assertIn("readInitialRoute", source)
+        self.assertIn("normalizeRouteKey", source)
+        self.assertIn("window.localStorage", source)
+        self.assertIn("window.location.hash", source)
+        self.assertIn("window.history.replaceState", source)
+        self.assertIn("hashchange", source)
+        self.assertIn("onNavigate={navigateRoute}", source)
+        self.assertIn('"factor"', source)
+        self.assertIn('"next"', source)
+        self.assertNotIn("streamlit", source.lower())
+
     def test_read_only_pages_render_structured_cache_without_direct_python_calls(self):
         route_dir = ROOT / "src" / "routes"
         page_names = [
