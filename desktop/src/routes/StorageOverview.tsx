@@ -29,6 +29,7 @@ export default function StorageOverview() {
 
   const datasetStatus = overview.dataset_status as Record<string, unknown> | undefined;
   const datasets = overview.datasets as Array<Record<string, unknown>> | undefined;
+  const datasetCatalog = overview.dataset_catalog as Array<Record<string, unknown>> | undefined;
   const datasetCards = [
     { key: "factor_values", label: "factor_values", packet: factorValues },
     { key: "daily", label: "daily", packet: datasetDetails.daily ?? {} },
@@ -65,6 +66,7 @@ export default function StorageOverview() {
       <MetricGrid
         items={[
           { label: "store", value: overview.store as string | undefined },
+          { label: "dataset catalog", value: overview.dataset_count as number | undefined },
           { label: "cache only", value: overview.cache_only, tone: overview.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: overview.external_calls_triggered === true ? "存在" : "无", tone: overview.external_calls_triggered === true ? "bad" : "good" },
           { label: "Tushare", value: overview.tushare_called === true ? "已调用" : "未调用", tone: overview.tushare_called === true ? "bad" : "good" },
@@ -124,6 +126,10 @@ export default function StorageOverview() {
             };
           })}
         />
+      </PacketCard>
+
+      <PacketCard title="数据集目录" subtitle="数据集用途、别名、写入边界和未来任务归属；只读、不写 Parquet" status="dataset_catalog">
+        <DataLineageTable rows={datasetCatalog ?? []} />
       </PacketCard>
 
       <PacketCard title="GET storage envelope call_ledger" subtitle="GET /api/storage 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">

@@ -92,7 +92,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - 任务生命周期已同步写入 SQLite metadata store；内存状态丢失后，`/api/tasks/{task_id}` 仍可从本地 SQLite fallback 读回任务状态。
 - `/api/packets` 已暴露 SQLite packet/task metadata 摘要，便于前端判断哪些 packet 来自持久化 cache。
 - `/api/model-strategy/cache` 已独立暴露 DeepSeek 模型策略：`default/explain/projection/factor_explain` 默认走解释级模型，`fast/healthcheck/feeder` 默认走 fast 模型；模型名统一从 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 或集中默认值读取，调用点不得硬编码。
-- `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 只读状态；缺文件返回 `missing`，不触发 Tushare、回测或因子计算。
+- `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 只读状态和 dataset catalog；缺文件返回 `missing`，不触发 Tushare、回测或因子计算。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
 
@@ -153,7 +153,7 @@ scripts/run_scheduler.sh
 ### Storage
 
 - SQLite：packet 元数据、任务状态、用户配置。当前已落地 packet payload、packet metadata 和 task lifecycle metadata。
-- Parquet：daily、daily_basic、moneyflow、factor_values、backtest_results。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 文件状态接口，并由 light-mode 因子任务写入 `factor_values`。
+- Parquet：daily、daily_basic、moneyflow、factor_values、backtest_results。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 文件状态接口和 dataset catalog，并由 light-mode 因子任务写入 `factor_values`。
 - DuckDB：直接查询 Parquet。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 缺文件安全查询和只读状态 API。
 - Redis：Celery broker、任务状态、热点 packet cache；未安装时可使用 memory fallback。
 

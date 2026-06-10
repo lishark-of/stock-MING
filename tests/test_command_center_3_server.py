@@ -754,6 +754,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         self.assertEqual(overview["store"], "parquet_duckdb")
         self.assertEqual(set(overview["dataset_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
+        self.assertEqual(overview["dataset_count"], 5)
+        self.assertEqual({item["dataset"] for item in overview["dataset_catalog"]}, {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
+        catalog_by_dataset = {item["dataset"]: item for item in overview["dataset_catalog"]}
+        self.assertIn("daily-basic", catalog_by_dataset["daily_basic"]["aliases"])
+        self.assertIn("backtest-results", catalog_by_dataset["backtest_results"]["aliases"])
+        self.assertEqual(catalog_by_dataset["factor_values"]["writer"], "POST /api/factor-quant/run-light")
+        self.assertTrue(all(item["does_not_execute_trades"] for item in overview["dataset_catalog"]))
+        self.assertTrue(all(item["does_not_modify_strategy_action"] for item in overview["dataset_catalog"]))
         self.assertTrue(overview["cache_only"])
         self.assertFalse(overview["external_calls_triggered"])
         self.assertFalse(overview["tushare_called"])
@@ -798,6 +806,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         self.assertEqual(status["status"], "unsupported_dataset")
         self.assertEqual(set(status["supported_datasets"]), {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
+        self.assertEqual(set(status["supported_aliases"]), {"factor-values", "daily-basic", "backtest-results"})
         self.assertFalse(status["external_calls_triggered"])
         self.assertFalse(status["tushare_called"])
         self.assertEqual(status["call_ledger"][0]["api"], "local_storage_dataset_cache")
@@ -2059,6 +2068,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         storage_overview = self.client.get("/api/storage").json()
         self.assertTrue(storage_overview["ok"])
         self.assertEqual(set(storage_overview["data"]["dataset_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
+        self.assertEqual(storage_overview["data"]["dataset_count"], 5)
+        self.assertEqual({item["dataset"] for item in storage_overview["data"]["dataset_catalog"]}, {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
         self.assertIn("sqlite_meta", storage_overview["data"])
         self.assertFalse(storage_overview["data"]["external_calls_triggered"])
         self.assertEqual(storage_overview["call_ledger"][0]["api"], "local_storage_overview_cache")

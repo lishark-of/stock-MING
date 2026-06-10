@@ -22,6 +22,68 @@ SUPPORTED_PARQUET_DATASETS = {
     "backtest-results": "backtest_results",
 }
 CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"]
+DATASET_CATALOG = [
+    {
+        "dataset": "factor_values",
+        "aliases": ["factor-values"],
+        "cache_endpoint": "GET /api/storage/factor-values",
+        "source": "runtime.factor_values",
+        "purpose": "light mode 因子运行值本地落盘",
+        "write_policy": "task_pipeline_write_allowed",
+        "writer": "POST /api/factor-quant/run-light",
+        "external_refresh_policy": "local_cache_pipeline_no_external_call",
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    },
+    {
+        "dataset": "daily",
+        "aliases": [],
+        "cache_endpoint": "GET /api/storage/daily",
+        "source": "tushare.daily parquet cache",
+        "purpose": "日线 OHLCV 与次日图谱行情底座",
+        "write_policy": "future_button_gated_tushare_task",
+        "writer": "future refresh_tushare_facts task",
+        "external_refresh_policy": "button_gated_tushare_capable",
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    },
+    {
+        "dataset": "daily_basic",
+        "aliases": ["daily-basic"],
+        "cache_endpoint": "GET /api/storage/daily-basic",
+        "source": "tushare.daily_basic parquet cache",
+        "purpose": "估值、换手率、市值等 A 股基础因子底座",
+        "write_policy": "future_button_gated_tushare_task",
+        "writer": "future refresh_tushare_facts task",
+        "external_refresh_policy": "button_gated_tushare_capable",
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    },
+    {
+        "dataset": "moneyflow",
+        "aliases": [],
+        "cache_endpoint": "GET /api/storage/moneyflow",
+        "source": "tushare.moneyflow parquet cache",
+        "purpose": "资金流因子与市场证据底座",
+        "write_policy": "future_button_gated_tushare_task",
+        "writer": "future refresh_tushare_facts task",
+        "external_refresh_policy": "button_gated_tushare_capable",
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    },
+    {
+        "dataset": "backtest_results",
+        "aliases": ["backtest-results"],
+        "cache_endpoint": "GET /api/storage/backtest-results",
+        "source": "local backtest task parquet cache",
+        "purpose": "旧量化/组合回测结果持久化预留",
+        "write_policy": "future_button_gated_backtest_task",
+        "writer": "future backtest task",
+        "external_refresh_policy": "local_compute_task_no_external_call",
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    },
+]
 
 
 def _path_label(path: Path) -> str:
@@ -36,6 +98,10 @@ def _canonical_dataset(dataset: str) -> str:
     if key not in SUPPORTED_PARQUET_DATASETS:
         return ""
     return SUPPORTED_PARQUET_DATASETS[key]
+
+
+def dataset_catalog() -> list[dict[str, Any]]:
+    return [dict(item) for item in DATASET_CATALOG]
 
 
 def _now_iso() -> str:
@@ -111,6 +177,7 @@ def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
                 "status": "unsupported_dataset",
                 "dataset": str(dataset or ""),
                 "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
+                "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
                 "cache_only": True,
                 "external_calls_triggered": False,
                 "tushare_called": False,
@@ -244,6 +311,10 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "status": "cache_ready",
         "metadata_store": "sqlite_meta",
         "datasets": datasets,
+        "dataset_catalog": dataset_catalog(),
+        "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
+        "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
+        "dataset_count": len(CANONICAL_PARQUET_DATASETS),
         "dataset_status": {item["dataset"]: item["metadata"]["status"] for item in datasets},
         "sqlite_meta": sqlite_meta,
         "metadata_status": sqlite_meta["status"],
