@@ -19,6 +19,18 @@ def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
 
+def _local_ledger_boundary() -> dict[str, Any]:
+    return {
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def read_factor_quant_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_factor_quant_cache())
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
@@ -118,7 +130,7 @@ def _factor_quant_cache_call_ledger(packet: dict[str, Any], now: str) -> list[di
             "local_fetched_at": now,
             "call_status": "cache_missing" if packet.get("status") == "cache_missing" else "cache_read",
             "error_message_safe": "",
-            "external": False,
+            **_local_ledger_boundary(),
         }
     ]
 
@@ -165,6 +177,7 @@ def _local_snapshot_call_ledger(snapshot: dict[str, Any], now: str) -> list[dict
             "local_fetched_at": now,
             "call_status": "cache_read" if loaded_keys else "cache_missing",
             "error_message_safe": "",
+            **_local_ledger_boundary(),
         }
     ]
 
@@ -181,6 +194,7 @@ def _factor_values_storage_call_ledger(result: dict[str, Any], now: str) -> dict
         "local_fetched_at": now,
         "call_status": result.get("status") or "unknown",
         "error_message_safe": str(result.get("error_message_safe") or "")[:240],
+        **_local_ledger_boundary(),
     }
 
 
@@ -300,6 +314,7 @@ def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool) -> l
             "local_fetched_at": now,
             "call_status": "provided_payload_sanitized" if sanitized_payload else "not_called",
             "error_message_safe": "",
+            **_local_ledger_boundary(),
         }
     ]
 

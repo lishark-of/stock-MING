@@ -16,6 +16,19 @@ def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
 
+def _local_ledger_boundary() -> dict[str, Any]:
+    return {
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+    }
+
+
 def read_next_session_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_next_session_cache())
     packet.setdefault("call_ledger", _next_session_cache_call_ledger(packet, _now_iso()))
@@ -82,7 +95,7 @@ def _next_session_cache_call_ledger(packet: dict[str, Any], now: str) -> list[di
             "local_fetched_at": now,
             "call_status": _cache_call_status(packet),
             "error_message_safe": "",
-            "external": False,
+            **_local_ledger_boundary(),
         }
     ]
 
@@ -142,7 +155,7 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
                 "local_fetched_at": _now_iso(),
                 "call_status": "failed",
                 "error_message_safe": _safe_error_message(exc),
-                "external": False,
+                **_local_ledger_boundary(),
             }
         ]
         return update_task_status(

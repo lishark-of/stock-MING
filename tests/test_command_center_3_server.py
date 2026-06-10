@@ -51,6 +51,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, storage_service, "PARQUET_ROOT", original_root)
         return storage_service.PARQUET_ROOT
 
+    def assert_local_ledger_boundary(self, row):
+        self.assertFalse(row["external"])
+        self.assertFalse(row["external_calls_triggered"])
+        self.assertFalse(row["tushare_called"])
+        self.assertFalse(row["deepseek_called"])
+        self.assertFalse(row["github_called"])
+        self.assertTrue(row["does_not_execute_trades"])
+        self.assertTrue(row["does_not_modify_strategy_action"])
+
     def _with_trade_review_log(self, records):
         original_path = trade_review_service.TRADE_REVIEW_LOG_PATH
         temp_dir = tempfile.TemporaryDirectory()
@@ -1364,6 +1373,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["call_ledger"][0]["api"], "local_next_session_cache")
         self.assertEqual(task["call_ledger"][0]["call_status"], "exact_cache_read")
         self.assertEqual(task["call_ledger"][0]["data_date"], "20260610")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assertTrue(task["call_ledger"][0]["does_not_modify_operation_zones"])
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
         self.assertFalse(task["deepseek_called"])
@@ -1383,6 +1394,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["does_not_modify_operation_zones"])
         self.assertFalse(persisted["external_calls_triggered"])
         self.assertEqual(persisted["task_call_ledger"][0]["call_status"], "exact_cache_read")
+        self.assert_local_ledger_boundary(persisted["task_call_ledger"][0])
+        self.assertTrue(persisted["task_call_ledger"][0]["does_not_modify_operation_zones"])
 
     def test_next_session_generate_task_does_not_persist_cache_missing_packet(self):
         db_path = self._with_meta_store()
@@ -1404,6 +1417,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["current_step"], "next_session_cache_missing_no_packet_written")
         self.assertEqual(task["call_ledger"][0]["api"], "local_next_session_cache")
         self.assertEqual(task["call_ledger"][0]["call_status"], "cache_missing")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assertTrue(task["call_ledger"][0]["does_not_modify_operation_zones"])
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
         self.assertFalse(task["deepseek_called"])
@@ -1434,7 +1449,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
         self.assertEqual(catalog["call_ledger"][0]["row_count"], 6)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
-        self.assertFalse(catalog["call_ledger"][0]["external"])
+        self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
         self.assertTrue(catalog["policy"]["does_not_execute_trades"])
         self.assertTrue(catalog["policy"]["does_not_modify_strategy_action"])
@@ -1575,6 +1590,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(cancelled["call_ledger"][-1]["api"], "local_task_cancel")
         self.assertEqual(cancelled["call_ledger"][-1]["call_status"], "cancelled_locally_no_external_call")
         self.assertEqual(cancelled["call_ledger"][-1]["request_params_safe"]["reason"], "[redacted_sensitive_text]")
+        self.assert_local_ledger_boundary(cancelled["call_ledger"][-1])
         self.assertNotIn("api_key", cancelled["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cancelled, ensure_ascii=False))
         self.assertFalse(cancelled["external_calls_triggered"])
@@ -1634,9 +1650,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
         self.assertEqual(task["call_ledger"][0]["call_status"], "cache_read")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
         storage_ledger = [item for item in task["call_ledger"] if item.get("api") == "local_parquet_factor_values"]
         self.assertEqual(len(storage_ledger), 1)
         self.assertIn(storage_ledger[0]["call_status"], {"written", "dependency_missing", "empty"})
+        self.assert_local_ledger_boundary(storage_ledger[0])
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertFalse(task["external_calls_triggered"])
 
@@ -1675,6 +1693,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "deepseek_prompt_ready_without_model_call")
         self.assertEqual(task["call_ledger"][0]["call_status"], "not_called")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
         self.assertFalse(task["deepseek_called"])
         self.assertFalse(task["external_calls_triggered"])
         self.assertTrue(task["does_not_execute_trades"])
@@ -1713,6 +1732,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "deepseek_explanation_sanitized_without_model_call")
         self.assertEqual(task["call_ledger"][0]["call_status"], "provided_payload_sanitized")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
         self.assertEqual(task["payload_safe"], {"provided_explanation_payload": True})
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertNotIn("provided_explanation", task["payload_safe"])
@@ -1783,6 +1803,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, storage_service, "PARQUET_ROOT", original_root)
         return storage_service.PARQUET_ROOT
+
+    def assert_local_ledger_boundary(self, row):
+        self.assertFalse(row["external"])
+        self.assertFalse(row["external_calls_triggered"])
+        self.assertFalse(row["tushare_called"])
+        self.assertFalse(row["deepseek_called"])
+        self.assertFalse(row["github_called"])
+        self.assertTrue(row["does_not_execute_trades"])
+        self.assertTrue(row["does_not_modify_strategy_action"])
 
     def _with_trade_review_log(self, records):
         original_path = trade_review_service.TRADE_REVIEW_LOG_PATH
@@ -2553,6 +2582,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         task_id = created["data"]["task_id"]
         self.assertTrue(task_id.startswith("local-"))
         self.assertEqual(created["call_ledger"][0]["call_status"], "stub_not_called")
+        self.assert_local_ledger_boundary(created["call_ledger"][0])
         self.assertIn("本地 lifecycle stub", created["warnings"][0])
 
         status = self.client.get(f"/api/tasks/{task_id}").json()
@@ -2560,7 +2590,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(status["data"]["status"], "success")
         self.assertEqual(status["data"]["progress"], 1.0)
         self.assertEqual(status["data"]["call_ledger"][0]["call_status"], "stub_not_called")
+        self.assert_local_ledger_boundary(status["data"]["call_ledger"][0])
         self.assertEqual(status["call_ledger"][0]["call_status"], "stub_not_called")
+        self.assert_local_ledger_boundary(status["call_ledger"][0])
         self.assertIn("本地 lifecycle stub", status["warnings"][0])
 
         listing = self.client.get("/api/tasks").json()
@@ -2577,6 +2609,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(listing["data"]["does_not_execute_trades"])
         self.assertTrue(listing["data"]["does_not_modify_strategy_action"])
         self.assertEqual(listing["call_ledger"][0]["api"], "local_task_status_index")
+        self.assert_local_ledger_boundary(listing["call_ledger"][0])
         self.assertEqual(listing["data"]["tasks"][0]["task_id"], task_id)
         task_service._TASKS.clear()
         persisted_status = self.client.get(f"/api/tasks/{task_id}").json()
@@ -2594,6 +2627,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertTrue(response["ok"])
             self.assertTrue(response["data"]["task_id"].startswith("local-"))
             self.assertEqual(response["call_ledger"][0]["call_status"], "stub_not_called")
+            self.assert_local_ledger_boundary(response["call_ledger"][0])
             self.assertIn("本地 lifecycle stub", response["warnings"][0])
             self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 

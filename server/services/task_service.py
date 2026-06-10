@@ -134,6 +134,12 @@ def build_task_catalog() -> dict[str, Any]:
                 "call_status": "cache_read",
                 "error_message_safe": "",
                 "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
             }
         ],
         "warnings": [
@@ -218,6 +224,13 @@ def _stub_call_ledger(task_type: str, now: str) -> list[dict[str, Any]]:
             "local_fetched_at": now,
             "call_status": "stub_not_called",
             "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
         }
     ]
 
@@ -233,6 +246,12 @@ def _cancel_call_ledger(task_id: str, now: str, *, reason_safe: str = "") -> dic
         "call_status": "cancelled_locally_no_external_call",
         "error_message_safe": "",
         "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
     }
 
 
@@ -467,6 +486,12 @@ def build_task_status_index() -> dict[str, Any]:
                 "call_status": "cache_read",
                 "error_message_safe": "",
                 "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
             }
         ],
         "warnings": [
