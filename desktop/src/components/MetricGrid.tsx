@@ -2,7 +2,7 @@ import StatusBadge from "./StatusBadge";
 
 export type MetricItem = {
   label: string;
-  value: string | number | boolean | null | undefined;
+  value: unknown;
   tone?: "good" | "warn" | "bad" | "neutral";
 };
 
@@ -10,6 +10,13 @@ function displayValue(value: MetricItem["value"]) {
   if (value === true) return "是";
   if (value === false) return "否";
   if (value === null || value === undefined || value === "") return "--";
+  if (Array.isArray(value) || typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "[结构化数据]";
+    }
+  }
   return String(value);
 }
 

@@ -1,4 +1,4 @@
-import type { EChartsOption, SeriesOption } from "echarts";
+import type { EChartsOption, MarkAreaComponentOption, SeriesOption } from "echarts";
 import EChartPanel from "./EChartPanel";
 
 type ChartPoint = {
@@ -126,25 +126,26 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       label: { formatter: "T0", color: "#0f172a" }
     });
   }
-  const markAreaData = operationZones
-    .map((zone) => {
+  const markAreaData: NonNullable<MarkAreaComponentOption["data"]> = operationZones
+    .flatMap((zone) => {
       const rawLow = zone.price_range?.[0];
       const rawHigh = zone.price_range?.[1];
-      if (typeof rawLow !== "number" || typeof rawHigh !== "number") return null;
+      if (typeof rawLow !== "number" || typeof rawHigh !== "number") return [];
       const low = Math.min(rawLow, rawHigh);
       const high = Math.max(rawLow, rawHigh);
       const color = zoneColor(zone);
       return [
-        {
-          name: zone.zone_name ?? zone.zone_key ?? "操作区",
-          yAxis: low,
-          itemStyle: { color },
-          label: { formatter: zone.zone_name ?? zone.zone_key ?? "操作区" }
-        },
-        { yAxis: high }
+        [
+          {
+            name: zone.zone_name ?? zone.zone_key ?? "操作区",
+            yAxis: low,
+            itemStyle: { color },
+            label: { formatter: zone.zone_name ?? zone.zone_key ?? "操作区" }
+          },
+          { yAxis: high }
+        ]
       ];
-    })
-    .filter((item): item is Array<Record<string, unknown>> => item !== null);
+    });
   const referenceLegend = referenceLines
     .filter((line) => typeof line.value === "number")
     .map((line) => {
