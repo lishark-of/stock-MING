@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import data_capability_service, evidence_service, factor_service, packet_service, quant_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -353,6 +353,53 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_decision_packet"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_strategy_trace_cache")
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_position_context_cache_reads_home_snapshot_without_external_calls(self):
+        self._with_snapshot_cache(
+            {
+                "holding_action": {
+                    "ticker": "002008.SZ",
+                    "name": "大族激光",
+                    "shares": 3000,
+                    "cost": 108,
+                    "current_price": 112,
+                    "floating_pnl_text": "浮盈",
+                    "action_state": "只观察",
+                    "api_key": "SHOULD_DROP",
+                },
+                "position_risk_budget": {"risk_level": "中", "max_add_amount": 0},
+                "risk_breakdown": {"position": "cache"},
+                "safety_line": {"stop_loss": 100},
+                "today_action": {"overall_action": "只观察"},
+                "strategy_packet": {"action": "等待", "confidence": "中", "authorization": "Bearer SHOULD_DROP"},
+            }
+        )
+
+        packet = position_service.read_position_context_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_position_context_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["position_summary"]["ticker"], "002008.SZ")
+        self.assertEqual(packet["holding_action"]["shares"], 3000)
+        self.assertEqual(packet["today_action"]["overall_action"], "只观察")
+        self.assertEqual(packet["strategy_context"]["action"], "等待")
+        self.assertNotIn("api_key", packet["holding_action"])
+        self.assertNotIn("authorization", packet["strategy_context"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_call_tushare"])
+        self.assertTrue(packet["policy"]["does_not_call_deepseek"])
+        self.assertTrue(packet["policy"]["does_not_recalculate_position"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_position_context_cache")
         json.dumps(packet, ensure_ascii=False)
 
     def test_a_share_evidence_cache_builds_lineage_without_external_calls(self):
@@ -850,6 +897,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(strategy["data"]["does_not_modify_strategy_action"])
         self.assertTrue(strategy["data"]["does_not_execute_trades"])
 
+        position = self.client.get("/api/position/cache").json()
+        self.assertTrue(position["ok"])
+        self.assertTrue(position["data"]["cache_only"])
+        self.assertFalse(position["data"]["external_calls_triggered"])
+        self.assertFalse(position["data"]["tushare_called"])
+        self.assertFalse(position["data"]["deepseek_called"])
+        self.assertTrue(position["data"]["policy"]["does_not_recalculate_position"])
+        self.assertTrue(position["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(position["data"]["does_not_modify_holdings"])
+        self.assertTrue(position["data"]["does_not_execute_trades"])
+
         evidence = self.client.get("/api/evidence/cache").json()
         self.assertTrue(evidence["ok"])
         self.assertTrue(evidence["data"]["cache_only"])
@@ -953,6 +1011,39 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_position_context_cache_endpoint_returns_position_without_external_work(self):
+        self._with_snapshot_cache(
+            {
+                "holding_action": {
+                    "ticker": "002008.SZ",
+                    "shares": 1200,
+                    "cost": 105,
+                    "current_price": 111,
+                    "action_state": "只观察",
+                    "authorization": "Bearer SHOULD_DROP",
+                },
+                "position_risk_budget": {"risk_level": "中"},
+                "today_action": {"overall_action": "只观察"},
+                "strategy_packet": {"action": "等待"},
+            }
+        )
+
+        response = self.client.get("/api/position/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_position_context_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["position_summary"]["ticker"], "002008.SZ")
+        self.assertEqual(packet["holding_action"]["shares"], 1200)
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_call_tushare"])
+        self.assertTrue(packet["policy"]["does_not_recalculate_position"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
 
     def test_evidence_cache_endpoint_returns_lineage_without_external_work(self):
         self._with_snapshot_cache(

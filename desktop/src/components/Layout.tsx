@@ -6,6 +6,7 @@ export type RouteKey =
   | "evidence"
   | "dataCapability"
   | "next"
+  | "position"
   | "factor"
   | "chokepoint"
   | "serenity"
@@ -24,6 +25,7 @@ const ROUTES: Array<{ key: RouteKey; label: string }> = [
   { key: "evidence", label: "证据雷达" },
   { key: "dataCapability", label: "数据能力" },
   { key: "next", label: "次日图谱" },
+  { key: "position", label: "持仓画像" },
   { key: "factor", label: "多因子图谱" },
   { key: "chokepoint", label: "瓶颈扫描" },
   { key: "serenity", label: "Serenity" },

@@ -10,6 +10,7 @@ import LegacyTools from "./routes/LegacyTools";
 import MigrationStatus from "./routes/MigrationStatus";
 import NextSessionMap from "./routes/NextSessionMap";
 import PacketRegistry from "./routes/PacketRegistry";
+import PositionContext from "./routes/PositionContext";
 import QuantBacktestLab from "./routes/QuantBacktestLab";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 import StorageOverview from "./routes/StorageOverview";
@@ -26,6 +27,7 @@ export default function App() {
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}
       {route === "next" ? <NextSessionMap /> : null}
+      {route === "position" ? <PositionContext /> : null}
       {route === "factor" ? <FactorQuantHub /> : null}
       {route === "chokepoint" ? <ChokepointScan /> : null}
       {route === "serenity" ? <SerenityMethodRadar /> : null}

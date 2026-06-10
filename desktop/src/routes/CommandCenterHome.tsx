@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getChokepointCache, getFactorQuantCache, getHealth, getMigrationStatus, getNextSessionCache, getPackets, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
+import { getChokepointCache, getFactorQuantCache, getHealth, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -10,6 +10,7 @@ export default function CommandCenterHome() {
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [factor, setFactor] = useState<Record<string, unknown>>({});
   const [next, setNext] = useState<Record<string, unknown>>({});
+  const [position, setPosition] = useState<Record<string, unknown>>({});
   const [serenity, setSerenity] = useState<Record<string, unknown>>({});
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
@@ -22,6 +23,7 @@ export default function CommandCenterHome() {
     void getPackets().then((res) => setPackets(res.data));
     void getFactorQuantCache().then((res) => setFactor(res.data));
     void getNextSessionCache().then((res) => setNext(res.data));
+    void getPositionCache().then((res) => setPosition(res.data));
     void getSerenityCache().then((res) => setSerenity(res.data));
     void getChokepointCache().then((res) => setChokepoint(res.data));
     void getStorageOverview().then((res) => setStorageOverview(res.data));
@@ -42,6 +44,7 @@ export default function CommandCenterHome() {
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
+  const positionSummary = position.position_summary as Record<string, unknown> | undefined;
 
   return (
     <>
@@ -83,6 +86,11 @@ export default function CommandCenterHome() {
         <PacketCard title="次日操作图谱 cache" subtitle="GET cache，不刷新，不改 action" status={String(next.status ?? "cache")}>
           <p>{String(next.summary ?? "等待缓存")}</p>
           <p>legacy projection: {String((next.legacy_projection_cache as Record<string, unknown> | undefined)?.available ?? false)}</p>
+        </PacketCard>
+        <PacketCard title="持仓画像 cache" subtitle="GET cache，只读持仓上下文，不改 action" status={String(position.status ?? "cache")}>
+          <p>ticker: {String(positionSummary?.ticker ?? "--")}</p>
+          <p>shares: {String(positionSummary?.shares ?? "--")}</p>
+          <p>external calls: {String(position.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="Factor Quant Hub cache" subtitle="多因子量化图谱 cache-only" status={String((factor.runtime as Record<string, unknown> | undefined)?.status ?? "cache")}>
           <p>mode: {String(factor.mode ?? "cache_only")}</p>

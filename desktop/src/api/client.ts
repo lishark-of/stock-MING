@@ -97,6 +97,10 @@ export function getStrategyCache() {
   return request<Record<string, unknown>>("/api/strategy/cache");
 }
 
+export function getPositionCache() {
+  return request<Record<string, unknown>>("/api/position/cache");
+}
+
 export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }

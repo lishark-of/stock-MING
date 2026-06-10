@@ -25,6 +25,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "HealthStatus.tsx",
             ROOT / "src" / "routes" / "MigrationStatus.tsx",
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
+            ROOT / "src" / "routes" / "PositionContext.tsx",
             ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
             ROOT / "src" / "routes" / "StrategyTrace.tsx",
@@ -97,6 +98,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "ChokepointScan.tsx",
             "SerenityMethodRadar.tsx",
             "PacketRegistry.tsx",
+            "PositionContext.tsx",
             "QuantBacktestLab.tsx",
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
@@ -142,6 +144,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("AShareEvidenceRadar", app_source)
         self.assertIn("DataCapabilityConsole", app_source)
         self.assertIn("PacketRegistry", app_source)
+        self.assertIn("PositionContext", app_source)
         self.assertIn("QuantBacktestLab", app_source)
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
@@ -152,6 +155,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"evidence"', layout_source)
         self.assertIn('"dataCapability"', layout_source)
         self.assertIn('"packets"', layout_source)
+        self.assertIn('"position"', layout_source)
         self.assertIn('"quant"', layout_source)
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
@@ -162,6 +166,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("证据雷达", layout_source)
         self.assertIn("数据能力", layout_source)
         self.assertIn("Packet", layout_source)
+        self.assertIn("持仓画像", layout_source)
         self.assertIn("量化回测", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
@@ -268,6 +273,31 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不能直接修改 strategy action", page)
         self.assertIn("回测收益不代表未来收益", page)
         self.assertIn("local_quant_backtest_cache", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_position_context_page_reads_position_cache_without_external_work(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "PositionContext.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/position/cache", client)
+        self.assertIn("getPositionCache", page)
+        self.assertIn("getPositionCache", home)
+        self.assertIn("GET /api/position/cache", page)
+        self.assertIn("holding_action", page)
+        self.assertIn("position_risk_budget", page)
+        self.assertIn("risk_breakdown", page)
+        self.assertIn("safety_line", page)
+        self.assertIn("不会调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不自动下单", page)
+        self.assertIn("不修改持仓或 strategy action", page)
+        self.assertIn("local_position_context_cache", page)
+        self.assertIn("does_not_modify_holdings", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)
