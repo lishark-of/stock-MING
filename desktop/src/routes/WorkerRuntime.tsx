@@ -26,6 +26,7 @@ export default function WorkerRuntime() {
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
   const summary = (cache.task_catalog_summary as Record<string, unknown> | undefined) ?? {};
   const taskStatus = (cache.task_status_summary as Record<string, unknown> | undefined) ?? {};
+  const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? ((taskStatus.persistence as Record<string, unknown> | undefined) ?? {});
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -46,6 +47,9 @@ export default function WorkerRuntime() {
           { label: "ready modules", value: counts.worker_module_ready_count as number | undefined },
           { label: "task catalog", value: counts.task_count as number | undefined },
           { label: "task status", value: counts.task_status_count as number | undefined },
+          { label: "memory tasks", value: counts.memory_task_count as number | undefined },
+          { label: "sqlite tasks", value: counts.sqlite_task_count as number | undefined },
+          { label: "dedup tasks", value: counts.deduplicated_task_count as number | undefined },
           { label: "task call ledger", value: counts.task_status_call_ledger_count as number | undefined },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
@@ -79,11 +83,24 @@ export default function WorkerRuntime() {
           <p>status counts: {JSON.stringify(taskStatus.status_counts ?? {})}</p>
           <p>latest task: {String(taskStatus.latest_task_type ?? "--")} / {String(taskStatus.latest_task_status ?? "--")}</p>
           <p>call ledger: {String(taskStatus.call_ledger_count ?? 0)}</p>
+          <p>memory tasks: {String(taskStatus.memory_task_count ?? 0)}</p>
+          <p>sqlite tasks: {String(taskStatus.sqlite_task_count ?? 0)}</p>
+          <p>deduplicated tasks: {String(taskStatus.deduplicated_task_count ?? 0)}</p>
+          <p>sqlite fallback enabled: {String(taskStatus.sqlite_fallback_enabled ?? true)}</p>
           <p>external calls: {String(taskStatus.external_calls_triggered ?? false)}</p>
           <p>does_not_execute_trades: {String(taskStatus.does_not_execute_trades ?? true)}</p>
           <p>does_not_modify_strategy_action: {String(taskStatus.does_not_modify_strategy_action ?? true)}</p>
         </PacketCard>
       </div>
+
+      <PacketCard title="Task 持久化来源" subtitle="GET /api/tasks 的 memory + SQLite fallback 来源；只读展示" status="task_persistence">
+        <p>storage backend: {String(taskPersistence.storage_backend ?? "memory_plus_sqlite_fallback")}</p>
+        <p>memory_task_count: {String(taskPersistence.memory_task_count ?? 0)}</p>
+        <p>sqlite_task_count: {String(taskPersistence.sqlite_task_count ?? 0)}</p>
+        <p>deduplicated_task_count: {String(taskPersistence.deduplicated_task_count ?? taskStatus.task_count ?? 0)}</p>
+        <p>task_rows_include_storage_source: {String(taskPersistence.task_rows_include_storage_source ?? true)}</p>
+        <DataLineageTable rows={rows(cache.task_persistence_source_rows ?? taskStatus.persistence_source_rows)} />
+      </PacketCard>
 
       <PacketCard title="Backend 状态" subtitle="local fallback / Celery / Redis / APScheduler；cache API 不连接外部服务" status="backends">
         <DataLineageTable rows={rows(cache.backend_rows)} />
