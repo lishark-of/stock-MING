@@ -11,4 +11,5 @@ router = APIRouter(prefix="/api/migration")
 
 @router.get("/status")
 def get_migration_status() -> dict:
-    return envelope(migration_status_service.build_migration_status())
+    packet = migration_status_service.build_migration_status()
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))

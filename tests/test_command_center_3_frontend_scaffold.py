@@ -185,7 +185,13 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("enters_chokepoint_score", (route_dir / "SerenityMethodRadar.tsx").read_text(encoding="utf-8"))
         migration_source = (route_dir / "MigrationStatus.tsx").read_text(encoding="utf-8")
         self.assertIn("getMigrationStatus", migration_source)
+        self.assertIn("setCacheEnvelopeLedger(res.call_ledger ?? [])", migration_source)
+        self.assertIn("setCacheEnvelopeWarnings(res.warnings ?? [])", migration_source)
         self.assertIn("只读、不重新估算、不外联", migration_source)
+        self.assertIn("GET migration envelope call_ledger", migration_source)
+        self.assertIn("GET migration envelope warnings", migration_source)
+        self.assertIn("cache envelope ledger", migration_source)
+        self.assertIn("cache warnings", migration_source)
         self.assertIn("does_not_execute_trades", migration_source)
         self.assertNotIn("postTask", migration_source)
 

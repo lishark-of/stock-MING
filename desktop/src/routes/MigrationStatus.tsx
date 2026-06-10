@@ -7,23 +7,39 @@ import PacketCard from "../components/PacketCard";
 
 export default function MigrationStatus() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getMigrationStatus().then((res) => setPacket(res.data));
+    void getMigrationStatus().then((res) => {
+      setPacket(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const progress = (packet.progress_baseline as Array<Record<string, unknown>> | undefined) ?? [];
   const policy = packet.api_policy as Record<string, unknown> | undefined;
   const baselinePolicy = packet.baseline_policy as Record<string, unknown> | undefined;
+  const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<string> | undefined) ?? []);
+  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
 
   return (
     <PacketCard title="Command Center 3.0 迁移状态" subtitle="固定长期参考基线；只读、不重新估算、不外联" status={String(packet.status ?? "loading")}>
       <div className="actions">
-        <button onClick={() => void getMigrationStatus().then((res) => setPacket(res.data))}>查看迁移基线</button>
+        <button onClick={() => void getMigrationStatus().then((res) => {
+          setPacket(res.data);
+          setCacheEnvelopeLedger(res.call_ledger ?? []);
+          setCacheEnvelopeWarnings(res.warnings ?? []);
+        })}>查看迁移基线</button>
       </div>
       <MetricGrid
         items={[
           { label: "baseline items", value: progress.length },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length },
           { label: "planning baseline", value: baselinePolicy?.use_as_planning_baseline === true, tone: baselinePolicy?.use_as_planning_baseline === true ? "good" : "warn" },
           { label: "cache only", value: policy?.cache_only === true, tone: policy?.cache_only === true ? "good" : "warn" },
           { label: "external calls", value: policy?.external_calls_triggered === true ? "存在" : "无", tone: policy?.external_calls_triggered === true ? "bad" : "good" },
@@ -33,6 +49,10 @@ export default function MigrationStatus() {
       />
       <h3>固定进度表</h3>
       <DataLineageTable rows={progress} />
+      <h3>GET migration envelope call_ledger</h3>
+      <DataLineageTable rows={cacheCallLedger} />
+      <h3>GET migration envelope warnings</h3>
+      <DataLineageTable rows={warningRows} />
       <JsonDetails title="目标技术栈" data={packet.target_stack ?? []} />
       <JsonDetails title="迁移原则" data={packet.principles ?? []} />
       <JsonDetails title="迁移状态 packet" data={packet} />
