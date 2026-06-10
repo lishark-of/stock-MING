@@ -1458,6 +1458,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("def assert_cache_safety", script)
         self.assertIn("TestClient", script)
         self.assertIn("def assert_api_cache_endpoint", script)
+        self.assertIn("def assert_model_strategy_safety", script)
         self.assertIn("response.get(\"call_ledger\")", script)
         self.assertIn("api_cache_paths", script)
         self.assertIn("/api/packets", script)
@@ -1485,6 +1486,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn('catalog["route_coverage"]["known_post_routes"]', script)
         self.assertIn("task_route_coverage:", script)
         self.assertIn("call_ledger_required_for_all_known_post_routes", script)
+        self.assertIn("model_strategy purposes changed", script)
+        self.assertIn("model_strategy explain_grade purposes must stay complete", script)
+        self.assertIn("model_strategy fast_grade purposes must stay complete", script)
+        self.assertIn("must not hardcode model at callsite", script)
+        self.assertIn("must not contain secrets", script)
+        self.assertIn("cache read must not external call", script)
 
     def test_next_session_generate_task_writes_exact_cache_packet_without_external_work(self):
         db_path = self._with_meta_store()
@@ -2209,6 +2216,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(model_strategy["data"]["read_only"])
         self.assertEqual(model_strategy["data"]["mode"], "cache_only")
         self.assertEqual(model_strategy["data"]["counts"]["purpose_count"], 7)
+        self.assertEqual(
+            set(model_strategy["data"]["purpose_groups"]["explain_grade"]),
+            {"default", "explain", "projection", "factor_explain"},
+        )
+        self.assertEqual(
+            set(model_strategy["data"]["purpose_groups"]["fast_grade"]),
+            {"fast", "healthcheck", "feeder"},
+        )
+        for row in model_strategy["data"]["model_rows"]:
+            self.assertTrue(row["does_not_hardcode_model"])
+            self.assertFalse(row["contains_secret"])
+            self.assertFalse(row["external_call_on_cache_read"])
+            self.assertTrue(row["config_keys"])
         self.assertFalse(model_strategy["data"]["external_calls_triggered"])
         self.assertFalse(model_strategy["data"]["tushare_called"])
         self.assertFalse(model_strategy["data"]["deepseek_called"])

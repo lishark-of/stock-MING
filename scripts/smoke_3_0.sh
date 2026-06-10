@@ -40,6 +40,28 @@ def assert_api_cache_endpoint(client, path):
     return data
 
 
+def assert_model_strategy_safety(packet):
+    expected_explain = {"default", "explain", "projection", "factor_explain"}
+    expected_fast = {"fast", "healthcheck", "feeder"}
+    rows = packet.get("model_rows") or []
+    row_by_purpose = {row.get("purpose"): row for row in rows}
+    if set(row_by_purpose) != expected_explain | expected_fast:
+        raise AssertionError(f"model_strategy purposes changed: {sorted(row_by_purpose)}")
+    if set(packet.get("purpose_groups", {}).get("explain_grade") or []) != expected_explain:
+        raise AssertionError("model_strategy explain_grade purposes must stay complete")
+    if set(packet.get("purpose_groups", {}).get("fast_grade") or []) != expected_fast:
+        raise AssertionError("model_strategy fast_grade purposes must stay complete")
+    for purpose, row in row_by_purpose.items():
+        if not row.get("does_not_hardcode_model"):
+            raise AssertionError(f"model_strategy.{purpose} must not hardcode model at callsite")
+        if row.get("contains_secret"):
+            raise AssertionError(f"model_strategy.{purpose} must not contain secrets")
+        if row.get("external_call_on_cache_read"):
+            raise AssertionError(f"model_strategy.{purpose} cache read must not external call")
+        if not row.get("config_keys"):
+            raise AssertionError(f"model_strategy.{purpose} must expose config_keys")
+
+
 print("health: import ok")
 for key in [
     "command_center_factor_quant_hub_packet",
@@ -91,6 +113,7 @@ assert_cache_safety("migration_status", migration)
 print("migration_status:", migration["status"], len(migration["progress_baseline"]))
 model_strategy = model_strategy_service.read_deepseek_model_strategy_cache()
 assert_cache_safety("model_strategy", model_strategy)
+assert_model_strategy_safety(model_strategy)
 print("model_strategy:", model_strategy["status"], model_strategy["mode"], model_strategy["counts"]["purpose_count"])
 audit = audit_service.read_call_ledger_audit_cache()
 assert_cache_safety("call_ledger_audit", audit)
