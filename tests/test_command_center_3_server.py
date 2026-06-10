@@ -1948,6 +1948,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(risk["data"]["does_not_modify_strategy_action"])
         self.assertTrue(risk["data"]["does_not_modify_holdings"])
         self.assertTrue(risk["data"]["does_not_execute_trades"])
+        self.assertEqual(risk["call_ledger"][0]["api"], "local_risk_guardrails_cache")
+        self.assertFalse(risk["call_ledger"][0]["external"])
+        self.assertIn("GET /api/risk/cache", risk["warnings"][0])
 
         evidence = self.client.get("/api/evidence/cache").json()
         self.assertTrue(evidence["ok"])
@@ -2275,6 +2278,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_risk_guardrails_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/risk/cache", response["warnings"][0])
 
     def test_evidence_cache_endpoint_returns_lineage_without_external_work(self):
         self._with_snapshot_cache(
