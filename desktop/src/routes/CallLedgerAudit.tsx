@@ -26,6 +26,7 @@ export default function CallLedgerAudit() {
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const getRouteCoverage = (cache.get_route_coverage as Record<string, unknown> | undefined) ?? {};
+  const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? {};
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -46,6 +47,9 @@ export default function CallLedgerAudit() {
           { label: "GET routes", value: counts.known_get_route_count as number | undefined },
           { label: "uncovered GET", value: counts.uncovered_get_route_count as number | undefined, tone: Number(counts.uncovered_get_route_count ?? 0) > 0 ? "bad" : "good" },
           { label: "tasks", value: counts.task_count as number | undefined },
+          { label: "memory tasks", value: counts.memory_task_count as number | undefined },
+          { label: "sqlite tasks", value: counts.sqlite_task_count as number | undefined },
+          { label: "dedup tasks", value: counts.deduplicated_task_count as number | undefined },
           { label: "call ledger", value: counts.call_ledger_count as number | undefined },
           { label: "endpoint ledger", value: counts.endpoint_call_ledger_count as number | undefined },
           { label: "task ledger", value: counts.task_call_ledger_count as number | undefined },
@@ -92,7 +96,17 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="任务审计" subtitle="GET /api/tasks 只读任务状态；不创建任务" status="tasks">
         <p>任务状态 index（command_center_3_task_status_index）会作为 cache endpoint 进入审计，同时任务明细会单独聚合 call_ledger。</p>
+        <p>任务行会显示 storage_source，用来区分 memory、sqlite_meta 和 memory_and_sqlite。</p>
         <DataLineageTable rows={rows(cache.task_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Task 持久化审计" subtitle="memory + SQLite fallback 来源；审计页只读汇总" status="task_persistence">
+        <p>storage_backend: {String(taskPersistence.storage_backend ?? "memory_plus_sqlite_fallback")}</p>
+        <p>memory_task_count: {String(taskPersistence.memory_task_count ?? 0)}</p>
+        <p>sqlite_task_count: {String(taskPersistence.sqlite_task_count ?? 0)}</p>
+        <p>deduplicated_task_count: {String(taskPersistence.deduplicated_task_count ?? counts.task_count ?? 0)}</p>
+        <p>task_rows_include_storage_source: {String(taskPersistence.task_rows_include_storage_source ?? true)}</p>
+        <DataLineageTable rows={rows(cache.task_persistence_source_rows)} />
       </PacketCard>
 
       <PacketCard title="DeepSeek 模型策略审计" subtitle="从 local_deepseek_model_strategy_cache 提取；cache read 不外联、不含凭据" status="model_strategy">

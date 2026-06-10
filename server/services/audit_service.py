@@ -295,6 +295,7 @@ def _task_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                 "progress": task_map.get("progress"),
                 "current_step": task_map.get("current_step"),
                 "backend": task_map.get("backend"),
+                "storage_source": task_map.get("storage_source"),
                 "output_packet_key": task_map.get("output_packet_key"),
                 "call_ledger_count": len(ledger),
                 "external_calls_triggered": _bool(task_map.get("external_calls_triggered")),
@@ -337,6 +338,10 @@ def _model_strategy_rows() -> list[dict[str, Any]]:
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
+    task_status_index = _safe_value(task_service.build_task_status_index())
+    task_status_index = task_status_index if isinstance(task_status_index, dict) else {}
+    task_persistence = _as_dict(task_status_index.get("persistence"))
+    task_persistence_source_rows = _as_list(task_status_index.get("persistence_source_rows"))
     model_strategy_rows = _model_strategy_rows()
     get_route_coverage = _get_route_coverage(endpoint_rows)
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
@@ -364,6 +369,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "call_ledger_rows": all_ledger_rows,
         "endpoint_call_ledger_rows": endpoint_ledger_rows[:160],
         "task_call_ledger_rows": task_ledger_rows[:160],
+        "task_persistence": task_persistence,
+        "task_persistence_source_rows": task_persistence_source_rows,
         "model_strategy_rows": model_strategy_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
@@ -377,6 +384,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "call_ledger_count": len(all_ledger_rows),
             "endpoint_call_ledger_count": len(endpoint_ledger_rows),
             "task_call_ledger_count": len(task_ledger_rows),
+            "memory_task_count": task_persistence.get("memory_task_count", 0),
+            "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
+            "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
             "model_strategy_purpose_count": len(model_strategy_rows),
             "model_strategy_cache_read_external_call_count": sum(
                 1 for row in model_strategy_rows if row.get("external_call_on_cache_read")
@@ -397,6 +407,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
             "audit_is_read_only": True,
             "post_task_required_for_external_work": True,
+            "reads_memory_and_sqlite_fallback": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -407,6 +418,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "endpoint_count": len(endpoint_rows),
                 "known_get_route_count": get_route_coverage["known_get_route_count"],
                 "task_count": len(task_rows),
+                "memory_task_count": task_persistence.get("memory_task_count", 0),
+                "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
+                "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
+                "storage_backend": task_persistence.get("storage_backend", "memory_plus_sqlite_fallback"),
                 "local_fetched_at": _now_iso(),
                 "call_status": "cache_read",
                 "external": False,

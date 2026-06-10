@@ -1858,6 +1858,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["cache_only"])
         self.assertGreater(packet["counts"]["cache_endpoint_count"], 10)
         self.assertGreaterEqual(packet["counts"]["task_count"], 1)
+        self.assertIn("memory_task_count", packet["counts"])
+        self.assertIn("sqlite_task_count", packet["counts"])
+        self.assertIn("deduplicated_task_count", packet["counts"])
         self.assertGreaterEqual(packet["counts"]["call_ledger_count"], 1)
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
@@ -1882,6 +1885,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(endpoint_by_source["task_status_index"]["call_ledger_count"], 1)
         self.assertIn("local_health_check", {row.get("api") for row in packet["endpoint_call_ledger_rows"]})
         self.assertIn("local_task_status_index", {row.get("api") for row in packet["endpoint_call_ledger_rows"]})
+        self.assertIn("task_persistence", packet)
+        self.assertIn("task_persistence_source_rows", packet)
+        self.assertEqual(packet["task_persistence"]["storage_backend"], "memory_plus_sqlite_fallback")
+        self.assertTrue(packet["task_persistence"]["task_rows_include_storage_source"])
+        self.assertEqual({row["source"] for row in packet["task_persistence_source_rows"]}, {"memory", "sqlite_meta", "deduplicated"})
+        self.assertIn("storage_source", packet["task_rows"][0])
         model_rows = {row["purpose"]: row for row in packet["model_strategy_rows"]}
         self.assertEqual(
             set(model_rows),
@@ -1896,9 +1905,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["policy"]["audit_is_read_only"])
         self.assertTrue(packet["policy"]["post_task_required_for_external_work"])
+        self.assertTrue(packet["policy"]["reads_memory_and_sqlite_fallback"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_call_ledger_audit_cache")
+        self.assertEqual(packet["call_ledger"][0]["storage_backend"], "memory_plus_sqlite_fallback")
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
         json.dumps(packet, ensure_ascii=False)
 
