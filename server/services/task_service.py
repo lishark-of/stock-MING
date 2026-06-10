@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from config import DEEPSEEK_MODEL_CONFIG_KEYS
+from config import DEEPSEEK_MODEL_CONFIG_KEYS, get_deepseek_model
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -269,11 +269,35 @@ def _list_persisted_tasks() -> list[dict[str, Any]]:
     return [task for task in tasks if isinstance(task, dict)]
 
 
+def _task_catalog_entry(task_type: str) -> dict[str, Any]:
+    for item in TASK_CATALOG:
+        if item.get("task_type") == task_type:
+            return dict(item)
+    return {}
+
+
+def _stub_request_params_safe(task_type: str) -> dict[str, Any]:
+    entry = _task_catalog_entry(task_type)
+    purpose = entry.get("deepseek_model_strategy_purpose")
+    if not purpose:
+        return {}
+    return {
+        "deepseek_model_strategy": {
+            "purpose": str(purpose),
+            "model": get_deepseek_model(str(purpose)),
+            "config_keys": list(entry.get("deepseek_model_config_keys") or []),
+            "model_source": str(entry.get("deepseek_model_source") or f"config.get_deepseek_model('{purpose}')"),
+            "does_not_hardcode_model": bool(entry.get("does_not_hardcode_deepseek_model")),
+            "contains_secret": False,
+        }
+    }
+
+
 def _stub_call_ledger(task_type: str, now: str) -> list[dict[str, Any]]:
     return [
         {
             "api": task_type,
-            "request_params_safe": {},
+            "request_params_safe": _stub_request_params_safe(task_type),
             "row_count": 0,
             "data_date": None,
             "local_fetched_at": now,

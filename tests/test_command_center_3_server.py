@@ -2901,6 +2901,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertTrue(response["data"]["task_id"].startswith("local-"))
             self.assertEqual(response["call_ledger"][0]["call_status"], "stub_not_called")
             self.assert_local_ledger_boundary(response["call_ledger"][0])
+            request_params_safe = response["call_ledger"][0]["request_params_safe"]
+            if path == "/api/chokepoint/run":
+                model_strategy = request_params_safe["deepseek_model_strategy"]
+                self.assertEqual(model_strategy["purpose"], "explain")
+                self.assertIn("DEEPSEEK_EXPLAIN_MODEL", model_strategy["config_keys"])
+                self.assertTrue(model_strategy["does_not_hardcode_model"])
+                self.assertFalse(model_strategy["contains_secret"])
+            else:
+                self.assertNotIn("deepseek_model_strategy", request_params_safe)
             self.assertIn("本地 lifecycle stub", response["warnings"][0])
             self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
