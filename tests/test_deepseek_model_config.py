@@ -1,5 +1,6 @@
 import ast
 import os
+import re
 import unittest
 from pathlib import Path
 
@@ -110,7 +111,10 @@ class DeepSeekModelConfigTests(unittest.TestCase):
             root / "docs" / "command_center_3_architecture.md",
         }
         source_suffixes = {".py", ".ts", ".tsx", ".js", ".jsx"}
-        forbidden_fragments = ("deepseek-chat", "deepseek-v4-pro", "deepseek-v4-flash")
+        model_literal_pattern = re.compile(
+            r"\bdeepseek-(?:v\d+[a-z0-9_-]*|chat|reasoner|coder)\b",
+            re.IGNORECASE,
+        )
         offenders = []
 
         for path in root.rglob("*"):
@@ -119,9 +123,8 @@ class DeepSeekModelConfigTests(unittest.TestCase):
             if any(part in {".git", ".venv", "__pycache__", "node_modules", "dist"} for part in path.parts):
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
-            for fragment in forbidden_fragments:
-                if fragment in text:
-                    offenders.append(f"{path.relative_to(root)} contains {fragment}")
+            for match in model_literal_pattern.finditer(text):
+                offenders.append(f"{path.relative_to(root)} contains {match.group(0)}")
 
         self.assertEqual(offenders, [])
 
