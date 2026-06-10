@@ -28,7 +28,11 @@ export default function CommandCenterHome() {
   const [candidates, setCandidates] = useState<Record<string, unknown>>({});
   const [risk, setRisk] = useState<Record<string, unknown>>({});
   const [serenity, setSerenity] = useState<Record<string, unknown>>({});
+  const [serenityEnvelopeLedger, setSerenityEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [serenityEnvelopeWarnings, setSerenityEnvelopeWarnings] = useState<Array<string>>([]);
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
+  const [chokepointEnvelopeLedger, setChokepointEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [chokepointEnvelopeWarnings, setChokepointEnvelopeWarnings] = useState<Array<string>>([]);
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
   const [migration, setMigration] = useState<Record<string, unknown>>({});
   const [modelStrategy, setModelStrategy] = useState<Record<string, unknown>>({});
@@ -69,8 +73,16 @@ export default function CommandCenterHome() {
     void getPositionCache().then((res) => setPosition(res.data));
     void getCandidateRadarCache().then((res) => setCandidates(res.data));
     void getRiskGuardrailsCache().then((res) => setRisk(res.data));
-    void getSerenityCache().then((res) => setSerenity(res.data));
-    void getChokepointCache().then((res) => setChokepoint(res.data));
+    void getSerenityCache().then((res) => {
+      setSerenityEnvelopeLedger(res.call_ledger ?? []);
+      setSerenityEnvelopeWarnings(res.warnings ?? []);
+      setSerenity(res.data);
+    });
+    void getChokepointCache().then((res) => {
+      setChokepointEnvelopeLedger(res.call_ledger ?? []);
+      setChokepointEnvelopeWarnings(res.warnings ?? []);
+      setChokepoint(res.data);
+    });
     void getStorageOverview().then((res) => setStorageOverview(res.data));
     void getMigrationStatus().then((res) => setMigration(res.data));
     void getModelStrategyCache().then((res) => setModelStrategy(res.data));
@@ -121,6 +133,8 @@ export default function CommandCenterHome() {
   const packetPayloadLedger = (packets.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const factorPayloadLedger = (factor.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const nextPayloadLedger = (next.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const serenityPayloadLedger = (serenity.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const chokepointPayloadLedger = (chokepoint.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
   const envelopeLedgerRows = [
@@ -128,6 +142,8 @@ export default function CommandCenterHome() {
     ...(packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).map((row) => ({ scope: "packet_index", ...row })),
     ...(factorEnvelopeLedger.length ? factorEnvelopeLedger : factorPayloadLedger).map((row) => ({ scope: "factor_quant", ...row })),
     ...(nextEnvelopeLedger.length ? nextEnvelopeLedger : nextPayloadLedger).map((row) => ({ scope: "next_session", ...row })),
+    ...(serenityEnvelopeLedger.length ? serenityEnvelopeLedger : serenityPayloadLedger).map((row) => ({ scope: "serenity", ...row })),
+    ...(chokepointEnvelopeLedger.length ? chokepointEnvelopeLedger : chokepointPayloadLedger).map((row) => ({ scope: "chokepoint", ...row })),
     ...(taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).map((row) => ({ scope: "task_catalog", ...row })),
     ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
   ];
@@ -148,6 +164,8 @@ export default function CommandCenterHome() {
           { label: "packet envelope ledger", value: (packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).length },
           { label: "factor envelope ledger", value: (factorEnvelopeLedger.length ? factorEnvelopeLedger : factorPayloadLedger).length },
           { label: "next envelope ledger", value: (nextEnvelopeLedger.length ? nextEnvelopeLedger : nextPayloadLedger).length },
+          { label: "serenity envelope ledger", value: (serenityEnvelopeLedger.length ? serenityEnvelopeLedger : serenityPayloadLedger).length },
+          { label: "chokepoint envelope ledger", value: (chokepointEnvelopeLedger.length ? chokepointEnvelopeLedger : chokepointPayloadLedger).length },
           { label: "任务记录", value: taskIndex?.task_count ?? tasks.length },
           { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
           { label: "任务目录", value: taskCatalogItems?.length ?? 0 },
@@ -183,9 +201,9 @@ export default function CommandCenterHome() {
           <p>external calls: {String(audit.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="3.0 envelope 血缘总览" subtitle="首页优先读取 FastAPI 顶层 call_ledger；不钻 payload 也能判断只读边界" status="lineage">
-          <p>health / packet / factor / next / catalog / task index: {String(healthEnvelopeLedger.length)} / {String(packetEnvelopeLedger.length)} / {String(factorEnvelopeLedger.length)} / {String(nextEnvelopeLedger.length)} / {String(taskCatalogEnvelopeLedger.length)} / {String(taskIndexEnvelopeLedger.length)}</p>
+          <p>health / packet / factor / next / serenity / chokepoint / catalog / task index: {String(healthEnvelopeLedger.length)} / {String(packetEnvelopeLedger.length)} / {String(factorEnvelopeLedger.length)} / {String(nextEnvelopeLedger.length)} / {String(serenityEnvelopeLedger.length)} / {String(chokepointEnvelopeLedger.length)} / {String(taskCatalogEnvelopeLedger.length)} / {String(taskIndexEnvelopeLedger.length)}</p>
           <p>health warnings: {String(healthWarnings.length)}</p>
-          <p>fallback payload ledger: {String(packetPayloadLedger.length + factorPayloadLedger.length + nextPayloadLedger.length + taskCatalogPayloadLedger.length + taskIndexPayloadLedger.length)}</p>
+          <p>fallback payload ledger: {String(packetPayloadLedger.length + factorPayloadLedger.length + nextPayloadLedger.length + serenityPayloadLedger.length + chokepointPayloadLedger.length + taskCatalogPayloadLedger.length + taskIndexPayloadLedger.length)}</p>
           <p>GET cache 仍不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。</p>
           <DataLineageTable rows={envelopeLedgerRows} />
         </PacketCard>
@@ -251,6 +269,7 @@ export default function CommandCenterHome() {
         <PacketCard title="Serenity 方法雷达 cache" subtitle="本地方法来源基线" status={String(serenity.github_status ?? "local")}>
           <p>DeepSeek: 不调用</p>
           <p>repositories: {String((serenity.repositories as unknown[] | undefined)?.length ?? 0)}</p>
+          <p>envelope ledger / warnings: {String(serenityEnvelopeLedger.length)} / {String(serenityEnvelopeWarnings.length)}</p>
         </PacketCard>
         <PacketCard title="DeepSeek 模型策略" subtitle="独立 cache；不展示 token/key，不触发模型调用" status={modelStrategy.contains_secret === true ? "check" : "safe"}>
           <p>purpose count: {String(deepseekModelCounts?.purpose_count ?? 0)}</p>
@@ -261,6 +280,7 @@ export default function CommandCenterHome() {
         </PacketCard>
         <PacketCard title="产业链瓶颈扫描 cache" subtitle="GET cache 不触发 DeepSeek" status={String(chokepoint.status ?? "cache")}>
           <p>{String(chokepoint.summary ?? "等待缓存")}</p>
+          <p>envelope ledger / warnings: {String(chokepointEnvelopeLedger.length)} / {String(chokepointEnvelopeWarnings.length)}</p>
         </PacketCard>
         <PacketCard title="Parquet / DuckDB Storage" subtitle="daily / moneyflow / factor_values 只读状态，不触发刷新" status={String(storageOverview.store ?? "parquet_duckdb")}>
           <p>datasets: {String(storageDatasets?.length ?? 0)}</p>
