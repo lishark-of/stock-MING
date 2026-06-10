@@ -69,6 +69,10 @@ export function getEvidenceCache() {
   return request<Record<string, unknown>>("/api/evidence/cache");
 }
 
+export function getMarketContextCache() {
+  return request<Record<string, unknown>>("/api/market/cache");
+}
+
 export function getDataCapabilityCache() {
   return request<Record<string, unknown>>("/api/data-capability/cache");
 }

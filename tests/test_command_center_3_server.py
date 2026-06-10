@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, evidence_service, factor_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -190,6 +190,57 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("command_center_factor_quant_hub_packet", index["available_cache_keys"])
         self.assertEqual(index["sqlite_meta"]["packet_metadata"][0]["schema_version"], "factor_quant_hub.v1")
         self.assertFalse(index["cache_api_policy"]["get_cache_external_calls"])
+
+    def test_market_context_cache_reads_market_packets_without_refreshing_quotes(self):
+        self._with_snapshot_cache(
+            {
+                "market_packet": {
+                    "status": "ready",
+                    "summary": "盘面中性偏强",
+                    "trade_date": "20260610",
+                    "verified_sources": ["moneyflow"],
+                    "missing_sources": ["chip"],
+                    "api_key": "SHOULD_DROP",
+                },
+                "market_profile_evidence": {"status": "ready", "market_label": "震荡", "summary": "只读画像"},
+                "moneyflow_packet": {"status": "ready", "ticker": "002008.SZ", "main_net_yi": 1.2, "authorization": "Bearer SHOULD_DROP"},
+                "margin_packet": {"status": "ready", "margin_balance_yi": 4.5, "leverage_state": "温和"},
+                "dragon_tiger_packet": {"status": "ready", "net_buy_amount_yi": 0.8, "inst_rows": [{"name": "机构席位"}]},
+                "limit_emotion_packet": {"status": "ready", "emotion_state": "修复", "limit_records": [{"date": "20260610"}]},
+                "chip_packet": {"status": "ready", "winner_rate": 0.62, "chips_top_areas": [{"area": "100-105"}]},
+                "etf_packet": {"status": "ready", "risk_state": "观察", "etf_replacement_hint": "仅替代说明"},
+            }
+        )
+
+        packet = market_service.read_market_context_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_market_context_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["trade_date"], "20260610")
+        self.assertEqual(packet["counts"]["packet_count"], 8)
+        self.assertEqual(packet["counts"]["verified_source_count"], 1)
+        self.assertEqual(packet["counts"]["missing_source_count"], 1)
+        self.assertEqual(packet["counts"]["limit_record_count"], 1)
+        self.assertEqual(packet["counts"]["dragon_tiger_inst_count"], 1)
+        self.assertEqual(packet["counts"]["chip_area_count"], 1)
+        self.assertEqual(packet["packet_rows"][2]["packet_key"], "moneyflow_packet")
+        self.assertNotIn("api_key", packet["market_packet"])
+        self.assertNotIn("authorization", packet["moneyflow_packet"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_refresh_quotes"])
+        self.assertTrue(packet["policy"]["does_not_refresh_moneyflow"])
+        self.assertTrue(packet["policy"]["market_context_is_not_trade_instruction"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_market_context_cache")
+        json.dumps(packet, ensure_ascii=False)
 
     def test_storage_factor_values_status_is_cache_only(self):
         self._with_parquet_root()
@@ -973,6 +1024,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(factor["data"]["mode"], "cache_only")
         self.assertFalse(factor["data"]["external_calls_triggered"])
 
+        market = self.client.get("/api/market/cache").json()
+        self.assertTrue(market["ok"])
+        self.assertTrue(market["data"]["cache_only"])
+        self.assertFalse(market["data"]["external_calls_triggered"])
+        self.assertFalse(market["data"]["tushare_called"])
+        self.assertFalse(market["data"]["deepseek_called"])
+        self.assertTrue(market["data"]["policy"]["does_not_refresh_quotes"])
+        self.assertTrue(market["data"]["policy"]["market_context_is_not_trade_instruction"])
+        self.assertTrue(market["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(market["data"]["does_not_execute_trades"])
+
         serenity = self.client.get("/api/serenity/cache").json()
         self.assertTrue(serenity["ok"])
         self.assertFalse(serenity["data"]["deepseek_called"])
@@ -1158,6 +1220,32 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["does_not_run_backtest"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_execute_trades"])
+
+    def test_market_context_cache_endpoint_returns_local_market_context(self):
+        self._with_snapshot_cache(
+            {
+                "market_packet": {"status": "ready", "summary": "市场缓存", "trade_date": "20260610"},
+                "moneyflow_packet": {"status": "ready", "main_net_yi": 1.1, "authorization": "Bearer SHOULD_DROP"},
+                "limit_emotion_packet": {"status": "ready", "emotion_state": "偏强"},
+            }
+        )
+
+        response = self.client.get("/api/market/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_market_context_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["trade_date"], "20260610")
+        self.assertGreaterEqual(packet["counts"]["packet_count"], 3)
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_call_tushare"])
+        self.assertTrue(packet["policy"]["does_not_refresh_moneyflow"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_strategy_trace_cache_endpoint_returns_strategy_trace_without_external_work(self):
         self._with_snapshot_cache(

@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
-from server.services import candidate_service, data_capability_service, evidence_service, migration_status_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, evidence_service, market_service, migration_status_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service
 from server.services.task_service import create_task_stub
 
 print("health: import ok")
@@ -22,6 +22,8 @@ catalog = task_service.build_task_catalog()
 print("task_catalog:", catalog["status"], catalog["task_count"])
 trade_review = trade_review_service.read_trade_review_cache()
 print("trade_review:", trade_review["status"], trade_review["record_count"])
+market = market_service.read_market_context_cache()
+print("market_context:", market["status"], market["mode"], market["counts"]["packet_count"])
 quant = quant_service.read_quant_backtest_cache()
 print("quant_cache:", quant["status"], quant["mode"])
 evidence = evidence_service.read_a_share_evidence_cache()

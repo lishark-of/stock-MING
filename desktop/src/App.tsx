@@ -8,6 +8,7 @@ import DataCapabilityConsole from "./routes/DataCapabilityConsole";
 import FactorQuantHub from "./routes/FactorQuantHub";
 import HealthStatus from "./routes/HealthStatus";
 import LegacyTools from "./routes/LegacyTools";
+import MarketContext from "./routes/MarketContext";
 import MigrationStatus from "./routes/MigrationStatus";
 import NextSessionMap from "./routes/NextSessionMap";
 import PacketRegistry from "./routes/PacketRegistry";
@@ -27,6 +28,7 @@ export default function App() {
     <Layout active={route} onNavigate={setRoute}>
       {route === "home" ? <CommandCenterHome /> : null}
       {route === "health" ? <HealthStatus /> : null}
+      {route === "market" ? <MarketContext /> : null}
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}
       {route === "recovery" ? <RecoveryCenter /> : null}
