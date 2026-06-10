@@ -31,6 +31,8 @@ def assert_api_cache_endpoint(client, path):
     response = client.get(path).json()
     if not response.get("ok"):
         raise AssertionError(f"{path} failed: {response.get('error')}")
+    if not response.get("call_ledger"):
+        raise AssertionError(f"{path}.call_ledger must be exposed at envelope top level")
     data = response.get("data") or {}
     if not isinstance(data, dict):
         raise AssertionError(f"{path}.data must be a dict")
@@ -60,6 +62,8 @@ created_task = created.get("data", {}).get("task", {})
 assert_cache_safety("task_creation_api", created_task)
 print("task_creation_api:", created["data"]["task_id"], created["call_ledger"][0]["call_status"])
 api_cache_paths = [
+    "/api/packets",
+    "/api/packets/command_center_factor_quant_hub_packet",
     "/api/factor-quant/cache",
     "/api/next-session/cache",
     "/api/serenity/cache",
@@ -68,6 +72,10 @@ api_cache_paths = [
     "/api/audit/cache",
     "/api/legacy/cache",
     "/api/worker/cache",
+    "/api/storage",
+    "/api/storage/factor-values",
+    "/api/storage/daily",
+    "/api/storage/moneyflow",
     "/api/storage/sqlite-meta",
     "/api/tasks",
     "/api/tasks/catalog",
