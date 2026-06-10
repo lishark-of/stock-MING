@@ -82,6 +82,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(serenity["packet_key"], "command_center_serenity_method_radar_packet")
         self.assertFalse(serenity["deepseek_called"])
         self.assertTrue(serenity["decision_usage_policy"]["display_only"])
+        self.assertEqual(serenity["call_ledger"][0]["api"], "local_serenity_method_radar_cache")
+        self.assertFalse(serenity["call_ledger"][0]["external"])
+        self.assertFalse(serenity["call_ledger"][0]["github_called"])
+        self.assertIn("GET /api/serenity/cache", serenity["warnings"][0])
 
         self.assertEqual(next_session["packet_key"], "command_center_next_session_projection_packet")
         self.assertFalse(next_session["external_calls_triggered"])
@@ -1736,6 +1740,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         serenity = self.client.get("/api/serenity/cache").json()
         self.assertTrue(serenity["ok"])
         self.assertFalse(serenity["data"]["deepseek_called"])
+        self.assertEqual(serenity["call_ledger"][0]["api"], "local_serenity_method_radar_cache")
+        self.assertFalse(serenity["call_ledger"][0]["external"])
+        self.assertFalse(serenity["call_ledger"][0]["github_called"])
+        self.assertIn("GET /api/serenity/cache", serenity["warnings"][0])
 
         next_session = self.client.get("/api/next-session/cache").json()
         self.assertTrue(next_session["ok"])

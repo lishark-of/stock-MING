@@ -9,10 +9,17 @@ import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function SerenityMethodRadar() {
   const [packet, setPacket] = useState<Record<string, any>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  const refreshCache = () => void getSerenityCache().then((res) => setPacket(res.data));
+  const refreshCache = () =>
+    void getSerenityCache().then((res) => {
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+      setPacket(res.data);
+    });
   const launchTask = () =>
     void postTask("/api/serenity/github-probe").then((res) => {
       setTaskReceipt(res);
@@ -27,6 +34,9 @@ export default function SerenityMethodRadar() {
   const repositories = packet.repositories ?? [];
   const defenseRows = packet.hallucination_defense_evolution ?? [];
   const methodRows = packet.method_summaries ?? [];
+  const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
   const decisionRows = Object.entries(policy).map(([key, value]) => ({ boundary: key, value: String(value) }));
   const sourceRows = [
     { field: "source_label", value: "本地方法来源基线" },
@@ -57,7 +67,9 @@ export default function SerenityMethodRadar() {
           { label: "进入评分", value: policy.enters_chokepoint_score === true ? "会" : "不会", tone: policy.enters_chokepoint_score === true ? "bad" : "good" },
           { label: "进入 action", value: policy.enters_strategy_action === true ? "会" : "不会", tone: policy.enters_strategy_action === true ? "bad" : "good" },
           { label: "进入次日图谱", value: policy.enters_next_session_projection === true ? "会" : "不会", tone: policy.enters_next_session_projection === true ? "bad" : "good" },
-          { label: "进入 DeepSeek prompt", value: policy.enters_deepseek_prompt === true ? "会" : "不会", tone: policy.enters_deepseek_prompt === true ? "bad" : "good" }
+          { label: "进入 DeepSeek prompt", value: policy.enters_deepseek_prompt === true ? "会" : "不会", tone: policy.enters_deepseek_prompt === true ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
       <h3>仓库方法雷达</h3>
@@ -70,6 +82,10 @@ export default function SerenityMethodRadar() {
       <DataLineageTable rows={decisionRows} />
       <h3>技术血缘</h3>
       <DataLineageTable rows={sourceRows} />
+      <h3>GET cache envelope call_ledger</h3>
+      <DataLineageTable rows={cacheCallLedger} />
+      <h3>GET cache envelope warnings</h3>
+      <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning: String(warning ?? "") }))} />
       <JsonDetails title="防幻觉演进 raw" data={defenseRows} />
       <JsonDetails title="方法归纳 raw" data={methodRows} />
       <JsonDetails title="Serenity packet" data={packet} />

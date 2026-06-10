@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/serenity")
 
 @router.get("/cache")
 def get_serenity_cache() -> dict:
-    return envelope(packet_service.build_serenity_cache())
+    packet = packet_service.build_serenity_cache()
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
 @router.post("/github-probe")

@@ -491,9 +491,39 @@ def build_factor_quant_cache() -> dict[str, Any]:
 def build_serenity_cache() -> dict[str, Any]:
     cached = _read_snapshot_packet("command_center_serenity_method_radar_packet")
     if cached:
+        cached.setdefault("call_ledger", serenity_cache_call_ledger(cached))
+        cached.setdefault("warnings", ["GET /api/serenity/cache 只读取本地方法来源基线；不会调用 GitHub、DeepSeek、Tushare 或真实交易接口。"])
         return cached
     packet = json_safe(serenity_radar.build_serenity_method_radar_packet(now=_now_iso()))
-    return _normalize_cached_packet("command_center_serenity_method_radar_packet", packet, source="local_builder")
+    normalized = _normalize_cached_packet("command_center_serenity_method_radar_packet", packet, source="local_builder")
+    normalized["call_ledger"] = serenity_cache_call_ledger(normalized)
+    normalized["warnings"] = ["GET /api/serenity/cache 只读取本地方法来源基线；不会调用 GitHub、DeepSeek、Tushare 或真实交易接口。"]
+    return normalized
+
+
+def serenity_cache_call_ledger(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    repositories = packet.get("repositories") if isinstance(packet.get("repositories"), list) else []
+    return [
+        {
+            "api": "local_serenity_method_radar_cache",
+            "request_params_safe": {
+                "packet_key": packet.get("packet_key"),
+                "cache_source": packet.get("cache_source"),
+                "github_status": packet.get("github_status"),
+                "source_type": packet.get("source_type"),
+            },
+            "row_count": len(repositories),
+            "data_date": None,
+            "local_fetched_at": _now_iso(),
+            "call_status": "cache_read",
+            "error_message_safe": "",
+            "external": False,
+            "github_called": False,
+            "deepseek_called": False,
+            "tushare_called": False,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
 
 
 def build_next_session_cache() -> dict[str, Any]:
