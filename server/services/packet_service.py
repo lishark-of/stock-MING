@@ -55,6 +55,13 @@ def _cache_path_label() -> str:
         return str(SNAPSHOT_CACHE_PATH)
 
 
+def _sqlite_path_label() -> str:
+    try:
+        return str(SQLITE_META_PATH.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(SQLITE_META_PATH)
+
+
 def load_snapshot_cache() -> dict[str, Any]:
     if not SNAPSHOT_CACHE_PATH.exists():
         return {}
@@ -340,6 +347,34 @@ def _read_persisted_packet(packet_key: str) -> dict[str, Any] | None:
     return _normalize_cached_packet(packet_key, packet, source="sqlite_meta", source_key=packet_key)
 
 
+def _sqlite_metadata() -> dict[str, Any]:
+    if not SQLITE_META_PATH.exists():
+        return {
+            "sqlite_meta_available": False,
+            "sqlite_meta_path": _sqlite_path_label(),
+            "packet_metadata": [],
+            "task_metadata": [],
+        }
+    try:
+        store = SQLiteMetaStore(SQLITE_META_PATH)
+        packet_metadata = store.list_packet_metadata()
+        task_metadata = store.list_task_metadata()
+    except Exception as exc:
+        return {
+            "sqlite_meta_available": False,
+            "sqlite_meta_path": _sqlite_path_label(),
+            "packet_metadata": [],
+            "task_metadata": [],
+            "error_message_safe": str(exc)[:240],
+        }
+    return {
+        "sqlite_meta_available": True,
+        "sqlite_meta_path": _sqlite_path_label(),
+        "packet_metadata": packet_metadata,
+        "task_metadata": task_metadata,
+    }
+
+
 def build_packet_registry_cache() -> dict[str, Any]:
     cached = _read_snapshot_packet("command_center_packet_registry")
     if cached:
@@ -468,13 +503,17 @@ def list_packets() -> dict[str, Any]:
     snapshot = load_snapshot_cache()
     snapshot_keys = sorted(snapshot)
     alias_keys = sorted(api_key for api_key, source_key in SNAPSHOT_PACKET_ALIASES.items() if source_key in snapshot)
+    sqlite_meta = _sqlite_metadata()
+    persisted_keys = sorted(str(item.get("packet_key")) for item in sqlite_meta.get("packet_metadata", []) if item.get("packet_key"))
     return {
         "schema_version": "command_center_3_packet_index.v1",
-        "available_cache_keys": sorted(set(PACKET_BUILDERS) | set(snapshot_keys) | set(alias_keys)),
+        "available_cache_keys": sorted(set(PACKET_BUILDERS) | set(snapshot_keys) | set(alias_keys) | set(persisted_keys)),
         "snapshot_available": bool(snapshot),
         "snapshot_cache_path": _cache_path_label(),
         "snapshot_available_keys": snapshot_keys,
         "snapshot_alias_keys": alias_keys,
+        "sqlite_meta": sqlite_meta,
+        "persisted_packet_keys": persisted_keys,
         "registry_count": len(specs) if isinstance(specs, list) else 0,
         "registry": registry,
         "cache_api_policy": {

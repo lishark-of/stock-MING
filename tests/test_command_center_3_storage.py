@@ -17,10 +17,18 @@ class CommandCenter3StorageTests(unittest.TestCase):
             packet = {"packet_key": "demo_packet", "value": 3}
             store.write_packet("demo_packet", packet)
             self.assertEqual(store.read_packet("demo_packet"), packet)
+            packet_meta = store.list_packet_metadata()
+            self.assertEqual(packet_meta[0]["packet_key"], "demo_packet")
+            self.assertGreater(packet_meta[0]["payload_bytes"], 0)
 
             task = {"task_id": "task-1", "status": "success"}
             store.write_task_status(task)
             self.assertEqual(store.read_task_status("task-1"), task)
+            task_meta = store.list_task_metadata()
+            self.assertEqual(task_meta[0]["task_id"], "task-1")
+            self.assertEqual(task_meta[0]["status"], "success")
+            self.assertEqual(store.clear_task_statuses()["deleted_count"], 1)
+            self.assertEqual(store.list_task_metadata(), [])
 
     def test_redis_cache_memory_fallback(self):
         cache = RedisCache(use_memory_fallback=True)

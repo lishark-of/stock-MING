@@ -37,6 +37,7 @@
 
 这些 stub 只返回 `task_id` 和安全任务状态，不调用 Tushare、DeepSeek、GitHub，也不执行真实交易。
 任务状态已经包含 `pending/running/success/failed/cancelled` 合同、`progress`、`current_step`、`error_message_safe`、`output_packet_key`、`call_ledger` 和本地 fallback backend；React 页面可通过 `/api/tasks/{task_id}` 轮询。
+任务生命周期现在同步写入 `.stock_ming_3/meta.sqlite`；内存 fallback 丢失时，`/api/tasks/{task_id}` 仍可从 SQLite 读回任务状态。`/api/packets` 同时暴露 SQLite packet/task metadata 摘要，供 3.0 前端识别持久化 cache 来源。
 
 `/api/factor-quant/run-light` 已从纯 stub 升级为本地 light-mode pipeline：只读取本地 snapshot/cache，生成 `command_center_factor_quant_hub_packet` 并写入 SQLite meta cache；仍不调用 Tushare、DeepSeek、GitHub，不跑全市场回测，不修改 strategy action。
 

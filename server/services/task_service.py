@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import datetime as _dt
 import uuid
+from pathlib import Path
 from typing import Any
+
+from storage.sqlite_meta import SQLiteMetaStore
 
 
 _TASKS: dict[str, dict[str, Any]] = {}
 TASK_STATUSES = {"pending", "running", "success", "failed", "cancelled"}
 SECRET_KEYWORDS = ("token", "api_key", "secret", "password", "authorization", "bearer", "cookie")
+SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
 
 
 def _now_iso() -> str:
@@ -46,7 +50,28 @@ def _status_event(status: str, *, progress: float, current_step: str, at: str | 
 
 def _persist_task(task: dict[str, Any]) -> dict[str, Any]:
     _TASKS[str(task["task_id"])] = task
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_task_status(task)
+    except Exception:
+        task.setdefault("warnings", []).append("task_metadata_sqlite_write_failed_safe")
     return task
+
+
+def _read_persisted_task(task_id: str) -> dict[str, Any] | None:
+    try:
+        task = SQLiteMetaStore(SQLITE_META_PATH).read_task_status(str(task_id))
+    except Exception:
+        return None
+    return task if isinstance(task, dict) else None
+
+
+def _list_persisted_tasks() -> list[dict[str, Any]]:
+    try:
+        store = SQLiteMetaStore(SQLITE_META_PATH)
+        tasks = [task for item in store.list_task_metadata() if (task := store.read_task_status(str(item.get("task_id") or "")))]
+    except Exception:
+        return []
+    return [task for task in tasks if isinstance(task, dict)]
 
 
 def _stub_call_ledger(task_type: str, now: str) -> list[dict[str, Any]]:
@@ -193,12 +218,29 @@ def create_task_stub(
 
 
 def read_task_status(task_id: str) -> dict[str, Any] | None:
-    return _TASKS.get(str(task_id))
+    return _TASKS.get(str(task_id)) or _read_persisted_task(str(task_id))
 
 
 def list_task_statuses() -> list[dict[str, Any]]:
-    return list(_TASKS.values())
+    merged: dict[str, dict[str, Any]] = {}
+    for task in _list_persisted_tasks():
+        task_id = str(task.get("task_id") or "")
+        if task_id:
+            merged[task_id] = task
+    for task_id, task in _TASKS.items():
+        merged[str(task_id)] = task
+    return sorted(
+        merged.values(),
+        key=lambda item: str(item.get("finished_at") or item.get("started_at") or item.get("created_at") or ""),
+        reverse=True,
+    )
 
 
-def clear_task_statuses_for_tests() -> None:
+def clear_task_statuses_for_tests(*, clear_persisted: bool = False) -> None:
     _TASKS.clear()
+    if not clear_persisted:
+        return
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).clear_task_statuses()
+    except Exception:
+        return

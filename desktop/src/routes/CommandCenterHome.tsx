@@ -26,6 +26,9 @@ export default function CommandCenterHome() {
 
   const packetKeys = packets.available_cache_keys as unknown[] | undefined;
   const snapshotAvailable = Boolean(packets.snapshot_available);
+  const sqliteMeta = packets.sqlite_meta as Record<string, unknown> | undefined;
+  const sqlitePackets = sqliteMeta?.packet_metadata as unknown[] | undefined;
+  const sqliteTasks = sqliteMeta?.task_metadata as unknown[] | undefined;
 
   return (
     <>
@@ -39,6 +42,8 @@ export default function CommandCenterHome() {
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
           { label: "cache keys", value: packetKeys?.length ?? 0 },
           { label: "任务记录", value: tasks.length },
+          { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
+          { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
           { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" }
         ]}
       />
@@ -46,6 +51,7 @@ export default function CommandCenterHome() {
         <PacketCard title="Packet Registry" subtitle="现有 packet contract 只读映射" status={snapshotAvailable ? "snapshot" : "cache"}>
           <p>本地快照路径：{String(packets.snapshot_cache_path ?? "--")}</p>
           <p>alias keys: {String((packets.snapshot_alias_keys as unknown[] | undefined)?.length ?? 0)}</p>
+          <p>SQLite meta: {String(Boolean(sqliteMeta?.sqlite_meta_available))}</p>
           <JsonDetails title="packet index 明细" data={packets} />
         </PacketCard>
         <PacketCard title="次日操作图谱 cache" subtitle="GET cache，不刷新，不改 action" status={String(next.status ?? "cache")}>

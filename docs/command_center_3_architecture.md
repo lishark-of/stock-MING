@@ -60,6 +60,8 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `/api/tasks` 返回当前本地 fallback 任务列表，供 3.0 前端状态面板展示。
 - `POST /api/factor-quant/run-light` 已接入本地 light-mode pipeline：读取 `.stock_ming_cache/command_center_latest.json`，调用现有 Factor Quant Hub builder，写入 `.stock_ming_3/meta.sqlite`，不调用 Tushare、DeepSeek、GitHub，也不修改 `strategy action`。
 - `POST /api/factor-quant/deepseek-explain` 已接入 guarded explanation pipeline：读取 Factor Quant Hub cache，准备未发送的安全 prompt 预览；如提供本地解释 payload，仅按六个白名单字段清洗并写回 SQLite cache，不真实调用 DeepSeek、不覆盖数值、不修改 `strategy action`。
+- 任务生命周期已同步写入 SQLite metadata store；内存状态丢失后，`/api/tasks/{task_id}` 仍可从本地 SQLite fallback 读回任务状态。
+- `/api/packets` 已暴露 SQLite packet/task metadata 摘要，便于前端判断哪些 packet 来自持久化 cache。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
 
@@ -101,7 +103,7 @@ scripts/run_scheduler.sh
 
 ### Storage
 
-- SQLite：packet 元数据、任务状态、用户配置。
+- SQLite：packet 元数据、任务状态、用户配置。当前已落地 packet payload、packet metadata 和 task lifecycle metadata。
 - Parquet：daily、daily_basic、moneyflow、factor_values、backtest_results。
 - DuckDB：直接查询 Parquet。
 - Redis：Celery broker、任务状态、热点 packet cache；未安装时可使用 memory fallback。

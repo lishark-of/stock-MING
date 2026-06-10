@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import factor_service, packet_service
+from server.services import factor_service, packet_service, task_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
 
@@ -24,13 +24,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def _with_meta_store(self):
         original_packet_path = packet_service.SQLITE_META_PATH
         original_factor_path = factor_service.SQLITE_META_PATH
+        original_task_path = task_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         packet_service.SQLITE_META_PATH = db_path
         factor_service.SQLITE_META_PATH = db_path
+        task_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
+        self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
         return db_path
 
     def test_cache_builders_do_not_call_external_sources(self):
@@ -139,7 +142,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("command_center_moneyflow_packet", index["snapshot_alias_keys"])
         self.assertIn("command_center_moneyflow_packet", index["available_cache_keys"])
 
+    def test_packet_index_exposes_sqlite_packet_metadata(self):
+        self._with_meta_store()
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(packet_service.SQLITE_META_PATH).write_packet(
+            "command_center_factor_quant_hub_packet",
+            {"packet_key": "command_center_factor_quant_hub_packet", "schema_version": "factor_quant_hub.v1", "mode": "light"},
+        )
+
+        index = packet_service.list_packets()
+
+        self.assertTrue(index["sqlite_meta"]["sqlite_meta_available"])
+        self.assertIn("command_center_factor_quant_hub_packet", index["persisted_packet_keys"])
+        self.assertIn("command_center_factor_quant_hub_packet", index["available_cache_keys"])
+        self.assertEqual(index["sqlite_meta"]["packet_metadata"][0]["schema_version"], "factor_quant_hub.v1")
+        self.assertFalse(index["cache_api_policy"]["get_cache_external_calls"])
+
     def test_task_stub_records_safe_status_without_external_work(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
         task = create_task_stub(
             "refresh_factor_data",
             payload={"ts_code": "002008.SZ", "token": "SHOULD_NOT_KEEP", "nested": {"api_key": "DROP", "keep": "ok"}},
@@ -158,8 +180,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(task["tushare_called"])
         self.assertTrue(task["does_not_execute_trades"])
         self.assertEqual(read_task_status(task["task_id"])["task_id"], task["task_id"])
+        task_service._TASKS.clear()
+        persisted = read_task_status(task["task_id"])
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["task_id"], task["task_id"])
+        self.assertEqual(task_service.list_task_statuses()[0]["task_id"], task["task_id"])
 
     def test_task_status_update_supports_failed_state_without_secret_leak(self):
+        self._with_meta_store()
         task = create_task_stub("run_factor_light", payload={"authorization": "Bearer secret", "ts_code": "002008.SZ"})
 
         updated = update_task_status(
@@ -315,13 +343,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def _with_meta_store(self):
         original_packet_path = packet_service.SQLITE_META_PATH
         original_factor_path = factor_service.SQLITE_META_PATH
+        original_task_path = task_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         packet_service.SQLITE_META_PATH = db_path
         factor_service.SQLITE_META_PATH = db_path
+        task_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
+        self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
         return db_path
 
     def test_health_and_cache_endpoints(self):
@@ -343,7 +374,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(next_session["data"]["external_calls_triggered"])
 
     def test_post_task_stub_returns_task_id(self):
-        clear_task_statuses_for_tests()
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
         created = self.client.post("/api/factor-quant/refresh-data", json={"ts_code": "002008.SZ"}).json()
         self.assertTrue(created["ok"])
         task_id = created["data"]["task_id"]
@@ -358,9 +390,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         listing = self.client.get("/api/tasks").json()
         self.assertTrue(listing["ok"])
         self.assertEqual(listing["data"]["tasks"][0]["task_id"], task_id)
+        task_service._TASKS.clear()
+        persisted_status = self.client.get(f"/api/tasks/{task_id}").json()
+        self.assertTrue(persisted_status["ok"])
+        self.assertEqual(persisted_status["data"]["task_id"], task_id)
+        self.assertEqual(persisted_status["data"]["backend"], "local_fallback")
 
     def test_run_light_endpoint_writes_factor_cache(self):
-        clear_task_statuses_for_tests()
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
         self._with_snapshot_cache(
             {
                 "timestamp": "2026-06-10T09:30:00",
@@ -370,8 +408,6 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "quant_packet": {"status": "ready"},
             }
         )
-        self._with_meta_store()
-
         created = self.client.post("/api/factor-quant/run-light", json={"ts_code": "002008.SZ", "token": "DROP"}).json()
         self.assertTrue(created["ok"])
         task = created["data"]["task"]
@@ -388,8 +424,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
 
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):
-        clear_task_statuses_for_tests()
         self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
 
         created = self.client.post(
             "/api/factor-quant/deepseek-explain",

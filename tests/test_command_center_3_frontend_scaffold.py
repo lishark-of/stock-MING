@@ -69,6 +69,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
                     self.assertNotIn(needle, source)
 
         self.assertIn("MetricGrid", (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8"))
+        self.assertIn("sqlite_meta", (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8"))
         self.assertIn("does_not_modify_action", (route_dir / "NextSessionMap.tsx").read_text(encoding="utf-8"))
         self.assertIn("allow_core_action", (route_dir / "FactorQuantHub.tsx").read_text(encoding="utf-8"))
         self.assertIn("enters_strategy_action", (route_dir / "ChokepointScan.tsx").read_text(encoding="utf-8"))

@@ -57,6 +57,27 @@ class SQLiteMetaStore:
             return None
         return json.loads(row[0])
 
+    def list_packet_metadata(self) -> list[dict[str, Any]]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT packet_key, payload_json, updated_at FROM packets ORDER BY updated_at DESC, packet_key").fetchall()
+        items = []
+        for packet_key, payload_json, updated_at in rows:
+            try:
+                payload = json.loads(payload_json)
+            except Exception:
+                payload = {}
+            items.append(
+                {
+                    "packet_key": packet_key,
+                    "updated_at": updated_at,
+                    "schema_version": payload.get("schema_version") if isinstance(payload, dict) else None,
+                    "status": payload.get("status") if isinstance(payload, dict) else None,
+                    "mode": payload.get("mode") if isinstance(payload, dict) else None,
+                    "payload_bytes": len(str(payload_json).encode("utf-8")),
+                }
+            )
+        return items
+
     def write_task_status(self, task: dict[str, Any]) -> dict[str, Any]:
         task_id = str(task.get("task_id") or "")
         if not task_id:
@@ -77,3 +98,35 @@ class SQLiteMetaStore:
         if row is None:
             return None
         return json.loads(row[0])
+
+    def list_task_metadata(self) -> list[dict[str, Any]]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT task_id, payload_json, updated_at FROM task_status ORDER BY updated_at DESC, task_id").fetchall()
+        items = []
+        for task_id, payload_json, updated_at in rows:
+            try:
+                payload = json.loads(payload_json)
+            except Exception:
+                payload = {}
+            items.append(
+                {
+                    "task_id": task_id,
+                    "updated_at": updated_at,
+                    "task_type": payload.get("task_type") if isinstance(payload, dict) else None,
+                    "status": payload.get("status") if isinstance(payload, dict) else None,
+                    "progress": payload.get("progress") if isinstance(payload, dict) else None,
+                    "current_step": payload.get("current_step") if isinstance(payload, dict) else None,
+                    "output_packet_key": payload.get("output_packet_key") if isinstance(payload, dict) else None,
+                    "backend": payload.get("backend") if isinstance(payload, dict) else None,
+                    "payload_bytes": len(str(payload_json).encode("utf-8")),
+                }
+            )
+        return items
+
+    def clear_task_statuses(self) -> dict[str, Any]:
+        with closing(self._connect()) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM task_status").fetchone()
+            deleted = int(row[0] if row else 0)
+            conn.execute("DELETE FROM task_status")
+            conn.commit()
+        return {"status": "cleared", "deleted_count": deleted}
