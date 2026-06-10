@@ -183,6 +183,10 @@ export function getStorageDataset(dataset: string) {
   return request<Record<string, unknown>>(`/api/storage/${encodeURIComponent(dataset)}`);
 }
 
+export function getStorageCatalog() {
+  return request<Record<string, unknown>>("/api/storage/catalog");
+}
+
 export function getStorageOverview() {
   return request<Record<string, unknown>>("/api/storage");
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getFactorValuesStorage, getSQLiteMetaStorage, getStorageDataset, getStorageOverview } from "../api/client";
+import { getFactorValuesStorage, getSQLiteMetaStorage, getStorageCatalog, getStorageDataset, getStorageOverview } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -10,6 +10,9 @@ export default function StorageOverview() {
   const [overview, setOverview] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [storageCatalog, setStorageCatalog] = useState<Record<string, unknown>>({});
+  const [catalogEnvelopeLedger, setCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [catalogEnvelopeWarnings, setCatalogEnvelopeWarnings] = useState<Array<string>>([]);
   const [factorValues, setFactorValues] = useState<Record<string, unknown>>({});
   const [sqliteMeta, setSqliteMeta] = useState<Record<string, unknown>>({});
   const [datasetDetails, setDatasetDetails] = useState<Record<string, Record<string, unknown>>>({});
@@ -20,6 +23,11 @@ export default function StorageOverview() {
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
     });
+    void getStorageCatalog().then((res) => {
+      setStorageCatalog(res.data);
+      setCatalogEnvelopeLedger(res.call_ledger ?? []);
+      setCatalogEnvelopeWarnings(res.warnings ?? []);
+    });
     void getFactorValuesStorage().then((res) => setFactorValues(res.data));
     void getSQLiteMetaStorage().then((res) => setSqliteMeta(res.data));
     void Promise.all(["daily", "daily-basic", "moneyflow", "backtest-results"].map((dataset) => getStorageDataset(dataset).then((res) => [dataset, res.data] as const))).then((items) =>
@@ -29,7 +37,9 @@ export default function StorageOverview() {
 
   const datasetStatus = overview.dataset_status as Record<string, unknown> | undefined;
   const datasets = overview.datasets as Array<Record<string, unknown>> | undefined;
-  const datasetCatalog = overview.dataset_catalog as Array<Record<string, unknown>> | undefined;
+  const datasetCatalog =
+    (storageCatalog.dataset_catalog as Array<Record<string, unknown>> | undefined) ??
+    (overview.dataset_catalog as Array<Record<string, unknown>> | undefined);
   const datasetCards = [
     { key: "factor_values", label: "factor_values", packet: factorValues },
     { key: "daily", label: "daily", packet: datasetDetails.daily ?? {} },
@@ -45,7 +55,11 @@ export default function StorageOverview() {
   const payloadCallLedger = (overview.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((overview.warnings as Array<string> | undefined) ?? []);
+  const catalogPayloadCallLedger = (storageCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const catalogCallLedger = catalogEnvelopeLedger.length ? catalogEnvelopeLedger : catalogPayloadCallLedger;
+  const catalogWarnings = catalogEnvelopeWarnings.length ? catalogEnvelopeWarnings : ((storageCatalog.warnings as Array<string> | undefined) ?? []);
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
+  const catalogWarningRows = catalogWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const previewRows = datasetCards.flatMap((item) => {
     const query = item.packet.query as Record<string, unknown> | undefined;
     const rows = (query?.rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -76,6 +90,8 @@ export default function StorageOverview() {
           { label: "修改 action", value: overview.does_not_modify_strategy_action === false ? "可能" : "不会", tone: overview.does_not_modify_strategy_action === false ? "bad" : "good" },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
+          { label: "catalog envelope ledger", value: catalogCallLedger.length },
+          { label: "catalog warnings", value: catalogWarnings.length },
           { label: "factor_values", value: String(datasetStatus?.factor_values ?? "missing") },
           { label: "daily", value: String(datasetStatus?.daily ?? "missing") },
           { label: "daily_basic", value: String(datasetStatus?.daily_basic ?? "missing") },
@@ -132,6 +148,14 @@ export default function StorageOverview() {
         <DataLineageTable rows={datasetCatalog ?? []} />
       </PacketCard>
 
+      <PacketCard title="GET storage catalog envelope call_ledger" subtitle="GET /api/storage/catalog 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={catalogCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET storage catalog warnings" subtitle="独立数据集目录 API 提示；只读、不写 Parquet、不外联" status="warnings">
+        <DataLineageTable rows={catalogWarningRows} />
+      </PacketCard>
+
       <PacketCard title="GET storage envelope call_ledger" subtitle="GET /api/storage 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
         <DataLineageTable rows={cacheCallLedger} />
       </PacketCard>
@@ -166,6 +190,7 @@ export default function StorageOverview() {
 
       <PacketCard title="原始 storage payload" subtitle="调试用 JSON；cache API 永不外联" status="safe">
         <JsonDetails title="storage overview raw" data={overview} />
+        <JsonDetails title="storage catalog raw" data={storageCatalog} />
         <JsonDetails title="factor values raw" data={factorValues} />
         <JsonDetails title="sqlite meta raw" data={sqliteMeta} />
         <JsonDetails title="daily raw" data={datasetDetails.daily ?? {}} />

@@ -27,6 +27,12 @@ def get_sqlite_meta_status(limit: int = 100) -> dict:
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
+@router.get("/catalog")
+def get_storage_dataset_catalog() -> dict:
+    packet = storage_service.storage_dataset_catalog()
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
 @router.get("/{dataset}")
 def get_parquet_dataset_status(dataset: str, limit: int = 100) -> dict:
     packet = storage_service.parquet_dataset_status(dataset, limit=limit)

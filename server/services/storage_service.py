@@ -168,6 +168,33 @@ def _attach_storage_lineage(
     return packet
 
 
+def storage_dataset_catalog() -> dict[str, Any]:
+    catalog = dataset_catalog()
+    packet = {
+        "schema_version": "command_center_3_storage_dataset_catalog.v1",
+        "store": "parquet_duckdb",
+        "status": "ready",
+        "mode": "cache_only",
+        "dataset_catalog": catalog,
+        "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
+        "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
+        "dataset_count": len(catalog),
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+    return _attach_storage_lineage(
+        packet,
+        api="local_storage_dataset_catalog_cache",
+        endpoint="GET /api/storage/catalog",
+        row_count=len(catalog),
+    )
+
+
 def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
     selected = _canonical_dataset(dataset)
     if not selected:

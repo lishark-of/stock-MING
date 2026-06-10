@@ -73,6 +73,7 @@ api_cache_paths = [
     "/api/legacy/cache",
     "/api/worker/cache",
     "/api/storage",
+    "/api/storage/catalog",
     "/api/storage/factor-values",
     "/api/storage/daily",
     "/api/storage/daily-basic",

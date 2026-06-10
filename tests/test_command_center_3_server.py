@@ -773,6 +773,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(overview["call_ledger"][0]["external"])
         self.assertIn("GET /api/storage", overview["warnings"][0])
 
+    def test_storage_dataset_catalog_is_independent_cache_only_endpoint(self):
+        catalog = storage_service.storage_dataset_catalog()
+
+        self.assertEqual(catalog["schema_version"], "command_center_3_storage_dataset_catalog.v1")
+        self.assertEqual(catalog["store"], "parquet_duckdb")
+        self.assertEqual(catalog["status"], "ready")
+        self.assertEqual(catalog["mode"], "cache_only")
+        self.assertEqual(catalog["dataset_count"], 5)
+        self.assertEqual({item["dataset"] for item in catalog["dataset_catalog"]}, {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
+        self.assertEqual(set(catalog["supported_aliases"]), {"factor-values", "daily-basic", "backtest-results"})
+        self.assertTrue(all(item["does_not_execute_trades"] for item in catalog["dataset_catalog"]))
+        self.assertTrue(all(item["does_not_modify_strategy_action"] for item in catalog["dataset_catalog"]))
+        self.assertTrue(catalog["cache_only"])
+        self.assertFalse(catalog["external_calls_triggered"])
+        self.assertFalse(catalog["tushare_called"])
+        self.assertFalse(catalog["deepseek_called"])
+        self.assertFalse(catalog["github_called"])
+        self.assertTrue(catalog["does_not_execute_trades"])
+        self.assertTrue(catalog["does_not_modify_strategy_action"])
+        self.assertEqual(catalog["call_ledger"][0]["api"], "local_storage_dataset_catalog_cache")
+        self.assertEqual(catalog["call_ledger"][0]["endpoint"], "GET /api/storage/catalog")
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 5)
+        self.assertFalse(catalog["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage/catalog", catalog["warnings"][0])
+
     def test_storage_sqlite_meta_status_lists_metadata_without_payloads(self):
         db_path = self._with_meta_store()
         from storage.sqlite_meta import SQLiteMetaStore
@@ -1412,6 +1437,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("/api/packets/command_center_factor_quant_hub_packet", script)
         self.assertIn("/api/factor-quant/cache", script)
         self.assertIn("/api/storage", script)
+        self.assertIn("/api/storage/catalog", script)
         self.assertIn("/api/storage/factor-values", script)
         self.assertIn("/api/storage/daily", script)
         self.assertIn("/api/storage/daily-basic", script)
@@ -1706,6 +1732,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(any(row.get("source") == "call_ledger_audit_self" and row.get("not_invoked_by_audit_reader") for row in coverage["parameterized_local_routes"]))
         endpoint_by_source = {row["source"]: row for row in packet["endpoint_rows"]}
         self.assertIn("task_catalog", endpoint_by_source)
+        self.assertIn("storage_dataset_catalog", endpoint_by_source)
+        self.assertEqual(endpoint_by_source["storage_dataset_catalog"]["endpoint"], "GET /api/storage/catalog")
         self.assertIn("storage_factor_values", endpoint_by_source)
         self.assertIn("storage_sqlite_meta", endpoint_by_source)
 
@@ -2075,6 +2103,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(storage_overview["call_ledger"][0]["api"], "local_storage_overview_cache")
         self.assertFalse(storage_overview["call_ledger"][0]["external"])
         self.assertIn("GET /api/storage", storage_overview["warnings"][0])
+
+        storage_catalog = self.client.get("/api/storage/catalog").json()
+        self.assertTrue(storage_catalog["ok"])
+        self.assertTrue(storage_catalog["data"]["cache_only"])
+        self.assertEqual(storage_catalog["data"]["status"], "ready")
+        self.assertEqual(storage_catalog["data"]["dataset_count"], 5)
+        self.assertEqual({item["dataset"] for item in storage_catalog["data"]["dataset_catalog"]}, {"factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"})
+        self.assertFalse(storage_catalog["data"]["external_calls_triggered"])
+        self.assertFalse(storage_catalog["data"]["tushare_called"])
+        self.assertFalse(storage_catalog["data"]["deepseek_called"])
+        self.assertFalse(storage_catalog["data"]["github_called"])
+        self.assertEqual(storage_catalog["call_ledger"][0]["api"], "local_storage_dataset_catalog_cache")
+        self.assertFalse(storage_catalog["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage/catalog", storage_catalog["warnings"][0])
 
         daily_storage = self.client.get("/api/storage/daily").json()
         self.assertTrue(daily_storage["ok"])

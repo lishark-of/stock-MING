@@ -70,6 +70,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/serenity/cache`
 - `POST /api/serenity/github-probe`
 - `GET /api/storage`
+- `GET /api/storage/catalog`
 - `GET /api/storage/factor-values`
 - `GET /api/storage/{dataset}`，当前白名单为 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results`
 - `GET /api/tasks/catalog`
@@ -93,6 +94,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `/api/packets` 已暴露 SQLite packet/task metadata 摘要，便于前端判断哪些 packet 来自持久化 cache。
 - `/api/model-strategy/cache` 已独立暴露 DeepSeek 模型策略：`default/explain/projection/factor_explain` 默认走解释级模型，`fast/healthcheck/feeder` 默认走 fast 模型；模型名统一从 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 或集中默认值读取，调用点不得硬编码。
 - `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 只读状态和 dataset catalog；缺文件返回 `missing`，不触发 Tushare、回测或因子计算。
+- `GET /api/storage/catalog` 独立暴露 dataset catalog，供前端、worker 和后续任务读取数据集用途、别名、写入边界和未来任务归属；该接口只读、不写 Parquet、不外联。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
 
