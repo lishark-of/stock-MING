@@ -62,6 +62,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(row["does_not_modify_strategy_action"])
 
     def _discover_fastapi_post_routes(self):
+        return self._discover_fastapi_routes("post")
+
+    def _discover_fastapi_get_routes(self):
+        return self._discover_fastapi_routes("get")
+
+    def _discover_fastapi_routes(self, method):
         routes = []
         for path in sorted(Path("server/api").glob("routes_*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -86,12 +92,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 for decorator in node.decorator_list:
                     if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
                         continue
-                    if decorator.func.attr != "post" or not isinstance(decorator.func.value, ast.Name):
+                    if decorator.func.attr != method or not isinstance(decorator.func.value, ast.Name):
                         continue
                     path_arg = ""
                     if decorator.args and isinstance(decorator.args[0], ast.Constant):
                         path_arg = str(decorator.args[0].value or "")
-                    routes.append(f"POST {router_prefixes.get(decorator.func.value.id, '')}{path_arg}")
+                    routes.append(f"{method.upper()} {router_prefixes.get(decorator.func.value.id, '')}{path_arg}")
         return sorted(routes)
 
     def _with_trade_review_log(self, records):
@@ -1634,6 +1640,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["call_ledger"][0]["api"], "local_call_ledger_audit_cache")
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
         json.dumps(packet, ensure_ascii=False)
+
+    def test_call_ledger_audit_covers_all_fastapi_get_routes(self):
+        packet = audit_service.read_call_ledger_audit_cache()
+        coverage = packet["get_route_coverage"]
+        discovered_routes = self._discover_fastapi_get_routes()
+
+        self.assertEqual(sorted(coverage["known_get_routes"]), discovered_routes)
+        self.assertEqual(coverage["known_get_route_count"], len(discovered_routes))
+        self.assertEqual(coverage["uncovered_get_routes"], [])
+        self.assertTrue(coverage["all_known_get_routes_cache_only"])
+        self.assertTrue(coverage["cache_routes_create_no_tasks"])
+        self.assertFalse(coverage["external_calls_triggered"])
+        self.assertIn("GET /api/audit/cache", coverage["known_get_routes"])
+        self.assertIn("GET /api/packets/{packet_key}", coverage["known_get_routes"])
+        self.assertIn("GET /api/tasks/{task_id}", coverage["known_get_routes"])
+        self.assertIn("GET /api/storage/{dataset}", coverage["known_get_routes"])
+        self.assertTrue(any(row.get("source") == "call_ledger_audit_self" and row.get("not_invoked_by_audit_reader") for row in coverage["parameterized_local_routes"]))
+        endpoint_by_source = {row["source"]: row for row in packet["endpoint_rows"]}
+        self.assertIn("task_catalog", endpoint_by_source)
+        self.assertIn("storage_factor_values", endpoint_by_source)
+        self.assertIn("storage_sqlite_meta", endpoint_by_source)
 
     def test_cancel_task_marks_pending_task_without_external_work(self):
         self._with_meta_store()

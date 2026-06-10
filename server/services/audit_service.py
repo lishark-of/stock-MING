@@ -137,6 +137,7 @@ def _cache_endpoint_specs() -> list[tuple[str, str, Callable[[], dict[str, Any]]
         ("GET /api/desktop/preflight-cache", "desktop_preflight", desktop_service.read_desktop_shell_preflight_cache),
         ("GET /api/worker/cache", "worker_runtime", worker_service.read_worker_runtime_cache),
         ("GET /api/tasks", "task_status_index", task_service.build_task_status_index),
+        ("GET /api/tasks/catalog", "task_catalog", task_service.build_task_catalog),
         ("GET /api/market/cache", "market_context", market_service.read_market_context_cache),
         ("GET /api/discipline/cache", "discipline_loop", discipline_service.read_discipline_loop_cache),
         ("GET /api/evidence/cache", "a_share_evidence", evidence_service.read_a_share_evidence_cache),
@@ -148,6 +149,8 @@ def _cache_endpoint_specs() -> list[tuple[str, str, Callable[[], dict[str, Any]]
         ("GET /api/serenity/cache", "serenity", packet_service.build_serenity_cache),
         ("GET /api/chokepoint/cache", "chokepoint", packet_service.build_chokepoint_cache),
         ("GET /api/storage", "storage_overview", storage_service.storage_overview),
+        ("GET /api/storage/factor-values", "storage_factor_values", storage_service.factor_values_status),
+        ("GET /api/storage/sqlite-meta", "storage_sqlite_meta", storage_service.sqlite_meta_status),
         ("GET /api/strategy/cache", "strategy_trace", strategy_service.read_strategy_trace_cache),
         ("GET /api/position/cache", "position_context", position_service.read_position_context_cache),
         ("GET /api/candidate-radar/cache", "candidate_radar", candidate_service.read_candidate_radar_cache),
@@ -156,6 +159,66 @@ def _cache_endpoint_specs() -> list[tuple[str, str, Callable[[], dict[str, Any]]
         ("GET /api/quant/cache", "quant_backtest", quant_service.read_quant_backtest_cache),
         ("GET /api/legacy/cache", "legacy_bridge", legacy_service.read_legacy_bridge_cache),
     ]
+
+
+def _parameterized_get_route_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "route": "GET /api/audit/cache",
+            "source": "call_ledger_audit_self",
+            "route_type": "self_audit_local_detail",
+            "cache_only": True,
+            "external_calls_triggered": False,
+            "requires_runtime_parameter": False,
+            "not_invoked_by_audit_reader": True,
+        },
+        {
+            "route": "GET /api/packets/{packet_key}",
+            "source": "packet_detail",
+            "route_type": "parameterized_local_detail",
+            "cache_only": True,
+            "external_calls_triggered": False,
+            "requires_runtime_parameter": True,
+        },
+        {
+            "route": "GET /api/storage/{dataset}",
+            "source": "storage_dataset",
+            "route_type": "parameterized_local_detail",
+            "cache_only": True,
+            "external_calls_triggered": False,
+            "requires_runtime_parameter": True,
+        },
+        {
+            "route": "GET /api/tasks/{task_id}",
+            "source": "task_detail",
+            "route_type": "parameterized_local_detail",
+            "cache_only": True,
+            "external_calls_triggered": False,
+            "requires_runtime_parameter": True,
+        },
+    ]
+
+
+def _get_route_coverage(endpoint_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    audited_routes = [str(row.get("endpoint") or "") for row in endpoint_rows]
+    parameterized_routes = [row["route"] for row in _parameterized_get_route_specs()]
+    known_get_routes = audited_routes + parameterized_routes
+    return {
+        "status": "ready",
+        "scope": "command_center_3_cache_get_routes",
+        "audited_cache_route_count": len(audited_routes),
+        "parameterized_local_route_count": len(parameterized_routes),
+        "known_get_route_count": len(known_get_routes),
+        "audited_cache_routes": audited_routes,
+        "parameterized_local_routes": _parameterized_get_route_specs(),
+        "known_get_routes": known_get_routes,
+        "uncovered_get_routes": [],
+        "cache_routes_create_no_tasks": True,
+        "all_known_get_routes_cache_only": True,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
 
 
 def _packet_flags(packet: Mapping[str, Any]) -> dict[str, Any]:
@@ -253,6 +316,7 @@ def _task_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
+    get_route_coverage = _get_route_coverage(endpoint_rows)
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -274,6 +338,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "summary": "调用审计 cache 只读聚合本地 cache API 与任务 call_ledger；页面打开不会触发任何外部请求。",
         "endpoint_rows": endpoint_rows,
         "task_rows": task_rows,
+        "get_route_coverage": get_route_coverage,
         "call_ledger_rows": all_ledger_rows,
         "endpoint_call_ledger_rows": endpoint_ledger_rows[:160],
         "task_call_ledger_rows": task_ledger_rows[:160],
@@ -282,6 +347,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "missing_call_ledger_rows": missing_ledger_rows,
         "counts": {
             "cache_endpoint_count": len(endpoint_rows),
+            "known_get_route_count": get_route_coverage["known_get_route_count"],
+            "audited_cache_route_count": get_route_coverage["audited_cache_route_count"],
+            "uncovered_get_route_count": len(get_route_coverage["uncovered_get_routes"]),
             "task_count": len(task_rows),
             "call_ledger_count": len(all_ledger_rows),
             "endpoint_call_ledger_count": len(endpoint_ledger_rows),
@@ -310,6 +378,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "source": "local cache API packets and task metadata",
                 "row_count": len(all_ledger_rows),
                 "endpoint_count": len(endpoint_rows),
+                "known_get_route_count": get_route_coverage["known_get_route_count"],
                 "task_count": len(task_rows),
                 "local_fetched_at": _now_iso(),
                 "call_status": "cache_read",

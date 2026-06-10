@@ -25,6 +25,8 @@ export default function CallLedgerAudit() {
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
+  const getRouteCoverage = (cache.get_route_coverage as Record<string, unknown> | undefined) ?? {};
+  const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<unknown> | undefined) ?? []);
@@ -40,6 +42,8 @@ export default function CallLedgerAudit() {
         items={[
           { label: "mode", value: cache.mode as string | undefined },
           { label: "cache endpoints", value: counts.cache_endpoint_count as number | undefined },
+          { label: "GET routes", value: counts.known_get_route_count as number | undefined },
+          { label: "uncovered GET", value: counts.uncovered_get_route_count as number | undefined, tone: Number(counts.uncovered_get_route_count ?? 0) > 0 ? "bad" : "good" },
           { label: "tasks", value: counts.task_count as number | undefined },
           { label: "call ledger", value: counts.call_ledger_count as number | undefined },
           { label: "endpoint ledger", value: counts.endpoint_call_ledger_count as number | undefined },
@@ -59,6 +63,7 @@ export default function CallLedgerAudit() {
         <PacketCard title="调用审计来源" subtitle="GET /api/audit/cache 聚合 cache API 与 task call_ledger" status={String(cache.status ?? "missing")}>
           <p>{String(cache.summary ?? "调用审计 cache 只读展示。")}</p>
           <p>审计范围包含 GET /health、GET cache API 与本地 task call_ledger。</p>
+          <p>GET route coverage 会把参数化详情路由单列为 local detail，不会为了审计去构造 packet_key、dataset 或 task_id。</p>
           <p>GET /api/audit/cache 只读聚合本地 call_ledger，不调用 Tushare、DeepSeek、GitHub 或 Redis。</p>
           <p>审计页不刷新数据、不运行回测、不执行真实交易、不修改 strategy action。</p>
         </PacketCard>
@@ -72,6 +77,14 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="Cache endpoint 审计" subtitle="每个 GET cache 的外部调用标志、call_ledger 数量和交易边界" status="endpoints">
         <DataLineageTable rows={rows(cache.endpoint_rows)} />
+      </PacketCard>
+
+      <PacketCard title="GET 路由覆盖" subtitle="可直接审计的 cache GET 与参数化 local detail GET 分开登记" status="get_route_coverage">
+        <p>known_get_route_count: {String(getRouteCoverage.known_get_route_count ?? 0)}</p>
+        <p>audited_cache_route_count: {String(getRouteCoverage.audited_cache_route_count ?? 0)}</p>
+        <p>uncovered_get_routes: {String((getRouteCoverage.uncovered_get_routes as unknown[] | undefined)?.length ?? 0)}</p>
+        <p>cache_routes_create_no_tasks: {String(getRouteCoverage.cache_routes_create_no_tasks ?? true)}</p>
+        <DataLineageTable rows={parameterizedRoutes} />
       </PacketCard>
 
       <PacketCard title="任务审计" subtitle="GET /api/tasks 只读任务状态；不创建任务" status="tasks">
