@@ -57,6 +57,40 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("react", package["dependencies"])
         self.assertIn("echarts", package["dependencies"])
 
+    def test_frontend_network_boundary_is_centralized_in_api_client(self):
+        src_root = ROOT / "src"
+        client_path = src_root / "api" / "client.ts"
+        client_source = client_path.read_text(encoding="utf-8")
+
+        self.assertIn('const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710"', client_source)
+        self.assertIn("async function request", client_source)
+        self.assertIn("fetch(`${API_BASE}${path}`", client_source)
+        self.assertNotIn("DEEPSEEK_API_KEY", client_source)
+        self.assertNotIn("GITHUB_TOKEN", client_source)
+        self.assertNotIn("TUSHARE_TOKEN", client_source)
+        self.assertNotIn("tushare_adapter", client_source)
+        self.assertNotIn("akshare", client_source)
+
+        forbidden_outside_client = [
+            "fetch(",
+            "XMLHttpRequest",
+            "axios",
+            "import.meta.env",
+            "process.env",
+            "DEEPSEEK_API_KEY",
+            "GITHUB_TOKEN",
+            "TUSHARE_TOKEN",
+            "tushare_adapter",
+            "akshare",
+        ]
+        for path in sorted(src_root.rglob("*")):
+            if path == client_path or path.suffix not in {".ts", ".tsx"}:
+                continue
+            source = path.read_text(encoding="utf-8")
+            for needle in forbidden_outside_client:
+                with self.subTest(path=str(path), needle=needle):
+                    self.assertNotIn(needle, source)
+
     def test_frontend_uses_api_client_and_button_gated_tasks(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
