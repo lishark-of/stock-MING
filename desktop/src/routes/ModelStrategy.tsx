@@ -12,14 +12,24 @@ function rows(value: unknown): Array<Record<string, unknown>> {
 
 export default function ModelStrategy() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getModelStrategyCache().then((res) => setCache(res.data));
+    void getModelStrategyCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const groups = (cache.purpose_groups as Record<string, unknown> | undefined) ?? {};
+  const payloadCallLedger = rows(cache.call_ledger);
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
 
   return (
     <>
@@ -37,7 +47,9 @@ export default function ModelStrategy() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "DeepSeek call", value: cache.deepseek_called === true ? "已调用" : "未调用", tone: cache.deepseek_called === true ? "bad" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
-          { label: "contains secret", value: cache.contains_secret === true ? "是" : "否", tone: cache.contains_secret === true ? "bad" : "good" }
+          { label: "contains secret", value: cache.contains_secret === true ? "是" : "否", tone: cache.contains_secret === true ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -65,7 +77,15 @@ export default function ModelStrategy() {
       </PacketCard>
 
       <PacketCard title="调用血缘" subtitle="local_deepseek_model_strategy_cache；不外联" status="lineage">
-        <DataLineageTable rows={rows(cache.call_ledger)} />
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET model strategy envelope call_ledger" subtitle="GET /api/model-strategy/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET model strategy envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={warningRows} />
       </PacketCard>
 
       <PacketCard title="原始 model strategy payload" subtitle="调试用 JSON；不含凭据" status="safe">

@@ -1830,6 +1830,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(model_strategy["data"]["policy"]["model_names_are_configurable"])
         self.assertFalse(model_strategy["data"]["policy"]["callsite_hardcoding_allowed"])
         self.assertEqual(model_strategy["data"]["call_ledger"][0]["api"], "local_deepseek_model_strategy_cache")
+        self.assertEqual(model_strategy["call_ledger"][0]["api"], "local_deepseek_model_strategy_cache")
+        self.assertFalse(model_strategy["call_ledger"][0]["external"])
+        self.assertIn("GET /api/model-strategy/cache", model_strategy["warnings"][0])
 
         legacy = self.client.get("/api/legacy/cache").json()
         self.assertTrue(legacy["ok"])
