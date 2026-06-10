@@ -509,31 +509,21 @@ def _read_persisted_packet(packet_key: str) -> dict[str, Any] | None:
 
 
 def _sqlite_metadata() -> dict[str, Any]:
-    if not SQLITE_META_PATH.exists():
-        return {
-            "sqlite_meta_available": False,
-            "sqlite_meta_path": _sqlite_path_label(),
-            "packet_metadata": [],
-            "task_metadata": [],
-        }
-    try:
-        store = SQLiteMetaStore(SQLITE_META_PATH)
-        packet_metadata = store.list_packet_metadata()
-        task_metadata = store.list_task_metadata()
-    except Exception as exc:
-        return {
-            "sqlite_meta_available": False,
-            "sqlite_meta_path": _sqlite_path_label(),
-            "packet_metadata": [],
-            "task_metadata": [],
-            "error_message_safe": str(exc)[:240],
-        }
-    return {
-        "sqlite_meta_available": True,
-        "sqlite_meta_path": _sqlite_path_label(),
-        "packet_metadata": packet_metadata,
-        "task_metadata": task_metadata,
-    }
+    status = storage_service.sqlite_meta_status()
+    packet = dict(status) if isinstance(status, dict) else {}
+    packet["sqlite_meta_available"] = packet.get("status") == "ready"
+    packet["sqlite_meta_path"] = packet.get("path") or _sqlite_path_label()
+    packet.setdefault("packet_metadata", [])
+    packet.setdefault("task_metadata", [])
+    packet.setdefault("metadata_source_rows", [])
+    packet.setdefault("metadata_safe_columns", {})
+    packet.setdefault("does_not_return_payload_json", True)
+    packet.setdefault("cache_only", True)
+    packet.setdefault("external_calls_triggered", False)
+    packet.setdefault("tushare_called", False)
+    packet.setdefault("deepseek_called", False)
+    packet.setdefault("github_called", False)
+    return packet
 
 
 def _storage_catalog_summary() -> dict[str, Any]:

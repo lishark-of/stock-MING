@@ -44,6 +44,7 @@ export default function PacketRegistry() {
   const storageCatalogRows = (storageCatalog?.dataset_catalog as Array<Record<string, unknown>> | undefined) ?? [];
   const packetMetadata = (sqliteMeta?.packet_metadata as Array<Record<string, unknown>> | undefined) ?? [];
   const taskMetadata = (sqliteMeta?.task_metadata as Array<Record<string, unknown>> | undefined) ?? [];
+  const sqliteMetadataSourceRows = (sqliteMeta?.metadata_source_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const persistedKeys = (index.persisted_packet_keys as string[] | undefined) ?? [];
   const snapshotKeys = (index.snapshot_available_keys as string[] | undefined) ?? [];
   const aliasKeys = (index.snapshot_alias_keys as string[] | undefined) ?? [];
@@ -148,6 +149,11 @@ export default function PacketRegistry() {
       </PacketCard>
 
       <PacketCard title="SQLite metadata" subtitle="packet/task 元数据只读展示" status={String(sqliteMeta?.sqlite_meta_available ?? false)}>
+        <p>does_not_return_payload_json: {String(sqliteMeta?.does_not_return_payload_json ?? true)}</p>
+        <p>metadata_safe_columns: {JSON.stringify(sqliteMeta?.metadata_safe_columns ?? {})}</p>
+        <p>packet_status_counts: {JSON.stringify(sqliteMeta?.packet_status_counts ?? {})}</p>
+        <p>task_status_counts: {JSON.stringify(sqliteMeta?.task_status_counts ?? {})}</p>
+        <DataLineageTable rows={sqliteMetadataSourceRows} />
         <DataLineageTable rows={packetMetadata} />
         <JsonDetails title="task metadata" data={taskMetadata} />
       </PacketCard>

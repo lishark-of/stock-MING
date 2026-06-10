@@ -580,6 +580,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(source_row["local_builder"])
         self.assertEqual(source_row["read_priority"], "sqlite_meta > snapshot > local_builder > missing")
         self.assertEqual(index["sqlite_meta"]["packet_metadata"][0]["schema_version"], "custom.v1")
+        self.assertTrue(index["sqlite_meta"]["does_not_return_payload_json"])
+        self.assertIn("metadata_safe_columns", index["sqlite_meta"])
+        self.assertIn("metadata_source_rows", index["sqlite_meta"])
+        self.assertEqual({row["source"] for row in index["sqlite_meta"]["metadata_source_rows"]}, {"packet_metadata", "task_metadata"})
+        self.assertTrue(all(row["payload_json_returned"] is False for row in index["sqlite_meta"]["metadata_source_rows"]))
+        self.assertEqual(index["sqlite_meta"]["packet_status_counts"]["ready"], 1)
+        self.assertIn("storage_source", index["sqlite_meta"]["metadata_safe_columns"]["task_metadata"])
         self.assertFalse(index["cache_api_policy"]["get_cache_external_calls"])
 
         packet = packet_service.read_packet(packet_key)
