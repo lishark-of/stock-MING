@@ -108,6 +108,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _count_values(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = _safe_scalar(value) or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def _storage_cache_warning(endpoint: str) -> str:
     return f"{endpoint} 只读取本地 storage cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
 
@@ -264,10 +272,30 @@ def factor_values_status(*, limit: int = 100) -> dict[str, Any]:
 
 def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
     path = SQLITE_META_PATH
+    packet_safe_columns = ["packet_key", "updated_at", "schema_version", "status", "mode", "payload_bytes"]
+    task_safe_columns = [
+        "task_id",
+        "updated_at",
+        "task_type",
+        "status",
+        "progress",
+        "current_step",
+        "output_packet_key",
+        "backend",
+        "storage_source",
+        "payload_bytes",
+    ]
     base = {
         "schema_version": "command_center_3_storage_sqlite_meta.v1",
         "store": "sqlite_meta",
         "path": _path_label(path),
+        "metadata_safe_columns": {
+            "packet_metadata": packet_safe_columns,
+            "task_metadata": task_safe_columns,
+        },
+        "metadata_source_rows": [],
+        "metadata_is_payload_only": False,
+        "does_not_return_payload_json": True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -294,7 +322,7 @@ def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
     try:
         store = SQLiteMetaStore(path)
         packet_metadata = store.list_packet_metadata()
-        task_metadata = store.list_task_metadata()
+        task_metadata = [{**item, "storage_source": "sqlite_meta"} for item in store.list_task_metadata()]
     except Exception as exc:
         return _attach_storage_lineage(
             {
@@ -319,8 +347,24 @@ def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
             "task_count": len(task_metadata),
             "packet_metadata": packet_metadata[:limit],
             "task_metadata": task_metadata[:limit],
-            "metadata_is_payload_only": False,
-            "does_not_return_payload_json": True,
+            "packet_status_counts": _count_values(item.get("status") for item in packet_metadata),
+            "task_status_counts": _count_values(item.get("status") for item in task_metadata),
+            "metadata_source_rows": [
+                {
+                    "source": "packet_metadata",
+                    "row_count": len(packet_metadata),
+                    "storage_source": "sqlite_meta",
+                    "payload_json_returned": False,
+                    "safe_columns": packet_safe_columns,
+                },
+                {
+                    "source": "task_metadata",
+                    "row_count": len(task_metadata),
+                    "storage_source": "sqlite_meta",
+                    "payload_json_returned": False,
+                    "safe_columns": task_safe_columns,
+                },
+            ],
         },
         api="local_storage_sqlite_meta_cache",
         endpoint="GET /api/storage/sqlite-meta",

@@ -52,6 +52,9 @@ export default function StorageOverview() {
   const factorRows = (factorQuery?.rows as Array<Record<string, unknown>> | undefined) ?? [];
   const packetMetadataRows = (sqliteMeta.packet_metadata as Array<Record<string, unknown>> | undefined) ?? [];
   const taskMetadataRows = (sqliteMeta.task_metadata as Array<Record<string, unknown>> | undefined) ?? [];
+  const sqliteMetadataSourceRows = (sqliteMeta.metadata_source_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const sqlitePacketStatusCounts = sqliteMeta.packet_status_counts as Record<string, unknown> | undefined;
+  const sqliteTaskStatusCounts = sqliteMeta.task_status_counts as Record<string, unknown> | undefined;
   const payloadCallLedger = (overview.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((overview.warnings as Array<string> | undefined) ?? []);
@@ -123,6 +126,14 @@ export default function StorageOverview() {
           <p>does_not_return_payload_json: {String(sqliteMeta.does_not_return_payload_json ?? true)}</p>
         </PacketCard>
       </div>
+
+      <PacketCard title="SQLite metadata 安全摘要" subtitle="只展示安全列、状态分布和来源行；不返回 payload_json" status="sqlite_meta_safety">
+        <p>metadata_is_payload_only: {String(sqliteMeta.metadata_is_payload_only ?? false)}</p>
+        <p>packet_status_counts: {JSON.stringify(sqlitePacketStatusCounts ?? {})}</p>
+        <p>task_status_counts: {JSON.stringify(sqliteTaskStatusCounts ?? {})}</p>
+        <p>metadata_safe_columns: {JSON.stringify(sqliteMeta.metadata_safe_columns ?? {})}</p>
+        <DataLineageTable rows={sqliteMetadataSourceRows} />
+      </PacketCard>
 
       <PacketCard title="数据集明细" subtitle="GET /api/storage/{dataset} 只读查询本地 Parquet；不刷新数据" status="dataset_cache">
         <DataLineageTable
