@@ -47,6 +47,10 @@ export function getPackets() {
   return request<Record<string, unknown>>("/api/packets");
 }
 
+export function getPacket(packetKey: string) {
+  return request<Record<string, unknown>>(`/api/packets/${encodeURIComponent(packetKey)}`);
+}
+
 export function getMigrationStatus() {
   return request<Record<string, unknown>>("/api/migration/status");
 }

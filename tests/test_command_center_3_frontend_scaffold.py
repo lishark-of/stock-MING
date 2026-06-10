@@ -21,6 +21,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src" / "routes" / "MigrationStatus.tsx",
+            ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
             ROOT / "src" / "routes" / "TaskCatalog.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
@@ -63,6 +64,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "FactorQuantHub.tsx",
             "ChokepointScan.tsx",
             "SerenityMethodRadar.tsx",
+            "PacketRegistry.tsx",
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
             "TaskCatalog.tsx",
@@ -101,12 +103,15 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
         layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+        self.assertIn("PacketRegistry", app_source)
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
         self.assertIn("TaskCatalog", app_source)
+        self.assertIn('"packets"', layout_source)
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
         self.assertIn('"tasks"', layout_source)
+        self.assertIn("Packet", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
         self.assertIn("任务目录", layout_source)
@@ -147,6 +152,23 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("cache API 永不外联", page)
         self.assertIn("external_calls_triggered", page)
         self.assertIn("does_not_execute_trades", page)
+        self.assertIn("does_not_modify_strategy_action", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_packet_registry_page_reads_packet_cache_without_external_calls(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "PacketRegistry.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/packets", client)
+        self.assertIn("encodeURIComponent(packetKey)", client)
+        self.assertIn("getPackets", page)
+        self.assertIn("getPacket", page)
+        self.assertIn("GET /api/packets", page)
+        self.assertIn("GET /api/packets/{packet_key} 永不外联", page)
+        self.assertIn("cache API 永不外联", page)
         self.assertIn("does_not_modify_strategy_action", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

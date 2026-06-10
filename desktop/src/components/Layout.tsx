@@ -1,6 +1,16 @@
 import type { ReactNode } from "react";
 
-export type RouteKey = "home" | "next" | "factor" | "chokepoint" | "serenity" | "migration" | "storage" | "tasks" | "legacy";
+export type RouteKey =
+  | "home"
+  | "next"
+  | "factor"
+  | "chokepoint"
+  | "serenity"
+  | "packets"
+  | "migration"
+  | "storage"
+  | "tasks"
+  | "legacy";
 
 const ROUTES: Array<{ key: RouteKey; label: string }> = [
   { key: "home", label: "Command Center" },
@@ -8,6 +18,7 @@ const ROUTES: Array<{ key: RouteKey; label: string }> = [
   { key: "factor", label: "多因子图谱" },
   { key: "chokepoint", label: "瓶颈扫描" },
   { key: "serenity", label: "Serenity" },
+  { key: "packets", label: "Packet" },
   { key: "migration", label: "迁移状态" },
   { key: "storage", label: "存储层" },
   { key: "tasks", label: "任务目录" },

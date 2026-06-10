@@ -6,6 +6,7 @@ import FactorQuantHub from "./routes/FactorQuantHub";
 import LegacyTools from "./routes/LegacyTools";
 import MigrationStatus from "./routes/MigrationStatus";
 import NextSessionMap from "./routes/NextSessionMap";
+import PacketRegistry from "./routes/PacketRegistry";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 import StorageOverview from "./routes/StorageOverview";
 import TaskCatalog from "./routes/TaskCatalog";
@@ -19,6 +20,7 @@ export default function App() {
       {route === "factor" ? <FactorQuantHub /> : null}
       {route === "chokepoint" ? <ChokepointScan /> : null}
       {route === "serenity" ? <SerenityMethodRadar /> : null}
+      {route === "packets" ? <PacketRegistry /> : null}
       {route === "migration" ? <MigrationStatus /> : null}
       {route === "storage" ? <StorageOverview /> : null}
       {route === "tasks" ? <TaskCatalog /> : null}
