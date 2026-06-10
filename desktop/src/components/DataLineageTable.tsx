@@ -1,3 +1,15 @@
+function formatCellValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 export default function DataLineageTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   const keys = Array.from(new Set(rows.flatMap((row) => Object.keys(row)))).slice(0, 8);
   if (!rows.length) {
@@ -17,7 +29,9 @@ export default function DataLineageTable({ rows }: { rows: Array<Record<string, 
           {rows.slice(0, 40).map((row, idx) => (
             <tr key={idx}>
               {keys.map((key) => (
-                <td key={key}>{String(row[key] ?? "")}</td>
+                <td key={key}>
+                  <span className="table-cell-value">{formatCellValue(row[key])}</span>
+                </td>
               ))}
             </tr>
           ))}

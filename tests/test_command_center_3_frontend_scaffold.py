@@ -148,6 +148,17 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("DataLineageTable", source)
         self.assertNotIn("strategy_execution_packet.action =", source)
 
+    def test_data_lineage_table_renders_nested_audit_fields_as_json(self):
+        source = (ROOT / "src" / "components" / "DataLineageTable.tsx").read_text(encoding="utf-8")
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("function formatCellValue(value: unknown): string", source)
+        self.assertIn('JSON.stringify(value, null, 2)', source)
+        self.assertIn("table-cell-value", source)
+        self.assertNotIn("String(row[key] ?? \"\")", source)
+        self.assertIn(".table-cell-value", styles)
+        self.assertIn("white-space: pre-wrap", styles)
+
     def test_app_persists_desktop_route_without_streamlit_rerun(self):
         source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
 

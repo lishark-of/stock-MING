@@ -294,6 +294,10 @@ td {
   text-align: left;
 }
 
+.table-cell-value {
+  white-space: pre-wrap;
+}
+
 pre {
   background: #0f172a;
   border-radius: 8px;
