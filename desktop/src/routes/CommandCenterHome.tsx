@@ -197,7 +197,9 @@ export default function CommandCenterHome() {
           { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
           { label: "factor parquet", value: String(storageStatus?.factor_values ?? "missing") },
           { label: "daily parquet", value: String(storageStatus?.daily ?? "missing") },
+          { label: "daily_basic parquet", value: String(storageStatus?.daily_basic ?? "missing") },
           { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
+          { label: "backtest parquet", value: String(storageStatus?.backtest_results ?? "missing") },
           { label: "迁移基线", value: String(migration.status ?? "loading") },
           { label: "DeepSeek explain", value: String(deepseekModelByPurpose.get("explain")?.model ?? "--") },
           { label: "DeepSeek fast", value: String(deepseekModelByPurpose.get("fast")?.model ?? "--") },
@@ -306,11 +308,13 @@ export default function CommandCenterHome() {
           <p>{String(chokepoint.summary ?? "等待缓存")}</p>
           <p>envelope ledger / warnings: {String(chokepointEnvelopeLedger.length)} / {String(chokepointEnvelopeWarnings.length)}</p>
         </PacketCard>
-        <PacketCard title="Parquet / DuckDB Storage" subtitle="daily / moneyflow / factor_values 只读状态，不触发刷新" status={String(storageOverview.store ?? "parquet_duckdb")}>
+        <PacketCard title="Parquet / DuckDB Storage" subtitle="daily / daily_basic / moneyflow / factor_values / backtest_results 只读状态，不触发刷新" status={String(storageOverview.store ?? "parquet_duckdb")}>
           <p>datasets: {String(storageDatasets?.length ?? 0)}</p>
           <p>factor_values: {String(storageStatus?.factor_values ?? "missing")}</p>
           <p>daily: {String(storageStatus?.daily ?? "missing")}</p>
+          <p>daily_basic: {String(storageStatus?.daily_basic ?? "missing")}</p>
           <p>moneyflow: {String(storageStatus?.moneyflow ?? "missing")}</p>
+          <p>backtest_results: {String(storageStatus?.backtest_results ?? "missing")}</p>
           <JsonDetails title="storage overview" data={storageOverview} />
         </PacketCard>
         <PacketCard title="任务状态" subtitle="POST 返回 task_id，页面轮询 FastAPI" status="local">

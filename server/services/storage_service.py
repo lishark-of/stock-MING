@@ -15,8 +15,13 @@ SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
     "daily": "daily",
+    "daily_basic": "daily_basic",
+    "daily-basic": "daily_basic",
     "moneyflow": "moneyflow",
+    "backtest_results": "backtest_results",
+    "backtest-results": "backtest_results",
 }
+CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"]
 
 
 def _path_label(path: Path) -> str:
@@ -105,7 +110,7 @@ def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
                 "schema_version": "command_center_3_storage_dataset.v1",
                 "status": "unsupported_dataset",
                 "dataset": str(dataset or ""),
-                "supported_datasets": ["factor_values", "daily", "moneyflow"],
+                "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
                 "cache_only": True,
                 "external_calls_triggered": False,
                 "tushare_called": False,
@@ -231,7 +236,7 @@ def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
 
 
 def storage_overview(*, limit: int = 20) -> dict[str, Any]:
-    datasets = [parquet_dataset_status(name, limit=limit) for name in ("factor_values", "daily", "moneyflow")]
+    datasets = [parquet_dataset_status(name, limit=limit) for name in CANONICAL_PARQUET_DATASETS]
     sqlite_meta = sqlite_meta_status(limit=limit)
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
