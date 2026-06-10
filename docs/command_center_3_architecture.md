@@ -14,7 +14,7 @@ Tauri desktop shell
 → existing Python quant and packet modules
 ```
 
-Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为长期正式主入口。
+Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为长期正式主入口；页面顶部已显示 Command Center 3.0 正式入口和 legacy/admin/debug 边界提示。
 
 ## 为什么迁移
 
@@ -118,6 +118,7 @@ scripts/run_scheduler.sh
 - DeepSeek 只做解释整理，不作为数据源。
 - Tushare、DeepSeek、GitHub 不在应用启动或 cache GET 时自动调用。
 - 因子结果只进入 evidence_effects 预览，不修改 strategy action。
+- Streamlit 仅作为 legacy/admin/debug 入口保留，普通主路径迁往 React/Vite/Tauri + FastAPI。
 - 现有 packet key 保持不变。
 
 ## 后续阶段

@@ -15,6 +15,13 @@ import inspect
 import pandas as pd
 import numpy as np
 
+STREAMLIT_LEGACY_MODE_STATUS = "legacy/admin/debug"
+COMMAND_CENTER_3_OFFICIAL_ENTRY = "React/Vite/Tauri + FastAPI"
+STREAMLIT_LEGACY_NOTICE = (
+    "Command Center 3.0 正式主入口为 React/Vite/Tauri + FastAPI；"
+    "当前 Streamlit 工作台已降级为 legacy/admin/debug，仅用于回退、排查和旧功能兼容。"
+)
+
 import command_center_adapter as cc_adapter
 import command_center_home_snapshot as home_snapshot_service
 import command_center_projection as projection_service
@@ -2563,6 +2570,17 @@ def inject_ui_animations():
 
 
 inject_ui_animations()
+
+
+def render_streamlit_legacy_admin_notice():
+    st.info(STREAMLIT_LEGACY_NOTICE)
+    st.caption(
+        f"Streamlit {STREAMLIT_LEGACY_MODE_STATUS}：外部刷新、DeepSeek、GitHub 校验仍需按钮门控；"
+        f"本入口不会自动执行真实交易，普通主路径请使用 {COMMAND_CENTER_3_OFFICIAL_ENTRY}。"
+    )
+
+
+render_streamlit_legacy_admin_notice()
 
 # ==========================================
 # 📊 Token 消耗计数器
