@@ -122,6 +122,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     scheduled_refresh_enabled = os.getenv("COMMAND_CENTER_ENABLE_SCHEDULED_REFRESH") == "1"
     redis_configured = bool(os.getenv("COMMAND_CENTER_REDIS_URL"))
     catalog = task_service.build_task_catalog()
+    task_index = task_service.build_task_status_index()
     worker_module_rows = _worker_module_rows()
     backend_rows = _backend_rows(
         celery_available=celery_available,
@@ -160,6 +161,18 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "call_ledger_required_for_all": bool(catalog.get("policy", {}).get("call_ledger_required_for_all")),
             "supports_local_task_cancel": bool(catalog.get("policy", {}).get("supports_local_task_cancel")),
         },
+        "task_status_summary": {
+            "packet_key": task_index.get("packet_key"),
+            "task_count": task_index.get("task_count", 0),
+            "status_counts": task_index.get("status_counts", {}),
+            "latest_task_id": task_index.get("latest_task_id"),
+            "latest_task_type": task_index.get("latest_task_type"),
+            "latest_task_status": task_index.get("latest_task_status"),
+            "call_ledger_count": task_index.get("call_ledger_count", 0),
+            "external_calls_triggered": task_index.get("external_calls_triggered", False),
+            "does_not_execute_trades": task_index.get("does_not_execute_trades", True),
+            "does_not_modify_strategy_action": task_index.get("does_not_modify_strategy_action", True),
+        },
         "backend_rows": backend_rows,
         "worker_module_rows": worker_module_rows,
         "counts": {
@@ -167,6 +180,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_module_count": len(worker_module_rows),
             "worker_module_ready_count": module_ready_count,
             "task_count": catalog.get("task_count", 0),
+            "task_status_count": task_index.get("task_count", 0),
+            "task_status_call_ledger_count": task_index.get("call_ledger_count", 0),
         },
         "policy": {
             "cache_api_external_calls": False,

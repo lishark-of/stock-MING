@@ -19,6 +19,7 @@ export default function WorkerRuntime() {
 
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
   const summary = (cache.task_catalog_summary as Record<string, unknown> | undefined) ?? {};
+  const taskStatus = (cache.task_status_summary as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -37,6 +38,8 @@ export default function WorkerRuntime() {
           { label: "worker modules", value: counts.worker_module_count as number | undefined },
           { label: "ready modules", value: counts.worker_module_ready_count as number | undefined },
           { label: "task catalog", value: counts.task_count as number | undefined },
+          { label: "task status", value: counts.task_status_count as number | undefined },
+          { label: "task call ledger", value: counts.task_status_call_ledger_count as number | undefined },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
           { label: "Redis package", value: runtime.redis_package_available, tone: runtime.redis_package_available === true ? "good" : "warn" },
@@ -59,6 +62,17 @@ export default function WorkerRuntime() {
           <p>all button gated: {String(summary.all_tasks_button_gated ?? true)}</p>
           <p>call ledger required: {String(summary.call_ledger_required_for_all ?? true)}</p>
           <p>supports local cancel: {String(summary.supports_local_task_cancel ?? true)}</p>
+        </PacketCard>
+
+        <PacketCard title="Task status index 摘要" subtitle="GET /api/tasks 的本地状态汇总；不创建任务、不外联" status="task_status_index">
+          <p>packet: {String(taskStatus.packet_key ?? "--")}</p>
+          <p>task count: {String(taskStatus.task_count ?? 0)}</p>
+          <p>status counts: {JSON.stringify(taskStatus.status_counts ?? {})}</p>
+          <p>latest task: {String(taskStatus.latest_task_type ?? "--")} / {String(taskStatus.latest_task_status ?? "--")}</p>
+          <p>call ledger: {String(taskStatus.call_ledger_count ?? 0)}</p>
+          <p>external calls: {String(taskStatus.external_calls_triggered ?? false)}</p>
+          <p>does_not_execute_trades: {String(taskStatus.does_not_execute_trades ?? true)}</p>
+          <p>does_not_modify_strategy_action: {String(taskStatus.does_not_modify_strategy_action ?? true)}</p>
         </PacketCard>
       </div>
 
