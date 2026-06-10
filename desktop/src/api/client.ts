@@ -109,6 +109,10 @@ export function getRiskGuardrailsCache() {
   return request<Record<string, unknown>>("/api/risk/cache");
 }
 
+export function getRecoveryCenterCache() {
+  return request<Record<string, unknown>>("/api/recovery/cache");
+}
+
 export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }

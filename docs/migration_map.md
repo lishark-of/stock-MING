@@ -10,6 +10,7 @@
 | 风险护栏 / 安全线 | `command_center_home_snapshot.py`, `strategy_execution_service.py`, `app.py` | `GET /api/risk/cache` | `RiskGuardrails.tsx` | cache GET 只读展示 `risk_alerts`、`safety_line`、执行护栏、旧链状态和风险预算，不清除风险标记 | 后续任务化；当前不提供 POST |
 | A 股事实血缘 | `command_center_evidence_summary.py`, `command_center_*_packet.py` | `GET /api/evidence/cache`, `/api/packets/{packet_key}` 与后续 fact refresh task | `AShareEvidenceRadar.tsx` | cache 不重算，支持本地快照别名 | 后续任务化 |
 | 数据能力/数据源体检 | `command_center_data_capability_console.py`, `command_center_data_health_ledger.py`, `app.py` | `GET /api/data-capability/cache`，后续 provider refresh task | `DataCapabilityConsole.tsx` | cache GET 不检测；只读本地能力 packet | 后续任务化 |
+| 数据恢复中心 | `command_center_data_capability_console.py`, `command_center_data_health_ledger.py`, `app.py` | `GET /api/recovery/cache` | `RecoveryCenter.tsx` | cache GET 只读展示恢复动作、恢复时间线、Provider 恢复矩阵和缺口报告，不执行恢复 | 后续任务化；当前不提供 POST |
 | Tushare 数据刷新 | `tushare_adapter.py`, `app.py` | 后续 `refresh_tushare_facts` task | Factor / Next Session / Evidence / Data Capability pages | 是 | 是，当前 stub |
 | 交易记录实验室 | `trade_review_log.py`, `app.py` | `GET /api/trade-review/cache` | `TradeReviewLab.tsx` | 否，cache-only 读取本地 `trade_review_log.jsonl` | 否 |
 | 旧量化/回测 | `command_center_quant_packet.py`, `backtester.py` | `GET /api/quant/cache`，后续 `/api/backtest/run` | `QuantBacktestLab.tsx` | cache GET 不重算；后续 POST task 才可运行回测 | 后续任务化 |
@@ -28,6 +29,7 @@
 - `/api/packets/{packet_key}`
 - `/api/evidence/cache`
 - `/api/data-capability/cache`
+- `/api/recovery/cache`
 - `/api/next-session/cache`
 - `/api/factor-quant/cache`
 - `/api/serenity/cache`
@@ -49,6 +51,8 @@
 `/api/evidence/cache` 已接入 A 股证据雷达与事实血缘只读迁移：读取本地 `command_center_evidence_radar_packet` / `a_share_fact_lineage_summary` 或用本地 builder 生成缓存视图；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
 `/api/data-capability/cache` 已接入数据能力/数据源体检只读迁移：读取本地 `data_capability`、`data_capability_console` 与 `data_health_ledger`，或用本地 builder 生成安全空态；不 ping Tushare/AkShare/yfinance/Supabase，不调用 DeepSeek/GitHub，不执行真实交易，不修改 `strategy_execution_packet.action`。
+
+`/api/recovery/cache` 已接入数据恢复中心只读迁移：读取本地 `data_recovery_actions`、`tool_recovery_actions`、`recovery_result_timeline`、`data_health_timeline_recovery_actions`、`a_share_evidence_recovery_ledger`、`provider_recovery_matrix` 和 `data_gap_report`，输出恢复动作、恢复时间线和调用血缘；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不执行恢复动作、不刷新数据、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
 
 `/api/strategy/cache` 已接入策略执行 / 今日决策只读迁移：读取本地 `strategy_execution_packet` 与 `command_center_decision_packet`，输出 action 来源、策略 trace、决策摘要和调用血缘；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action` 或 `command_center_decision_packet`。
 

@@ -28,6 +28,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "PositionContext.tsx",
             ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
+            ROOT / "src" / "routes" / "RecoveryCenter.tsx",
             ROOT / "src" / "routes" / "RiskGuardrails.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
             ROOT / "src" / "routes" / "StrategyTrace.tsx",
@@ -103,6 +104,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "PacketRegistry.tsx",
             "PositionContext.tsx",
             "QuantBacktestLab.tsx",
+            "RecoveryCenter.tsx",
             "RiskGuardrails.tsx",
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
@@ -151,6 +153,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("PacketRegistry", app_source)
         self.assertIn("PositionContext", app_source)
         self.assertIn("QuantBacktestLab", app_source)
+        self.assertIn("RecoveryCenter", app_source)
         self.assertIn("RiskGuardrails", app_source)
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
@@ -164,6 +167,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"packets"', layout_source)
         self.assertIn('"position"', layout_source)
         self.assertIn('"quant"', layout_source)
+        self.assertIn('"recovery"', layout_source)
         self.assertIn('"risk"', layout_source)
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
@@ -177,6 +181,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("Packet", layout_source)
         self.assertIn("持仓画像", layout_source)
         self.assertIn("量化回测", layout_source)
+        self.assertIn("恢复中心", layout_source)
         self.assertIn("风险护栏", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
@@ -422,6 +427,32 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不调用 DeepSeek 或 GitHub", page)
         self.assertIn("strategy action", page)
         self.assertIn("local_data_capability_cache", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_recovery_center_page_reads_cache_without_running_recovery_actions(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "RecoveryCenter.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/recovery/cache", client)
+        self.assertIn("getRecoveryCenterCache", page)
+        self.assertIn("getRecoveryCenterCache", home)
+        self.assertIn("GET /api/recovery/cache", page)
+        self.assertIn("data_recovery_actions", page)
+        self.assertIn("tool_recovery_actions", page)
+        self.assertIn("recovery_result_timeline", page)
+        self.assertIn("provider_recovery_matrix", page)
+        self.assertIn("data_gap_report", page)
+        self.assertIn("local_recovery_center_cache", page)
+        self.assertIn("恢复动作只是手动建议", page)
+        self.assertIn("不会调用 Tushare、AkShare、yfinance、DeepSeek 或 GitHub", page)
+        self.assertIn("不会执行恢复动作", page)
+        self.assertIn("不会修改 strategy action", page)
+        self.assertIn("不会执行真实交易", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

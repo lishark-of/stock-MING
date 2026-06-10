@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, evidence_service, factor_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -587,6 +587,53 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["call_ledger"][0]["api"], "local_data_capability_cache")
         json.dumps(packet, ensure_ascii=False)
 
+    def test_recovery_center_cache_reads_local_recovery_actions_without_running_them(self):
+        self._with_snapshot_cache(
+            {
+                "data_recovery_center": {"summary": "先恢复资金流，再恢复硬风险。", "token": "SHOULD_DROP"},
+                "data_recovery_actions": [
+                    {"label": "刷新资金流", "api": "moneyflow", "status": "manual", "api_key": "SHOULD_DROP"},
+                    "补齐龙虎榜",
+                ],
+                "tool_recovery_actions": [{"label": "打开旧工具", "status": "manual"}],
+                "recovery_result_timeline": [{"event": "恢复失败", "error": "Traceback token=SHOULD_DROP"}],
+                "data_health_timeline_recovery_actions": [{"label": "恢复 data_health", "status": "pending"}],
+                "a_share_evidence_recovery_ledger": {"items": [{"label": "补证据雷达"}]},
+                "provider_recovery_matrix": {"items": [{"provider": "Tushare", "api": "daily_basic"}]},
+                "data_gap_report": {"items": [{"label": "moneyflow missing"}]},
+                "recovery_result_status_strip": {"summary": "仍需手动恢复", "next_action": "点击按钮任务"},
+                "old_workspace_data_absence_ledger": {"summary": "旧工作台缺口"},
+            }
+        )
+
+        packet = recovery_service.read_recovery_center_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_recovery_center_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["counts"]["data_recovery_action_count"], 2)
+        self.assertEqual(packet["counts"]["tool_recovery_action_count"], 1)
+        self.assertEqual(packet["counts"]["evidence_recovery_count"], 1)
+        self.assertEqual(packet["counts"]["provider_recovery_count"], 1)
+        self.assertEqual(packet["counts"]["data_gap_count"], 1)
+        self.assertEqual(packet["action_rows"][0]["label"], "刷新资金流")
+        self.assertEqual(packet["action_rows"][1]["label"], "补齐龙虎榜")
+        self.assertNotIn("api_key", packet["action_rows"][0])
+        self.assertNotIn("token", packet["data_recovery_center"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_run_recovery_actions"])
+        self.assertTrue(packet["policy"]["recovery_actions_are_manual_guidance"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_recovery_center_cache")
+        json.dumps(packet, ensure_ascii=False)
+
     def test_factor_value_rows_keep_safe_scalar_contract(self):
         rows = storage_service._factor_value_rows_from_hub(
             {
@@ -1047,6 +1094,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(data_capability["data"]["policy"]["does_not_ping_tushare"])
         self.assertTrue(data_capability["data"]["does_not_modify_strategy_action"])
 
+        recovery = self.client.get("/api/recovery/cache").json()
+        self.assertTrue(recovery["ok"])
+        self.assertTrue(recovery["data"]["cache_only"])
+        self.assertFalse(recovery["data"]["external_calls_triggered"])
+        self.assertFalse(recovery["data"]["tushare_called"])
+        self.assertFalse(recovery["data"]["deepseek_called"])
+        self.assertTrue(recovery["data"]["policy"]["does_not_run_recovery_actions"])
+        self.assertTrue(recovery["data"]["policy"]["recovery_actions_are_manual_guidance"])
+        self.assertTrue(recovery["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(recovery["data"]["does_not_execute_trades"])
+
     def test_trade_review_cache_endpoint_returns_sanitized_local_records(self):
         self._with_trade_review_log(
             [
@@ -1278,6 +1336,37 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["policy"]["does_not_ping_tushare"])
         self.assertTrue(packet["does_not_execute_trades"])
+
+    def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
+        self._with_snapshot_cache(
+            {
+                "data_recovery_actions": [
+                    {"label": "恢复 daily_basic", "api": "daily_basic", "authorization": "Bearer SHOULD_DROP"}
+                ],
+                "tool_recovery_actions": ["检查旧工具"],
+                "recovery_result_timeline": [{"event": "等待手动恢复"}],
+                "provider_recovery_matrix": {"items": [{"provider": "Tushare", "api": "moneyflow"}]},
+                "data_gap_report": {"items": [{"label": "moneyflow missing"}]},
+            }
+        )
+
+        response = self.client.get("/api/recovery/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_recovery_center_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["counts"]["action_count"], 3)
+        self.assertEqual(packet["counts"]["timeline_count"], 1)
+        self.assertEqual(packet["action_rows"][0]["label"], "恢复 daily_basic")
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_run_recovery_actions"])
+        self.assertTrue(packet["policy"]["recovery_actions_are_manual_guidance"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()

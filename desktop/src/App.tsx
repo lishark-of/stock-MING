@@ -13,6 +13,7 @@ import NextSessionMap from "./routes/NextSessionMap";
 import PacketRegistry from "./routes/PacketRegistry";
 import PositionContext from "./routes/PositionContext";
 import QuantBacktestLab from "./routes/QuantBacktestLab";
+import RecoveryCenter from "./routes/RecoveryCenter";
 import RiskGuardrails from "./routes/RiskGuardrails";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 import StorageOverview from "./routes/StorageOverview";
@@ -28,6 +29,7 @@ export default function App() {
       {route === "health" ? <HealthStatus /> : null}
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}
+      {route === "recovery" ? <RecoveryCenter /> : null}
       {route === "next" ? <NextSessionMap /> : null}
       {route === "position" ? <PositionContext /> : null}
       {route === "candidates" ? <CandidateRadar /> : null}
