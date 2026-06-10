@@ -26,6 +26,21 @@ export default function ModelStrategy() {
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const groups = (cache.purpose_groups as Record<string, unknown> | undefined) ?? {};
+  const modelRows = rows(cache.model_rows);
+  const modelSafetyRows = [
+    {
+      check: "does_not_hardcode_model",
+      passed_count: modelRows.filter((row) => row.does_not_hardcode_model === true).length,
+      total_count: modelRows.length,
+      status: modelRows.length && modelRows.every((row) => row.does_not_hardcode_model === true) ? "passed" : "check"
+    },
+    {
+      check: "contains_secret",
+      passed_count: modelRows.filter((row) => row.contains_secret === false).length,
+      total_count: modelRows.length,
+      status: modelRows.length && modelRows.every((row) => row.contains_secret === false) ? "passed" : "check"
+    }
+  ];
   const payloadCallLedger = rows(cache.call_ledger);
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
@@ -69,7 +84,12 @@ export default function ModelStrategy() {
       </div>
 
       <PacketCard title="用途到模型映射" subtitle="model_rows；只展示模型名和配置键名，不展示凭据" status="models">
-        <DataLineageTable rows={rows(cache.model_rows)} />
+        <DataLineageTable rows={modelRows} />
+      </PacketCard>
+
+      <PacketCard title="模型策略安全摘要" subtitle="每个 purpose 都必须声明不硬编码模型名且不含凭据" status="model_safety">
+        <p>安全摘要来自 GET /api/model-strategy/cache 的 model_rows；只读、不调用 DeepSeek。</p>
+        <DataLineageTable rows={modelSafetyRows} />
       </PacketCard>
 
       <PacketCard title="安全策略" subtitle="cache API 永不外联；DeepSeek 只能按钮门控" status="policy">
