@@ -202,7 +202,7 @@ export function cancelTask(taskId: string, reason = "manual_cancel_from_task_cat
 }
 
 export function getTask(taskId: string) {
-  return request<TaskRecord>(`/api/tasks/${taskId}`);
+  return request<TaskRecord>(`/api/tasks/${encodeURIComponent(taskId)}`);
 }
 
 export function getTasks() {

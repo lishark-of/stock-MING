@@ -8,6 +8,12 @@ type Props = {
   onSuccess?: () => void;
 };
 
+type TaskLookupError = {
+  error: string;
+  call_ledger: Array<Record<string, unknown>>;
+  warnings: unknown[];
+};
+
 function toneForStatus(status: TaskRecord["status"]) {
   if (status === "success") return "good";
   if (status === "failed" || status === "cancelled") return "bad";
@@ -25,8 +31,18 @@ function mergeTaskEnvelope(res: ApiEnvelope<TaskRecord>): TaskRecord | null {
   };
 }
 
+function taskLookupError(res: ApiEnvelope<TaskRecord>): TaskLookupError | null {
+  if (res.ok) return null;
+  return {
+    error: String(res.error ?? "task_lookup_failed"),
+    call_ledger: res.call_ledger ?? [],
+    warnings: res.warnings ?? []
+  };
+}
+
 export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const [task, setTask] = useState<TaskRecord | null>(null);
+  const [lookupError, setLookupError] = useState<TaskLookupError | null>(null);
   const [cancelMessage, setCancelMessage] = useState("");
   const successNotified = useRef("");
 
@@ -34,7 +50,12 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     if (!taskId) return;
     void getTask(taskId).then((res) => {
       const mergedTask = mergeTaskEnvelope(res);
-      if (mergedTask) setTask(mergedTask);
+      if (mergedTask) {
+        setTask(mergedTask);
+        setLookupError(null);
+        return;
+      }
+      setLookupError(taskLookupError(res));
     });
   };
 
@@ -44,7 +65,13 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     const load = () => {
       void getTask(taskId).then((res) => {
         const mergedTask = mergeTaskEnvelope(res);
-        if (active && mergedTask) setTask(mergedTask);
+        if (!active) return;
+        if (mergedTask) {
+          setTask(mergedTask);
+          setLookupError(null);
+          return;
+        }
+        setLookupError(taskLookupError(res));
       });
     };
     load();
@@ -65,7 +92,24 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   }, [onSuccess, task?.status, task?.task_id]);
 
   if (!taskId) return null;
-  if (!task) return <p>任务状态读取中：{taskId}</p>;
+  if (!task) {
+    if (lookupError) {
+      return (
+        <div className="task-panel">
+          <div className="task-panel__head">
+            <StatusBadge label={lookupError.error} tone="bad" />
+            <span>{taskId}</span>
+          </div>
+          <p>任务状态读取失败：{lookupError.error}</p>
+          <p>GET /api/tasks/{"{task_id}"} 只读取本地任务状态，不调用 Tushare、DeepSeek 或 GitHub。</p>
+          <p>call_ledger: {lookupError.call_ledger.length}</p>
+          {lookupError.warnings.length ? <p className="risk-note">{String(lookupError.warnings[0])}</p> : null}
+          {lookupError.call_ledger.length ? <DataLineageTable rows={lookupError.call_ledger} /> : <p className="empty-state">暂无 task lookup call_ledger。</p>}
+        </div>
+      );
+    }
+    return <p>任务状态读取中：{taskId}</p>;
+  }
   const callLedger = task.call_ledger ?? [];
   const statusHistory = task.status_history ?? [];
   const cancellable = task.status === "pending" || task.status === "running";
