@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
+from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -25,15 +25,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def _with_meta_store(self):
         original_packet_path = packet_service.SQLITE_META_PATH
         original_factor_path = factor_service.SQLITE_META_PATH
+        original_next_session_path = next_session_service.SQLITE_META_PATH
         original_task_path = task_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         packet_service.SQLITE_META_PATH = db_path
         factor_service.SQLITE_META_PATH = db_path
+        next_session_service.SQLITE_META_PATH = db_path
         task_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
+        self.addCleanup(setattr, next_session_service, "SQLITE_META_PATH", original_next_session_path)
         self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
         return db_path
 
@@ -1071,6 +1074,86 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["task_id"], task["task_id"])
         self.assertEqual(task_service.list_task_statuses()[0]["task_id"], task["task_id"])
 
+    def test_next_session_generate_task_writes_exact_cache_packet_without_external_work(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "command_center_next_session_projection_packet": {
+                    "packet_key": "command_center_next_session_projection_packet",
+                    "status": "ready",
+                    "trade_date": "20260610",
+                    "chart_render_model": {
+                        "historical_series": [{"x": "2026-06-10", "price": 10.4}],
+                        "scenario_series": [{"scenario_key": "neutral", "scenario_name": "中性路径", "points": [{"x": "T+1", "price": 10.8}]}],
+                        "current_price_line": 10.4,
+                        "cost_line": 9.8,
+                        "operation_zone_overlays": [{"zone_key": "observe", "price_range": [10.6, 10.9], "action_mode": "condition_only"}],
+                    },
+                }
+            }
+        )
+
+        task = next_session_service.create_next_session_task({"ts_code": "002008.SZ", "token": "SHOULD_DROP"})
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "next_session_cache_written_to_sqlite")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_next_session_cache")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "exact_cache_read")
+        self.assertEqual(task["call_ledger"][0]["data_date"], "20260610")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_next_session_projection_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["packet_key"], "command_center_next_session_projection_packet")
+        self.assertEqual(persisted["status"], "ready")
+        self.assertTrue(persisted["does_not_modify_action"])
+        self.assertTrue(persisted["does_not_modify_operation_zones"])
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertEqual(persisted["task_call_ledger"][0]["call_status"], "exact_cache_read")
+
+    def test_next_session_generate_task_does_not_persist_cache_missing_packet(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "projection_packet": {
+                    "base_date": "2026-06-10",
+                    "historical": [{"t": 0, "value": 10.4}],
+                    "paths": [{"name": "中性路径", "points": [{"t": 1, "value": 10.8}]}],
+                    "status": "ready",
+                }
+            }
+        )
+
+        task = next_session_service.create_next_session_task({"ts_code": "002008.SZ", "api_key": "SHOULD_DROP"})
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "next_session_cache_missing_no_packet_written")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_next_session_cache")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "cache_missing")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self.assertIsNone(SQLiteMetaStore(db_path).read_packet("command_center_next_session_projection_packet"))
+
     def test_task_catalog_documents_button_gated_external_boundaries(self):
         catalog = task_service.build_task_catalog()
 
@@ -1094,6 +1177,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
         self.assertIn("github", by_type["probe_serenity_github"]["possible_external_sources"])
         self.assertEqual(by_type["run_factor_light"]["possible_external_sources"], [])
+        self.assertEqual(by_type["build_next_session_projection"]["current_backend"], "local_cache_pipeline")
+        self.assertEqual(by_type["build_next_session_projection"]["possible_external_sources"], [])
 
     def test_worker_runtime_cache_reads_local_scaffold_without_starting_backends(self):
         packet = worker_service.read_worker_runtime_cache()
@@ -1380,15 +1465,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def _with_meta_store(self):
         original_packet_path = packet_service.SQLITE_META_PATH
         original_factor_path = factor_service.SQLITE_META_PATH
+        original_next_session_path = next_session_service.SQLITE_META_PATH
         original_task_path = task_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         packet_service.SQLITE_META_PATH = db_path
         factor_service.SQLITE_META_PATH = db_path
+        next_session_service.SQLITE_META_PATH = db_path
         task_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
+        self.addCleanup(setattr, next_session_service, "SQLITE_META_PATH", original_next_session_path)
         self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
         return db_path
 
@@ -2069,6 +2157,47 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(persisted_status["ok"])
         self.assertEqual(persisted_status["data"]["task_id"], task_id)
         self.assertEqual(persisted_status["data"]["backend"], "local_fallback")
+
+    def test_next_session_generate_endpoint_uses_local_cache_pipeline(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "command_center_next_session_projection_packet": {
+                    "packet_key": "command_center_next_session_projection_packet",
+                    "status": "ready",
+                    "trade_date": "20260610",
+                    "chart_render_model": {
+                        "historical_series": [{"x": "2026-06-10", "price": 10.4}],
+                        "scenario_series": [{"scenario_key": "neutral", "scenario_name": "中性路径", "points": [{"x": "T+1", "price": 10.8}]}],
+                        "current_price_line": 10.4,
+                    },
+                }
+            }
+        )
+
+        created = self.client.post("/api/next-session/generate", json={"ts_code": "002008.SZ", "authorization": "Bearer SHOULD_DROP"}).json()
+
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "next_session_cache_written_to_sqlite")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_next_session_cache")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "exact_cache_read")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(created, ensure_ascii=False))
+
+        cache = self.client.get("/api/next-session/cache").json()
+        self.assertTrue(cache["ok"])
+        self.assertEqual(cache["data"]["status"], "ready")
+        self.assertFalse(cache["data"]["external_calls_triggered"])
+        self.assertTrue(cache["data"]["does_not_modify_action"])
 
     def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
         self._with_meta_store()

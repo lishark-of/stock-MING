@@ -4,7 +4,7 @@
 |---|---|---|---|---|---|
 | 调用审计 / 外部边界 | `server/services/*_service.py`, `server/services/task_service.py` | `GET /api/audit/cache` | `CallLedgerAudit.tsx` | cache GET 聚合本地 cache API 与任务 `call_ledger`；不刷新、不外联 | 否；只读审计 |
 | DeepSeek 模型策略 | `config.py`, `server/services/model_strategy_service.py` | `GET /api/model-strategy/cache` | `ModelStrategy.tsx` | cache GET 只读展示用途到模型映射、配置键名和安全边界；不调用模型、不读取凭据 | 否；真实解释仍需按钮任务 |
-| 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing` | 是，POST 当前 stub |
+| 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing`；POST 只读本地 cache 并在有精确 packet 时写入 SQLite | 是，POST 已本地 cache pipeline |
 | Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | 市场环境 / 盘面证据 | `command_center_*_packet.py`, `app.py` | `GET /api/market/cache` | `MarketContext.tsx` | cache GET 只读展示市场状态、资金流、两融、涨跌停情绪、龙虎榜、筹码和 ETF 替代，不刷新行情 | 后续任务化；当前不提供 POST |
 | 交易纪律 / 决策闭环 | `strategy_execution_service.py`, `command_center_decision_engine.py`, `app.py` | `GET /api/discipline/cache` | `DisciplineLoop.tsx` | cache GET 只读展示纪律 packet、决策闭环、今日动作和满血刷新步骤，不运行回测 | 后续任务化；当前不提供 POST |
@@ -92,7 +92,6 @@
 
 ## 当前 stub API
 
-- `/api/next-session/generate`
 - `/api/factor-quant/refresh-data`
 - `/api/chokepoint/run`
 - `/api/serenity/github-probe`
@@ -103,6 +102,8 @@
 任务生命周期现在同步写入 `.stock_ming_3/meta.sqlite`；内存 fallback 丢失时，`/api/tasks/{task_id}` 仍可从 SQLite 读回任务状态。`/api/packets` 同时暴露 SQLite packet/task metadata 摘要，供 3.0 前端识别持久化 cache 来源。
 
 `/api/factor-quant/run-light` 已从纯 stub 升级为本地 light-mode pipeline：只读取本地 snapshot/cache，生成 `command_center_factor_quant_hub_packet` 并写入 SQLite meta cache，同时把 `runtime.factor_values` 写入 Parquet；仍不调用 Tushare、DeepSeek、GitHub，不跑全市场回测，不修改 strategy action。
+
+`/api/next-session/generate` 已从纯 stub 升级为本地 cache pipeline：只读取已有次日图谱 cache，发现精确 `command_center_next_session_projection_packet` 时写入 SQLite meta cache；没有精确 packet 时返回 `cache_missing` 任务状态，不写入假 packet。该任务仍不调用 Tushare、DeepSeek、GitHub，不修改 strategy action、价格、持仓或 operation_zones。
 
 `/api/factor-quant/deepseek-explain` 已从纯 stub 升级为 guarded explanation pipeline：只读取已有 Factor Quant Hub cache，生成未发送的安全 prompt 预览；如传入本地解释 payload，只保留 `summary`、`support_notes`、`suppress_notes`、`conflict_notes`、`missing_data_notes`、`discipline_notes` 六类字段并写回 SQLite cache。当前阶段不真实调用 DeepSeek，不输出价格/持仓/因子值/买卖指令，不覆盖任何数值 packet。
 
