@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from config import DEEPSEEK_MODEL_CONFIG_KEYS
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -50,6 +51,10 @@ TASK_CATALOG = [
         "current_backend": "guarded_prompt_or_payload_sanitizer",
         "external_call_policy": "manual_deepseek_capable_current_no_model_call",
         "possible_external_sources": ["deepseek"],
+        "deepseek_model_strategy_purpose": "factor_explain",
+        "deepseek_model_config_keys": list(DEEPSEEK_MODEL_CONFIG_KEYS["factor_explain"]),
+        "deepseek_model_source": "config.get_deepseek_model('factor_explain')",
+        "does_not_hardcode_deepseek_model": True,
         "call_ledger_required": True,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -76,6 +81,10 @@ TASK_CATALOG = [
         "current_backend": "local_fallback_stub",
         "external_call_policy": "manual_deepseek_capable",
         "possible_external_sources": ["deepseek"],
+        "deepseek_model_strategy_purpose": "explain",
+        "deepseek_model_config_keys": list(DEEPSEEK_MODEL_CONFIG_KEYS["explain"]),
+        "deepseek_model_source": "config.get_deepseek_model('explain')",
+        "does_not_hardcode_deepseek_model": True,
         "call_ledger_required": True,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
