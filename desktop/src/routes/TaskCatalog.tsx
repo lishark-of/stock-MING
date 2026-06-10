@@ -42,6 +42,12 @@ export default function TaskCatalog() {
   const taskLifecycleRoutes = catalog.task_lifecycle_routes as Array<Record<string, unknown>> | undefined;
   const routeCoverage = catalog.route_coverage as Record<string, unknown> | undefined;
   const externalSources = catalog.external_sources as unknown[] | undefined;
+  const knownPostRouteRows = Array.isArray(routeCoverage?.known_post_routes)
+    ? (routeCoverage?.known_post_routes as unknown[]).map((route, index) => ({ index: index + 1, route: String(route), coverage: "known_post_route" }))
+    : [];
+  const uncoveredPostRouteRows = Array.isArray(routeCoverage?.uncovered_post_routes)
+    ? (routeCoverage?.uncovered_post_routes as unknown[]).map((route, index) => ({ index: index + 1, route: String(route), coverage: "uncovered_post_route" }))
+    : [];
   const taskIndexPolicy = taskIndex?.policy ?? {};
   const taskStatusRows = Object.entries(taskIndex?.status_counts ?? {}).map(([status, count]) => ({ status, count }));
   const catalogPayloadLedger = (catalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -141,8 +147,14 @@ export default function TaskCatalog() {
       <PacketCard title="POST 路由覆盖" subtitle="任务创建 POST 与本地生命周期 POST 分开登记；cache GET 不创建任务" status="route_coverage">
         <p>known_post_route_count: {String(routeCoverage?.known_post_route_count ?? 0)}</p>
         <p>uncovered_post_routes: {String((routeCoverage?.uncovered_post_routes as unknown[] | undefined)?.length ?? 0)}</p>
+        <p>all_known_post_routes_button_gated: {String(routeCoverage?.all_known_post_routes_button_gated ?? false)}</p>
+        <p>call_ledger_required_for_all_known_post_routes: {String(routeCoverage?.call_ledger_required_for_all_known_post_routes ?? false)}</p>
         <p>cancel_routes_external_calls: {String(routeCoverage?.cancel_routes_external_calls ?? false)}</p>
         <DataLineageTable rows={routeCoverageRows} />
+        <h3>已登记 POST 路由</h3>
+        <DataLineageTable rows={knownPostRouteRows} />
+        <h3>未覆盖 POST 路由</h3>
+        <DataLineageTable rows={uncoveredPostRouteRows} />
       </PacketCard>
 
       <PacketCard title="任务目录 envelope call_ledger" subtitle="GET /api/tasks/catalog 顶层响应血缘；只读、不外联、不交易" status="lineage">
