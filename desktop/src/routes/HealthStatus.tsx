@@ -8,16 +8,23 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function HealthStatus() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
+  const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [healthEnvelopeWarnings, setHealthEnvelopeWarnings] = useState<Array<string>>([]);
   const [migration, setMigration] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
-    void getHealth().then((res) => setHealth(res.data));
+    void getHealth().then((res) => {
+      setHealth(res.data);
+      setHealthEnvelopeLedger(res.call_ledger ?? []);
+      setHealthEnvelopeWarnings(res.warnings ?? []);
+    });
     void getMigrationStatus().then((res) => setMigration(res.data));
   }, []);
 
   const modelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
   const progress = (migration.progress_baseline as Array<Record<string, unknown>> | undefined) ?? [];
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
+  const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
 
   return (
     <>
@@ -36,7 +43,9 @@ export default function HealthStatus() {
           { label: "真实交易", value: health.real_trading_enabled === true ? "启用" : "禁用", tone: health.real_trading_enabled === true ? "bad" : "good" },
           { label: "Streamlit", value: String(health.legacy_streamlit ?? "legacy/admin/debug") },
           { label: "迁移基线", value: String(migration.status ?? "loading") },
-          { label: "cache only", value: migrationPolicy?.cache_only, tone: migrationPolicy?.cache_only === false ? "bad" : "good" }
+          { label: "cache only", value: migrationPolicy?.cache_only, tone: migrationPolicy?.cache_only === false ? "bad" : "good" },
+          { label: "health envelope ledger", value: healthEnvelopeLedger.length },
+          { label: "health warnings", value: healthWarnings.length }
         ]}
       />
 
@@ -57,6 +66,14 @@ export default function HealthStatus() {
 
       <PacketCard title="迁移基线" subtitle="用户给定长期参考进度；只读展示，不重新估算" status={String(migration.status ?? "baseline")}>
         <DataLineageTable rows={progress} />
+      </PacketCard>
+
+      <PacketCard title="GET health envelope call_ledger" subtitle="GET /health 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={healthEnvelopeLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET health envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={healthWarnings.map((warning, index) => ({ index: index + 1, warning }))} />
       </PacketCard>
 
       <PacketCard title="原始健康 payload" subtitle="调试用 JSON；不含 token/key" status="safe">

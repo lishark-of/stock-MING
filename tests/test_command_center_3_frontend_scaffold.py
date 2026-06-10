@@ -380,7 +380,13 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("getHealth", page)
         self.assertIn("getMigrationStatus", page)
+        self.assertIn("setHealthEnvelopeLedger(res.call_ledger ?? [])", page)
+        self.assertIn("setHealthEnvelopeWarnings(res.warnings ?? [])", page)
         self.assertIn("GET /health 只读", page)
+        self.assertIn("GET health envelope call_ledger", page)
+        self.assertIn("GET health envelope warnings", page)
+        self.assertIn("health envelope ledger", page)
+        self.assertIn("health warnings", page)
         self.assertIn("external_calls_on_startup", page)
         self.assertIn("real_trading_enabled", page)
         self.assertIn("deepseek_model_strategy", page)

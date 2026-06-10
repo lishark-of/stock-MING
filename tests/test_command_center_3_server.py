@@ -1706,6 +1706,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(health["data"]["external_calls_on_startup"])
         self.assertFalse(health["data"]["deepseek_called"])
         self.assertFalse(health["data"]["tushare_called"])
+        self.assertEqual(health["call_ledger"][0]["api"], "local_health_check")
+        self.assertFalse(health["call_ledger"][0]["external"])
+        self.assertIn("GET /health", health["warnings"][0])
         model_strategy = health["data"]["deepseek_model_strategy"]
         self.assertTrue(model_strategy["explain"])
         self.assertTrue(model_strategy["fast"])
