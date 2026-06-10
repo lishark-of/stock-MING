@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import tempfile
@@ -59,6 +60,39 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(row["github_called"])
         self.assertTrue(row["does_not_execute_trades"])
         self.assertTrue(row["does_not_modify_strategy_action"])
+
+    def _discover_fastapi_post_routes(self):
+        routes = []
+        for path in sorted(Path("server/api").glob("routes_*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            router_prefixes = {}
+            for node in tree.body:
+                if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+                    continue
+                func = node.value.func
+                if not isinstance(func, ast.Name) or func.id != "APIRouter":
+                    continue
+                prefix = ""
+                for keyword in node.value.keywords:
+                    if keyword.arg == "prefix" and isinstance(keyword.value, ast.Constant):
+                        prefix = str(keyword.value.value or "")
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        router_prefixes[target.id] = prefix
+
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+                        continue
+                    if decorator.func.attr != "post" or not isinstance(decorator.func.value, ast.Name):
+                        continue
+                    path_arg = ""
+                    if decorator.args and isinstance(decorator.args[0], ast.Constant):
+                        path_arg = str(decorator.args[0].value or "")
+                    routes.append(f"POST {router_prefixes.get(decorator.func.value.id, '')}{path_arg}")
+        return sorted(routes)
 
     def _with_trade_review_log(self, records):
         original_path = trade_review_service.TRADE_REVIEW_LOG_PATH
@@ -1476,6 +1510,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["run_factor_light"]["possible_external_sources"], [])
         self.assertEqual(by_type["build_next_session_projection"]["current_backend"], "local_cache_pipeline")
         self.assertEqual(by_type["build_next_session_projection"]["possible_external_sources"], [])
+
+    def test_task_catalog_covers_all_fastapi_post_routes(self):
+        catalog = task_service.build_task_catalog()
+        route_coverage = catalog["route_coverage"]
+        discovered_routes = self._discover_fastapi_post_routes()
+
+        self.assertEqual(sorted(route_coverage["known_post_routes"]), discovered_routes)
+        self.assertEqual(route_coverage["known_post_route_count"], len(discovered_routes))
+        self.assertEqual(route_coverage["uncovered_post_routes"], [])
+        self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
+        self.assertTrue(route_coverage["call_ledger_required_for_all_known_post_routes"])
+        self.assertIn("POST /api/tasks/{task_id}/cancel", discovered_routes)
+        self.assertIn("POST /api/factor-quant/run-light", discovered_routes)
+        self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
 
     def test_worker_runtime_cache_reads_local_scaffold_without_starting_backends(self):
         packet = worker_service.read_worker_runtime_cache()
