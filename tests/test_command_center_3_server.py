@@ -317,6 +317,52 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(contract["series_counts"]["operation_zones"], 1)
         self.assertIn("前端不得修改 strategy action", " ".join(contract["guardrails"]))
 
+    def test_next_session_cache_exact_packet_without_chart_model_still_has_contract(self):
+        self._with_snapshot_cache(
+            {
+                "command_center_next_session_projection_packet": {
+                    "packet_key": "command_center_next_session_projection_packet",
+                    "status": "ready",
+                }
+            }
+        )
+
+        packet = packet_service.build_next_session_cache()
+        chart = packet["chart_payload"]
+        contract = chart["chart_contract"]
+
+        self.assertEqual(chart["status"], "missing")
+        self.assertTrue(chart["is_exact_next_session_packet"])
+        self.assertEqual(contract["source_packet"], "command_center_next_session_projection_packet")
+        self.assertFalse(contract["frontend_computes_trade_action"])
+        self.assertEqual(contract["series_counts"]["historical_points"], 0)
+        self.assertIn("精确次日操作图谱 packet 未提供 chart_render_model", " ".join(chart["warnings"]))
+
+    def test_next_session_cache_normalizes_existing_chart_payload_contract(self):
+        self._with_snapshot_cache(
+            {
+                "command_center_next_session_projection_packet": {
+                    "packet_key": "command_center_next_session_projection_packet",
+                    "status": "ready",
+                    "chart_payload": {
+                        "status": "ready",
+                        "historical_points": [{"x": "2026-06-10", "price": 10.4}],
+                    },
+                }
+            }
+        )
+
+        packet = packet_service.build_next_session_cache()
+        chart = packet["chart_payload"]
+        contract = chart["chart_contract"]
+
+        self.assertEqual(chart["historical_points"][0]["price"], 10.4)
+        self.assertEqual(chart["source_packet"], "command_center_next_session_projection_packet")
+        self.assertEqual(contract["series_counts"]["historical_points"], 1)
+        self.assertEqual(contract["renderer"], "ECharts")
+        self.assertTrue(contract["does_not_modify_action"])
+        self.assertTrue(contract["does_not_modify_operation_zones"])
+
     def test_next_session_cache_reads_persisted_sqlite_packet_without_snapshot(self):
         self._with_meta_store()
         from storage.sqlite_meta import SQLiteMetaStore

@@ -240,6 +240,20 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _attach_next_session_chart_contract(payload: dict[str, Any], source_packet: str | None = None) -> dict[str, Any]:
+    payload.setdefault("historical_points", [])
+    payload.setdefault("scenario_series", [])
+    payload.setdefault("reference_lines", [])
+    payload.setdefault("operation_zones", [])
+    payload.setdefault("warnings", [])
+    if source_packet and not payload.get("source_packet"):
+        payload["source_packet"] = source_packet
+    if "y_axis_range" not in payload:
+        payload["y_axis_range"] = _chart_y_axis_range(payload)
+    payload["chart_contract"] = _next_session_echarts_contract(payload)
+    return payload
+
+
 def _missing_next_session_chart_payload() -> dict[str, Any]:
     payload = {
         "status": "missing",
@@ -253,8 +267,7 @@ def _missing_next_session_chart_payload() -> dict[str, Any]:
         "warnings": ["没有可用于 ECharts 的本地次日图谱缓存。"],
         "y_axis_range": [None, None],
     }
-    payload["chart_contract"] = _next_session_echarts_contract(payload)
-    return payload
+    return _attach_next_session_chart_contract(payload)
 
 
 def _operation_zone_overlay(item: Any) -> dict[str, Any] | None:
@@ -372,15 +385,14 @@ def _legacy_projection_chart_payload(projection: Any) -> dict[str, Any]:
         ],
     }
     payload["y_axis_range"] = _chart_y_axis_range(payload)
-    payload["chart_contract"] = _next_session_echarts_contract(payload)
-    return payload
+    return _attach_next_session_chart_contract(payload)
 
 
 def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
     source = packet if isinstance(packet, dict) else {}
     model = source.get("chart_render_model") if isinstance(source.get("chart_render_model"), dict) else {}
     if not model:
-        return {
+        return _attach_next_session_chart_contract({
             "status": "missing",
             "source_packet": next_session_projection.PACKET_KEY,
             "is_exact_next_session_packet": True,
@@ -391,7 +403,7 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
             "operation_zones": [],
             "warnings": ["精确次日操作图谱 packet 未提供 chart_render_model。"],
             "y_axis_range": [None, None],
-        }
+        })
     payload = {
         "status": "ready",
         "source_packet": next_session_projection.PACKET_KEY,
@@ -416,8 +428,7 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
         "warnings": ["图表只读展示，不修改 strategy action、价格、持仓或 operation_zones。"],
     }
     payload["y_axis_range"] = model.get("y_axis_range") or _chart_y_axis_range(payload)
-    payload["chart_contract"] = _next_session_echarts_contract(payload)
-    return payload
+    return _attach_next_session_chart_contract(payload)
 
 
 def _cache_missing_packet(packet_key: str, summary: str, **extra: Any) -> dict[str, Any]:
@@ -580,13 +591,25 @@ def serenity_cache_call_ledger(packet: dict[str, Any]) -> list[dict[str, Any]]:
 def build_next_session_cache() -> dict[str, Any]:
     persisted = _read_persisted_packet(next_session_projection.PACKET_KEY)
     if persisted:
-        persisted.setdefault("chart_payload", _exact_next_session_chart_payload(persisted))
+        if isinstance(persisted.get("chart_payload"), dict):
+            persisted["chart_payload"] = _attach_next_session_chart_contract(
+                persisted["chart_payload"],
+                source_packet=next_session_projection.PACKET_KEY,
+            )
+        else:
+            persisted["chart_payload"] = _exact_next_session_chart_payload(persisted)
         persisted.setdefault("does_not_modify_action", True)
         persisted.setdefault("does_not_modify_operation_zones", True)
         return persisted
     cached = _read_snapshot_packet(next_session_projection.PACKET_KEY)
     if cached:
-        cached.setdefault("chart_payload", _exact_next_session_chart_payload(cached))
+        if isinstance(cached.get("chart_payload"), dict):
+            cached["chart_payload"] = _attach_next_session_chart_contract(
+                cached["chart_payload"],
+                source_packet=next_session_projection.PACKET_KEY,
+            )
+        else:
+            cached["chart_payload"] = _exact_next_session_chart_payload(cached)
         cached.setdefault("does_not_modify_action", True)
         cached.setdefault("does_not_modify_operation_zones", True)
         return cached
