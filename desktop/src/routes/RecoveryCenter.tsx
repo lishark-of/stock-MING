@@ -16,9 +16,15 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
 
 export default function RecoveryCenter() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getRecoveryCenterCache().then((res) => setCache(res.data));
+    void getRecoveryCenterCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -27,7 +33,8 @@ export default function RecoveryCenter() {
   const factSummary = (cache.a_share_fact_recovery_summary as Record<string, unknown> | undefined) ?? {};
   const absenceLedger = (cache.old_workspace_data_absence_ledger as Record<string, unknown> | undefined) ?? {};
   const gapReport = (cache.data_gap_report as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
   return (
     <>
@@ -49,7 +56,9 @@ export default function RecoveryCenter() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "执行恢复动作", value: policy.does_not_run_recovery_actions === true ? "不会" : "可能", tone: policy.does_not_run_recovery_actions === true ? "good" : "bad" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
+          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -118,8 +127,16 @@ export default function RecoveryCenter() {
         <DataLineageTable rows={[policy]} />
       </PacketCard>
 
-      <PacketCard title="调用血缘" subtitle="local_recovery_center_cache；不外联、不写回" status="lineage">
-        <DataLineageTable rows={callLedger} />
+      <PacketCard title="调用血缘" subtitle="payload 内部 local_recovery_center_cache；不外联、不写回" status="lineage">
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET recovery envelope call_ledger" subtitle="GET /api/recovery/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheEnvelopeLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET recovery envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning }))} />
       </PacketCard>
 
       <PacketCard title="原始 recovery center cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">

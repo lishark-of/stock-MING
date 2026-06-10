@@ -2436,6 +2436,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_recovery_center_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/recovery/cache", response["warnings"][0])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()
