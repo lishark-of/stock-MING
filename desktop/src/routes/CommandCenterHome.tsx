@@ -133,6 +133,8 @@ export default function CommandCenterHome() {
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
+  const taskRouteCoverage = taskCatalog.route_coverage as Record<string, unknown> | undefined;
+  const taskUncoveredPostRoutes = taskRouteCoverage?.uncovered_post_routes as unknown[] | undefined;
   const legacyCounts = legacyBridge.counts as Record<string, unknown> | undefined;
   const workerCounts = workerRuntime.counts as Record<string, unknown> | undefined;
   const workerRuntimeState = workerRuntime.runtime as Record<string, unknown> | undefined;
@@ -187,6 +189,8 @@ export default function CommandCenterHome() {
           { label: "任务记录", value: taskIndex?.task_count ?? tasks.length },
           { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
           { label: "任务目录", value: taskCatalogItems?.length ?? 0 },
+          { label: "POST 路由", value: taskRouteCoverage?.known_post_route_count as number | undefined },
+          { label: "未覆盖 POST", value: taskUncoveredPostRoutes?.length ?? 0, tone: taskUncoveredPostRoutes?.length ? "bad" : "good" },
           { label: "task catalog ledger", value: (taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).length },
           { label: "task index ledger", value: (taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).length },
           { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
@@ -322,9 +326,14 @@ export default function CommandCenterHome() {
         </PacketCard>
         <PacketCard title="任务目录" subtitle="只读 catalog；POST task 才可能触发外部请求" status={String(taskCatalog.status ?? "catalog")}>
           <p>catalog tasks: {String(taskCatalogItems?.length ?? 0)}</p>
+          <p>known POST routes: {String(taskRouteCoverage?.known_post_route_count ?? 0)}</p>
+          <p>uncovered POST routes: {String(taskUncoveredPostRoutes?.length ?? 0)}</p>
+          <p>all known POST button gated: {String(taskRouteCoverage?.all_known_post_routes_button_gated ?? true)}</p>
+          <p>call ledger required for POST: {String(taskRouteCoverage?.call_ledger_required_for_all_known_post_routes ?? true)}</p>
           <p>all button gated: {String(taskCatalogPolicy?.all_tasks_button_gated ?? true)}</p>
           <p>call ledger required: {String(taskCatalogPolicy?.call_ledger_required_for_all ?? true)}</p>
           <JsonDetails title="任务目录明细" data={taskCatalogItems ?? []} />
+          <JsonDetails title="POST 路由覆盖" data={taskRouteCoverage ?? {}} />
         </PacketCard>
         <PacketCard title="Worker runtime cache" subtitle="GET cache，只读 worker scaffold，不连接 Redis" status={String(workerRuntime.status ?? "cache")}>
           <p>modules ready: {String(workerCounts?.worker_module_ready_count ?? 0)} / {String(workerCounts?.worker_module_count ?? 0)}</p>
