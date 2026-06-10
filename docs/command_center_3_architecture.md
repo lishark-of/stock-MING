@@ -54,6 +54,8 @@ python3 -m uvicorn server.main:app --reload --port 8710
 规则：
 
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
+- `GET .../cache` 优先读取 `.stock_ming_cache/command_center_latest.json` 中已有本地快照；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
+- `/api/packets/{packet_key}` 支持部分 2.0 本地快照别名，例如 `command_center_moneyflow_packet` → `moneyflow_packet`、`strategy_execution_packet` → `strategy_packet`。
 - `POST` 当前返回 local task stub，不在请求线程跑重计算。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
 
@@ -112,7 +114,7 @@ scripts/run_scheduler.sh
 
 ## 后续阶段
 
-1. 把 FastAPI cache 读取接到 SQLite/Redis 持久化 packet。
+1. 把当前本地快照 cache 读取进一步落到 SQLite/Redis 持久化 packet。
 2. 把 `refresh_factor_data` 等 task stub 迁移到 Celery worker。
 3. 接入 DuckDB/Parquet 因子值和行情缓存。
 4. 把 Streamlit 页面逐块迁移到 React/ECharts。
