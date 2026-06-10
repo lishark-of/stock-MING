@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { cancelTask, getTask, type TaskRecord } from "../api/client";
+import { cancelTask, getTask, type ApiEnvelope, type TaskRecord } from "../api/client";
 import DataLineageTable from "./DataLineageTable";
-import JsonDetails from "./JsonDetails";
 import StatusBadge from "./StatusBadge";
 
 type Props = {
@@ -15,6 +14,17 @@ function toneForStatus(status: TaskRecord["status"]) {
   return "warn";
 }
 
+function mergeTaskEnvelope(res: ApiEnvelope<TaskRecord>): TaskRecord | null {
+  if (!res.ok) return null;
+  const dataLedger = res.data.call_ledger ?? [];
+  const dataWarnings = res.data.warnings ?? [];
+  return {
+    ...res.data,
+    call_ledger: dataLedger.length ? dataLedger : res.call_ledger,
+    warnings: dataWarnings.length ? dataWarnings : res.warnings
+  };
+}
+
 export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const [task, setTask] = useState<TaskRecord | null>(null);
   const [cancelMessage, setCancelMessage] = useState("");
@@ -23,7 +33,8 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const loadTask = () => {
     if (!taskId) return;
     void getTask(taskId).then((res) => {
-      if (res.ok) setTask(res.data);
+      const mergedTask = mergeTaskEnvelope(res);
+      if (mergedTask) setTask(mergedTask);
     });
   };
 
@@ -32,7 +43,8 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     let active = true;
     const load = () => {
       void getTask(taskId).then((res) => {
-        if (active && res.ok) setTask(res.data);
+        const mergedTask = mergeTaskEnvelope(res);
+        if (active && mergedTask) setTask(mergedTask);
       });
     };
     load();
@@ -89,7 +101,12 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       {task.error_message_safe ? <p className="risk-note">{task.error_message_safe}</p> : null}
       {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
       {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无 call_ledger 记录。</p>}
-      {statusHistory.length ? <JsonDetails title="status_history" data={statusHistory} /> : null}
+      {statusHistory.length ? (
+        <>
+          <p>status_history: {statusHistory.length}</p>
+          <DataLineageTable rows={statusHistory} />
+        </>
+      ) : null}
     </div>
   );
 }
