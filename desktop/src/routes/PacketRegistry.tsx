@@ -8,13 +8,19 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function PacketRegistry() {
   const [index, setIndex] = useState<Record<string, unknown>>({});
+  const [indexEnvelopeLedger, setIndexEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [indexEnvelopeWarnings, setIndexEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [selectedKey, setSelectedKey] = useState("");
   const [packet, setPacket] = useState<Record<string, unknown>>({});
+  const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [packetEnvelopeWarnings, setPacketEnvelopeWarnings] = useState<Array<unknown>>([]);
 
   useEffect(() => {
     void getPackets().then((res) => {
       const nextIndex = res.data;
       const keys = nextIndex.available_cache_keys as string[] | undefined;
+      setIndexEnvelopeLedger(res.call_ledger ?? []);
+      setIndexEnvelopeWarnings(res.warnings ?? []);
       setIndex(nextIndex);
       if (keys?.length) {
         setSelectedKey(keys[0]);
@@ -24,7 +30,11 @@ export default function PacketRegistry() {
 
   useEffect(() => {
     if (!selectedKey) return;
-    void getPacket(selectedKey).then((res) => setPacket(res.data));
+    void getPacket(selectedKey).then((res) => {
+      setPacketEnvelopeLedger(res.call_ledger ?? []);
+      setPacketEnvelopeWarnings(res.warnings ?? []);
+      setPacket(res.data);
+    });
   }, [selectedKey]);
 
   const keys = (index.available_cache_keys as string[] | undefined) ?? [];
@@ -36,8 +46,12 @@ export default function PacketRegistry() {
   const snapshotKeys = (index.snapshot_available_keys as string[] | undefined) ?? [];
   const aliasKeys = (index.snapshot_alias_keys as string[] | undefined) ?? [];
   const packetSourceRows = (index.packet_source_rows as Array<Record<string, unknown>> | undefined) ?? [];
-  const selectedCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
-  const selectedWarnings = (packet.warnings as Array<unknown> | undefined) ?? [];
+  const indexPayloadCallLedger = (index.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const indexCallLedger = indexEnvelopeLedger.length ? indexEnvelopeLedger : indexPayloadCallLedger;
+  const indexWarnings = indexEnvelopeWarnings.length ? indexEnvelopeWarnings : ((index.warnings as Array<unknown> | undefined) ?? []);
+  const selectedPayloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const selectedCallLedger = packetEnvelopeLedger.length ? packetEnvelopeLedger : selectedPayloadCallLedger;
+  const selectedWarnings = packetEnvelopeWarnings.length ? packetEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
   const selectedBoundaryRows = [
     { boundary: "external_calls_triggered", value: String(packet.external_calls_triggered ?? packet.cache_api_external_calls_triggered ?? false), expected: "false" },
     { boundary: "tushare_called", value: String(packet.tushare_called ?? packet.cache_api_tushare_called ?? false), expected: "false" },
@@ -45,7 +59,8 @@ export default function PacketRegistry() {
     { boundary: "github_called", value: String(packet.github_called ?? packet.cache_api_github_called ?? false), expected: "false" },
     { boundary: "does_not_execute_trades", value: String(packet.does_not_execute_trades ?? true), expected: "true" },
     { boundary: "does_not_modify_strategy_action", value: String(packet.does_not_modify_strategy_action ?? true), expected: "true" },
-    { boundary: "call_ledger_count", value: String(selectedCallLedger.length), expected: ">= 0" },
+    { boundary: "top_level_call_ledger_count", value: String(packetEnvelopeLedger.length), expected: ">= 0" },
+    { boundary: "payload_call_ledger_count", value: String(selectedPayloadCallLedger.length), expected: ">= 0" },
     { boundary: "warning_count", value: String(selectedWarnings.length), expected: ">= 0" }
   ];
   const packetRows = packetSourceRows.length
@@ -73,6 +88,9 @@ export default function PacketRegistry() {
           { label: "persisted packets", value: persistedKeys.length },
           { label: "SQLite packet meta", value: packetMetadata.length },
           { label: "SQLite task meta", value: taskMetadata.length },
+          { label: "index envelope ledger", value: indexCallLedger.length },
+          { label: "index warnings", value: indexWarnings.length },
+          { label: "selected envelope ledger", value: selectedCallLedger.length },
           { label: "GET cache 外联", value: policy?.get_cache_external_calls === true ? "存在" : "无", tone: policy?.get_cache_external_calls === true ? "bad" : "good" },
           { label: "POST button gated", value: policy?.post_tasks_button_gated, tone: policy?.post_tasks_button_gated === false ? "bad" : "good" },
           { label: "修改 action", value: policy?.does_not_modify_strategy_action === false ? "可能" : "不会", tone: policy?.does_not_modify_strategy_action === false ? "bad" : "good" }
@@ -107,11 +125,15 @@ export default function PacketRegistry() {
         <DataLineageTable rows={packetRows} />
       </PacketCard>
 
+      <PacketCard title="Packet index envelope call_ledger" subtitle="GET /api/packets 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={indexCallLedger} />
+      </PacketCard>
+
       <PacketCard title="选中 Packet 边界" subtitle="结构化展示外联、交易和 action 边界；不依赖 raw JSON" status="guardrail">
         <DataLineageTable rows={selectedBoundaryRows} />
       </PacketCard>
 
-      <PacketCard title="选中 Packet call_ledger" subtitle="本地调用血缘；不得包含 token/key 或错误堆栈" status="lineage">
+      <PacketCard title="选中 Packet envelope call_ledger" subtitle="GET /api/packets/{packet_key} 顶层响应血缘；不得包含 token/key 或错误堆栈" status="lineage">
         <DataLineageTable rows={selectedCallLedger} />
       </PacketCard>
 
