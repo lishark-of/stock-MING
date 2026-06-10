@@ -55,6 +55,14 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertEqual(config.get_deepseek_model("feeder"), "custom-fast")
         self.assertEqual(config.get_deepseek_model("healthcheck"), "custom-fast")
 
+    def test_streamlit_secret_example_documents_model_strategy_keys(self):
+        example = Path(__file__).resolve().parents[1] / ".streamlit" / "secrets.example.toml"
+        text = example.read_text(encoding="utf-8")
+
+        self.assertIn('DEEPSEEK_EXPLAIN_MODEL = "deepseek-v4-pro"', text)
+        self.assertIn('DEEPSEEK_FAST_MODEL = "deepseek-v4-flash"', text)
+        self.assertIn('DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-pro"', text)
+
     def test_model_strategy_reference_helper_is_configurable_and_secret_free(self):
         os.environ["DEEPSEEK_DEFAULT_MODEL"] = "custom-default"
         os.environ["DEEPSEEK_EXPLAIN_MODEL"] = "custom-explain"
