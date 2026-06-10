@@ -81,10 +81,10 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
 - `/health` 返回启动安全摘要；`GET /api/model-strategy/cache` 返回当前 DeepSeek 模型策略、用途映射和配置来源。二者都不包含 token/key，不触发模型调用。
 - `/api/migration/status` 返回用户给定的 3.0 长期迁移进度基线、目标技术栈和安全原则；该接口只读、不外联、不重新估算进度。
-- `/api/tasks/catalog` 返回按钮门控任务目录、可能外部源、call ledger 要求和交易边界；该接口只读，不创建任务。
+- `/api/tasks/catalog` 返回按钮门控任务目录、可能外部源、call ledger 要求和交易边界；DeepSeek-capable 任务会声明 `deepseek_model_strategy_purpose`、配置键和非硬编码模型来源；该接口只读，不创建任务。
 - `GET .../cache` 优先读取 `.stock_ming_cache/command_center_latest.json` 中已有本地快照；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
 - `/api/packets/{packet_key}` 支持部分 2.0 本地快照别名，例如 `command_center_moneyflow_packet` → `moneyflow_packet`、`strategy_execution_packet` → `strategy_packet`。
-- `POST` 默认返回 local fallback task，不在请求线程跑重计算；任务可通过 `/api/tasks/{task_id}` 轮询，记录 `pending → running → success` 状态历史、`progress`、`current_step`、`error_message_safe`、`output_packet_key` 和 `call_ledger`。
+- `POST` 默认返回 local fallback task，不在请求线程跑重计算；任务可通过 `/api/tasks/{task_id}` 轮询，记录 `pending → running → success` 状态历史、`progress`、`current_step`、`error_message_safe`、`output_packet_key` 和 `call_ledger`。DeepSeek-capable stub 和 guarded explanation task 会把集中模型策略引用写入 `call_ledger.request_params_safe`，但不会调用模型。
 - 提交纪律保持为人工确认：不使用 `git add .`，不 push，除非用户明确确认。
 - `/api/tasks` 返回 `command_center_3_task_status_index`，包含任务列表、状态计数、最新任务、`call_ledger_count` 和外部/交易边界汇总，供 3.0 前端状态面板与审计页展示。
 - `POST /api/next-session/generate` 已从纯 stub 升级为本地 cache pipeline：读取已有 `command_center_next_session_projection_packet` cache，发现精确 packet 时写入 `.stock_ming_3/meta.sqlite`；没有精确 packet 时返回 `cache_missing` 任务结果且不写入假 packet。不调用 Tushare、DeepSeek、GitHub，不修改 `strategy action` 或 `operation_zones`。
@@ -92,7 +92,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `POST /api/factor-quant/deepseek-explain` 已接入 guarded explanation pipeline：读取 Factor Quant Hub cache，准备未发送的安全 prompt 预览；如提供本地解释 payload，仅按六个白名单字段清洗并写回 SQLite cache，不真实调用 DeepSeek、不覆盖数值、不修改 `strategy action`。
 - 任务生命周期已同步写入 SQLite metadata store；内存状态丢失后，`/api/tasks/{task_id}` 仍可从本地 SQLite fallback 读回任务状态。
 - `/api/packets` 已暴露 SQLite packet/task metadata 摘要，便于前端判断哪些 packet 来自持久化 cache。
-- `/api/model-strategy/cache` 已独立暴露 DeepSeek 模型策略：`default/explain/projection/factor_explain` 默认走解释级模型，`fast/healthcheck/feeder` 默认走 fast 模型；模型名统一从 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 或集中默认值读取，调用点不得硬编码。
+- `/api/model-strategy/cache` 已独立暴露 DeepSeek 模型策略：`default/explain/projection/factor_explain` 默认走解释级模型，`fast/healthcheck/feeder` 默认走 fast 模型；模型名统一从 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 或集中默认值读取，调用点、任务目录和任务回执不得硬编码。
 - `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 只读状态和 dataset catalog；缺文件返回 `missing`，不触发 Tushare、回测或因子计算。
 - `GET /api/storage/catalog` 独立暴露 dataset catalog，供前端、worker 和后续任务读取数据集用途、别名、写入边界和未来任务归属；该接口只读、不写 Parquet、不外联。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
@@ -112,6 +112,8 @@ DEEPSEEK_DEFAULT_MODEL=deepseek-v4-pro
 - `fast/feeder/healthcheck`：优先使用 `DEEPSEEK_FAST_MODEL`，再退回 `DEEPSEEK_DEFAULT_MODEL`。
 - 未配置时使用安全默认策略：解释类走 pro，轻量/体检/feeder 类走 flash。
 - 模型配置只记录模型名，不包含 token/key；是否调用 DeepSeek 仍由按钮门控或显式任务控制。
+- `server/services/model_strategy_service.py` 提供统一模型策略引用 helper；task catalog、DeepSeek-capable local stub、Factor Quant Hub 的 guarded explanation task 都复用该 helper 写入审计字段。
+- React 的 `ModelStrategy.tsx` 和 `TaskCatalog.tsx` 只读展示模型用途、配置键、非硬编码状态和 `contains_secret=false`；通用 `DataLineageTable` 会把嵌套 `call_ledger` / `request_params_safe` 以 JSON 形式展开，避免审计信息被显示成 `[object Object]`。
 
 ### Desktop
 

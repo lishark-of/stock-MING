@@ -3,7 +3,7 @@
 | Streamlit/现有模块 | 当前文件 | 3.0 API | 3.0 前端页面 | 是否重计算 | 是否任务化 |
 |---|---|---|---|---|---|
 | 调用审计 / 外部边界 | `server/services/*_service.py`, `server/services/task_service.py` | `GET /api/audit/cache` | `CallLedgerAudit.tsx` | cache GET 聚合本地 cache API 与任务 `call_ledger`；不刷新、不外联 | 否；只读审计 |
-| DeepSeek 模型策略 | `config.py`, `server/services/model_strategy_service.py` | `GET /api/model-strategy/cache` | `ModelStrategy.tsx` | cache GET 只读展示用途到模型映射、配置键名和安全边界；不调用模型、不读取凭据 | 否；真实解释仍需按钮任务 |
+| DeepSeek 模型策略 | `config.py`, `server/services/model_strategy_service.py`, `server/services/task_service.py`, `server/services/factor_service.py` | `GET /api/model-strategy/cache`, `GET /api/tasks/catalog`, DeepSeek-capable POST task 回执 | `ModelStrategy.tsx`, `TaskCatalog.tsx`, `DataLineageTable.tsx` | cache GET 只读展示用途到模型映射、配置键名和安全边界；任务目录与任务回执携带 `deepseek_model_strategy` 血缘；不调用模型、不读取凭据 | 否；真实解释仍需按钮任务 |
 | 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing`；POST 只读本地 cache 并在有精确 packet 时写入 SQLite | 是，POST 已本地 cache pipeline |
 | Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | 市场环境 / 盘面证据 | `command_center_*_packet.py`, `app.py` | `GET /api/market/cache` | `MarketContext.tsx` | cache GET 只读展示市场状态、资金流、两融、涨跌停情绪、龙虎榜、筹码和 ETF 替代，不刷新行情 | 后续任务化；当前不提供 POST |
@@ -65,7 +65,7 @@
 
 `/api/audit/cache` 已接入调用审计 / 外部边界只读迁移：聚合本地 cache API 返回包与任务状态中的 `call_ledger`、外部调用标志和交易边界；不调用 Tushare/DeepSeek/GitHub/Redis，不刷新数据，不运行回测，不执行真实交易，不修改 `strategy_execution_packet.action`。缺失 `call_ledger` 的本地项只作为审计提示，不代表自动外联。
 
-`/api/model-strategy/cache` 已接入 DeepSeek 模型策略只读迁移：读取集中配置中的 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 选择逻辑，输出用途到模型映射、配置键名、默认/覆盖状态和调用血缘；不调用 DeepSeek、不读取凭据、不调用 Tushare/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。
+`/api/model-strategy/cache` 已接入 DeepSeek 模型策略只读迁移：读取集中配置中的 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 选择逻辑，输出用途到模型映射、配置键名、默认/覆盖状态和调用血缘；不调用 DeepSeek、不读取凭据、不调用 Tushare/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。同一模型策略引用已进入 `GET /api/tasks/catalog`、DeepSeek-capable local stub 的 `call_ledger.request_params_safe`、Factor Quant Hub guarded explanation packet 和 React 任务目录页；前端通用表格会以 JSON 展开嵌套审计字段，便于直接核验 `does_not_hardcode_model` 和 `contains_secret=false`。
 
 `/api/worker/cache` 已接入 Worker / Task runtime 只读迁移：检查本地 `worker` scaffold、Celery/Redis/APScheduler 依赖可见性、task catalog 和 local fallback 状态；不连接 Redis、不启动 Celery worker、不启动 APScheduler、不调度真实 Tushare/DeepSeek/GitHub 任务、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
