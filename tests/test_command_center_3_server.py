@@ -202,6 +202,81 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(status["external_calls_triggered"])
         self.assertFalse(status["tushare_called"])
 
+    def test_factor_value_rows_keep_safe_scalar_contract(self):
+        rows = storage_service._factor_value_rows_from_hub(
+            {
+                "packet_key": "command_center_factor_quant_hub_packet",
+                "mode": "light",
+                "cache_source": "local_factor_light_pipeline",
+                "runtime": {
+                    "trade_date": "20260610",
+                    "calculated_at": "2026-06-10T09:30:00",
+                    "factor_values": [
+                        {
+                            "factor_key": "momentum_20d",
+                            "factor_name": "20日动量",
+                            "raw_value": {"not": "scalar"},
+                            "zscore": [1, 2],
+                            "rank_pct": 0.7,
+                            "direction": "support",
+                            "data_status": "ready",
+                            "status_note": "Traceback token=SHOULD_DROP",
+                            "pit_validated": True,
+                        }
+                    ],
+                },
+                "universe": {"items": ["002008.SZ"]},
+            }
+        )
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["ts_code"], "002008.SZ")
+        self.assertEqual(row["trade_date"], "20260610")
+        self.assertEqual(row["factor_key"], "momentum_20d")
+        self.assertEqual(row["data_status"], "ready")
+        self.assertEqual(row["rank_pct"], 0.7)
+        self.assertIsNone(row["raw_value"])
+        self.assertIsNone(row["zscore"])
+        self.assertIsNone(row["status_note"])
+        self.assertEqual(row["packet_key"], "command_center_factor_quant_hub_packet")
+        self.assertEqual(row["source_packet"], "runtime.factor_values")
+        self.assertEqual(row["source"], "local_factor_light_pipeline")
+        self.assertNotIn("SHOULD_DROP", json.dumps(row, ensure_ascii=False))
+
+    def test_persist_factor_values_failed_write_returns_safe_status(self):
+        self._with_parquet_root()
+        original_dependency_status = storage_service.parquet_store.dependency_status
+        original_write_dataset = storage_service.parquet_store.write_dataset
+
+        storage_service.parquet_store.dependency_status = lambda: {"available": True, "error_message_safe": ""}
+
+        def fail_write(*args, **kwargs):
+            raise RuntimeError('Traceback File "x.py" token=SHOULD_DROP')
+
+        storage_service.parquet_store.write_dataset = fail_write
+        self.addCleanup(setattr, storage_service.parquet_store, "dependency_status", original_dependency_status)
+        self.addCleanup(setattr, storage_service.parquet_store, "write_dataset", original_write_dataset)
+
+        result = storage_service.persist_factor_values_from_hub(
+            {
+                "runtime": {
+                    "factor_values": [
+                        {"factor_key": "momentum_20d", "raw_value": 1.2, "data_status": "ready"},
+                    ]
+                },
+                "universe": {"items": ["002008.SZ"]},
+            }
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["dataset"], "factor_values")
+        self.assertEqual(result["row_count"], 0)
+        self.assertEqual(result["error_message_safe"], "local parquet factor_values write failed")
+        self.assertFalse(result["external_calls_triggered"])
+        self.assertTrue(result["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(result, ensure_ascii=False))
+
     def test_task_stub_records_safe_status_without_external_work(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -264,6 +339,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             }
         )
         self._with_meta_store()
+        self._with_parquet_root()
 
         task = factor_service.create_factor_task(
             "run_factor_light",
@@ -274,6 +350,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
         self.assertEqual(task["call_ledger"][0]["call_status"], "cache_read")
+        storage_ledger = [item for item in task["call_ledger"] if item.get("api") == "local_parquet_factor_values"]
+        self.assertEqual(len(storage_ledger), 1)
+        self.assertIn(storage_ledger[0]["call_status"], {"written", "dependency_missing", "empty"})
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertFalse(task["external_calls_triggered"])
 
@@ -283,6 +362,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
         self.assertFalse(packet["external_calls_triggered"])
+        self.assertEqual(packet["factor_values_storage"]["dataset"], "factor_values")
+        self.assertIn(packet["factor_values_storage"]["status"], {"written", "dependency_missing", "empty"})
+        self.assertIn("local_parquet_factor_values", {item.get("api") for item in packet["storage_call_ledger"]})
         self.assertFalse(packet["governance"]["allow_core_action"])
         self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
         support_keys = {item.get("factor_key") for item in packet["score"]["support_factors"]}
@@ -464,6 +546,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def test_run_light_endpoint_writes_factor_cache(self):
         self._with_meta_store()
+        self._with_parquet_root()
         clear_task_statuses_for_tests(clear_persisted=True)
         self._with_snapshot_cache(
             {
@@ -480,6 +563,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
         self.assertEqual(task["call_ledger"][0]["call_status"], "cache_read")
+        self.assertIn("local_parquet_factor_values", {item.get("api") for item in task["call_ledger"]})
         self.assertNotIn("token", task["payload_safe"])
 
         factor = self.client.get("/api/factor-quant/cache").json()
@@ -487,6 +571,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(factor["data"]["mode"], "light")
         self.assertEqual(factor["data"]["cache_source"], "sqlite_meta")
         self.assertFalse(factor["data"]["external_calls_triggered"])
+        self.assertEqual(factor["data"]["factor_values_storage"]["dataset"], "factor_values")
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
 
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):

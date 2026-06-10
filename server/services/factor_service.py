@@ -9,7 +9,7 @@ import command_center_next_session_projection as next_session_projection
 import command_center_serenity_method_radar as serenity_radar
 from storage.sqlite_meta import SQLiteMetaStore
 
-from . import packet_service
+from . import packet_service, storage_service
 from .task_service import create_task_record, create_task_stub, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
@@ -69,6 +69,21 @@ def _local_snapshot_call_ledger(snapshot: dict[str, Any], now: str) -> list[dict
     ]
 
 
+def _factor_values_storage_call_ledger(result: dict[str, Any], now: str) -> dict[str, Any]:
+    return {
+        "api": "local_parquet_factor_values",
+        "request_params_safe": {
+            "dataset": "factor_values",
+            "path": result.get("path"),
+        },
+        "row_count": int(result.get("row_count") or 0),
+        "data_date": None,
+        "local_fetched_at": now,
+        "call_status": result.get("status") or "unknown",
+        "error_message_safe": str(result.get("error_message_safe") or "")[:240],
+    }
+
+
 def _build_light_hub_from_snapshot(payload: Any = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     now = _now_iso()
     snapshot = packet_service.load_snapshot_cache()
@@ -122,14 +137,25 @@ def run_factor_light_task(payload: Any = None) -> dict[str, Any]:
     update_task_status(task["task_id"], status="running", progress=0.25, current_step="reading_local_snapshot_cache")
     try:
         hub, call_ledger = _build_light_hub_from_snapshot(payload)
-        update_task_status(task["task_id"], status="running", progress=0.75, current_step="writing_factor_quant_hub_cache", call_ledger=call_ledger)
+        update_task_status(task["task_id"], status="running", progress=0.55, current_step="writing_factor_values_parquet", call_ledger=call_ledger)
+        storage_result = storage_service.persist_factor_values_from_hub(hub)
+        storage_ledger = _factor_values_storage_call_ledger(storage_result, _now_iso())
+        combined_ledger = list(call_ledger) + [storage_ledger]
+        hub["factor_values_storage"] = storage_result
+        hub["storage_call_ledger"] = [storage_ledger]
+        hub["task_call_ledger"] = combined_ledger
+        hub["call_ledger"] = combined_ledger
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["external_calls_triggered"] = False
+        update_task_status(task["task_id"], status="running", progress=0.8, current_step="writing_factor_quant_hub_cache", call_ledger=combined_ledger)
         SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
         return update_task_status(
             task["task_id"],
             status="success",
             progress=1.0,
             current_step="factor_light_completed_from_local_cache",
-            call_ledger=call_ledger,
+            call_ledger=combined_ledger,
         ) or task
     except Exception as exc:
         return update_task_status(
