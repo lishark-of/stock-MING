@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from server.services import factor_service, packet_service, storage_service, task_service
+from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
 
@@ -48,6 +49,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         factor = packet_service.build_factor_quant_cache()
         serenity = packet_service.build_serenity_cache()
         next_session = packet_service.build_next_session_cache()
+        migration = migration_status_service.build_migration_status()
 
         self.assertEqual(factor["packet_key"], "command_center_factor_quant_hub_packet")
         self.assertFalse(factor["deepseek_called"])
@@ -64,8 +66,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(next_session["packet_key"], "command_center_next_session_projection_packet")
         self.assertFalse(next_session["external_calls_triggered"])
         self.assertTrue(next_session["does_not_modify_action"])
+        self.assertEqual(migration["packet_key"], "command_center_3_migration_status")
+        self.assertEqual(len(migration["progress_baseline"]), 11)
+        self.assertEqual(migration["progress_baseline"][0]["module"], "Streamlit 保留为 legacy")
+        self.assertEqual(migration["progress_baseline"][-1]["current_degree"], "20%-30%")
+        self.assertTrue(migration["baseline_policy"]["use_as_planning_baseline"])
+        self.assertFalse(migration["api_policy"]["external_calls_triggered"])
+        self.assertFalse(migration["api_policy"]["tushare_called"])
+        self.assertFalse(migration["api_policy"]["deepseek_called"])
+        self.assertFalse(migration["api_policy"]["github_called"])
+        self.assertTrue(migration["api_policy"]["does_not_modify_strategy_action"])
 
-        json.dumps({"factor": factor, "serenity": serenity, "next": next_session}, ensure_ascii=False)
+        json.dumps({"factor": factor, "serenity": serenity, "next": next_session, "migration": migration}, ensure_ascii=False)
 
     def test_packet_service_reads_snapshot_alias_without_external_calls(self):
         self._with_snapshot_cache(
@@ -529,6 +541,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(daily_storage["ok"])
         self.assertEqual(daily_storage["data"]["dataset"], "daily")
         self.assertFalse(daily_storage["data"]["external_calls_triggered"])
+
+        migration = self.client.get("/api/migration/status").json()
+        self.assertTrue(migration["ok"])
+        self.assertEqual(migration["data"]["status"], "active_migration")
+        self.assertEqual(len(migration["data"]["progress_baseline"]), 11)
+        self.assertTrue(migration["data"]["baseline_policy"]["do_not_reestimate_every_turn"])
+        self.assertTrue(migration["data"]["api_policy"]["cache_only"])
+        self.assertFalse(migration["data"]["api_policy"]["external_calls_triggered"])
+        self.assertTrue(migration["data"]["api_policy"]["does_not_execute_trades"])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()

@@ -47,6 +47,10 @@ export function getPackets() {
   return request<Record<string, unknown>>("/api/packets");
 }
 
+export function getMigrationStatus() {
+  return request<Record<string, unknown>>("/api/migration/status");
+}
+
 export function getNextSessionCache() {
   return request<Record<string, unknown>>("/api/next-session/cache");
 }

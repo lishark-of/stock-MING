@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getChokepointCache, getFactorQuantCache, getHealth, getNextSessionCache, getPackets, getSerenityCache, getStorageOverview, getTasks } from "../api/client";
+import { getChokepointCache, getFactorQuantCache, getHealth, getMigrationStatus, getNextSessionCache, getPackets, getSerenityCache, getStorageOverview, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -13,6 +13,7 @@ export default function CommandCenterHome() {
   const [serenity, setSerenity] = useState<Record<string, unknown>>({});
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
+  const [migration, setMigration] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
@@ -23,6 +24,7 @@ export default function CommandCenterHome() {
     void getSerenityCache().then((res) => setSerenity(res.data));
     void getChokepointCache().then((res) => setChokepoint(res.data));
     void getStorageOverview().then((res) => setStorageOverview(res.data));
+    void getMigrationStatus().then((res) => setMigration(res.data));
     void getTasks().then((res) => setTasks(res.data.tasks ?? []));
   }, []);
 
@@ -34,6 +36,8 @@ export default function CommandCenterHome() {
   const storageStatus = storageOverview.dataset_status as Record<string, unknown> | undefined;
   const storageDatasets = storageOverview.datasets as Array<Record<string, unknown>> | undefined;
   const deepseekModelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
+  const migrationProgress = migration.progress_baseline as Array<Record<string, unknown>> | undefined;
+  const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
 
   return (
     <>
@@ -52,6 +56,7 @@ export default function CommandCenterHome() {
           { label: "factor parquet", value: String(storageStatus?.factor_values ?? "missing") },
           { label: "daily parquet", value: String(storageStatus?.daily ?? "missing") },
           { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
+          { label: "迁移基线", value: String(migration.status ?? "loading") },
           { label: "DeepSeek explain", value: String(deepseekModelStrategy?.explain ?? "--") },
           { label: "DeepSeek fast", value: String(deepseekModelStrategy?.fast ?? "--") },
           { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" }
@@ -63,6 +68,12 @@ export default function CommandCenterHome() {
           <p>alias keys: {String((packets.snapshot_alias_keys as unknown[] | undefined)?.length ?? 0)}</p>
           <p>SQLite meta: {String(Boolean(sqliteMeta?.sqlite_meta_available))}</p>
           <JsonDetails title="packet index 明细" data={packets} />
+        </PacketCard>
+        <PacketCard title="Command Center 3.0 迁移基线" subtitle="用户给定长期进度表；只读展示，不重新估算" status={String(migration.status ?? "baseline")}>
+          <p>progress items: {String(migrationProgress?.length ?? 0)}</p>
+          <p>cache only: {String(migrationPolicy?.cache_only ?? true)}</p>
+          <p>external calls: {String(migrationPolicy?.external_calls_triggered ?? false)}</p>
+          <JsonDetails title="迁移进度基线" data={migrationProgress ?? []} />
         </PacketCard>
         <PacketCard title="次日操作图谱 cache" subtitle="GET cache，不刷新，不改 action" status={String(next.status ?? "cache")}>
           <p>{String(next.summary ?? "等待缓存")}</p>
