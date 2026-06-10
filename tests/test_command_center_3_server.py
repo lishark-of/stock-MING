@@ -1892,6 +1892,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["current_step"], "deepseek_prompt_ready_without_model_call")
         self.assertEqual(task["call_ledger"][0]["call_status"], "not_called")
         self.assert_local_ledger_boundary(task["call_ledger"][0])
+        task_model_strategy = task["call_ledger"][0]["request_params_safe"]["deepseek_model_strategy"]
+        self.assertEqual(task_model_strategy["purpose"], "factor_explain")
+        self.assertIn("DEEPSEEK_EXPLAIN_MODEL", task_model_strategy["config_keys"])
+        self.assertTrue(task_model_strategy["does_not_hardcode_model"])
+        self.assertFalse(task_model_strategy["contains_secret"])
         self.assertFalse(task["deepseek_called"])
         self.assertFalse(task["external_calls_triggered"])
         self.assertTrue(task["does_not_execute_trades"])
@@ -1904,6 +1909,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["deepseek_explanation"]["payload"], None)
         self.assertFalse(packet["deepseek_explanation_prompt_preview"]["enters_deepseek_prompt"])
         self.assertTrue(packet["deepseek_explanation_prompt_preview"]["would_enter_deepseek_prompt_if_user_authorizes"])
+        self.assertEqual(packet["deepseek_model_strategy"]["purpose"], "factor_explain")
+        self.assertEqual(packet["deepseek_explanation_prompt_preview"]["deepseek_model_strategy"]["purpose"], "factor_explain")
+        self.assertFalse(packet["deepseek_model_strategy"]["contains_secret"])
         self.assertFalse(packet["governance"]["allow_core_action"])
         self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
 
@@ -1931,6 +1939,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(task["current_step"], "deepseek_explanation_sanitized_without_model_call")
         self.assertEqual(task["call_ledger"][0]["call_status"], "provided_payload_sanitized")
         self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assertEqual(
+            task["call_ledger"][0]["request_params_safe"]["deepseek_model_strategy"]["purpose"],
+            "factor_explain",
+        )
         self.assertEqual(task["payload_safe"], {"provided_explanation_payload": True})
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertNotIn("provided_explanation", task["payload_safe"])
@@ -1940,6 +1952,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         self.assertFalse(packet["deepseek_called"])
         self.assertFalse(packet["deepseek_model_called"])
+        self.assertEqual(packet["deepseek_model_strategy"]["purpose"], "factor_explain")
+        self.assertEqual(explanation["deepseek_model_strategy"]["purpose"], "factor_explain")
         self.assertEqual(explanation["status"], "success")
         self.assertEqual(explanation["payload"]["summary"], "只解释已有结构化结果")
         self.assertEqual(set(explanation["payload"]), {

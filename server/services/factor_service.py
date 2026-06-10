@@ -7,6 +7,7 @@ from typing import Any
 import command_center_factor_research as factor_research
 import command_center_next_session_projection as next_session_projection
 import command_center_serenity_method_radar as serenity_radar
+from config import DEEPSEEK_MODEL_CONFIG_KEYS, get_deepseek_model
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import packet_service, storage_service
@@ -301,6 +302,17 @@ def _deepseek_task_payload_summary(payload: Any) -> dict[str, Any]:
     return summary
 
 
+def _deepseek_model_strategy(purpose: str = "factor_explain") -> dict[str, Any]:
+    return {
+        "purpose": purpose,
+        "model": get_deepseek_model(purpose),
+        "config_keys": list(DEEPSEEK_MODEL_CONFIG_KEYS.get(purpose, DEEPSEEK_MODEL_CONFIG_KEYS["default"])),
+        "model_source": f"config.get_deepseek_model('{purpose}')",
+        "does_not_hardcode_model": True,
+        "contains_secret": False,
+    }
+
+
 def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool) -> list[dict[str, Any]]:
     return [
         {
@@ -308,6 +320,7 @@ def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool) -> l
             "request_params_safe": {
                 "mode": "guarded_prompt_only",
                 "provided_explanation_payload": sanitized_payload,
+                "deepseek_model_strategy": _deepseek_model_strategy("factor_explain"),
             },
             "row_count": 0,
             "data_date": None,
@@ -323,6 +336,7 @@ def _deepseek_prompt_preview(hub: dict[str, Any]) -> dict[str, Any]:
     prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)
     return {
         "status": "ready_not_sent",
+        "deepseek_model_strategy": _deepseek_model_strategy("factor_explain"),
         "allowed_top_level_keys": prompt.get("allowed_top_level_keys") or [],
         "would_enter_deepseek_prompt_if_user_authorizes": bool(prompt.get("enters_deepseek_prompt")),
         "enters_deepseek_prompt": False,
@@ -362,6 +376,7 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
                 "does_not_output_strategy_action": True,
                 "model_call_status": "not_called",
                 "source": "prompt_ready_no_model_call",
+                "deepseek_model_strategy": _deepseek_model_strategy("factor_explain"),
             }
             current_step = "deepseek_prompt_ready_without_model_call"
         else:
@@ -370,11 +385,13 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
             explanation["model_call_status"] = "not_called"
             explanation["source"] = "provided_payload_sanitized_no_model_call"
             explanation["allowed_keys_enforced"] = True
+            explanation["deepseek_model_strategy"] = _deepseek_model_strategy("factor_explain")
             call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=True)
             current_step = "deepseek_explanation_sanitized_without_model_call"
 
         hub["deepseek_explanation_prompt_preview"] = prompt_preview
         hub["deepseek_explanation"] = explanation
+        hub["deepseek_model_strategy"] = _deepseek_model_strategy("factor_explain")
         hub["deepseek_called"] = False
         hub["deepseek_model_called"] = False
         hub["deepseek_task_external_calls_triggered"] = False
