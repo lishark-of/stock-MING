@@ -582,7 +582,7 @@ def list_packets() -> dict[str, Any]:
         }
         for key in available_keys
     ]
-    return {
+    index = {
         "schema_version": "command_center_3_packet_index.v1",
         "available_cache_keys": available_keys,
         "packet_source_rows": packet_source_rows,
@@ -600,6 +600,8 @@ def list_packets() -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
         },
     }
+    index["call_ledger"] = packet_index_call_ledger(index)
+    return index
 
 
 def read_packet(packet_key: str) -> dict[str, Any]:
@@ -617,3 +619,48 @@ def read_packet(packet_key: str) -> dict[str, Any]:
             source_snapshot_available=bool(load_snapshot_cache()),
         )
     return builder()
+
+
+def packet_index_call_ledger(index: dict[str, Any]) -> list[dict[str, Any]]:
+    sqlite_meta = index.get("sqlite_meta") if isinstance(index.get("sqlite_meta"), dict) else {}
+    return [
+        {
+            "api": "local_packet_registry_cache",
+            "source_type": "local_cache_index",
+            "call_status": "cache_ready",
+            "packet_count": len(index.get("available_cache_keys") or []),
+            "snapshot_available": bool(index.get("snapshot_available")),
+            "sqlite_meta_available": bool(sqlite_meta.get("sqlite_meta_available")),
+            "loaded_at": _now_iso(),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def packet_detail_call_ledger(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    source = packet.get("cache_source") or packet.get("source_type") or "local_builder"
+    status = packet.get("status") or "cache_ready"
+    rows: list[dict[str, Any]] = [
+        {
+            "api": "local_packet_cache_read",
+            "packet_key": packet.get("packet_key"),
+            "cache_source": source,
+            "source_cache_key": packet.get("source_cache_key"),
+            "call_status": "cache_missing" if status == "cache_missing" else "cache_ready",
+            "loaded_at": packet.get("cache_api_loaded_at") or _now_iso(),
+            "external_calls_triggered": bool(packet.get("cache_api_external_calls_triggered", packet.get("external_calls_triggered", False))),
+            "tushare_called": bool(packet.get("cache_api_tushare_called", packet.get("tushare_called", False))),
+            "deepseek_called": bool(packet.get("cache_api_deepseek_called", packet.get("deepseek_called", False))),
+            "github_called": bool(packet.get("cache_api_github_called", packet.get("github_called", False))),
+            "does_not_modify_strategy_action": not bool(packet.get("enters_strategy_action", False)),
+        }
+    ]
+    packet_rows = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
+    for row in packet_rows:
+        if isinstance(row, dict):
+            rows.append(json_safe(row))
+    return rows

@@ -371,6 +371,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(response["data"]["packet_key"], packet_key)
         self.assertEqual(response["data"]["cache_source"], "sqlite_meta")
         self.assertFalse(response["data"]["external_calls_triggered"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_packet_cache_read")
+        self.assertEqual(response["call_ledger"][0]["cache_source"], "sqlite_meta")
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(response["call_ledger"][0]["tushare_called"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
+
+    def test_packet_index_endpoint_exposes_top_level_cache_lineage(self):
+        self._with_snapshot_cache({"moneyflow_packet": {"status": "ready"}})
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).get("/api/packets").json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_packet_registry_cache")
+        self.assertEqual(response["call_ledger"][0]["source_type"], "local_cache_index")
+        self.assertTrue(response["call_ledger"][0]["snapshot_available"])
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(response["call_ledger"][0]["tushare_called"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
+        self.assertEqual(response["data"]["call_ledger"][0]["api"], "local_packet_registry_cache")
+        self.assertIn("command_center_moneyflow_packet", response["data"]["available_cache_keys"])
 
     def test_market_context_cache_reads_market_packets_without_refreshing_quotes(self):
         self._with_snapshot_cache(
