@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter
 
 from server.schemas.packets import envelope
@@ -25,3 +27,11 @@ def get_task(task_id: str) -> dict:
     if task is None:
         return envelope({}, ok=False, error="task_not_found")
     return envelope(task)
+
+
+@router.post("/{task_id}/cancel")
+def cancel_task(task_id: str, payload: dict[str, Any] | None = None) -> dict:
+    task = task_service.cancel_task(task_id, payload)
+    if task is None:
+        return envelope({}, ok=False, error="task_not_found")
+    return envelope({"task_id": task["task_id"], "task": task}, call_ledger=task.get("call_ledger"), warnings=task.get("warnings"))

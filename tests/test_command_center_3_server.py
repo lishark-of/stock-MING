@@ -974,6 +974,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["call_ledger_required_for_all"])
+        self.assertTrue(catalog["policy"]["supports_local_task_cancel"])
+        self.assertFalse(catalog["policy"]["cancel_task_external_calls"])
         self.assertFalse(catalog["external_calls_triggered"])
         self.assertFalse(catalog["tushare_called"])
         self.assertFalse(catalog["deepseek_called"])
@@ -987,6 +989,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
         self.assertIn("github", by_type["probe_serenity_github"]["possible_external_sources"])
         self.assertEqual(by_type["run_factor_light"]["possible_external_sources"], [])
+
+    def test_cancel_task_marks_pending_task_without_external_work(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task = task_service.create_task_record(
+            "build_next_session_projection",
+            output_packet_key="command_center_next_session_projection_packet",
+            payload={"ts_code": "002008.SZ", "api_key": "SHOULD_DROP"},
+        )
+
+        cancelled = task_service.cancel_task(task["task_id"], {"reason": "user requested token=SHOULD_DROP"})
+
+        self.assertIsNotNone(cancelled)
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["current_step"], "cancelled_by_user_no_external_call")
+        self.assertEqual(cancelled["call_ledger"][-1]["api"], "local_task_cancel")
+        self.assertEqual(cancelled["call_ledger"][-1]["call_status"], "cancelled_locally_no_external_call")
+        self.assertEqual(cancelled["call_ledger"][-1]["request_params_safe"]["reason"], "[redacted_sensitive_text]")
+        self.assertNotIn("api_key", cancelled["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cancelled, ensure_ascii=False))
+        self.assertFalse(cancelled["external_calls_triggered"])
+        self.assertFalse(cancelled["tushare_called"])
+        self.assertFalse(cancelled["deepseek_called"])
+        self.assertFalse(cancelled["github_called"])
+        self.assertTrue(cancelled["does_not_execute_trades"])
+        self.assertTrue(cancelled["does_not_modify_strategy_action"])
+        task_service._TASKS.clear()
+        persisted = read_task_status(task["task_id"])
+        self.assertEqual(persisted["status"], "cancelled")
 
     def test_task_status_update_supports_failed_state_without_secret_leak(self):
         self._with_meta_store()
@@ -1780,6 +1811,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(persisted_status["ok"])
         self.assertEqual(persisted_status["data"]["task_id"], task_id)
         self.assertEqual(persisted_status["data"]["backend"], "local_fallback")
+
+    def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task = task_service.create_task_record(
+            "build_next_session_projection",
+            output_packet_key="command_center_next_session_projection_packet",
+            payload={"authorization": "Bearer SHOULD_DROP", "ts_code": "002008.SZ"},
+        )
+
+        cancelled = self.client.post(f"/api/tasks/{task['task_id']}/cancel", json={"reason": "manual"}).json()
+
+        self.assertTrue(cancelled["ok"])
+        packet = cancelled["data"]["task"]
+        self.assertEqual(packet["status"], "cancelled")
+        self.assertEqual(packet["current_step"], "cancelled_by_user_no_external_call")
+        self.assertEqual(packet["call_ledger"][-1]["api"], "local_task_cancel")
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cancelled, ensure_ascii=False))
 
     def test_run_light_endpoint_writes_factor_cache(self):
         self._with_meta_store()

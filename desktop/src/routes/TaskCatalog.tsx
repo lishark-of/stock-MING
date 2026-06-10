@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getTaskCatalog, getTasks, type TaskRecord } from "../api/client";
+import { cancelTask, getTaskCatalog, getTasks, type TaskRecord } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -10,9 +10,13 @@ export default function TaskCatalog() {
   const [catalog, setCatalog] = useState<Record<string, unknown>>({});
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
 
+  const refreshTasks = () => {
+    void getTasks().then((res) => setTaskRecords(res.data.tasks ?? []));
+  };
+
   useEffect(() => {
     void getTaskCatalog().then((res) => setCatalog(res.data));
-    void getTasks().then((res) => setTaskRecords(res.data.tasks ?? []));
+    refreshTasks();
   }, []);
 
   const policy = catalog.policy as Record<string, unknown> | undefined;
@@ -73,6 +77,25 @@ export default function TaskCatalog() {
 
       <PacketCard title="任务记录" subtitle="GET /api/tasks 只读状态；不会创建任务" status="read_only">
         <DataLineageTable rows={taskRows} />
+      </PacketCard>
+
+      <PacketCard title="取消任务" subtitle="POST /api/tasks/{task_id}/cancel 只改本地任务状态；不外联、不交易" status="local_cancel">
+        <p>取消入口只面向 pending / running 任务，写入 local_task_cancel 调用血缘，并把步骤标记为 cancelled_by_user_no_external_call。</p>
+        <p>不会调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。</p>
+        <div className="button-row">
+          {taskRecords.map((task) => {
+            const cancellable = task.status === "pending" || task.status === "running";
+            return (
+              <button
+                key={task.task_id}
+                disabled={!cancellable}
+                onClick={() => void cancelTask(task.task_id).then(() => refreshTasks())}
+              >
+                取消 {task.task_type}
+              </button>
+            );
+          })}
+        </div>
       </PacketCard>
 
       <PacketCard title="原始目录 payload" subtitle="调试用 JSON；不含 token/key" status="safe">

@@ -11,6 +11,7 @@ from storage.sqlite_meta import SQLiteMetaStore
 _TASKS: dict[str, dict[str, Any]] = {}
 TASK_STATUSES = {"pending", "running", "success", "failed", "cancelled"}
 SECRET_KEYWORDS = ("token", "api_key", "secret", "password", "authorization", "bearer", "cookie")
+SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
 
 TASK_CATALOG = [
@@ -110,6 +111,8 @@ def build_task_catalog() -> dict[str, Any]:
             "get_catalog_cache_only": True,
             "all_tasks_button_gated": all(bool(item.get("button_gated")) for item in TASK_CATALOG),
             "call_ledger_required_for_all": all(bool(item.get("call_ledger_required")) for item in TASK_CATALOG),
+            "supports_local_task_cancel": True,
+            "cancel_task_external_calls": False,
             "post_task_may_trigger_external_request": True,
             "cache_api_external_calls": False,
             "does_not_execute_trades": True,
@@ -129,6 +132,14 @@ def _is_secret_key(key: Any) -> bool:
     return any(marker in lowered for marker in SECRET_KEYWORDS)
 
 
+def _safe_text(value: Any, *, limit: int = 500) -> str:
+    text = str(value or "").strip()
+    lower = text.lower()
+    if any(marker in lower for marker in SENSITIVE_TEXT_MARKERS):
+        return "[redacted_sensitive_text]"
+    return text[:limit]
+
+
 def _safe_value(key: Any, value: Any) -> Any:
     if _is_secret_key(key):
         return None
@@ -136,6 +147,8 @@ def _safe_value(key: Any, value: Any) -> Any:
         return {str(child_key): safe for child_key, child_value in value.items() if (safe := _safe_value(child_key, child_value)) is not None}
     if isinstance(value, list):
         return [_safe_value(key, item) for item in value]
+    if isinstance(value, str):
+        return _safe_text(value)
     return value
 
 
@@ -192,6 +205,20 @@ def _stub_call_ledger(task_type: str, now: str) -> list[dict[str, Any]]:
             "error_message_safe": "",
         }
     ]
+
+
+def _cancel_call_ledger(task_id: str, now: str, *, reason_safe: str = "") -> dict[str, Any]:
+    return {
+        "api": "local_task_cancel",
+        "task_id": str(task_id),
+        "request_params_safe": {"reason": reason_safe} if reason_safe else {},
+        "row_count": 0,
+        "data_date": None,
+        "local_fetched_at": now,
+        "call_status": "cancelled_locally_no_external_call",
+        "error_message_safe": "",
+        "external": False,
+    }
 
 
 def build_task_record(
@@ -293,6 +320,39 @@ def update_task_status(
         _status_event(status, progress=float(task.get("progress") or 0.0), current_step=str(task.get("current_step") or ""), at=now)
     )
     return _persist_task(task)
+
+
+def cancel_task(task_id: str, payload: Any = None) -> dict[str, Any] | None:
+    task = read_task_status(task_id)
+    if task is None:
+        return None
+
+    payload_safe = _safe_payload(payload)
+    reason_safe = _safe_text(payload_safe.get("reason", "")) if isinstance(payload_safe, dict) else ""
+    now = _now_iso()
+    existing_ledger = list(task.get("call_ledger") or [])
+    cancel_ledger = existing_ledger + [_cancel_call_ledger(str(task_id), now, reason_safe=reason_safe)]
+    terminal = {"success", "failed", "cancelled"}
+    if task.get("status") in terminal:
+        task["call_ledger"] = cancel_ledger
+        task.setdefault("warnings", []).append("task_cancel_noop_already_terminal")
+        task["external_calls_triggered"] = False
+        task["deepseek_called"] = False
+        task["tushare_called"] = False
+        task["github_called"] = False
+        task["does_not_execute_trades"] = True
+        task["does_not_modify_strategy_action"] = True
+        return _persist_task(task)
+
+    return update_task_status(
+        str(task_id),
+        status="cancelled",
+        progress=float(task.get("progress") or 0.0),
+        current_step="cancelled_by_user_no_external_call",
+        error_message_safe="",
+        call_ledger=cancel_ledger,
+        warning="task_cancelled_locally_no_external_call",
+    )
 
 
 def create_task_stub(
