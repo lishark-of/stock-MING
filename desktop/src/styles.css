@@ -176,6 +176,34 @@ button {
   width: 100%;
 }
 
+.chart-empty-state,
+.chart-safety-strip {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #334155;
+  margin: 10px 0;
+  padding: 10px;
+}
+
+.chart-empty-state p {
+  margin: 6px 0 0;
+}
+
+.chart-safety-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.chart-safety-strip span {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 7px 8px;
+}
+
 .chart-legend-grid {
   display: grid;
   gap: 12px;

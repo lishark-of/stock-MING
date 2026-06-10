@@ -28,11 +28,22 @@ type OperationZone = {
 
 type ChartPayload = {
   status?: string;
+  source_packet?: string;
+  is_exact_next_session_packet?: boolean;
+  uses_real_daily_close?: boolean;
   historical_points?: ChartPoint[];
   scenario_series?: ScenarioSeries[];
   reference_lines?: ReferenceLine[];
   operation_zones?: OperationZone[];
   y_axis_range?: Array<number | null>;
+  chart_contract?: {
+    renderer?: string;
+    schema_version?: string;
+    source_packet?: string;
+    frontend_computes_trade_action?: boolean;
+    does_not_modify_action?: boolean;
+    does_not_modify_operation_zones?: boolean;
+  };
   warnings?: string[];
 };
 
@@ -80,9 +91,16 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   const scenarioSeries = payload?.scenario_series ?? [];
   const referenceLines = payload?.reference_lines ?? [];
   const operationZones = payload?.operation_zones ?? [];
+  const contract = payload?.chart_contract;
+  const mayModifyOperationZones = Object.is(contract?.does_not_modify_operation_zones, false);
 
   if (!payload || payload.status === "missing" || (!historical.length && !scenarioSeries.length)) {
-    return <p className="empty-state">暂无可绘制的次日操作图谱缓存。</p>;
+    return (
+      <div className="chart-empty-state">
+        <strong>暂无可绘制的次日操作图谱缓存。</strong>
+        <p>GET cache 只读返回缺口提示，不触发 Tushare、DeepSeek 或 GitHub。</p>
+      </div>
+    );
   }
 
   const xLabels = Array.from(
@@ -210,6 +228,14 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   return (
     <>
       <EChartPanel option={option} />
+      <div className="chart-safety-strip">
+        <span>来源：{String(contract?.source_packet ?? payload.source_packet ?? "cache_payload")}</span>
+        <span>精确图谱：{payload.is_exact_next_session_packet === true ? "是" : "否"}</span>
+        <span>真实 close：{payload.uses_real_daily_close === true ? "是" : "待验证"}</span>
+        <span>前端算交易动作：{contract?.frontend_computes_trade_action === true ? "是" : "否"}</span>
+        <span>改 action：{contract?.does_not_modify_action === false ? "可能" : "不会"}</span>
+        <span>改操作区：{mayModifyOperationZones ? "可能" : "不会"}</span>
+      </div>
       {referenceLegend.length || operationLegend.length ? (
         <div className="chart-legend-grid">
           <div className="chart-legend-block">
