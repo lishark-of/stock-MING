@@ -36,6 +36,10 @@ export default function StorageOverview() {
   }, []);
 
   const datasetStatus = overview.dataset_status as Record<string, unknown> | undefined;
+  const datasetImplementation =
+    (overview.dataset_implementation_status as Record<string, unknown> | undefined) ??
+    (storageCatalog.dataset_implementation_status as Record<string, unknown> | undefined) ??
+    {};
   const datasets = overview.datasets as Array<Record<string, unknown>> | undefined;
   const datasetCatalog =
     (storageCatalog.dataset_catalog as Array<Record<string, unknown>> | undefined) ??
@@ -55,6 +59,9 @@ export default function StorageOverview() {
   const sqliteMetadataSourceRows = (sqliteMeta.metadata_source_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const sqlitePacketStatusCounts = sqliteMeta.packet_status_counts as Record<string, unknown> | undefined;
   const sqliteTaskStatusCounts = sqliteMeta.task_status_counts as Record<string, unknown> | undefined;
+  const implementationStateCounts = datasetImplementation.state_counts as Record<string, unknown> | undefined;
+  const implementationParquetStatusCounts = datasetImplementation.parquet_status_counts as Record<string, unknown> | undefined;
+  const implementationRows = (datasetImplementation.dataset_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const payloadCallLedger = (overview.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((overview.warnings as Array<string> | undefined) ?? []);
@@ -84,6 +91,12 @@ export default function StorageOverview() {
         items={[
           { label: "store", value: overview.store as string | undefined },
           { label: "dataset catalog", value: overview.dataset_count as number | undefined },
+          { label: "local pipeline datasets", value: datasetImplementation.local_pipeline_dataset_count as number | undefined },
+          { label: "future gated datasets", value: datasetImplementation.future_button_gated_dataset_count as number | undefined },
+          { label: "parquet ready", value: datasetImplementation.parquet_ready_dataset_count as number | undefined },
+          { label: "parquet missing", value: datasetImplementation.parquet_missing_dataset_count as number | undefined },
+          { label: "Tushare capable datasets", value: datasetImplementation.tushare_capable_dataset_count as number | undefined },
+          { label: "local compute datasets", value: datasetImplementation.local_compute_capable_dataset_count as number | undefined },
           { label: "cache only", value: overview.cache_only, tone: overview.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: overview.external_calls_triggered === true ? "存在" : "无", tone: overview.external_calls_triggered === true ? "bad" : "good" },
           { label: "Tushare", value: overview.tushare_called === true ? "已调用" : "未调用", tone: overview.tushare_called === true ? "bad" : "good" },
@@ -133,6 +146,17 @@ export default function StorageOverview() {
         <p>task_status_counts: {JSON.stringify(sqliteTaskStatusCounts ?? {})}</p>
         <p>metadata_safe_columns: {JSON.stringify(sqliteMeta.metadata_safe_columns ?? {})}</p>
         <DataLineageTable rows={sqliteMetadataSourceRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage implementation status" subtitle="只读展示数据集落地状态；不会创建 Parquet、刷新 Tushare 或运行回测" status={String(datasetImplementation.status ?? "partial_migration")}>
+        <p>local pipeline / future gated: {String(datasetImplementation.local_pipeline_dataset_count ?? 0)} / {String(datasetImplementation.future_button_gated_dataset_count ?? 0)}</p>
+        <p>parquet ready / missing: {String(datasetImplementation.parquet_ready_dataset_count ?? 0)} / {String(datasetImplementation.parquet_missing_dataset_count ?? 0)}</p>
+        <p>Tushare capable / local compute: {String(datasetImplementation.tushare_capable_dataset_count ?? 0)} / {String(datasetImplementation.local_compute_capable_dataset_count ?? 0)}</p>
+        <p>all external refreshes button gated: {String(datasetImplementation.all_external_refreshes_button_gated ?? true)}</p>
+        <p>does not modify action / execute trades: {String(datasetImplementation.all_datasets_do_not_modify_strategy_action ?? true)} / {String(datasetImplementation.all_datasets_do_not_execute_trades ?? true)}</p>
+        <p>state_counts: {JSON.stringify(implementationStateCounts ?? {})}</p>
+        <p>parquet_status_counts: {JSON.stringify(implementationParquetStatusCounts ?? {})}</p>
+        <DataLineageTable rows={implementationRows} />
       </PacketCard>
 
       <PacketCard title="数据集明细" subtitle="GET /api/storage/{dataset} 只读查询本地 Parquet；不刷新数据" status="dataset_cache">

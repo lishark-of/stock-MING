@@ -104,6 +104,62 @@ def dataset_catalog() -> list[dict[str, Any]]:
     return [dict(item) for item in DATASET_CATALOG]
 
 
+def dataset_implementation_status() -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for item in DATASET_CATALOG:
+        dataset = str(item.get("dataset") or "")
+        metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
+        write_policy = str(item.get("write_policy") or "")
+        external_refresh_policy = str(item.get("external_refresh_policy") or "")
+        if write_policy == "task_pipeline_write_allowed":
+            implementation_state = "local_pipeline_enabled"
+        elif write_policy.startswith("future_button_gated"):
+            implementation_state = "future_button_gated"
+        else:
+            implementation_state = "catalog_only"
+        rows.append(
+            {
+                "dataset": dataset,
+                "implementation_state": implementation_state,
+                "parquet_status": metadata.get("status", "missing"),
+                "parquet_exists": bool(metadata.get("exists")),
+                "write_policy": write_policy,
+                "writer": item.get("writer"),
+                "external_refresh_policy": external_refresh_policy,
+                "tushare_capable": "tushare" in external_refresh_policy,
+                "local_compute_capable": "local_compute" in external_refresh_policy or "local_cache_pipeline" in external_refresh_policy,
+                "button_gated": "button_gated" in external_refresh_policy or write_policy == "task_pipeline_write_allowed",
+                "does_not_modify_strategy_action": item.get("does_not_modify_strategy_action") is not False,
+                "does_not_execute_trades": item.get("does_not_execute_trades") is not False,
+                "path": _path_label(Path(str(metadata.get("path") or parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)))),
+            }
+        )
+
+    return {
+        "status": "partial_migration",
+        "scope": "command_center_3_storage_dataset_implementation",
+        "dataset_count": len(rows),
+        "dataset_rows": rows,
+        "state_counts": _count_values(row.get("implementation_state") for row in rows),
+        "parquet_status_counts": _count_values(row.get("parquet_status") for row in rows),
+        "local_pipeline_dataset_count": sum(1 for row in rows if row.get("implementation_state") == "local_pipeline_enabled"),
+        "future_button_gated_dataset_count": sum(1 for row in rows if row.get("implementation_state") == "future_button_gated"),
+        "catalog_only_dataset_count": sum(1 for row in rows if row.get("implementation_state") == "catalog_only"),
+        "parquet_ready_dataset_count": sum(1 for row in rows if row.get("parquet_status") == "ready"),
+        "parquet_missing_dataset_count": sum(1 for row in rows if row.get("parquet_status") == "missing"),
+        "tushare_capable_dataset_count": sum(1 for row in rows if row.get("tushare_capable")),
+        "local_compute_capable_dataset_count": sum(1 for row in rows if row.get("local_compute_capable")),
+        "all_external_refreshes_button_gated": all(
+            bool(row.get("button_gated"))
+            for row in rows
+            if row.get("tushare_capable") or str(row.get("external_refresh_policy") or "").startswith("button_gated")
+        ),
+        "all_datasets_do_not_modify_strategy_action": all(row.get("does_not_modify_strategy_action") for row in rows),
+        "all_datasets_do_not_execute_trades": all(row.get("does_not_execute_trades") for row in rows),
+        "note": "Storage implementation status 只读展示数据集落地状态；不会创建 Parquet、刷新 Tushare 或运行回测。",
+    }
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -178,12 +234,14 @@ def _attach_storage_lineage(
 
 def storage_dataset_catalog() -> dict[str, Any]:
     catalog = dataset_catalog()
+    implementation_status = dataset_implementation_status()
     packet = {
         "schema_version": "command_center_3_storage_dataset_catalog.v1",
         "store": "parquet_duckdb",
         "status": "ready",
         "mode": "cache_only",
         "dataset_catalog": catalog,
+        "dataset_implementation_status": implementation_status,
         "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
         "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
         "dataset_count": len(catalog),
@@ -376,6 +434,7 @@ def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
 def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     datasets = [parquet_dataset_status(name, limit=limit) for name in CANONICAL_PARQUET_DATASETS]
     sqlite_meta = sqlite_meta_status(limit=limit)
+    implementation_status = dataset_implementation_status()
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
         "store": "parquet_duckdb",
@@ -383,10 +442,13 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "metadata_store": "sqlite_meta",
         "datasets": datasets,
         "dataset_catalog": dataset_catalog(),
+        "dataset_implementation_status": implementation_status,
         "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
         "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
         "dataset_count": len(CANONICAL_PARQUET_DATASETS),
         "dataset_status": {item["dataset"]: item["metadata"]["status"] for item in datasets},
+        "dataset_implementation_state_counts": implementation_status["state_counts"],
+        "dataset_parquet_status_counts": implementation_status["parquet_status_counts"],
         "sqlite_meta": sqlite_meta,
         "metadata_status": sqlite_meta["status"],
         "packet_metadata_count": sqlite_meta["packet_count"],
