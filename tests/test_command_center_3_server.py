@@ -220,6 +220,79 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("chokepoint_method_hint", support_keys | suppress_keys)
         self.assertIn("roe_latest", {item.get("factor_key") for item in packet["score"]["missing_factors"]})
 
+    def test_deepseek_explanation_task_prepares_prompt_without_model_call(self):
+        self._with_meta_store()
+
+        task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload={"ts_code": "002008.SZ"})
+        packet = packet_service.build_factor_quant_cache()
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "deepseek_prompt_ready_without_model_call")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "not_called")
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertTrue(task["does_not_execute_trades"])
+
+        self.assertEqual(packet["cache_source"], "sqlite_meta")
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["deepseek_model_called"])
+        self.assertFalse(packet["deepseek_task_external_calls_triggered"])
+        self.assertEqual(packet["deepseek_explanation"]["status"], "not_called")
+        self.assertEqual(packet["deepseek_explanation"]["payload"], None)
+        self.assertFalse(packet["deepseek_explanation_prompt_preview"]["enters_deepseek_prompt"])
+        self.assertTrue(packet["deepseek_explanation_prompt_preview"]["would_enter_deepseek_prompt_if_user_authorizes"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+        self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
+
+    def test_deepseek_explanation_task_sanitizes_payload_without_overwriting_values(self):
+        self._with_meta_store()
+        forbidden = {
+            "summary": "只解释已有结构化结果",
+            "support_notes": ["量能支持"],
+            "strategy_action": "buy",
+            "action": "买入",
+            "price": 99,
+            "position": {"shares": 1000},
+            "factor_values": [{"raw_value": 1.2}],
+            "packet": {"full": True},
+        }
+
+        task = factor_service.create_factor_task(
+            "run_deepseek_factor_explanation",
+            payload={"provided_explanation": forbidden, "api_key": "DROP"},
+        )
+        packet = packet_service.build_factor_quant_cache()
+        explanation = packet["deepseek_explanation"]
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "deepseek_explanation_sanitized_without_model_call")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "provided_payload_sanitized")
+        self.assertEqual(task["payload_safe"], {"provided_explanation_payload": True})
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertNotIn("provided_explanation", task["payload_safe"])
+        self.assertNotIn("price", json.dumps(task["payload_safe"], ensure_ascii=False))
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["external_calls_triggered"])
+
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["deepseek_model_called"])
+        self.assertEqual(explanation["status"], "success")
+        self.assertEqual(explanation["payload"]["summary"], "只解释已有结构化结果")
+        self.assertEqual(set(explanation["payload"]), {
+            "summary",
+            "support_notes",
+            "suppress_notes",
+            "conflict_notes",
+            "missing_data_notes",
+            "discipline_notes",
+        })
+        for forbidden_key in ("strategy_action", "action", "price", "position", "factor_values", "packet"):
+            self.assertIn(forbidden_key, explanation["ignored_keys"])
+            self.assertNotIn(forbidden_key, explanation["payload"])
+        self.assertTrue(explanation["does_not_override_numeric_values"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+        self.assertTrue(packet["next_session_bridge"]["does_not_modify_operation_zones"])
+
 
 @unittest.skipIf(importlib.util.find_spec("fastapi") is None, "FastAPI is not installed in this environment")
 class CommandCenter3FastAPITests(unittest.TestCase):
@@ -313,6 +386,41 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(factor["data"]["cache_source"], "sqlite_meta")
         self.assertFalse(factor["data"]["external_calls_triggered"])
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
+
+    def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):
+        clear_task_statuses_for_tests()
+        self._with_meta_store()
+
+        created = self.client.post(
+            "/api/factor-quant/deepseek-explain",
+            json={
+                "provided_explanation": {
+                    "summary": "整理摘要",
+                    "support_notes": ["支持说明"],
+                    "price": 100,
+                    "strategy_action": "buy",
+                    "factor_values": [1, 2],
+                }
+            },
+        ).json()
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "provided_payload_sanitized")
+        self.assertEqual(task["payload_safe"], {"provided_explanation_payload": True})
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["external_calls_triggered"])
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        explanation = factor["data"]["deepseek_explanation"]
+        self.assertFalse(factor["data"]["deepseek_called"])
+        self.assertEqual(explanation["payload"]["summary"], "整理摘要")
+        self.assertIn("price", explanation["ignored_keys"])
+        self.assertIn("strategy_action", explanation["ignored_keys"])
+        self.assertIn("factor_values", explanation["ignored_keys"])
+        self.assertFalse(factor["data"]["governance"]["allow_core_action"])
+        self.assertTrue(factor["data"]["next_session_bridge"]["does_not_modify_action"])
 
 
 if __name__ == "__main__":

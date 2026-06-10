@@ -56,9 +56,10 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
 - `GET .../cache` 优先读取 `.stock_ming_cache/command_center_latest.json` 中已有本地快照；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
 - `/api/packets/{packet_key}` 支持部分 2.0 本地快照别名，例如 `command_center_moneyflow_packet` → `moneyflow_packet`、`strategy_execution_packet` → `strategy_packet`。
-- `POST` 当前返回 local fallback task stub，不在请求线程跑重计算；任务可通过 `/api/tasks/{task_id}` 轮询，记录 `pending → running → success` 状态历史、`progress`、`current_step`、`error_message_safe`、`output_packet_key` 和 `call_ledger`。
+- `POST` 默认返回 local fallback task，不在请求线程跑重计算；任务可通过 `/api/tasks/{task_id}` 轮询，记录 `pending → running → success` 状态历史、`progress`、`current_step`、`error_message_safe`、`output_packet_key` 和 `call_ledger`。
 - `/api/tasks` 返回当前本地 fallback 任务列表，供 3.0 前端状态面板展示。
 - `POST /api/factor-quant/run-light` 已接入本地 light-mode pipeline：读取 `.stock_ming_cache/command_center_latest.json`，调用现有 Factor Quant Hub builder，写入 `.stock_ming_3/meta.sqlite`，不调用 Tushare、DeepSeek、GitHub，也不修改 `strategy action`。
+- `POST /api/factor-quant/deepseek-explain` 已接入 guarded explanation pipeline：读取 Factor Quant Hub cache，准备未发送的安全 prompt 预览；如提供本地解释 payload，仅按六个白名单字段清洗并写回 SQLite cache，不真实调用 DeepSeek、不覆盖数值、不修改 `strategy action`。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
 

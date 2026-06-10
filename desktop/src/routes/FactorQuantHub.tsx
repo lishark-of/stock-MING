@@ -23,6 +23,7 @@ export default function FactorQuantHub() {
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
   const linkedPackets = packet.linked_packets ?? {};
+  const deepseek = packet.deepseek_explanation ?? {};
   const option: EChartsOption = {
     tooltip: {},
     xAxis: { type: "category", data: ["支持", "压制", "中性", "缺失", "冲突"] },
@@ -60,6 +61,7 @@ export default function FactorQuantHub() {
           { label: "score band", value: score.score_band ?? "missing" },
           { label: "core action", value: governance.allow_core_action === true ? "允许" : "禁止", tone: governance.allow_core_action === true ? "bad" : "good" },
           { label: "evidence preview", value: bridge.enters_evidence_effects === true ? "预览" : "关闭" },
+          { label: "DeepSeek", value: deepseek.status ?? "not_called", tone: deepseek.called === true ? "warn" : "good" },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" }
         ]}
       />
@@ -76,6 +78,11 @@ export default function FactorQuantHub() {
           <p>legacy quant: {String(Boolean(linkedPackets.legacy_quant_packet))}</p>
         </PacketCard>
       </div>
+      <PacketCard title="DeepSeek 解释" subtitle="按钮门控；只整理已有结构化结果，不覆盖数值">
+        <p>called: {String(Boolean(deepseek.called))}</p>
+        <p>status: {String(deepseek.status ?? "not_called")}</p>
+        <p>allowed: summary / support_notes / suppress_notes / conflict_notes / missing_data_notes / discipline_notes</p>
+      </PacketCard>
       <h3>数据血缘</h3>
       <DataLineageTable rows={packet.data_ledger?.ledger_rows ?? []} />
       <JsonDetails title="Factor Quant Hub packet" data={packet} />

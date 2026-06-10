@@ -32,7 +32,6 @@
 
 - `/api/next-session/generate`
 - `/api/factor-quant/refresh-data`
-- `/api/factor-quant/deepseek-explain`
 - `/api/chokepoint/run`
 - `/api/serenity/github-probe`
 
@@ -40,3 +39,5 @@
 任务状态已经包含 `pending/running/success/failed/cancelled` 合同、`progress`、`current_step`、`error_message_safe`、`output_packet_key`、`call_ledger` 和本地 fallback backend；React 页面可通过 `/api/tasks/{task_id}` 轮询。
 
 `/api/factor-quant/run-light` 已从纯 stub 升级为本地 light-mode pipeline：只读取本地 snapshot/cache，生成 `command_center_factor_quant_hub_packet` 并写入 SQLite meta cache；仍不调用 Tushare、DeepSeek、GitHub，不跑全市场回测，不修改 strategy action。
+
+`/api/factor-quant/deepseek-explain` 已从纯 stub 升级为 guarded explanation pipeline：只读取已有 Factor Quant Hub cache，生成未发送的安全 prompt 预览；如传入本地解释 payload，只保留 `summary`、`support_notes`、`suppress_notes`、`conflict_notes`、`missing_data_notes`、`discipline_notes` 六类字段并写回 SQLite cache。当前阶段不真实调用 DeepSeek，不输出价格/持仓/因子值/买卖指令，不覆盖任何数值 packet。

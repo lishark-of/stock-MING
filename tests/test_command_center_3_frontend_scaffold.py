@@ -44,6 +44,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("/api/factor-quant/run-light", source)
         self.assertIn("/api/factor-quant/deepseek-explain", source)
         self.assertIn("多因子量化不是交易建议", source)
+        self.assertIn("只整理已有结构化结果", source)
+        self.assertIn("summary / support_notes / suppress_notes", source)
         self.assertNotIn("tushare_adapter", source)
         self.assertNotIn("DEEPSEEK", source)
         self.assertNotIn("GITHUB_TOKEN", source)

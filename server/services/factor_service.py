@@ -141,9 +141,132 @@ def run_factor_light_task(payload: Any = None) -> dict[str, Any]:
         ) or task
 
 
+def _extract_provided_explanation_payload(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("provided_explanation", "local_explanation_payload", "mock_deepseek_output", "deepseek_response"):
+        if key in payload:
+            return payload.get(key)
+    return None
+
+
+def _deepseek_task_payload_summary(payload: Any) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "provided_explanation_payload": _extract_provided_explanation_payload(payload) is not None,
+    }
+    if isinstance(payload, dict):
+        for key in ("ts_code", "ticker", "symbol"):
+            if payload.get(key):
+                summary[key] = str(payload.get(key))
+    return summary
+
+
+def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "deepseek_factor_explanation",
+            "request_params_safe": {
+                "mode": "guarded_prompt_only",
+                "provided_explanation_payload": sanitized_payload,
+            },
+            "row_count": 0,
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": "provided_payload_sanitized" if sanitized_payload else "not_called",
+            "error_message_safe": "",
+        }
+    ]
+
+
+def _deepseek_prompt_preview(hub: dict[str, Any]) -> dict[str, Any]:
+    prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)
+    return {
+        "status": "ready_not_sent",
+        "allowed_top_level_keys": prompt.get("allowed_top_level_keys") or [],
+        "would_enter_deepseek_prompt_if_user_authorizes": bool(prompt.get("enters_deepseek_prompt")),
+        "enters_deepseek_prompt": False,
+        "does_not_include_full_packet": bool(prompt.get("does_not_include_full_packet")),
+        "does_not_include_price_or_position": True,
+        "does_not_include_factor_values": True,
+    }
+
+
+def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
+    task = create_task_record(
+        "run_deepseek_factor_explanation",
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=_deepseek_task_payload_summary(payload),
+        current_step="deepseek_explanation_queued",
+        warnings=[
+            "DeepSeek 因子解释任务本轮不调用模型；只准备安全 prompt 或清洗已提供的解释 JSON。",
+            "解释输出只允许六个白名单字段，不覆盖因子数值、价格、持仓或 strategy action。",
+        ],
+    )
+    update_task_status(task["task_id"], status="running", progress=0.2, current_step="reading_factor_quant_hub_cache")
+    now = _now_iso()
+    call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=False)
+    try:
+        hub = dict(read_factor_quant_cache())
+        update_task_status(task["task_id"], status="running", progress=0.45, current_step="building_guarded_deepseek_prompt_preview")
+        prompt_preview = _deepseek_prompt_preview(hub)
+        provided_payload = _extract_provided_explanation_payload(payload)
+        if provided_payload is None:
+            explanation = {
+                "called": False,
+                "status": "not_called",
+                "payload": None,
+                "ignored_keys": [],
+                "error_message_safe": "",
+                "does_not_override_numeric_values": True,
+                "does_not_output_strategy_action": True,
+                "model_call_status": "not_called",
+                "source": "prompt_ready_no_model_call",
+            }
+            current_step = "deepseek_prompt_ready_without_model_call"
+        else:
+            explanation = factor_research.sanitize_factor_deepseek_explanation(provided_payload)
+            explanation["called"] = False
+            explanation["model_call_status"] = "not_called"
+            explanation["source"] = "provided_payload_sanitized_no_model_call"
+            explanation["allowed_keys_enforced"] = True
+            call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=True)
+            current_step = "deepseek_explanation_sanitized_without_model_call"
+
+        hub["deepseek_explanation_prompt_preview"] = prompt_preview
+        hub["deepseek_explanation"] = explanation
+        hub["deepseek_called"] = False
+        hub["deepseek_model_called"] = False
+        hub["deepseek_task_external_calls_triggered"] = False
+        hub["deepseek_call_ledger"] = call_ledger
+        hub["does_not_modify_strategy_action"] = True
+        hub["does_not_modify_next_session_operation_zones"] = True
+        hub["does_not_execute_trades"] = True
+
+        update_task_status(task["task_id"], status="running", progress=0.75, current_step="writing_guarded_deepseek_explanation_cache", call_ledger=call_ledger)
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+        return update_task_status(
+            task["task_id"],
+            status="success",
+            progress=1.0,
+            current_step=current_step,
+            call_ledger=call_ledger,
+        ) or task
+    except Exception as exc:
+        return update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="deepseek_explanation_failed",
+            error_message_safe=str(exc)[:500],
+            call_ledger=call_ledger,
+        ) or task
+
+
 def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
     if task_type == "run_factor_light":
         return run_factor_light_task(payload)
+    if task_type == "run_deepseek_factor_explanation":
+        return run_factor_deepseek_explanation_task(payload)
     return create_task_stub(
         task_type,
         output_packet_key="command_center_factor_quant_hub_packet",

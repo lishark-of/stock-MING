@@ -31,5 +31,4 @@ def run_factor_light(payload: dict[str, Any] | None = None) -> dict:
 @router.post("/deepseek-explain")
 def explain_factor_with_deepseek(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload)
-    task["warnings"].append("DeepSeek 解释任务当前为 stub；不会生成或覆盖数值。")
     return envelope({"task_id": task["task_id"], "task": task})
