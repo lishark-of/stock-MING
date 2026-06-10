@@ -188,6 +188,25 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK", page)
         self.assertNotIn("GITHUB_TOKEN", page)
 
+    def test_chokepoint_page_shows_research_only_task_boundaries(self):
+        page = (ROOT / "src" / "routes" / "ChokepointScan.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("getChokepointCache", page)
+        self.assertIn("/api/chokepoint/run", page)
+        self.assertIn("GET cache 不运行瓶颈扫描", page)
+        self.assertIn("cache API 永不外联", page)
+        self.assertIn("手动 POST task", page)
+        self.assertIn("DeepSeek 只可整理解释，不作为数据源", page)
+        self.assertIn("研究解释不进入 strategy action", page)
+        self.assertIn("不写回次日操作图谱", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("cache_api_external_calls_triggered", page)
+        self.assertIn("legacy_analysis_method_cache", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
     def test_packet_registry_page_reads_packet_cache_without_external_calls(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
         page = (ROOT / "src" / "routes" / "PacketRegistry.tsx").read_text(encoding="utf-8")
