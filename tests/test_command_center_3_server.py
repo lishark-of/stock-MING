@@ -1739,6 +1739,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(market["data"]["policy"]["market_context_is_not_trade_instruction"])
         self.assertTrue(market["data"]["does_not_modify_strategy_action"])
         self.assertTrue(market["data"]["does_not_execute_trades"])
+        self.assertEqual(market["call_ledger"][0]["api"], "local_market_context_cache")
+        self.assertFalse(market["call_ledger"][0]["external"])
+        self.assertIn("GET /api/market/cache", market["warnings"][0])
 
         discipline = self.client.get("/api/discipline/cache").json()
         self.assertTrue(discipline["ok"])
@@ -2093,6 +2096,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_market_context_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/market/cache", response["warnings"][0])
 
     def test_discipline_loop_cache_endpoint_returns_local_discipline_context(self):
         self._with_snapshot_cache(

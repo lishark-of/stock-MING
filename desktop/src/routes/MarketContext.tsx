@@ -16,9 +16,15 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
 
 export default function MarketContext() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getMarketContextCache().then((res) => setCache(res.data));
+    void getMarketContextCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -30,7 +36,10 @@ export default function MarketContext() {
   const limit = (cache.limit_emotion_packet as Record<string, unknown> | undefined) ?? {};
   const chip = (cache.chip_packet as Record<string, unknown> | undefined) ?? {};
   const etf = (cache.etf_packet as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
 
   return (
     <>
@@ -52,7 +61,9 @@ export default function MarketContext() {
           { label: "筹码区", value: counts.chip_area_count as number | undefined },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
+          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -123,7 +134,15 @@ export default function MarketContext() {
       </PacketCard>
 
       <PacketCard title="调用血缘" subtitle="local_market_context_cache；不外联、不写回" status="lineage">
-        <DataLineageTable rows={callLedger} />
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET market envelope call_ledger" subtitle="GET /api/market/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET market envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={warningRows} />
       </PacketCard>
 
       <PacketCard title="原始 market context cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
