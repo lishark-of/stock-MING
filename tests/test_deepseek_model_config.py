@@ -1,5 +1,6 @@
 import os
 import unittest
+from pathlib import Path
 
 import command_center_next_session_projection as next_session_projection
 import command_center_projection as projection
@@ -67,6 +68,29 @@ class DeepSeekModelConfigTests(unittest.TestCase):
             "{}",
         )
         self.assertEqual(next_packet["deepseek_synthesis"]["model"], "custom-projection-model")
+
+    def test_deepseek_model_names_are_centralized_outside_docs_and_tests(self):
+        root = Path(__file__).resolve().parents[1]
+        allowed = {
+            root / "config.py",
+            Path(__file__).resolve(),
+            root / "docs" / "command_center_3_architecture.md",
+        }
+        source_suffixes = {".py", ".ts", ".tsx", ".js", ".jsx"}
+        forbidden_fragments = ("deepseek-chat", "deepseek-v4-pro", "deepseek-v4-flash")
+        offenders = []
+
+        for path in root.rglob("*"):
+            if path in allowed or path.suffix not in source_suffixes:
+                continue
+            if any(part in {".git", ".venv", "__pycache__", "node_modules", "dist"} for part in path.parts):
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for fragment in forbidden_fragments:
+                if fragment in text:
+                    offenders.append(f"{path.relative_to(root)} contains {fragment}")
+
+        self.assertEqual(offenders, [])
 
 
 if __name__ == "__main__":
