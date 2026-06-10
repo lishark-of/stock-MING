@@ -29,6 +29,29 @@ export type TaskRecord = {
   warnings: string[];
 };
 
+export type TaskStatusIndex = {
+  packet_key: string;
+  schema_version: string;
+  mode: string;
+  status: string;
+  tasks: TaskRecord[];
+  task_count: number;
+  status_counts: Record<string, number>;
+  latest_task_id?: string;
+  latest_task_type?: string;
+  latest_task_status?: string;
+  call_ledger_count: number;
+  policy: Record<string, unknown>;
+  external_calls_triggered: boolean;
+  tushare_called: boolean;
+  deepseek_called: boolean;
+  github_called: boolean;
+  does_not_execute_trades: boolean;
+  does_not_modify_strategy_action: boolean;
+  call_ledger: Array<Record<string, unknown>>;
+  warnings: string[];
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710";
 
 async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
@@ -172,7 +195,7 @@ export function getTask(taskId: string) {
 }
 
 export function getTasks() {
-  return request<{ tasks: TaskRecord[] }>("/api/tasks");
+  return request<TaskStatusIndex>("/api/tasks");
 }
 
 export function getTaskCatalog() {

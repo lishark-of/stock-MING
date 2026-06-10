@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { cancelTask, getTaskCatalog, getTasks, type TaskRecord } from "../api/client";
+import { cancelTask, getTaskCatalog, getTasks, type TaskRecord, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -8,10 +8,14 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function TaskCatalog() {
   const [catalog, setCatalog] = useState<Record<string, unknown>>({});
+  const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
 
   const refreshTasks = () => {
-    void getTasks().then((res) => setTaskRecords(res.data.tasks ?? []));
+    void getTasks().then((res) => {
+      setTaskIndex(res.data);
+      setTaskRecords(res.data.tasks ?? []);
+    });
   };
 
   useEffect(() => {
@@ -22,6 +26,8 @@ export default function TaskCatalog() {
   const policy = catalog.policy as Record<string, unknown> | undefined;
   const catalogTasks = catalog.tasks as Array<Record<string, unknown>> | undefined;
   const externalSources = catalog.external_sources as unknown[] | undefined;
+  const taskIndexPolicy = taskIndex?.policy ?? {};
+  const taskStatusRows = Object.entries(taskIndex?.status_counts ?? {}).map(([status, count]) => ({ status, count }));
   const taskRows = taskRecords.map((task) => ({
     task_id: task.task_id,
     task_type: task.task_type,
@@ -49,7 +55,10 @@ export default function TaskCatalog() {
       <MetricGrid
         items={[
           { label: "任务数量", value: catalog.task_count as number | undefined },
-          { label: "任务记录", value: taskRecords.length },
+          { label: "任务记录", value: taskIndex?.task_count ?? taskRecords.length },
+          { label: "任务 call_ledger", value: taskIndex?.call_ledger_count ?? 0 },
+          { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
+          { label: "任务真实交易", value: taskIndex?.does_not_execute_trades === false ? "可能" : "禁止", tone: taskIndex?.does_not_execute_trades === false ? "bad" : "good" },
           { label: "全部按钮门控", value: policy?.all_tasks_button_gated, tone: policy?.all_tasks_button_gated === false ? "bad" : "good" },
           { label: "call ledger required", value: policy?.call_ledger_required_for_all, tone: policy?.call_ledger_required_for_all === false ? "bad" : "good" },
           { label: "cache API 外联", value: policy?.cache_api_external_calls === true ? "存在" : "无", tone: policy?.cache_api_external_calls === true ? "bad" : "good" },
@@ -65,6 +74,7 @@ export default function TaskCatalog() {
           <p>本页只读取 FastAPI 的任务目录 cache 和 GET /api/tasks 任务记录，不调用 Tushare、DeepSeek 或 GitHub。</p>
           <p>任务执行必须由对应 POST API 按钮触发，并且需要写入 call_ledger_required_for_all 对应的审计记录。</p>
           <p>does_not_execute_trades 与 does_not_modify_strategy_action 必须保持为 true。</p>
+          <p>task_status_index: {String(taskIndex?.packet_key ?? "--")}；get_tasks_cache_only: {String(taskIndexPolicy.get_tasks_cache_only ?? true)}</p>
         </PacketCard>
 
         <PacketCard title="外部请求策略" subtitle="GET catalog 不外联；按钮任务才可能进入外部源" status={String(policy?.post_task_may_trigger_external_request ?? true)}>
@@ -77,6 +87,11 @@ export default function TaskCatalog() {
 
       <PacketCard title="任务清单" subtitle="按钮门控、可能外部源和输出 packet" status="catalog">
         <DataLineageTable rows={catalogTasks ?? []} />
+      </PacketCard>
+
+      <PacketCard title="任务状态总览" subtitle="GET /api/tasks 返回 command_center_3_task_status_index；只读汇总" status="task_status_index">
+        <DataLineageTable rows={taskStatusRows} />
+        <DataLineageTable rows={taskIndex?.call_ledger ?? []} />
       </PacketCard>
 
       <PacketCard title="任务记录" subtitle="GET /api/tasks 只读状态；不会创建任务" status="read_only">
@@ -104,6 +119,7 @@ export default function TaskCatalog() {
 
       <PacketCard title="原始目录 payload" subtitle="调试用 JSON；不含 token/key" status="safe">
         <JsonDetails title="task catalog raw" data={catalog} />
+        <JsonDetails title="task status index raw" data={taskIndex ?? {}} />
         <JsonDetails title="task records raw" data={taskRecords} />
       </PacketCard>
     </>

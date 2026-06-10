@@ -13,7 +13,8 @@ router = APIRouter(prefix="/api/tasks")
 
 @router.get("")
 def list_tasks() -> dict:
-    return envelope({"tasks": task_service.list_task_statuses()})
+    index = task_service.build_task_status_index()
+    return envelope(index, call_ledger=index.get("call_ledger"), warnings=index.get("warnings"))
 
 
 @router.get("/catalog")

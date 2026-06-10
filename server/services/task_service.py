@@ -402,6 +402,65 @@ def list_task_statuses() -> list[dict[str, Any]]:
     )
 
 
+def build_task_status_index() -> dict[str, Any]:
+    tasks = list_task_statuses()
+    status_counts = {status: 0 for status in sorted(TASK_STATUSES)}
+    for task in tasks:
+        status = str(task.get("status") or "pending")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    call_ledger_count = sum(len(task.get("call_ledger") or []) for task in tasks)
+    external_calls_triggered = any(task.get("external_calls_triggered") is True for task in tasks)
+    tushare_called = any(task.get("tushare_called") is True for task in tasks)
+    deepseek_called = any(task.get("deepseek_called") is True for task in tasks)
+    github_called = any(task.get("github_called") is True for task in tasks)
+    does_not_execute_trades = all(task.get("does_not_execute_trades") is not False for task in tasks)
+    does_not_modify_strategy_action = all(task.get("does_not_modify_strategy_action") is not False for task in tasks)
+    latest_task = tasks[0] if tasks else {}
+    return {
+        "packet_key": "command_center_3_task_status_index",
+        "schema_version": "command_center_3_task_status_index.v1",
+        "mode": "cache_only",
+        "status": "ready",
+        "tasks": tasks,
+        "task_count": len(tasks),
+        "status_counts": status_counts,
+        "latest_task_id": latest_task.get("task_id"),
+        "latest_task_type": latest_task.get("task_type"),
+        "latest_task_status": latest_task.get("status"),
+        "call_ledger_count": call_ledger_count,
+        "policy": {
+            "get_tasks_cache_only": True,
+            "does_not_create_tasks": True,
+            "does_not_call_external_sources": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        },
+        "external_calls_triggered": external_calls_triggered,
+        "tushare_called": tushare_called,
+        "deepseek_called": deepseek_called,
+        "github_called": github_called,
+        "does_not_execute_trades": does_not_execute_trades,
+        "does_not_modify_strategy_action": does_not_modify_strategy_action,
+        "call_ledger": [
+            {
+                "api": "local_task_status_index",
+                "request_params_safe": {},
+                "row_count": len(tasks),
+                "data_date": None,
+                "local_fetched_at": _now_iso(),
+                "call_status": "cache_read",
+                "error_message_safe": "",
+                "external": False,
+            }
+        ],
+        "warnings": [
+            "GET /api/tasks 只读取本地任务状态；不会调用 Tushare、DeepSeek、GitHub、Redis 或真实交易接口。",
+            "任务明细中的 payload_safe 已在创建任务时剔除 token/api_key/authorization 等敏感字段。",
+        ],
+    }
+
+
 def clear_task_statuses_for_tests(*, clear_persisted: bool = False) -> None:
     _TASKS.clear()
     if not clear_persisted:
