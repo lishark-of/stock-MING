@@ -2176,6 +2176,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_legacy_bridge_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/legacy/cache", response["warnings"][0])
 
     def test_strategy_trace_cache_endpoint_returns_strategy_trace_without_external_work(self):
         self._with_snapshot_cache(

@@ -32,9 +32,15 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
 
 export default function LegacyTools() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getLegacyBridgeCache().then((res) => setCache(res.data));
+    void getLegacyBridgeCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -42,7 +48,8 @@ export default function LegacyTools() {
   const capability = (cache.old_workspace_capability_overview as Record<string, unknown> | undefined) ?? {};
   const absence = (cache.old_workspace_data_absence_ledger as Record<string, unknown> | undefined) ?? {};
   const bridge = (cache.old_workspace_packet_bridge as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
   return (
     <>
@@ -58,7 +65,9 @@ export default function LegacyTools() {
             { label: "普通主流程", value: "迁往 React/Tauri", tone: "good" },
             { label: "自动外联", value: "禁止", tone: "good" },
             { label: "真实交易", value: "禁止", tone: "good" },
-            { label: "自动下单", value: "禁止", tone: "good" }
+            { label: "自动下单", value: "禁止", tone: "good" },
+            { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
+            { label: "cache warnings", value: cacheWarnings.length }
           ]}
         />
         <p>旧版 Streamlit 入口仍保留在 app.py，用于排查、管理、旧功能回退和阶段性兼容。</p>
@@ -113,8 +122,16 @@ export default function LegacyTools() {
         <DataLineageTable rows={[policy]} />
       </PacketCard>
 
-      <PacketCard title="调用血缘" subtitle="local_legacy_bridge_cache；不外联、不写回" status="lineage">
-        <DataLineageTable rows={callLedger} />
+      <PacketCard title="调用血缘" subtitle="payload 内部 local_legacy_bridge_cache；不外联、不写回" status="lineage">
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET legacy envelope call_ledger" subtitle="GET /api/legacy/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheEnvelopeLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET legacy envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning }))} />
       </PacketCard>
 
       <PacketCard title="原始 legacy bridge cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
