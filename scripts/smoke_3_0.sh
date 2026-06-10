@@ -3,11 +3,20 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
+import tempfile
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from server.main import app
 from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, model_strategy_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services.task_service import create_task_stub
+
+
+_SMOKE_TASK_META_DIR = tempfile.TemporaryDirectory()
+_SMOKE_TASK_META_PATH = Path(_SMOKE_TASK_META_DIR.name) / "smoke_meta.sqlite"
+task_service.SQLITE_META_PATH = _SMOKE_TASK_META_PATH
+task_service.clear_task_statuses_for_tests(clear_persisted=True)
 
 
 def assert_false_when_present(name, packet, key):
@@ -63,6 +72,7 @@ def assert_model_strategy_safety(packet):
 
 
 print("health: import ok")
+print("smoke_task_meta:", _SMOKE_TASK_META_PATH)
 for key in [
     "command_center_factor_quant_hub_packet",
     "command_center_serenity_method_radar_packet",
