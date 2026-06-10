@@ -8,9 +8,15 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function AShareEvidenceRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getEvidenceCache().then((res) => setCache(res.data));
+    void getEvidenceCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const radar = (cache.evidence_radar as Record<string, unknown> | undefined) ?? {};
@@ -21,7 +27,8 @@ export default function AShareEvidenceRadar() {
   const radarItems = (radar.items as Array<Record<string, unknown>> | undefined) ?? [];
   const lineageItems = (lineage.items as Array<Record<string, unknown>> | undefined) ?? [];
   const nextActions = (radar.next_evidence_actions as Array<Record<string, unknown>> | undefined) ?? [];
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
   const radarRows = radarItems.map((item) => ({
     key: item.key,
@@ -71,7 +78,9 @@ export default function AShareEvidenceRadar() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
+          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -108,8 +117,16 @@ export default function AShareEvidenceRadar() {
         </PacketCard>
       </div>
 
-      <PacketCard title="调用血缘" subtitle="local_a_share_evidence_cache；不刷新 Tushare" status="call_ledger">
-        <DataLineageTable rows={callLedger} />
+      <PacketCard title="调用血缘" subtitle="payload 内部 local_a_share_evidence_cache；不刷新 Tushare" status="call_ledger">
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET evidence envelope call_ledger" subtitle="GET /api/evidence/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheEnvelopeLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET evidence envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning }))} />
       </PacketCard>
 
       <PacketCard title="原始 evidence cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">

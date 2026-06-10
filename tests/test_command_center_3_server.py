@@ -2336,6 +2336,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["policy"]["lineage_enters_core_action"])
         self.assertTrue(packet["does_not_execute_trades"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_a_share_evidence_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/evidence/cache", response["warnings"][0])
 
     def test_data_capability_cache_endpoint_returns_safe_local_status(self):
         self._with_snapshot_cache(
