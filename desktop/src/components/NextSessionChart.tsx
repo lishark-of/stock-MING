@@ -40,6 +40,11 @@ type ChartPayload = {
     renderer?: string;
     schema_version?: string;
     source_packet?: string;
+    external_calls_triggered?: boolean;
+    tushare_called?: boolean;
+    deepseek_called?: boolean;
+    github_called?: boolean;
+    does_not_execute_trades?: boolean;
     frontend_computes_trade_action?: boolean;
     does_not_modify_action?: boolean;
     does_not_modify_operation_zones?: boolean;
@@ -233,6 +238,11 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
         <span>来源：{String(contract?.source_packet ?? payload.source_packet ?? "cache_payload")}</span>
         <span>精确图谱：{payload.is_exact_next_session_packet === true ? "是" : "否"}</span>
         <span>真实 close：{payload.uses_real_daily_close === true ? "是" : "待验证"}</span>
+        <span>外部调用：{contract?.external_calls_triggered === true ? "存在" : "无"}</span>
+        <span>Tushare：{contract?.tushare_called === true ? "已调用" : "未调用"}</span>
+        <span>DeepSeek：{contract?.deepseek_called === true ? "已调用" : "未调用"}</span>
+        <span>GitHub：{contract?.github_called === true ? "已调用" : "未调用"}</span>
+        <span>真实交易：{contract?.does_not_execute_trades === false ? "可能" : "禁止"}</span>
         <span>前端算交易动作：{contract?.frontend_computes_trade_action === true ? "是" : "否"}</span>
         <span>改 action：{contract?.does_not_modify_action === false ? "可能" : "不会"}</span>
         <span>改操作区：{mayModifyOperationZones ? "可能" : "不会"}</span>
