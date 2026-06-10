@@ -126,6 +126,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("setInterval", panel)
         self.assertIn("local_fallback", panel)
         self.assertIn("onSuccess", panel)
+        self.assertIn("call_ledger", panel)
+        self.assertIn("status_history", panel)
+        self.assertIn("external_calls_triggered", panel)
+        self.assertIn("does_not_execute_trades", panel)
+        self.assertIn("does_not_modify_strategy_action", panel)
+        self.assertIn("DataLineageTable", panel)
 
         factor_page = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
         self.assertIn("onSuccess={refreshCache}", factor_page)

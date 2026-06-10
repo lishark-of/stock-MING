@@ -20,6 +20,12 @@ export type TaskRecord = {
   call_ledger?: Array<Record<string, unknown>>;
   status_history?: Array<Record<string, unknown>>;
   backend?: string;
+  external_calls_triggered?: boolean;
+  tushare_called?: boolean;
+  deepseek_called?: boolean;
+  github_called?: boolean;
+  does_not_execute_trades?: boolean;
+  does_not_modify_strategy_action?: boolean;
   warnings: string[];
 };
 
