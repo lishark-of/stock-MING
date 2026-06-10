@@ -103,6 +103,8 @@ export default function CommandCenterHome() {
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
+  const factorScoreChart = factor.score_chart_payload as Record<string, unknown> | undefined;
+  const factorScoreChartContract = factorScoreChart?.chart_contract as Record<string, unknown> | undefined;
   const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
   const packetPayloadLedger = (packets.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -222,6 +224,8 @@ export default function CommandCenterHome() {
         <PacketCard title="Factor Quant Hub cache" subtitle="多因子量化图谱 cache-only" status={String((factor.runtime as Record<string, unknown> | undefined)?.status ?? "cache")}>
           <p>mode: {String(factor.mode ?? "cache_only")}</p>
           <p>coverage: {String((factor.runtime as Record<string, unknown> | undefined)?.coverage ?? "--")}</p>
+          <p>score chart: {String(factorScoreChartContract?.schema_version ?? "missing")}</p>
+          <p>frontend computes trade action: {String(factorScoreChartContract?.frontend_computes_trade_action ?? false)}</p>
           <p>core action: {String((factor.governance as Record<string, unknown> | undefined)?.allow_core_action ?? false)}</p>
         </PacketCard>
         <PacketCard title="Serenity 方法雷达 cache" subtitle="本地方法来源基线" status={String(serenity.github_status ?? "local")}>
