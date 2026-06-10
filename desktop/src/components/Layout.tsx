@@ -20,6 +20,7 @@ export type RouteKey =
   | "migration"
   | "storage"
   | "tasks"
+  | "worker"
   | "strategy"
   | "quant"
   | "tradeReview"
@@ -45,6 +46,7 @@ const ROUTES: Array<{ key: RouteKey; label: string }> = [
   { key: "migration", label: "迁移状态" },
   { key: "storage", label: "存储层" },
   { key: "tasks", label: "任务目录" },
+  { key: "worker", label: "Worker" },
   { key: "strategy", label: "策略 Trace" },
   { key: "quant", label: "量化回测" },
   { key: "tradeReview", label: "交易复盘" },

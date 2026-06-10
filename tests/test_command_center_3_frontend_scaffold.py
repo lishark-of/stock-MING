@@ -37,6 +37,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "StrategyTrace.tsx",
             ROOT / "src" / "routes" / "TaskCatalog.tsx",
             ROOT / "src" / "routes" / "TradeReviewLab.tsx",
+            ROOT / "src" / "routes" / "WorkerRuntime.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
             ROOT / "src-tauri" / "src" / "main.rs",
         ]
@@ -117,6 +118,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "TaskCatalog.tsx",
             "StrategyTrace.tsx",
             "TradeReviewLab.tsx",
+            "WorkerRuntime.tsx",
             "LegacyTools.tsx",
         ]
         forbidden = ["tushare_adapter", "akshare", "DeepSeek(", "GITHUB_TOKEN", "process.env"]
@@ -169,6 +171,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("TaskCatalog", app_source)
         self.assertIn("StrategyTrace", app_source)
         self.assertIn("TradeReviewLab", app_source)
+        self.assertIn("WorkerRuntime", app_source)
         self.assertIn('"health"', layout_source)
         self.assertIn('"market"', layout_source)
         self.assertIn('"discipline"', layout_source)
@@ -186,6 +189,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"tasks"', layout_source)
         self.assertIn('"strategy"', layout_source)
         self.assertIn('"tradeReview"', layout_source)
+        self.assertIn('"worker"', layout_source)
         self.assertIn("健康", layout_source)
         self.assertIn("证据雷达", layout_source)
         self.assertIn("候选雷达", layout_source)
@@ -201,6 +205,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("任务目录", layout_source)
         self.assertIn("策略 Trace", layout_source)
         self.assertIn("交易复盘", layout_source)
+        self.assertIn("Worker", layout_source)
         self.assertIn("市场环境", layout_source)
         self.assertIn("交易纪律", layout_source)
 
@@ -260,6 +265,33 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("does_not_execute_trades", task_catalog_page)
         self.assertIn("does_not_modify_strategy_action", task_catalog_page)
         self.assertNotIn("postTask", task_catalog_page)
+
+    def test_worker_runtime_page_reads_runtime_cache_without_starting_backends(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "WorkerRuntime.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/worker/cache", client)
+        self.assertIn("getWorkerRuntimeCache", page)
+        self.assertIn("getWorkerRuntimeCache", home)
+        self.assertIn("GET /api/worker/cache", page)
+        self.assertIn("local_worker_runtime_cache", page)
+        self.assertIn("不会连接 Redis", page)
+        self.assertIn("不会启动 Celery worker", page)
+        self.assertIn("不会启动 APScheduler", page)
+        self.assertIn("不会调度真实任务", page)
+        self.assertIn("不调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertIn("does_not_ping_redis", page)
+        self.assertIn("does_not_start_celery_worker", page)
+        self.assertIn("does_not_start_scheduler", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+        self.assertNotIn("COMMAND_CENTER_REDIS_URL", page)
 
     def test_storage_page_reads_storage_cache_without_external_calls(self):
         page = (ROOT / "src" / "routes" / "StorageOverview.tsx").read_text(encoding="utf-8")

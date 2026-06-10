@@ -26,6 +26,7 @@ from server.api import (
     routes_strategy,
     routes_tasks,
     routes_trade_review,
+    routes_worker,
 )
 
 
@@ -65,3 +66,4 @@ app.include_router(routes_storage.router)
 app.include_router(routes_strategy.router)
 app.include_router(routes_tasks.router)
 app.include_router(routes_trade_review.router)
+app.include_router(routes_worker.router)

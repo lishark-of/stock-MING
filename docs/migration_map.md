@@ -22,6 +22,7 @@
 | DeepSeek 解释器 | `analysis_engine.py`, `deepseek_safety.py`, `command_center_*` | `POST /api/factor-quant/deepseek-explain` 等 | 页面按钮 | 只解释已有结构化结果 | 是，当前 stub |
 | Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否 | 否 |
 | Storage datasets | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage`, `GET /api/storage/{dataset}` | `CommandCenterHome.tsx` | 否，只读 Parquet/DuckDB 状态；白名单 `factor_values/daily/moneyflow` | 否 |
+| Worker / Task runtime | `worker/celery_app.py`, `worker/tasks_*.py`, `worker/scheduler.py`, `server/services/task_service.py` | `GET /api/worker/cache`, `GET /api/tasks`, `POST /api/tasks/{task_id}/cancel` | `WorkerRuntime.tsx`, `TaskCatalog.tsx` | cache GET 不连接 Redis、不启动 Celery、不启动 APScheduler；取消任务只改本地状态 | 是，POST task / cancel 走 FastAPI lifecycle |
 | Tauri desktop shell | `desktop/src-tauri/*`, `scripts/check_tauri_env.sh` | 连接本地 FastAPI `8710` | Tauri window / Vite dev | 否，预检不启动 Tauri | 否 |
 | Streamlit 旧工作台 | `app.py`, `visual_components.py` | `GET /api/legacy/cache`；作为 legacy | `LegacyTools.tsx` | cache GET 只读展示旧工作台桥接、迁移清单、旧数据缺失账本，不运行旧工具 | 后续任务化；当前不提供 POST |
 
@@ -53,8 +54,11 @@
 - `/api/tasks/{task_id}`
 - `/api/tasks/{task_id}/cancel`
 - `/api/tasks`
+- `/api/worker/cache`
 
 `GET` 类 cache API 当前已可读取 `.stock_ming_cache/command_center_latest.json` 中的本地快照或本地 builder 结果，不调用 Tushare、DeepSeek、GitHub。精确 packet 缺失时返回 `cache_missing`，并附带可审计的 legacy 快照摘要。
+
+`/api/worker/cache` 已接入 Worker / Task runtime 只读迁移：检查本地 `worker` scaffold、Celery/Redis/APScheduler 依赖可见性、task catalog 和 local fallback 状态；不连接 Redis、不启动 Celery worker、不启动 APScheduler、不调度真实 Tushare/DeepSeek/GitHub 任务、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
 `/api/market/cache` 已接入市场环境 / 盘面证据只读迁移：读取本地 `market_packet`、`market_profile_evidence`、`moneyflow_packet`、`margin_packet`、`dragon_tiger_packet`、`limit_emotion_packet`、`chip_packet`、`etf_packet` 和 `margin_etf_summary`，输出盘面状态、资金流、两融、龙虎榜、涨跌停情绪、筹码和 ETF 替代说明；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不刷新行情或资金流、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
 

@@ -23,6 +23,7 @@ import StorageOverview from "./routes/StorageOverview";
 import StrategyTrace from "./routes/StrategyTrace";
 import TaskCatalog from "./routes/TaskCatalog";
 import TradeReviewLab from "./routes/TradeReviewLab";
+import WorkerRuntime from "./routes/WorkerRuntime";
 
 export default function App() {
   const [route, setRoute] = useState<RouteKey>("home");
@@ -47,6 +48,7 @@ export default function App() {
       {route === "migration" ? <MigrationStatus /> : null}
       {route === "storage" ? <StorageOverview /> : null}
       {route === "tasks" ? <TaskCatalog /> : null}
+      {route === "worker" ? <WorkerRuntime /> : null}
       {route === "strategy" ? <StrategyTrace /> : null}
       {route === "quant" ? <QuantBacktestLab /> : null}
       {route === "tradeReview" ? <TradeReviewLab /> : null}

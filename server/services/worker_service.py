@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+import datetime as _dt
+import importlib.util
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+from server.services import task_service
+
+
+PACKET_KEY = "command_center_3_worker_runtime_cache"
+SCHEMA_VERSION = "worker_runtime_cache.v1"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _now_iso() -> str:
+    return _dt.datetime.now().isoformat(timespec="seconds")
+
+
+def _json_safe(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except Exception:
+        return {"serialization_error_safe": "worker_runtime_cache_not_json_serializable"}
+
+
+def _module_available(module_name: str) -> bool:
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except Exception:
+        return False
+
+
+def _path_exists(path: str) -> bool:
+    return (PROJECT_ROOT / path).exists()
+
+
+def _worker_module_rows() -> list[dict[str, Any]]:
+    rows = [
+        {
+            "module": "worker.celery_app",
+            "file": "worker/celery_app.py",
+            "role": "Celery app factory",
+            "task_types": [],
+        },
+        {
+            "module": "worker.tasks_factor",
+            "file": "worker/tasks_factor.py",
+            "role": "Factor quant task wrappers",
+            "task_types": ["refresh_factor_data", "run_factor_light"],
+        },
+        {
+            "module": "worker.tasks_deepseek",
+            "file": "worker/tasks_deepseek.py",
+            "role": "Guarded DeepSeek explanation task wrapper",
+            "task_types": ["run_deepseek_factor_explanation"],
+        },
+        {
+            "module": "worker.tasks_chokepoint",
+            "file": "worker/tasks_chokepoint.py",
+            "role": "Chokepoint and Serenity task wrappers",
+            "task_types": ["run_chokepoint_scan", "probe_serenity_github"],
+        },
+        {
+            "module": "worker.tasks_tushare",
+            "file": "worker/tasks_tushare.py",
+            "role": "Tushare refresh task wrapper",
+            "task_types": ["refresh_tushare_facts"],
+        },
+        {
+            "module": "worker.scheduler",
+            "file": "worker/scheduler.py",
+            "role": "APScheduler config scaffold",
+            "task_types": [],
+        },
+    ]
+    for row in rows:
+        row["module_available"] = _module_available(str(row["module"]))
+        row["file_exists"] = _path_exists(str(row["file"]))
+    return rows
+
+
+def _backend_rows(*, celery_available: bool, redis_available: bool, apscheduler_available: bool, scheduled_refresh_enabled: bool) -> list[dict[str, Any]]:
+    return [
+        {
+            "backend": "local_fallback",
+            "status": "ready",
+            "role": "Default local task lifecycle and SQLite persistence",
+            "external_connection": False,
+            "started_by_cache_api": False,
+        },
+        {
+            "backend": "celery",
+            "status": "available" if celery_available else "missing_dependency",
+            "role": "Optional distributed worker backend",
+            "external_connection": False,
+            "started_by_cache_api": False,
+        },
+        {
+            "backend": "redis",
+            "status": "package_available" if redis_available else "missing_dependency",
+            "role": "Optional broker / hot cache",
+            "external_connection": False,
+            "pinged_by_cache_api": False,
+        },
+        {
+            "backend": "apscheduler",
+            "status": "configured_disabled" if apscheduler_available and not scheduled_refresh_enabled else "configured_enabled" if apscheduler_available else "missing_dependency",
+            "role": "Optional scheduled task trigger scaffold",
+            "external_connection": False,
+            "started_by_cache_api": False,
+        },
+    ]
+
+
+def read_worker_runtime_cache() -> dict[str, Any]:
+    celery_available = _module_available("celery")
+    redis_available = _module_available("redis")
+    apscheduler_available = _module_available("apscheduler")
+    scheduled_refresh_enabled = os.getenv("COMMAND_CENTER_ENABLE_SCHEDULED_REFRESH") == "1"
+    redis_configured = bool(os.getenv("COMMAND_CENTER_REDIS_URL"))
+    catalog = task_service.build_task_catalog()
+    worker_module_rows = _worker_module_rows()
+    backend_rows = _backend_rows(
+        celery_available=celery_available,
+        redis_available=redis_available,
+        apscheduler_available=apscheduler_available,
+        scheduled_refresh_enabled=scheduled_refresh_enabled,
+    )
+    module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
+    status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
+
+    packet = {
+        "packet_key": PACKET_KEY,
+        "schema_version": SCHEMA_VERSION,
+        "status": status,
+        "mode": "cache_only",
+        "cache_only": True,
+        "read_only": True,
+        "loaded_at": _now_iso(),
+        "runtime": {
+            "local_fallback_enabled": True,
+            "sqlite_task_metadata_enabled": True,
+            "celery_available": celery_available,
+            "redis_package_available": redis_available,
+            "redis_url_configured": redis_configured,
+            "redis_url_exposed": False,
+            "apscheduler_available": apscheduler_available,
+            "scheduled_refresh_enabled": scheduled_refresh_enabled,
+            "celery_worker_started": False,
+            "scheduler_started": False,
+            "redis_pinged": False,
+        },
+        "task_catalog_summary": {
+            "task_count": catalog.get("task_count", 0),
+            "external_sources": catalog.get("external_sources", []),
+            "all_tasks_button_gated": bool(catalog.get("policy", {}).get("all_tasks_button_gated")),
+            "call_ledger_required_for_all": bool(catalog.get("policy", {}).get("call_ledger_required_for_all")),
+            "supports_local_task_cancel": bool(catalog.get("policy", {}).get("supports_local_task_cancel")),
+        },
+        "backend_rows": backend_rows,
+        "worker_module_rows": worker_module_rows,
+        "counts": {
+            "backend_count": len(backend_rows),
+            "worker_module_count": len(worker_module_rows),
+            "worker_module_ready_count": module_ready_count,
+            "task_count": catalog.get("task_count", 0),
+        },
+        "policy": {
+            "cache_api_external_calls": False,
+            "does_not_ping_redis": True,
+            "does_not_start_celery_worker": True,
+            "does_not_start_scheduler": True,
+            "does_not_schedule_real_tasks": True,
+            "does_not_call_tushare": True,
+            "does_not_call_deepseek": True,
+            "does_not_call_github": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "post_task_required_for_work": True,
+            "worker_runtime_is_diagnostic_only": True,
+            "contains_secret": False,
+        },
+        "call_ledger": [
+            {
+                "api": "local_worker_runtime_cache",
+                "source": "worker scaffold and task catalog",
+                "row_count": len(worker_module_rows) + len(backend_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "cache_read",
+                "external": False,
+            }
+        ],
+        "external_calls_triggered": False,
+        "redis_pinged": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "GET /api/worker/cache 只读检查本地 worker scaffold 和依赖可见性；不会连接 Redis。",
+            "本页不会启动 Celery worker 或 APScheduler，不会调度真实 Tushare、DeepSeek 或 GitHub 任务。",
+            "Worker runtime 只做诊断说明，不执行真实交易，不修改 strategy action。",
+        ],
+    }
+    return _json_safe(packet)

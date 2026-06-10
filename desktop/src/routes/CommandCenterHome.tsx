@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
+import { getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -23,6 +23,7 @@ export default function CommandCenterHome() {
   const [migration, setMigration] = useState<Record<string, unknown>>({});
   const [legacyBridge, setLegacyBridge] = useState<Record<string, unknown>>({});
   const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
+  const [workerRuntime, setWorkerRuntime] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function CommandCenterHome() {
     void getMigrationStatus().then((res) => setMigration(res.data));
     void getLegacyBridgeCache().then((res) => setLegacyBridge(res.data));
     void getTaskCatalog().then((res) => setTaskCatalog(res.data));
+    void getWorkerRuntimeCache().then((res) => setWorkerRuntime(res.data));
     void getTasks().then((res) => setTasks(res.data.tasks ?? []));
   }, []);
 
@@ -64,6 +66,8 @@ export default function CommandCenterHome() {
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
   const legacyCounts = legacyBridge.counts as Record<string, unknown> | undefined;
+  const workerCounts = workerRuntime.counts as Record<string, unknown> | undefined;
+  const workerRuntimeState = workerRuntime.runtime as Record<string, unknown> | undefined;
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
@@ -183,6 +187,11 @@ export default function CommandCenterHome() {
           <p>all button gated: {String(taskCatalogPolicy?.all_tasks_button_gated ?? true)}</p>
           <p>call ledger required: {String(taskCatalogPolicy?.call_ledger_required_for_all ?? true)}</p>
           <JsonDetails title="任务目录明细" data={taskCatalogItems ?? []} />
+        </PacketCard>
+        <PacketCard title="Worker runtime cache" subtitle="GET cache，只读 worker scaffold，不连接 Redis" status={String(workerRuntime.status ?? "cache")}>
+          <p>modules ready: {String(workerCounts?.worker_module_ready_count ?? 0)} / {String(workerCounts?.worker_module_count ?? 0)}</p>
+          <p>local fallback: {String(workerRuntimeState?.local_fallback_enabled ?? true)}</p>
+          <p>redis pinged: {String(workerRuntime.redis_pinged ?? false)}</p>
         </PacketCard>
       </div>
     </>

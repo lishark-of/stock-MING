@@ -162,3 +162,7 @@ export function getTasks() {
 export function getTaskCatalog() {
   return request<Record<string, unknown>>("/api/tasks/catalog");
 }
+
+export function getWorkerRuntimeCache() {
+  return request<Record<string, unknown>>("/api/worker/cache");
+}

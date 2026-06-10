@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
-from server.services import candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services.task_service import create_task_stub
 
 print("health: import ok")
@@ -22,6 +22,8 @@ legacy = legacy_service.read_legacy_bridge_cache()
 print("legacy_bridge:", legacy["status"], legacy["mode"], legacy["counts"]["checklist_item_count"])
 catalog = task_service.build_task_catalog()
 print("task_catalog:", catalog["status"], catalog["task_count"])
+worker = worker_service.read_worker_runtime_cache()
+print("worker_runtime:", worker["status"], worker["mode"], worker["counts"]["worker_module_ready_count"])
 trade_review = trade_review_service.read_trade_review_cache()
 print("trade_review:", trade_review["status"], trade_review["record_count"])
 market = market_service.read_market_context_cache()

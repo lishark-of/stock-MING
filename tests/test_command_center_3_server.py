@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -990,6 +990,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("github", by_type["probe_serenity_github"]["possible_external_sources"])
         self.assertEqual(by_type["run_factor_light"]["possible_external_sources"], [])
 
+    def test_worker_runtime_cache_reads_local_scaffold_without_starting_backends(self):
+        packet = worker_service.read_worker_runtime_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_worker_runtime_cache")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertTrue(packet["runtime"]["local_fallback_enabled"])
+        self.assertFalse(packet["runtime"]["celery_worker_started"])
+        self.assertFalse(packet["runtime"]["scheduler_started"])
+        self.assertFalse(packet["runtime"]["redis_pinged"])
+        self.assertFalse(packet["runtime"]["redis_url_exposed"])
+        self.assertEqual(packet["task_catalog_summary"]["task_count"], task_service.build_task_catalog()["task_count"])
+        self.assertTrue(packet["task_catalog_summary"]["all_tasks_button_gated"])
+        self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
+        self.assertTrue(packet["policy"]["does_not_ping_redis"])
+        self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
+        self.assertTrue(packet["policy"]["does_not_start_scheduler"])
+        self.assertTrue(packet["policy"]["does_not_schedule_real_tasks"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["redis_pinged"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_worker_runtime_cache")
+        self.assertNotIn("COMMAND_CENTER_REDIS_URL", json.dumps(packet, ensure_ascii=False))
+        json.dumps(packet, ensure_ascii=False)
+
     def test_cancel_task_marks_pending_task_without_external_work(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -1309,6 +1338,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task_catalog["data"]["tushare_called"])
         self.assertFalse(task_catalog["data"]["deepseek_called"])
         self.assertFalse(task_catalog["data"]["github_called"])
+
+        worker = self.client.get("/api/worker/cache").json()
+        self.assertTrue(worker["ok"])
+        self.assertTrue(worker["data"]["cache_only"])
+        self.assertFalse(worker["data"]["external_calls_triggered"])
+        self.assertFalse(worker["data"]["redis_pinged"])
+        self.assertFalse(worker["data"]["tushare_called"])
+        self.assertFalse(worker["data"]["deepseek_called"])
+        self.assertFalse(worker["data"]["github_called"])
+        self.assertTrue(worker["data"]["runtime"]["local_fallback_enabled"])
+        self.assertFalse(worker["data"]["runtime"]["celery_worker_started"])
+        self.assertFalse(worker["data"]["runtime"]["scheduler_started"])
+        self.assertTrue(worker["data"]["policy"]["does_not_ping_redis"])
+        self.assertTrue(worker["data"]["policy"]["does_not_start_celery_worker"])
+        self.assertTrue(worker["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(worker["data"]["does_not_execute_trades"])
 
         trade_review = self.client.get("/api/trade-review/cache").json()
         self.assertTrue(trade_review["ok"])
@@ -1835,6 +1880,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cancelled, ensure_ascii=False))
+
+    def test_worker_runtime_cache_endpoint_returns_local_backend_readiness(self):
+        response = self.client.get("/api/worker/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_worker_runtime_cache")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertGreaterEqual(packet["counts"]["backend_count"], 4)
+        self.assertGreaterEqual(packet["counts"]["worker_module_count"], 6)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["redis_pinged"])
+        self.assertFalse(packet["runtime"]["celery_worker_started"])
+        self.assertFalse(packet["runtime"]["scheduler_started"])
+        self.assertTrue(packet["policy"]["post_task_required_for_work"])
+        self.assertTrue(packet["policy"]["worker_runtime_is_diagnostic_only"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_run_light_endpoint_writes_factor_cache(self):
         self._with_meta_store()
