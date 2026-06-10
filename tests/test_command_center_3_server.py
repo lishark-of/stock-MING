@@ -2054,9 +2054,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(health["call_ledger"][0]["external"])
         self.assertIn("GET /health", health["warnings"][0])
         model_strategy = health["data"]["deepseek_model_strategy"]
-        self.assertTrue(model_strategy["explain"])
-        self.assertTrue(model_strategy["fast"])
-        self.assertTrue(model_strategy["default"])
+        model_purposes = set(model_strategy) - {"source", "contains_secret"}
+        self.assertEqual(
+            model_purposes,
+            {"default", "explain", "projection", "factor_explain", "fast", "healthcheck", "feeder"},
+        )
+        self.assertEqual(model_strategy["default"], model_strategy["explain"])
+        self.assertEqual(model_strategy["projection"], model_strategy["explain"])
+        self.assertEqual(model_strategy["factor_explain"], model_strategy["explain"])
+        self.assertEqual(model_strategy["healthcheck"], model_strategy["fast"])
+        self.assertEqual(model_strategy["feeder"], model_strategy["fast"])
         self.assertFalse(model_strategy["contains_secret"])
         self.assertNotIn("token", json.dumps(model_strategy, ensure_ascii=False).lower())
         self.assertNotIn("api_key", json.dumps(model_strategy, ensure_ascii=False).lower())
