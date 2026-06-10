@@ -20,6 +20,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "NextSessionChart.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
+            ROOT / "src" / "routes" / "HealthStatus.tsx",
             ROOT / "src" / "routes" / "MigrationStatus.tsx",
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
@@ -60,6 +61,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         route_dir = ROOT / "src" / "routes"
         page_names = [
             "CommandCenterHome.tsx",
+            "HealthStatus.tsx",
             "NextSessionMap.tsx",
             "FactorQuantHub.tsx",
             "ChokepointScan.tsx",
@@ -103,14 +105,17 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
         layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+        self.assertIn("HealthStatus", app_source)
         self.assertIn("PacketRegistry", app_source)
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
         self.assertIn("TaskCatalog", app_source)
+        self.assertIn('"health"', layout_source)
         self.assertIn('"packets"', layout_source)
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
         self.assertIn('"tasks"', layout_source)
+        self.assertIn("健康", layout_source)
         self.assertIn("Packet", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
@@ -132,6 +137,22 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("does_not_execute_trades", panel)
         self.assertIn("does_not_modify_strategy_action", panel)
         self.assertIn("DataLineageTable", panel)
+
+    def test_health_page_reads_startup_state_without_external_calls(self):
+        page = (ROOT / "src" / "routes" / "HealthStatus.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("getHealth", page)
+        self.assertIn("getMigrationStatus", page)
+        self.assertIn("GET /health 只读", page)
+        self.assertIn("external_calls_on_startup", page)
+        self.assertIn("real_trading_enabled", page)
+        self.assertIn("deepseek_model_strategy", page)
+        self.assertIn("不在调用点硬编码", page)
+        self.assertIn("不展示密钥", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
 
         factor_page = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
         self.assertIn("onSuccess={refreshCache}", factor_page)

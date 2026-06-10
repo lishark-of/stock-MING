@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 export type RouteKey =
   | "home"
+  | "health"
   | "next"
   | "factor"
   | "chokepoint"
@@ -14,6 +15,7 @@ export type RouteKey =
 
 const ROUTES: Array<{ key: RouteKey; label: string }> = [
   { key: "home", label: "Command Center" },
+  { key: "health", label: "健康" },
   { key: "next", label: "次日图谱" },
   { key: "factor", label: "多因子图谱" },
   { key: "chokepoint", label: "瓶颈扫描" },
