@@ -12,14 +12,22 @@ function rows(value: unknown): Array<Record<string, unknown>> {
 
 export default function CallLedgerAudit() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
 
   useEffect(() => {
-    void getAuditCache().then((res) => setCache(res.data));
+    void getAuditCache().then((res) => {
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+      setCache(res.data);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<unknown> | undefined) ?? []);
 
   return (
     <>
@@ -39,6 +47,8 @@ export default function CallLedgerAudit() {
           { label: "external calls", value: counts.external_call_count as number | undefined, tone: Number(counts.external_call_count ?? 0) > 0 ? "bad" : "good" },
           { label: "action risk", value: counts.action_risk_count as number | undefined, tone: Number(counts.action_risk_count ?? 0) > 0 ? "bad" : "good" },
           { label: "missing ledger", value: counts.missing_call_ledger_count as number | undefined, tone: Number(counts.missing_call_ledger_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "audit envelope ledger", value: callLedger.length },
+          { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "外部调用", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
@@ -87,6 +97,10 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="审计页自身调用血缘" subtitle="local_call_ledger_audit_cache；不外联、不写回业务 packet" status="self_lineage">
         <DataLineageTable rows={callLedger} />
+      </PacketCard>
+
+      <PacketCard title="审计页 envelope warnings" subtitle="GET /api/audit/cache 顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning: String(warning ?? "") }))} />
       </PacketCard>
 
       <PacketCard title="原始 call ledger audit cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">

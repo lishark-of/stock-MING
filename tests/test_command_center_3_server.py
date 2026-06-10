@@ -2490,6 +2490,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         response = self.client.get("/api/audit/cache").json()
 
         self.assertTrue(response["ok"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_call_ledger_audit_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
         packet = response["data"]
         self.assertEqual(packet["packet_key"], "command_center_3_call_ledger_audit_cache")
         self.assertEqual(packet["mode"], "cache_only")
