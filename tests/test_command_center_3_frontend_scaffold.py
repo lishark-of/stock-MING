@@ -21,6 +21,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src" / "routes" / "MigrationStatus.tsx",
+            ROOT / "src" / "routes" / "TaskCatalog.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
             ROOT / "src-tauri" / "src" / "main.rs",
         ]
@@ -62,6 +63,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "ChokepointScan.tsx",
             "SerenityMethodRadar.tsx",
             "MigrationStatus.tsx",
+            "TaskCatalog.tsx",
             "LegacyTools.tsx",
         ]
         forbidden = ["tushare_adapter", "akshare", "DeepSeek(", "GITHUB_TOKEN", "process.env"]
@@ -98,8 +100,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
         layout_source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
         self.assertIn("MigrationStatus", app_source)
+        self.assertIn("TaskCatalog", app_source)
         self.assertIn('"migration"', layout_source)
+        self.assertIn('"tasks"', layout_source)
         self.assertIn("迁移状态", layout_source)
+        self.assertIn("任务目录", layout_source)
 
     def test_task_panel_polls_fastapi_task_endpoint(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
@@ -118,6 +123,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("getTaskCatalog", home_source)
         self.assertIn("POST task 才可能触发外部请求", home_source)
         self.assertIn("call_ledger_required_for_all", home_source)
+
+        task_catalog_page = (ROOT / "src" / "routes" / "TaskCatalog.tsx").read_text(encoding="utf-8")
+        self.assertIn("getTaskCatalog", task_catalog_page)
+        self.assertIn("call_ledger_required_for_all", task_catalog_page)
+        self.assertIn("POST task 才可能触发外部请求", task_catalog_page)
+        self.assertIn("does_not_execute_trades", task_catalog_page)
+        self.assertIn("does_not_modify_strategy_action", task_catalog_page)
+        self.assertNotIn("postTask", task_catalog_page)
 
     def test_next_session_chart_uses_cache_payload_without_trade_mutation(self):
         page = (ROOT / "src" / "routes" / "NextSessionMap.tsx").read_text(encoding="utf-8")
