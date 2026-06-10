@@ -1417,6 +1417,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("build_task_status_index", script)
         self.assertIn("task_status_index:", script)
         self.assertIn('task_index["call_ledger_count"]', script)
+        self.assertIn("discovered_post_routes", script)
+        self.assertIn('catalog["route_coverage"]["known_post_routes"]', script)
+        self.assertIn("task_route_coverage:", script)
+        self.assertIn("call_ledger_required_for_all_known_post_routes", script)
 
     def test_next_session_generate_task_writes_exact_cache_packet_without_external_work(self):
         db_path = self._with_meta_store()

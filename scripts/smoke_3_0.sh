@@ -97,7 +97,23 @@ assert_cache_safety("legacy_bridge", legacy)
 print("legacy_bridge:", legacy["status"], legacy["mode"], legacy["counts"]["checklist_item_count"])
 catalog = task_service.build_task_catalog()
 assert_cache_safety("task_catalog", catalog)
+discovered_post_routes = sorted(
+    f"POST {route.path}"
+    for route in app.routes
+    if "POST" in getattr(route, "methods", set()) and str(route.path).startswith("/api/")
+)
+known_post_routes = sorted(catalog["route_coverage"]["known_post_routes"])
+if discovered_post_routes != known_post_routes:
+    raise AssertionError(
+        "task_catalog.route_coverage must cover every FastAPI POST route: "
+        f"discovered={discovered_post_routes}, known={known_post_routes}"
+    )
+if catalog["route_coverage"]["uncovered_post_routes"]:
+    raise AssertionError("task_catalog.route_coverage.uncovered_post_routes must stay empty")
+if not catalog["route_coverage"]["call_ledger_required_for_all_known_post_routes"]:
+    raise AssertionError("every known POST route must require call_ledger")
 print("task_catalog:", catalog["status"], catalog["task_count"])
+print("task_route_coverage:", len(discovered_post_routes), "post routes covered")
 task_index = task_service.build_task_status_index()
 assert_cache_safety("task_status_index", task_index)
 print("task_status_index:", task_index["status"], task_index["task_count"], task_index["call_ledger_count"])
