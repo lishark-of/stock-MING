@@ -58,6 +58,7 @@ export default function CallLedgerAudit() {
       <div className="grid">
         <PacketCard title="调用审计来源" subtitle="GET /api/audit/cache 聚合 cache API 与 task call_ledger" status={String(cache.status ?? "missing")}>
           <p>{String(cache.summary ?? "调用审计 cache 只读展示。")}</p>
+          <p>审计范围包含 GET /health、GET cache API 与本地 task call_ledger。</p>
           <p>GET /api/audit/cache 只读聚合本地 call_ledger，不调用 Tushare、DeepSeek、GitHub 或 Redis。</p>
           <p>审计页不刷新数据、不运行回测、不执行真实交易、不修改 strategy action。</p>
         </PacketCard>

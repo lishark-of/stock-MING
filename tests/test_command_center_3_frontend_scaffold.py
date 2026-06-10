@@ -411,6 +411,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("audit warnings", page)
         self.assertIn("审计页 envelope warnings", page)
         self.assertIn("GET /api/audit/cache", page)
+        self.assertIn("GET /health", page)
         self.assertIn("local_call_ledger_audit_cache", page)
         self.assertIn("cache API 与 task call_ledger", page)
         self.assertIn("command_center_3_task_status_index", page)

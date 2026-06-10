@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from config import get_deepseek_model_strategy
 from server.services import (
     candidate_service,
     data_capability_service,
@@ -92,8 +93,44 @@ def _bool(value: Any) -> bool:
     return bool(value)
 
 
+def _health_check_packet() -> dict[str, Any]:
+    checked_at = _now_iso()
+    return {
+        "packet_key": "command_center_3_health_check",
+        "schema_version": "health_check.v1",
+        "status": "ok",
+        "mode": "cache_only",
+        "cache_only": True,
+        "service": "stock-MING Command Center 3.0",
+        "legacy_streamlit": "retained_for_admin_debug",
+        "external_calls_on_startup": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "real_trading_enabled": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "deepseek_model_strategy": get_deepseek_model_strategy(),
+        "call_ledger": [
+            {
+                "api": "local_health_check",
+                "source": "FastAPI health route and local config",
+                "call_status": "cache_read",
+                "local_fetched_at": checked_at,
+                "external": False,
+            }
+        ],
+        "warnings": [
+            "GET /health 只读检查 FastAPI 启动状态和本地模型策略配置；不会调用 Tushare、DeepSeek 或 GitHub。",
+            "健康检查不读取 token/key，不执行真实交易，不修改 strategy action。",
+        ],
+    }
+
+
 def _cache_endpoint_specs() -> list[tuple[str, str, Callable[[], dict[str, Any]]]]:
     return [
+        ("GET /health", "health", _health_check_packet),
         ("GET /api/packets", "packet_index", packet_service.list_packets),
         ("GET /api/migration/status", "migration_status", migration_status_service.build_migration_status),
         ("GET /api/model-strategy/cache", "model_strategy", model_strategy_service.read_deepseek_model_strategy_cache),
