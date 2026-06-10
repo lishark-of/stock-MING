@@ -14,7 +14,11 @@ export default function CommandCenterHome() {
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [market, setMarket] = useState<Record<string, unknown>>({});
+  const [marketEnvelopeLedger, setMarketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [marketEnvelopeWarnings, setMarketEnvelopeWarnings] = useState<Array<string>>([]);
   const [discipline, setDiscipline] = useState<Record<string, unknown>>({});
+  const [disciplineEnvelopeLedger, setDisciplineEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [disciplineEnvelopeWarnings, setDisciplineEnvelopeWarnings] = useState<Array<string>>([]);
   const [factor, setFactor] = useState<Record<string, unknown>>({});
   const [factorEnvelopeLedger, setFactorEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [factorEnvelopeWarnings, setFactorEnvelopeWarnings] = useState<Array<string>>([]);
@@ -55,8 +59,16 @@ export default function CommandCenterHome() {
       setPacketEnvelopeLedger(res.call_ledger ?? []);
       setPackets(res.data);
     });
-    void getMarketContextCache().then((res) => setMarket(res.data));
-    void getDisciplineLoopCache().then((res) => setDiscipline(res.data));
+    void getMarketContextCache().then((res) => {
+      setMarketEnvelopeLedger(res.call_ledger ?? []);
+      setMarketEnvelopeWarnings(res.warnings ?? []);
+      setMarket(res.data);
+    });
+    void getDisciplineLoopCache().then((res) => {
+      setDisciplineEnvelopeLedger(res.call_ledger ?? []);
+      setDisciplineEnvelopeWarnings(res.warnings ?? []);
+      setDiscipline(res.data);
+    });
     void getFactorQuantCache().then((res) => {
       setFactorEnvelopeLedger(res.call_ledger ?? []);
       setFactorEnvelopeWarnings(res.warnings ?? []);
@@ -131,6 +143,8 @@ export default function CommandCenterHome() {
   const factorScoreChartContract = factorScoreChart?.chart_contract as Record<string, unknown> | undefined;
   const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
   const packetPayloadLedger = (packets.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const marketPayloadLedger = (market.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const disciplinePayloadLedger = (discipline.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const factorPayloadLedger = (factor.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const nextPayloadLedger = (next.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const serenityPayloadLedger = (serenity.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -140,6 +154,8 @@ export default function CommandCenterHome() {
   const envelopeLedgerRows = [
     ...healthEnvelopeLedger.map((row) => ({ scope: "health", ...row })),
     ...(packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).map((row) => ({ scope: "packet_index", ...row })),
+    ...(marketEnvelopeLedger.length ? marketEnvelopeLedger : marketPayloadLedger).map((row) => ({ scope: "market", ...row })),
+    ...(disciplineEnvelopeLedger.length ? disciplineEnvelopeLedger : disciplinePayloadLedger).map((row) => ({ scope: "discipline", ...row })),
     ...(factorEnvelopeLedger.length ? factorEnvelopeLedger : factorPayloadLedger).map((row) => ({ scope: "factor_quant", ...row })),
     ...(nextEnvelopeLedger.length ? nextEnvelopeLedger : nextPayloadLedger).map((row) => ({ scope: "next_session", ...row })),
     ...(serenityEnvelopeLedger.length ? serenityEnvelopeLedger : serenityPayloadLedger).map((row) => ({ scope: "serenity", ...row })),
@@ -162,6 +178,8 @@ export default function CommandCenterHome() {
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
           { label: "cache keys", value: packetKeys?.length ?? 0 },
           { label: "packet envelope ledger", value: (packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).length },
+          { label: "market envelope ledger", value: (marketEnvelopeLedger.length ? marketEnvelopeLedger : marketPayloadLedger).length },
+          { label: "discipline envelope ledger", value: (disciplineEnvelopeLedger.length ? disciplineEnvelopeLedger : disciplinePayloadLedger).length },
           { label: "factor envelope ledger", value: (factorEnvelopeLedger.length ? factorEnvelopeLedger : factorPayloadLedger).length },
           { label: "next envelope ledger", value: (nextEnvelopeLedger.length ? nextEnvelopeLedger : nextPayloadLedger).length },
           { label: "serenity envelope ledger", value: (serenityEnvelopeLedger.length ? serenityEnvelopeLedger : serenityPayloadLedger).length },
@@ -201,9 +219,9 @@ export default function CommandCenterHome() {
           <p>external calls: {String(audit.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="3.0 envelope 血缘总览" subtitle="首页优先读取 FastAPI 顶层 call_ledger；不钻 payload 也能判断只读边界" status="lineage">
-          <p>health / packet / factor / next / serenity / chokepoint / catalog / task index: {String(healthEnvelopeLedger.length)} / {String(packetEnvelopeLedger.length)} / {String(factorEnvelopeLedger.length)} / {String(nextEnvelopeLedger.length)} / {String(serenityEnvelopeLedger.length)} / {String(chokepointEnvelopeLedger.length)} / {String(taskCatalogEnvelopeLedger.length)} / {String(taskIndexEnvelopeLedger.length)}</p>
+          <p>health / packet / market / discipline / factor / next / serenity / chokepoint / catalog / task index: {String(healthEnvelopeLedger.length)} / {String(packetEnvelopeLedger.length)} / {String(marketEnvelopeLedger.length)} / {String(disciplineEnvelopeLedger.length)} / {String(factorEnvelopeLedger.length)} / {String(nextEnvelopeLedger.length)} / {String(serenityEnvelopeLedger.length)} / {String(chokepointEnvelopeLedger.length)} / {String(taskCatalogEnvelopeLedger.length)} / {String(taskIndexEnvelopeLedger.length)}</p>
           <p>health warnings: {String(healthWarnings.length)}</p>
-          <p>fallback payload ledger: {String(packetPayloadLedger.length + factorPayloadLedger.length + nextPayloadLedger.length + serenityPayloadLedger.length + chokepointPayloadLedger.length + taskCatalogPayloadLedger.length + taskIndexPayloadLedger.length)}</p>
+          <p>fallback payload ledger: {String(packetPayloadLedger.length + marketPayloadLedger.length + disciplinePayloadLedger.length + factorPayloadLedger.length + nextPayloadLedger.length + serenityPayloadLedger.length + chokepointPayloadLedger.length + taskCatalogPayloadLedger.length + taskIndexPayloadLedger.length)}</p>
           <p>GET cache 仍不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。</p>
           <DataLineageTable rows={envelopeLedgerRows} />
         </PacketCard>
@@ -215,12 +233,14 @@ export default function CommandCenterHome() {
         <PacketCard title="市场环境 cache" subtitle="GET cache，只读盘面资金/情绪/两融，不刷新行情" status={String(market.status ?? "cache")}>
           <p>trade date: {String(market.trade_date ?? "--")}</p>
           <p>packets ready/missing: {String(marketCounts?.ready_count ?? 0)} / {String(marketCounts?.missing_count ?? 0)}</p>
+          <p>envelope ledger / warnings: {String(marketEnvelopeLedger.length)} / {String(marketEnvelopeWarnings.length)}</p>
           <p>external calls: {String(market.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="交易纪律 cache" subtitle="GET cache，只读纪律闭环，不运行回测" status={String(discipline.status ?? "cache")}>
           <p>discipline score: {String(disciplinePacket?.score ?? "--")}</p>
           <p>loop ready / blocked: {String(disciplineCounts?.loop_ready_count ?? 0)} / {String(disciplineCounts?.loop_blocked_count ?? 0)}</p>
           <p>refresh steps: {String(disciplineCounts?.refresh_step_count ?? 0)}</p>
+          <p>envelope ledger / warnings: {String(disciplineEnvelopeLedger.length)} / {String(disciplineEnvelopeWarnings.length)}</p>
         </PacketCard>
         <PacketCard title="次日操作图谱 cache" subtitle="GET cache，不刷新，不改 action" status={String(next.status ?? "cache")}>
           <p>{String(next.summary ?? "等待缓存")}</p>
