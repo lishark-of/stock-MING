@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+import datetime as _dt
+import json
+import os
+import shutil
+from pathlib import Path
+from typing import Any
+
+
+PACKET_KEY = "command_center_3_desktop_shell_preflight_cache"
+SCHEMA_VERSION = "desktop_shell_preflight_cache.v1"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DESKTOP_ROOT = PROJECT_ROOT / "desktop"
+
+
+def _now_iso() -> str:
+    return _dt.datetime.now().isoformat(timespec="seconds")
+
+
+def _json_safe(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except Exception:
+        return {"serialization_error_safe": "desktop_shell_preflight_cache_not_json_serializable"}
+
+
+def _path_label(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _file_row(path: Path, label: str, role: str) -> dict[str, Any]:
+    return {
+        "label": label,
+        "path": _path_label(path),
+        "role": role,
+        "exists": path.exists(),
+        "kind": "directory" if path.is_dir() else "file",
+    }
+
+
+def _command_row(name: str, role: str, required_for: str) -> dict[str, Any]:
+    executable = shutil.which(name)
+    return {
+        "command": name,
+        "role": role,
+        "required_for": required_for,
+        "available": bool(executable),
+        "path_available": bool(executable),
+    }
+
+
+def _package_json_summary() -> dict[str, Any]:
+    path = DESKTOP_ROOT / "package.json"
+    if not path.exists():
+        return {"available": False, "scripts": [], "dependencies": [], "dev_dependencies": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"available": False, "error_message_safe": str(exc).splitlines()[0][:240], "scripts": [], "dependencies": [], "dev_dependencies": []}
+    scripts = payload.get("scripts") if isinstance(payload.get("scripts"), dict) else {}
+    dependencies = payload.get("dependencies") if isinstance(payload.get("dependencies"), dict) else {}
+    dev_dependencies = payload.get("devDependencies") if isinstance(payload.get("devDependencies"), dict) else {}
+    return {
+        "available": True,
+        "name": payload.get("name"),
+        "version": payload.get("version"),
+        "scripts": sorted(str(key) for key in scripts),
+        "dependencies": sorted(str(key) for key in dependencies),
+        "dev_dependencies": sorted(str(key) for key in dev_dependencies),
+        "has_vite": "vite" in dependencies,
+        "has_react": "react" in dependencies and "react-dom" in dependencies,
+        "has_echarts": "echarts" in dependencies,
+        "has_tauri_cli": "@tauri-apps/cli" in dev_dependencies,
+        "has_build_script": "build" in scripts,
+        "has_dev_script": "dev" in scripts,
+        "has_tauri_script": "tauri" in scripts,
+    }
+
+
+def read_desktop_shell_preflight_cache() -> dict[str, Any]:
+    package_summary = _package_json_summary()
+    file_rows = [
+        _file_row(DESKTOP_ROOT / "package.json", "package_json", "React/Vite package manifest"),
+        _file_row(DESKTOP_ROOT / "package-lock.json", "package_lock", "Reproducible npm dependency lockfile"),
+        _file_row(DESKTOP_ROOT / "vite.config.ts", "vite_config", "Vite frontend config"),
+        _file_row(DESKTOP_ROOT / "tsconfig.json", "tsconfig", "TypeScript strict config"),
+        _file_row(DESKTOP_ROOT / "src" / "App.tsx", "react_app", "React route shell"),
+        _file_row(DESKTOP_ROOT / "src-tauri" / "tauri.conf.json", "tauri_config", "Tauri v2 config"),
+        _file_row(DESKTOP_ROOT / "src-tauri" / "Cargo.toml", "cargo_toml", "Rust package manifest"),
+        _file_row(DESKTOP_ROOT / "src-tauri" / "src" / "main.rs", "tauri_main", "Tauri app entry"),
+        _file_row(DESKTOP_ROOT / "node_modules", "node_modules", "Installed frontend dependencies"),
+        _file_row(DESKTOP_ROOT / "dist", "dist", "Vite build output, should not be committed"),
+    ]
+    command_rows = [
+        _command_row("node", "Node.js runtime", "Vite dev/build"),
+        _command_row("npm", "npm package manager", "Frontend dependency install/build"),
+        _command_row("rustc", "Rust compiler", "Tauri dev/build"),
+        _command_row("cargo", "Rust package manager", "Tauri dev/build"),
+    ]
+    file_ready_count = sum(1 for row in file_rows[:8] if row["exists"])
+    rust_ready = all(row["available"] for row in command_rows if row["command"] in {"rustc", "cargo"})
+    node_ready = all(row["available"] for row in command_rows if row["command"] in {"node", "npm"})
+    scaffold_ready = file_ready_count == 8 and bool(package_summary.get("has_vite")) and bool(package_summary.get("has_tauri_cli"))
+    vite_dev_ready = scaffold_ready and node_ready
+    tauri_dev_ready = vite_dev_ready and rust_ready
+    api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
+
+    packet = {
+        "packet_key": PACKET_KEY,
+        "schema_version": SCHEMA_VERSION,
+        "status": "ready" if scaffold_ready else "partial",
+        "mode": "cache_only",
+        "cache_only": True,
+        "read_only": True,
+        "loaded_at": _now_iso(),
+        "api_base": api_base,
+        "package_json": package_summary,
+        "file_rows": file_rows,
+        "command_rows": command_rows,
+        "counts": {
+            "required_file_count": 8,
+            "required_file_ready_count": file_ready_count,
+            "command_count": len(command_rows),
+            "command_ready_count": sum(1 for row in command_rows if row["available"]),
+        },
+        "runtime": {
+            "node_ready": node_ready,
+            "rust_ready": rust_ready,
+            "vite_dev_ready": vite_dev_ready,
+            "tauri_dev_ready": tauri_dev_ready,
+            "node_modules_present": (DESKTOP_ROOT / "node_modules").exists(),
+            "dist_present": (DESKTOP_ROOT / "dist").exists(),
+            "tauri_cli_declared": bool(package_summary.get("has_tauri_cli")),
+            "tauri_build_attempted": False,
+            "vite_build_attempted": False,
+            "fastapi_dev_server_started": False,
+        },
+        "policy": {
+            "cache_api_external_calls": False,
+            "does_not_run_npm_install": True,
+            "does_not_run_npm_build": True,
+            "does_not_run_tauri": True,
+            "does_not_run_cargo": True,
+            "does_not_start_fastapi": True,
+            "does_not_call_tushare": True,
+            "does_not_call_deepseek": True,
+            "does_not_call_github": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        },
+        "call_ledger": [
+            {
+                "api": "local_desktop_shell_preflight_cache",
+                "source": "desktop scaffold files and local command availability",
+                "row_count": len(file_rows) + len(command_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "cache_read",
+                "external": False,
+            }
+        ],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "GET /api/desktop/preflight-cache 只读检查本地 React/Tauri scaffold；不会运行 npm install、npm build、cargo 或 Tauri。",
+            "Rust/Cargo 缺失不阻断 Vite 前端；只有 Tauri dev/build 需要 Rust 工具链。",
+            "桌面壳预检不读取 token/key，不调用 Tushare、DeepSeek、GitHub，不执行真实交易。",
+        ],
+    }
+    return _json_safe(packet)

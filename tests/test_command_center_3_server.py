@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import audit_service, candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
+from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -62,6 +62,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         serenity = packet_service.build_serenity_cache()
         next_session = packet_service.build_next_session_cache()
         migration = migration_status_service.build_migration_status()
+        desktop = desktop_service.read_desktop_shell_preflight_cache()
 
         self.assertEqual(factor["packet_key"], "command_center_factor_quant_hub_packet")
         self.assertFalse(factor["deepseek_called"])
@@ -89,7 +90,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(migration["api_policy"]["github_called"])
         self.assertTrue(migration["api_policy"]["does_not_modify_strategy_action"])
 
-        json.dumps({"factor": factor, "serenity": serenity, "next": next_session, "migration": migration}, ensure_ascii=False)
+        self.assertEqual(desktop["packet_key"], "command_center_3_desktop_shell_preflight_cache")
+        self.assertEqual(desktop["mode"], "cache_only")
+        self.assertTrue(desktop["cache_only"])
+        self.assertTrue(desktop["read_only"])
+        self.assertFalse(desktop["external_calls_triggered"])
+        self.assertFalse(desktop["tushare_called"])
+        self.assertFalse(desktop["deepseek_called"])
+        self.assertFalse(desktop["github_called"])
+        self.assertTrue(desktop["policy"]["does_not_run_npm_install"])
+        self.assertTrue(desktop["policy"]["does_not_run_npm_build"])
+        self.assertTrue(desktop["policy"]["does_not_run_tauri"])
+        self.assertTrue(desktop["policy"]["does_not_run_cargo"])
+        self.assertTrue(desktop["does_not_execute_trades"])
+        self.assertTrue(desktop["does_not_modify_strategy_action"])
+        self.assertEqual(desktop["call_ledger"][0]["api"], "local_desktop_shell_preflight_cache")
+        file_labels = {row["label"] for row in desktop["file_rows"]}
+        self.assertIn("react_app", file_labels)
+        self.assertIn("tauri_config", file_labels)
+        self.assertIn("cargo_toml", file_labels)
+        self.assertIn("tauri_main", file_labels)
+        command_names = {row["command"] for row in desktop["command_rows"]}
+        self.assertEqual(command_names, {"node", "npm", "rustc", "cargo"})
+        desktop_dump = json.dumps(desktop, ensure_ascii=False)
+        self.assertNotIn("DEEPSEEK_API_KEY", desktop_dump)
+        self.assertNotIn("TUSHARE_TOKEN", desktop_dump)
+        self.assertNotIn("GITHUB_TOKEN", desktop_dump)
+        self.assertNotIn("COMMAND_CENTER_REDIS_URL", desktop_dump)
+
+        json.dumps({"factor": factor, "serenity": serenity, "next": next_session, "migration": migration, "desktop": desktop}, ensure_ascii=False)
 
     def test_packet_service_reads_snapshot_alias_without_external_calls(self):
         self._with_snapshot_cache(
@@ -1566,6 +1595,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(data_health["data"]["policy"]["post_task_required_for_provider_probe"])
         self.assertTrue(data_health["data"]["does_not_modify_strategy_action"])
         self.assertTrue(data_health["data"]["does_not_execute_trades"])
+
+        desktop = self.client.get("/api/desktop/preflight-cache").json()
+        self.assertTrue(desktop["ok"])
+        self.assertTrue(desktop["data"]["cache_only"])
+        self.assertTrue(desktop["data"]["read_only"])
+        self.assertEqual(desktop["data"]["mode"], "cache_only")
+        self.assertFalse(desktop["data"]["external_calls_triggered"])
+        self.assertFalse(desktop["data"]["tushare_called"])
+        self.assertFalse(desktop["data"]["deepseek_called"])
+        self.assertFalse(desktop["data"]["github_called"])
+        self.assertTrue(desktop["data"]["policy"]["does_not_run_npm_install"])
+        self.assertTrue(desktop["data"]["policy"]["does_not_run_npm_build"])
+        self.assertTrue(desktop["data"]["policy"]["does_not_run_tauri"])
+        self.assertTrue(desktop["data"]["policy"]["does_not_run_cargo"])
+        self.assertTrue(desktop["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(desktop["data"]["does_not_execute_trades"])
+        self.assertEqual(desktop["data"]["call_ledger"][0]["api"], "local_desktop_shell_preflight_cache")
 
         recovery = self.client.get("/api/recovery/cache").json()
         self.assertTrue(recovery["ok"])

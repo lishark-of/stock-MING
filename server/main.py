@@ -9,6 +9,7 @@ from server.api import (
     routes_chokepoint,
     routes_data_capability,
     routes_data_health,
+    routes_desktop,
     routes_discipline,
     routes_evidence,
     routes_factor_quant,
@@ -54,6 +55,7 @@ app.include_router(routes_packets.router)
 app.include_router(routes_candidate.router)
 app.include_router(routes_data_capability.router)
 app.include_router(routes_data_health.router)
+app.include_router(routes_desktop.router)
 app.include_router(routes_discipline.router)
 app.include_router(routes_evidence.router)
 app.include_router(routes_next_session.router)

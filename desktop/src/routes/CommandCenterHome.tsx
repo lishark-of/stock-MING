@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
+import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -14,6 +14,7 @@ export default function CommandCenterHome() {
   const [factor, setFactor] = useState<Record<string, unknown>>({});
   const [next, setNext] = useState<Record<string, unknown>>({});
   const [dataHealth, setDataHealth] = useState<Record<string, unknown>>({});
+  const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
   const [recovery, setRecovery] = useState<Record<string, unknown>>({});
   const [position, setPosition] = useState<Record<string, unknown>>({});
   const [candidates, setCandidates] = useState<Record<string, unknown>>({});
@@ -36,6 +37,7 @@ export default function CommandCenterHome() {
     void getFactorQuantCache().then((res) => setFactor(res.data));
     void getNextSessionCache().then((res) => setNext(res.data));
     void getDataHealthCache().then((res) => setDataHealth(res.data));
+    void getDesktopPreflightCache().then((res) => setDesktopPreflight(res.data));
     void getRecoveryCenterCache().then((res) => setRecovery(res.data));
     void getPositionCache().then((res) => setPosition(res.data));
     void getCandidateRadarCache().then((res) => setCandidates(res.data));
@@ -65,6 +67,8 @@ export default function CommandCenterHome() {
   const migrationProgress = migration.progress_baseline as Array<Record<string, unknown>> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
+  const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
+  const desktopCounts = desktopPreflight.counts as Record<string, unknown> | undefined;
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
@@ -145,6 +149,12 @@ export default function CommandCenterHome() {
           <p>timeline / provider: {String(dataHealthCounts?.timeline_count ?? 0)} / {String(dataHealthCounts?.provider_count ?? 0)}</p>
           <p>capability / gaps: {String(dataHealthCounts?.capability_count ?? 0)} / {String(dataHealthCounts?.gap_count ?? 0)}</p>
           <p>external calls: {String(dataHealth.external_calls_triggered ?? false)}</p>
+        </PacketCard>
+        <PacketCard title="桌面壳预检 cache" subtitle="GET cache，只读 React/Tauri scaffold，不运行构建命令" status={String(desktopPreflight.status ?? "cache")}>
+          <p>required files: {String(desktopCounts?.required_file_ready_count ?? 0)} / {String(desktopCounts?.required_file_count ?? 0)}</p>
+          <p>vite dev ready: {String(desktopRuntime?.vite_dev_ready ?? false)}</p>
+          <p>tauri dev ready: {String(desktopRuntime?.tauri_dev_ready ?? false)}</p>
+          <p>external calls: {String(desktopPreflight.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="持仓画像 cache" subtitle="GET cache，只读持仓上下文，不改 action" status={String(position.status ?? "cache")}>
           <p>ticker: {String(positionSummary?.ticker ?? "--")}</p>

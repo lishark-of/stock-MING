@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
-from server.services import audit_service, candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service, worker_service
+from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, legacy_service, market_service, migration_status_service, packet_service, position_service, quant_service, recovery_service, risk_service, strategy_service, task_service, trade_review_service, worker_service
 from server.services.task_service import create_task_stub
 
 print("health: import ok")
@@ -40,6 +40,8 @@ capability = data_capability_service.read_data_capability_cache()
 print("data_capability:", capability["status"], capability["mode"])
 data_health = data_health_service.read_data_health_timeline_cache()
 print("data_health:", data_health["status"], data_health["mode"], data_health["counts"]["timeline_count"])
+desktop = desktop_service.read_desktop_shell_preflight_cache()
+print("desktop_preflight:", desktop["status"], desktop["mode"], desktop["runtime"]["tauri_dev_ready"])
 recovery = recovery_service.read_recovery_center_cache()
 print("recovery_center:", recovery["status"], recovery["mode"], recovery["counts"]["action_count"])
 strategy = strategy_service.read_strategy_trace_cache()

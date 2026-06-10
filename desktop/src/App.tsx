@@ -7,6 +7,7 @@ import CallLedgerAudit from "./routes/CallLedgerAudit";
 import CommandCenterHome from "./routes/CommandCenterHome";
 import DataCapabilityConsole from "./routes/DataCapabilityConsole";
 import DataHealthTimeline from "./routes/DataHealthTimeline";
+import DesktopShellPreflight from "./routes/DesktopShellPreflight";
 import DisciplineLoop from "./routes/DisciplineLoop";
 import FactorQuantHub from "./routes/FactorQuantHub";
 import HealthStatus from "./routes/HealthStatus";
@@ -36,6 +37,7 @@ const ROUTE_KEYS: RouteKey[] = [
   "evidence",
   "dataCapability",
   "dataHealth",
+  "desktop",
   "recovery",
   "next",
   "position",
@@ -121,6 +123,7 @@ export default function App() {
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}
       {route === "dataHealth" ? <DataHealthTimeline /> : null}
+      {route === "desktop" ? <DesktopShellPreflight /> : null}
       {route === "recovery" ? <RecoveryCenter /> : null}
       {route === "next" ? <NextSessionMap /> : null}
       {route === "position" ? <PositionContext /> : null}

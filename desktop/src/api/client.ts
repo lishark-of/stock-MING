@@ -89,6 +89,10 @@ export function getDataHealthCache() {
   return request<Record<string, unknown>>("/api/data-health/cache");
 }
 
+export function getDesktopPreflightCache() {
+  return request<Record<string, unknown>>("/api/desktop/preflight-cache");
+}
+
 export function getDisciplineLoopCache() {
   return request<Record<string, unknown>>("/api/discipline/cache");
 }

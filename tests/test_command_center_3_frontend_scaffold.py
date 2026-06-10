@@ -24,6 +24,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "CandidateRadar.tsx",
             ROOT / "src" / "routes" / "DataCapabilityConsole.tsx",
             ROOT / "src" / "routes" / "DataHealthTimeline.tsx",
+            ROOT / "src" / "routes" / "DesktopShellPreflight.tsx",
             ROOT / "src" / "routes" / "DisciplineLoop.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src" / "routes" / "HealthStatus.tsx",
@@ -61,6 +62,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("/api/factor-quant/cache", client)
         self.assertIn("/api/migration/status", client)
         self.assertIn("/api/storage", client)
+        self.assertIn("/api/desktop/preflight-cache", client)
         self.assertIn("/api/factor-quant/refresh-data", source)
         self.assertIn("/api/factor-quant/run-light", source)
         self.assertIn("/api/factor-quant/deepseek-explain", source)
@@ -107,6 +109,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("onNavigate={navigateRoute}", source)
         self.assertIn('"factor"', source)
         self.assertIn('"next"', source)
+        self.assertIn('"desktop"', source)
+        self.assertIn("DesktopShellPreflight", source)
         self.assertNotIn("streamlit", source.lower())
 
     def test_read_only_pages_render_structured_cache_without_direct_python_calls(self):
@@ -118,6 +122,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "CandidateRadar.tsx",
             "DataCapabilityConsole.tsx",
             "DataHealthTimeline.tsx",
+            "DesktopShellPreflight.tsx",
             "DisciplineLoop.tsx",
             "HealthStatus.tsx",
             "MarketContext.tsx",
@@ -179,6 +184,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("CandidateRadar", app_source)
         self.assertIn("DataCapabilityConsole", app_source)
         self.assertIn("DataHealthTimeline", app_source)
+        self.assertIn("DesktopShellPreflight", app_source)
         self.assertIn("PacketRegistry", app_source)
         self.assertIn("PositionContext", app_source)
         self.assertIn("QuantBacktestLab", app_source)
@@ -198,6 +204,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"candidates"', layout_source)
         self.assertIn('"dataCapability"', layout_source)
         self.assertIn('"dataHealth"', layout_source)
+        self.assertIn('"desktop"', layout_source)
         self.assertIn('"packets"', layout_source)
         self.assertIn('"position"', layout_source)
         self.assertIn('"quant"', layout_source)
@@ -215,6 +222,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("候选雷达", layout_source)
         self.assertIn("数据能力", layout_source)
         self.assertIn("数据健康", layout_source)
+        self.assertIn("桌面壳", layout_source)
         self.assertIn("Packet", layout_source)
         self.assertIn("持仓画像", layout_source)
         self.assertIn("量化回测", layout_source)
@@ -228,6 +236,39 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("Worker", layout_source)
         self.assertIn("市场环境", layout_source)
         self.assertIn("交易纪律", layout_source)
+
+    def test_desktop_shell_preflight_page_is_cache_only_and_read_only(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "DesktopShellPreflight.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/desktop/preflight-cache", client)
+        self.assertIn("getDesktopPreflightCache", client)
+        self.assertIn("getDesktopPreflightCache", home)
+        self.assertIn("桌面壳预检 cache", home)
+        self.assertIn("getDesktopPreflightCache", page)
+        self.assertIn("GET /api/desktop/preflight-cache", page)
+        self.assertIn("只读检查本地 scaffold", page)
+        self.assertIn("does_not_run_npm_install", page)
+        self.assertIn("does_not_run_npm_build", page)
+        self.assertIn("does_not_run_tauri", page)
+        self.assertIn("does_not_run_cargo", page)
+        self.assertIn("Rust/Cargo", page)
+        self.assertIn("Vite", page)
+        self.assertIn("Tauri", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertIn("local_desktop_shell_preflight_cache", page)
+        self.assertIn("不会调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不读取 token/key", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不修改 strategy action", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("TUSHARE_TOKEN", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+        self.assertNotIn("npm install &&", page)
+        self.assertNotIn("cargo build", page)
 
     def test_task_panel_polls_fastapi_task_endpoint(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
