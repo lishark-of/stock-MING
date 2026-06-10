@@ -37,7 +37,20 @@ button {
 
 .sidebar nav {
   display: grid;
-  gap: 8px;
+  gap: 16px;
+}
+
+.nav-group {
+  display: grid;
+  gap: 6px;
+}
+
+.nav-group-title {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 2px;
 }
 
 .sidebar button {

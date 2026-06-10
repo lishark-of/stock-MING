@@ -29,34 +29,54 @@ export type RouteKey =
   | "tradeReview"
   | "legacy";
 
-const ROUTES: Array<{ key: RouteKey; label: string }> = [
-  { key: "home", label: "Command Center" },
-  { key: "health", label: "健康" },
-  { key: "audit", label: "调用审计" },
-  { key: "market", label: "市场环境" },
-  { key: "models", label: "模型策略" },
-  { key: "discipline", label: "交易纪律" },
-  { key: "evidence", label: "证据雷达" },
-  { key: "dataCapability", label: "数据能力" },
-  { key: "dataHealth", label: "数据健康" },
-  { key: "desktop", label: "桌面壳" },
-  { key: "recovery", label: "恢复中心" },
-  { key: "next", label: "次日图谱" },
-  { key: "position", label: "持仓画像" },
-  { key: "candidates", label: "候选雷达" },
-  { key: "risk", label: "风险护栏" },
-  { key: "factor", label: "多因子图谱" },
-  { key: "chokepoint", label: "瓶颈扫描" },
-  { key: "serenity", label: "Serenity" },
-  { key: "packets", label: "Packet" },
-  { key: "migration", label: "迁移状态" },
-  { key: "storage", label: "存储层" },
-  { key: "tasks", label: "任务目录" },
-  { key: "worker", label: "Worker" },
-  { key: "strategy", label: "策略 Trace" },
-  { key: "quant", label: "量化回测" },
-  { key: "tradeReview", label: "交易复盘" },
-  { key: "legacy", label: "Legacy" }
+const ROUTE_GROUPS: Array<{ title: string; routes: Array<{ key: RouteKey; label: string }> }> = [
+  {
+    title: "主流程",
+    routes: [
+      { key: "home", label: "Command Center" },
+      { key: "next", label: "次日图谱" },
+      { key: "factor", label: "多因子图谱" },
+      { key: "strategy", label: "策略 Trace" },
+      { key: "tradeReview", label: "交易复盘" }
+    ]
+  },
+  {
+    title: "研究雷达",
+    routes: [
+      { key: "market", label: "市场环境" },
+      { key: "position", label: "持仓画像" },
+      { key: "candidates", label: "候选雷达" },
+      { key: "risk", label: "风险护栏" },
+      { key: "chokepoint", label: "瓶颈扫描" },
+      { key: "serenity", label: "Serenity" }
+    ]
+  },
+  {
+    title: "数据与治理",
+    routes: [
+      { key: "audit", label: "调用审计" },
+      { key: "evidence", label: "证据雷达" },
+      { key: "dataCapability", label: "数据能力" },
+      { key: "dataHealth", label: "数据健康" },
+      { key: "storage", label: "存储层" },
+      { key: "packets", label: "Packet" }
+    ]
+  },
+  {
+    title: "系统迁移",
+    routes: [
+      { key: "health", label: "健康" },
+      { key: "models", label: "模型策略" },
+      { key: "discipline", label: "交易纪律" },
+      { key: "desktop", label: "桌面壳" },
+      { key: "migration", label: "迁移状态" },
+      { key: "tasks", label: "任务目录" },
+      { key: "worker", label: "Worker" },
+      { key: "quant", label: "量化回测" },
+      { key: "recovery", label: "恢复中心" },
+      { key: "legacy", label: "Legacy" }
+    ]
+  }
 ];
 
 export default function Layout({
@@ -73,14 +93,19 @@ export default function Layout({
       <aside className="sidebar">
         <div className="brand">stock-MING 3.0</div>
         <nav>
-          {ROUTES.map((route) => (
-            <button
-              key={route.key}
-              className={active === route.key ? "nav-active" : ""}
-              onClick={() => onNavigate(route.key)}
-            >
-              {route.label}
-            </button>
+          {ROUTE_GROUPS.map((group) => (
+            <section className="nav-group" key={group.title}>
+              <p className="nav-group-title">{group.title}</p>
+              {group.routes.map((route) => (
+                <button
+                  key={route.key}
+                  className={active === route.key ? "nav-active" : ""}
+                  onClick={() => onNavigate(route.key)}
+                >
+                  {route.label}
+                </button>
+              ))}
+            </section>
           ))}
         </nav>
         <p className="sidebar-note">React / FastAPI / Tauri skeleton. Streamlit 保留为 legacy/admin/debug。</p>
