@@ -12,8 +12,10 @@ export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
   const [taskId, setTaskId] = useState("");
 
+  const refreshCache = () => void getFactorQuantCache().then((res) => setPacket(res.data));
+
   useEffect(() => {
-    void getFactorQuantCache().then((res) => setPacket(res.data));
+    refreshCache();
   }, []);
 
   const score = packet.score ?? {};
@@ -48,7 +50,7 @@ export default function FactorQuantHub() {
         <button onClick={() => void postTask("/api/factor-quant/deepseek-explain").then((res) => setTaskId(res.data.task_id))}>DeepSeek 整理</button>
       </div>
       <p className="risk-note">多因子量化不是交易建议；不改价格、持仓、operation_zones 或 strategy action。</p>
-      <TaskStatusPanel taskId={taskId} />
+      <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[
           { label: "mode", value: packet.mode ?? "cache_only" },

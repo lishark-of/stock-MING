@@ -80,6 +80,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("getTask(taskId)", panel)
         self.assertIn("setInterval", panel)
         self.assertIn("local_fallback", panel)
+        self.assertIn("onSuccess", panel)
+
+        factor_page = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
+        self.assertIn("onSuccess={refreshCache}", factor_page)
 
     def test_next_session_chart_uses_cache_payload_without_trade_mutation(self):
         page = (ROOT / "src" / "routes" / "NextSessionMap.tsx").read_text(encoding="utf-8")

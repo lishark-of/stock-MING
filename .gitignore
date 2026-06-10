@@ -12,6 +12,7 @@ venv/
 *.bak*
 app.py.bak_before_tushare_app_integration
 .stock_ming_cache/
+.stock_ming_3/
 dist/
 build/
 *.spec

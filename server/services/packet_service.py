@@ -9,9 +9,11 @@ import command_center_factor_research as factor_research
 import command_center_next_session_projection as next_session_projection
 import command_center_packet_registry as packet_registry
 import command_center_serenity_method_radar as serenity_radar
+from storage.sqlite_meta import SQLiteMetaStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT_CACHE_PATH = PROJECT_ROOT / ".stock_ming_cache" / "command_center_latest.json"
+SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 
 SNAPSHOT_PACKET_ALIASES = {
     "a_share_fact_lineage_summary": "a_share_fact_lineage_summary",
@@ -326,6 +328,18 @@ def _read_snapshot_packet(packet_key: str, snapshot: dict[str, Any] | None = Non
     return _normalize_cached_packet(packet_key, cache.get(source_key), source="stock_ming_snapshot", source_key=source_key)
 
 
+def _read_persisted_packet(packet_key: str) -> dict[str, Any] | None:
+    if not SQLITE_META_PATH.exists():
+        return None
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(packet_key)
+    except Exception:
+        return None
+    if packet is None:
+        return None
+    return _normalize_cached_packet(packet_key, packet, source="sqlite_meta", source_key=packet_key)
+
+
 def build_packet_registry_cache() -> dict[str, Any]:
     cached = _read_snapshot_packet("command_center_packet_registry")
     if cached:
@@ -335,6 +349,9 @@ def build_packet_registry_cache() -> dict[str, Any]:
 
 
 def build_factor_quant_cache() -> dict[str, Any]:
+    persisted = _read_persisted_packet("command_center_factor_quant_hub_packet")
+    if persisted:
+        return persisted
     cached = _read_snapshot_packet("command_center_factor_quant_hub_packet")
     if cached:
         return cached

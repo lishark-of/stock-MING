@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getTask, type TaskRecord } from "../api/client";
 import StatusBadge from "./StatusBadge";
 
 type Props = {
   taskId: string;
+  onSuccess?: () => void;
 };
 
 function toneForStatus(status: TaskRecord["status"]) {
@@ -12,8 +13,9 @@ function toneForStatus(status: TaskRecord["status"]) {
   return "warn";
 }
 
-export default function TaskStatusPanel({ taskId }: Props) {
+export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const [task, setTask] = useState<TaskRecord | null>(null);
+  const successNotified = useRef("");
 
   useEffect(() => {
     if (!taskId) return undefined;
@@ -32,6 +34,13 @@ export default function TaskStatusPanel({ taskId }: Props) {
       window.clearInterval(timer);
     };
   }, [taskId, task?.status]);
+
+  useEffect(() => {
+    if (task?.status === "success" && task.task_id !== successNotified.current) {
+      successNotified.current = task.task_id;
+      onSuccess?.();
+    }
+  }, [onSuccess, task?.status, task?.task_id]);
 
   if (!taskId) return null;
   if (!task) return <p>任务状态读取中：{taskId}</p>;

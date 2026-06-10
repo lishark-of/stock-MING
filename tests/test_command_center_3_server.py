@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import packet_service
+from server.services import factor_service, packet_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
 
@@ -20,6 +20,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SNAPSHOT_CACHE_PATH", original_path)
         return cache_path
+
+    def _with_meta_store(self):
+        original_packet_path = packet_service.SQLITE_META_PATH
+        original_factor_path = factor_service.SQLITE_META_PATH
+        temp_dir = tempfile.TemporaryDirectory()
+        db_path = Path(temp_dir.name) / "meta.sqlite"
+        packet_service.SQLITE_META_PATH = db_path
+        factor_service.SQLITE_META_PATH = db_path
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
+        self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
+        return db_path
 
     def test_cache_builders_do_not_call_external_sources(self):
         factor = packet_service.build_factor_quant_cache()
@@ -166,6 +178,48 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("authorization", updated["payload_safe"])
         self.assertIn("safe warning", updated["warnings"])
 
+    def test_factor_run_light_writes_local_cache_without_external_calls(self):
+        self._with_snapshot_cache(
+            {
+                "timestamp": "2026-06-10T09:30:00",
+                "moneyflow_packet": {"status": "ready", "ticker": "002008.SZ", "main_net_yi": 1.2, "small_net_yi": -0.4},
+                "hard_risk_packet": {"status": "ready", "risk_flags": []},
+                "limit_emotion_packet": {"status": "ready", "limit_heat_score": 1},
+                "chip_packet": {"status": "ready", "winner_rate": 40},
+                "strategy_packet": {"status": "ready", "action": "wait"},
+                "decision_packet": {"status": "ready"},
+                "quant_packet": {"status": "ready"},
+                "a_share_fact_lineage_summary": {"items": [{"fact_key": "moneyflow"}]},
+            }
+        )
+        self._with_meta_store()
+
+        task = factor_service.create_factor_task(
+            "run_factor_light",
+            payload={"ts_code": "002008.SZ", "api_key": "SHOULD_DROP"},
+        )
+        packet = packet_service.build_factor_quant_cache()
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "cache_read")
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertFalse(task["external_calls_triggered"])
+
+        self.assertEqual(packet["packet_key"], "command_center_factor_quant_hub_packet")
+        self.assertEqual(packet["mode"], "light")
+        self.assertEqual(packet["cache_source"], "sqlite_meta")
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+        self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
+        support_keys = {item.get("factor_key") for item in packet["score"]["support_factors"]}
+        suppress_keys = {item.get("factor_key") for item in packet["score"]["suppress_factors"]}
+        self.assertNotIn("serenity_method_source", support_keys | suppress_keys)
+        self.assertNotIn("chokepoint_method_hint", support_keys | suppress_keys)
+        self.assertIn("roe_latest", {item.get("factor_key") for item in packet["score"]["missing_factors"]})
+
 
 @unittest.skipIf(importlib.util.find_spec("fastapi") is None, "FastAPI is not installed in this environment")
 class CommandCenter3FastAPITests(unittest.TestCase):
@@ -174,6 +228,28 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         from server.main import app
 
         self.client = TestClient(app)
+
+    def _with_snapshot_cache(self, payload):
+        original_path = packet_service.SNAPSHOT_CACHE_PATH
+        temp_dir = tempfile.TemporaryDirectory()
+        cache_path = Path(temp_dir.name) / "command_center_latest.json"
+        cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        packet_service.SNAPSHOT_CACHE_PATH = cache_path
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, packet_service, "SNAPSHOT_CACHE_PATH", original_path)
+        return cache_path
+
+    def _with_meta_store(self):
+        original_packet_path = packet_service.SQLITE_META_PATH
+        original_factor_path = factor_service.SQLITE_META_PATH
+        temp_dir = tempfile.TemporaryDirectory()
+        db_path = Path(temp_dir.name) / "meta.sqlite"
+        packet_service.SQLITE_META_PATH = db_path
+        factor_service.SQLITE_META_PATH = db_path
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
+        self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
+        return db_path
 
     def test_health_and_cache_endpoints(self):
         health = self.client.get("/health").json()
@@ -209,6 +285,34 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         listing = self.client.get("/api/tasks").json()
         self.assertTrue(listing["ok"])
         self.assertEqual(listing["data"]["tasks"][0]["task_id"], task_id)
+
+    def test_run_light_endpoint_writes_factor_cache(self):
+        clear_task_statuses_for_tests()
+        self._with_snapshot_cache(
+            {
+                "timestamp": "2026-06-10T09:30:00",
+                "moneyflow_packet": {"status": "ready", "ticker": "002008.SZ", "main_net_yi": 1.2},
+                "strategy_packet": {"status": "ready", "action": "wait"},
+                "decision_packet": {"status": "ready"},
+                "quant_packet": {"status": "ready"},
+            }
+        )
+        self._with_meta_store()
+
+        created = self.client.post("/api/factor-quant/run-light", json={"ts_code": "002008.SZ", "token": "DROP"}).json()
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "cache_read")
+        self.assertNotIn("token", task["payload_safe"])
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        self.assertEqual(factor["data"]["mode"], "light")
+        self.assertEqual(factor["data"]["cache_source"], "sqlite_meta")
+        self.assertFalse(factor["data"]["external_calls_triggered"])
+        self.assertFalse(factor["data"]["governance"]["allow_core_action"])
 
 
 if __name__ == "__main__":

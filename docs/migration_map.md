@@ -3,7 +3,7 @@
 | Streamlit/现有模块 | 当前文件 | 3.0 API | 3.0 前端页面 | 是否重计算 | 是否任务化 |
 |---|---|---|---|---|---|
 | 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing` | 是，POST 当前 stub |
-| Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照上下文；refresh/run 后续重算 | 是，POST 当前 stub |
+| Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | A 股事实血缘 | `command_center_evidence_summary.py`, `command_center_*_packet.py` | `/api/packets/{packet_key}` 与后续 fact refresh task | `CommandCenterHome.tsx` / 后续证据页 | cache 不重算，支持本地快照别名 | 后续任务化 |
 | Tushare 数据刷新 | `tushare_adapter.py`, `app.py` | 后续 `refresh_tushare_facts` task | Factor / Next Session / Evidence pages | 是 | 是，当前 stub |
 | 交易记录实验室 | `trade_review_log.py`, `app.py` | 后续 `/api/trade-review/cache` | `LegacyTools.tsx` 迁移后独立页面 | 否 | 否 |
@@ -32,10 +32,11 @@
 
 - `/api/next-session/generate`
 - `/api/factor-quant/refresh-data`
-- `/api/factor-quant/run-light`
 - `/api/factor-quant/deepseek-explain`
 - `/api/chokepoint/run`
 - `/api/serenity/github-probe`
 
 这些 stub 只返回 `task_id` 和安全任务状态，不调用 Tushare、DeepSeek、GitHub，也不执行真实交易。
 任务状态已经包含 `pending/running/success/failed/cancelled` 合同、`progress`、`current_step`、`error_message_safe`、`output_packet_key`、`call_ledger` 和本地 fallback backend；React 页面可通过 `/api/tasks/{task_id}` 轮询。
+
+`/api/factor-quant/run-light` 已从纯 stub 升级为本地 light-mode pipeline：只读取本地 snapshot/cache，生成 `command_center_factor_quant_hub_packet` 并写入 SQLite meta cache；仍不调用 Tushare、DeepSeek、GitHub，不跑全市场回测，不修改 strategy action。

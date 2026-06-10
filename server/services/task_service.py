@@ -103,6 +103,26 @@ def build_task_record(
     return record
 
 
+def create_task_record(
+    task_type: str,
+    *,
+    output_packet_key: str = "",
+    payload: Any = None,
+    current_step: str = "queued",
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    task = build_task_record(
+        task_type,
+        output_packet_key=output_packet_key,
+        payload=payload,
+        status="pending",
+        progress=0.0,
+        current_step=current_step,
+        warnings=warnings,
+    )
+    return _persist_task(task)
+
+
 def update_task_status(
     task_id: str,
     *,
