@@ -197,6 +197,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
 
+    def test_next_session_cache_missing_still_exposes_echarts_contract(self):
+        self._with_snapshot_cache({})
+
+        packet = packet_service.build_next_session_cache()
+        chart = packet["chart_payload"]
+        contract = chart["chart_contract"]
+
+        self.assertEqual(packet["packet_key"], "command_center_next_session_projection_packet")
+        self.assertEqual(packet["status"], "cache_missing")
+        self.assertEqual(chart["status"], "missing")
+        self.assertEqual(contract["schema_version"], "next_session_echarts_payload.v1")
+        self.assertEqual(contract["renderer"], "ECharts")
+        self.assertTrue(contract["cache_only"])
+        self.assertFalse(contract["frontend_computes_trade_action"])
+        self.assertTrue(contract["does_not_modify_action"])
+        self.assertTrue(contract["does_not_modify_operation_zones"])
+        self.assertEqual(contract["series_counts"]["historical_points"], 0)
+        self.assertIn("GET /api/next-session/cache 不触发 Tushare", " ".join(contract["guardrails"]))
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+
     def test_next_session_cache_missing_does_not_promote_legacy_projection(self):
         self._with_snapshot_cache(
             {

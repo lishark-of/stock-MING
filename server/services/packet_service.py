@@ -240,6 +240,23 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _missing_next_session_chart_payload() -> dict[str, Any]:
+    payload = {
+        "status": "missing",
+        "source_packet": "none",
+        "is_exact_next_session_packet": False,
+        "uses_real_daily_close": False,
+        "historical_points": [],
+        "scenario_series": [],
+        "reference_lines": [],
+        "operation_zones": [],
+        "warnings": ["没有可用于 ECharts 的本地次日图谱缓存。"],
+        "y_axis_range": [None, None],
+    }
+    payload["chart_contract"] = _next_session_echarts_contract(payload)
+    return payload
+
+
 def _operation_zone_overlay(item: Any) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
@@ -581,18 +598,7 @@ def build_next_session_cache() -> dict[str, Any]:
         schema_version=next_session_projection.SCHEMA_VERSION,
         source_snapshot_available=bool(snapshot),
         legacy_projection_cache=_summary_of_packet(legacy_projection) if legacy_projection is not None else {"available": False},
-        chart_payload=_legacy_projection_chart_payload(legacy_projection) if legacy_projection is not None else {
-            "status": "missing",
-            "source_packet": "none",
-            "is_exact_next_session_packet": False,
-            "uses_real_daily_close": False,
-            "historical_points": [],
-            "scenario_series": [],
-            "reference_lines": [],
-            "operation_zones": [],
-            "warnings": ["没有可用于 ECharts 的本地次日图谱缓存。"],
-            "y_axis_range": [None, None],
-        },
+        chart_payload=_legacy_projection_chart_payload(legacy_projection) if legacy_projection is not None else _missing_next_session_chart_payload(),
         does_not_modify_action=True,
         does_not_modify_operation_zones=True,
     )
