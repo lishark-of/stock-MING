@@ -58,16 +58,24 @@ export default function TaskCatalog() {
   const taskIndexWarnings = taskIndexEnvelopeWarnings.length ? taskIndexEnvelopeWarnings : (taskIndex?.warnings ?? []);
   const deepseekModelStrategyRows = (catalogTasks ?? [])
     .filter((item) => Array.isArray(item.possible_external_sources) && item.possible_external_sources.includes("deepseek"))
-    .map((item) => ({
-      task_type: item.task_type,
-      route: item.route,
-      model_purpose: item.deepseek_model_strategy_purpose ?? "not_declared",
-      config_keys: Array.isArray(item.deepseek_model_config_keys) ? item.deepseek_model_config_keys.join(" / ") : "",
-      model_source: item.deepseek_model_source ?? "",
-      no_hardcoded_model: item.does_not_hardcode_deepseek_model === true,
-      button_gated: item.button_gated === true,
-      call_ledger_required: item.call_ledger_required === true
-    }));
+    .map((item) => {
+      const strategy = (item.deepseek_model_strategy as Record<string, unknown> | undefined) ?? {};
+      return {
+        task_type: item.task_type,
+        route: item.route,
+        model_purpose: item.deepseek_model_strategy_purpose ?? "not_declared",
+        model: strategy.model ?? "--",
+        config_keys: Array.isArray(strategy.config_keys) ? strategy.config_keys.join(" / ") : item.deepseek_model_config_keys,
+        active_config_key: strategy.active_config_key ?? "--",
+        model_source: strategy.model_source ?? item.deepseek_model_source ?? "",
+        does_not_hardcode_deepseek_model: item.does_not_hardcode_deepseek_model === true,
+        no_hardcoded_model: strategy.does_not_hardcode_model === true,
+        contains_secret: strategy.contains_secret === true,
+        cache_read_external_call: strategy.external_call_on_cache_read === true,
+        button_gated: item.button_gated === true,
+        call_ledger_required: item.call_ledger_required === true
+      };
+    });
   const taskRows = taskRecords.map((task) => ({
     task_id: task.task_id,
     task_type: task.task_type,

@@ -151,13 +151,24 @@ def _build_route_coverage() -> dict[str, Any]:
     }
 
 
+def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
+    row = dict(item)
+    purpose = row.get("deepseek_model_strategy_purpose")
+    if purpose:
+        strategy = build_deepseek_model_strategy_ref(str(purpose))
+        strategy["model_source"] = str(row.get("deepseek_model_source") or strategy.get("model_source"))
+        strategy["does_not_hardcode_model"] = bool(row.get("does_not_hardcode_deepseek_model"))
+        row["deepseek_model_strategy"] = strategy
+    return row
+
+
 def build_task_catalog() -> dict[str, Any]:
     route_coverage = _build_route_coverage()
     return {
         "packet_key": "command_center_3_task_catalog",
         "schema_version": "command_center_3_task_catalog.v1",
         "status": "ready",
-        "tasks": [dict(item) for item in TASK_CATALOG],
+        "tasks": [_catalog_task_item(item) for item in TASK_CATALOG],
         "task_lifecycle_routes": [dict(item) for item in TASK_LIFECYCLE_POST_ROUTES],
         "route_coverage": route_coverage,
         "task_count": len(TASK_CATALOG),
