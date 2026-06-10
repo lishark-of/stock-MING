@@ -513,7 +513,30 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
         self.assertFalse(response["call_ledger"][0]["tushare_called"])
         self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
         self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
+
+    def test_packet_endpoint_missing_packet_redacts_sensitive_packet_key(self):
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).get("/api/packets/token=SHOULD_DROP").json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["data"]["status"], "cache_missing")
+        self.assertEqual(response["data"]["packet_key"], "[redacted_sensitive_text]")
+        self.assertEqual(response["call_ledger"][0]["api"], "local_packet_cache_read")
+        self.assertEqual(response["call_ledger"][0]["packet_key"], "[redacted_sensitive_text]")
+        self.assertEqual(response["call_ledger"][0]["call_status"], "cache_missing")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(response["call_ledger"][0]["tushare_called"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(response["call_ledger"][0]["github_called"])
+        self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
+        self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_packet_index_endpoint_exposes_top_level_cache_lineage(self):
         self._with_snapshot_cache({"moneyflow_packet": {"status": "ready"}})

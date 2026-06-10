@@ -14,6 +14,7 @@ from storage.sqlite_meta import SQLiteMetaStore
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT_CACHE_PATH = PROJECT_ROOT / ".stock_ming_cache" / "command_center_latest.json"
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 
 SNAPSHOT_PACKET_ALIASES = {
     "a_share_fact_lineage_summary": "a_share_fact_lineage_summary",
@@ -46,6 +47,14 @@ def json_safe(value: Any) -> Any:
         return json.loads(json.dumps(value, ensure_ascii=False, default=str))
     except Exception:
         return {"serialization_error_safe": "packet could not be JSON serialized"}
+
+
+def _safe_text(value: Any, *, limit: int = 500) -> str:
+    text = str(value or "").strip()
+    lower = text.lower()
+    if any(marker in lower for marker in SENSITIVE_TEXT_MARKERS):
+        return "[redacted_sensitive_text]"
+    return text[:limit]
 
 
 def _cache_path_label() -> str:
@@ -432,8 +441,9 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
 
 
 def _cache_missing_packet(packet_key: str, summary: str, **extra: Any) -> dict[str, Any]:
+    packet_key_safe = _safe_text(packet_key, limit=160)
     payload = {
-        "packet_key": packet_key,
+        "packet_key": packet_key_safe,
         "mode": "cache_only",
         "status": "cache_missing",
         "summary": summary,
@@ -770,15 +780,17 @@ def packet_detail_call_ledger(packet: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = [
         {
             "api": "local_packet_cache_read",
-            "packet_key": packet.get("packet_key"),
+            "packet_key": _safe_text(packet.get("packet_key"), limit=160),
             "cache_source": source,
             "source_cache_key": packet.get("source_cache_key"),
             "call_status": "cache_missing" if status == "cache_missing" else "cache_ready",
             "loaded_at": packet.get("cache_api_loaded_at") or _now_iso(),
+            "external": False,
             "external_calls_triggered": bool(packet.get("cache_api_external_calls_triggered", packet.get("external_calls_triggered", False))),
             "tushare_called": bool(packet.get("cache_api_tushare_called", packet.get("tushare_called", False))),
             "deepseek_called": bool(packet.get("cache_api_deepseek_called", packet.get("deepseek_called", False))),
             "github_called": bool(packet.get("cache_api_github_called", packet.get("github_called", False))),
+            "does_not_execute_trades": True,
             "does_not_modify_strategy_action": not bool(packet.get("enters_strategy_action", False)),
         }
     ]
