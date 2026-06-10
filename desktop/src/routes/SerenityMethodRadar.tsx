@@ -10,8 +10,10 @@ export default function SerenityMethodRadar() {
   const [packet, setPacket] = useState<Record<string, any>>({});
   const [taskId, setTaskId] = useState("");
 
+  const refreshCache = () => void getSerenityCache().then((res) => setPacket(res.data));
+
   useEffect(() => {
-    void getSerenityCache().then((res) => setPacket(res.data));
+    refreshCache();
   }, []);
 
   const policy = packet.decision_usage_policy ?? {};
@@ -33,11 +35,11 @@ export default function SerenityMethodRadar() {
   return (
     <PacketCard title="Serenity 方法来源雷达" subtitle="一次性本地方法基线；只读说明，不参与交易评分" status={String(packet.github_status ?? "unverified")}>
       <div className="actions">
-        <button onClick={() => void getSerenityCache().then((res) => setPacket(res.data))}>查看缓存</button>
+        <button onClick={refreshCache}>查看缓存</button>
         <button onClick={() => void postTask("/api/serenity/github-probe").then((res) => setTaskId(res.data.task_id))}>GitHub 校验任务</button>
       </div>
       <p className="risk-note">默认只读本地方法来源基线；GitHub 当前状态为未校验。GitHub 校验只在手动 POST task 后进入任务队列。</p>
-      <TaskStatusPanel taskId={taskId} />
+      <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[
           { label: "来源", value: "本地方法来源基线" },

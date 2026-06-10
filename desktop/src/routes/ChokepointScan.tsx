@@ -10,8 +10,10 @@ export default function ChokepointScan() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
   const [taskId, setTaskId] = useState("");
 
+  const refreshCache = () => void getChokepointCache().then((res) => setPacket(res.data));
+
   useEffect(() => {
-    void getChokepointCache().then((res) => setPacket(res.data));
+    refreshCache();
   }, []);
 
   const legacy = packet.legacy_analysis_method_cache as Record<string, unknown> | undefined;
@@ -36,10 +38,10 @@ export default function ChokepointScan() {
   return (
     <PacketCard title="产业链瓶颈扫描" subtitle="运行必须按钮触发；DeepSeek 不作为数据源" status={String(packet.status ?? "cache")}>
       <div className="actions">
-        <button onClick={() => void getChokepointCache().then((res) => setPacket(res.data))}>查看缓存</button>
+        <button onClick={refreshCache}>查看缓存</button>
         <button onClick={() => void postTask("/api/chokepoint/run").then((res) => setTaskId(res.data.task_id))}>运行任务</button>
       </div>
-      <TaskStatusPanel taskId={taskId} />
+      <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <p className="risk-note">GET cache 不运行瓶颈扫描；cache API 永不外联。运行任务必须手动 POST task，且只进入研究解释层。</p>
       <MetricGrid
         items={[

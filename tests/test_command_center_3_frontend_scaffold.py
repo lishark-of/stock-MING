@@ -734,6 +734,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("getChokepointCache", page)
         self.assertIn("/api/chokepoint/run", page)
+        self.assertIn("const refreshCache", page)
+        self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
         self.assertIn("GET cache 不运行瓶颈扫描", page)
         self.assertIn("cache API 永不外联", page)
         self.assertIn("手动 POST task", page)
@@ -778,6 +780,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("getSerenityCache", page)
         self.assertIn("/api/serenity/github-probe", page)
+        self.assertIn("const refreshCache", page)
+        self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
         self.assertIn("本地方法来源基线", page)
         self.assertIn("GitHub 当前状态为未校验", page)
         self.assertIn("手动 POST task", page)
