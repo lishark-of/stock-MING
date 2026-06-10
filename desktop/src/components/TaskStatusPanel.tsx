@@ -81,6 +81,9 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <p>task_id: {task.task_id}</p>
       <p>backend: {task.backend ?? "local_fallback"}</p>
       <p>output_packet_key: {task.output_packet_key || "--"}</p>
+      <p>created_at: {task.created_at ?? "--"}</p>
+      <p>started_at: {task.started_at ?? "--"}</p>
+      <p>finished_at: {task.finished_at ?? "--"}</p>
       <p>external_calls_triggered: {String(task.external_calls_triggered ?? false)}</p>
       <p>Tushare / DeepSeek / GitHub: {String(task.tushare_called ?? false)} / {String(task.deepseek_called ?? false)} / {String(task.github_called ?? false)}</p>
       <p>does_not_execute_trades: {String(task.does_not_execute_trades ?? true)}</p>
@@ -98,7 +101,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         本地取消任务
       </button>
       {cancelMessage ? <p className="risk-note">{cancelMessage}</p> : null}
-      {task.error_message_safe ? <p className="risk-note">{task.error_message_safe}</p> : null}
+      {task.error_message_safe ? <p className="risk-note">error_message_safe: {task.error_message_safe}</p> : null}
       {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
       {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无 call_ledger 记录。</p>}
       {statusHistory.length ? (
