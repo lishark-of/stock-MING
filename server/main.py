@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.api import (
     routes_chokepoint,
+    routes_evidence,
     routes_factor_quant,
     routes_health,
     routes_migration,
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(routes_health.router)
 app.include_router(routes_migration.router)
 app.include_router(routes_packets.router)
+app.include_router(routes_evidence.router)
 app.include_router(routes_next_session.router)
 app.include_router(routes_quant.router)
 app.include_router(routes_factor_quant.router)

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Layout, { type RouteKey } from "./components/Layout";
+import AShareEvidenceRadar from "./routes/AShareEvidenceRadar";
 import ChokepointScan from "./routes/ChokepointScan";
 import CommandCenterHome from "./routes/CommandCenterHome";
 import FactorQuantHub from "./routes/FactorQuantHub";
@@ -20,6 +21,7 @@ export default function App() {
     <Layout active={route} onNavigate={setRoute}>
       {route === "home" ? <CommandCenterHome /> : null}
       {route === "health" ? <HealthStatus /> : null}
+      {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "next" ? <NextSessionMap /> : null}
       {route === "factor" ? <FactorQuantHub /> : null}
       {route === "chokepoint" ? <ChokepointScan /> : null}

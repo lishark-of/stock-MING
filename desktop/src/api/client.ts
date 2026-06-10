@@ -65,6 +65,10 @@ export function getNextSessionCache() {
   return request<Record<string, unknown>>("/api/next-session/cache");
 }
 
+export function getEvidenceCache() {
+  return request<Record<string, unknown>>("/api/evidence/cache");
+}
+
 export function getFactorQuantCache() {
   return request<Record<string, unknown>>("/api/factor-quant/cache");
 }

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import factor_service, packet_service, quant_service, storage_service, task_service, trade_review_service
+from server.services import evidence_service, factor_service, packet_service, quant_service, storage_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -300,6 +300,46 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_quant_backtest_cache")
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_a_share_evidence_cache_builds_lineage_without_external_calls(self):
+        self._with_snapshot_cache(
+            {
+                "moneyflow_packet": {
+                    "status": "ready",
+                    "trade_date": "20260610",
+                    "updated_at": "2026-06-10T09:30:00",
+                    "flow_state": "主力净流入",
+                    "main_net_yi": 1.2,
+                    "api_key": "SHOULD_DROP",
+                },
+                "a_share_fact_lineage_summary": {
+                    "schema_version": "a_share_fact_lineage_summary.v1",
+                    "summary": "已验证 1｜阻断 0｜缓存 0｜过期 0｜缺失 0｜待验证 0",
+                    "items": [{"fact_key": "moneyflow", "status_label": "已验证", "enters_core_action": False}],
+                    "counts": {"verified": 1, "blocked": 0, "missing": 0, "cached": 0},
+                },
+            }
+        )
+
+        packet = evidence_service.read_a_share_evidence_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_a_share_evidence_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertEqual(packet["fact_lineage"]["schema_version"], "a_share_fact_lineage_summary.v1")
+        self.assertEqual(packet["counts"]["lineage_verified"], 1)
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_call_tushare"])
+        self.assertFalse(packet["policy"]["lineage_enters_core_action"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_a_share_evidence_cache")
         json.dumps(packet, ensure_ascii=False)
 
     def test_factor_value_rows_keep_safe_scalar_contract(self):
@@ -701,6 +741,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(quant["data"]["deepseek_called"])
         self.assertTrue(quant["data"]["does_not_modify_strategy_action"])
 
+        evidence = self.client.get("/api/evidence/cache").json()
+        self.assertTrue(evidence["ok"])
+        self.assertTrue(evidence["data"]["cache_only"])
+        self.assertFalse(evidence["data"]["external_calls_triggered"])
+        self.assertFalse(evidence["data"]["tushare_called"])
+        self.assertFalse(evidence["data"]["deepseek_called"])
+        self.assertTrue(evidence["data"]["does_not_modify_strategy_action"])
+
     def test_trade_review_cache_endpoint_returns_sanitized_local_records(self):
         self._with_trade_review_log(
             [
@@ -753,6 +801,29 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         self.assertTrue(packet["policy"]["does_not_run_backtest"])
         self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["does_not_execute_trades"])
+
+    def test_evidence_cache_endpoint_returns_lineage_without_external_work(self):
+        self._with_snapshot_cache(
+            {
+                "a_share_fact_lineage_summary": {
+                    "schema_version": "a_share_fact_lineage_summary.v1",
+                    "summary": "已验证 1｜阻断 0｜缓存 0｜过期 0｜缺失 0｜待验证 0",
+                    "items": [{"fact_key": "moneyflow", "status_label": "已验证", "enters_core_action": False}],
+                    "counts": {"verified": 1, "blocked": 0, "missing": 0, "cached": 0},
+                }
+            }
+        )
+
+        response = self.client.get("/api/evidence/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_a_share_evidence_cache")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertEqual(packet["counts"]["lineage_verified"], 1)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["policy"]["lineage_enters_core_action"])
         self.assertTrue(packet["does_not_execute_trades"])
 
     def test_post_task_stub_returns_task_id(self):
