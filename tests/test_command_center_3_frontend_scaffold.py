@@ -205,6 +205,22 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK", page)
         self.assertNotIn("GITHUB_TOKEN", page)
 
+    def test_legacy_page_declares_streamlit_as_guarded_legacy_surface(self):
+        page = (ROOT / "src" / "routes" / "LegacyTools.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("legacy/admin/debug", page)
+        self.assertIn("普通主流程请使用 Command Center 3", page)
+        self.assertIn("不会创建任务", page)
+        self.assertIn("不调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不会绕过 strategy_execution_packet", page)
+        self.assertIn("真实交易", page)
+        self.assertIn("自动下单", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
     def test_next_session_chart_uses_cache_payload_without_trade_mutation(self):
         page = (ROOT / "src" / "routes" / "NextSessionMap.tsx").read_text(encoding="utf-8")
         chart = (ROOT / "src" / "components" / "NextSessionChart.tsx").read_text(encoding="utf-8")
