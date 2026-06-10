@@ -584,6 +584,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(status["deepseek_called"])
         self.assertTrue(status["does_not_execute_trades"])
         self.assertIn(status["metadata"]["status"], {"missing", "ready"})
+        self.assertEqual(status["call_ledger"][0]["api"], "local_storage_factor_values_cache")
+        self.assertFalse(status["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage/factor-values", status["warnings"][0])
 
     def test_storage_overview_covers_daily_moneyflow_and_factor_values(self):
         self._with_parquet_root()
@@ -600,6 +603,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("sqlite_meta", overview)
         self.assertEqual(overview["metadata_store"], "sqlite_meta")
         self.assertEqual(overview["metadata_status"], "missing")
+        self.assertEqual(overview["call_ledger"][0]["api"], "local_storage_overview_cache")
+        self.assertFalse(overview["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage", overview["warnings"][0])
 
     def test_storage_sqlite_meta_status_lists_metadata_without_payloads(self):
         db_path = self._with_meta_store()
@@ -620,6 +626,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(status["external_calls_triggered"])
         self.assertFalse(status["tushare_called"])
         self.assertTrue(status["does_not_execute_trades"])
+        self.assertEqual(status["call_ledger"][0]["api"], "local_storage_sqlite_meta_cache")
+        self.assertFalse(status["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage/sqlite-meta", status["warnings"][0])
         self.assertIn("packet_key", status["packet_metadata"][0])
         self.assertNotIn("payload_json", status["packet_metadata"][0])
         self.assertNotIn("SHOULD_DROP", json.dumps(status, ensure_ascii=False))
@@ -633,6 +642,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(status["supported_datasets"]), {"factor_values", "daily", "moneyflow"})
         self.assertFalse(status["external_calls_triggered"])
         self.assertFalse(status["tushare_called"])
+        self.assertEqual(status["call_ledger"][0]["api"], "local_storage_dataset_cache")
+        self.assertFalse(status["call_ledger"][0]["external"])
 
     def test_trade_review_cache_reads_local_log_without_external_calls(self):
         self._with_trade_review_log(
@@ -1765,23 +1776,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(storage["ok"])
         self.assertTrue(storage["data"]["cache_only"])
         self.assertFalse(storage["data"]["external_calls_triggered"])
+        self.assertEqual(storage["call_ledger"][0]["api"], "local_storage_factor_values_cache")
+        self.assertFalse(storage["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage/factor-values", storage["warnings"][0])
 
         sqlite_meta = self.client.get("/api/storage/sqlite-meta").json()
         self.assertTrue(sqlite_meta["ok"])
         self.assertTrue(sqlite_meta["data"]["cache_only"])
         self.assertFalse(sqlite_meta["data"]["external_calls_triggered"])
         self.assertTrue(sqlite_meta["data"].get("does_not_return_payload_json", True))
+        self.assertEqual(sqlite_meta["call_ledger"][0]["api"], "local_storage_sqlite_meta_cache")
+        self.assertFalse(sqlite_meta["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage/sqlite-meta", sqlite_meta["warnings"][0])
 
         storage_overview = self.client.get("/api/storage").json()
         self.assertTrue(storage_overview["ok"])
         self.assertEqual(set(storage_overview["data"]["dataset_status"]), {"factor_values", "daily", "moneyflow"})
         self.assertIn("sqlite_meta", storage_overview["data"])
         self.assertFalse(storage_overview["data"]["external_calls_triggered"])
+        self.assertEqual(storage_overview["call_ledger"][0]["api"], "local_storage_overview_cache")
+        self.assertFalse(storage_overview["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage", storage_overview["warnings"][0])
 
         daily_storage = self.client.get("/api/storage/daily").json()
         self.assertTrue(daily_storage["ok"])
         self.assertEqual(daily_storage["data"]["dataset"], "daily")
         self.assertFalse(daily_storage["data"]["external_calls_triggered"])
+        self.assertEqual(daily_storage["call_ledger"][0]["api"], "local_storage_dataset_cache")
+        self.assertFalse(daily_storage["call_ledger"][0]["external"])
+        self.assertIn("GET /api/storage/daily", daily_storage["warnings"][0])
 
         migration = self.client.get("/api/migration/status").json()
         self.assertTrue(migration["ok"])

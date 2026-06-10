@@ -8,12 +8,18 @@ import StatusBadge from "../components/StatusBadge";
 
 export default function StorageOverview() {
   const [overview, setOverview] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [factorValues, setFactorValues] = useState<Record<string, unknown>>({});
   const [sqliteMeta, setSqliteMeta] = useState<Record<string, unknown>>({});
   const [datasetDetails, setDatasetDetails] = useState<Record<string, Record<string, unknown>>>({});
 
   useEffect(() => {
-    void getStorageOverview().then((res) => setOverview(res.data));
+    void getStorageOverview().then((res) => {
+      setOverview(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
     void getFactorValuesStorage().then((res) => setFactorValues(res.data));
     void getSQLiteMetaStorage().then((res) => setSqliteMeta(res.data));
     void Promise.all(["daily", "moneyflow"].map((dataset) => getStorageDataset(dataset).then((res) => [dataset, res.data] as const))).then((items) =>
@@ -33,6 +39,10 @@ export default function StorageOverview() {
   const factorRows = (factorQuery?.rows as Array<Record<string, unknown>> | undefined) ?? [];
   const packetMetadataRows = (sqliteMeta.packet_metadata as Array<Record<string, unknown>> | undefined) ?? [];
   const taskMetadataRows = (sqliteMeta.task_metadata as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (overview.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((overview.warnings as Array<string> | undefined) ?? []);
+  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const previewRows = datasetCards.flatMap((item) => {
     const query = item.packet.query as Record<string, unknown> | undefined;
     const rows = (query?.rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -56,6 +66,8 @@ export default function StorageOverview() {
           { label: "GitHub", value: overview.github_called === true ? "已调用" : "未调用", tone: overview.github_called === true ? "bad" : "good" },
           { label: "真实交易", value: overview.does_not_execute_trades === false ? "可能" : "禁止", tone: overview.does_not_execute_trades === false ? "bad" : "good" },
           { label: "修改 action", value: overview.does_not_modify_strategy_action === false ? "可能" : "不会", tone: overview.does_not_modify_strategy_action === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length },
           { label: "factor_values", value: String(datasetStatus?.factor_values ?? "missing") },
           { label: "daily", value: String(datasetStatus?.daily ?? "missing") },
           { label: "moneyflow", value: String(datasetStatus?.moneyflow ?? "missing") },
@@ -104,6 +116,14 @@ export default function StorageOverview() {
             };
           })}
         />
+      </PacketCard>
+
+      <PacketCard title="GET storage envelope call_ledger" subtitle="GET /api/storage 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET storage envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={warningRows} />
       </PacketCard>
 
       <PacketCard title="数据集状态" subtitle="本地 Parquet 数据集元数据" status="overview">

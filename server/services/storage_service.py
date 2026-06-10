@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import math
 from pathlib import Path
 from typing import Any, Mapping
@@ -32,30 +33,101 @@ def _canonical_dataset(dataset: str) -> str:
     return SUPPORTED_PARQUET_DATASETS[key]
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _storage_cache_warning(endpoint: str) -> str:
+    return f"{endpoint} 只读取本地 storage cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
+
+
+def _storage_cache_call_ledger(
+    api: str,
+    *,
+    endpoint: str,
+    status: Any = None,
+    dataset: Any = None,
+    row_count: Any = None,
+    path: Any = None,
+    now: str | None = None,
+) -> list[dict[str, Any]]:
+    row: dict[str, Any] = {
+        "api": api,
+        "endpoint": endpoint,
+        "source_type": "local_storage_cache",
+        "external": False,
+        "call_status": _safe_scalar(status) or "cache_read",
+        "local_fetched_at": now or _now_iso(),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    safe_dataset = _safe_scalar(dataset)
+    if safe_dataset:
+        row["dataset"] = safe_dataset
+    safe_path = _safe_scalar(path)
+    if safe_path:
+        row["path"] = safe_path
+    if isinstance(row_count, int):
+        row["row_count"] = row_count
+    return [row]
+
+
+def _attach_storage_lineage(
+    packet: dict[str, Any],
+    *,
+    api: str,
+    endpoint: str,
+    dataset: Any = None,
+    row_count: Any = None,
+    path: Any = None,
+) -> dict[str, Any]:
+    packet["call_ledger"] = _storage_cache_call_ledger(
+        api,
+        endpoint=endpoint,
+        status=packet.get("status") or packet.get("metadata_status") or packet.get("store"),
+        dataset=dataset if dataset is not None else packet.get("dataset"),
+        row_count=row_count if row_count is not None else packet.get("row_count"),
+        path=path if path is not None else packet.get("path"),
+    )
+    packet["warnings"] = [_storage_cache_warning(endpoint)]
+    return packet
+
+
 def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
     selected = _canonical_dataset(dataset)
     if not selected:
-        return {
-            "schema_version": "command_center_3_storage_dataset.v1",
-            "status": "unsupported_dataset",
-            "dataset": str(dataset or ""),
-            "supported_datasets": ["factor_values", "daily", "moneyflow"],
-            "cache_only": True,
-            "external_calls_triggered": False,
-            "tushare_called": False,
-            "deepseek_called": False,
-            "github_called": False,
-            "does_not_modify_strategy_action": True,
-            "does_not_execute_trades": True,
-        }
+        return _attach_storage_lineage(
+            {
+                "schema_version": "command_center_3_storage_dataset.v1",
+                "status": "unsupported_dataset",
+                "dataset": str(dataset or ""),
+                "supported_datasets": ["factor_values", "daily", "moneyflow"],
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_modify_strategy_action": True,
+                "does_not_execute_trades": True,
+            },
+            api="local_storage_dataset_cache",
+            endpoint=f"GET /api/storage/{dataset}",
+            dataset=str(dataset or ""),
+            row_count=0,
+        )
     path = parquet_store.dataset_path(root=PARQUET_ROOT, name=selected)
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=selected)
     query = duckdb_store.query_parquet_dataset(path, limit=limit)
     metadata["path"] = _path_label(path)
     query["path"] = _path_label(path)
-    return {
+    packet = {
         "schema_version": "command_center_3_storage_dataset.v1",
         "store": "parquet_duckdb",
+        "status": metadata.get("status", "missing"),
         "dataset": selected,
         "metadata": metadata,
         "query": query,
@@ -68,12 +140,27 @@ def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
     }
+    return _attach_storage_lineage(
+        packet,
+        api="local_storage_dataset_cache",
+        endpoint=f"GET /api/storage/{selected}",
+        dataset=selected,
+        row_count=packet["row_count"],
+        path=metadata["path"],
+    )
 
 
 def factor_values_status(*, limit: int = 100) -> dict[str, Any]:
     packet = parquet_dataset_status("factor_values", limit=limit)
     packet["schema_version"] = "command_center_3_storage_factor_values.v1"
-    return packet
+    return _attach_storage_lineage(
+        packet,
+        api="local_storage_factor_values_cache",
+        endpoint="GET /api/storage/factor-values",
+        dataset="factor_values",
+        row_count=packet.get("row_count"),
+        path=(packet.get("metadata") or {}).get("path") if isinstance(packet.get("metadata"), Mapping) else packet.get("path"),
+    )
 
 
 def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
@@ -91,46 +178,65 @@ def sqlite_meta_status(*, limit: int = 50) -> dict[str, Any]:
         "does_not_execute_trades": True,
     }
     if not path.exists():
-        return {
-            **base,
-            "status": "missing",
-            "packet_count": 0,
-            "task_count": 0,
-            "packet_metadata": [],
-            "task_metadata": [],
-        }
+        return _attach_storage_lineage(
+            {
+                **base,
+                "status": "missing",
+                "packet_count": 0,
+                "task_count": 0,
+                "packet_metadata": [],
+                "task_metadata": [],
+            },
+            api="local_storage_sqlite_meta_cache",
+            endpoint="GET /api/storage/sqlite-meta",
+            row_count=0,
+            path=base["path"],
+        )
     try:
         store = SQLiteMetaStore(path)
         packet_metadata = store.list_packet_metadata()
         task_metadata = store.list_task_metadata()
     except Exception as exc:
-        return {
+        return _attach_storage_lineage(
+            {
+                **base,
+                "status": "read_failed",
+                "packet_count": 0,
+                "task_count": 0,
+                "packet_metadata": [],
+                "task_metadata": [],
+                "error_message_safe": _safe_error_message(exc),
+            },
+            api="local_storage_sqlite_meta_cache",
+            endpoint="GET /api/storage/sqlite-meta",
+            row_count=0,
+            path=base["path"],
+        )
+    return _attach_storage_lineage(
+        {
             **base,
-            "status": "read_failed",
-            "packet_count": 0,
-            "task_count": 0,
-            "packet_metadata": [],
-            "task_metadata": [],
-            "error_message_safe": _safe_error_message(exc),
-        }
-    return {
-        **base,
-        "status": "ready",
-        "packet_count": len(packet_metadata),
-        "task_count": len(task_metadata),
-        "packet_metadata": packet_metadata[:limit],
-        "task_metadata": task_metadata[:limit],
-        "metadata_is_payload_only": False,
-        "does_not_return_payload_json": True,
-    }
+            "status": "ready",
+            "packet_count": len(packet_metadata),
+            "task_count": len(task_metadata),
+            "packet_metadata": packet_metadata[:limit],
+            "task_metadata": task_metadata[:limit],
+            "metadata_is_payload_only": False,
+            "does_not_return_payload_json": True,
+        },
+        api="local_storage_sqlite_meta_cache",
+        endpoint="GET /api/storage/sqlite-meta",
+        row_count=len(packet_metadata) + len(task_metadata),
+        path=base["path"],
+    )
 
 
 def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     datasets = [parquet_dataset_status(name, limit=limit) for name in ("factor_values", "daily", "moneyflow")]
     sqlite_meta = sqlite_meta_status(limit=limit)
-    return {
+    packet = {
         "schema_version": "command_center_3_storage_overview.v1",
         "store": "parquet_duckdb",
+        "status": "cache_ready",
         "metadata_store": "sqlite_meta",
         "datasets": datasets,
         "dataset_status": {item["dataset"]: item["metadata"]["status"] for item in datasets},
@@ -146,6 +252,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
     }
+    return _attach_storage_lineage(
+        packet,
+        api="local_storage_overview_cache",
+        endpoint="GET /api/storage",
+        row_count=sum(int(item.get("row_count") or 0) for item in datasets),
+    )
 
 
 SENSITIVE_VALUE_MARKERS = (
