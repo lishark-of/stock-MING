@@ -1,3 +1,4 @@
+import ast
 import os
 import unittest
 from pathlib import Path
@@ -89,6 +90,59 @@ class DeepSeekModelConfigTests(unittest.TestCase):
             for fragment in forbidden_fragments:
                 if fragment in text:
                     offenders.append(f"{path.relative_to(root)} contains {fragment}")
+
+        self.assertEqual(offenders, [])
+
+    def test_chat_completion_calls_use_configured_deepseek_model(self):
+        root = Path(__file__).resolve().parents[1]
+        offenders = []
+
+        def attr_chain(node):
+            parts = []
+            while isinstance(node, ast.Attribute):
+                parts.append(node.attr)
+                node = node.value
+            if isinstance(node, ast.Name):
+                parts.append(node.id)
+            return list(reversed(parts))
+
+        for path in root.rglob("*.py"):
+            if any(part in {".git", ".venv", "__pycache__", "node_modules", "dist"} for part in path.parts):
+                continue
+            if path.parts[-2:-1] == ("tests",):
+                continue
+
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            try:
+                tree = ast.parse(text)
+            except SyntaxError as exc:
+                offenders.append(f"{path.relative_to(root)} cannot be parsed: {exc}")
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                chain = attr_chain(node.func)
+                if chain[-3:] != ["chat", "completions", "create"]:
+                    continue
+
+                model_keywords = [kw for kw in node.keywords if kw.arg == "model"]
+                if model_keywords:
+                    for keyword in model_keywords:
+                        value_source = ast.get_source_segment(text, keyword.value) or ""
+                        if "get_deepseek_model(" not in value_source:
+                            offenders.append(
+                                f"{path.relative_to(root)}:{node.lineno} model is not from get_deepseek_model"
+                            )
+                    continue
+
+                has_kwargs = any(kw.arg is None for kw in node.keywords)
+                if has_kwargs and (
+                    '"model": get_deepseek_model(' in text or "'model': get_deepseek_model(" in text
+                ):
+                    continue
+
+                offenders.append(f"{path.relative_to(root)}:{node.lineno} missing configured model keyword")
 
         self.assertEqual(offenders, [])
 
