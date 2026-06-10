@@ -35,6 +35,7 @@ export default function PacketRegistry() {
   const persistedKeys = (index.persisted_packet_keys as string[] | undefined) ?? [];
   const snapshotKeys = (index.snapshot_available_keys as string[] | undefined) ?? [];
   const aliasKeys = (index.snapshot_alias_keys as string[] | undefined) ?? [];
+  const packetSourceRows = (index.packet_source_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const selectedCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const selectedWarnings = (packet.warnings as Array<unknown> | undefined) ?? [];
   const selectedBoundaryRows = [
@@ -47,12 +48,15 @@ export default function PacketRegistry() {
     { boundary: "call_ledger_count", value: String(selectedCallLedger.length), expected: ">= 0" },
     { boundary: "warning_count", value: String(selectedWarnings.length), expected: ">= 0" }
   ];
-  const packetRows = keys.map((packetKey) => ({
-    packet_key: packetKey,
-    persisted: persistedKeys.includes(packetKey),
-    snapshot: snapshotKeys.includes(packetKey),
-    alias: aliasKeys.includes(packetKey)
-  }));
+  const packetRows = packetSourceRows.length
+    ? packetSourceRows
+    : keys.map((packetKey) => ({
+        packet_key: packetKey,
+        read_priority: "snapshot > sqlite_meta > local_builder > missing",
+        sqlite_meta: persistedKeys.includes(packetKey),
+        snapshot: snapshotKeys.includes(packetKey),
+        snapshot_alias: aliasKeys.includes(packetKey)
+      }));
 
   return (
     <>
@@ -99,7 +103,7 @@ export default function PacketRegistry() {
         </PacketCard>
       </div>
 
-      <PacketCard title="Packet keys" subtitle="本地快照、SQLite metadata 与本地 builder 汇总" status="index">
+      <PacketCard title="Packet keys" subtitle="本地快照、SQLite metadata 与本地 builder 汇总；读取优先级固定" status="index">
         <DataLineageTable rows={packetRows} />
       </PacketCard>
 

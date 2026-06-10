@@ -570,9 +570,22 @@ def list_packets() -> dict[str, Any]:
     alias_keys = sorted(api_key for api_key, source_key in SNAPSHOT_PACKET_ALIASES.items() if source_key in snapshot)
     sqlite_meta = _sqlite_metadata()
     persisted_keys = sorted(str(item.get("packet_key")) for item in sqlite_meta.get("packet_metadata", []) if item.get("packet_key"))
+    available_keys = sorted(set(PACKET_BUILDERS) | set(snapshot_keys) | set(alias_keys) | set(persisted_keys))
+    packet_source_rows = [
+        {
+            "packet_key": key,
+            "read_priority": "snapshot > sqlite_meta > local_builder > missing",
+            "snapshot": key in snapshot_keys,
+            "snapshot_alias": key in alias_keys,
+            "sqlite_meta": key in persisted_keys,
+            "local_builder": key in PACKET_BUILDERS,
+        }
+        for key in available_keys
+    ]
     return {
         "schema_version": "command_center_3_packet_index.v1",
-        "available_cache_keys": sorted(set(PACKET_BUILDERS) | set(snapshot_keys) | set(alias_keys) | set(persisted_keys)),
+        "available_cache_keys": available_keys,
+        "packet_source_rows": packet_source_rows,
         "snapshot_available": bool(snapshot),
         "snapshot_cache_path": _cache_path_label(),
         "snapshot_available_keys": snapshot_keys,
@@ -593,6 +606,9 @@ def read_packet(packet_key: str) -> dict[str, Any]:
     cached = _read_snapshot_packet(str(packet_key))
     if cached:
         return cached
+    persisted = _read_persisted_packet(str(packet_key))
+    if persisted:
+        return persisted
     builder = PACKET_BUILDERS.get(str(packet_key))
     if builder is None:
         return _cache_missing_packet(

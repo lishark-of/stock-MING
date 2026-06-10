@@ -327,18 +327,50 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self._with_meta_store()
         from storage.sqlite_meta import SQLiteMetaStore
 
+        packet_key = "custom_local_research_packet"
         SQLiteMetaStore(packet_service.SQLITE_META_PATH).write_packet(
-            "command_center_factor_quant_hub_packet",
-            {"packet_key": "command_center_factor_quant_hub_packet", "schema_version": "factor_quant_hub.v1", "mode": "light"},
+            packet_key,
+            {"packet_key": packet_key, "schema_version": "custom.v1", "status": "ready"},
         )
 
         index = packet_service.list_packets()
 
         self.assertTrue(index["sqlite_meta"]["sqlite_meta_available"])
-        self.assertIn("command_center_factor_quant_hub_packet", index["persisted_packet_keys"])
-        self.assertIn("command_center_factor_quant_hub_packet", index["available_cache_keys"])
-        self.assertEqual(index["sqlite_meta"]["packet_metadata"][0]["schema_version"], "factor_quant_hub.v1")
+        self.assertIn(packet_key, index["persisted_packet_keys"])
+        self.assertIn(packet_key, index["available_cache_keys"])
+        self.assertIn(packet_key, {row["packet_key"] for row in index["packet_source_rows"]})
+        source_row = next(row for row in index["packet_source_rows"] if row["packet_key"] == packet_key)
+        self.assertTrue(source_row["sqlite_meta"])
+        self.assertFalse(source_row["local_builder"])
+        self.assertIn("sqlite_meta", source_row["read_priority"])
+        self.assertEqual(index["sqlite_meta"]["packet_metadata"][0]["schema_version"], "custom.v1")
         self.assertFalse(index["cache_api_policy"]["get_cache_external_calls"])
+
+        packet = packet_service.read_packet(packet_key)
+
+        self.assertEqual(packet["packet_key"], packet_key)
+        self.assertEqual(packet["cache_source"], "sqlite_meta")
+        self.assertFalse(packet["external_calls_triggered"])
+
+    def test_packet_endpoint_reads_sqlite_only_packet(self):
+        self._with_meta_store()
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        packet_key = "custom_sqlite_only_packet"
+        SQLiteMetaStore(packet_service.SQLITE_META_PATH).write_packet(
+            packet_key,
+            {"packet_key": packet_key, "schema_version": "custom.sqlite.v1", "status": "ready"},
+        )
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).get(f"/api/packets/{packet_key}").json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["data"]["packet_key"], packet_key)
+        self.assertEqual(response["data"]["cache_source"], "sqlite_meta")
+        self.assertFalse(response["data"]["external_calls_triggered"])
 
     def test_market_context_cache_reads_market_packets_without_refreshing_quotes(self):
         self._with_snapshot_cache(
