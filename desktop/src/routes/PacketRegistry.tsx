@@ -35,6 +35,18 @@ export default function PacketRegistry() {
   const persistedKeys = (index.persisted_packet_keys as string[] | undefined) ?? [];
   const snapshotKeys = (index.snapshot_available_keys as string[] | undefined) ?? [];
   const aliasKeys = (index.snapshot_alias_keys as string[] | undefined) ?? [];
+  const selectedCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const selectedWarnings = (packet.warnings as Array<unknown> | undefined) ?? [];
+  const selectedBoundaryRows = [
+    { boundary: "external_calls_triggered", value: String(packet.external_calls_triggered ?? packet.cache_api_external_calls_triggered ?? false), expected: "false" },
+    { boundary: "tushare_called", value: String(packet.tushare_called ?? packet.cache_api_tushare_called ?? false), expected: "false" },
+    { boundary: "deepseek_called", value: String(packet.deepseek_called ?? packet.cache_api_deepseek_called ?? false), expected: "false" },
+    { boundary: "github_called", value: String(packet.github_called ?? packet.cache_api_github_called ?? false), expected: "false" },
+    { boundary: "does_not_execute_trades", value: String(packet.does_not_execute_trades ?? true), expected: "true" },
+    { boundary: "does_not_modify_strategy_action", value: String(packet.does_not_modify_strategy_action ?? true), expected: "true" },
+    { boundary: "call_ledger_count", value: String(selectedCallLedger.length), expected: ">= 0" },
+    { boundary: "warning_count", value: String(selectedWarnings.length), expected: ">= 0" }
+  ];
   const packetRows = keys.map((packetKey) => ({
     packet_key: packetKey,
     persisted: persistedKeys.includes(packetKey),
@@ -89,6 +101,14 @@ export default function PacketRegistry() {
 
       <PacketCard title="Packet keys" subtitle="本地快照、SQLite metadata 与本地 builder 汇总" status="index">
         <DataLineageTable rows={packetRows} />
+      </PacketCard>
+
+      <PacketCard title="选中 Packet 边界" subtitle="结构化展示外联、交易和 action 边界；不依赖 raw JSON" status="guardrail">
+        <DataLineageTable rows={selectedBoundaryRows} />
+      </PacketCard>
+
+      <PacketCard title="选中 Packet call_ledger" subtitle="本地调用血缘；不得包含 token/key 或错误堆栈" status="lineage">
+        <DataLineageTable rows={selectedCallLedger} />
       </PacketCard>
 
       <PacketCard title="SQLite metadata" subtitle="packet/task 元数据只读展示" status={String(sqliteMeta?.sqlite_meta_available ?? false)}>
