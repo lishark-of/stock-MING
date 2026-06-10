@@ -30,21 +30,31 @@ def _active_config_key(purpose: str) -> str | None:
     return None
 
 
-def _purpose_row(purpose: str) -> dict[str, Any]:
-    active_key = _active_config_key(purpose)
-    config_keys = list(DEEPSEEK_MODEL_CONFIG_KEYS.get(purpose, ()))
-    fallback_model = DEEPSEEK_MODEL_DEFAULTS.get(purpose, DEEPSEEK_MODEL_DEFAULTS["default"])
+def build_deepseek_model_strategy_ref(purpose: str = "default") -> dict[str, Any]:
+    selected = str(purpose or "default").strip().lower()
+    if selected not in DEEPSEEK_MODEL_CONFIG_KEYS:
+        selected = "default"
+    active_key = _active_config_key(selected)
+    config_keys = list(DEEPSEEK_MODEL_CONFIG_KEYS.get(selected, ()))
+    fallback_model = DEEPSEEK_MODEL_DEFAULTS.get(selected, DEEPSEEK_MODEL_DEFAULTS["default"])
     return {
-        "purpose": purpose,
-        "model": get_deepseek_model(purpose),
+        "purpose": selected,
+        "model": get_deepseek_model(selected),
         "fallback_model": fallback_model,
         "config_keys": config_keys,
         "active_config_key": active_key,
         "uses_configured_value": bool(active_key),
         "uses_safe_default": not bool(active_key),
+        "model_source": f"config.get_deepseek_model('{selected}')",
+        "does_not_hardcode_model": True,
+        "contains_secret": False,
         "call_policy": "manual_only",
         "external_call_on_cache_read": False,
     }
+
+
+def _purpose_row(purpose: str) -> dict[str, Any]:
+    return build_deepseek_model_strategy_ref(purpose)
 
 
 def read_deepseek_model_strategy_cache() -> dict[str, Any]:

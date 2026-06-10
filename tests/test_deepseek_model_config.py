@@ -6,6 +6,7 @@ from pathlib import Path
 import command_center_next_session_projection as next_session_projection
 import command_center_projection as projection
 import config
+from server.services import model_strategy_service
 
 
 class DeepSeekModelConfigTests(unittest.TestCase):
@@ -53,6 +54,25 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertEqual(config.get_deepseek_model("projection"), "custom-explain")
         self.assertEqual(config.get_deepseek_model("feeder"), "custom-fast")
         self.assertEqual(config.get_deepseek_model("healthcheck"), "custom-fast")
+
+    def test_model_strategy_reference_helper_is_configurable_and_secret_free(self):
+        os.environ["DEEPSEEK_DEFAULT_MODEL"] = "custom-default"
+        os.environ["DEEPSEEK_EXPLAIN_MODEL"] = "custom-explain"
+
+        factor_ref = model_strategy_service.build_deepseek_model_strategy_ref("factor_explain")
+        fallback_ref = model_strategy_service.build_deepseek_model_strategy_ref("unknown-purpose")
+
+        self.assertEqual(factor_ref["purpose"], "factor_explain")
+        self.assertEqual(factor_ref["model"], "custom-explain")
+        self.assertIn("DEEPSEEK_EXPLAIN_MODEL", factor_ref["config_keys"])
+        self.assertEqual(factor_ref["active_config_key"], "DEEPSEEK_EXPLAIN_MODEL")
+        self.assertTrue(factor_ref["uses_configured_value"])
+        self.assertTrue(factor_ref["does_not_hardcode_model"])
+        self.assertFalse(factor_ref["contains_secret"])
+
+        self.assertEqual(fallback_ref["purpose"], "default")
+        self.assertEqual(fallback_ref["model"], "custom-default")
+        self.assertIn("DEEPSEEK_DEFAULT_MODEL", fallback_ref["config_keys"])
 
     def test_projection_merges_default_to_configured_model(self):
         os.environ["DEEPSEEK_EXPLAIN_MODEL"] = "custom-projection-model"

@@ -7,10 +7,9 @@ from typing import Any
 import command_center_factor_research as factor_research
 import command_center_next_session_projection as next_session_projection
 import command_center_serenity_method_radar as serenity_radar
-from config import DEEPSEEK_MODEL_CONFIG_KEYS, get_deepseek_model
 from storage.sqlite_meta import SQLiteMetaStore
 
-from . import packet_service, storage_service
+from . import model_strategy_service, packet_service, storage_service
 from .task_service import create_task_record, create_task_stub, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
@@ -303,14 +302,7 @@ def _deepseek_task_payload_summary(payload: Any) -> dict[str, Any]:
 
 
 def _deepseek_model_strategy(purpose: str = "factor_explain") -> dict[str, Any]:
-    return {
-        "purpose": purpose,
-        "model": get_deepseek_model(purpose),
-        "config_keys": list(DEEPSEEK_MODEL_CONFIG_KEYS.get(purpose, DEEPSEEK_MODEL_CONFIG_KEYS["default"])),
-        "model_source": f"config.get_deepseek_model('{purpose}')",
-        "does_not_hardcode_model": True,
-        "contains_secret": False,
-    }
+    return model_strategy_service.build_deepseek_model_strategy_ref(purpose)
 
 
 def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool) -> list[dict[str, Any]]:

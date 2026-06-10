@@ -5,8 +5,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from config import DEEPSEEK_MODEL_CONFIG_KEYS, get_deepseek_model
+from config import DEEPSEEK_MODEL_CONFIG_KEYS
 from storage.sqlite_meta import SQLiteMetaStore
+
+from .model_strategy_service import build_deepseek_model_strategy_ref
 
 
 _TASKS: dict[str, dict[str, Any]] = {}
@@ -281,15 +283,11 @@ def _stub_request_params_safe(task_type: str) -> dict[str, Any]:
     purpose = entry.get("deepseek_model_strategy_purpose")
     if not purpose:
         return {}
+    strategy = build_deepseek_model_strategy_ref(str(purpose))
+    strategy["model_source"] = str(entry.get("deepseek_model_source") or strategy.get("model_source"))
+    strategy["does_not_hardcode_model"] = bool(entry.get("does_not_hardcode_deepseek_model"))
     return {
-        "deepseek_model_strategy": {
-            "purpose": str(purpose),
-            "model": get_deepseek_model(str(purpose)),
-            "config_keys": list(entry.get("deepseek_model_config_keys") or []),
-            "model_source": str(entry.get("deepseek_model_source") or f"config.get_deepseek_model('{purpose}')"),
-            "does_not_hardcode_model": bool(entry.get("does_not_hardcode_deepseek_model")),
-            "contains_secret": False,
-        }
+        "deepseek_model_strategy": strategy
     }
 
 
