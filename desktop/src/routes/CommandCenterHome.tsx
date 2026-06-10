@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, getChokepointCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
+import { getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -12,6 +12,7 @@ export default function CommandCenterHome() {
   const [discipline, setDiscipline] = useState<Record<string, unknown>>({});
   const [factor, setFactor] = useState<Record<string, unknown>>({});
   const [next, setNext] = useState<Record<string, unknown>>({});
+  const [dataHealth, setDataHealth] = useState<Record<string, unknown>>({});
   const [recovery, setRecovery] = useState<Record<string, unknown>>({});
   const [position, setPosition] = useState<Record<string, unknown>>({});
   const [candidates, setCandidates] = useState<Record<string, unknown>>({});
@@ -31,6 +32,7 @@ export default function CommandCenterHome() {
     void getDisciplineLoopCache().then((res) => setDiscipline(res.data));
     void getFactorQuantCache().then((res) => setFactor(res.data));
     void getNextSessionCache().then((res) => setNext(res.data));
+    void getDataHealthCache().then((res) => setDataHealth(res.data));
     void getRecoveryCenterCache().then((res) => setRecovery(res.data));
     void getPositionCache().then((res) => setPosition(res.data));
     void getCandidateRadarCache().then((res) => setCandidates(res.data));
@@ -57,6 +59,7 @@ export default function CommandCenterHome() {
   const deepseekModelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
   const migrationProgress = migration.progress_baseline as Array<Record<string, unknown>> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
+  const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
@@ -125,6 +128,11 @@ export default function CommandCenterHome() {
           <p>actions / timeline: {String(recoveryCounts?.action_count ?? 0)} / {String(recoveryCounts?.timeline_count ?? 0)}</p>
           <p>provider recovery: {String(recoveryCounts?.provider_recovery_count ?? 0)}</p>
           <p>external calls: {String(recovery.external_calls_triggered ?? false)}</p>
+        </PacketCard>
+        <PacketCard title="数据健康 cache" subtitle="GET cache，只读健康时间线，不 ping provider" status={String(dataHealth.status ?? "cache")}>
+          <p>timeline / provider: {String(dataHealthCounts?.timeline_count ?? 0)} / {String(dataHealthCounts?.provider_count ?? 0)}</p>
+          <p>capability / gaps: {String(dataHealthCounts?.capability_count ?? 0)} / {String(dataHealthCounts?.gap_count ?? 0)}</p>
+          <p>external calls: {String(dataHealth.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="持仓画像 cache" subtitle="GET cache，只读持仓上下文，不改 action" status={String(position.status ?? "cache")}>
           <p>ticker: {String(positionSummary?.ticker ?? "--")}</p>

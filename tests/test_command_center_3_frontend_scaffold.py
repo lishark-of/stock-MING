@@ -22,6 +22,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "AShareEvidenceRadar.tsx",
             ROOT / "src" / "routes" / "CandidateRadar.tsx",
             ROOT / "src" / "routes" / "DataCapabilityConsole.tsx",
+            ROOT / "src" / "routes" / "DataHealthTimeline.tsx",
             ROOT / "src" / "routes" / "DisciplineLoop.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src" / "routes" / "HealthStatus.tsx",
@@ -98,6 +99,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "AShareEvidenceRadar.tsx",
             "CandidateRadar.tsx",
             "DataCapabilityConsole.tsx",
+            "DataHealthTimeline.tsx",
             "DisciplineLoop.tsx",
             "HealthStatus.tsx",
             "MarketContext.tsx",
@@ -156,6 +158,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("AShareEvidenceRadar", app_source)
         self.assertIn("CandidateRadar", app_source)
         self.assertIn("DataCapabilityConsole", app_source)
+        self.assertIn("DataHealthTimeline", app_source)
         self.assertIn("PacketRegistry", app_source)
         self.assertIn("PositionContext", app_source)
         self.assertIn("QuantBacktestLab", app_source)
@@ -172,6 +175,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"evidence"', layout_source)
         self.assertIn('"candidates"', layout_source)
         self.assertIn('"dataCapability"', layout_source)
+        self.assertIn('"dataHealth"', layout_source)
         self.assertIn('"packets"', layout_source)
         self.assertIn('"position"', layout_source)
         self.assertIn('"quant"', layout_source)
@@ -186,6 +190,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("证据雷达", layout_source)
         self.assertIn("候选雷达", layout_source)
         self.assertIn("数据能力", layout_source)
+        self.assertIn("数据健康", layout_source)
         self.assertIn("Packet", layout_source)
         self.assertIn("持仓画像", layout_source)
         self.assertIn("量化回测", layout_source)
@@ -491,6 +496,29 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不调用 DeepSeek 或 GitHub", page)
         self.assertIn("strategy action", page)
         self.assertIn("local_data_capability_cache", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_data_health_page_reads_timeline_cache_without_provider_ping(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "DataHealthTimeline.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/data-health/cache", client)
+        self.assertIn("getDataHealthCache", page)
+        self.assertIn("getDataHealthCache", home)
+        self.assertIn("GET /api/data-health/cache", page)
+        self.assertIn("data_health_timeline", page)
+        self.assertIn("provider_data_capability_cockpit", page)
+        self.assertIn("a_share_capability_matrix", page)
+        self.assertIn("local_data_health_timeline_cache", page)
+        self.assertIn("不会 ping Tushare、AkShare、yfinance、Supabase", page)
+        self.assertIn("不调用 DeepSeek 或 GitHub", page)
+        self.assertIn("不会刷新数据", page)
+        self.assertIn("不修改 strategy action", page)
         self.assertIn("DataLineageTable", page)
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)

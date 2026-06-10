@@ -5,6 +5,7 @@ import CandidateRadar from "./routes/CandidateRadar";
 import ChokepointScan from "./routes/ChokepointScan";
 import CommandCenterHome from "./routes/CommandCenterHome";
 import DataCapabilityConsole from "./routes/DataCapabilityConsole";
+import DataHealthTimeline from "./routes/DataHealthTimeline";
 import DisciplineLoop from "./routes/DisciplineLoop";
 import FactorQuantHub from "./routes/FactorQuantHub";
 import HealthStatus from "./routes/HealthStatus";
@@ -33,6 +34,7 @@ export default function App() {
       {route === "discipline" ? <DisciplineLoop /> : null}
       {route === "evidence" ? <AShareEvidenceRadar /> : null}
       {route === "dataCapability" ? <DataCapabilityConsole /> : null}
+      {route === "dataHealth" ? <DataHealthTimeline /> : null}
       {route === "recovery" ? <RecoveryCenter /> : null}
       {route === "next" ? <NextSessionMap /> : null}
       {route === "position" ? <PositionContext /> : null}

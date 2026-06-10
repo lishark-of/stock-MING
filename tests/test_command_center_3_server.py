@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, data_health_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -758,6 +758,65 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["call_ledger"][0]["api"], "local_data_capability_cache")
         json.dumps(packet, ensure_ascii=False)
 
+    def test_data_health_timeline_cache_reads_provider_diagnostics_without_ping(self):
+        self._with_snapshot_cache(
+            {
+                "data_health_timeline": [
+                    {"event": "moneyflow stale", "provider": "Tushare", "error": "Traceback token=SHOULD_DROP"},
+                    {"event": "cyq recovered", "provider": "Tushare"},
+                ],
+                "provider_data_capability_cockpit": {
+                    "providers": [
+                        {"provider": "Tushare", "status": "partial", "api_key": "SHOULD_DROP"},
+                        {"provider": "Supabase", "status": "not_configured"},
+                    ]
+                },
+                "a_share_capability_matrix": [
+                    {"provider": "Tushare", "api": "daily_basic", "capability_state": "available"},
+                    {"provider": "AkShare", "api": "spot", "capability_state": "pending"},
+                ],
+                "data_health_ledger": {"rows": [{"provider": "Tushare", "api": "moneyflow", "status": "stale"}]},
+                "data_gap_report": {"items": [{"label": "moneyflow missing", "authorization": "Bearer SHOULD_DROP"}]},
+                "data_health_timeline_recovery_actions": [{"label": "刷新 moneyflow", "status": "manual"}],
+                "data_health_visibility_summary": {"summary": "资金流过期，等待手动恢复。"},
+            }
+        )
+
+        packet = data_health_service.read_data_health_timeline_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_data_health_timeline_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["counts"]["timeline_count"], 2)
+        self.assertEqual(packet["counts"]["provider_count"], 2)
+        self.assertEqual(packet["counts"]["capability_count"], 2)
+        self.assertEqual(packet["counts"]["ledger_count"], 1)
+        self.assertEqual(packet["counts"]["gap_count"], 1)
+        self.assertEqual(packet["counts"]["recovery_action_count"], 1)
+        self.assertEqual(packet["timeline_rows"][0]["event"], "moneyflow stale")
+        self.assertEqual(packet["provider_rows"][0]["provider"], "Tushare")
+        self.assertEqual(packet["capability_rows"][0]["api"], "daily_basic")
+        self.assertNotIn("api_key", packet["provider_rows"][0])
+        self.assertNotIn("authorization", packet["gap_rows"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_ping_tushare"])
+        self.assertTrue(packet["policy"]["does_not_ping_supabase"])
+        self.assertTrue(packet["policy"]["does_not_refresh_data"])
+        self.assertTrue(packet["policy"]["post_task_required_for_provider_probe"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["akshare_called"])
+        self.assertFalse(packet["yfinance_called"])
+        self.assertFalse(packet["supabase_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_data_health_timeline_cache")
+        json.dumps(packet, ensure_ascii=False)
+
     def test_recovery_center_cache_reads_local_recovery_actions_without_running_them(self):
         self._with_snapshot_cache(
             {
@@ -1298,6 +1357,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(data_capability["data"]["policy"]["does_not_ping_tushare"])
         self.assertTrue(data_capability["data"]["does_not_modify_strategy_action"])
 
+        data_health = self.client.get("/api/data-health/cache").json()
+        self.assertTrue(data_health["ok"])
+        self.assertTrue(data_health["data"]["cache_only"])
+        self.assertFalse(data_health["data"]["external_calls_triggered"])
+        self.assertFalse(data_health["data"]["tushare_called"])
+        self.assertFalse(data_health["data"]["deepseek_called"])
+        self.assertFalse(data_health["data"]["github_called"])
+        self.assertTrue(data_health["data"]["policy"]["does_not_ping_tushare"])
+        self.assertTrue(data_health["data"]["policy"]["does_not_ping_supabase"])
+        self.assertTrue(data_health["data"]["policy"]["does_not_refresh_data"])
+        self.assertTrue(data_health["data"]["policy"]["post_task_required_for_provider_probe"])
+        self.assertTrue(data_health["data"]["does_not_modify_strategy_action"])
+        self.assertTrue(data_health["data"]["does_not_execute_trades"])
+
         recovery = self.client.get("/api/recovery/cache").json()
         self.assertTrue(recovery["ok"])
         self.assertTrue(recovery["data"]["cache_only"])
@@ -1623,6 +1696,36 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["policy"]["does_not_ping_tushare"])
         self.assertTrue(packet["does_not_execute_trades"])
+
+    def test_data_health_cache_endpoint_returns_provider_timeline_without_ping(self):
+        self._with_snapshot_cache(
+            {
+                "data_health_timeline": [{"event": "daily_basic stale", "provider": "Tushare"}],
+                "provider_data_capability_cockpit": {"providers": [{"provider": "Tushare", "status": "partial"}]},
+                "a_share_capability_matrix": [{"provider": "Tushare", "api": "daily_basic"}],
+                "data_health_ledger": {"rows": [{"provider": "Tushare", "api": "daily_basic"}]},
+                "data_gap_report": {"items": [{"label": "daily_basic missing", "token": "SHOULD_DROP"}]},
+            }
+        )
+
+        response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_data_health_timeline_cache")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertEqual(packet["counts"]["timeline_count"], 1)
+        self.assertEqual(packet["counts"]["provider_count"], 1)
+        self.assertEqual(packet["counts"]["capability_count"], 1)
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["policy"]["does_not_ping_tushare"])
+        self.assertTrue(packet["policy"]["does_not_refresh_data"])
+        self.assertTrue(packet["policy"]["post_task_required_for_provider_probe"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(

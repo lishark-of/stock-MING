@@ -81,6 +81,10 @@ export function getDataCapabilityCache() {
   return request<Record<string, unknown>>("/api/data-capability/cache");
 }
 
+export function getDataHealthCache() {
+  return request<Record<string, unknown>>("/api/data-health/cache");
+}
+
 export function getDisciplineLoopCache() {
   return request<Record<string, unknown>>("/api/discipline/cache");
 }
