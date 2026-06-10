@@ -6,7 +6,7 @@
 | Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | A 股事实血缘 | `command_center_evidence_summary.py`, `command_center_*_packet.py` | `/api/packets/{packet_key}` 与后续 fact refresh task | `CommandCenterHome.tsx` / 后续证据页 | cache 不重算，支持本地快照别名 | 后续任务化 |
 | Tushare 数据刷新 | `tushare_adapter.py`, `app.py` | 后续 `refresh_tushare_facts` task | Factor / Next Session / Evidence pages | 是 | 是，当前 stub |
-| 交易记录实验室 | `trade_review_log.py`, `app.py` | 后续 `/api/trade-review/cache` | `LegacyTools.tsx` 迁移后独立页面 | 否 | 否 |
+| 交易记录实验室 | `trade_review_log.py`, `app.py` | `GET /api/trade-review/cache` | `TradeReviewLab.tsx` | 否，cache-only 读取本地 `trade_review_log.jsonl` | 否 |
 | 旧量化/回测 | `command_center_quant_packet.py`, `backtester.py` | 后续 `/api/backtest/run` | 后续 ECharts 回测页 | 是 | 是 |
 | 产业链瓶颈扫描 | `command_center_analysis_methods.py`, `analysis_engine.py`, `app.py` | `GET /api/chokepoint/cache`, `POST /api/chokepoint/run` | `ChokepointScan.tsx` | cache GET 不外联；没有精确 packet 时只返回缺口和旧分析摘要 | 是，POST 当前 stub |
 | Serenity 方法雷达 | `command_center_serenity_method_radar.py`, `app.py` | `GET /api/serenity/cache`, `POST /api/serenity/github-probe` | `SerenityMethodRadar.tsx` | cache 使用本地方法基线；probe 后续外联 | 是，POST 当前 stub |
@@ -28,6 +28,7 @@
 - `/api/storage`
 - `/api/storage/factor-values`
 - `/api/storage/{dataset}`
+- `/api/trade-review/cache`
 - `/api/tasks/{task_id}`
 - `/api/tasks`
 
@@ -47,3 +48,5 @@
 `/api/factor-quant/run-light` 已从纯 stub 升级为本地 light-mode pipeline：只读取本地 snapshot/cache，生成 `command_center_factor_quant_hub_packet` 并写入 SQLite meta cache，同时把 `runtime.factor_values` 写入 Parquet；仍不调用 Tushare、DeepSeek、GitHub，不跑全市场回测，不修改 strategy action。
 
 `/api/factor-quant/deepseek-explain` 已从纯 stub 升级为 guarded explanation pipeline：只读取已有 Factor Quant Hub cache，生成未发送的安全 prompt 预览；如传入本地解释 payload，只保留 `summary`、`support_notes`、`suppress_notes`、`conflict_notes`、`missing_data_notes`、`discipline_notes` 六类字段并写回 SQLite cache。当前阶段不真实调用 DeepSeek，不输出价格/持仓/因子值/买卖指令，不覆盖任何数值 packet。
+
+`/api/trade-review/cache` 已接入交易记录实验室只读迁移：只读取 `.stock_ming_cache/trade_review_log.jsonl`，返回复盘记录摘要、记录表和本地读取血缘；不创建记录、不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。

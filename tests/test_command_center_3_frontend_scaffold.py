@@ -25,6 +25,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
             ROOT / "src" / "routes" / "TaskCatalog.tsx",
+            ROOT / "src" / "routes" / "TradeReviewLab.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
             ROOT / "src-tauri" / "src" / "main.rs",
         ]
@@ -93,6 +94,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
             "TaskCatalog.tsx",
+            "TradeReviewLab.tsx",
             "LegacyTools.tsx",
         ]
         forbidden = ["tushare_adapter", "akshare", "DeepSeek(", "GITHUB_TOKEN", "process.env"]
@@ -133,16 +135,19 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("MigrationStatus", app_source)
         self.assertIn("StorageOverview", app_source)
         self.assertIn("TaskCatalog", app_source)
+        self.assertIn("TradeReviewLab", app_source)
         self.assertIn('"health"', layout_source)
         self.assertIn('"packets"', layout_source)
         self.assertIn('"migration"', layout_source)
         self.assertIn('"storage"', layout_source)
         self.assertIn('"tasks"', layout_source)
+        self.assertIn('"tradeReview"', layout_source)
         self.assertIn("健康", layout_source)
         self.assertIn("Packet", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
         self.assertIn("任务目录", layout_source)
+        self.assertIn("交易复盘", layout_source)
 
     def test_task_panel_polls_fastapi_task_endpoint(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
@@ -209,6 +214,25 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)
         self.assertNotIn("DEEPSEEK", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+
+    def test_trade_review_page_reads_local_review_cache_without_external_calls(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        page = (ROOT / "src" / "routes" / "TradeReviewLab.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("/api/trade-review/cache", client)
+        self.assertIn("getTradeReviewCache", page)
+        self.assertIn("GET /api/trade-review/cache", page)
+        self.assertIn("trade_review_log.jsonl", page)
+        self.assertIn("cache-only", page)
+        self.assertIn("不会调用 Tushare、DeepSeek 或 GitHub", page)
+        self.assertIn("不执行真实交易", page)
+        self.assertIn("不会修改 strategy_execution_packet.action", page)
+        self.assertIn("local_trade_review_log", page)
+        self.assertIn("DataLineageTable", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
         self.assertNotIn("GITHUB_TOKEN", page)
 
     def test_chokepoint_page_shows_research_only_task_boundaries(self):

@@ -77,6 +77,10 @@ export function getChokepointCache() {
   return request<Record<string, unknown>>("/api/chokepoint/cache");
 }
 
+export function getTradeReviewCache() {
+  return request<Record<string, unknown>>("/api/trade-review/cache");
+}
+
 export function getFactorValuesStorage() {
   return request<Record<string, unknown>>("/api/storage/factor-values");
 }

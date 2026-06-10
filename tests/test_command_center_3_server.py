@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import factor_service, packet_service, storage_service, task_service
+from server.services import factor_service, packet_service, storage_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -44,6 +44,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, storage_service, "PARQUET_ROOT", original_root)
         return storage_service.PARQUET_ROOT
+
+    def _with_trade_review_log(self, records):
+        original_path = trade_review_service.TRADE_REVIEW_LOG_PATH
+        temp_dir = tempfile.TemporaryDirectory()
+        log_path = Path(temp_dir.name) / "trade_review_log.jsonl"
+        with log_path.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        trade_review_service.TRADE_REVIEW_LOG_PATH = log_path
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, trade_review_service, "TRADE_REVIEW_LOG_PATH", original_path)
+        return log_path
 
     def test_cache_builders_do_not_call_external_sources(self):
         factor = packet_service.build_factor_quant_cache()
@@ -213,6 +225,45 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(status["supported_datasets"]), {"factor_values", "daily", "moneyflow"})
         self.assertFalse(status["external_calls_triggered"])
         self.assertFalse(status["tushare_called"])
+
+    def test_trade_review_cache_reads_local_log_without_external_calls(self):
+        self._with_trade_review_log(
+            [
+                {
+                    "id": "r1",
+                    "created_at": "2026-06-10T09:30:00",
+                    "ticker": "002008.SZ",
+                    "user_decision": "观察",
+                    "overall_action": "等待",
+                    "strategy_action": "wait",
+                    "user_note": "复盘纪律",
+                    "api_key": "SHOULD_DROP",
+                    "deepseek_summary": "Traceback token=SHOULD_DROP",
+                }
+            ]
+        )
+
+        packet = trade_review_service.read_trade_review_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_trade_review_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertTrue(packet["cache_only"])
+        self.assertTrue(packet["read_only"])
+        self.assertEqual(packet["record_count"], 1)
+        self.assertEqual(packet["records"][0]["ticker"], "002008.SZ")
+        self.assertNotIn("api_key", packet["records"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_trade_review_log")
+        self.assertEqual(packet["call_ledger"][0]["call_status"], "cache_read")
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_write_cache"])
+        self.assertFalse(packet["contains_secret"])
+        json.dumps(packet, ensure_ascii=False)
 
     def test_factor_value_rows_keep_safe_scalar_contract(self):
         rows = storage_service._factor_value_rows_from_hub(
@@ -522,6 +573,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(setattr, storage_service, "PARQUET_ROOT", original_root)
         return storage_service.PARQUET_ROOT
 
+    def _with_trade_review_log(self, records):
+        original_path = trade_review_service.TRADE_REVIEW_LOG_PATH
+        temp_dir = tempfile.TemporaryDirectory()
+        log_path = Path(temp_dir.name) / "trade_review_log.jsonl"
+        with log_path.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        trade_review_service.TRADE_REVIEW_LOG_PATH = log_path
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, trade_review_service, "TRADE_REVIEW_LOG_PATH", original_path)
+        return log_path
+
     def test_health_and_cache_endpoints(self):
         health = self.client.get("/health").json()
         self.assertTrue(health["ok"])
@@ -583,6 +646,42 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task_catalog["data"]["tushare_called"])
         self.assertFalse(task_catalog["data"]["deepseek_called"])
         self.assertFalse(task_catalog["data"]["github_called"])
+
+        trade_review = self.client.get("/api/trade-review/cache").json()
+        self.assertTrue(trade_review["ok"])
+        self.assertTrue(trade_review["data"]["cache_only"])
+        self.assertFalse(trade_review["data"]["external_calls_triggered"])
+        self.assertFalse(trade_review["data"]["tushare_called"])
+        self.assertFalse(trade_review["data"]["deepseek_called"])
+        self.assertTrue(trade_review["data"]["does_not_execute_trades"])
+
+    def test_trade_review_cache_endpoint_returns_sanitized_local_records(self):
+        self._with_trade_review_log(
+            [
+                {
+                    "id": "r2",
+                    "created_at": "2026-06-10T10:00:00",
+                    "ticker": "002008.SZ",
+                    "user_decision": "观察",
+                    "overall_action": "等待",
+                    "authorization": "Bearer SHOULD_DROP",
+                    "user_note": "不要追高",
+                }
+            ]
+        )
+
+        response = self.client.get("/api/trade-review/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_trade_review_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["record_count"], 1)
+        self.assertEqual(packet["records"][0]["ticker"], "002008.SZ")
+        self.assertNotIn("authorization", packet["records"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()

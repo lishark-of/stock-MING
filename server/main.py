@@ -13,6 +13,7 @@ from server.api import (
     routes_serenity,
     routes_storage,
     routes_tasks,
+    routes_trade_review,
 )
 
 
@@ -39,3 +40,4 @@ app.include_router(routes_chokepoint.router)
 app.include_router(routes_serenity.router)
 app.include_router(routes_storage.router)
 app.include_router(routes_tasks.router)
+app.include_router(routes_trade_review.router)

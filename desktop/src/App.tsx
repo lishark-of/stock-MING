@@ -11,6 +11,7 @@ import PacketRegistry from "./routes/PacketRegistry";
 import SerenityMethodRadar from "./routes/SerenityMethodRadar";
 import StorageOverview from "./routes/StorageOverview";
 import TaskCatalog from "./routes/TaskCatalog";
+import TradeReviewLab from "./routes/TradeReviewLab";
 
 export default function App() {
   const [route, setRoute] = useState<RouteKey>("home");
@@ -26,6 +27,7 @@ export default function App() {
       {route === "migration" ? <MigrationStatus /> : null}
       {route === "storage" ? <StorageOverview /> : null}
       {route === "tasks" ? <TaskCatalog /> : null}
+      {route === "tradeReview" ? <TradeReviewLab /> : null}
       {route === "legacy" ? <LegacyTools /> : null}
     </Layout>
   );

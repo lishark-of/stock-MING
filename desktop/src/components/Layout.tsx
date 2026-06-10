@@ -11,6 +11,7 @@ export type RouteKey =
   | "migration"
   | "storage"
   | "tasks"
+  | "tradeReview"
   | "legacy";
 
 const ROUTES: Array<{ key: RouteKey; label: string }> = [
@@ -24,6 +25,7 @@ const ROUTES: Array<{ key: RouteKey; label: string }> = [
   { key: "migration", label: "迁移状态" },
   { key: "storage", label: "存储层" },
   { key: "tasks", label: "任务目录" },
+  { key: "tradeReview", label: "交易复盘" },
   { key: "legacy", label: "Legacy" }
 ];
 
