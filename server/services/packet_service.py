@@ -121,6 +121,186 @@ def _summary_of_packet(packet: Any) -> dict[str, Any]:
     }
 
 
+def _to_number(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _chart_x_from_t(value: Any) -> str:
+    number = _to_number(value)
+    if number is None:
+        return str(value or "")
+    if number < 0:
+        return f"T{int(number)}"
+    if number == 0:
+        return "T0"
+    return f"T+{int(number)}"
+
+
+def _chart_point(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    price = _to_number(item.get("price") or item.get("close") or item.get("value"))
+    if price is None:
+        return None
+    t_value = item.get("t", item.get("x"))
+    return {
+        "x": _chart_x_from_t(t_value),
+        "t": t_value,
+        "price": round(price, 4),
+        "source": item.get("source") or "cache_projection",
+    }
+
+
+def _chart_points(items: Any) -> list[dict[str, Any]]:
+    if not isinstance(items, list):
+        return []
+    return [point for item in items if (point := _chart_point(item)) is not None]
+
+
+def _reference_line(key: str, label: str, value: Any, *, tone: str = "neutral") -> dict[str, Any] | None:
+    number = _to_number(value)
+    if number is None:
+        return None
+    return {"key": key, "label": label, "value": round(number, 4), "tone": tone}
+
+
+def _chart_y_axis_range(payload: dict[str, Any]) -> list[float | None]:
+    values: list[float] = []
+    for point in payload.get("historical_points") or []:
+        number = _to_number(point.get("price"))
+        if number is not None:
+            values.append(number)
+    for series in payload.get("scenario_series") or []:
+        for point in series.get("points") or []:
+            number = _to_number(point.get("price"))
+            if number is not None:
+                values.append(number)
+    for line in payload.get("reference_lines") or []:
+        number = _to_number(line.get("value"))
+        if number is not None:
+            values.append(number)
+    if not values:
+        return [None, None]
+    low = min(values)
+    high = max(values)
+    padding = max((high - low) * 0.08, high * 0.01, 0.5)
+    return [round(low - padding, 4), round(high + padding, 4)]
+
+
+def _legacy_projection_chart_payload(projection: Any) -> dict[str, Any]:
+    packet = projection if isinstance(projection, dict) else {}
+    position = packet.get("position_context") if isinstance(packet.get("position_context"), dict) else {}
+    reference_lines = []
+    for item in packet.get("reference_lines") or []:
+        if not isinstance(item, dict):
+            continue
+        line = _reference_line(str(item.get("key") or "reference"), str(item.get("label") or item.get("key") or "参考线"), item.get("value"), tone=str(item.get("tone") or "neutral"))
+        if line:
+            reference_lines.append(line)
+    for line in (
+        _reference_line("current_price", "当前价", position.get("current_price"), tone="blue"),
+        _reference_line("cost_price", "成本线", position.get("cost_price"), tone="orange"),
+    ):
+        if line and all(existing.get("key") != line["key"] for existing in reference_lines):
+            reference_lines.append(line)
+    scenario_series = []
+    for path in packet.get("paths") or []:
+        if not isinstance(path, dict):
+            continue
+        points = _chart_points(path.get("points"))
+        if not points:
+            continue
+        scenario_series.append(
+            {
+                "scenario_key": path.get("scenario_key") or path.get("name"),
+                "scenario_name": path.get("name") or path.get("scenario_name") or "情景路径",
+                "probability": path.get("probability"),
+                "color": path.get("color"),
+                "points": points,
+                "source": path.get("source") or packet.get("future_source"),
+                "risk_note": path.get("risk_note") or path.get("risk"),
+            }
+        )
+    payload = {
+        "status": "ready" if packet else "missing",
+        "source_packet": "projection_packet",
+        "source_cache_key": "projection_packet",
+        "is_exact_next_session_packet": False,
+        "uses_real_daily_close": False,
+        "historical_source_label": packet.get("historical_source_label") or "legacy projection historical cache",
+        "future_source_label": packet.get("future_source_label") or "legacy scenario projection",
+        "base_date": packet.get("base_date"),
+        "base_value": packet.get("base_value"),
+        "unit": packet.get("unit") or "price",
+        "historical_points": _chart_points(packet.get("historical")),
+        "scenario_series": scenario_series,
+        "reference_lines": reference_lines,
+        "operation_zones": [],
+        "warnings": [
+            "当前图表来自 legacy projection_packet cache，不是精确 command_center_next_session_projection_packet。",
+            "历史段未验证为真实 60 日 close；前端不得据此计算交易动作。",
+            "图表只读展示，不修改 strategy action、价格、持仓或 operation_zones。",
+        ],
+    }
+    payload["y_axis_range"] = _chart_y_axis_range(payload)
+    return payload
+
+
+def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
+    source = packet if isinstance(packet, dict) else {}
+    model = source.get("chart_render_model") if isinstance(source.get("chart_render_model"), dict) else {}
+    if not model:
+        return {
+            "status": "missing",
+            "source_packet": next_session_projection.PACKET_KEY,
+            "is_exact_next_session_packet": True,
+            "uses_real_daily_close": False,
+            "historical_points": [],
+            "scenario_series": [],
+            "reference_lines": [],
+            "operation_zones": [],
+            "warnings": ["精确次日操作图谱 packet 未提供 chart_render_model。"],
+            "y_axis_range": [None, None],
+        }
+    payload = {
+        "status": "ready",
+        "source_packet": next_session_projection.PACKET_KEY,
+        "is_exact_next_session_packet": True,
+        "uses_real_daily_close": bool(model.get("uses_real_daily_close") or _summary_of_packet(source).get("available")),
+        "historical_source_label": "command_center_next_session_projection_packet.chart_render_model",
+        "future_source_label": "scenario_paths",
+        "historical_points": _chart_points(model.get("historical_points") or model.get("daily_close_points") or []),
+        "scenario_series": [
+            {
+                "scenario_key": item.get("scenario_key"),
+                "scenario_name": item.get("scenario_name") or item.get("name"),
+                "color": item.get("color"),
+                "points": _chart_points(item.get("points")),
+                "source": "chart_render_model",
+            }
+            for item in model.get("scenario_series") or []
+            if isinstance(item, dict)
+        ],
+        "reference_lines": [
+            line
+            for line in (
+                _reference_line("current_price", "当前价", model.get("current_price_line"), tone="blue"),
+                _reference_line("cost_price", "成本线", model.get("cost_line"), tone="orange"),
+            )
+            if line
+        ],
+        "operation_zones": model.get("operation_zones") or source.get("operation_zones") or [],
+        "warnings": ["图表只读展示，不修改 strategy action、价格、持仓或 operation_zones。"],
+    }
+    payload["y_axis_range"] = model.get("y_axis_range") or _chart_y_axis_range(payload)
+    return payload
+
+
 def _cache_missing_packet(packet_key: str, summary: str, **extra: Any) -> dict[str, Any]:
     payload = {
         "packet_key": packet_key,
@@ -208,6 +388,7 @@ def build_serenity_cache() -> dict[str, Any]:
 def build_next_session_cache() -> dict[str, Any]:
     cached = _read_snapshot_packet(next_session_projection.PACKET_KEY)
     if cached:
+        cached.setdefault("chart_payload", _exact_next_session_chart_payload(cached))
         cached.setdefault("does_not_modify_action", True)
         cached.setdefault("does_not_modify_operation_zones", True)
         return cached
@@ -219,6 +400,18 @@ def build_next_session_cache() -> dict[str, Any]:
         schema_version=next_session_projection.SCHEMA_VERSION,
         source_snapshot_available=bool(snapshot),
         legacy_projection_cache=_summary_of_packet(legacy_projection) if legacy_projection is not None else {"available": False},
+        chart_payload=_legacy_projection_chart_payload(legacy_projection) if legacy_projection is not None else {
+            "status": "missing",
+            "source_packet": "none",
+            "is_exact_next_session_packet": False,
+            "uses_real_daily_close": False,
+            "historical_points": [],
+            "scenario_series": [],
+            "reference_lines": [],
+            "operation_zones": [],
+            "warnings": ["没有可用于 ECharts 的本地次日图谱缓存。"],
+            "y_axis_range": [None, None],
+        },
         does_not_modify_action=True,
         does_not_modify_operation_zones=True,
     )

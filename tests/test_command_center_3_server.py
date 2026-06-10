@@ -90,6 +90,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self._with_snapshot_cache(
             {
                 "projection_packet": {
+                    "base_date": "2026-06-09",
+                    "historical_source_label": "当前价锚定的模拟历史段",
+                    "historical": [{"t": -1, "value": 99}, {"t": 0, "value": 100}],
+                    "paths": [{"name": "中性路径", "points": [{"t": 0, "value": 100}, {"t": 1, "value": 101}]}],
+                    "position_context": {"current_price": 100, "cost_price": 96},
+                    "reference_lines": [{"key": "current_price", "label": "当前价基准", "value": 100}],
                     "status": "ready",
                     "summary": "legacy projection exists",
                 }
@@ -104,6 +110,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["legacy_projection_cache"]["available"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertTrue(packet["does_not_modify_action"])
+        self.assertEqual(packet["chart_payload"]["status"], "ready")
+        self.assertFalse(packet["chart_payload"]["is_exact_next_session_packet"])
+        self.assertFalse(packet["chart_payload"]["uses_real_daily_close"])
+        self.assertEqual(packet["chart_payload"]["historical_points"][0]["x"], "T-1")
+        self.assertEqual(packet["chart_payload"]["scenario_series"][0]["scenario_name"], "中性路径")
+        self.assertIn("前端不得据此计算交易动作", " ".join(packet["chart_payload"]["warnings"]))
 
     def test_packet_index_exposes_snapshot_keys(self):
         self._with_snapshot_cache({"moneyflow_packet": {"status": "ready"}})

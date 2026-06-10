@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getNextSessionCache, postTask } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
+import NextSessionChart from "../components/NextSessionChart";
 import PacketCard from "../components/PacketCard";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
@@ -14,6 +15,7 @@ export default function NextSessionMap() {
   }, []);
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
+  const chartPayload = packet.chart_payload as Record<string, unknown> | undefined;
 
   return (
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
@@ -28,11 +30,14 @@ export default function NextSessionMap() {
           { label: "cache source", value: String(packet.cache_source ?? "--") },
           { label: "本地快照", value: Boolean(packet.source_snapshot_available), tone: packet.source_snapshot_available ? "good" : "warn" },
           { label: "旧 projection", value: Boolean(legacy?.available), tone: legacy?.available ? "warn" : "neutral" },
+          { label: "精确图谱", value: chartPayload?.is_exact_next_session_packet === true, tone: chartPayload?.is_exact_next_session_packet === true ? "good" : "warn" },
+          { label: "真实 close", value: chartPayload?.uses_real_daily_close === true, tone: chartPayload?.uses_real_daily_close === true ? "good" : "warn" },
           { label: "修改 action", value: packet.does_not_modify_action === false ? "会" : "不会", tone: packet.does_not_modify_action === false ? "bad" : "good" },
           { label: "修改 operation_zones", value: packet.does_not_modify_operation_zones === false ? "会" : "不会", tone: packet.does_not_modify_operation_zones === false ? "bad" : "good" }
         ]}
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
+      <NextSessionChart payload={chartPayload} />
       {legacy?.available ? <JsonDetails title="legacy projection 摘要" data={legacy} /> : null}
       <JsonDetails title="次日图谱 cache packet" data={packet} />
     </PacketCard>

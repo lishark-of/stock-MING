@@ -17,6 +17,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "api" / "client.ts",
             ROOT / "src" / "components" / "JsonDetails.tsx",
             ROOT / "src" / "components" / "MetricGrid.tsx",
+            ROOT / "src" / "components" / "NextSessionChart.tsx",
             ROOT / "src" / "components" / "TaskStatusPanel.tsx",
             ROOT / "src" / "routes" / "FactorQuantHub.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
@@ -79,6 +80,21 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("getTask(taskId)", panel)
         self.assertIn("setInterval", panel)
         self.assertIn("local_fallback", panel)
+
+    def test_next_session_chart_uses_cache_payload_without_trade_mutation(self):
+        page = (ROOT / "src" / "routes" / "NextSessionMap.tsx").read_text(encoding="utf-8")
+        chart = (ROOT / "src" / "components" / "NextSessionChart.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("NextSessionChart", page)
+        self.assertIn("chart_payload", page)
+        self.assertIn("uses_real_daily_close", page)
+        self.assertIn("is_exact_next_session_packet", page)
+        self.assertIn("EChartPanel", chart)
+        self.assertIn("historical_points", chart)
+        self.assertIn("scenario_series", chart)
+        self.assertIn("reference_lines", chart)
+        self.assertNotIn("strategy_execution_packet.action", chart)
+        self.assertNotIn("operation_zones =", chart)
 
 
 if __name__ == "__main__":
