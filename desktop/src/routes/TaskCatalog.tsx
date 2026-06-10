@@ -5,6 +5,7 @@ import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function TaskCatalog() {
   const [catalog, setCatalog] = useState<Record<string, unknown>>({});
@@ -14,13 +15,16 @@ export default function TaskCatalog() {
   const [taskIndexEnvelopeLedger, setTaskIndexEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [taskIndexEnvelopeWarnings, setTaskIndexEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState("");
 
   const refreshTasks = () => {
     void getTasks().then((res) => {
       setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
       setTaskIndexEnvelopeWarnings(res.warnings ?? []);
       setTaskIndex(res.data);
-      setTaskRecords(res.data.tasks ?? []);
+      const records = res.data.tasks ?? [];
+      setTaskRecords(records);
+      setSelectedTaskId((current) => current || res.data.latest_task_id || records[0]?.task_id || "");
     });
   };
 
@@ -120,6 +124,23 @@ export default function TaskCatalog() {
 
       <PacketCard title="任务记录" subtitle="GET /api/tasks 只读状态；不会创建任务" status="read_only">
         <DataLineageTable rows={taskRows} />
+      </PacketCard>
+
+      <PacketCard title="任务详情轮询" subtitle="选择任务后轮询 GET /api/tasks/{task_id}；不创建任务、不外联" status={selectedTaskId ? "selected" : "empty"}>
+        <p>详情面板复用 TaskStatusPanel，会展示单任务 call_ledger、status_history 和本地取消入口。</p>
+        <p>读取路径仍然是 FastAPI GET cache；不会调用 Tushare、DeepSeek 或 GitHub。</p>
+        <div className="button-row">
+          {taskRecords.map((task) => (
+            <button
+              key={task.task_id}
+              className={selectedTaskId === task.task_id ? "secondary" : undefined}
+              onClick={() => setSelectedTaskId(task.task_id)}
+            >
+              查看 {task.task_type}
+            </button>
+          ))}
+        </div>
+        {selectedTaskId ? <TaskStatusPanel taskId={selectedTaskId} onSuccess={refreshTasks} /> : <p className="empty-state">暂无任务记录可查看。</p>}
       </PacketCard>
 
       <PacketCard title="取消任务" subtitle="POST /api/tasks/{task_id}/cancel 只改本地任务状态；不外联、不交易" status="local_cancel">
