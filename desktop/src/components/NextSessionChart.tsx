@@ -13,8 +13,10 @@ type ScenarioSeries = {
 };
 
 type ReferenceLine = {
+  key?: string;
   label?: string;
   value?: number;
+  tone?: string;
 };
 
 type OperationZone = {
@@ -39,6 +41,34 @@ function pointTuple(point: ChartPoint): [string, number] | null {
   return [point.x, point.price];
 }
 
+function referenceColor(line: ReferenceLine): string {
+  const key = String(line.key ?? "").toLowerCase();
+  const tone = String(line.tone ?? "").toLowerCase();
+  if (key.includes("current") || tone === "blue") return "#2563eb";
+  if (key.includes("cost") || tone === "orange") return "#f97316";
+  if (key.includes("support") || tone === "green") return "#16a34a";
+  if (key.includes("resistance") || tone === "red") return "#dc2626";
+  if (key.includes("limit") && (tone === "red" || tone === "green")) return tone === "red" ? "#dc2626" : "#16a34a";
+  return "#64748b";
+}
+
+function referenceLineType(line: ReferenceLine): "solid" | "dashed" | "dotted" {
+  const key = String(line.key ?? "").toLowerCase();
+  if (key.includes("current")) return "solid";
+  if (key.includes("cost")) return "dashed";
+  if (key.includes("support") || key.includes("resistance")) return "dotted";
+  return "dashed";
+}
+
+function zoneColor(zone: OperationZone): string {
+  const key = String(zone.zone_key ?? "").toLowerCase();
+  const tone = String(zone.tone ?? "").toLowerCase();
+  if (key.includes("risk") || key.includes("forbid") || tone === "high" || tone === "red") return "rgba(239, 68, 68, 0.12)";
+  if (key.includes("support") || key.includes("buy") || tone === "green") return "rgba(22, 163, 74, 0.10)";
+  if (key.includes("reduce") || key.includes("take") || tone === "orange") return "rgba(249, 115, 22, 0.12)";
+  return "rgba(37, 99, 235, 0.08)";
+}
+
 export default function NextSessionChart({ payload }: { payload: ChartPayload | null | undefined }) {
   const historical = (payload?.historical_points ?? []).map(pointTuple).filter(Boolean) as Array<[string, number]>;
   const scenarioSeries = payload?.scenario_series ?? [];
@@ -56,13 +86,22 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
     ])
   );
 
-  const markLineData = referenceLines
+  const markLineData: Array<Record<string, unknown>> = referenceLines
     .filter((line) => typeof line.value === "number")
     .map((line) => ({
       name: line.label ?? "参考线",
       yAxis: line.value,
-      label: { formatter: line.label ?? "参考线" }
+      lineStyle: { color: referenceColor(line), type: referenceLineType(line), width: 1.4 },
+      label: { formatter: line.label ?? "参考线", color: referenceColor(line) }
     }));
+  if (xLabels.includes("T0")) {
+    markLineData.push({
+      name: "T0 分割线",
+      xAxis: "T0",
+      lineStyle: { color: "#0f172a", type: "dashed", width: 1.2 },
+      label: { formatter: "T0", color: "#0f172a" }
+    });
+  }
   const markAreaData = operationZones
     .map((zone) => {
       const rawLow = zone.price_range?.[0];
@@ -70,7 +109,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       if (typeof rawLow !== "number" || typeof rawHigh !== "number") return null;
       const low = Math.min(rawLow, rawHigh);
       const high = Math.max(rawLow, rawHigh);
-      const color = zone.tone === "high" || zone.tone === "red" ? "rgba(239, 68, 68, 0.10)" : "rgba(37, 99, 235, 0.08)";
+      const color = zoneColor(zone);
       return [
         {
           name: zone.zone_name ?? zone.zone_key ?? "操作区",
