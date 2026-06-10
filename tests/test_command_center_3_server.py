@@ -1701,15 +1701,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             status="failed",
             progress=0.7,
             current_step="safe_failure_recorded",
-            error_message_safe="mock failure",
+            error_message_safe="mock failure with token=SHOULD_DROP",
             warning="safe warning",
         )
 
         self.assertIsNotNone(updated)
         self.assertEqual(updated["status"], "failed")
         self.assertEqual(updated["current_step"], "safe_failure_recorded")
-        self.assertEqual(updated["error_message_safe"], "mock failure")
+        self.assertEqual(updated["error_message_safe"], "[redacted_sensitive_text]")
         self.assertNotIn("authorization", updated["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(updated, ensure_ascii=False))
         self.assertIn("safe warning", updated["warnings"])
 
     def test_factor_run_light_writes_local_cache_without_external_calls(self):

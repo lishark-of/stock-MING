@@ -385,7 +385,7 @@ def update_task_status(
     if current_step is not None:
         task["current_step"] = current_step
     if error_message_safe is not None:
-        task["error_message_safe"] = str(error_message_safe)[:500]
+        task["error_message_safe"] = _safe_text(error_message_safe)
     if output_packet_key is not None:
         task["output_packet_key"] = output_packet_key
     if call_ledger is not None:
