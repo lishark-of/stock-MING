@@ -27,11 +27,18 @@ export default function CallLedgerAudit() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const getRouteCoverage = (cache.get_route_coverage as Record<string, unknown> | undefined) ?? {};
   const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? {};
+  const taskImplementation = (cache.task_implementation_status as Record<string, unknown> | undefined) ?? {};
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<unknown> | undefined) ?? []);
   const modelStrategyRows = rows(cache.model_strategy_rows);
+  const implementationRows = [
+    { kind: "stub", count: taskImplementation.stub_task_count, task_types: Array.isArray(taskImplementation.stub_task_types) ? (taskImplementation.stub_task_types as unknown[]).join(" / ") : "" },
+    { kind: "local_pipeline", count: taskImplementation.local_pipeline_task_count, task_types: Array.isArray(taskImplementation.local_pipeline_task_types) ? (taskImplementation.local_pipeline_task_types as unknown[]).join(" / ") : "" },
+    { kind: "guarded_local", count: taskImplementation.guarded_local_task_count, task_types: Array.isArray(taskImplementation.guarded_local_task_types) ? (taskImplementation.guarded_local_task_types as unknown[]).join(" / ") : "" },
+    { kind: "external_capable", count: taskImplementation.external_capable_task_count, task_types: Array.isArray(taskImplementation.external_capable_task_types) ? (taskImplementation.external_capable_task_types as unknown[]).join(" / ") : "" }
+  ];
 
   return (
     <>
@@ -47,6 +54,10 @@ export default function CallLedgerAudit() {
           { label: "GET routes", value: counts.known_get_route_count as number | undefined },
           { label: "uncovered GET", value: counts.uncovered_get_route_count as number | undefined, tone: Number(counts.uncovered_get_route_count ?? 0) > 0 ? "bad" : "good" },
           { label: "tasks", value: counts.task_count as number | undefined },
+          { label: "stub tasks", value: counts.stub_task_count as number | undefined },
+          { label: "local pipelines", value: counts.local_pipeline_task_count as number | undefined },
+          { label: "guarded local", value: counts.guarded_local_task_count as number | undefined },
+          { label: "implemented local", value: counts.implemented_local_task_count as number | undefined },
           { label: "memory tasks", value: counts.memory_task_count as number | undefined },
           { label: "sqlite tasks", value: counts.sqlite_task_count as number | undefined },
           { label: "dedup tasks", value: counts.deduplicated_task_count as number | undefined },
@@ -98,6 +109,14 @@ export default function CallLedgerAudit() {
         <p>任务状态 index（command_center_3_task_status_index）会作为 cache endpoint 进入审计，同时任务明细会单独聚合 call_ledger。</p>
         <p>任务行会显示 storage_source，用来区分 memory、sqlite_meta 和 memory_and_sqlite。</p>
         <DataLineageTable rows={rows(cache.task_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Task implementation audit" subtitle="只读展示 stub / local pipeline / guarded local，避免把任务系统误读成完整生产迁移" status={String(taskImplementation.status ?? "partial_migration")}>
+        <p>implemented local task count: {String(taskImplementation.implemented_local_task_count ?? 0)}</p>
+        <p>stub tasks must not be reported as complete: {String(policy.stub_tasks_must_not_be_reported_as_complete ?? true)}</p>
+        <p>external capable tasks button gated: {String(taskImplementation.all_external_capable_tasks_are_button_gated ?? true)}</p>
+        <p>external capable tasks require call ledger: {String(taskImplementation.all_external_capable_tasks_require_call_ledger ?? true)}</p>
+        <DataLineageTable rows={implementationRows} />
       </PacketCard>
 
       <PacketCard title="Task 持久化审计" subtitle="memory + SQLite fallback 来源；审计页只读汇总" status="task_persistence">

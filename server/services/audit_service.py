@@ -339,6 +339,9 @@ def _model_strategy_rows() -> list[dict[str, Any]]:
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
+    task_catalog = _safe_value(task_service.build_task_catalog())
+    task_catalog = task_catalog if isinstance(task_catalog, dict) else {}
+    task_implementation_status = _as_dict(task_catalog.get("implementation_status"))
     task_status_index = _safe_value(task_service.build_task_status_index())
     task_status_index = task_status_index if isinstance(task_status_index, dict) else {}
     task_persistence = _as_dict(task_status_index.get("persistence"))
@@ -370,6 +373,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "call_ledger_rows": all_ledger_rows,
         "endpoint_call_ledger_rows": endpoint_ledger_rows[:160],
         "task_call_ledger_rows": task_ledger_rows[:160],
+        "task_implementation_status": task_implementation_status,
         "task_persistence": task_persistence,
         "task_persistence_source_rows": task_persistence_source_rows,
         "model_strategy_rows": model_strategy_rows,
@@ -385,6 +389,11 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "call_ledger_count": len(all_ledger_rows),
             "endpoint_call_ledger_count": len(endpoint_ledger_rows),
             "task_call_ledger_count": len(task_ledger_rows),
+            "stub_task_count": task_implementation_status.get("stub_task_count", 0),
+            "local_pipeline_task_count": task_implementation_status.get("local_pipeline_task_count", 0),
+            "guarded_local_task_count": task_implementation_status.get("guarded_local_task_count", 0),
+            "implemented_local_task_count": task_implementation_status.get("implemented_local_task_count", 0),
+            "external_capable_task_count": task_implementation_status.get("external_capable_task_count", 0),
             "memory_task_count": task_persistence.get("memory_task_count", 0),
             "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
             "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -409,6 +418,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "audit_is_read_only": True,
             "post_task_required_for_external_work": True,
             "reads_memory_and_sqlite_fallback": True,
+            "task_implementation_status_is_read_only": True,
+            "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
         },
         "call_ledger": [
