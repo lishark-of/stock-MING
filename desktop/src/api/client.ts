@@ -10,9 +10,16 @@ export type TaskRecord = {
   task_id: string;
   task_type: string;
   status: "pending" | "running" | "success" | "failed" | "cancelled";
+  created_at?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
   progress: number;
   current_step: string;
+  error_message_safe?: string;
   output_packet_key: string;
+  call_ledger?: Array<Record<string, unknown>>;
+  status_history?: Array<Record<string, unknown>>;
+  backend?: string;
   warnings: string[];
 };
 

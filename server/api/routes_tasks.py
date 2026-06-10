@@ -9,6 +9,11 @@ from server.services import task_service
 router = APIRouter(prefix="/api/tasks")
 
 
+@router.get("")
+def list_tasks() -> dict:
+    return envelope({"tasks": task_service.list_task_statuses()})
+
+
 @router.get("/{task_id}")
 def get_task(task_id: str) -> dict:
     task = task_service.read_task_status(task_id)

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from server.services import packet_service
-from server.services.task_service import create_task_stub, read_task_status
+from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
 
 class CommandCenter3ServerServiceTests(unittest.TestCase):
@@ -116,13 +116,43 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("command_center_moneyflow_packet", index["available_cache_keys"])
 
     def test_task_stub_records_safe_status_without_external_work(self):
-        task = create_task_stub("refresh_factor_data", payload={"ts_code": "002008.SZ", "token": "SHOULD_NOT_KEEP"})
+        task = create_task_stub(
+            "refresh_factor_data",
+            payload={"ts_code": "002008.SZ", "token": "SHOULD_NOT_KEEP", "nested": {"api_key": "DROP", "keep": "ok"}},
+        )
 
         self.assertTrue(task["task_id"].startswith("local-"))
         self.assertEqual(task["status"], "success")
+        self.assertEqual(task["progress"], 1.0)
         self.assertEqual(task["current_step"], "stub_created_no_external_call")
+        self.assertEqual([item["status"] for item in task["status_history"]], ["pending", "running", "success"])
+        self.assertEqual(task["call_ledger"][0]["call_status"], "stub_not_called")
+        self.assertEqual(task["backend"], "local_fallback")
         self.assertNotIn("token", task["payload_safe"])
+        self.assertEqual(task["payload_safe"]["nested"], {"keep": "ok"})
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertTrue(task["does_not_execute_trades"])
         self.assertEqual(read_task_status(task["task_id"])["task_id"], task["task_id"])
+
+    def test_task_status_update_supports_failed_state_without_secret_leak(self):
+        task = create_task_stub("run_factor_light", payload={"authorization": "Bearer secret", "ts_code": "002008.SZ"})
+
+        updated = update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=0.7,
+            current_step="safe_failure_recorded",
+            error_message_safe="mock failure",
+            warning="safe warning",
+        )
+
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated["status"], "failed")
+        self.assertEqual(updated["current_step"], "safe_failure_recorded")
+        self.assertEqual(updated["error_message_safe"], "mock failure")
+        self.assertNotIn("authorization", updated["payload_safe"])
+        self.assertIn("safe warning", updated["warnings"])
 
 
 @unittest.skipIf(importlib.util.find_spec("fastapi") is None, "FastAPI is not installed in this environment")
@@ -152,6 +182,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(next_session["data"]["external_calls_triggered"])
 
     def test_post_task_stub_returns_task_id(self):
+        clear_task_statuses_for_tests()
         created = self.client.post("/api/factor-quant/refresh-data", json={"ts_code": "002008.SZ"}).json()
         self.assertTrue(created["ok"])
         task_id = created["data"]["task_id"]
@@ -160,6 +191,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         status = self.client.get(f"/api/tasks/{task_id}").json()
         self.assertTrue(status["ok"])
         self.assertEqual(status["data"]["status"], "success")
+        self.assertEqual(status["data"]["progress"], 1.0)
+        self.assertEqual(status["data"]["call_ledger"][0]["call_status"], "stub_not_called")
+
+        listing = self.client.get("/api/tasks").json()
+        self.assertTrue(listing["ok"])
+        self.assertEqual(listing["data"]["tasks"][0]["task_id"], task_id)
 
 
 if __name__ == "__main__":

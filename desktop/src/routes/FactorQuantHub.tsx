@@ -4,6 +4,7 @@ import { getFactorQuantCache, postTask } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
 import PacketCard from "../components/PacketCard";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
@@ -41,7 +42,7 @@ export default function FactorQuantHub() {
         <button onClick={() => void postTask("/api/factor-quant/deepseek-explain").then((res) => setTaskId(res.data.task_id))}>DeepSeek 整理</button>
       </div>
       <p className="risk-note">多因子量化不是交易建议；不改价格、持仓、operation_zones 或 strategy action。</p>
-      {taskId ? <p>task_id: {taskId}</p> : null}
+      <TaskStatusPanel taskId={taskId} />
       <EChartPanel option={option} />
       <h3>数据血缘</h3>
       <DataLineageTable rows={packet.data_ledger?.ledger_rows ?? []} />

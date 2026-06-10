@@ -56,7 +56,8 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
 - `GET .../cache` 优先读取 `.stock_ming_cache/command_center_latest.json` 中已有本地快照；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
 - `/api/packets/{packet_key}` 支持部分 2.0 本地快照别名，例如 `command_center_moneyflow_packet` → `moneyflow_packet`、`strategy_execution_packet` → `strategy_packet`。
-- `POST` 当前返回 local task stub，不在请求线程跑重计算。
+- `POST` 当前返回 local fallback task stub，不在请求线程跑重计算；任务可通过 `/api/tasks/{task_id}` 轮询，记录 `pending → running → success` 状态历史、`progress`、`current_step`、`error_message_safe`、`output_packet_key` 和 `call_ledger`。
+- `/api/tasks` 返回当前本地 fallback 任务列表，供 3.0 前端状态面板展示。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
 
 ### Desktop
@@ -115,7 +116,7 @@ scripts/run_scheduler.sh
 ## 后续阶段
 
 1. 把当前本地快照 cache 读取进一步落到 SQLite/Redis 持久化 packet。
-2. 把 `refresh_factor_data` 等 task stub 迁移到 Celery worker。
+2. 把 `refresh_factor_data` 等 local fallback task stub 迁移到 Celery worker，并保留相同任务状态合同。
 3. 接入 DuckDB/Parquet 因子值和行情缓存。
 4. 把 Streamlit 页面逐块迁移到 React/ECharts。
 5. 最后将 Streamlit 仅保留为 legacy/admin/debug。

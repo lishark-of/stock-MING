@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getSerenityCache, postTask } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import PacketCard from "../components/PacketCard";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function SerenityMethodRadar() {
   const [packet, setPacket] = useState<Record<string, any>>({});
@@ -17,7 +18,7 @@ export default function SerenityMethodRadar() {
         <button onClick={() => void getSerenityCache().then((res) => setPacket(res.data))}>查看缓存</button>
         <button onClick={() => void postTask("/api/serenity/github-probe").then((res) => setTaskId(res.data.task_id))}>GitHub 校验任务</button>
       </div>
-      {taskId ? <p>task_id: {taskId}</p> : null}
+      <TaskStatusPanel taskId={taskId} />
       <DataLineageTable rows={packet.repositories ?? []} />
     </PacketCard>
   );

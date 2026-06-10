@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getNextSessionCache, postTask } from "../api/client";
 import PacketCard from "../components/PacketCard";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
@@ -16,7 +17,7 @@ export default function NextSessionMap() {
         <button onClick={() => void getNextSessionCache().then((res) => setPacket(res.data))}>查看缓存</button>
         <button onClick={() => void postTask("/api/next-session/generate").then((res) => setTaskId(res.data.task_id))}>生成任务</button>
       </div>
-      {taskId ? <p>task_id: {taskId}</p> : null}
+      <TaskStatusPanel taskId={taskId} />
       <pre>{JSON.stringify(packet, null, 2)}</pre>
     </PacketCard>
   );

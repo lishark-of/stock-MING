@@ -24,6 +24,7 @@
 - `/api/serenity/cache`
 - `/api/chokepoint/cache`
 - `/api/tasks/{task_id}`
+- `/api/tasks`
 
 `GET` 类 cache API 当前已可读取 `.stock_ming_cache/command_center_latest.json` 中的本地快照或本地 builder 结果，不调用 Tushare、DeepSeek、GitHub。精确 packet 缺失时返回 `cache_missing`，并附带可审计的 legacy 快照摘要。
 
@@ -37,3 +38,4 @@
 - `/api/serenity/github-probe`
 
 这些 stub 只返回 `task_id` 和安全任务状态，不调用 Tushare、DeepSeek、GitHub，也不执行真实交易。
+任务状态已经包含 `pending/running/success/failed/cancelled` 合同、`progress`、`current_step`、`error_message_safe`、`output_packet_key`、`call_ledger` 和本地 fallback backend；React 页面可通过 `/api/tasks/{task_id}` 轮询。
