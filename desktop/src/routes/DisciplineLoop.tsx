@@ -16,9 +16,15 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
 
 export default function DisciplineLoop() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getDisciplineLoopCache().then((res) => setCache(res.data));
+    void getDisciplineLoopCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -30,7 +36,10 @@ export default function DisciplineLoop() {
   const strategy = (cache.strategy_packet as Record<string, unknown> | undefined) ?? {};
   const issueBrief = (cache.home_data_issue_brief as Record<string, unknown> | undefined) ?? {};
   const issueExplainer = (cache.data_issue_explainer as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
 
   return (
     <>
@@ -52,7 +61,9 @@ export default function DisciplineLoop() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "运行回测", value: policy.does_not_run_backtest === true ? "不会" : "可能", tone: policy.does_not_run_backtest === true ? "good" : "bad" },
           { label: "重算 action", value: policy.does_not_recompute_action === true ? "不会" : "可能", tone: policy.does_not_recompute_action === true ? "good" : "bad" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
+          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheCallLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -133,7 +144,15 @@ export default function DisciplineLoop() {
       </PacketCard>
 
       <PacketCard title="调用血缘" subtitle="local_discipline_loop_cache；不外联、不写回" status="lineage">
-        <DataLineageTable rows={callLedger} />
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET discipline envelope call_ledger" subtitle="GET /api/discipline/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET discipline envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <DataLineageTable rows={warningRows} />
       </PacketCard>
 
       <PacketCard title="原始 discipline loop cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">

@@ -1753,6 +1753,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(discipline["data"]["policy"]["does_not_recompute_action"])
         self.assertTrue(discipline["data"]["does_not_modify_strategy_action"])
         self.assertTrue(discipline["data"]["does_not_execute_trades"])
+        self.assertEqual(discipline["call_ledger"][0]["api"], "local_discipline_loop_cache")
+        self.assertFalse(discipline["call_ledger"][0]["external"])
+        self.assertIn("GET /api/discipline/cache", discipline["warnings"][0])
 
         serenity = self.client.get("/api/serenity/cache").json()
         self.assertTrue(serenity["ok"])
@@ -2128,6 +2131,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_discipline_loop_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/discipline/cache", response["warnings"][0])
 
     def test_legacy_bridge_cache_endpoint_returns_legacy_migration_context(self):
         self._with_snapshot_cache(
