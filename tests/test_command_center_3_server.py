@@ -2582,6 +2582,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["worker_runtime_is_diagnostic_only"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_worker_runtime_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertIn("GET /api/worker/cache", response["warnings"][0])
 
     def test_call_ledger_audit_cache_endpoint_returns_read_only_audit(self):
         response = self.client.get("/api/audit/cache").json()

@@ -12,9 +12,15 @@ function rows(value: unknown): Array<Record<string, unknown>> {
 
 export default function WorkerRuntime() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
+  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
-    void getWorkerRuntimeCache().then((res) => setCache(res.data));
+    void getWorkerRuntimeCache().then((res) => {
+      setCache(res.data);
+      setCacheEnvelopeLedger(res.call_ledger ?? []);
+      setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
@@ -22,7 +28,8 @@ export default function WorkerRuntime() {
   const taskStatus = (cache.task_status_summary as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
-  const callLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
   return (
     <>
@@ -46,7 +53,9 @@ export default function WorkerRuntime() {
           { label: "APScheduler", value: runtime.apscheduler_available, tone: runtime.apscheduler_available === true ? "good" : "warn" },
           { label: "Redis ping", value: cache.redis_pinged === true ? "已 ping" : "未 ping", tone: cache.redis_pinged === true ? "bad" : "good" },
           { label: "scheduler started", value: runtime.scheduler_started === true ? "是" : "否", tone: runtime.scheduler_started === true ? "bad" : "good" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" }
+          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
+          { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
 
@@ -91,8 +100,16 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={[policy]} />
       </PacketCard>
 
-      <PacketCard title="调用血缘" subtitle="local_worker_runtime_cache；不外联、不启动 worker" status="lineage">
-        <DataLineageTable rows={callLedger} />
+      <PacketCard title="调用血缘" subtitle="payload 内部 local_worker_runtime_cache；不外联、不启动 worker" status="lineage">
+        <DataLineageTable rows={payloadCallLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET worker envelope call_ledger" subtitle="GET /api/worker/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+        <DataLineageTable rows={cacheEnvelopeLedger} />
+      </PacketCard>
+
+      <PacketCard title="GET worker envelope warnings" subtitle="顶层响应提示；不包含 token/key/Redis URL" status="warnings">
+        <DataLineageTable rows={cacheWarnings.map((warning, index) => ({ index: index + 1, warning }))} />
       </PacketCard>
 
       <PacketCard title="原始 worker runtime cache payload" subtitle="调试用 JSON；不含 token/key/Redis URL" status="safe">
