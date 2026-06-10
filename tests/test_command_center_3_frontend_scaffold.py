@@ -490,6 +490,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         receipt = (ROOT / "src" / "components" / "TaskLaunchReceipt.tsx").read_text(encoding="utf-8")
         boundary = (ROOT / "src" / "components" / "TaskBoundarySummary.tsx").read_text(encoding="utf-8")
         model_strategy_ledger = (ROOT / "src" / "components" / "DeepSeekModelStrategyLedger.tsx").read_text(encoding="utf-8")
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("/api/tasks", client)
         self.assertIn("/api/tasks/catalog", client)
@@ -534,6 +535,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("does_not_modify_strategy_action", boundary)
         self.assertIn("error_message_safe", boundary)
         self.assertIn("task-boundary-summary", boundary)
+        self.assertIn(".task-boundary-summary", styles)
+        self.assertIn(".task-boundary-summary p", styles)
+        self.assertIn(".task-boundary-summary .risk-note", styles)
         self.assertIn("top_level_call_ledger", receipt)
         self.assertIn("task_call_ledger", receipt)
         self.assertIn("modelStrategyCallLedger", receipt)
