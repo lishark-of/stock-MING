@@ -86,7 +86,7 @@ export default function FactorQuantHub() {
   return (
     <PacketCard title="2.0 多因子量化图谱" subtitle="只进入 evidence_effects 预览，不修改 action" status={String(packet.mode ?? "cache_only")}>
       <div className="actions">
-        <button onClick={() => void getFactorQuantCache().then((res) => setPacket(res.data))}>查看缓存</button>
+        <button onClick={refreshCache}>查看缓存</button>
         <button onClick={() => launchTask("/api/factor-quant/refresh-data")}>刷新数据</button>
         <button onClick={() => launchTask("/api/factor-quant/run-light")}>运行计算</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>

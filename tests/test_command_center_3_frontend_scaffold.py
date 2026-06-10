@@ -98,6 +98,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("评分图表数据合同", source)
         self.assertIn("评分图表 buckets", source)
         self.assertIn("frontend_computes_trade_action", source)
+        self.assertIn("<button onClick={refreshCache}>查看缓存</button>", source)
+        self.assertNotIn("getFactorQuantCache().then((res) => setPacket(res.data))", source)
         self.assertIn("governance", source)
         self.assertIn("next_session_bridge", source)
         self.assertIn("does_not_modify_operation_zones", source)
