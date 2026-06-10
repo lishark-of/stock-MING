@@ -19,12 +19,24 @@ export default function MigrationStatus() {
   }, []);
 
   const progress = (packet.progress_baseline as Array<Record<string, unknown>> | undefined) ?? [];
+  const principles = Array.isArray(packet.principles) ? packet.principles : [];
   const policy = packet.api_policy as Record<string, unknown> | undefined;
   const baselinePolicy = packet.baseline_policy as Record<string, unknown> | undefined;
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<string> | undefined) ?? []);
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
+  const principleRows = principles.map((principle, index) => {
+    const text = String(principle ?? "");
+    const category = text.includes("git add") || text.includes("push")
+      ? "提交 / 推送纪律"
+      : text.includes("Tushare") || text.includes("DeepSeek") || text.includes("GitHub") || text.includes("外部请求")
+        ? "外部调用边界"
+        : text.includes("交易") || text.includes("下单") || text.includes("strategy")
+          ? "交易边界"
+          : "迁移原则";
+    return { index: index + 1, category, principle: text };
+  });
 
   return (
     <PacketCard title="Command Center 3.0 迁移状态" subtitle="固定长期参考基线；只读、不重新估算、不外联" status={String(packet.status ?? "loading")}>
@@ -49,6 +61,9 @@ export default function MigrationStatus() {
       />
       <h3>固定进度表</h3>
       <DataLineageTable rows={progress} />
+      <h3>长期迁移原则</h3>
+      <p className="risk-note">这组原则来自用户长期基线；React/Tauri 主入口只读展示，不重新估算、不创建任务。</p>
+      <DataLineageTable rows={principleRows} />
       <h3>GET migration envelope call_ledger</h3>
       <DataLineageTable rows={cacheCallLedger} />
       <h3>GET migration envelope warnings</h3>
