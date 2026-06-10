@@ -56,6 +56,9 @@ export default function PacketRegistry() {
   const selectedCallLedger = packetEnvelopeLedger.length ? packetEnvelopeLedger : selectedPayloadCallLedger;
   const selectedWarnings = packetEnvelopeWarnings.length ? packetEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
   const selectedBoundaryRows = [
+    { boundary: "cache_source", value: String(packet.cache_source ?? "--"), expected: "sqlite_meta | stock_ming_snapshot | local_builder | cache_missing" },
+    { boundary: "source_cache_key", value: String(packet.source_cache_key ?? "--"), expected: "safe local key" },
+    { boundary: "read_priority", value: "sqlite_meta > snapshot > local_builder > missing", expected: "fixed" },
     { boundary: "external_calls_triggered", value: String(packet.external_calls_triggered ?? packet.cache_api_external_calls_triggered ?? false), expected: "false" },
     { boundary: "tushare_called", value: String(packet.tushare_called ?? packet.cache_api_tushare_called ?? false), expected: "false" },
     { boundary: "deepseek_called", value: String(packet.deepseek_called ?? packet.cache_api_deepseek_called ?? false), expected: "false" },
