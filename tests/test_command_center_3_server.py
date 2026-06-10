@@ -2099,11 +2099,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         chart_payload = cache_packet["score_chart_payload"]
         self.assertEqual(chart_payload["chart_type"], "factor_score_bucket_bar")
         self.assertEqual(chart_payload["chart_contract"]["schema_version"], "factor_quant_score_echarts_payload.v1")
+        self.assertFalse(chart_payload["chart_contract"]["external_calls_triggered"])
+        self.assertFalse(chart_payload["chart_contract"]["tushare_called"])
+        self.assertFalse(chart_payload["chart_contract"]["deepseek_called"])
+        self.assertFalse(chart_payload["chart_contract"]["github_called"])
+        self.assertTrue(chart_payload["chart_contract"]["does_not_execute_trades"])
         self.assertFalse(chart_payload["chart_contract"]["frontend_computes_trade_action"])
         self.assertTrue(chart_payload["chart_contract"]["does_not_modify_action"])
         self.assertTrue(chart_payload["chart_contract"]["does_not_modify_operation_zones"])
         self.assertEqual(chart_payload["chart_contract"]["series_counts"]["bucket_rows"], 5)
         self.assertEqual(chart_payload["chart_contract"]["series_counts"]["missing"], len(packet["score"]["missing_factors"]))
+        self.assertIn("不执行真实交易", " ".join(chart_payload["chart_contract"]["guardrails"]))
         self.assertIn("因子图表不得修改 strategy action", " ".join(chart_payload["chart_contract"]["guardrails"]))
 
     def test_deepseek_explanation_task_prepares_prompt_without_model_call(self):
