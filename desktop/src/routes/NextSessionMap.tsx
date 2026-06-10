@@ -43,6 +43,7 @@ export default function NextSessionMap() {
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
   const chartPayload = packet.chart_payload as Record<string, unknown> | undefined;
+  const chartSummary = (packet.chart_summary as Record<string, unknown> | undefined) ?? (chartPayload?.chart_summary as Record<string, unknown> | undefined) ?? {};
   const chartContract = chartPayload?.chart_contract as Record<string, unknown> | undefined;
   const chartContractCounts = chartContract?.series_counts as Record<string, unknown> | undefined;
   const historicalRows = rowsFromArray(chartPayload?.historical_points).slice(0, 20);
@@ -97,13 +98,14 @@ export default function NextSessionMap() {
           { label: "cache source", value: String(packet.cache_source ?? "--") },
           { label: "本地快照", value: Boolean(packet.source_snapshot_available), tone: packet.source_snapshot_available ? "good" : "warn" },
           { label: "旧 projection", value: Boolean(legacy?.available), tone: legacy?.available ? "warn" : "neutral" },
-          { label: "精确图谱", value: chartPayload?.is_exact_next_session_packet === true, tone: chartPayload?.is_exact_next_session_packet === true ? "good" : "warn" },
-          { label: "真实 close", value: chartPayload?.uses_real_daily_close === true, tone: chartPayload?.uses_real_daily_close === true ? "good" : "warn" },
+          { label: "精确图谱", value: chartSummary.is_exact_next_session_packet === true, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
+          { label: "真实 close", value: chartSummary.uses_real_daily_close === true, tone: chartSummary.uses_real_daily_close === true ? "good" : "warn" },
+          { label: "可绘制", value: chartSummary.has_drawable_data === true, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
           { label: "图表合同", value: String(chartContract?.schema_version ?? "missing"), tone: chartContract ? "good" : "warn" },
-          { label: "情景路径", value: scenarioRows.length },
-          { label: "参考线", value: referenceRows.length },
-          { label: "操作区", value: operationRows.length },
-          { label: "历史点样例", value: historicalRows.length },
+          { label: "情景路径", value: chartSummary.scenario_series_count as number | undefined },
+          { label: "参考线", value: chartSummary.reference_line_count as number | undefined },
+          { label: "操作区", value: chartSummary.operation_zone_count as number | undefined },
+          { label: "历史点", value: chartSummary.historical_point_count as number | undefined },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
           { label: "修改 action", value: packet.does_not_modify_action === false ? "会" : "不会", tone: packet.does_not_modify_action === false ? "bad" : "good" },
@@ -112,6 +114,8 @@ export default function NextSessionMap() {
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
       <NextSessionChart payload={chartPayload} />
+      <h3>ECharts 图表摘要</h3>
+      <DataLineageTable rows={[chartSummary]} />
       <h3>ECharts 图表数据合同</h3>
       <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>

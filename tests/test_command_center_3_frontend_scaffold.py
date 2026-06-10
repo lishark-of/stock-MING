@@ -1234,6 +1234,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("NextSessionChart", page)
         self.assertIn("chart_payload", page)
+        self.assertIn("chart_summary", page)
+        self.assertIn("ECharts 图表摘要", page)
+        self.assertIn("has_drawable_data", page)
+        self.assertIn("historical_point_count", page)
         self.assertIn("chart_contract", page)
         self.assertIn("ECharts 图表数据合同", page)
         self.assertIn("frontend_computes_trade_action", page)

@@ -250,6 +250,28 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _next_session_chart_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    contract = payload.get("chart_contract") if isinstance(payload.get("chart_contract"), dict) else {}
+    counts = contract.get("series_counts") if isinstance(contract.get("series_counts"), dict) else {}
+    has_drawable_data = bool((payload.get("historical_points") or []) or (payload.get("scenario_series") or []))
+    return {
+        "status": payload.get("status") or ("ready" if has_drawable_data else "missing"),
+        "renderer": contract.get("renderer") or "ECharts",
+        "source_packet": contract.get("source_packet") or payload.get("source_packet"),
+        "is_exact_next_session_packet": bool(payload.get("is_exact_next_session_packet")),
+        "uses_real_daily_close": bool(payload.get("uses_real_daily_close")),
+        "has_drawable_data": has_drawable_data,
+        "historical_point_count": int(counts.get("historical_points") or len(payload.get("historical_points") or [])),
+        "scenario_series_count": int(counts.get("scenario_series") or len(payload.get("scenario_series") or [])),
+        "reference_line_count": int(counts.get("reference_lines") or len(payload.get("reference_lines") or [])),
+        "operation_zone_count": int(counts.get("operation_zones") or len(payload.get("operation_zones") or [])),
+        "frontend_computes_trade_action": bool(contract.get("frontend_computes_trade_action")),
+        "does_not_modify_action": contract.get("does_not_modify_action") is not False,
+        "does_not_modify_operation_zones": contract.get("does_not_modify_operation_zones") is not False,
+        "cache_only": contract.get("cache_only") is not False,
+    }
+
+
 def _attach_next_session_chart_contract(payload: dict[str, Any], source_packet: str | None = None) -> dict[str, Any]:
     payload.setdefault("historical_points", [])
     payload.setdefault("scenario_series", [])
@@ -261,7 +283,14 @@ def _attach_next_session_chart_contract(payload: dict[str, Any], source_packet: 
     if "y_axis_range" not in payload:
         payload["y_axis_range"] = _chart_y_axis_range(payload)
     payload["chart_contract"] = _next_session_echarts_contract(payload)
+    payload["chart_summary"] = _next_session_chart_summary(payload)
     return payload
+
+
+def _attach_next_session_chart_summary(packet: dict[str, Any]) -> dict[str, Any]:
+    chart = packet.get("chart_payload") if isinstance(packet.get("chart_payload"), dict) else {}
+    packet["chart_summary"] = _next_session_chart_summary(chart)
+    return packet
 
 
 def _missing_next_session_chart_payload() -> dict[str, Any]:
@@ -632,7 +661,7 @@ def build_next_session_cache() -> dict[str, Any]:
             persisted["chart_payload"] = _exact_next_session_chart_payload(persisted)
         persisted.setdefault("does_not_modify_action", True)
         persisted.setdefault("does_not_modify_operation_zones", True)
-        return persisted
+        return _attach_next_session_chart_summary(persisted)
     cached = _read_snapshot_packet(next_session_projection.PACKET_KEY)
     if cached:
         if isinstance(cached.get("chart_payload"), dict):
@@ -644,10 +673,10 @@ def build_next_session_cache() -> dict[str, Any]:
             cached["chart_payload"] = _exact_next_session_chart_payload(cached)
         cached.setdefault("does_not_modify_action", True)
         cached.setdefault("does_not_modify_operation_zones", True)
-        return cached
+        return _attach_next_session_chart_summary(cached)
     snapshot = load_snapshot_cache()
     legacy_projection = _snapshot_value("command_center_projection_packet", snapshot)
-    return _cache_missing_packet(
+    return _attach_next_session_chart_summary(_cache_missing_packet(
         next_session_projection.PACKET_KEY,
         "Command Center 3.0 cache API 不触发 Tushare/DeepSeek；当前未发现精确的次日操作图谱 packet 缓存。",
         schema_version=next_session_projection.SCHEMA_VERSION,
@@ -656,7 +685,7 @@ def build_next_session_cache() -> dict[str, Any]:
         chart_payload=_legacy_projection_chart_payload(legacy_projection) if legacy_projection is not None else _missing_next_session_chart_payload(),
         does_not_modify_action=True,
         does_not_modify_operation_zones=True,
-    )
+    ))
 
 
 def build_chokepoint_cache() -> dict[str, Any]:
