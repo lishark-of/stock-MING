@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, data_capability_service, discipline_service, evidence_service, factor_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
+from server.services import candidate_service, data_capability_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -306,6 +306,60 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_decision_packet"])
         self.assertTrue(packet["does_not_modify_holdings"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_discipline_loop_cache")
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_legacy_bridge_cache_reads_migration_checklist_without_running_legacy_tools(self):
+        self._with_snapshot_cache(
+            {
+                "legacy_migration_map": {
+                    "summary": "旧功能迁移中",
+                    "items": [{"label": "次日图谱迁移", "status": "ready"}],
+                    "lanes": [{"label": "已迁移"}],
+                    "token": "SHOULD_DROP",
+                },
+                "legacy_packet_migration_checklist": {
+                    "items": [
+                        {"label": "market_packet", "status": "done"},
+                        {"label": "legacy risk", "status": "pending", "api_key": "SHOULD_DROP"},
+                    ]
+                },
+                "old_workspace_packet_bridge": {"items": [{"label": "旧 packet bridge"}]},
+                "old_workspace_capability_overview": {"checklist_done_count": 1, "checklist_pending_count": 1, "items": [{"label": "旧能力"}]},
+                "old_workspace_data_absence_ledger": {"items": [{"label": "缺失账本", "authorization": "Bearer SHOULD_DROP"}]},
+                "legacy_decision_chain_summary": {"ready_count": 2, "waiting_count": 1, "blocked_count": 1, "items": [{"label": "旧链"}]},
+                "legacy_a_share_fact_recovery_actions": [{"label": "强制刷新融资融券", "status": "cached"}],
+            }
+        )
+
+        packet = legacy_service.read_legacy_bridge_cache()
+
+        self.assertEqual(packet["packet_key"], "command_center_3_legacy_bridge_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertTrue(packet["cache_only"])
+        self.assertEqual(packet["counts"]["checklist_item_count"], 2)
+        self.assertEqual(packet["counts"]["checklist_done_count"], 1)
+        self.assertEqual(packet["counts"]["checklist_pending_count"], 1)
+        self.assertEqual(packet["counts"]["bridge_item_count"], 1)
+        self.assertEqual(packet["counts"]["absence_item_count"], 1)
+        self.assertEqual(packet["counts"]["fact_recovery_action_count"], 1)
+        self.assertEqual(packet["counts"]["decision_blocked_count"], 1)
+        self.assertNotIn("token", packet["legacy_migration_map"])
+        self.assertNotIn("api_key", packet["checklist_items"][1])
+        self.assertNotIn("authorization", packet["absence_items"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+        self.assertEqual(packet["policy"]["streamlit_role"], "legacy/admin/debug")
+        self.assertTrue(packet["policy"]["react_tauri_is_primary_entry"])
+        self.assertTrue(packet["policy"]["does_not_open_streamlit"])
+        self.assertTrue(packet["policy"]["does_not_run_legacy_tools"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_legacy_bridge_cache")
         json.dumps(packet, ensure_ascii=False)
 
     def test_storage_factor_values_status_is_cache_only(self):
@@ -1144,6 +1198,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(migration["data"]["api_policy"]["external_calls_triggered"])
         self.assertTrue(migration["data"]["api_policy"]["does_not_execute_trades"])
 
+        legacy = self.client.get("/api/legacy/cache").json()
+        self.assertTrue(legacy["ok"])
+        self.assertTrue(legacy["data"]["cache_only"])
+        self.assertFalse(legacy["data"]["external_calls_triggered"])
+        self.assertFalse(legacy["data"]["tushare_called"])
+        self.assertFalse(legacy["data"]["deepseek_called"])
+        self.assertTrue(legacy["data"]["policy"]["does_not_open_streamlit"])
+        self.assertTrue(legacy["data"]["policy"]["does_not_run_legacy_tools"])
+        self.assertTrue(legacy["data"]["policy"]["react_tauri_is_primary_entry"])
+        self.assertTrue(legacy["data"]["does_not_modify_strategy_action"])
+
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
         self.assertEqual(task_catalog["data"]["task_count"], 6)
@@ -1347,6 +1412,34 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["does_not_run_backtest"])
         self.assertTrue(packet["policy"]["does_not_run_full_refresh"])
         self.assertTrue(packet["policy"]["does_not_recompute_action"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_legacy_bridge_cache_endpoint_returns_legacy_migration_context(self):
+        self._with_snapshot_cache(
+            {
+                "legacy_packet_migration_checklist": {
+                    "items": [{"label": "策略 Trace", "status": "done", "authorization": "Bearer SHOULD_DROP"}]
+                },
+                "old_workspace_packet_bridge": {"items": [{"label": "旧 packet 桥接"}]},
+                "old_workspace_capability_overview": {"checklist_done_count": 1, "checklist_pending_count": 0},
+            }
+        )
+
+        response = self.client.get("/api/legacy/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_legacy_bridge_cache")
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["counts"]["checklist_item_count"], 1)
+        self.assertEqual(packet["counts"]["bridge_item_count"], 1)
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertTrue(packet["policy"]["does_not_open_streamlit"])
+        self.assertTrue(packet["policy"]["does_not_run_legacy_tools"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])

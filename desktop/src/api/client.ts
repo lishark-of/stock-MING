@@ -49,6 +49,10 @@ export function getHealth() {
   return request<Record<string, unknown>>("/health");
 }
 
+export function getLegacyBridgeCache() {
+  return request<Record<string, unknown>>("/api/legacy/cache");
+}
+
 export function getPackets() {
   return request<Record<string, unknown>>("/api/packets");
 }

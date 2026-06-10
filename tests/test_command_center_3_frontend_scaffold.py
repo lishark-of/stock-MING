@@ -581,8 +581,20 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK_API_KEY", page)
 
     def test_legacy_page_declares_streamlit_as_guarded_legacy_surface(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
         page = (ROOT / "src" / "routes" / "LegacyTools.tsx").read_text(encoding="utf-8")
 
+        self.assertIn("/api/legacy/cache", client)
+        self.assertIn("getLegacyBridgeCache", page)
+        self.assertIn("getLegacyBridgeCache", home)
+        self.assertIn("legacy_migration_map", page)
+        self.assertIn("legacy_packet_migration_checklist", page)
+        self.assertIn("old_workspace_packet_bridge", page)
+        self.assertIn("old_workspace_data_absence_ledger", page)
+        self.assertIn("local_legacy_bridge_cache", page)
+        self.assertIn("不会打开 Streamlit", page)
+        self.assertIn("不运行旧工具", page)
         self.assertIn("legacy/admin/debug", page)
         self.assertIn("普通主流程请使用 Command Center 3", page)
         self.assertIn("不会创建任务", page)

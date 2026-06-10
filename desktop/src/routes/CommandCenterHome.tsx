@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, getChokepointCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
+import { getCandidateRadarCache, getChokepointCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageOverview, getTaskCatalog, getTasks } from "../api/client";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -20,6 +20,7 @@ export default function CommandCenterHome() {
   const [chokepoint, setChokepoint] = useState<Record<string, unknown>>({});
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
   const [migration, setMigration] = useState<Record<string, unknown>>({});
+  const [legacyBridge, setLegacyBridge] = useState<Record<string, unknown>>({});
   const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
 
@@ -38,6 +39,7 @@ export default function CommandCenterHome() {
     void getChokepointCache().then((res) => setChokepoint(res.data));
     void getStorageOverview().then((res) => setStorageOverview(res.data));
     void getMigrationStatus().then((res) => setMigration(res.data));
+    void getLegacyBridgeCache().then((res) => setLegacyBridge(res.data));
     void getTaskCatalog().then((res) => setTaskCatalog(res.data));
     void getTasks().then((res) => setTasks(res.data.tasks ?? []));
   }, []);
@@ -58,6 +60,7 @@ export default function CommandCenterHome() {
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
+  const legacyCounts = legacyBridge.counts as Record<string, unknown> | undefined;
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
@@ -98,6 +101,11 @@ export default function CommandCenterHome() {
           <p>cache only: {String(migrationPolicy?.cache_only ?? true)}</p>
           <p>external calls: {String(migrationPolicy?.external_calls_triggered ?? false)}</p>
           <JsonDetails title="迁移进度基线" data={migrationProgress ?? []} />
+        </PacketCard>
+        <PacketCard title="Legacy bridge cache" subtitle="GET cache，只读旧工作台桥接，不运行旧工具" status={String(legacyBridge.status ?? "cache")}>
+          <p>checklist done/pending: {String(legacyCounts?.checklist_done_count ?? 0)} / {String(legacyCounts?.checklist_pending_count ?? 0)}</p>
+          <p>bridge / absence: {String(legacyCounts?.bridge_item_count ?? 0)} / {String(legacyCounts?.absence_item_count ?? 0)}</p>
+          <p>external calls: {String(legacyBridge.external_calls_triggered ?? false)}</p>
         </PacketCard>
         <PacketCard title="市场环境 cache" subtitle="GET cache，只读盘面资金/情绪/两融，不刷新行情" status={String(market.status ?? "cache")}>
           <p>trade date: {String(market.trade_date ?? "--")}</p>

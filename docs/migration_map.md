@@ -22,7 +22,7 @@
 | Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否 | 否 |
 | Storage datasets | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage`, `GET /api/storage/{dataset}` | `CommandCenterHome.tsx` | 否，只读 Parquet/DuckDB 状态；白名单 `factor_values/daily/moneyflow` | 否 |
 | Tauri desktop shell | `desktop/src-tauri/*`, `scripts/check_tauri_env.sh` | 连接本地 FastAPI `8710` | Tauri window / Vite dev | 否，预检不启动 Tauri | 否 |
-| Streamlit 旧工作台 | `app.py`, `visual_components.py` | 无新增主 API；作为 legacy | `LegacyTools.tsx` | 旧入口保留 | 不新增 |
+| Streamlit 旧工作台 | `app.py`, `visual_components.py` | `GET /api/legacy/cache`；作为 legacy | `LegacyTools.tsx` | cache GET 只读展示旧工作台桥接、迁移清单、旧数据缺失账本，不运行旧工具 | 后续任务化；当前不提供 POST |
 
 ## 当前可用 API
 
@@ -41,6 +41,7 @@
 - `/api/storage`
 - `/api/storage/factor-values`
 - `/api/storage/{dataset}`
+- `/api/legacy/cache`
 - `/api/strategy/cache`
 - `/api/position/cache`
 - `/api/candidate-radar/cache`
@@ -55,6 +56,8 @@
 `/api/market/cache` 已接入市场环境 / 盘面证据只读迁移：读取本地 `market_packet`、`market_profile_evidence`、`moneyflow_packet`、`margin_packet`、`dragon_tiger_packet`、`limit_emotion_packet`、`chip_packet`、`etf_packet` 和 `margin_etf_summary`，输出盘面状态、资金流、两融、龙虎榜、涨跌停情绪、筹码和 ETF 替代说明；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不刷新行情或资金流、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
 
 `/api/discipline/cache` 已接入交易纪律 / 决策闭环只读迁移：读取本地 `discipline_packet`、`decision_loop_status`、`today_action`、`decision_packet`、`strategy_packet`、`full_refresh_steps`、`home_data_issue_brief` 和 `data_issue_explainer`，输出纪律指标、关键规则、闭环条目、恢复队列和刷新步骤；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不运行回测或满血刷新、不重算 action、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
+
+`/api/legacy/cache` 已接入旧工作台桥接 / 迁移清单只读迁移：读取本地 `legacy_migration_map`、`legacy_packet_migration_checklist`、`old_workspace_packet_bridge`、`old_workspace_capability_overview`、`old_workspace_data_absence_ledger`、`legacy_decision_chain_summary` 和 `legacy_a_share_fact_recovery_actions`，输出旧功能迁移清单、旧 packet 桥接、缺失账本和调用血缘；不调用 Tushare/DeepSeek/GitHub、不打开 Streamlit、不运行旧工具、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
 
 `/api/evidence/cache` 已接入 A 股证据雷达与事实血缘只读迁移：读取本地 `command_center_evidence_radar_packet` / `a_share_fact_lineage_summary` 或用本地 builder 生成缓存视图；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
