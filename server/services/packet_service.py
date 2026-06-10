@@ -193,12 +193,78 @@ def _chart_y_axis_range(payload: dict[str, Any]) -> list[float | None]:
         number = _to_number(line.get("value"))
         if number is not None:
             values.append(number)
+    for zone in payload.get("operation_zones") or []:
+        if not isinstance(zone, dict):
+            continue
+        for value in zone.get("price_range") or []:
+            number = _to_number(value)
+            if number is not None:
+                values.append(number)
     if not values:
         return [None, None]
     low = min(values)
     high = max(values)
     padding = max((high - low) * 0.08, high * 0.01, 0.5)
     return [round(low - padding, 4), round(high + padding, 4)]
+
+
+def _operation_zone_overlay(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    raw_range = item.get("price_range")
+    if not isinstance(raw_range, list) or len(raw_range) < 2:
+        return None
+    low = _to_number(raw_range[0])
+    high = _to_number(raw_range[1])
+    if low is None or high is None:
+        return None
+    lower, upper = sorted((low, high))
+    return {
+        "zone_key": str(item.get("zone_key") or item.get("key") or item.get("zone_name") or "operation_zone"),
+        "zone_name": str(item.get("zone_name") or item.get("label") or item.get("zone_key") or "操作区"),
+        "price_range": [round(lower, 4), round(upper, 4)],
+        "action_mode": item.get("action_mode") or item.get("action") or "condition_only",
+        "tone": item.get("tone") or item.get("risk_level") or "neutral",
+        "source": item.get("source") or "chart_render_model.operation_zone_overlays",
+        "guardrail": item.get("guardrail") or "前端只读展示，不改写 strategy action 或 operation_zones。",
+    }
+
+
+def _operation_zone_overlays(items: Any) -> list[dict[str, Any]]:
+    if not isinstance(items, list):
+        return []
+    return [zone for item in items if (zone := _operation_zone_overlay(item)) is not None]
+
+
+def _exact_reference_lines_from_model(model: dict[str, Any]) -> list[dict[str, Any]]:
+    lines = [
+        line
+        for line in (
+            _reference_line("current_price", "当前价", model.get("current_price_line"), tone="blue"),
+            _reference_line("cost_price", "成本线", model.get("cost_line"), tone="orange"),
+        )
+        if line
+    ]
+    for item in model.get("limit_lines") or []:
+        if not isinstance(item, dict):
+            continue
+        line = _reference_line(
+            str(item.get("key") or item.get("label") or "limit_line"),
+            str(item.get("label") or "涨跌停参考"),
+            item.get("value"),
+            tone="red" if "涨" in str(item.get("label") or "") else "green",
+        )
+        if line:
+            lines.append(line)
+    for index, value in enumerate(model.get("support_lines") or []):
+        line = _reference_line(f"support_{index + 1}", f"支撑 {index + 1}", value, tone="green")
+        if line:
+            lines.append(line)
+    for index, value in enumerate(model.get("resistance_lines") or []):
+        line = _reference_line(f"resistance_{index + 1}", f"压力 {index + 1}", value, tone="red")
+        if line:
+            lines.append(line)
+    return lines
 
 
 def _legacy_projection_chart_payload(projection: Any) -> dict[str, Any]:
@@ -283,7 +349,7 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
         "uses_real_daily_close": bool(model.get("uses_real_daily_close") or _summary_of_packet(source).get("available")),
         "historical_source_label": "command_center_next_session_projection_packet.chart_render_model",
         "future_source_label": "scenario_paths",
-        "historical_points": _chart_points(model.get("historical_points") or model.get("daily_close_points") or []),
+        "historical_points": _chart_points(model.get("historical_series") or model.get("historical_points") or model.get("daily_close_points") or []),
         "scenario_series": [
             {
                 "scenario_key": item.get("scenario_key"),
@@ -295,15 +361,8 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
             for item in model.get("scenario_series") or []
             if isinstance(item, dict)
         ],
-        "reference_lines": [
-            line
-            for line in (
-                _reference_line("current_price", "当前价", model.get("current_price_line"), tone="blue"),
-                _reference_line("cost_price", "成本线", model.get("cost_line"), tone="orange"),
-            )
-            if line
-        ],
-        "operation_zones": model.get("operation_zones") or source.get("operation_zones") or [],
+        "reference_lines": _exact_reference_lines_from_model(model),
+        "operation_zones": _operation_zone_overlays(model.get("operation_zone_overlays") or model.get("operation_zones") or source.get("operation_zones")),
         "warnings": ["图表只读展示，不修改 strategy action、价格、持仓或 operation_zones。"],
     }
     payload["y_axis_range"] = model.get("y_axis_range") or _chart_y_axis_range(payload)

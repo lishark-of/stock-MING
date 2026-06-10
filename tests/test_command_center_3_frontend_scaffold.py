@@ -726,6 +726,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("historical_points", chart)
         self.assertIn("scenario_series", chart)
         self.assertIn("reference_lines", chart)
+        self.assertIn("operation_zones", chart)
+        self.assertIn("markArea", chart)
+        self.assertIn("price_range", chart)
         self.assertNotIn("strategy_execution_packet.action", chart)
         self.assertNotIn("operation_zones =", chart)
 

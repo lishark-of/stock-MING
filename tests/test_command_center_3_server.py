@@ -164,6 +164,60 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["chart_payload"]["scenario_series"][0]["scenario_name"], "中性路径")
         self.assertIn("前端不得据此计算交易动作", " ".join(packet["chart_payload"]["warnings"]))
 
+    def test_next_session_cache_maps_exact_chart_render_model_for_echarts(self):
+        self._with_snapshot_cache(
+            {
+                "command_center_next_session_projection_packet": {
+                    "packet_key": "command_center_next_session_projection_packet",
+                    "status": "ready",
+                    "chart_render_model": {
+                        "historical_series": [
+                            {"x": "2026-06-08", "price": 10.0},
+                            {"x": "2026-06-09", "close": 10.4},
+                        ],
+                        "scenario_series": [
+                            {
+                                "scenario_key": "neutral",
+                                "scenario_name": "中性路径",
+                                "points": [{"x": "T0", "price": 10.4}, {"x": "T+1_close", "price": 10.8}],
+                            }
+                        ],
+                        "cost_line": 9.8,
+                        "current_price_line": 10.4,
+                        "limit_lines": [{"label": "涨停参考", "value": 11.44}, {"label": "跌停参考", "value": 9.36}],
+                        "support_lines": [9.9],
+                        "resistance_lines": [11.0],
+                        "operation_zone_overlays": [
+                            {
+                                "zone_key": "reduce_watch_zone",
+                                "zone_name": "止盈/减仓观察区",
+                                "price_range": [10.9, 11.3],
+                                "action_mode": "condition_only",
+                            }
+                        ],
+                        "y_axis_range": [9.0, 12.0],
+                    },
+                    "operation_zones": [{"zone_key": "fallback_should_not_win", "price_range": [1, 2]}],
+                }
+            }
+        )
+
+        packet = packet_service.build_next_session_cache()
+        chart = packet["chart_payload"]
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertTrue(chart["is_exact_next_session_packet"])
+        self.assertEqual(chart["historical_points"][0]["x"], "2026-06-08")
+        self.assertEqual(chart["historical_points"][1]["price"], 10.4)
+        self.assertEqual(chart["operation_zones"][0]["zone_key"], "reduce_watch_zone")
+        self.assertEqual(chart["operation_zones"][0]["price_range"], [10.9, 11.3])
+        self.assertIn("当前价", {item["label"] for item in chart["reference_lines"]})
+        self.assertIn("涨停参考", {item["label"] for item in chart["reference_lines"]})
+        self.assertIn("支撑 1", {item["label"] for item in chart["reference_lines"]})
+        self.assertTrue(packet["does_not_modify_action"])
+        self.assertTrue(packet["does_not_modify_operation_zones"])
+        self.assertFalse(packet["external_calls_triggered"])
+
     def test_packet_index_exposes_snapshot_keys(self):
         self._with_snapshot_cache({"moneyflow_packet": {"status": "ready"}})
 

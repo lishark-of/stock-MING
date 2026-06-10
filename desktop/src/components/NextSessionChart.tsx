@@ -17,11 +17,19 @@ type ReferenceLine = {
   value?: number;
 };
 
+type OperationZone = {
+  zone_key?: string;
+  zone_name?: string;
+  price_range?: number[];
+  tone?: string;
+};
+
 type ChartPayload = {
   status?: string;
   historical_points?: ChartPoint[];
   scenario_series?: ScenarioSeries[];
   reference_lines?: ReferenceLine[];
+  operation_zones?: OperationZone[];
   y_axis_range?: Array<number | null>;
   warnings?: string[];
 };
@@ -35,6 +43,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   const historical = (payload?.historical_points ?? []).map(pointTuple).filter(Boolean) as Array<[string, number]>;
   const scenarioSeries = payload?.scenario_series ?? [];
   const referenceLines = payload?.reference_lines ?? [];
+  const operationZones = payload?.operation_zones ?? [];
 
   if (!payload || payload.status === "missing" || (!historical.length && !scenarioSeries.length)) {
     return <p className="empty-state">暂无可绘制的次日操作图谱缓存。</p>;
@@ -54,6 +63,25 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       yAxis: line.value,
       label: { formatter: line.label ?? "参考线" }
     }));
+  const markAreaData = operationZones
+    .map((zone) => {
+      const rawLow = zone.price_range?.[0];
+      const rawHigh = zone.price_range?.[1];
+      if (typeof rawLow !== "number" || typeof rawHigh !== "number") return null;
+      const low = Math.min(rawLow, rawHigh);
+      const high = Math.max(rawLow, rawHigh);
+      const color = zone.tone === "high" || zone.tone === "red" ? "rgba(239, 68, 68, 0.10)" : "rgba(37, 99, 235, 0.08)";
+      return [
+        {
+          name: zone.zone_name ?? zone.zone_key ?? "操作区",
+          yAxis: low,
+          itemStyle: { color },
+          label: { formatter: zone.zone_name ?? zone.zone_key ?? "操作区" }
+        },
+        { yAxis: high }
+      ];
+    })
+    .filter((item): item is Array<Record<string, unknown>> => item !== null);
 
   const series: SeriesOption[] = [
     {
@@ -65,7 +93,13 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       markLine: {
         silent: true,
         data: markLineData
-      }
+      },
+      markArea: markAreaData.length
+        ? {
+            silent: true,
+            data: markAreaData
+          }
+        : undefined
     },
     ...scenarioSeries.map((item) => ({
       name: item.scenario_name ?? "情景路径",
