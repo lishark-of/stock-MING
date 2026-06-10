@@ -108,6 +108,14 @@ api_cache_paths = [
 for path in api_cache_paths:
     data = assert_api_cache_endpoint(client, path)
     print("api_cache:", path, data.get("status") or data.get("mode") or data.get("packet_key"))
+packet_index = client.get("/api/packets").json().get("data") or {}
+source_rows = packet_index.get("packet_source_rows") or []
+expected_read_priority = "sqlite_meta > snapshot > local_builder > missing"
+if not source_rows:
+    raise AssertionError("packet registry must expose packet_source_rows")
+if any(row.get("read_priority") != expected_read_priority for row in source_rows):
+    raise AssertionError("packet registry read_priority must prefer sqlite_meta before snapshot")
+print("packet_read_priority:", expected_read_priority, len(source_rows))
 migration = migration_status_service.build_migration_status()
 assert_cache_safety("migration_status", migration)
 print("migration_status:", migration["status"], len(migration["progress_baseline"]))

@@ -5,7 +5,7 @@
 | 调用审计 / 外部边界 | `server/services/*_service.py`, `server/services/task_service.py` | `GET /api/audit/cache` | `CallLedgerAudit.tsx` | cache GET 聚合本地 cache API 与任务 `call_ledger`；不刷新、不外联 | 否；只读审计 |
 | DeepSeek 模型策略 | `config.py`, `server/services/model_strategy_service.py`, `server/services/task_service.py`, `server/services/factor_service.py` | `GET /api/model-strategy/cache`, `GET /api/tasks/catalog`, DeepSeek-capable POST task 回执 | `ModelStrategy.tsx`, `TaskCatalog.tsx`, `DataLineageTable.tsx` | cache GET 只读展示用途到模型映射、配置键名和安全边界；任务目录与任务回执携带 `deepseek_model_strategy` 血缘；不调用模型、不读取凭据 | 否；真实解释仍需按钮任务 |
 | 次日操作图谱 | `command_center_next_session_projection.py`, `app.py` | `GET /api/next-session/cache`, `POST /api/next-session/generate` | `NextSessionMap.tsx` | cache GET 不重算；没有精确新 packet 时返回 `cache_missing`；POST 只读本地 cache 并在有精确 packet 时写入 SQLite | 是，POST 已本地 cache pipeline |
-| Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 读取本地快照/SQLite；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
+| Factor Quant Hub | `command_center_factor_research.py`, `app.py` | `GET /api/factor-quant/cache`, `POST /api/factor-quant/refresh-data`, `POST /api/factor-quant/run-light` | `FactorQuantHub.tsx` | cache GET 优先读取 SQLite 持久化 packet，snapshot/local builder 兜底；run-light 本地 light 计算并写入 factor_values Parquet；refresh-data 后续接 Tushare | 是，run-light 已本地 pipeline |
 | 市场环境 / 盘面证据 | `command_center_*_packet.py`, `app.py` | `GET /api/market/cache` | `MarketContext.tsx` | cache GET 只读展示市场状态、资金流、两融、涨跌停情绪、龙虎榜、筹码和 ETF 替代，不刷新行情 | 后续任务化；当前不提供 POST |
 | 交易纪律 / 决策闭环 | `strategy_execution_service.py`, `command_center_decision_engine.py`, `app.py` | `GET /api/discipline/cache` | `DisciplineLoop.tsx` | cache GET 只读展示纪律 packet、决策闭环、今日动作和满血刷新步骤，不运行回测 | 后续任务化；当前不提供 POST |
 | 策略执行 / 今日决策 | `strategy_execution_service.py`, `command_center_decision_engine.py`, `command_center_strategy_summary.py` | `GET /api/strategy/cache` | `StrategyTrace.tsx` | cache GET 只读展示 `strategy_execution_packet` / `command_center_decision_packet`，不生成新动作 | 后续任务化；当前不提供 POST |
@@ -22,7 +22,7 @@
 | 产业链瓶颈扫描 | `command_center_analysis_methods.py`, `analysis_engine.py`, `app.py` | `GET /api/chokepoint/cache`, `POST /api/chokepoint/run` | `ChokepointScan.tsx` | cache GET 不外联；没有精确 packet 时只返回缺口和旧分析摘要 | 是，POST 当前 stub |
 | Serenity 方法雷达 | `command_center_serenity_method_radar.py`, `app.py` | `GET /api/serenity/cache`, `POST /api/serenity/github-probe` | `SerenityMethodRadar.tsx` | cache 使用本地方法基线；probe 后续外联 | 是，POST 当前 stub |
 | DeepSeek 解释器 | `analysis_engine.py`, `deepseek_safety.py`, `command_center_*` | `POST /api/factor-quant/deepseek-explain` 等 | 页面按钮 | 只解释已有结构化结果 | 是，当前 stub |
-| Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否 | 否 |
+| Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否；读取优先级为 `sqlite_meta > snapshot > local_builder > missing` | 否 |
 | Storage datasets | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage`, `GET /api/storage/catalog`, `GET /api/storage/{dataset}` | `CommandCenterHome.tsx` | 否，只读 Parquet/DuckDB 状态和数据集目录；白名单 `factor_values/daily/daily_basic/moneyflow/backtest_results` | 否 |
 | Worker / Task runtime | `worker/celery_app.py`, `worker/tasks_*.py`, `worker/scheduler.py`, `server/services/task_service.py` | `GET /api/worker/cache`, `GET /api/tasks`, `POST /api/tasks/{task_id}/cancel` | `WorkerRuntime.tsx`, `TaskCatalog.tsx` | cache GET 不连接 Redis、不启动 Celery、不启动 APScheduler；取消任务只改本地状态 | 是，POST task / cancel 走 FastAPI lifecycle |
 | Tauri desktop shell | `desktop/src-tauri/*`, `scripts/check_tauri_env.sh` | 连接本地 FastAPI `8710` | Tauri window / Vite dev | 否，预检不启动 Tauri | 否 |
@@ -61,7 +61,7 @@
 - `/api/tasks`
 - `/api/worker/cache`
 
-`GET` 类 cache API 当前已可读取 `.stock_ming_cache/command_center_latest.json` 中的本地快照或本地 builder 结果，不调用 Tushare、DeepSeek、GitHub。精确 packet 缺失时返回 `cache_missing`，并附带可审计的 legacy 快照摘要。
+`GET` 类 cache API 当前优先读取 `.stock_ming_3/meta.sqlite` 中的持久化 packet；没有持久化 packet 时再读取 `.stock_ming_cache/command_center_latest.json` 本地快照或本地 builder 结果。不调用 Tushare、DeepSeek、GitHub。精确 packet 缺失时返回 `cache_missing`，并附带可审计的 legacy 快照摘要。
 
 `/api/audit/cache` 已接入调用审计 / 外部边界只读迁移：聚合本地 cache API 返回包与任务状态中的 `call_ledger`、外部调用标志和交易边界；不调用 Tushare/DeepSeek/GitHub/Redis，不刷新数据，不运行回测，不执行真实交易，不修改 `strategy_execution_packet.action`。缺失 `call_ledger` 的本地项只作为审计提示，不代表自动外联。
 
@@ -100,7 +100,7 @@
 这些 stub 只返回 `task_id` 和安全任务状态，不调用 Tushare、DeepSeek、GitHub，也不执行真实交易。
 `/api/tasks` 已返回 `command_center_3_task_status_index`：包含本地任务列表、`pending/running/success/failed/cancelled` 状态计数、最新任务、`call_ledger_count`、外部调用标志和交易边界；React 页面可通过 `/api/tasks/{task_id}` 轮询单个任务。
 `/api/tasks/{task_id}/cancel` 已接入本地任务生命周期控制：只将 pending/running 任务标记为 `cancelled`，写入 `local_task_cancel` 调用血缘；终态任务取消请求记录为 no-op；不调用 Tushare/DeepSeek/GitHub，不执行真实交易，不修改 `strategy_execution_packet.action`。
-任务生命周期现在同步写入 `.stock_ming_3/meta.sqlite`；内存 fallback 丢失时，`/api/tasks/{task_id}` 仍可从 SQLite 读回任务状态。`/api/packets` 同时暴露 SQLite packet/task metadata 摘要，供 3.0 前端识别持久化 cache 来源。
+任务生命周期现在同步写入 `.stock_ming_3/meta.sqlite`；内存 fallback 丢失时，`/api/tasks/{task_id}` 仍可从 SQLite 读回任务状态。`/api/packets` 同时暴露 SQLite packet/task metadata 摘要和 `sqlite_meta > snapshot > local_builder > missing` 读取优先级，供 3.0 前端识别持久化 cache 来源。
 
 `/api/factor-quant/run-light` 已从纯 stub 升级为本地 light-mode pipeline：只读取本地 snapshot/cache，生成 `command_center_factor_quant_hub_packet` 并写入 SQLite meta cache，同时把 `runtime.factor_values` 写入 Parquet；仍不调用 Tushare、DeepSeek、GitHub，不跑全市场回测，不修改 strategy action。
 
