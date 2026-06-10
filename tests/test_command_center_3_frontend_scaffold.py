@@ -945,12 +945,22 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("referenceColor", chart)
         self.assertIn("referenceLineType", chart)
         self.assertIn("zoneColor", chart)
+        self.assertIn("lineStyleLabel", chart)
+        self.assertIn("referenceLegend", chart)
+        self.assertIn("operationLegend", chart)
+        self.assertIn("参考线图例", chart)
+        self.assertIn("操作区图例", chart)
+        self.assertIn("只读区域", chart)
         self.assertIn("T0 分割线", chart)
         self.assertIn("markArea", chart)
         self.assertIn("lineStyle", chart)
         self.assertIn("price_range", chart)
         self.assertNotIn("strategy_execution_packet.action", chart)
         self.assertNotIn("operation_zones =", chart)
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn(".chart-legend-grid", styles)
+        self.assertIn(".chart-legend-line", styles)
+        self.assertIn(".chart-legend-zone", styles)
 
 
 if __name__ == "__main__":

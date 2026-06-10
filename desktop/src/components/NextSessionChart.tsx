@@ -69,6 +69,12 @@ function zoneColor(zone: OperationZone): string {
   return "rgba(37, 99, 235, 0.08)";
 }
 
+function lineStyleLabel(type: "solid" | "dashed" | "dotted"): string {
+  if (type === "solid") return "实线";
+  if (type === "dotted") return "点线";
+  return "虚线";
+}
+
 export default function NextSessionChart({ payload }: { payload: ChartPayload | null | undefined }) {
   const historical = (payload?.historical_points ?? []).map(pointTuple).filter(Boolean) as Array<[string, number]>;
   const scenarioSeries = payload?.scenario_series ?? [];
@@ -121,6 +127,44 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       ];
     })
     .filter((item): item is Array<Record<string, unknown>> => item !== null);
+  const referenceLegend = referenceLines
+    .filter((line) => typeof line.value === "number")
+    .map((line) => {
+      const style = referenceLineType(line);
+      return {
+        key: String(line.key ?? line.label ?? "reference_line"),
+        label: String(line.label ?? line.key ?? "参考线"),
+        value: Number(line.value).toFixed(2),
+        color: referenceColor(line),
+        style,
+        styleLabel: lineStyleLabel(style)
+      };
+    });
+  if (xLabels.includes("T0")) {
+    referenceLegend.push({
+      key: "t0_split",
+      label: "T0 分割线",
+      value: "时间分割",
+      color: "#0f172a",
+      style: "dashed",
+      styleLabel: "虚线"
+    });
+  }
+  const operationLegend = operationZones
+    .map((zone) => {
+      const rawLow = zone.price_range?.[0];
+      const rawHigh = zone.price_range?.[1];
+      if (typeof rawLow !== "number" || typeof rawHigh !== "number") return null;
+      const low = Math.min(rawLow, rawHigh);
+      const high = Math.max(rawLow, rawHigh);
+      return {
+        key: String(zone.zone_key ?? zone.zone_name ?? "operation_zone"),
+        label: String(zone.zone_name ?? zone.zone_key ?? "操作区"),
+        range: `${low.toFixed(2)} - ${high.toFixed(2)}`,
+        color: zoneColor(zone)
+      };
+    })
+    .filter((item): item is { key: string; label: string; range: string; color: string } => item !== null);
 
   const series: SeriesOption[] = [
     {
@@ -166,6 +210,44 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   return (
     <>
       <EChartPanel option={option} />
+      {referenceLegend.length || operationLegend.length ? (
+        <div className="chart-legend-grid">
+          <div className="chart-legend-block">
+            <strong>参考线图例</strong>
+            {referenceLegend.length ? (
+              <ul className="chart-legend-list">
+                {referenceLegend.map((item) => (
+                  <li key={item.key}>
+                    <span className="chart-legend-line" style={{ borderTopColor: item.color, borderTopStyle: item.style }} />
+                    <span>{item.label}</span>
+                    <em>{item.value}</em>
+                    <small>{item.styleLabel}</small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">暂无参考线。</p>
+            )}
+          </div>
+          <div className="chart-legend-block">
+            <strong>操作区图例</strong>
+            {operationLegend.length ? (
+              <ul className="chart-legend-list">
+                {operationLegend.map((item) => (
+                  <li key={item.key}>
+                    <span className="chart-legend-zone" style={{ backgroundColor: item.color }} />
+                    <span>{item.label}</span>
+                    <em>{item.range}</em>
+                    <small>只读区域</small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">暂无操作区。</p>
+            )}
+          </div>
+        </div>
+      ) : null}
       {payload.warnings?.length ? <p className="risk-note">{payload.warnings[0]}</p> : null}
     </>
   );
