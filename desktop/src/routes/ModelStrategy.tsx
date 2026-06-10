@@ -39,6 +39,12 @@ export default function ModelStrategy() {
       passed_count: modelRows.filter((row) => row.contains_secret === false).length,
       total_count: modelRows.length,
       status: modelRows.length && modelRows.every((row) => row.contains_secret === false) ? "passed" : "check"
+    },
+    {
+      check: "external_call_on_cache_read",
+      passed_count: modelRows.filter((row) => row.external_call_on_cache_read === false).length,
+      total_count: modelRows.length,
+      status: modelRows.length && modelRows.every((row) => row.external_call_on_cache_read === false) ? "passed" : "check"
     }
   ];
   const payloadCallLedger = rows(cache.call_ledger);
@@ -87,7 +93,7 @@ export default function ModelStrategy() {
         <DataLineageTable rows={modelRows} />
       </PacketCard>
 
-      <PacketCard title="模型策略安全摘要" subtitle="每个 purpose 都必须声明不硬编码模型名且不含凭据" status="model_safety">
+      <PacketCard title="模型策略安全摘要" subtitle="每个 purpose 都必须声明不硬编码模型名、不含凭据、cache read 不外联" status="model_safety">
         <p>安全摘要来自 GET /api/model-strategy/cache 的 model_rows；只读、不调用 DeepSeek。</p>
         <DataLineageTable rows={modelSafetyRows} />
       </PacketCard>
