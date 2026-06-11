@@ -1,32 +1,33 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent } from "react";
 import Layout, { type RouteKey } from "./components/Layout";
-import AShareEvidenceRadar from "./routes/AShareEvidenceRadar";
-import CandidateRadar from "./routes/CandidateRadar";
-import ChokepointScan from "./routes/ChokepointScan";
-import CallLedgerAudit from "./routes/CallLedgerAudit";
-import CommandCenterHome from "./routes/CommandCenterHome";
-import DataCapabilityConsole from "./routes/DataCapabilityConsole";
-import DataHealthTimeline from "./routes/DataHealthTimeline";
-import DesktopShellPreflight from "./routes/DesktopShellPreflight";
-import DisciplineLoop from "./routes/DisciplineLoop";
-import FactorQuantHub from "./routes/FactorQuantHub";
-import HealthStatus from "./routes/HealthStatus";
-import LegacyTools from "./routes/LegacyTools";
-import MarketContext from "./routes/MarketContext";
-import MigrationStatus from "./routes/MigrationStatus";
-import ModelStrategy from "./routes/ModelStrategy";
-import NextSessionMap from "./routes/NextSessionMap";
-import PacketRegistry from "./routes/PacketRegistry";
-import PositionContext from "./routes/PositionContext";
-import QuantBacktestLab from "./routes/QuantBacktestLab";
-import RecoveryCenter from "./routes/RecoveryCenter";
-import RiskGuardrails from "./routes/RiskGuardrails";
-import SerenityMethodRadar from "./routes/SerenityMethodRadar";
-import StorageOverview from "./routes/StorageOverview";
-import StrategyTrace from "./routes/StrategyTrace";
-import TaskCatalog from "./routes/TaskCatalog";
-import TradeReviewLab from "./routes/TradeReviewLab";
-import WorkerRuntime from "./routes/WorkerRuntime";
+
+const AShareEvidenceRadar = lazy(() => import("./routes/AShareEvidenceRadar"));
+const CandidateRadar = lazy(() => import("./routes/CandidateRadar"));
+const ChokepointScan = lazy(() => import("./routes/ChokepointScan"));
+const CallLedgerAudit = lazy(() => import("./routes/CallLedgerAudit"));
+const CommandCenterHome = lazy(() => import("./routes/CommandCenterHome"));
+const DataCapabilityConsole = lazy(() => import("./routes/DataCapabilityConsole"));
+const DataHealthTimeline = lazy(() => import("./routes/DataHealthTimeline"));
+const DesktopShellPreflight = lazy(() => import("./routes/DesktopShellPreflight"));
+const DisciplineLoop = lazy(() => import("./routes/DisciplineLoop"));
+const FactorQuantHub = lazy(() => import("./routes/FactorQuantHub"));
+const HealthStatus = lazy(() => import("./routes/HealthStatus"));
+const LegacyTools = lazy(() => import("./routes/LegacyTools"));
+const MarketContext = lazy(() => import("./routes/MarketContext"));
+const MigrationStatus = lazy(() => import("./routes/MigrationStatus"));
+const ModelStrategy = lazy(() => import("./routes/ModelStrategy"));
+const NextSessionMap = lazy(() => import("./routes/NextSessionMap"));
+const PacketRegistry = lazy(() => import("./routes/PacketRegistry"));
+const PositionContext = lazy(() => import("./routes/PositionContext"));
+const QuantBacktestLab = lazy(() => import("./routes/QuantBacktestLab"));
+const RecoveryCenter = lazy(() => import("./routes/RecoveryCenter"));
+const RiskGuardrails = lazy(() => import("./routes/RiskGuardrails"));
+const SerenityMethodRadar = lazy(() => import("./routes/SerenityMethodRadar"));
+const StorageOverview = lazy(() => import("./routes/StorageOverview"));
+const StrategyTrace = lazy(() => import("./routes/StrategyTrace"));
+const TaskCatalog = lazy(() => import("./routes/TaskCatalog"));
+const TradeReviewLab = lazy(() => import("./routes/TradeReviewLab"));
+const WorkerRuntime = lazy(() => import("./routes/WorkerRuntime"));
 
 const ROUTE_STORAGE_KEY = "stock_ming_command_center_3_route";
 const ROUTE_KEYS: RouteKey[] = [
@@ -58,6 +59,36 @@ const ROUTE_KEYS: RouteKey[] = [
   "tradeReview",
   "legacy"
 ];
+
+const ROUTE_COMPONENTS = {
+  home: CommandCenterHome,
+  health: HealthStatus,
+  audit: CallLedgerAudit,
+  market: MarketContext,
+  models: ModelStrategy,
+  discipline: DisciplineLoop,
+  evidence: AShareEvidenceRadar,
+  dataCapability: DataCapabilityConsole,
+  dataHealth: DataHealthTimeline,
+  desktop: DesktopShellPreflight,
+  recovery: RecoveryCenter,
+  next: NextSessionMap,
+  position: PositionContext,
+  candidates: CandidateRadar,
+  risk: RiskGuardrails,
+  factor: FactorQuantHub,
+  chokepoint: ChokepointScan,
+  serenity: SerenityMethodRadar,
+  packets: PacketRegistry,
+  migration: MigrationStatus,
+  storage: StorageOverview,
+  tasks: TaskCatalog,
+  worker: WorkerRuntime,
+  strategy: StrategyTrace,
+  quant: QuantBacktestLab,
+  tradeReview: TradeReviewLab,
+  legacy: LegacyTools
+} satisfies Record<RouteKey, LazyExoticComponent<ComponentType>>;
 
 function normalizeRouteKey(value: string | null): RouteKey | null {
   const cleaned = String(value ?? "")
@@ -99,6 +130,7 @@ function persistRoute(route: RouteKey) {
 
 export default function App() {
   const [route, setRoute] = useState<RouteKey>(() => readInitialRoute());
+  const ActiveRoute = ROUTE_COMPONENTS[route];
 
   useEffect(() => {
     persistRoute(route);
@@ -117,33 +149,9 @@ export default function App() {
 
   return (
     <Layout active={route} onNavigate={navigateRoute}>
-      {route === "home" ? <CommandCenterHome /> : null}
-      {route === "health" ? <HealthStatus /> : null}
-      {route === "audit" ? <CallLedgerAudit /> : null}
-      {route === "market" ? <MarketContext /> : null}
-      {route === "models" ? <ModelStrategy /> : null}
-      {route === "discipline" ? <DisciplineLoop /> : null}
-      {route === "evidence" ? <AShareEvidenceRadar /> : null}
-      {route === "dataCapability" ? <DataCapabilityConsole /> : null}
-      {route === "dataHealth" ? <DataHealthTimeline /> : null}
-      {route === "desktop" ? <DesktopShellPreflight /> : null}
-      {route === "recovery" ? <RecoveryCenter /> : null}
-      {route === "next" ? <NextSessionMap /> : null}
-      {route === "position" ? <PositionContext /> : null}
-      {route === "candidates" ? <CandidateRadar /> : null}
-      {route === "risk" ? <RiskGuardrails /> : null}
-      {route === "factor" ? <FactorQuantHub /> : null}
-      {route === "chokepoint" ? <ChokepointScan /> : null}
-      {route === "serenity" ? <SerenityMethodRadar /> : null}
-      {route === "packets" ? <PacketRegistry /> : null}
-      {route === "migration" ? <MigrationStatus /> : null}
-      {route === "storage" ? <StorageOverview /> : null}
-      {route === "tasks" ? <TaskCatalog /> : null}
-      {route === "worker" ? <WorkerRuntime /> : null}
-      {route === "strategy" ? <StrategyTrace /> : null}
-      {route === "quant" ? <QuantBacktestLab /> : null}
-      {route === "tradeReview" ? <TradeReviewLab /> : null}
-      {route === "legacy" ? <LegacyTools /> : null}
+      <Suspense fallback={<div className="panel-loading">正在加载模块...</div>}>
+        <ActiveRoute />
+      </Suspense>
     </Layout>
   );
 }

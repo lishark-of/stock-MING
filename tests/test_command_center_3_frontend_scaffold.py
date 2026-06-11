@@ -60,6 +60,29 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("react", package["dependencies"])
         self.assertIn("echarts", package["dependencies"])
 
+    def test_vite_build_splits_route_and_vendor_chunks(self):
+        source = (ROOT / "vite.config.ts").read_text(encoding="utf-8")
+
+        self.assertIn("manualChunks", source)
+        self.assertIn("react-vendor", source)
+        self.assertIn("chart-vendor", source)
+        self.assertIn("chunkSizeWarningLimit: 600", source)
+        self.assertIn("node_modules/react", source)
+        self.assertIn("node_modules/react-dom", source)
+        self.assertIn("node_modules/echarts", source)
+        self.assertIn("node_modules/zrender", source)
+
+    def test_echarts_panel_uses_core_registration_instead_of_full_bundle(self):
+        source = (ROOT / "src" / "components" / "EChartPanel.tsx").read_text(encoding="utf-8")
+
+        self.assertIn('from "echarts/core"', source)
+        self.assertIn('from "echarts/charts"', source)
+        self.assertIn('from "echarts/components"', source)
+        self.assertIn('from "echarts/renderers"', source)
+        self.assertIn("use([BarChart, LineChart", source)
+        self.assertIn("CanvasRenderer", source)
+        self.assertNotIn('import * as echarts from "echarts"', source)
+
     def test_frontend_generated_artifacts_are_gitignored(self):
         gitignore = Path(".gitignore").read_text(encoding="utf-8")
 
@@ -197,6 +220,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
 
         self.assertIn("stock_ming_command_center_3_route", source)
+        self.assertIn("lazy(() => import(\"./routes/CommandCenterHome\"))", source)
+        self.assertIn("lazy(() => import(\"./routes/NextSessionMap\"))", source)
+        self.assertIn("lazy(() => import(\"./routes/FactorQuantHub\"))", source)
+        self.assertIn("Suspense", source)
+        self.assertIn("ROUTE_COMPONENTS", source)
+        self.assertIn("正在加载模块", source)
         self.assertIn("readInitialRoute", source)
         self.assertIn("normalizeRouteKey", source)
         self.assertIn("window.localStorage", source)
@@ -210,6 +239,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"models"', source)
         self.assertIn("DesktopShellPreflight", source)
         self.assertIn("ModelStrategy", source)
+        self.assertNotIn('import CommandCenterHome from "./routes/CommandCenterHome"', source)
+        self.assertNotIn('import NextSessionMap from "./routes/NextSessionMap"', source)
         self.assertNotIn("streamlit", source.lower())
 
     def test_read_only_pages_render_structured_cache_without_direct_python_calls(self):
