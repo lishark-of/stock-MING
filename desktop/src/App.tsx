@@ -23,6 +23,7 @@ const QuantBacktestLab = lazy(() => import("./routes/QuantBacktestLab"));
 const RecoveryCenter = lazy(() => import("./routes/RecoveryCenter"));
 const RiskGuardrails = lazy(() => import("./routes/RiskGuardrails"));
 const SerenityMethodRadar = lazy(() => import("./routes/SerenityMethodRadar"));
+const SettingsConfigHealth = lazy(() => import("./routes/SettingsConfigHealth"));
 const StorageOverview = lazy(() => import("./routes/StorageOverview"));
 const StrategyTrace = lazy(() => import("./routes/StrategyTrace"));
 const TaskCatalog = lazy(() => import("./routes/TaskCatalog"));
@@ -33,6 +34,7 @@ const ROUTE_STORAGE_KEY = "stock_ming_command_center_3_route";
 const ROUTE_KEYS: RouteKey[] = [
   "home",
   "health",
+  "settings",
   "audit",
   "market",
   "models",
@@ -63,6 +65,7 @@ const ROUTE_KEYS: RouteKey[] = [
 const ROUTE_COMPONENTS = {
   home: CommandCenterHome,
   health: HealthStatus,
+  settings: SettingsConfigHealth,
   audit: CallLedgerAudit,
   market: MarketContext,
   models: ModelStrategy,

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 export type RouteKey =
   | "home"
   | "health"
+  | "settings"
   | "audit"
   | "market"
   | "models"
@@ -66,11 +67,12 @@ const ROUTE_GROUPS: Array<{ title: string; routes: Array<{ key: RouteKey; label:
     title: "系统迁移",
     routes: [
       { key: "health", label: "健康" },
+      { key: "settings", label: "配置健康" },
       { key: "models", label: "模型策略" },
       { key: "discipline", label: "交易纪律" },
       { key: "desktop", label: "桌面壳" },
       { key: "migration", label: "迁移状态" },
-      { key: "tasks", label: "任务目录" },
+      { key: "tasks", label: "Task Monitor" },
       { key: "worker", label: "Worker" },
       { key: "quant", label: "量化回测" },
       { key: "recovery", label: "恢复中心" },

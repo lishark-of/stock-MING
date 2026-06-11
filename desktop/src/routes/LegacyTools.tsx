@@ -4,6 +4,7 @@ import PacketCard from "../components/PacketCard";
 import MetricGrid from "../components/MetricGrid";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
+import PageStateBanner from "../components/PageStateBanner";
 
 const LEGACY_BOUNDARIES = [
   { boundary: "正式主入口", status: "Command Center 3 React/Tauri", note: "普通主流程请使用 3.0 前端和 FastAPI cache/task API。" },
@@ -34,13 +35,20 @@ export default function LegacyTools() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    setLoading(true);
+    setError("");
     void getLegacyBridgeCache().then((res) => {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
-    });
+      if (!res.ok) setError(res.error ?? "legacy_cache_not_ok");
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+    }).finally(() => setLoading(false));
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -50,10 +58,18 @@ export default function LegacyTools() {
   const bridge = (cache.old_workspace_packet_bridge as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const empty = !loading && !error && !Object.keys(cache).length;
 
   return (
     <>
       <PacketCard title="Legacy / Admin / Debug" subtitle="Streamlit 2.0 保留为 legacy，不再作为正式主应用" status="legacy">
+        <PageStateBanner
+          loading={loading}
+          error={error}
+          empty={empty}
+          emptyTitle="暂无 Legacy 桥接缓存"
+          emptyDetail="Legacy 页面只读展示旧工作台边界，不启动 Streamlit 或运行旧工具。"
+        />
         <MetricGrid
           items={[
             { label: "正式入口", value: "Command Center 3" },

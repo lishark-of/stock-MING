@@ -3,6 +3,7 @@ import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealt
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
+import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
 
@@ -50,73 +51,102 @@ export default function CommandCenterHome() {
   const [taskIndexEnvelopeLedger, setTaskIndexEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [workerRuntime, setWorkerRuntime] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    void getHealth().then((res) => {
+    let cancelled = false;
+    let pending = 0;
+    const track = <T extends { ok?: boolean; error?: string | null }>(
+      label: string,
+      promise: Promise<T>,
+      onReady: (res: T) => void
+    ) => {
+      pending += 1;
+      void promise.then((res) => {
+        if (cancelled) return;
+        onReady(res);
+        if (res.ok === false) setError((current) => current || `${label}: ${res.error ?? "request_not_ok"}`);
+      }).catch((err) => {
+        if (cancelled) return;
+        setError((current) => current || `${label}: ${err instanceof Error ? err.message : String(err)}`);
+      }).finally(() => {
+        pending -= 1;
+        if (!cancelled && pending <= 0) setLoading(false);
+      });
+    };
+
+    setLoading(true);
+    setError("");
+    track("health", getHealth(), (res) => {
       setHealth(res.data);
       setHealthEnvelopeLedger(res.call_ledger ?? []);
       setHealthEnvelopeWarnings(res.warnings ?? []);
     });
-    void getAuditCache().then((res) => setAudit(res.data));
-    void getPackets().then((res) => {
+    track("audit", getAuditCache(), (res) => setAudit(res.data));
+    track("packets", getPackets(), (res) => {
       setPacketEnvelopeLedger(res.call_ledger ?? []);
       setPackets(res.data);
     });
-    void getMarketContextCache().then((res) => {
+    track("market", getMarketContextCache(), (res) => {
       setMarketEnvelopeLedger(res.call_ledger ?? []);
       setMarketEnvelopeWarnings(res.warnings ?? []);
       setMarket(res.data);
     });
-    void getDisciplineLoopCache().then((res) => {
+    track("discipline", getDisciplineLoopCache(), (res) => {
       setDisciplineEnvelopeLedger(res.call_ledger ?? []);
       setDisciplineEnvelopeWarnings(res.warnings ?? []);
       setDiscipline(res.data);
     });
-    void getFactorQuantCache().then((res) => {
+    track("factor", getFactorQuantCache(), (res) => {
       setFactorEnvelopeLedger(res.call_ledger ?? []);
       setFactorEnvelopeWarnings(res.warnings ?? []);
       setFactor(res.data);
     });
-    void getNextSessionCache().then((res) => {
+    track("next", getNextSessionCache(), (res) => {
       setNextEnvelopeLedger(res.call_ledger ?? []);
       setNextEnvelopeWarnings(res.warnings ?? []);
       setNext(res.data);
     });
-    void getDataHealthCache().then((res) => setDataHealth(res.data));
-    void getDesktopPreflightCache().then((res) => setDesktopPreflight(res.data));
-    void getRecoveryCenterCache().then((res) => setRecovery(res.data));
-    void getPositionCache().then((res) => setPosition(res.data));
-    void getCandidateRadarCache().then((res) => setCandidates(res.data));
-    void getRiskGuardrailsCache().then((res) => setRisk(res.data));
-    void getSerenityCache().then((res) => {
+    track("data_health", getDataHealthCache(), (res) => setDataHealth(res.data));
+    track("desktop_preflight", getDesktopPreflightCache(), (res) => setDesktopPreflight(res.data));
+    track("recovery", getRecoveryCenterCache(), (res) => setRecovery(res.data));
+    track("position", getPositionCache(), (res) => setPosition(res.data));
+    track("candidates", getCandidateRadarCache(), (res) => setCandidates(res.data));
+    track("risk", getRiskGuardrailsCache(), (res) => setRisk(res.data));
+    track("serenity", getSerenityCache(), (res) => {
       setSerenityEnvelopeLedger(res.call_ledger ?? []);
       setSerenityEnvelopeWarnings(res.warnings ?? []);
       setSerenity(res.data);
     });
-    void getChokepointCache().then((res) => {
+    track("chokepoint", getChokepointCache(), (res) => {
       setChokepointEnvelopeLedger(res.call_ledger ?? []);
       setChokepointEnvelopeWarnings(res.warnings ?? []);
       setChokepoint(res.data);
     });
-    void getStorageOverview().then((res) => setStorageOverview(res.data));
-    void getStorageCatalog().then((res) => {
+    track("storage", getStorageOverview(), (res) => setStorageOverview(res.data));
+    track("storage_catalog", getStorageCatalog(), (res) => {
       setStorageCatalogEnvelopeLedger(res.call_ledger ?? []);
       setStorageCatalogEnvelopeWarnings(res.warnings ?? []);
       setStorageCatalog(res.data);
     });
-    void getMigrationStatus().then((res) => setMigration(res.data));
-    void getModelStrategyCache().then((res) => setModelStrategy(res.data));
-    void getLegacyBridgeCache().then((res) => setLegacyBridge(res.data));
-    void getTaskCatalog().then((res) => {
+    track("migration", getMigrationStatus(), (res) => setMigration(res.data));
+    track("model_strategy", getModelStrategyCache(), (res) => setModelStrategy(res.data));
+    track("legacy", getLegacyBridgeCache(), (res) => setLegacyBridge(res.data));
+    track("task_catalog", getTaskCatalog(), (res) => {
       setTaskCatalogEnvelopeLedger(res.call_ledger ?? []);
       setTaskCatalog(res.data);
     });
-    void getWorkerRuntimeCache().then((res) => setWorkerRuntime(res.data));
-    void getTasks().then((res) => {
+    track("worker", getWorkerRuntimeCache(), (res) => setWorkerRuntime(res.data));
+    track("tasks", getTasks(), (res) => {
       setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
       setTaskIndex(res.data);
       setTasks(res.data.tasks ?? []);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const packetKeys = packets.available_cache_keys as unknown[] | undefined;
@@ -187,6 +217,7 @@ export default function CommandCenterHome() {
     ...(taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).map((row) => ({ scope: "task_catalog", ...row })),
     ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
   ];
+  const empty = !loading && !error && !Object.keys(health).length && !Object.keys(packets).length;
 
   return (
     <>
@@ -194,6 +225,13 @@ export default function CommandCenterHome() {
         <h1>Command Center 3.0</h1>
         <StatusBadge label={health.status === "ok" ? "FastAPI online" : "waiting"} tone={health.status === "ok" ? "good" : "warn"} />
       </div>
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无 Command Center 3 cache"
+        emptyDetail="首页只读取 FastAPI GET cache；请确认后端服务已启动。"
+      />
       <MetricGrid
         items={[
           { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },

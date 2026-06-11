@@ -177,7 +177,8 @@ button {
 }
 
 .chart-empty-state,
-.chart-safety-strip {
+.chart-safety-strip,
+.page-state {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -188,6 +189,25 @@ button {
 
 .chart-empty-state p {
   margin: 6px 0 0;
+}
+
+.page-state p {
+  margin: 6px 0 0;
+}
+
+.page-state-loading {
+  border-color: #bfdbfe;
+}
+
+.page-state-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.page-state-empty {
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .chart-safety-strip {

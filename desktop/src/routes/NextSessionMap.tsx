@@ -4,6 +4,7 @@ import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import NextSessionChart from "../components/NextSessionChart";
+import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -24,13 +25,21 @@ export default function NextSessionMap() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const refreshCache = () =>
+  const refreshCache = () => {
+    setLoading(true);
+    setError("");
     void getNextSessionCache().then((res) => {
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
       setPacket(res.data);
-    });
+      if (!res.ok) setError(res.error ?? "next_session_cache_not_ok");
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+    }).finally(() => setLoading(false));
+  };
   const launchTask = () =>
     void postTask("/api/next-session/generate").then((res) => {
       setTaskReceipt(res);
@@ -88,9 +97,17 @@ export default function NextSessionMap() {
     { boundary: "is_exact_next_session_packet", value: String(chartPayload?.is_exact_next_session_packet === true), note: "非精确 packet 时只显示 legacy/cache 投影。" },
     { boundary: "uses_real_daily_close", value: String(chartPayload?.uses_real_daily_close === true), note: "未验证真实 close 时必须展示风险提示。" }
   ];
+  const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
 
   return (
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无已缓存次日操作图谱"
+        emptyDetail="请在允许按钮任务的情况下点击生成任务；查看缓存不会触发 Tushare。"
+      />
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>生成任务</button>

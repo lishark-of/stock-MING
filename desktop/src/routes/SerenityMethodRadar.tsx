@@ -3,6 +3,7 @@ import { getSerenityCache, postTask, type TaskCreationEnvelope } from "../api/cl
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
+import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -13,13 +14,21 @@ export default function SerenityMethodRadar() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const refreshCache = () =>
+  const refreshCache = () => {
+    setLoading(true);
+    setError("");
     void getSerenityCache().then((res) => {
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
       setPacket(res.data);
-    });
+      if (!res.ok) setError(res.error ?? "serenity_cache_not_ok");
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+    }).finally(() => setLoading(false));
+  };
   const launchTask = () =>
     void postTask("/api/serenity/github-probe").then((res) => {
       setTaskReceipt(res);
@@ -48,9 +57,17 @@ export default function SerenityMethodRadar() {
     { field: "enters_chokepoint_score", value: String(policy.enters_chokepoint_score === true) },
     { field: "enters_next_session_projection", value: String(policy.enters_next_session_projection === true) }
   ];
+  const empty = !loading && !error && !repositories.length;
 
   return (
     <PacketCard title="Serenity 方法来源雷达" subtitle="一次性本地方法基线；只读说明，不参与交易评分" status={String(packet.github_status ?? "unverified")}>
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无 Serenity 方法基线缓存"
+        emptyDetail="本页默认只读本地方法基线；GitHub 校验必须手动触发任务。"
+      />
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>GitHub 校验任务</button>

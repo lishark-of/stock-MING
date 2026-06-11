@@ -3,6 +3,7 @@ import { cancelTask, getTaskCatalog, getTasks, type TaskRecord, type TaskStatusI
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
+import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -16,8 +17,11 @@ export default function TaskCatalog() {
   const [taskIndexEnvelopeWarnings, setTaskIndexEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const refreshTasks = () => {
+    setError("");
     void getTasks().then((res) => {
       setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
       setTaskIndexEnvelopeWarnings(res.warnings ?? []);
@@ -25,16 +29,37 @@ export default function TaskCatalog() {
       const records = res.data.tasks ?? [];
       setTaskRecords(records);
       setSelectedTaskId((current) => current || res.data.latest_task_id || records[0]?.task_id || "");
+      if (!res.ok) setError(res.error ?? "task_index_not_ok");
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
     });
   };
 
   useEffect(() => {
-    void getTaskCatalog().then((res) => {
+    setLoading(true);
+    setError("");
+    const catalogPromise = getTaskCatalog().then((res) => {
       setCatalogEnvelopeLedger(res.call_ledger ?? []);
       setCatalogEnvelopeWarnings(res.warnings ?? []);
       setCatalog(res.data);
+      if (!res.ok) setError(res.error ?? "task_catalog_not_ok");
+      return res;
     });
-    refreshTasks();
+    const tasksPromise = getTasks().then((res) => {
+      setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
+      setTaskIndexEnvelopeWarnings(res.warnings ?? []);
+      setTaskIndex(res.data);
+      const records = res.data.tasks ?? [];
+      setTaskRecords(records);
+      setSelectedTaskId((current) => current || res.data.latest_task_id || records[0]?.task_id || "");
+      if (!res.ok) setError(res.error ?? "task_index_not_ok");
+      return res;
+    });
+    void Promise.allSettled([catalogPromise, tasksPromise]).then((results) => {
+      const failed = results.find((item) => item.status === "rejected");
+      if (failed?.status === "rejected") setError(failed.reason instanceof Error ? failed.reason.message : String(failed.reason));
+      setLoading(false);
+    });
   }, []);
 
   const policy = catalog.policy as Record<string, unknown> | undefined;
@@ -126,13 +151,22 @@ export default function TaskCatalog() {
       possible_external_sources: Array.isArray(item.possible_external_sources) ? item.possible_external_sources.join(" / ") : ""
     }))
   ];
+  const empty = !loading && !error && !catalogTasks?.length && !taskRecords.length;
 
   return (
     <>
       <div className="page-head">
-        <h1>任务目录</h1>
+        <h1>Task Monitor / 任务监控</h1>
         <StatusBadge label={String(catalog.status ?? "catalog")} tone={catalog.status === "ready" ? "good" : "neutral"} />
       </div>
+
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无任务目录或任务记录"
+        emptyDetail="本页只读任务目录和任务状态；POST task 必须由各业务页按钮触发。"
+      />
 
       <MetricGrid
         items={[

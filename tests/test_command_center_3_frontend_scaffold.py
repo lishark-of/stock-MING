@@ -19,6 +19,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "JsonDetails.tsx",
             ROOT / "src" / "components" / "MetricGrid.tsx",
             ROOT / "src" / "components" / "NextSessionChart.tsx",
+            ROOT / "src" / "components" / "PageStateBanner.tsx",
             ROOT / "src" / "components" / "DeepSeekModelStrategyLedger.tsx",
             ROOT / "src" / "components" / "TaskLaunchReceipt.tsx",
             ROOT / "src" / "components" / "TaskBoundarySummary.tsx",
@@ -40,6 +41,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
             ROOT / "src" / "routes" / "RecoveryCenter.tsx",
             ROOT / "src" / "routes" / "RiskGuardrails.tsx",
+            ROOT / "src" / "routes" / "SettingsConfigHealth.tsx",
             ROOT / "src" / "routes" / "StorageOverview.tsx",
             ROOT / "src" / "routes" / "StrategyTrace.tsx",
             ROOT / "src" / "routes" / "TaskCatalog.tsx",
@@ -223,6 +225,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("lazy(() => import(\"./routes/CommandCenterHome\"))", source)
         self.assertIn("lazy(() => import(\"./routes/NextSessionMap\"))", source)
         self.assertIn("lazy(() => import(\"./routes/FactorQuantHub\"))", source)
+        self.assertIn("lazy(() => import(\"./routes/SettingsConfigHealth\"))", source)
         self.assertIn("Suspense", source)
         self.assertIn("ROUTE_COMPONENTS", source)
         self.assertIn("正在加载模块", source)
@@ -236,9 +239,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"factor"', source)
         self.assertIn('"next"', source)
         self.assertIn('"desktop"', source)
+        self.assertIn('"settings"', source)
         self.assertIn('"models"', source)
         self.assertIn("DesktopShellPreflight", source)
         self.assertIn("ModelStrategy", source)
+        self.assertIn("SettingsConfigHealth", source)
         self.assertNotIn('import CommandCenterHome from "./routes/CommandCenterHome"', source)
         self.assertNotIn('import NextSessionMap from "./routes/NextSessionMap"', source)
         self.assertNotIn("streamlit", source.lower())
@@ -266,6 +271,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "QuantBacktestLab.tsx",
             "RecoveryCenter.tsx",
             "RiskGuardrails.tsx",
+            "SettingsConfigHealth.tsx",
             "MigrationStatus.tsx",
             "StorageOverview.tsx",
             "TaskCatalog.tsx",
@@ -385,6 +391,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("TradeReviewLab", app_source)
         self.assertIn("WorkerRuntime", app_source)
         self.assertIn('"health"', layout_source)
+        self.assertIn('"settings"', layout_source)
         self.assertIn('"audit"', layout_source)
         self.assertIn('"market"', layout_source)
         self.assertIn('"models"', layout_source)
@@ -415,6 +422,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn(".nav-group", styles)
         self.assertIn(".nav-group-title", styles)
         self.assertIn("健康", layout_source)
+        self.assertIn("配置健康", layout_source)
         self.assertIn("调用审计", layout_source)
         self.assertIn("证据雷达", layout_source)
         self.assertIn("候选雷达", layout_source)
@@ -428,7 +436,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("风险护栏", layout_source)
         self.assertIn("迁移状态", layout_source)
         self.assertIn("存储层", layout_source)
-        self.assertIn("任务目录", layout_source)
+        self.assertIn("Task Monitor", layout_source)
         self.assertIn("策略 Trace", layout_source)
         self.assertIn("交易复盘", layout_source)
         self.assertIn("Worker", layout_source)
@@ -475,6 +483,66 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", page)
         self.assertNotIn("GITHUB_TOKEN", page)
         self.assertNotIn("fetch(", page)
+
+    def test_settings_config_health_page_is_cache_only_and_secret_safe(self):
+        page = (ROOT / "src" / "routes" / "SettingsConfigHealth.tsx").read_text(encoding="utf-8")
+        app = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+        layout = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+        state = (ROOT / "src" / "components" / "PageStateBanner.tsx").read_text(encoding="utf-8")
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("Settings / Config Health", page)
+        self.assertIn("getHealth", page)
+        self.assertIn("getModelStrategyCache", page)
+        self.assertIn("getDataHealthCache", page)
+        self.assertIn("getDesktopPreflightCache", page)
+        self.assertIn("getStorageOverview", page)
+        self.assertIn("getTaskCatalog", page)
+        self.assertIn("getMigrationStatus", page)
+        self.assertIn("PageStateBanner", page)
+        self.assertIn("查看配置健康缓存", page)
+        self.assertIn("GET cache only", page)
+        self.assertIn("FastAPI only", page)
+        self.assertIn("DEEPSEEK_EXPLAIN_MODEL", page)
+        self.assertIn("DEEPSEEK_FAST_MODEL", page)
+        self.assertIn("DEEPSEEK_DEFAULT_MODEL", page)
+        self.assertIn("服务端 Tushare 凭据", page)
+        self.assertIn("GitHub 校验凭据", page)
+        self.assertIn("只展示配置键名和用途，不展示值", page)
+        self.assertIn("不会自动调用 Tushare、DeepSeek、GitHub", page)
+        self.assertNotIn("postTask", page)
+        self.assertNotIn("fetch(", page)
+        self.assertNotIn("tushare_adapter", page)
+        self.assertNotIn("DEEPSEEK_API_KEY", page)
+        self.assertNotIn("TUSHARE_TOKEN", page)
+        self.assertNotIn("GITHUB_TOKEN", page)
+        self.assertIn('"settings"', app)
+        self.assertIn("SettingsConfigHealth", app)
+        self.assertIn("配置健康", layout)
+        self.assertIn("正在读取本地缓存", state)
+        self.assertIn("缓存读取失败", state)
+        self.assertIn("暂无缓存数据", state)
+        self.assertIn(".page-state", styles)
+        self.assertIn(".page-state-error", styles)
+
+    def test_phase_one_main_pages_show_loading_error_and_empty_states(self):
+        page_names = [
+            "CommandCenterHome.tsx",
+            "NextSessionMap.tsx",
+            "FactorQuantHub.tsx",
+            "ChokepointScan.tsx",
+            "SerenityMethodRadar.tsx",
+            "TaskCatalog.tsx",
+            "LegacyTools.tsx",
+            "SettingsConfigHealth.tsx",
+        ]
+        for name in page_names:
+            source = (ROOT / "src" / "routes" / name).read_text(encoding="utf-8")
+            with self.subTest(page=name):
+                self.assertIn("PageStateBanner", source)
+                self.assertIn("loading", source)
+                self.assertIn("error", source)
+                self.assertIn("empty", source)
 
     def test_desktop_shell_preflight_page_is_cache_only_and_read_only(self):
         client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")

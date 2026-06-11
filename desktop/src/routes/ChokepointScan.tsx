@@ -3,6 +3,7 @@ import { getChokepointCache, postTask, type TaskCreationEnvelope } from "../api/
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
+import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -13,13 +14,21 @@ export default function ChokepointScan() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const refreshCache = () =>
+  const refreshCache = () => {
+    setLoading(true);
+    setError("");
     void getChokepointCache().then((res) => {
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
       setPacket(res.data);
-    });
+      if (!res.ok) setError(res.error ?? "chokepoint_cache_not_ok");
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+    }).finally(() => setLoading(false));
+  };
   const launchTask = () =>
     void postTask("/api/chokepoint/run").then((res) => {
       setTaskReceipt(res);
@@ -51,9 +60,17 @@ export default function ChokepointScan() {
     { field: "cache_api_external_calls_triggered", value: String(packet.cache_api_external_calls_triggered ?? false) },
     { field: "legacy_analysis_method_cache", value: String(Boolean(legacy?.available)) }
   ];
+  const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
 
   return (
     <PacketCard title="产业链瓶颈扫描" subtitle="运行必须按钮触发；DeepSeek 不作为数据源" status={String(packet.status ?? "cache")}>
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无瓶颈扫描缓存"
+        emptyDetail="GET cache 不运行扫描；运行任务必须手动点击按钮。"
+      />
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>运行任务</button>

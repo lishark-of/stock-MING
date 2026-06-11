@@ -6,6 +6,7 @@ import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
+import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -30,13 +31,21 @@ export default function FactorQuantHub() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const refreshCache = () =>
+  const refreshCache = () => {
+    setLoading(true);
+    setError("");
     void getFactorQuantCache().then((res) => {
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
       setPacket(res.data);
-    });
+      if (!res.ok) setError(res.error ?? "factor_quant_cache_not_ok");
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+    }).finally(() => setLoading(false));
+  };
   const launchTask = (path: string) =>
     void postTask(path).then((res) => {
       setTaskReceipt(res);
@@ -83,9 +92,17 @@ export default function FactorQuantHub() {
     yAxis: { type: "value" },
     series: Array.isArray(scoreChart.series) ? scoreChart.series : [{ type: "bar", data: [] }]
   };
+  const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
 
   return (
     <PacketCard title="2.0 多因子量化图谱" subtitle="只进入 evidence_effects 预览，不修改 action" status={String(packet.mode ?? "cache_only")}>
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无多因子图谱缓存"
+        emptyDetail="查看缓存不会刷新 Tushare；运行 light mode 必须手动点击任务按钮。"
+      />
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={() => launchTask("/api/factor-quant/refresh-data")}>刷新数据</button>
