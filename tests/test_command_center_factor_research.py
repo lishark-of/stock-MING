@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 import command_center_factor_research as factor_research
+from config import DEEPSEEK_MODEL_DEFAULTS
 
 
 class CommandCenterFactorResearchTests(unittest.TestCase):
@@ -431,7 +432,9 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                 "strategy_action": "买入",
                 "price": 99,
                 "factor_values": [{"raw_value": 1}],
-            }
+            },
+            model_used=DEEPSEEK_MODEL_DEFAULTS["factor_explain"],
+            input_hash=prompt["input_hash"],
         )
 
         self.assertEqual(
@@ -449,7 +452,39 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertIn("price", sanitized["ignored_keys"])
         self.assertIn("factor_values", sanitized["ignored_keys"])
         self.assertEqual(sanitized["payload"]["summary"], "只解释")
+        self.assertEqual(sanitized["model_used"], DEEPSEEK_MODEL_DEFAULTS["factor_explain"])
+        self.assertEqual(sanitized["input_hash"], prompt["input_hash"])
+        self.assertTrue(sanitized["output_hash"])
+        self.assertGreater(sanitized["token_estimate"], 0)
+        self.assertFalse(sanitized["parse_failed"])
         self.assertTrue(sanitized["does_not_override_numeric_values"])
+        self.assertTrue(prompt["input_hash"])
+        self.assertGreater(prompt["token_estimate"], 0)
+        self.assertTrue(prompt["does_not_include_full_packet"])
+
+    def test_deepseek_sanitizer_parse_failed_keeps_hashes_and_allowed_schema(self):
+        sanitized = factor_research.sanitize_factor_deepseek_explanation(
+            "不是 JSON",
+            model_used=DEEPSEEK_MODEL_DEFAULTS["factor_explain"],
+            input_hash="abc123",
+        )
+
+        self.assertEqual(sanitized["status"], "parse_failed")
+        self.assertTrue(sanitized["parse_failed"])
+        self.assertEqual(sanitized["model_used"], DEEPSEEK_MODEL_DEFAULTS["factor_explain"])
+        self.assertEqual(sanitized["input_hash"], "abc123")
+        self.assertTrue(sanitized["output_hash"])
+        self.assertGreater(sanitized["token_estimate"], 0)
+        self.assertEqual(set(sanitized["payload"]), {
+            "summary",
+            "support_notes",
+            "suppress_notes",
+            "conflict_notes",
+            "missing_data_notes",
+            "discipline_notes",
+        })
+        self.assertTrue(sanitized["does_not_override_numeric_values"])
+        self.assertTrue(sanitized["does_not_output_strategy_action"])
 
 
 if __name__ == "__main__":

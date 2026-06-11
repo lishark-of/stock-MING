@@ -311,14 +311,19 @@ def _deepseek_model_strategy(purpose: str = "factor_explain") -> dict[str, Any]:
     return model_strategy_service.build_deepseek_model_strategy_ref(purpose)
 
 
-def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool) -> list[dict[str, Any]]:
+def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool, input_hash: str = "", token_estimate: int = 0) -> list[dict[str, Any]]:
+    strategy = _deepseek_model_strategy("factor_explain")
     return [
         {
             "api": "deepseek_factor_explanation",
             "request_params_safe": {
                 "mode": "guarded_prompt_only",
                 "provided_explanation_payload": sanitized_payload,
-                "deepseek_model_strategy": _deepseek_model_strategy("factor_explain"),
+                "model_used": strategy.get("model"),
+                "model_purpose": strategy.get("purpose"),
+                "input_hash": input_hash,
+                "token_estimate": token_estimate,
+                "deepseek_model_strategy": strategy,
             },
             "row_count": 0,
             "data_date": None,
@@ -332,9 +337,13 @@ def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool) -> l
 
 def _deepseek_prompt_preview(hub: dict[str, Any]) -> dict[str, Any]:
     prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)
+    strategy = _deepseek_model_strategy("factor_explain")
     return {
         "status": "ready_not_sent",
-        "deepseek_model_strategy": _deepseek_model_strategy("factor_explain"),
+        "model_used": strategy.get("model"),
+        "deepseek_model_strategy": strategy,
+        "input_hash": prompt.get("input_hash"),
+        "token_estimate": prompt.get("token_estimate"),
         "allowed_top_level_keys": prompt.get("allowed_top_level_keys") or [],
         "would_enter_deepseek_prompt_if_user_authorizes": bool(prompt.get("enters_deepseek_prompt")),
         "enters_deepseek_prompt": False,
@@ -362,34 +371,44 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
         hub = dict(read_factor_quant_cache())
         update_task_status(task["task_id"], status="running", progress=0.45, current_step="building_guarded_deepseek_prompt_preview")
         prompt_preview = _deepseek_prompt_preview(hub)
+        model_strategy = _deepseek_model_strategy("factor_explain")
+        input_hash = str(prompt_preview.get("input_hash") or "")
+        token_estimate = int(prompt_preview.get("token_estimate") or 0)
+        model_used = str(model_strategy.get("model") or "")
+        call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=False, input_hash=input_hash, token_estimate=token_estimate)
         provided_payload = _extract_provided_explanation_payload(payload)
         if provided_payload is None:
             explanation = {
                 "called": False,
                 "status": "not_called",
+                "parse_failed": False,
                 "payload": None,
                 "ignored_keys": [],
                 "error_message_safe": "",
+                "model_used": model_used,
+                "input_hash": input_hash,
+                "output_hash": "",
+                "token_estimate": 0,
                 "does_not_override_numeric_values": True,
                 "does_not_output_strategy_action": True,
                 "model_call_status": "not_called",
                 "source": "prompt_ready_no_model_call",
-                "deepseek_model_strategy": _deepseek_model_strategy("factor_explain"),
+                "deepseek_model_strategy": model_strategy,
             }
             current_step = "deepseek_prompt_ready_without_model_call"
         else:
-            explanation = factor_research.sanitize_factor_deepseek_explanation(provided_payload)
+            explanation = factor_research.sanitize_factor_deepseek_explanation(provided_payload, model_used=model_used, input_hash=input_hash)
             explanation["called"] = False
             explanation["model_call_status"] = "not_called"
             explanation["source"] = "provided_payload_sanitized_no_model_call"
             explanation["allowed_keys_enforced"] = True
-            explanation["deepseek_model_strategy"] = _deepseek_model_strategy("factor_explain")
-            call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=True)
+            explanation["deepseek_model_strategy"] = model_strategy
+            call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=True, input_hash=input_hash, token_estimate=token_estimate)
             current_step = "deepseek_explanation_sanitized_without_model_call"
 
         hub["deepseek_explanation_prompt_preview"] = prompt_preview
         hub["deepseek_explanation"] = explanation
-        hub["deepseek_model_strategy"] = _deepseek_model_strategy("factor_explain")
+        hub["deepseek_model_strategy"] = model_strategy
         hub["deepseek_called"] = False
         hub["deepseek_model_called"] = False
         hub["deepseek_task_external_calls_triggered"] = False

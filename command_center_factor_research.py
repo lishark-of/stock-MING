@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import math
 import statistics
@@ -1656,6 +1657,9 @@ def build_factor_deepseek_explanation_prompt(hub_packet: Any) -> dict:
             "not_trading_advice": True,
         },
     }
+    prompt_json = json.dumps(prompt_payload, ensure_ascii=False, sort_keys=True, default=str)
+    input_hash = hashlib.sha256(prompt_json.encode("utf-8")).hexdigest()
+    token_estimate = max(1, math.ceil(len(prompt_json) / 4))
     return {
         "system_prompt": "你是多因子研究结果整理器。只解释用户提供的结构化因子结果，不生成或覆盖任何数值，不输出交易动作。",
         "user_prompt": (
@@ -1663,6 +1667,16 @@ def build_factor_deepseek_explanation_prompt(hub_packet: Any) -> dict:
             "conflict_notes、missing_data_notes、discipline_notes。不得输出价格、持仓、因子值、strategy action、买卖指令或完整 packet。\n\n"
             + json.dumps(prompt_payload, ensure_ascii=False, indent=2, default=str)
         ),
+        "input_hash": input_hash,
+        "token_estimate": token_estimate,
+        "prompt_payload_summary": {
+            "mode": prompt_payload.get("mode"),
+            "coverage": prompt_payload.get("coverage"),
+            "score_band": prompt_payload.get("score_band"),
+            "support_count": len(prompt_payload.get("support_factors") or []),
+            "suppress_count": len(prompt_payload.get("suppress_factors") or []),
+            "missing_count": len(prompt_payload.get("missing_factors") or []),
+        },
         "allowed_top_level_keys": sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS),
         "enters_deepseek_prompt": True,
         "does_not_include_full_packet": True,
@@ -1685,7 +1699,12 @@ def _extract_json_object_text(value: str) -> str:
     return text[start : end + 1] if start >= 0 and end > start else ""
 
 
-def sanitize_factor_deepseek_explanation(payload: Any) -> dict:
+def _payload_hash(payload: Any) -> str:
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
+
+
+def sanitize_factor_deepseek_explanation(payload: Any, *, model_used: str | None = None, input_hash: str | None = None) -> dict:
     parsed = payload if isinstance(payload, Mapping) else {}
     parse_error = ""
     if isinstance(payload, str):
@@ -1707,12 +1726,20 @@ def sanitize_factor_deepseek_explanation(payload: Any) -> dict:
             sanitized[key] = [str(item)[:240] for item in _as_list(value)[:8] if str(item).strip()]
     for key in DEEPSEEK_EXPLANATION_ALLOWED_KEYS:
         sanitized.setdefault(key, "" if key == "summary" else [])
+    output_hash = _payload_hash(payload) if payload else ""
+    output_token_estimate = max(0, math.ceil(len(str(payload or "")) / 4))
+    parse_failed = not (sanitized.get("summary") or any(sanitized.get(key) for key in DEEPSEEK_EXPLANATION_ALLOWED_KEYS if key != "summary"))
     return {
         "called": bool(payload),
-        "status": "success" if sanitized.get("summary") or any(sanitized.get(key) for key in DEEPSEEK_EXPLANATION_ALLOWED_KEYS if key != "summary") else "parse_failed",
+        "status": "parse_failed" if parse_failed else "success",
+        "parse_failed": parse_failed,
         "payload": sanitized,
         "ignored_keys": sorted(ignored_keys),
         "error_message_safe": parse_error,
+        "model_used": model_used or "",
+        "input_hash": input_hash or "",
+        "output_hash": output_hash,
+        "token_estimate": output_token_estimate,
         "does_not_override_numeric_values": True,
         "does_not_output_strategy_action": True,
     }

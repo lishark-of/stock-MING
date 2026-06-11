@@ -141,6 +141,9 @@ export default function FactorQuantHub() {
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
           { label: "DeepSeek", value: deepseek.status ?? "not_called", tone: deepseek.called === true ? "warn" : "good" },
+          { label: "DS model", value: deepseek.model_used ?? "not_called" },
+          { label: "DS parse_failed", value: deepseek.parse_failed === true ? "是" : "否", tone: deepseek.parse_failed === true ? "bad" : "good" },
+          { label: "DS token estimate", value: deepseek.token_estimate ?? 0 },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" }
         ]}
       />
@@ -171,6 +174,11 @@ export default function FactorQuantHub() {
       <PacketCard title="DeepSeek 解释" subtitle="按钮门控；只整理已有结构化结果，不覆盖数值">
         <p>called: {String(Boolean(deepseek.called))}</p>
         <p>status: {String(deepseek.status ?? "not_called")}</p>
+        <p>model_used: {String(deepseek.model_used ?? "not_called")}</p>
+        <p>input_hash: {String(deepseek.input_hash ?? "")}</p>
+        <p>output_hash: {String(deepseek.output_hash ?? "")}</p>
+        <p>parse_failed: {String(deepseek.parse_failed ?? false)}</p>
+        <p>token_estimate: {String(deepseek.token_estimate ?? 0)}</p>
         <p>allowed: summary / support_notes / suppress_notes / conflict_notes / missing_data_notes / discipline_notes</p>
       </PacketCard>
       <h3>因子库</h3>
