@@ -38,10 +38,22 @@ def assert_cache_safety(name, packet):
 
 def assert_api_cache_endpoint(client, path):
     response = client.get(path).json()
-    if not response.get("ok"):
-        raise AssertionError(f"{path} failed: {response.get('error')}")
     if not response.get("call_ledger"):
         raise AssertionError(f"{path}.call_ledger must be exposed at envelope top level")
+    if not response.get("ok"):
+        error = response.get("error") or {}
+        if not isinstance(error, dict) or error.get("code") != "cache_missing":
+            raise AssertionError(f"{path} failed: {response.get('error')}")
+        if response.get("data") is not None:
+            raise AssertionError(f"{path}.data must be null for cache_missing")
+        for row in response.get("call_ledger") or []:
+            assert_cache_safety(path, row)
+        details = error.get("details") if isinstance(error.get("details"), dict) else {}
+        return {
+            "status": "cache_missing",
+            "packet_key": details.get("packet_key"),
+            "cache_source": details.get("cache_source"),
+        }
     data = response.get("data") or {}
     if not isinstance(data, dict):
         raise AssertionError(f"{path}.data must be a dict")

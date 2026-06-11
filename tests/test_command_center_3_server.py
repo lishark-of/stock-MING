@@ -698,9 +698,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         response = TestClient(app).get("/api/packets/token=SHOULD_DROP").json()
 
-        self.assertTrue(response["ok"])
-        self.assertEqual(response["data"]["status"], "cache_missing")
-        self.assertEqual(response["data"]["packet_key"], "[redacted_sensitive_text]")
+        self.assertFalse(response["ok"])
+        self.assertIsNone(response["data"])
+        self.assertEqual(response["error"]["code"], "cache_missing")
+        self.assertEqual(response["error"]["details"]["packet_key"], "[redacted_sensitive_text]")
         self.assertEqual(response["call_ledger"][0]["api"], "local_packet_cache_read")
         self.assertEqual(response["call_ledger"][0]["packet_key"], "[redacted_sensitive_text]")
         self.assertEqual(response["call_ledger"][0]["call_status"], "cache_missing")
@@ -2356,6 +2357,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(setattr, trade_review_service, "TRADE_REVIEW_LOG_PATH", original_path)
         return log_path
 
+    def test_p2_cache_missing_uses_structured_error_without_external_calls(self):
+        self._with_meta_store()
+        self._with_snapshot_cache({})
+
+        for route, expected_api in (
+            ("/api/next-session/cache", "local_next_session_cache"),
+            ("/api/chokepoint/cache", "local_chokepoint_scan_cache"),
+            ("/api/packets/not_present_packet", "local_packet_cache_read"),
+        ):
+            response = self.client.get(route).json()
+            self.assertFalse(response["ok"], route)
+            self.assertIsNone(response["data"], route)
+            self.assertEqual(response["error"]["code"], "cache_missing")
+            self.assertIn("message", response["error"])
+            self.assertEqual(response["call_ledger"][0]["api"], expected_api)
+            self.assertIn(response["call_ledger"][0]["call_status"], {"cache_missing", "cache_ready"})
+            self.assertFalse(response["call_ledger"][0]["external"])
+            self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+            self.assertFalse(response["call_ledger"][0]["tushare_called"])
+            self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+            self.assertFalse(response["call_ledger"][0]["github_called"])
+            self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
+            self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
+
     def test_health_and_cache_endpoints(self):
         health = self.client.get("/health").json()
         self.assertTrue(health["ok"])
@@ -2434,17 +2459,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("GET /api/serenity/cache", serenity["warnings"][0])
 
         chokepoint = self.client.get("/api/chokepoint/cache").json()
-        self.assertTrue(chokepoint["ok"])
-        self.assertFalse(chokepoint["data"]["deepseek_called"])
-        self.assertFalse(chokepoint["data"]["enters_strategy_action"])
+        if chokepoint["ok"]:
+            self.assertFalse(chokepoint["data"]["deepseek_called"])
+            self.assertFalse(chokepoint["data"]["enters_strategy_action"])
+        else:
+            self.assertIsNone(chokepoint["data"])
+            self.assertEqual(chokepoint["error"]["code"], "cache_missing")
         self.assertEqual(chokepoint["call_ledger"][0]["api"], "local_chokepoint_scan_cache")
         self.assertFalse(chokepoint["call_ledger"][0]["external"])
         self.assertFalse(chokepoint["call_ledger"][0]["deepseek_called"])
         self.assertIn("GET /api/chokepoint/cache", chokepoint["warnings"][0])
 
         next_session = self.client.get("/api/next-session/cache").json()
-        self.assertTrue(next_session["ok"])
-        self.assertFalse(next_session["data"]["external_calls_triggered"])
+        if next_session["ok"]:
+            self.assertFalse(next_session["data"]["external_calls_triggered"])
+        else:
+            self.assertIsNone(next_session["data"])
+            self.assertEqual(next_session["error"]["code"], "cache_missing")
         self.assertEqual(next_session["call_ledger"][0]["api"], "local_next_session_cache")
         self.assertFalse(next_session["call_ledger"][0]["external"])
         self.assertIn("GET /api/next-session/cache", next_session["warnings"][0])

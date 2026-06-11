@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
-from server.schemas.packets import envelope
+from server.schemas.packets import cache_envelope
 from server.services import factor_service
 
 
@@ -15,7 +15,11 @@ router = APIRouter(prefix="/api/factor-quant")
 @router.get("/cache")
 def get_factor_quant_cache() -> dict:
     packet = factor_service.read_factor_quant_cache()
-    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+    return cache_envelope(
+        packet,
+        route="GET /api/factor-quant/cache",
+        missing_message="当前没有多因子量化图谱缓存；请通过按钮任务生成后再查看。",
+    )
 
 
 @router.post("/refresh-data")

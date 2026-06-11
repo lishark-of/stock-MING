@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
-from server.schemas.packets import envelope
+from server.schemas.packets import cache_envelope
 from server.services import packet_service
 from server.services.task_service import create_task_stub
 
@@ -16,7 +16,11 @@ router = APIRouter(prefix="/api/chokepoint")
 @router.get("/cache")
 def get_chokepoint_cache() -> dict:
     packet = packet_service.build_chokepoint_cache()
-    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+    return cache_envelope(
+        packet,
+        route="GET /api/chokepoint/cache",
+        missing_message="当前没有产业链瓶颈扫描缓存；GET cache 不会调用 DeepSeek。",
+    )
 
 
 @router.post("/run")

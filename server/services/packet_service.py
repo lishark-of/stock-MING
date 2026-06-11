@@ -646,9 +646,11 @@ def serenity_cache_call_ledger(packet: dict[str, Any]) -> list[dict[str, Any]]:
             "call_status": "cache_read",
             "error_message_safe": "",
             "external": False,
+            "external_calls_triggered": False,
             "github_called": False,
             "deepseek_called": False,
             "tushare_called": False,
+            "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
         }
     ]
@@ -741,9 +743,11 @@ def chokepoint_cache_call_ledger(packet: dict[str, Any]) -> list[dict[str, Any]]
             "call_status": "cache_missing" if packet.get("status") == "cache_missing" else "cache_read",
             "error_message_safe": "",
             "external": False,
+            "external_calls_triggered": False,
             "deepseek_called": False,
             "tushare_called": False,
             "github_called": False,
+            "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
         }
     ]

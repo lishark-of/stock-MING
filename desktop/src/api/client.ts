@@ -64,6 +64,18 @@ export type TaskCreationEnvelope = ApiEnvelope<TaskCreationData>;
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710";
 
+function errorToMessage(error: unknown): string | null {
+  if (!error) return null;
+  if (typeof error === "string") return error;
+  if (typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const code = typeof record.code === "string" ? record.code : "request_not_ok";
+    const message = typeof record.message === "string" ? record.message : code;
+    return `${code}: ${message}`;
+  }
+  return String(error);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -75,7 +87,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
   if (!res.ok) {
     return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
   }
-  return (await res.json()) as ApiEnvelope<T>;
+  const payload = await res.json();
+  return {
+    ...payload,
+    data: payload.data === null ? ({} as T) : payload.data,
+    error: errorToMessage(payload.error),
+    call_ledger: payload.call_ledger ?? [],
+    warnings: payload.warnings ?? [],
+  } as ApiEnvelope<T>;
 }
 
 export function getHealth() {
