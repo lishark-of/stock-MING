@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -72,6 +73,33 @@ class CommandCenter3StorageTests(unittest.TestCase):
             generic = duckdb_store.query_parquet_dataset(out["path"])
             self.assertEqual(generic["status"], "ready")
             self.assertFalse(generic["external_calls_triggered"])
+
+    def test_duckdb_store_handles_parallel_cache_reads(self):
+        from storage import duckdb_store, parquet_store
+
+        if not duckdb_store.dependency_status()["available"]:
+            self.skipTest("duckdb dependency missing")
+        if not parquet_store.dependency_status()["available"]:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = parquet_store.write_factor_values(
+                pd.DataFrame(
+                    {
+                        "factor_key": ["momentum_20d", "volatility_20d"],
+                        "raw_value": [0.12, 0.04],
+                    }
+                ),
+                root=tmp,
+            )
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(lambda _: duckdb_store.query_factor_values(out["path"]), range(12)))
+
+        self.assertTrue(results)
+        for result in results:
+            with self.subTest(status=result.get("status")):
+                self.assertEqual(result["status"], "ready")
+                self.assertEqual(result["row_count"], 2)
+                self.assertFalse(result["external_calls_triggered"])
 
     def test_factor_values_metadata_is_cache_only(self):
         from storage import parquet_store

@@ -91,7 +91,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         _file_row(DESKTOP_ROOT / "src" / "App.tsx", "react_app", "React route shell"),
         _file_row(DESKTOP_ROOT / "src-tauri" / "tauri.conf.json", "tauri_config", "Tauri v2 config"),
         _file_row(DESKTOP_ROOT / "src-tauri" / "Cargo.toml", "cargo_toml", "Rust package manifest"),
+        _file_row(DESKTOP_ROOT / "src-tauri" / "Cargo.lock", "cargo_lock", "Reproducible Rust dependency lockfile"),
         _file_row(DESKTOP_ROOT / "src-tauri" / "src" / "main.rs", "tauri_main", "Tauri app entry"),
+        _file_row(DESKTOP_ROOT / "src-tauri" / "icons" / "icon.png", "tauri_icon", "Tauri desktop window and app icon"),
         _file_row(DESKTOP_ROOT / "node_modules", "node_modules", "Installed frontend dependencies"),
         _file_row(DESKTOP_ROOT / "dist", "dist", "Vite build output, should not be committed"),
     ]
@@ -101,10 +103,11 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         _command_row("rustc", "Rust compiler", "Tauri dev/build"),
         _command_row("cargo", "Rust package manager", "Tauri dev/build"),
     ]
-    file_ready_count = sum(1 for row in file_rows[:8] if row["exists"])
+    required_file_count = 10
+    file_ready_count = sum(1 for row in file_rows[:required_file_count] if row["exists"])
     rust_ready = all(row["available"] for row in command_rows if row["command"] in {"rustc", "cargo"})
     node_ready = all(row["available"] for row in command_rows if row["command"] in {"node", "npm"})
-    scaffold_ready = file_ready_count == 8 and bool(package_summary.get("has_vite")) and bool(package_summary.get("has_tauri_cli"))
+    scaffold_ready = file_ready_count == required_file_count and bool(package_summary.get("has_vite")) and bool(package_summary.get("has_tauri_cli"))
     vite_dev_ready = scaffold_ready and node_ready
     tauri_dev_ready = vite_dev_ready and rust_ready
     api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
@@ -122,7 +125,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "file_rows": file_rows,
         "command_rows": command_rows,
         "counts": {
-            "required_file_count": 8,
+            "required_file_count": required_file_count,
             "required_file_ready_count": file_ready_count,
             "command_count": len(command_rows),
             "command_ready_count": sum(1 for row in command_rows if row["available"]),

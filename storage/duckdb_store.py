@@ -31,7 +31,18 @@ def query_parquet_dataset(parquet_path: str | Path, *, limit: int = 1000) -> dic
     safe_limit = max(1, min(int(limit or 1000), 10000))
     path_text = str(path).replace("'", "''")
     sql = f"SELECT * FROM read_parquet('{path_text}') LIMIT {safe_limit}"
-    rows = duckdb.sql(sql).df().to_dict("records")
+    try:
+        with duckdb.connect(database=":memory:", read_only=False) as connection:
+            rows = connection.execute(sql).df().to_dict("records")
+    except Exception as exc:
+        return {
+            "status": "read_failed",
+            "rows": [],
+            "row_count": 0,
+            "path": str(path),
+            "error_message_safe": str(exc).splitlines()[0][:240],
+            "external_calls_triggered": False,
+        }
     return {"status": "ready", "rows": rows, "row_count": len(rows), "path": str(path), "external_calls_triggered": False}
 
 

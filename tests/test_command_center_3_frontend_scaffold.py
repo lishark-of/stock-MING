@@ -48,7 +48,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "TradeReviewLab.tsx",
             ROOT / "src" / "routes" / "WorkerRuntime.tsx",
             ROOT / "src-tauri" / "tauri.conf.json",
+            ROOT / "src-tauri" / "Cargo.toml",
+            ROOT / "src-tauri" / "Cargo.lock",
             ROOT / "src-tauri" / "src" / "main.rs",
+            ROOT / "src-tauri" / "icons" / "icon.png",
         ]
         for path in expected:
             with self.subTest(path=path):
@@ -95,6 +98,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("desktop/node_modules/", gitignore)
         self.assertIn("desktop/dist/", gitignore)
         self.assertIn("desktop/src-tauri/target/", gitignore)
+        self.assertIn("desktop/src-tauri/gen/", gitignore)
 
     def test_frontend_network_boundary_is_centralized_in_api_client(self):
         src_root = ROOT / "src"

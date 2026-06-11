@@ -137,6 +137,7 @@ npm run tauri dev
 
 `scripts/check_tauri_env.sh` 只做本地环境预检，不安装依赖、不启动 Tauri、不调用 Tushare/DeepSeek/GitHub、不读取 token/key。
 如果本机未安装 Rust/Cargo，只运行 Vite 前端即可；Tauri dev mode 需要安装 Rust 后再执行 `npm run tauri dev`。
+Tauri dev mode 还要求 `desktop/src-tauri/Cargo.lock` 与 `desktop/src-tauri/icons/icon.png` 存在；`desktop/src-tauri/target/` 与 `desktop/src-tauri/gen/` 为本地生成物，不提交。
 
 ### Worker / Scheduler
 

@@ -177,7 +177,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("react_app", file_labels)
         self.assertIn("tauri_config", file_labels)
         self.assertIn("cargo_toml", file_labels)
+        self.assertIn("cargo_lock", file_labels)
         self.assertIn("tauri_main", file_labels)
+        self.assertIn("tauri_icon", file_labels)
         command_names = {row["command"] for row in desktop["command_rows"]}
         self.assertEqual(command_names, {"node", "npm", "rustc", "cargo"})
         desktop_dump = json.dumps(desktop, ensure_ascii=False)

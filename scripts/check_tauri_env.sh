@@ -60,7 +60,9 @@ echo
 echo "[tauri scaffold]"
 check_file "${DESKTOP_DIR}/src-tauri/tauri.conf.json" "tauri_config"
 check_file "${DESKTOP_DIR}/src-tauri/Cargo.toml" "cargo_toml"
+check_file "${DESKTOP_DIR}/src-tauri/Cargo.lock" "cargo_lock"
 check_file "${DESKTOP_DIR}/src-tauri/src/main.rs" "tauri_main"
+check_file "${DESKTOP_DIR}/src-tauri/icons/icon.png" "tauri_icon"
 echo
 
 echo "[rust toolchain]"

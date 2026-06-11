@@ -22,6 +22,7 @@ node_modules/
 desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
+desktop/src-tauri/gen/
 
 # Local secrets
 .streamlit/secrets.toml

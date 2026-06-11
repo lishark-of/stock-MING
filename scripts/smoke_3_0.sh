@@ -2,7 +2,15 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-python3 - <<'PY'
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ]; then
+  if [ -x ".venv/bin/python" ]; then
+    PYTHON_BIN=".venv/bin/python"
+  else
+    PYTHON_BIN="python3"
+  fi
+fi
+"$PYTHON_BIN" - <<'PY'
 import tempfile
 from pathlib import Path
 
