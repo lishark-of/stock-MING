@@ -19,10 +19,15 @@ function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<stri
   });
 }
 
+function isCacheMissingError(message: string | null | undefined): boolean {
+  return typeof message === "string" && message.startsWith("cache_missing:");
+}
+
 export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
+  const [cacheMissingMessage, setCacheMissingMessage] = useState("");
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,11 +36,19 @@ export default function NextSessionMap() {
   const refreshCache = () => {
     setLoading(true);
     setError("");
+    setCacheMissingMessage("");
     void getNextSessionCache().then((res) => {
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
       setPacket(res.data);
-      if (!res.ok) setError(res.error ?? "next_session_cache_not_ok");
+      if (!res.ok) {
+        if (isCacheMissingError(res.error)) {
+          setCacheMissingMessage(res.error ?? "cache_missing: 暂无已缓存次日操作图谱。");
+          setPacket({ ...res.data, status: "cache_missing", summary: res.error });
+          return;
+        }
+        setError(res.error ?? "next_session_cache_not_ok");
+      }
     }).catch((err) => {
       setError(err instanceof Error ? err.message : String(err));
     }).finally(() => setLoading(false));
@@ -106,7 +119,7 @@ export default function NextSessionMap() {
         error={error}
         empty={empty}
         emptyTitle="暂无已缓存次日操作图谱"
-        emptyDetail="请在允许按钮任务的情况下点击生成任务；查看缓存不会触发 Tushare。"
+        emptyDetail={cacheMissingMessage || "请在允许按钮任务的情况下点击生成任务；查看缓存不会触发 Tushare。"}
       />
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>

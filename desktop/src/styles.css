@@ -172,11 +172,13 @@ button {
 }
 
 .chart-panel {
-  height: 260px;
+  height: 380px;
   width: 100%;
 }
 
 .chart-empty-state,
+.chart-interaction-notes,
+.chart-selected-insight,
 .chart-safety-strip,
 .page-state {
   background: #f8fafc;
@@ -189,6 +191,34 @@ button {
 
 .chart-empty-state p {
   margin: 6px 0 0;
+}
+
+.chart-interaction-notes ul {
+  color: #475569;
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.chart-selected-insight {
+  display: grid;
+  gap: 5px;
+}
+
+.chart-selected-insight p {
+  margin: 0;
+}
+
+.chart-selected-insight small {
+  color: #64748b;
+}
+
+.chart-tooltip {
+  display: grid;
+  gap: 6px;
+  max-width: 360px;
+  white-space: normal;
 }
 
 .page-state p {

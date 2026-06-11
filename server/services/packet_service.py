@@ -234,6 +234,15 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "does_not_modify_action": True,
         "does_not_modify_operation_zones": True,
         "requires_button_task_for_refresh": True,
+        "interaction_contract": {
+            "source_endpoint": "GET /api/next-session/cache",
+            "hover_displays": ["price", "source", "trigger_condition", "risk_note"],
+            "click_path_displays": "trigger_condition",
+            "click_zone_displays": "guardrail",
+            "y_axis_dynamic_scale": True,
+            "frontend_render_only": True,
+            "frontend_must_not_calculate_action": True,
+        },
         "series_counts": {
             "historical_points": len(payload.get("historical_points") or []),
             "scenario_series": len(payload.get("scenario_series") or []),

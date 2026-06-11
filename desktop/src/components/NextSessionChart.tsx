@@ -1,15 +1,24 @@
 import type { EChartsOption, MarkAreaComponentOption, SeriesOption } from "echarts";
+import { useMemo, useState } from "react";
 import ChartSafetyStrip from "./ChartSafetyStrip";
-import EChartPanel from "./EChartPanel";
+import EChartPanel, { type ChartClickParams } from "./EChartPanel";
 
 type ChartPoint = {
   x?: string;
   price?: number;
+  source?: string;
+  trigger_condition?: string;
+  risk_note?: string;
+  confidence?: string;
 };
 
 type ScenarioSeries = {
+  scenario_key?: string;
   scenario_name?: string;
   color?: string;
+  source?: string;
+  trigger_condition?: string;
+  risk_note?: string;
   points?: ChartPoint[];
 };
 
@@ -18,6 +27,7 @@ type ReferenceLine = {
   label?: string;
   value?: number;
   tone?: string;
+  source?: string;
 };
 
 type OperationZone = {
@@ -25,11 +35,16 @@ type OperationZone = {
   zone_name?: string;
   price_range?: number[];
   tone?: string;
+  action_mode?: string;
+  source?: string;
+  guardrail?: string;
 };
 
 type ChartPayload = {
   status?: string;
   source_packet?: string;
+  historical_source_label?: string;
+  future_source_label?: string;
   is_exact_next_session_packet?: boolean;
   uses_real_daily_close?: boolean;
   historical_points?: ChartPoint[];
@@ -53,10 +68,61 @@ type ChartPayload = {
   warnings?: string[];
 };
 
+type PointMeta = {
+  seriesName: string;
+  x: string;
+  source: string;
+  triggerCondition: string;
+  riskNote: string;
+  confidence: string;
+};
+
+type SelectedInsight = {
+  title: string;
+  detail: string;
+  source: string;
+  guardrail: string;
+};
+
 function pointTuple(point: ChartPoint): [string, number] | null {
   if (!point.x || typeof point.price !== "number") return null;
   return [point.x, point.price];
 }
+
+function metaKey(seriesName: string | undefined, x: string | undefined): string {
+  return `${seriesName ?? ""}::${x ?? ""}`;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function readPointPrice(value: unknown): number | null {
+  if (typeof value === "number") return value;
+  if (Array.isArray(value) && typeof value[1] === "number") return value[1];
+  return null;
+}
+
+function readPointXFromParams(params: ChartClickParams | TooltipPoint): string | undefined {
+  const value = params.value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  if (typeof params.name === "string") return params.name;
+  if ("axisValue" in params && typeof params.axisValue === "string") return params.axisValue;
+  if ("axisValue" in params && typeof params.axisValue === "number") return String(params.axisValue);
+  return undefined;
+}
+
+type TooltipPoint = {
+  axisValue?: string | number;
+  marker?: string;
+  name?: string;
+  seriesName?: string;
+  value?: unknown;
+};
 
 function referenceColor(line: ReferenceLine): string {
   const key = String(line.key ?? "").toLowerCase();
@@ -93,11 +159,42 @@ function lineStyleLabel(type: "solid" | "dashed" | "dotted"): string {
 }
 
 export default function NextSessionChart({ payload }: { payload: ChartPayload | null | undefined }) {
-  const historical = (payload?.historical_points ?? []).map(pointTuple).filter(Boolean) as Array<[string, number]>;
+  const [selectedInsight, setSelectedInsight] = useState<SelectedInsight | null>(null);
+  const historicalPoints = payload?.historical_points ?? [];
+  const historical = historicalPoints.map(pointTuple).filter(Boolean) as Array<[string, number]>;
   const scenarioSeries = payload?.scenario_series ?? [];
   const referenceLines = payload?.reference_lines ?? [];
   const operationZones = payload?.operation_zones ?? [];
   const contract = payload?.chart_contract;
+  const pointMeta = useMemo(() => {
+    const map = new Map<string, PointMeta>();
+    historicalPoints.forEach((point) => {
+      if (!point.x) return;
+      map.set(metaKey("历史 close", point.x), {
+        seriesName: "历史 close",
+        x: point.x,
+        source: point.source ?? payload?.historical_source_label ?? "GET /api/next-session/cache.chart_payload.historical_points",
+        triggerCondition: point.trigger_condition ?? "历史段只作为图谱坐标，不触发交易动作。",
+        riskNote: point.risk_note ?? "真实 60 日 close 由后端 cache 合同标记；前端不补数。",
+        confidence: point.confidence ?? (payload?.uses_real_daily_close ? "real_daily_close" : "cache_or_legacy")
+      });
+    });
+    scenarioSeries.forEach((series) => {
+      const seriesName = series.scenario_name ?? "情景路径";
+      (series.points ?? []).forEach((point) => {
+        if (!point.x) return;
+        map.set(metaKey(seriesName, point.x), {
+          seriesName,
+          x: point.x,
+          source: point.source ?? series.source ?? payload?.future_source_label ?? "GET /api/next-session/cache.chart_payload.scenario_series",
+          triggerCondition: point.trigger_condition ?? series.trigger_condition ?? "点击情景路径仅显示触发条件；不生成买卖指令。",
+          riskNote: point.risk_note ?? series.risk_note ?? "情景路径为解释层预览，不能覆盖 strategy action。",
+          confidence: point.confidence ?? "scenario_preview"
+        });
+      });
+    });
+    return map;
+  }, [historicalPoints, payload?.future_source_label, payload?.historical_source_label, payload?.uses_real_daily_close, scenarioSeries]);
 
   if (!payload || payload.status === "missing" || (!historical.length && !scenarioSeries.length)) {
     return (
@@ -145,7 +242,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
             name: zone.zone_name ?? zone.zone_key ?? "操作区",
             yAxis: low,
             itemStyle: { color },
-            label: { formatter: zone.zone_name ?? zone.zone_key ?? "操作区" }
+            label: { formatter: zone.zone_name ?? zone.zone_key ?? "操作区", position: "insideTop" }
           },
           { yAxis: high }
         ]
@@ -185,10 +282,56 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
         key: String(zone.zone_key ?? zone.zone_name ?? "operation_zone"),
         label: String(zone.zone_name ?? zone.zone_key ?? "操作区"),
         range: `${low.toFixed(2)} - ${high.toFixed(2)}`,
-        color: zoneColor(zone)
+        color: zoneColor(zone),
+        actionMode: String(zone.action_mode ?? "condition_only"),
+        source: String(zone.source ?? "chart_payload.operation_zones"),
+        guardrail: String(zone.guardrail ?? "只读区域，不改写 operation_zones 或 strategy action。")
       };
     })
-    .filter((item): item is { key: string; label: string; range: string; color: string } => item !== null);
+    .filter((item): item is { key: string; label: string; range: string; color: string; actionMode: string; source: string; guardrail: string } => item !== null);
+
+  const tooltipFormatter = (params: unknown): string => {
+    const rows = Array.isArray(params) ? (params as TooltipPoint[]) : ([params] as TooltipPoint[]);
+    const title = rows[0] ? readPointXFromParams(rows[0]) : "";
+    const body = rows
+      .map((item) => {
+        const x = readPointXFromParams(item);
+        const price = readPointPrice(item.value);
+        const meta = pointMeta.get(metaKey(item.seriesName, x));
+        return [
+          `<div><strong>${escapeHtml(item.marker)}${escapeHtml(item.seriesName ?? "路径")}</strong>`,
+          price === null ? "" : `价位 ${price.toFixed(2)}`,
+          meta?.source ? `来源 ${escapeHtml(meta.source)}` : "",
+          meta?.triggerCondition ? `条件 ${escapeHtml(meta.triggerCondition)}` : "",
+          meta?.riskNote ? `纪律 ${escapeHtml(meta.riskNote)}` : "",
+          "</div>"
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      })
+      .join("");
+    return `<div class="chart-tooltip"><b>${escapeHtml(title)}</b>${body}</div>`;
+  };
+
+  const handleChartClick = (params: ChartClickParams) => {
+    const x = readPointXFromParams(params);
+    const meta = pointMeta.get(metaKey(params.seriesName, x));
+    if (meta) {
+      setSelectedInsight({
+        title: `${meta.seriesName} · ${meta.x}`,
+        detail: meta.triggerCondition,
+        source: meta.source,
+        guardrail: meta.riskNote
+      });
+      return;
+    }
+    setSelectedInsight({
+      title: String(params.seriesName ?? params.name ?? "图表区域"),
+      detail: "点击图表只展示来源、触发条件或区域说明；不会计算 action。",
+      source: payload?.source_packet ?? "GET /api/next-session/cache",
+      guardrail: "前端不修改价格、持仓、operation_zones 或 strategy action。"
+    });
+  };
 
   const series: SeriesOption[] = [
     {
@@ -219,21 +362,26 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   ];
 
   const option: EChartsOption = {
-    tooltip: { trigger: "axis" },
-    legend: { top: 0 },
-    grid: { left: 52, right: 24, top: 48, bottom: 36 },
-    xAxis: { type: "category", data: xLabels },
+    tooltip: { trigger: "axis", confine: true, formatter: tooltipFormatter },
+    legend: { top: 0, type: "scroll" },
+    grid: { left: 52, right: 24, top: 52, bottom: 68 },
+    dataZoom: [
+      { type: "inside", filterMode: "none" },
+      { type: "slider", height: 22, bottom: 22, filterMode: "none" }
+    ],
+    xAxis: { type: "category", data: xLabels, boundaryGap: false },
     yAxis: {
       type: "value",
       min: payload.y_axis_range?.[0] ?? undefined,
-      max: payload.y_axis_range?.[1] ?? undefined
+      max: payload.y_axis_range?.[1] ?? undefined,
+      scale: true
     },
     series
   };
 
   return (
     <>
-      <EChartPanel option={option} />
+      <EChartPanel option={option} onChartClick={handleChartClick} />
       <ChartSafetyStrip
         contract={contract}
         source={payload.source_packet}
@@ -270,7 +418,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
                     <span className="chart-legend-zone" style={{ backgroundColor: item.color }} />
                     <span>{item.label}</span>
                     <em>{item.range}</em>
-                    <small>只读区域</small>
+                    <small>{item.actionMode}</small>
                   </li>
                 ))}
               </ul>
@@ -278,6 +426,22 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
               <p className="empty-state">暂无操作区。</p>
             )}
           </div>
+        </div>
+      ) : null}
+      <div className="chart-interaction-notes">
+        <strong>图谱交互说明</strong>
+        <ul>
+          <li>hover 显示价位来源、触发条件和纪律说明。</li>
+          <li>点击情景路径只展开触发条件，不生成交易建议。</li>
+          <li>操作区为后端 cache 投影，前端只读渲染，不改 operation_zones。</li>
+        </ul>
+      </div>
+      {selectedInsight ? (
+        <div className="chart-selected-insight">
+          <strong>{selectedInsight.title}</strong>
+          <p>{selectedInsight.detail}</p>
+          <small>来源：{selectedInsight.source}</small>
+          <small>边界：{selectedInsight.guardrail}</small>
         </div>
       ) : null}
       {payload.warnings?.length ? <p className="risk-note">{payload.warnings[0]}</p> : null}
