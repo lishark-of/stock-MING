@@ -121,6 +121,10 @@ class CommandCenterPacketRegistryTests(unittest.TestCase):
             self.assertEqual(spec["external_call_policy"], "not_triggered")
             self.assertEqual(spec["deepseek_policy"], "never")
 
+        self.assertEqual(tests["label"], "Factor Test Lab")
+        self.assertIn("IC/Rank IC/ICIR", tests["description"])
+        self.assertIn("不跑全市场重回测", tests["description"])
+        self.assertIn("不进入 strategy action", tests["description"])
         self.assertEqual(hub["area"], "analysis")
         self.assertEqual(hub["refresh_policy"], "button_gated")
         self.assertEqual(hub["external_call_policy"], "button_gated")

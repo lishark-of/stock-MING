@@ -209,6 +209,99 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(values["roe_latest"]["data_status"], "pending_pit")
         self.assertFalse(values["roe_latest"]["pit_validated"])
 
+    def test_factor_test_lab_scaffold_declares_research_metrics_without_external_calls(self):
+        packet = factor_research.build_factor_test_packet(mode="light", now="2026-06-09T11:07:00")
+
+        self.assertEqual(packet["packet_key"], "command_center_factor_test_packet")
+        self.assertEqual(packet["schema_version"], "factor_test.v2")
+        self.assertEqual(packet["phase"], "phase_3_factor_test_lab_scaffold")
+        self.assertEqual(packet["status"], "scaffold_ready")
+        self.assertEqual(packet["updated_at"], "2026-06-09T11:07:00")
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+        self.assertFalse(packet["governance"]["allow_strategy_trace"])
+        self.assertFalse(packet["governance"]["allow_evidence_effects"])
+
+        metric_keys = {item["metric_key"] for item in packet["metric_schema"]}
+        self.assertTrue(
+            {
+                "ic_mean",
+                "rank_ic_mean",
+                "icir",
+                "top_bottom_group_return",
+                "turnover",
+                "cost_adjusted_return",
+                "max_drawdown",
+                "industry_neutral_ic",
+                "market_cap_neutral_ic",
+                "pit_check",
+                "lookahead_check",
+            }.issubset(metric_keys)
+        )
+        self.assertGreaterEqual(len(packet["items"]), 20)
+        self.assertEqual(packet["status_counts"]["not_enough_data"], len(packet["items"]))
+        self.assertIn("small_research", {item["mode"] for item in packet["mode_plan"]})
+        self.assertIn("full", {item["mode"] for item in packet["mode_plan"]})
+        self.assertEqual(packet["call_ledger"][0]["api"], "local_factor_test_lab_scaffold")
+        self.assertFalse(packet["call_ledger"][0]["external"])
+        self.assertIn("回测收益不代表未来收益", " ".join(packet["warnings"]))
+        json.dumps(packet, ensure_ascii=False)
+
+    def test_factor_test_lab_classifies_supplied_metrics_without_action_leakage(self):
+        packet = factor_research.build_factor_test_packet(
+            mode="light",
+            items=[
+                {
+                    "factor_key": "momentum_20d",
+                    "coverage": 0.92,
+                    "missing_rate": 0.04,
+                    "ic_mean": 0.031,
+                    "ic_std": 0.08,
+                    "icir": 0.42,
+                    "rank_ic_mean": 0.028,
+                    "top_bottom_group_return": 0.055,
+                    "group_return_monotonicity": True,
+                    "turnover": 0.3,
+                    "cost_adjusted_return": 0.032,
+                    "max_drawdown": -0.08,
+                    "industry_neutral_ic": 0.021,
+                    "market_cap_neutral_ic": 0.019,
+                    "pit_check": "passed",
+                    "lookahead_check": "passed",
+                    "strategy_action": "buy",
+                    "price": 99,
+                },
+                {
+                    "factor_key": "roe_latest",
+                    "coverage": 0.91,
+                    "missing_rate": 0.03,
+                    "ic_mean": 0.04,
+                    "ic_std": 0.1,
+                    "icir": 0.5,
+                    "rank_ic_mean": 0.04,
+                    "top_bottom_group_return": 0.06,
+                    "group_return_monotonicity": True,
+                    "cost_adjusted_return": 0.04,
+                    "pit_check": "failed",
+                    "lookahead_check": "pending",
+                },
+            ],
+            now="2026-06-09T11:08:00",
+        )
+        by_key = {item["factor_key"]: item for item in packet["items"]}
+
+        self.assertEqual(by_key["momentum_20d"]["result_status"], "research_pass")
+        self.assertEqual(by_key["roe_latest"]["result_status"], "invalid")
+        self.assertNotIn("strategy_action", by_key["momentum_20d"])
+        self.assertNotIn("price", by_key["momentum_20d"])
+        self.assertFalse(by_key["momentum_20d"]["enters_strategy_action"])
+        self.assertFalse(by_key["momentum_20d"]["enters_core_action"])
+        self.assertTrue(by_key["momentum_20d"]["does_not_modify_strategy_action"])
+
     def test_missing_factors_enter_missing_not_suppress(self):
         runtime = factor_research.build_factor_runtime_packet(
             daily_close_packet={"rows": []},

@@ -61,6 +61,7 @@ export default function FactorQuantHub() {
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
   const factorLibrary = packet.factor_library ?? {};
+  const factorTests = packet.factor_tests ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -69,6 +70,10 @@ export default function FactorQuantHub() {
   const scoreChartContract = scoreChart.chart_contract ?? {};
   const scoreChartRows = toRows(scoreChart.bucket_rows);
   const scoreChartContractRows = objectRows(scoreChartContract as Record<string, unknown>, "chart_contract");
+  const factorTestRows = toRows(factorTests.items);
+  const factorTestMetricRows = toRows(factorTests.metric_schema);
+  const factorTestModeRows = toRows(factorTests.mode_plan);
+  const factorTestStatusRows = objectRows((factorTests.status_counts ?? {}) as Record<string, unknown>, "factor_test_status");
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -119,6 +124,9 @@ export default function FactorQuantHub() {
           { label: "coverage", value: runtime.coverage ?? 0 },
           { label: "missing", value: runtime.missing_count ?? 0 },
           { label: "score band", value: score.score_band ?? "missing" },
+          { label: "factor tests", value: factorTests.status ?? "scaffold_missing", tone: factorTests.status === "scaffold_ready" ? "warn" : "neutral" },
+          { label: "test rows", value: factorTestRows.length },
+          { label: "test core action", value: factorTests.governance?.allow_core_action === true ? "允许" : "禁止", tone: factorTests.governance?.allow_core_action === true ? "bad" : "good" },
           { label: "score chart", value: scoreChartContract.schema_version ?? "missing", tone: scoreChartContract.schema_version ? "good" : "warn" },
           { label: "chart external", value: scoreChartContract.external_calls_triggered === true ? "存在" : "无", tone: scoreChartContract.external_calls_triggered === true ? "bad" : "good" },
           { label: "chart Tushare", value: scoreChartContract.tushare_called === true ? "调用" : "不调用", tone: scoreChartContract.tushare_called === true ? "bad" : "good" },
@@ -169,6 +177,15 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>
       <DataLineageTable rows={toRows(runtime.factor_values)} />
+      <h3>Factor Test Lab</h3>
+      <p className="risk-note">当前为研究指标 scaffold：IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益尚未代表已验证交易信号。</p>
+      <DataLineageTable rows={factorTestRows} />
+      <h3>Factor Test 指标 schema</h3>
+      <DataLineageTable rows={factorTestMetricRows} />
+      <h3>Factor Test 阶段计划</h3>
+      <DataLineageTable rows={factorTestModeRows} />
+      <h3>Factor Test 状态分布</h3>
+      <DataLineageTable rows={factorTestStatusRows} />
       <h3>评分桶</h3>
       <DataLineageTable rows={scoreRows} />
       <h3>治理边界</h3>

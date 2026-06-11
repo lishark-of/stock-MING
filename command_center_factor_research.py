@@ -60,7 +60,53 @@ VALIDATION_STANDARDS = {
     "disabled": "缺失率过高、ICIR 为负、分组收益不单调、换手成本不可用，或近期明显衰减。",
     "watchlist": "覆盖率和方向线索尚可，但 IC、Rank IC 或滚动稳定性不足。",
     "research_pass": "覆盖率、缺失率、ICIR、分组收益、成本后表现和中性化检验均达到研究通过阈值。",
+    "not_enough_data": "样本、forward return、行业/市值或 PIT 信息不足，只能保留为待检验研究项。",
 }
+
+FACTOR_TEST_METRIC_SCHEMA = [
+    {"metric_key": "coverage", "label": "数据覆盖率", "required": True, "unit": "ratio"},
+    {"metric_key": "missing_rate", "label": "缺失率", "required": True, "unit": "ratio"},
+    {"metric_key": "ic_mean", "label": "IC 均值", "required": True, "unit": "decimal"},
+    {"metric_key": "ic_std", "label": "IC 标准差", "required": True, "unit": "decimal"},
+    {"metric_key": "icir", "label": "ICIR", "required": True, "unit": "ratio"},
+    {"metric_key": "rank_ic_mean", "label": "Rank IC 均值", "required": True, "unit": "decimal"},
+    {"metric_key": "top_bottom_group_return", "label": "Top-Bottom 分组收益", "required": True, "unit": "return"},
+    {"metric_key": "group_return_monotonicity", "label": "分组收益单调性", "required": True, "unit": "boolean"},
+    {"metric_key": "turnover", "label": "换手率", "required": True, "unit": "ratio"},
+    {"metric_key": "cost_adjusted_return", "label": "成本后收益", "required": True, "unit": "return"},
+    {"metric_key": "max_drawdown", "label": "最大回撤", "required": True, "unit": "return"},
+    {"metric_key": "industry_neutral_ic", "label": "行业中性 IC", "required": True, "unit": "decimal"},
+    {"metric_key": "market_cap_neutral_ic", "label": "市值中性 IC", "required": True, "unit": "decimal"},
+    {"metric_key": "out_of_sample_stability", "label": "样本外稳定性", "required": True, "unit": "status"},
+    {"metric_key": "recent_decay", "label": "近期衰减", "required": True, "unit": "status"},
+    {"metric_key": "pit_check", "label": "PIT 检查", "required": True, "unit": "status"},
+    {"metric_key": "lookahead_check", "label": "未来函数检查", "required": True, "unit": "status"},
+    {"metric_key": "survivorship_check", "label": "幸存者偏差检查", "required": True, "unit": "status"},
+]
+
+FACTOR_TEST_MODE_PLAN = [
+    {
+        "mode": "light",
+        "scope": "当前持仓 / 当前标的 / 关注池",
+        "status": "scaffold_ready",
+        "allowed": True,
+        "notes": "先生成研究指标结构；只用小样本和缓存/按钮任务数据，不跑全市场重回测。",
+    },
+    {
+        "mode": "small_research",
+        "scope": "小股票池 + 短窗口",
+        "status": "planned",
+        "allowed": False,
+        "notes": "下一阶段再接横截面 forward return 与分组收益。",
+    },
+    {
+        "mode": "full",
+        "scope": "全市场 / 长窗口",
+        "status": "disabled",
+        "allowed": False,
+        "notes": "需要独立审批、成本/停牌/涨跌停/PIT 全检查后才允许。",
+    },
+]
 
 FACTOR_RESEARCH_LIBRARY = [
     {
@@ -992,19 +1038,181 @@ def build_factor_runtime_packet(
     }
 
 
-def build_factor_test_packet(*, mode: str = "light", now: Any = None) -> dict:
+def _classify_factor_test_row(row: Mapping[str, Any]) -> str:
+    pit_check = str(row.get("pit_check") or "pending")
+    lookahead_check = str(row.get("lookahead_check") or "pending")
+    if pit_check == "failed" or lookahead_check == "failed":
+        return "invalid"
+    coverage = _to_number(row.get("coverage"))
+    missing_rate = _to_number(row.get("missing_rate"))
+    ic_mean = _to_number(row.get("ic_mean"))
+    icir = _to_number(row.get("icir"))
+    rank_ic = _to_number(row.get("rank_ic_mean"))
+    top_bottom = _to_number(row.get("top_bottom_group_return"))
+    cost_adjusted = _to_number(row.get("cost_adjusted_return"))
+    monotonic = row.get("group_return_monotonicity")
+    if any(value is None for value in (coverage, missing_rate, ic_mean, icir, rank_ic, top_bottom, cost_adjusted)):
+        return "not_enough_data"
+    if coverage < 0.6:
+        return "not_enough_data"
+    if missing_rate > 0.25 or icir < 0 or monotonic is False:
+        return "disabled"
+    same_direction_rank_ic = (ic_mean >= 0 and rank_ic >= 0) or (ic_mean <= 0 and rank_ic <= 0)
+    if (
+        coverage >= 0.8
+        and missing_rate <= 0.15
+        and abs(ic_mean) >= 0.02
+        and icir >= 0.3
+        and same_direction_rank_ic
+        and top_bottom > 0
+        and cost_adjusted > 0
+        and monotonic is True
+    ):
+        return "research_pass"
+    return "watchlist"
+
+
+def _factor_test_scaffold_row(factor: Mapping[str, Any], *, mode: str, now: str) -> dict:
+    return {
+        "factor_key": factor.get("factor_key"),
+        "factor_name": factor.get("factor_name"),
+        "category": factor.get("category"),
+        "mode": mode,
+        "sample_scope": "current_holding_watchlist" if mode == "light" else mode,
+        "result_status": "not_enough_data",
+        "data_status": "metric_scaffold_only",
+        "coverage": None,
+        "missing_rate": None,
+        "ic_mean": None,
+        "ic_std": None,
+        "icir": None,
+        "rank_ic_mean": None,
+        "top_bottom_group_return": None,
+        "group_return_monotonicity": None,
+        "turnover": None,
+        "cost_adjusted_return": None,
+        "max_drawdown": None,
+        "industry_neutral_ic": None,
+        "market_cap_neutral_ic": None,
+        "out_of_sample_stability": "not_run",
+        "recent_decay": "not_run",
+        "pit_check": "pending" if not factor.get("pit_validated") else "declared",
+        "lookahead_check": "pending",
+        "survivorship_check": "pending",
+        "test_window": None,
+        "forward_return_horizon": None,
+        "calculated_at": now,
+        "enters_strategy_action": False,
+        "enters_core_action": False,
+        "enters_next_session_projection": False,
+        "enters_evidence_effects": False,
+        "does_not_modify_strategy_action": True,
+        "warning": "指标结构已声明；尚未计算 IC/Rank IC/分组收益/换手/成本后收益。",
+    }
+
+
+def _merge_factor_test_items(scaffold_rows: list[dict], supplied_items: Any, now: str) -> list[dict]:
+    overrides = {
+        str(item.get("factor_key")): dict(item)
+        for item in _as_list(supplied_items)
+        if isinstance(item, Mapping) and item.get("factor_key")
+    }
+    rows: list[dict] = []
+    for row in scaffold_rows:
+        merged = dict(row)
+        override = overrides.get(str(row.get("factor_key")))
+        if override:
+            for key, value in override.items():
+                if key in {"strategy_action", "core_action", "operation_zones", "price", "holding"}:
+                    continue
+                merged[key] = value
+            merged["calculated_at"] = merged.get("calculated_at") or now
+            merged["result_status"] = _classify_factor_test_row(merged)
+            merged["data_status"] = "metric_supplied"
+        rows.append(merged)
+    return rows
+
+
+def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None, items: Any = None, now: Any = None) -> dict:
+    now_text = _now_iso(now)
+    selected_mode = mode if mode in {"light", "small_research", "full", "research", "cache_only"} else "light"
+    library = factor_library if isinstance(factor_library, Mapping) else build_factor_library_packet(now=now_text)
+    factors = [_as_mapping(item) for item in _as_list(library.get("factors")) if _as_mapping(item)]
+    scaffold_rows = [_factor_test_scaffold_row(factor, mode=selected_mode, now=now_text) for factor in factors]
+    rows = _merge_factor_test_items(scaffold_rows, items, now_text)
+    status_counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get("result_status") or "not_enough_data")
+        status_counts[key] = status_counts.get(key, 0) + 1
     return {
         "packet_key": TEST_PACKET_KEY,
-        "schema_version": "factor_test.v1",
-        "phase": MVP_PHASE,
-        "mode": mode,
-        "status": "not_run",
-        "items": [],
-        "summary": "MVP light mode 不运行全市场 IC/Rank IC/ICIR/分组收益/换手/成本后检验。",
-        "updated_at": _now_iso(now),
+        "schema_version": "factor_test.v2",
+        "phase": "phase_3_factor_test_lab_scaffold",
+        "mode": selected_mode,
+        "status": "scaffold_ready",
+        "items": rows,
+        "metric_schema": FACTOR_TEST_METRIC_SCHEMA,
+        "mode_plan": FACTOR_TEST_MODE_PLAN,
+        "result_categories": VALIDATION_STANDARDS,
+        "status_counts": status_counts,
+        "summary": "Factor Test Lab 已声明 IC/Rank IC/ICIR/分组收益/换手/成本后收益等研究指标；当前 commit 只提供 scaffold，不跑全市场回测。",
+        "validation_thresholds": {
+            "research_pass": {
+                "coverage_min": 0.8,
+                "missing_rate_max": 0.15,
+                "abs_ic_mean_min": 0.02,
+                "icir_min": 0.3,
+                "top_bottom_group_return": "positive",
+                "cost_adjusted_return": "positive",
+                "group_return_monotonicity": True,
+            },
+            "disabled": {
+                "missing_rate_gt": 0.25,
+                "icir_lt": 0,
+                "group_return_monotonicity": False,
+            },
+            "not_enough_data": {
+                "coverage_lt": 0.6,
+                "missing_required_metrics": True,
+            },
+        },
+        "governance": {
+            "state": "research_only",
+            "allow_research_display": True,
+            "allow_evidence_effects": False,
+            "allow_strategy_trace": False,
+            "allow_core_action": False,
+        },
+        "decision_usage_policy": DECISION_USAGE_POLICY,
+        "call_ledger": [
+            {
+                "api": "local_factor_test_lab_scaffold",
+                "request_params_safe": {"mode": selected_mode, "factor_count": len(rows)},
+                "row_count": len(rows),
+                "data_date": None,
+                "local_fetched_at": now_text,
+                "call_status": "scaffold_ready",
+                "error_message_safe": "",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "warnings": [
+            "当前是 Factor Test Lab research metrics scaffold，不代表因子已通过检验。",
+            "回测收益不代表未来收益；缺失因子不得当负面。",
+            "pit_validated=False 不得成为强 support；任何进入 strategy action 都需要后续单独审批。",
+        ],
+        "updated_at": now_text,
         "deepseek_called": False,
         "tushare_called": False,
         "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
     }
 
 
