@@ -1058,8 +1058,10 @@ def _classify_factor_test_row(row: Mapping[str, Any]) -> str:
     if missing_rate > 0.25 or icir < 0 or monotonic is False:
         return "disabled"
     same_direction_rank_ic = (ic_mean >= 0 and rank_ic >= 0) or (ic_mean <= 0 and rank_ic <= 0)
+    pit_and_lookahead_passed = pit_check == "passed" and lookahead_check == "passed"
     if (
-        coverage >= 0.8
+        pit_and_lookahead_passed
+        and coverage >= 0.8
         and missing_rate <= 0.15
         and abs(ic_mean) >= 0.02
         and icir >= 0.3
@@ -1070,6 +1072,169 @@ def _classify_factor_test_row(row: Mapping[str, Any]) -> str:
     ):
         return "research_pass"
     return "watchlist"
+
+
+def _rank(values: list[float]) -> list[float]:
+    sorted_values = sorted((value, index) for index, value in enumerate(values))
+    ranks = [0.0] * len(values)
+    cursor = 0
+    while cursor < len(sorted_values):
+        end = cursor + 1
+        while end < len(sorted_values) and sorted_values[end][0] == sorted_values[cursor][0]:
+            end += 1
+        avg_rank = (cursor + 1 + end) / 2.0
+        for _, index in sorted_values[cursor:end]:
+            ranks[index] = avg_rank
+        cursor = end
+    return ranks
+
+
+def _pearson(xs: list[float], ys: list[float]) -> float | None:
+    if len(xs) != len(ys) or len(xs) < 3:
+        return None
+    x_mean = statistics.fmean(xs)
+    y_mean = statistics.fmean(ys)
+    x_diffs = [value - x_mean for value in xs]
+    y_diffs = [value - y_mean for value in ys]
+    x_var = sum(value * value for value in x_diffs)
+    y_var = sum(value * value for value in y_diffs)
+    if x_var <= 0 or y_var <= 0:
+        return None
+    return sum(x * y for x, y in zip(x_diffs, y_diffs)) / math.sqrt(x_var * y_var)
+
+
+def _spearman(xs: list[float], ys: list[float]) -> float | None:
+    if len(xs) != len(ys) or len(xs) < 3:
+        return None
+    return _pearson(_rank(xs), _rank(ys))
+
+
+def _max_drawdown_from_returns(returns: list[float]) -> float | None:
+    if not returns:
+        return None
+    equity = 1.0
+    peak = 1.0
+    max_drawdown = 0.0
+    for value in returns:
+        equity *= 1 + value
+        peak = max(peak, equity)
+        if peak > 0:
+            max_drawdown = min(max_drawdown, equity / peak - 1)
+    return max_drawdown
+
+
+def _group_return_summary(xs: list[float], ys: list[float]) -> tuple[float | None, bool | None]:
+    if len(xs) != len(ys) or len(xs) < 5:
+        return None, None
+    ordered = [item for item in sorted(zip(xs, ys), key=lambda pair: pair[0]) if item[1] is not None]
+    if len(ordered) < 5:
+        return None, None
+    bucket_size = max(1, len(ordered) // 3)
+    bottom = [value for _, value in ordered[:bucket_size]]
+    middle_start = max(bucket_size, (len(ordered) - bucket_size) // 2)
+    middle = [value for _, value in ordered[middle_start : middle_start + bucket_size]]
+    top = [value for _, value in ordered[-bucket_size:]]
+    if not bottom or not middle or not top:
+        return None, None
+    bottom_mean = statistics.fmean(bottom)
+    middle_mean = statistics.fmean(middle)
+    top_mean = statistics.fmean(top)
+    return top_mean - bottom_mean, bottom_mean <= middle_mean <= top_mean
+
+
+def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[dict]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in _as_list(observations):
+        row = _as_mapping(item)
+        factor_key = str(row.get("factor_key") or "")
+        if not factor_key:
+            continue
+        grouped.setdefault(factor_key, []).append(row)
+
+    metric_rows: list[dict] = []
+    for factor_key, rows in sorted(grouped.items()):
+        valid_pairs: list[tuple[str, float, float, dict[str, Any]]] = []
+        for row in rows:
+            factor_value = _to_number(row.get("factor_value", row.get("raw_value")))
+            forward_return = _to_number(row.get("forward_return", row.get("future_return")))
+            trade_date = str(row.get("trade_date") or row.get("data_date") or "")
+            if factor_value is None or forward_return is None:
+                continue
+            valid_pairs.append((trade_date, factor_value, forward_return, row))
+        total = len(rows)
+        valid_count = len(valid_pairs)
+        xs = [item[1] for item in valid_pairs]
+        ys = [item[2] for item in valid_pairs]
+        coverage = valid_count / total if total else 0.0
+        missing_rate = 1 - coverage if total else 1.0
+        per_date_ic = []
+        per_date_rank_ic = []
+        by_date: dict[str, list[tuple[float, float]]] = {}
+        for trade_date, factor_value, forward_return, _ in valid_pairs:
+            by_date.setdefault(trade_date, []).append((factor_value, forward_return))
+        for pairs in by_date.values():
+            date_xs = [item[0] for item in pairs]
+            date_ys = [item[1] for item in pairs]
+            ic = _pearson(date_xs, date_ys)
+            rank_ic = _spearman(date_xs, date_ys)
+            if ic is not None:
+                per_date_ic.append(ic)
+            if rank_ic is not None:
+                per_date_rank_ic.append(rank_ic)
+        if per_date_ic:
+            ic_mean = statistics.fmean(per_date_ic)
+            ic_std = statistics.pstdev(per_date_ic) if len(per_date_ic) > 1 else 0.0
+        else:
+            ic_mean = _pearson(xs, ys)
+            ic_std = None
+        rank_ic_mean = statistics.fmean(per_date_rank_ic) if per_date_rank_ic else _spearman(xs, ys)
+        if ic_mean is not None and ic_std not in (None, 0):
+            icir = ic_mean / ic_std
+        elif ic_mean is not None and ic_std == 0 and len(per_date_ic) >= 2:
+            icir = 9.99 if ic_mean > 0 else (-9.99 if ic_mean < 0 else 0.0)
+        else:
+            icir = None
+        top_bottom, monotonicity = _group_return_summary(xs, ys)
+        costs = [_to_number(row.get("transaction_cost", row.get("cost"))) for _, _, _, row in valid_pairs]
+        avg_cost = statistics.fmean([value for value in costs if value is not None]) if any(value is not None for value in costs) else None
+        turnover_values = [_to_number(row.get("turnover")) for _, _, _, row in valid_pairs]
+        turnover = statistics.fmean([value for value in turnover_values if value is not None]) if any(value is not None for value in turnover_values) else None
+        pit_passed = all(row.get("pit_validated") is True or row.get("pit_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
+        lookahead_passed = all(row.get("lookahead_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
+        row = {
+            "factor_key": factor_key,
+            "mode": "light",
+            "sample_scope": "current_holding_watchlist",
+            "data_status": "computed_from_light_observations" if valid_count >= 3 else "not_enough_data",
+            "coverage": round(coverage, 4),
+            "missing_rate": round(missing_rate, 4),
+            "ic_mean": round(ic_mean, 6) if ic_mean is not None else None,
+            "ic_std": round(ic_std, 6) if ic_std is not None else None,
+            "icir": round(icir, 6) if icir is not None else None,
+            "rank_ic_mean": round(rank_ic_mean, 6) if rank_ic_mean is not None else None,
+            "top_bottom_group_return": round(top_bottom, 6) if top_bottom is not None else None,
+            "group_return_monotonicity": monotonicity,
+            "turnover": round(turnover, 6) if turnover is not None else None,
+            "cost_adjusted_return": round(top_bottom - (avg_cost or 0), 6) if top_bottom is not None else None,
+            "max_drawdown": round(_max_drawdown_from_returns(ys), 6) if ys else None,
+            "industry_neutral_ic": None,
+            "market_cap_neutral_ic": None,
+            "out_of_sample_stability": "not_run",
+            "recent_decay": "not_run",
+            "pit_check": "passed" if pit_passed else "pending",
+            "lookahead_check": "passed" if lookahead_passed else "pending",
+            "survivorship_check": "pending",
+            "test_window": {
+                "trade_date_count": len(by_date),
+                "observation_count": total,
+                "valid_pair_count": valid_count,
+            },
+            "forward_return_horizon": rows[0].get("forward_return_horizon") or "unspecified",
+            "calculated_at": now,
+        }
+        row["result_status"] = _classify_factor_test_row(row)
+        metric_rows.append(row)
+    return metric_rows
 
 
 def _factor_test_scaffold_row(factor: Mapping[str, Any], *, mode: str, now: str) -> dict:
@@ -1133,13 +1298,16 @@ def _merge_factor_test_items(scaffold_rows: list[dict], supplied_items: Any, now
     return rows
 
 
-def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None, items: Any = None, now: Any = None) -> dict:
+def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None, items: Any = None, observations: Any = None, now: Any = None) -> dict:
     now_text = _now_iso(now)
     selected_mode = mode if mode in {"light", "small_research", "full", "research", "cache_only"} else "light"
     library = factor_library if isinstance(factor_library, Mapping) else build_factor_library_packet(now=now_text)
     factors = [_as_mapping(item) for item in _as_list(library.get("factors")) if _as_mapping(item)]
     scaffold_rows = [_factor_test_scaffold_row(factor, mode=selected_mode, now=now_text) for factor in factors]
-    rows = _merge_factor_test_items(scaffold_rows, items, now_text)
+    computed_items = _factor_test_rows_from_observations(observations, now=now_text) if observations is not None else []
+    supplied_items = list(_as_list(items)) + computed_items
+    rows = _merge_factor_test_items(scaffold_rows, supplied_items, now_text)
+    computed_count = len(computed_items)
     status_counts: dict[str, int] = {}
     for row in rows:
         key = str(row.get("result_status") or "not_enough_data")
@@ -1149,13 +1317,14 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
         "schema_version": "factor_test.v2",
         "phase": "phase_3_factor_test_lab_scaffold",
         "mode": selected_mode,
-        "status": "scaffold_ready",
+        "status": "ready" if computed_count else "scaffold_ready",
         "items": rows,
+        "computed_item_count": computed_count,
         "metric_schema": FACTOR_TEST_METRIC_SCHEMA,
         "mode_plan": FACTOR_TEST_MODE_PLAN,
         "result_categories": VALIDATION_STANDARDS,
         "status_counts": status_counts,
-        "summary": "Factor Test Lab 已声明 IC/Rank IC/ICIR/分组收益/换手/成本后收益等研究指标；当前 commit 只提供 scaffold，不跑全市场回测。",
+        "summary": "Factor Test Lab 已声明 IC/Rank IC/ICIR/分组收益/换手/成本后收益等研究指标；light observations 仅用于小样本研究计算，不跑全市场回测。",
         "validation_thresholds": {
             "research_pass": {
                 "coverage_min": 0.8,
@@ -1214,6 +1383,11 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
+
+
+def compute_light_mode_factor_ic_metrics(*, observations: Any, factor_library: Any = None, now: Any = None) -> dict:
+    """Build a light-mode factor test packet from caller-supplied local observations."""
+    return build_factor_test_packet(mode="light", factor_library=factor_library, observations=observations, now=now)
 
 
 def build_factor_score_packet(*, runtime_packet: Any = None, now: Any = None) -> dict:

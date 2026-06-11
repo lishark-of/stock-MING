@@ -302,6 +302,72 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertFalse(by_key["momentum_20d"]["enters_core_action"])
         self.assertTrue(by_key["momentum_20d"]["does_not_modify_strategy_action"])
 
+    def test_light_mode_factor_ic_metrics_compute_from_local_observations(self):
+        observations = []
+        for day_index, trade_date in enumerate(["20260601", "20260602", "20260603", "20260604"], start=1):
+            for stock_index in range(1, 7):
+                observations.append(
+                    {
+                        "factor_key": "momentum_20d",
+                        "ts_code": f"00000{stock_index}.SZ",
+                        "trade_date": trade_date,
+                        "factor_value": stock_index * 0.1,
+                        "forward_return": stock_index * 0.006 + day_index * 0.0003,
+                        "transaction_cost": 0.001,
+                        "turnover": 0.2 + stock_index * 0.01,
+                        "pit_validated": True,
+                        "lookahead_check": "passed",
+                        "forward_return_horizon": "1d",
+                        "strategy_action": "buy",
+                    }
+                )
+
+        packet = factor_research.compute_light_mode_factor_ic_metrics(
+            observations=observations,
+            now="2026-06-09T11:09:00",
+        )
+        row = {item["factor_key"]: item for item in packet["items"]}["momentum_20d"]
+
+        self.assertEqual(packet["status"], "ready")
+        self.assertEqual(packet["computed_item_count"], 1)
+        self.assertEqual(row["data_status"], "metric_supplied")
+        self.assertEqual(row["result_status"], "research_pass")
+        self.assertGreater(row["ic_mean"], 0.9)
+        self.assertGreater(row["rank_ic_mean"], 0.9)
+        self.assertGreater(row["icir"], 0)
+        self.assertGreater(row["top_bottom_group_return"], 0)
+        self.assertTrue(row["group_return_monotonicity"])
+        self.assertGreater(row["cost_adjusted_return"], 0)
+        self.assertEqual(row["pit_check"], "passed")
+        self.assertEqual(row["lookahead_check"], "passed")
+        self.assertNotIn("strategy_action", row)
+        self.assertFalse(row["enters_strategy_action"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_light_mode_factor_ic_metrics_do_not_pass_without_pit_validation(self):
+        observations = [
+            {
+                "factor_key": "momentum_20d",
+                "ts_code": f"00000{index}.SZ",
+                "trade_date": "20260601",
+                "factor_value": index,
+                "forward_return": index * 0.01,
+                "pit_validated": False,
+                "lookahead_check": "passed",
+            }
+            for index in range(1, 8)
+        ]
+
+        packet = factor_research.compute_light_mode_factor_ic_metrics(observations=observations)
+        row = {item["factor_key"]: item for item in packet["items"]}["momentum_20d"]
+
+        self.assertEqual(row["pit_check"], "pending")
+        self.assertNotEqual(row["result_status"], "research_pass")
+        self.assertFalse(row["enters_strategy_action"])
+        self.assertFalse(row["enters_core_action"])
+
     def test_missing_factors_enter_missing_not_suppress(self):
         runtime = factor_research.build_factor_runtime_packet(
             daily_close_packet={"rows": []},
