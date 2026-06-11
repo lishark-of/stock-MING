@@ -232,6 +232,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["cache_api_deepseek_called"])
 
     def test_factor_quant_cache_links_local_snapshot_context(self):
+        self._with_meta_store()
         self._with_snapshot_cache(
             {
                 "a_share_fact_lineage_summary": {"items": [{"fact_key": "daily"}]},
@@ -2552,6 +2553,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
 
     def test_health_and_cache_endpoints(self):
+        self._with_meta_store()
         health = self.client.get("/health").json()
         self.assertTrue(health["ok"])
         self.assertFalse(health["data"]["external_calls_on_startup"])
