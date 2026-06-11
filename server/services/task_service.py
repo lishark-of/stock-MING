@@ -19,14 +19,30 @@ SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta
 
 TASK_CATALOG = [
     {
+        "task_type": "refresh_tushare_facts",
+        "route": "POST /api/tasks/refresh-tushare-facts",
+        "label": "刷新 Tushare A 股事实",
+        "output_packet_key": "command_center_tushare_refresh_packet",
+        "button_gated": True,
+        "current_backend": "button_gated_tushare_pipeline",
+        "external_call_policy": "button_gated_tushare_task",
+        "possible_external_sources": ["tushare"],
+        "default_core_apis": ["daily", "daily_basic", "moneyflow"],
+        "optional_extended_apis": ["margin_detail", "stk_limit", "limit_list_d", "limit_cpt_list", "cyq_perf", "cyq_chips", "anns_d", "forecast", "stk_holdertrade", "share_float", "pledge_stat", "pledge_detail"],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
         "task_type": "refresh_factor_data",
         "route": "POST /api/factor-quant/refresh-data",
         "label": "刷新因子数据",
         "output_packet_key": "command_center_factor_quant_hub_packet",
         "button_gated": True,
-        "current_backend": "local_fallback_stub",
+        "current_backend": "button_gated_tushare_pipeline",
         "external_call_policy": "button_gated_tushare_capable",
         "possible_external_sources": ["tushare"],
+        "default_core_apis": ["daily", "daily_basic", "moneyflow"],
         "call_ledger_required": True,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -513,6 +529,12 @@ def update_task_status(
         task["output_packet_key"] = output_packet_key
     if call_ledger is not None:
         task["call_ledger"] = list(call_ledger)
+        task["external_calls_triggered"] = any(row.get("external_calls_triggered") is True or row.get("external") is True for row in task["call_ledger"])
+        task["tushare_called"] = any(row.get("tushare_called") is True for row in task["call_ledger"])
+        task["deepseek_called"] = any(row.get("deepseek_called") is True for row in task["call_ledger"])
+        task["github_called"] = any(row.get("github_called") is True for row in task["call_ledger"])
+        task["does_not_execute_trades"] = all(row.get("does_not_execute_trades") is not False for row in task["call_ledger"])
+        task["does_not_modify_strategy_action"] = all(row.get("does_not_modify_strategy_action") is not False for row in task["call_ledger"])
     if warning:
         task.setdefault("warnings", []).append(warning)
     if status in {"running", "success", "failed"} and not task.get("started_at"):

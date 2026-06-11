@@ -672,13 +672,18 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
                 self.assertIn("taskId", source)
                 self.assertIn("taskReceipt", source)
                 self.assertIn("setTaskReceipt(res)", source)
-                self.assertIn("if (res.ok) setTaskId(res.data.task_id)", source)
                 self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", source)
-                self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", source)
+                if path.name == "TaskCatalog.tsx":
+                    self.assertIn("setSelectedTaskId(res.data.task_id)", source)
+                    self.assertIn("<TaskStatusPanel taskId={selectedTaskId} onSuccess={refreshTasks} />", source)
+                    self.assertIn("/api/tasks/refresh-tushare-facts", source)
+                else:
+                    self.assertIn("if (res.ok) setTaskId(res.data.task_id)", source)
+                    self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", source)
 
         self.assertEqual(
             post_task_pages,
-            ["ChokepointScan.tsx", "FactorQuantHub.tsx", "NextSessionMap.tsx", "SerenityMethodRadar.tsx"],
+            ["ChokepointScan.tsx", "FactorQuantHub.tsx", "NextSessionMap.tsx", "SerenityMethodRadar.tsx", "TaskCatalog.tsx"],
         )
 
     def test_health_page_reads_startup_state_without_external_calls(self):
@@ -828,6 +833,13 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("persistence_source_rows?: Array<Record<string, unknown>>", client_source)
         self.assertIn("getTaskCatalog", task_catalog_page)
         self.assertIn("getTasks", task_catalog_page)
+        self.assertIn("postTask", task_catalog_page)
+        self.assertIn("/api/tasks/refresh-tushare-facts", task_catalog_page)
+        self.assertIn("launchTushareRefresh", task_catalog_page)
+        self.assertIn("刷新 Tushare facts", task_catalog_page)
+        self.assertIn("默认只刷新 daily / daily_basic / moneyflow", task_catalog_page)
+        self.assertIn("不打印 token/key，不修改 strategy action", task_catalog_page)
+        self.assertIn("TaskLaunchReceipt", task_catalog_page)
         self.assertIn("TaskStatusPanel", task_catalog_page)
         self.assertIn("selectedTaskId", task_catalog_page)
         self.assertIn("route_coverage", task_catalog_page)
@@ -909,7 +921,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("does_not_modify_strategy_action: task.does_not_modify_strategy_action !== false", task_catalog_page)
         self.assertIn("does_not_execute_trades", task_catalog_page)
         self.assertIn("does_not_modify_strategy_action", task_catalog_page)
-        self.assertNotIn("postTask", task_catalog_page)
+        self.assertNotIn("tushare_adapter", task_catalog_page)
 
         task_status_panel = (ROOT / "src" / "components" / "TaskStatusPanel.tsx").read_text(encoding="utf-8")
         self.assertIn("storage_source", task_status_panel)

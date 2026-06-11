@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
 from server.schemas.packets import envelope
-from server.services import task_service
+from server.services import task_service, tushare_task_service
 
 
 router = APIRouter(prefix="/api/tasks")
@@ -22,6 +22,12 @@ def list_tasks() -> dict:
 def get_task_catalog() -> dict:
     catalog = task_service.build_task_catalog()
     return envelope(catalog, call_ledger=catalog.get("call_ledger"), warnings=catalog.get("warnings"))
+
+
+@router.post("/refresh-tushare-facts")
+def refresh_tushare_facts(payload: dict[str, Any] | None = None) -> dict:
+    task = tushare_task_service.run_tushare_refresh_task(payload)
+    return task_envelope(task)
 
 
 @router.get("/{task_id}")

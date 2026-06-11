@@ -9,7 +9,7 @@ import command_center_next_session_projection as next_session_projection
 import command_center_serenity_method_radar as serenity_radar
 from storage.sqlite_meta import SQLiteMetaStore
 
-from . import model_strategy_service, packet_service, storage_service
+from . import model_strategy_service, packet_service, storage_service, tushare_task_service
 from .task_service import create_task_record, create_task_stub, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
@@ -419,6 +419,13 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
 
 
 def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
+    if task_type == "refresh_factor_data":
+        return tushare_task_service.run_tushare_refresh_task(
+            payload,
+            task_type="refresh_factor_data",
+            output_packet_key="command_center_factor_quant_hub_packet",
+            default_apis=("daily", "daily_basic", "moneyflow"),
+        )
     if task_type == "run_factor_light":
         return run_factor_light_task(payload)
     if task_type == "run_deepseek_factor_explanation":

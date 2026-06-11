@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { cancelTask, getTaskCatalog, getTasks, type TaskRecord, type TaskStatusIndex } from "../api/client";
+import { cancelTask, getTaskCatalog, getTasks, postTask, type TaskCreationEnvelope, type TaskRecord, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function TaskCatalog() {
@@ -17,6 +18,7 @@ export default function TaskCatalog() {
   const [taskIndexEnvelopeWarnings, setTaskIndexEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -61,6 +63,15 @@ export default function TaskCatalog() {
       setLoading(false);
     });
   }, []);
+
+  const launchTushareRefresh = () =>
+    void postTask("/api/tasks/refresh-tushare-facts", { apis: ["daily", "daily_basic", "moneyflow"] }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) {
+        setSelectedTaskId(res.data.task_id);
+        refreshTasks();
+      }
+    });
 
   const policy = catalog.policy as Record<string, unknown> | undefined;
   const catalogTasks = catalog.tasks as Array<Record<string, unknown>> | undefined;
@@ -200,6 +211,12 @@ export default function TaskCatalog() {
       />
 
       <div className="grid">
+        <PacketCard title="Tushare 刷新任务" subtitle="按钮门控 POST /api/tasks/refresh-tushare-facts；GET cache 不会触发" status="button_gated">
+          <p>默认只刷新 daily / daily_basic / moneyflow；任务会写 call_ledger，不打印 token/key，不修改 strategy action。</p>
+          <button onClick={launchTushareRefresh}>刷新 Tushare facts</button>
+          <TaskLaunchReceipt receipt={taskReceipt} />
+        </PacketCard>
+
         <PacketCard title="任务边界" subtitle="只读任务目录；不会创建任务；POST task 才可能触发外部请求" status="read_only">
           <p>本页只读取 FastAPI 的任务目录 cache 和 GET /api/tasks 任务记录，不调用 Tushare、DeepSeek 或 GitHub。</p>
           <p>任务执行必须由对应 POST API 按钮触发，并且需要写入 call_ledger_required_for_all 对应的审计记录。</p>

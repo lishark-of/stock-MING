@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, worker_service
+from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -28,6 +28,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         original_factor_path = factor_service.SQLITE_META_PATH
         original_next_session_path = next_session_service.SQLITE_META_PATH
         original_task_path = task_service.SQLITE_META_PATH
+        original_tushare_task_path = tushare_task_service.SQLITE_META_PATH
         original_storage_path = storage_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
@@ -35,12 +36,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         factor_service.SQLITE_META_PATH = db_path
         next_session_service.SQLITE_META_PATH = db_path
         task_service.SQLITE_META_PATH = db_path
+        tushare_task_service.SQLITE_META_PATH = db_path
         storage_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
         self.addCleanup(setattr, next_session_service, "SQLITE_META_PATH", original_next_session_path)
         self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
+        self.addCleanup(setattr, tushare_task_service, "SQLITE_META_PATH", original_tushare_task_path)
         self.addCleanup(setattr, storage_service, "SQLITE_META_PATH", original_storage_path)
         return db_path
 
@@ -1653,6 +1656,133 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(index["does_not_modify_strategy_action"])
         self.assertEqual(index["call_ledger"][0]["api"], "local_task_status_index")
 
+    def test_tushare_refresh_task_records_call_ledger_and_local_parquet(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class FakeTushareAdapter:
+            def get_daily(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "close": 10.4}], "error": ""}
+
+            def get_daily_basic(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "turnover_rate": 3.2}], "error": ""}
+
+            def get_moneyflow(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "net_mf_amount": 1200}], "error": ""}
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {"ts_code": "002008.SZ", "apis": ["daily", "daily_basic", "moneyflow"], "token": "SHOULD_DROP"},
+            adapter=FakeTushareAdapter(),
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tushare_refresh_completed")
+        self.assertEqual(task["backend"], "local_fallback")
+        self.assertTrue(task["external_calls_triggered"])
+        self.assertTrue(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertEqual([row["api"] for row in task["call_ledger"]], ["daily", "daily_basic", "moneyflow"])
+        for row in task["call_ledger"]:
+            self.assertTrue(row["external"])
+            self.assertTrue(row["external_calls_triggered"])
+            self.assertTrue(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertEqual(row["call_status"], "success")
+            self.assertEqual(row["row_count"], 1)
+            self.assertEqual(row["data_date"], "20260610")
+            self.assertNotIn("token", row["request_params_safe"])
+
+        parquet_status = {row["api"]: row["parquet_status"] for row in task["call_ledger"]}
+        self.assertEqual(set(parquet_status), {"daily", "daily_basic", "moneyflow"})
+        self.assertTrue(all(status in {"written", "dependency_missing"} for status in parquet_status.values()))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["status"], "success")
+        self.assertEqual(persisted["success_count"], 3)
+        self.assertEqual(persisted["failed_count"], 0)
+        self.assertTrue(persisted["tushare_called"])
+        self.assertTrue(persisted["does_not_modify_strategy_action"])
+
+    def test_tushare_refresh_task_failure_keeps_safe_error_and_action_boundary(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class FailingTushareAdapter:
+            def get_daily(self, **params):
+                return {"ok": False, "data": None, "error": "Traceback token=SHOULD_DROP api_key=DROP"}
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {"ts_code": "002008.SZ", "apis": ["daily"], "api_key": "SHOULD_DROP"},
+            adapter=FailingTushareAdapter(),
+        )
+
+        self.assertEqual(task["status"], "failed")
+        self.assertEqual(task["current_step"], "tushare_refresh_failed_safe")
+        self.assertTrue(task["external_calls_triggered"])
+        self.assertTrue(task["tushare_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertEqual(task["call_ledger"][0]["call_status"], "failed")
+        self.assertEqual(task["call_ledger"][0]["error_message_safe"], "tushare_error_redacted_safe")
+        dumped = json.dumps(task, ensure_ascii=False)
+        self.assertNotIn("SHOULD_DROP", dumped)
+        self.assertNotIn("Traceback", dumped)
+        self.assertNotIn("api_key", dumped)
+
+    def test_tushare_refresh_task_blocks_missing_ts_code_without_external_call(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class ExplodingTushareAdapter:
+            def get_daily(self, **params):
+                raise AssertionError("should_not_call_tushare_without_ts_code")
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {"apis": ["daily"], "token": "SHOULD_DROP"},
+            adapter=ExplodingTushareAdapter(),
+        )
+
+        self.assertEqual(task["status"], "failed")
+        self.assertEqual(task["current_step"], "tushare_refresh_blocked_missing_params")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertEqual(task["call_ledger"][0]["api"], "daily")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "blocked_missing_ts_code")
+        self.assertEqual(task["call_ledger"][0]["error_message_safe"], "missing_required_ts_code")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["status"], "failed")
+        self.assertEqual(persisted["blocked_count"], 1)
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertTrue(persisted["does_not_modify_strategy_action"])
+        dumped = json.dumps({"task": task, "persisted": persisted}, ensure_ascii=False)
+        self.assertNotIn("SHOULD_DROP", dumped)
+        self.assertNotIn("should_not_call", dumped)
+
     def test_smoke_script_includes_task_status_index(self):
         script = Path("scripts/smoke_3_0.sh").read_text(encoding="utf-8")
 
@@ -1789,7 +1919,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 6)
+        self.assertEqual(catalog["task_count"], 7)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -1803,7 +1933,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 6)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 7)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -1813,32 +1943,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         by_type = {item["task_type"]: item for item in catalog["tasks"]}
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
-        self.assertEqual(route_coverage["known_post_route_count"], 7)
-        self.assertEqual(route_coverage["task_creation_route_count"], 6)
+        self.assertEqual(route_coverage["known_post_route_count"], 8)
+        self.assertEqual(route_coverage["task_creation_route_count"], 7)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 1)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
         self.assertTrue(route_coverage["call_ledger_required_for_all_known_post_routes"])
         self.assertFalse(route_coverage["cancel_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 6)
-        self.assertEqual(implementation_status["stub_task_count"], 3)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 2)
+        self.assertEqual(implementation_status["task_count"], 7)
+        self.assertEqual(implementation_status["stub_task_count"], 2)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 4)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 3)
-        self.assertEqual(implementation_status["external_capable_task_count"], 4)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 5)
+        self.assertEqual(implementation_status["external_capable_task_count"], 5)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
-            {"refresh_factor_data", "run_chokepoint_scan", "probe_serenity_github"},
+            {"run_chokepoint_scan", "probe_serenity_github"},
         )
         self.assertEqual(
             set(implementation_status["local_pipeline_task_types"]),
-            {"run_factor_light", "build_next_session_projection"},
+            {"refresh_tushare_facts", "refresh_factor_data", "run_factor_light", "build_next_session_projection"},
         )
         self.assertEqual(implementation_status["guarded_local_task_types"], ["run_deepseek_factor_explanation"])
         self.assertEqual(
             set(implementation_status["implemented_local_task_types"]),
-            {"run_factor_light", "build_next_session_projection", "run_deepseek_factor_explanation"},
+            {"refresh_tushare_facts", "refresh_factor_data", "run_factor_light", "build_next_session_projection", "run_deepseek_factor_explanation"},
         )
         self.assertTrue(implementation_status["all_external_capable_tasks_are_button_gated"])
         self.assertTrue(implementation_status["all_external_capable_tasks_require_call_ledger"])
@@ -1849,7 +1979,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/tasks/{task_id}/cancel", route_coverage["known_post_routes"])
         self.assertEqual(catalog["task_lifecycle_routes"][0]["route"], "POST /api/tasks/{task_id}/cancel")
         self.assertEqual(catalog["task_lifecycle_routes"][0]["external_call_policy"], "local_cancel_no_external_call")
+        self.assertEqual(by_type["refresh_tushare_facts"]["route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(by_type["refresh_tushare_facts"]["current_backend"], "button_gated_tushare_pipeline")
+        self.assertIn("tushare", by_type["refresh_tushare_facts"]["possible_external_sources"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
+        self.assertEqual(by_type["refresh_factor_data"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertIn("tushare", by_type["refresh_factor_data"]["possible_external_sources"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
         self.assertEqual(by_type["run_deepseek_factor_explanation"]["deepseek_model_strategy_purpose"], "factor_explain")
@@ -1886,10 +2020,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
         self.assertTrue(route_coverage["call_ledger_required_for_all_known_post_routes"])
         self.assertIn("POST /api/tasks/{task_id}/cancel", discovered_routes)
+        self.assertIn("POST /api/tasks/refresh-tushare-facts", discovered_routes)
         self.assertIn("POST /api/factor-quant/run-light", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
 
     def test_worker_runtime_cache_reads_local_scaffold_without_starting_backends(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
         packet = worker_service.read_worker_runtime_cache()
 
         self.assertEqual(packet["packet_key"], "command_center_3_worker_runtime_cache")
@@ -1904,16 +2041,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["all_tasks_button_gated"])
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
-        self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 3)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 2)
+        self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 4)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 3)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 5)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
-        self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 3)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 2)
+        self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 4)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 3)
-        self.assertIn("refresh_factor_data", packet["task_implementation_status"]["stub_task_types"])
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 5)
+        self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_deepseek_factor_explanation", packet["task_implementation_status"]["guarded_local_task_types"])
         self.assertEqual(packet["task_status_summary"]["packet_key"], "command_center_3_task_status_index")
@@ -1936,10 +2074,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_status_summary"]["does_not_modify_strategy_action"])
         self.assertIn("task_status_count", packet["counts"])
         self.assertIn("task_status_call_ledger_count", packet["counts"])
-        self.assertEqual(packet["counts"]["stub_task_count"], 3)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 2)
+        self.assertEqual(packet["counts"]["stub_task_count"], 2)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 4)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 3)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 5)
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])
@@ -2002,11 +2140,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(packet["counts"]["call_ledger_count"], 1)
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
-        self.assertEqual(packet["counts"]["stub_task_count"], 3)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 2)
+        self.assertEqual(packet["counts"]["stub_task_count"], 2)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 4)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 3)
-        self.assertEqual(packet["counts"]["external_capable_task_count"], 4)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 5)
+        self.assertEqual(packet["counts"]["external_capable_task_count"], 5)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
         endpoint_by_source = {row["source"]: row for row in packet["endpoint_rows"]}
@@ -2035,11 +2173,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence", packet)
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
-        self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 3)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 2)
+        self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 4)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 3)
-        self.assertIn("refresh_factor_data", packet["task_implementation_status"]["stub_task_types"])
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 5)
+        self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_deepseek_factor_explanation", packet["task_implementation_status"]["guarded_local_task_types"])
         self.assertEqual(packet["task_persistence"]["storage_backend"], "memory_plus_sqlite_fallback")
@@ -2324,17 +2463,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         original_factor_path = factor_service.SQLITE_META_PATH
         original_next_session_path = next_session_service.SQLITE_META_PATH
         original_task_path = task_service.SQLITE_META_PATH
+        original_tushare_task_path = tushare_task_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         packet_service.SQLITE_META_PATH = db_path
         factor_service.SQLITE_META_PATH = db_path
         next_session_service.SQLITE_META_PATH = db_path
         task_service.SQLITE_META_PATH = db_path
+        tushare_task_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
         self.addCleanup(setattr, factor_service, "SQLITE_META_PATH", original_factor_path)
         self.addCleanup(setattr, next_session_service, "SQLITE_META_PATH", original_next_session_path)
         self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_path)
+        self.addCleanup(setattr, tushare_task_service, "SQLITE_META_PATH", original_tushare_task_path)
         return db_path
 
     def _with_parquet_root(self):
@@ -2614,7 +2756,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 6)
+        self.assertEqual(task_catalog["data"]["task_count"], 7)
+        self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertTrue(task_catalog["data"]["policy"]["get_catalog_cache_only"])
         self.assertTrue(task_catalog["data"]["policy"]["all_tasks_button_gated"])
         self.assertTrue(task_catalog["data"]["policy"]["call_ledger_required_for_all"])
@@ -2626,6 +2769,55 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task_catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assertFalse(task_catalog["call_ledger"][0]["external"])
         self.assertIn("GET /api/tasks/catalog", task_catalog["warnings"][0])
+
+        original_runner = tushare_task_service.run_tushare_refresh_task
+
+        def fake_runner(payload=None):
+            task = task_service.build_task_record(
+                "refresh_tushare_facts",
+                output_packet_key="command_center_tushare_refresh_packet",
+                payload=payload,
+                status="success",
+                progress=1.0,
+                current_step="tushare_refresh_completed",
+                call_ledger=[
+                    {
+                        "api": "daily",
+                        "request_params_safe": {"ts_code": "002008.SZ"},
+                        "row_count": 1,
+                        "data_date": "20260610",
+                        "local_fetched_at": "2026-06-10T15:00:00",
+                        "call_status": "success",
+                        "error_message_safe": "",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                ],
+            )
+            task["external_calls_triggered"] = True
+            task["tushare_called"] = True
+            return task
+
+        tushare_task_service.run_tushare_refresh_task = fake_runner
+        self.addCleanup(setattr, tushare_task_service, "run_tushare_refresh_task", original_runner)
+
+        refresh_response = self.client.post(
+            "/api/tasks/refresh-tushare-facts",
+            json={"ts_code": "002008.SZ", "token": "SHOULD_DROP"},
+        ).json()
+        self.assertTrue(refresh_response["ok"])
+        self.assertTrue(refresh_response["data"]["task_id"].startswith("local-"))
+        refresh_task = refresh_response["data"]["task"]
+        self.assertEqual(refresh_task["task_type"], "refresh_tushare_facts")
+        self.assertTrue(refresh_task["call_ledger"][0]["tushare_called"])
+        self.assertTrue(refresh_task["call_ledger"][0]["external_calls_triggered"])
+        self.assertTrue(refresh_task["call_ledger"][0]["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(refresh_response, ensure_ascii=False))
 
         worker = self.client.get("/api/worker/cache").json()
         self.assertTrue(worker["ok"])
@@ -3202,7 +3394,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def test_post_task_stub_returns_task_id(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
-        created = self.client.post("/api/factor-quant/refresh-data", json={"ts_code": "002008.SZ"}).json()
+        created = self.client.post("/api/chokepoint/run", json={"ts_code": "002008.SZ"}).json()
         self.assertTrue(created["ok"])
         task_id = created["data"]["task_id"]
         self.assertTrue(task_id.startswith("local-"))
