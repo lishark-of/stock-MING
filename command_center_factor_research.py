@@ -1539,6 +1539,93 @@ def _group_return_summary(xs: list[float], ys: list[float]) -> tuple[float | Non
     return top_mean - bottom_mean, bottom_mean <= middle_mean <= top_mean
 
 
+def _demean_by_group(values: list[float], groups: list[str]) -> list[float] | None:
+    if len(values) != len(groups) or len(values) < 3 or not all(groups):
+        return None
+    grouped: dict[str, list[float]] = {}
+    for value, group in zip(values, groups):
+        grouped.setdefault(str(group), []).append(value)
+    if len(grouped) < 2:
+        return None
+    means = {group: statistics.fmean(items) for group, items in grouped.items() if items}
+    return [value - means[str(group)] for value, group in zip(values, groups)]
+
+
+def _linear_residuals(values: list[float], controls: list[float]) -> list[float] | None:
+    if len(values) != len(controls) or len(values) < 3:
+        return None
+    x_mean = statistics.fmean(controls)
+    y_mean = statistics.fmean(values)
+    x_diffs = [value - x_mean for value in controls]
+    denominator = sum(value * value for value in x_diffs)
+    if denominator <= 0:
+        return None
+    slope = sum(x * (y - y_mean) for x, y in zip(x_diffs, values)) / denominator
+    intercept = y_mean - slope * x_mean
+    return [value - (intercept + slope * control) for value, control in zip(values, controls)]
+
+
+def _neutral_ic_from_observations(
+    valid_pairs: list[tuple[str, float, float, dict[str, Any]]],
+    *,
+    neutralizer: str,
+) -> float | None:
+    xs = [item[1] for item in valid_pairs]
+    ys = [item[2] for item in valid_pairs]
+    if neutralizer == "industry":
+        groups = [
+            str(row.get("industry") or row.get("industry_name") or row.get("sector") or "")
+            for _, _, _, row in valid_pairs
+        ]
+        x_resid = _demean_by_group(xs, groups)
+        y_resid = _demean_by_group(ys, groups)
+    elif neutralizer == "market_cap":
+        caps = [
+            _to_number(row.get("market_cap", row.get("total_mv", row.get("float_mv"))))
+            for _, _, _, row in valid_pairs
+        ]
+        if any(value is None or value <= 0 for value in caps):
+            return None
+        controls = [math.log(float(value)) for value in caps if value is not None]
+        x_resid = _linear_residuals(xs, controls)
+        y_resid = _linear_residuals(ys, controls)
+    else:
+        return None
+    if x_resid is None or y_resid is None:
+        return None
+    return _pearson(x_resid, y_resid)
+
+
+def _stability_from_date_splits(by_date: Mapping[str, list[tuple[float, float]]]) -> tuple[str, str]:
+    dates = sorted(key for key, pairs in by_date.items() if len(pairs) >= 3)
+    if len(dates) < 4:
+        return "not_enough_data", "not_enough_data"
+    midpoint = len(dates) // 2
+
+    def _date_ic(date_keys: list[str]) -> float | None:
+        values = []
+        for key in date_keys:
+            pairs = by_date.get(key) or []
+            ic = _pearson([item[0] for item in pairs], [item[1] for item in pairs])
+            if ic is not None:
+                values.append(ic)
+        return statistics.fmean(values) if values else None
+
+    early = _date_ic(dates[:midpoint])
+    recent = _date_ic(dates[midpoint:])
+    if early is None or recent is None:
+        return "not_enough_data", "not_enough_data"
+    stable = early == 0 or (early > 0 and recent > 0) or (early < 0 and recent < 0)
+    if not stable:
+        stability = "unstable_direction"
+    elif abs(recent) >= abs(early) * 0.5:
+        stability = "stable"
+    else:
+        stability = "weak_recent_window"
+    decay = "decaying" if abs(recent) < abs(early) * 0.5 else "not_detected"
+    return stability, decay
+
+
 def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[dict]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in _as_list(observations):
@@ -1598,6 +1685,9 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
         turnover = statistics.fmean([value for value in turnover_values if value is not None]) if any(value is not None for value in turnover_values) else None
         pit_passed = all(row.get("pit_validated") is True or row.get("pit_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
         lookahead_passed = all(row.get("lookahead_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
+        industry_neutral_ic = _neutral_ic_from_observations(valid_pairs, neutralizer="industry")
+        market_cap_neutral_ic = _neutral_ic_from_observations(valid_pairs, neutralizer="market_cap")
+        stability, recent_decay = _stability_from_date_splits(by_date)
         row = {
             "factor_key": factor_key,
             "mode": "light",
@@ -1614,10 +1704,14 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
             "turnover": round(turnover, 6) if turnover is not None else None,
             "cost_adjusted_return": round(top_bottom - (avg_cost or 0), 6) if top_bottom is not None else None,
             "max_drawdown": round(_max_drawdown_from_returns(ys), 6) if ys else None,
-            "industry_neutral_ic": None,
-            "market_cap_neutral_ic": None,
-            "out_of_sample_stability": "not_run",
-            "recent_decay": "not_run",
+            "industry_neutral_ic": round(industry_neutral_ic, 6) if industry_neutral_ic is not None else None,
+            "market_cap_neutral_ic": round(market_cap_neutral_ic, 6) if market_cap_neutral_ic is not None else None,
+            "neutralization_scope": {
+                "industry": "computed_light_observation_residual_ic" if industry_neutral_ic is not None else "not_enough_data",
+                "market_cap": "computed_light_observation_residual_ic" if market_cap_neutral_ic is not None else "not_enough_data",
+            },
+            "out_of_sample_stability": stability,
+            "recent_decay": recent_decay,
             "pit_check": "passed" if pit_passed else "pending",
             "lookahead_check": "passed" if lookahead_passed else "pending",
             "survivorship_check": "pending",

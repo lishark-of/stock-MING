@@ -395,6 +395,43 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertFalse(row["enters_strategy_action"])
         self.assertFalse(row["enters_core_action"])
 
+    def test_light_mode_factor_ic_metrics_compute_neutralized_research_metrics(self):
+        observations = []
+        industries = ["半导体", "设备"]
+        for day_index, trade_date in enumerate(["20260601", "20260602", "20260603", "20260604"], start=1):
+            for stock_index in range(1, 9):
+                local_signal = (stock_index % 4) + day_index * 0.1
+                observations.append(
+                    {
+                        "factor_key": "momentum_20d",
+                        "ts_code": f"00000{stock_index}.SZ",
+                        "trade_date": trade_date,
+                        "factor_value": local_signal + stock_index * 0.03,
+                        "forward_return": local_signal * 0.012 + stock_index * 0.0002,
+                        "transaction_cost": 0.001,
+                        "turnover": 0.18 + stock_index * 0.01,
+                        "industry": industries[stock_index % 2],
+                        "market_cap": 100 + stock_index * 20,
+                        "pit_validated": True,
+                        "lookahead_check": "passed",
+                    }
+                )
+
+        packet = factor_research.compute_light_mode_factor_ic_metrics(
+            observations=observations,
+            now="2026-06-09T11:09:30",
+        )
+        row = {item["factor_key"]: item for item in packet["items"]}["momentum_20d"]
+
+        self.assertIsNotNone(row["industry_neutral_ic"])
+        self.assertIsNotNone(row["market_cap_neutral_ic"])
+        self.assertEqual(row["neutralization_scope"]["industry"], "computed_light_observation_residual_ic")
+        self.assertEqual(row["neutralization_scope"]["market_cap"], "computed_light_observation_residual_ic")
+        self.assertIn(row["out_of_sample_stability"], {"stable", "weak_recent_window", "unstable_direction"})
+        self.assertIn(row["recent_decay"], {"not_detected", "decaying"})
+        self.assertFalse(row["enters_strategy_action"])
+        self.assertFalse(packet["quality_summary"]["allow_core_action"])
+
     def test_missing_factors_enter_missing_not_suppress(self):
         runtime = factor_research.build_factor_runtime_packet(
             daily_close_packet={"rows": []},
