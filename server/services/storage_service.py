@@ -853,6 +853,30 @@ def _safe_error_message(exc: Exception) -> str:
     return message
 
 
+def _schema_validation_for_rows(dataset: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    contract = _schema_contract(dataset)
+    required_columns = [str(item) for item in contract.get("required_columns") or []]
+    available_columns = sorted({str(key) for row in rows if isinstance(row, Mapping) for key in row.keys()})
+    missing_columns = [column for column in required_columns if column not in available_columns]
+    status = "valid" if not missing_columns else "missing_required_columns"
+    return {
+        "dataset": dataset,
+        "schema_version": contract.get("schema_version"),
+        "status": status,
+        "required_columns": required_columns,
+        "available_columns": available_columns,
+        "missing_required_columns": missing_columns,
+        "row_count": len(rows),
+        "blocks_write": bool(missing_columns),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
 def _factor_value_rows_from_hub(hub_packet: Any) -> list[dict[str, Any]]:
     hub = hub_packet if isinstance(hub_packet, Mapping) else {}
     runtime = hub.get("runtime") if isinstance(hub.get("runtime"), Mapping) else {}
@@ -896,12 +920,33 @@ def _factor_value_rows_from_hub(hub_packet: Any) -> list[dict[str, Any]]:
 
 def persist_factor_values_from_hub(hub_packet: Any) -> dict[str, Any]:
     rows = _factor_value_rows_from_hub(hub_packet)
+    schema_validation = _schema_validation_for_rows("factor_values", rows)
     if not rows:
         return {
             "status": "empty",
             "dataset": "factor_values",
+            "schema_version": schema_validation.get("schema_version"),
+            "schema_validation": schema_validation,
+            "schema_validation_status": schema_validation.get("status"),
             "row_count": 0,
             "path": _path_label(parquet_store.dataset_path(root=PARQUET_ROOT, name="factor_values")),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_modify_strategy_action": True,
+            "does_not_execute_trades": True,
+        }
+    if schema_validation.get("blocks_write"):
+        return {
+            "status": "schema_invalid",
+            "dataset": "factor_values",
+            "schema_version": schema_validation.get("schema_version"),
+            "schema_validation": schema_validation,
+            "schema_validation_status": schema_validation.get("status"),
+            "row_count": 0,
+            "path": _path_label(parquet_store.dataset_path(root=PARQUET_ROOT, name="factor_values")),
+            "error_message_safe": "factor_values schema missing required columns",
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -914,6 +959,9 @@ def persist_factor_values_from_hub(hub_packet: Any) -> dict[str, Any]:
         return {
             "status": "dependency_missing",
             "dataset": "factor_values",
+            "schema_version": schema_validation.get("schema_version"),
+            "schema_validation": schema_validation,
+            "schema_validation_status": schema_validation.get("status"),
             "row_count": 0,
             "path": _path_label(parquet_store.dataset_path(root=PARQUET_ROOT, name="factor_values")),
             "dependency": dependency,
@@ -938,6 +986,9 @@ def persist_factor_values_from_hub(hub_packet: Any) -> dict[str, Any]:
     result.update(
         {
             "dataset": "factor_values",
+            "schema_version": schema_validation.get("schema_version"),
+            "schema_validation": schema_validation,
+            "schema_validation_status": schema_validation.get("status"),
             "path": _path_label(Path(result.get("path") or parquet_store.dataset_path(root=PARQUET_ROOT, name="factor_values"))),
             "external_calls_triggered": False,
             "tushare_called": False,

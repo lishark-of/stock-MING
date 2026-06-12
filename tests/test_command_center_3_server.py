@@ -1815,6 +1815,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(row["source"], "local_factor_light_pipeline")
         self.assertNotIn("SHOULD_DROP", json.dumps(row, ensure_ascii=False))
 
+        validation = storage_service._schema_validation_for_rows("factor_values", rows)
+        self.assertEqual(validation["status"], "valid")
+        self.assertEqual(validation["schema_version"], "storage.factor_values.v1")
+        self.assertFalse(validation["blocks_write"])
+        self.assertFalse(validation["external_calls_triggered"])
+
+    def test_persist_factor_values_blocks_schema_invalid_rows(self):
+        original_rows_from_hub = storage_service._factor_value_rows_from_hub
+        storage_service._factor_value_rows_from_hub = lambda _hub: [{"factor_key": "momentum_20d"}]
+        self.addCleanup(setattr, storage_service, "_factor_value_rows_from_hub", original_rows_from_hub)
+
+        result = storage_service.persist_factor_values_from_hub({"runtime": {"factor_values": [{"factor_key": "momentum_20d"}]}})
+
+        self.assertEqual(result["status"], "schema_invalid")
+        self.assertEqual(result["schema_version"], "storage.factor_values.v1")
+        self.assertEqual(result["schema_validation_status"], "missing_required_columns")
+        self.assertIn("ts_code", result["schema_validation"]["missing_required_columns"])
+        self.assertIn("trade_date", result["schema_validation"]["missing_required_columns"])
+        self.assertEqual(result["row_count"], 0)
+        self.assertFalse(result["external_calls_triggered"])
+        self.assertTrue(result["does_not_modify_strategy_action"])
+
     def test_persist_factor_values_failed_write_returns_safe_status(self):
         self._with_parquet_root()
         original_dependency_status = storage_service.parquet_store.dependency_status
