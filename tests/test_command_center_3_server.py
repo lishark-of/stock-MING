@@ -1799,12 +1799,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["api_groups"]["calendar"], ["trade_cal"])
         validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
         self.assertEqual(validation_by_api["daily"]["validation_status"], "validated_success")
+        self.assertEqual(validation_by_api["daily"]["validation_scope"], "task_call_result")
         self.assertEqual(validation_by_api["daily"]["group"], "core")
         self.assertTrue(validation_by_api["daily"]["parquet_enabled"])
         self.assertEqual(validation_by_api["trade_cal"]["validation_status"], "not_requested")
+        self.assertEqual(validation_by_api["trade_cal"]["validation_scope"], "capability_matrix_only")
         self.assertEqual(validation_by_api["trade_cal"]["group"], "calendar")
         self.assertTrue(validation_by_api["trade_cal"]["parquet_enabled"])
         self.assertFalse(validation_by_api["limit_list_d"]["selected"])
+        self.assertTrue(persisted["api_validation_summary"]["does_not_claim_unselected_apis_verified"])
+        self.assertIn("trade_cal", persisted["api_validation_matrix_policy"]["matrix_only_apis"])
+        self.assertEqual(persisted["api_validation_matrix_policy"]["call_ledger_required_fields"][0], "api")
 
     def test_tushare_refresh_task_validates_trade_calendar_and_extended_apis_without_false_parquet_claims(self):
         db_path = self._with_meta_store()
@@ -1863,12 +1868,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
         self.assertEqual(validation_by_api["trade_cal"]["group"], "calendar")
         self.assertEqual(validation_by_api["trade_cal"]["validation_status"], "validated_success")
+        self.assertEqual(validation_by_api["trade_cal"]["validation_scope"], "task_call_result")
         self.assertTrue(validation_by_api["trade_cal"]["parquet_enabled"])
         self.assertEqual(validation_by_api["margin_detail"]["group"], "extended")
         self.assertEqual(validation_by_api["margin_detail"]["validation_status"], "validated_empty")
+        self.assertEqual(validation_by_api["margin_detail"]["validation_scope"], "task_call_result")
         self.assertFalse(validation_by_api["margin_detail"]["parquet_enabled"])
         self.assertEqual(validation_by_api["limit_cpt_list"]["validation_status"], "validated_failed")
+        self.assertEqual(validation_by_api["limit_cpt_list"]["validation_scope"], "task_call_result")
         self.assertEqual(validation_by_api["daily"]["validation_status"], "not_requested")
+        self.assertEqual(validation_by_api["daily"]["validation_scope"], "capability_matrix_only")
+        self.assertEqual(persisted["api_validation_summary"]["task_call_result_count"], 3)
+        self.assertIn("daily", persisted["api_validation_matrix_policy"]["matrix_only_apis"])
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -1907,6 +1918,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["api_validation_summary"]["calendar_api_count"], 1)
         self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], len(tushare_task_service.ALL_REFRESH_APIS))
         self.assertEqual(persisted["api_validation_summary"]["blocked_count"], persisted["blocked_count"])
+        self.assertGreater(persisted["api_validation_summary"]["preflight_blocked_count"], 0)
+        validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
+        self.assertEqual(validation_by_api["daily"]["validation_scope"], "preflight_blocked")
+        self.assertEqual(validation_by_api["trade_cal"]["validation_scope"], "task_call_result")
+        self.assertEqual(persisted["api_validation_matrix_policy"]["matrix_only_apis"], [])
 
     def test_tushare_refresh_task_failure_keeps_safe_error_and_action_boundary(self):
         self._with_meta_store()
@@ -2178,12 +2194,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["refresh_tushare_facts"]["default_core_apis"], ["daily", "daily_basic", "moneyflow"])
         self.assertEqual(by_type["refresh_tushare_facts"]["calendar_apis"], ["trade_cal"])
         self.assertIn("limit_cpt_list", by_type["refresh_tushare_facts"]["optional_extended_apis"])
-        self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow"])
+        self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
+        self.assertIn("unselected APIs are capability matrix only", by_type["refresh_tushare_facts"]["api_validation_matrix_policy"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
         self.assertEqual(by_type["refresh_factor_data"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertIn("tushare", by_type["refresh_factor_data"]["possible_external_sources"])
         self.assertEqual(by_type["refresh_factor_data"]["calendar_apis"], ["trade_cal"])
+        self.assertEqual(by_type["refresh_factor_data"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
         self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
         self.assertEqual(by_type["run_deepseek_factor_explanation"]["deepseek_model_strategy_purpose"], "factor_explain")

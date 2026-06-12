@@ -55,6 +55,15 @@ REFRESH_API_SPECS = {
 }
 SECRET_MARKERS = ("token", "api_key", "apikey", "authorization", "bearer", "secret", "password")
 STACK_MARKERS = ("traceback", 'file "', " line ", "exception")
+CALL_LEDGER_REQUIRED_FIELDS = (
+    "api",
+    "request_params_safe",
+    "row_count",
+    "data_date",
+    "local_fetched_at",
+    "call_status",
+    "error_message_safe",
+)
 
 
 def _now_iso() -> str:
@@ -168,18 +177,33 @@ def _api_validation_rows(selected_apis: Iterable[str], call_ledger: list[dict[st
         api = str(capability["api"])
         ledger = ledger_by_api.get(api, {})
         call_status = str(ledger.get("call_status") or ("not_requested" if api not in selected_set else "not_called"))
+        selected = api in selected_set
+        called = bool(ledger)
+        if called and call_status.startswith("blocked_"):
+            validation_scope = "preflight_blocked"
+        elif called:
+            validation_scope = "task_call_result"
+        elif selected:
+            validation_scope = "selected_not_called"
+        else:
+            validation_scope = "capability_matrix_only"
         rows.append(
             {
                 **capability,
-                "called": bool(ledger),
+                "called": called,
                 "call_status": call_status,
                 "validation_status": _validation_status(call_status),
+                "validation_scope": validation_scope,
+                "result_semantics": "unselected API 只代表能力矩阵，不代表真实调用或数据可用。" if not selected else "selected API 必须以 call_ledger 为准；失败、空数据和缺参不得伪装成 verified。",
                 "row_count": int(ledger.get("row_count") or 0),
                 "data_date": ledger.get("data_date"),
                 "local_fetched_at": ledger.get("local_fetched_at"),
                 "error_message_safe": ledger.get("error_message_safe", ""),
                 "parquet_status": ledger.get("parquet_status", "not_enabled" if not capability.get("parquet_enabled") else "not_written"),
                 "parquet_row_count": int(ledger.get("parquet_row_count") or 0),
+                "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
+                "cache_boundary": "GET cache API 不能调用该接口；只有 POST 按钮任务可以进入刷新管线。",
+                "action_boundary": "不会执行真实交易，不会修改 strategy action。",
             }
         )
     return rows
@@ -215,6 +239,10 @@ def _api_validation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "button_gated_external_calls_only": True,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
+        "matrix_only_api_count": len([row for row in rows if row.get("validation_scope") == "capability_matrix_only"]),
+        "task_call_result_count": len([row for row in rows if row.get("validation_scope") == "task_call_result"]),
+        "preflight_blocked_count": len([row for row in rows if row.get("validation_scope") == "preflight_blocked"]),
+        "does_not_claim_unselected_apis_verified": True,
     }
 
 
@@ -456,6 +484,17 @@ def run_tushare_refresh_task(
         "api_capability_rows": _api_capability_rows(selected_apis),
         "api_validation_rows": api_validation_rows,
         "api_validation_summary": api_validation_summary,
+        "api_validation_matrix_policy": {
+            "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
+            "selected_apis": list(selected_apis),
+            "matrix_only_apis": [row["api"] for row in api_validation_rows if row.get("validation_scope") == "capability_matrix_only"],
+            "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
+            "cache_get_external_calls": False,
+            "button_gated_external_calls_only": True,
+            "does_not_claim_unselected_apis_verified": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
         "call_ledger": call_ledger,
         "call_count": len(call_ledger),
         "success_count": len(success_or_empty),
