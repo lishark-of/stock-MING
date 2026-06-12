@@ -373,6 +373,9 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
             row["group_return_buckets"][-1]["mean_forward_return"],
         )
         self.assertGreater(row["cost_adjusted_return"], 0)
+        self.assertEqual(row["max_drawdown"], 0.0)
+        self.assertEqual(row["max_drawdown_scope"], "top_bottom_daily_spread")
+        self.assertEqual(row["max_drawdown_window_count"], 4)
         self.assertEqual(row["pit_check"], "passed")
         self.assertEqual(row["lookahead_check"], "passed")
         self.assertEqual(row["sample_split_stability"]["method"], "chronological_half_split_light_observations")
@@ -387,6 +390,38 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
+
+    def test_light_mode_factor_ic_metrics_compute_top_bottom_drawdown(self):
+        returns_by_date = {
+            "20260601": lambda stock_index: stock_index * 0.01,
+            "20260602": lambda stock_index: stock_index * -0.01,
+            "20260603": lambda stock_index: stock_index * 0.012,
+        }
+        observations = []
+        for trade_date, return_fn in returns_by_date.items():
+            for stock_index in range(1, 7):
+                observations.append(
+                    {
+                        "factor_key": "momentum_20d",
+                        "ts_code": f"00000{stock_index}.SZ",
+                        "trade_date": trade_date,
+                        "factor_value": stock_index,
+                        "forward_return": return_fn(stock_index),
+                        "transaction_cost": 0.001,
+                        "turnover": 0.2,
+                        "pit_validated": True,
+                        "lookahead_check": "passed",
+                    }
+                )
+
+        packet = factor_research.compute_light_mode_factor_ic_metrics(observations=observations)
+        row = {item["factor_key"]: item for item in packet["items"]}["momentum_20d"]
+
+        self.assertLess(row["max_drawdown"], 0)
+        self.assertEqual(row["max_drawdown_scope"], "top_bottom_daily_spread")
+        self.assertEqual(row["max_drawdown_window_count"], 3)
+        self.assertFalse(row["enters_strategy_action"])
+        self.assertFalse(packet["quality_summary"]["allow_core_action"])
 
     def test_light_mode_factor_ic_metrics_do_not_pass_without_pit_validation(self):
         observations = [

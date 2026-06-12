@@ -1745,6 +1745,26 @@ def _group_return_summary(xs: list[float], ys: list[float]) -> tuple[float | Non
     return details["top_bottom_group_return"], details["group_return_monotonicity"]
 
 
+def _top_bottom_spread_returns_by_date(
+    by_date: Mapping[str, list[tuple[float, float]]],
+) -> list[dict[str, Any]]:
+    spreads: list[dict[str, Any]] = []
+    for trade_date in sorted(by_date):
+        pairs = by_date.get(trade_date) or []
+        details = _group_return_details([item[0] for item in pairs], [item[1] for item in pairs])
+        spread = _to_number(details.get("top_bottom_group_return"))
+        if spread is None:
+            continue
+        spreads.append(
+            {
+                "trade_date": trade_date,
+                "spread_return": round(spread, 6),
+                "source": "top_bottom_group_return",
+            }
+        )
+    return spreads
+
+
 def _demean_by_group(values: list[float], groups: list[str]) -> list[float] | None:
     if len(values) != len(groups) or len(values) < 3 or not all(groups):
         return None
@@ -1918,6 +1938,12 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
         group_return_details = _group_return_details(xs, ys)
         top_bottom = group_return_details["top_bottom_group_return"]
         monotonicity = group_return_details["group_return_monotonicity"]
+        daily_spread_returns = _top_bottom_spread_returns_by_date(by_date)
+        max_drawdown = (
+            _max_drawdown_from_returns([item["spread_return"] for item in daily_spread_returns])
+            if len(daily_spread_returns) >= 2
+            else None
+        )
         costs = [_to_number(row.get("transaction_cost", row.get("cost"))) for _, _, _, row in valid_pairs]
         avg_cost = statistics.fmean([value for value in costs if value is not None]) if any(value is not None for value in costs) else None
         turnover_values = [_to_number(row.get("turnover")) for _, _, _, row in valid_pairs]
@@ -1945,7 +1971,9 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
             "group_return_buckets": group_return_details["group_return_buckets"],
             "turnover": round(turnover, 6) if turnover is not None else None,
             "cost_adjusted_return": round(top_bottom - (avg_cost or 0), 6) if top_bottom is not None else None,
-            "max_drawdown": round(_max_drawdown_from_returns(ys), 6) if ys else None,
+            "max_drawdown": round(max_drawdown, 6) if max_drawdown is not None else None,
+            "max_drawdown_scope": "top_bottom_daily_spread" if len(daily_spread_returns) >= 2 else "not_enough_data",
+            "max_drawdown_window_count": len(daily_spread_returns),
             "industry_neutral_ic": round(industry_neutral_ic, 6) if industry_neutral_ic is not None else None,
             "market_cap_neutral_ic": round(market_cap_neutral_ic, 6) if market_cap_neutral_ic is not None else None,
             "neutralization_scope": {
