@@ -33,7 +33,7 @@ SUPPORTED_PARQUET_DATASETS = {
 CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"]
 DUCKDB_QUERY_DEFAULT_LIMIT = 100
 DUCKDB_QUERY_MAX_LIMIT = 10000
-DUCKDB_QUERY_FILTER_PARAMS = ["limit", "ts_code", "trade_date", "start_date", "end_date"]
+DUCKDB_QUERY_FILTER_PARAMS = ["limit", "cursor", "ts_code", "trade_date", "start_date", "end_date"]
 DATASET_TTL_SECONDS = {
     "factor_values": 6 * 60 * 60,
     "daily": 24 * 60 * 60,
@@ -164,6 +164,14 @@ DATASET_SCHEMA_CONTRACTS = {
         "required_columns": ["strategy_key", "universe", "run_date", "status", "metrics"],
         "recommended_partition_columns": ["run_date"],
     },
+}
+DATASET_QUERY_PROJECTION_COLUMNS = {
+    "factor_values": ["ts_code", "trade_date", "factor_key", "raw_value", "data_status", "calculated_at"],
+    "daily": ["ts_code", "trade_date", "open", "high", "low", "close", "vol", "amount"],
+    "daily_basic": ["ts_code", "trade_date", "turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv"],
+    "moneyflow": ["ts_code", "trade_date", "buy_sm_amount", "sell_sm_amount", "buy_lg_amount", "sell_lg_amount"],
+    "trade_cal": ["exchange", "cal_date", "is_open", "pretrade_date"],
+    "backtest_results": ["strategy_key", "universe", "run_date", "status", "metrics"],
 }
 DATASET_CATALOG = [
     {
@@ -463,6 +471,13 @@ def _dataset_catalog_item(dataset: str) -> dict[str, Any]:
         if item.get("dataset") == dataset:
             return dict(item)
     return {"dataset": dataset}
+
+
+def _dataset_query_projection_columns(dataset: str) -> list[str]:
+    projection = DATASET_QUERY_PROJECTION_COLUMNS.get(dataset)
+    if projection:
+        return list(projection)
+    return [str(column) for column in _schema_contract(dataset).get("required_columns") or []]
 
 
 def _schema_migration_row(dataset: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -1182,8 +1197,10 @@ def _duckdb_query_service_row(dataset: str) -> dict[str, Any]:
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
     date_column = str(contract.get("date_column") or "")
     entity_columns = [str(item) for item in contract.get("entity_columns") or []]
+    projection_columns = _dataset_query_projection_columns(dataset)
     filter_columns = {
         "limit": "result_limit",
+        "cursor": "offset_cursor",
         "ts_code": "ts_code" if "ts_code" in entity_columns or dataset in {"daily", "daily_basic", "moneyflow", "factor_values"} else "",
         "trade_date": date_column,
         "start_date": date_column,
@@ -1211,6 +1228,9 @@ def _duckdb_query_service_row(dataset: str) -> dict[str, Any]:
         "path": _path_label(parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)),
         "date_column": date_column,
         "entity_columns": entity_columns,
+        "projection_columns": projection_columns,
+        "query_result_contract_schema_version": "duckdb_query_result_contract.v1",
+        "cursor_pagination": "offset_cursor",
         "supported_filter_params": supported_filters,
         "filter_columns": filter_columns,
         "skipped_filter_params": skipped_filters,
@@ -1218,6 +1238,9 @@ def _duckdb_query_service_row(dataset: str) -> dict[str, Any]:
         "max_limit": DUCKDB_QUERY_MAX_LIMIT,
         "safe_limit_enforced": True,
         "safe_parameter_binding": True,
+        "typed_projection_enabled": True,
+        "query_result_contract_enabled": True,
+        "cursor_pagination_enabled": True,
         "query_path_policy": "canonical_dataset_path_only",
         "frontend_executes_query": False,
         "ui_direct_dataframe_read": False,
@@ -1248,6 +1271,11 @@ def duckdb_query_service_policy() -> dict[str, Any]:
         "max_limit": DUCKDB_QUERY_MAX_LIMIT,
         "safe_limit_enforced": True,
         "safe_parameter_binding": True,
+        "typed_projection_enabled": True,
+        "query_result_contract_enabled": True,
+        "query_result_contract_schema_version": "duckdb_query_result_contract.v1",
+        "cursor_pagination_enabled": True,
+        "cursor_policy": "offset_cursor",
         "canonical_path_only": True,
         "frontend_executes_query": False,
         "ui_direct_dataframe_read": False,
@@ -1263,7 +1291,7 @@ def duckdb_query_service_policy() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
         "dependency": dependency,
-        "next_action": "add typed projections and cursor pagination before full-pool Factor Test Lab reads.",
+        "next_action": "add UI cursor controls and Factor Test Lab query consumption before full-pool research reads.",
         "call_ledger": _storage_cache_call_ledger(
             "local_storage_duckdb_query_service_policy",
             endpoint="GET /api/storage",
@@ -1707,6 +1735,9 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "query_wrapper": duckdb_query_service["query_wrapper"],
             "max_limit": duckdb_query_service["max_limit"],
             "safe_parameter_binding": duckdb_query_service["safe_parameter_binding"],
+            "typed_projection_enabled": duckdb_query_service["typed_projection_enabled"],
+            "query_result_contract_enabled": duckdb_query_service["query_result_contract_enabled"],
+            "cursor_pagination_enabled": duckdb_query_service["cursor_pagination_enabled"],
             "frontend_executes_query": duckdb_query_service["frontend_executes_query"],
             "cache_get_writes_files": duckdb_query_service["cache_get_writes_files"],
             "next_action": duckdb_query_service["next_action"],
@@ -1764,6 +1795,10 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "duckdb_query_wrapper": duckdb_query_service["query_wrapper"],
         "duckdb_query_max_limit": duckdb_query_service["max_limit"],
         "duckdb_query_safe_parameter_binding": duckdb_query_service["safe_parameter_binding"],
+        "duckdb_query_typed_projection_enabled": duckdb_query_service["typed_projection_enabled"],
+        "duckdb_query_result_contract_enabled": duckdb_query_service["query_result_contract_enabled"],
+        "duckdb_query_result_contract_schema_version": duckdb_query_service["query_result_contract_schema_version"],
+        "duckdb_query_cursor_pagination_enabled": duckdb_query_service["cursor_pagination_enabled"],
         "duckdb_query_frontend_executes_queries": duckdb_query_service["frontend_executes_query"],
         "duckdb_query_cache_get_external_calls": duckdb_query_service["cache_get_external_calls"],
         "duckdb_query_cache_get_writes_files": duckdb_query_service["cache_get_writes_files"],
@@ -1921,6 +1956,7 @@ def parquet_dataset_status(
     dataset: str,
     *,
     limit: int = 100,
+    cursor: str | int | None = None,
     ts_code: str | None = None,
     trade_date: str | int | None = None,
     start_date: str | int | None = None,
@@ -1959,6 +1995,8 @@ def parquet_dataset_status(
     query = duckdb_store.query_parquet_dataset(
         path,
         limit=limit,
+        cursor=cursor,
+        projection_columns=_dataset_query_projection_columns(selected),
         ts_code=ts_code,
         trade_date=trade_date,
         start_date=start_date,
@@ -1984,6 +2022,10 @@ def parquet_dataset_status(
         "query_filters": query.get("query_filters") or {},
         "applied_filters": query.get("applied_filters") or [],
         "skipped_filters": query.get("skipped_filters") or [],
+        "query_result_contract": query.get("query_result_contract") or {},
+        "page_info": query.get("page_info") or {},
+        "projected_columns": query.get("projected_columns") or [],
+        "missing_projected_columns": query.get("missing_projected_columns") or [],
         "row_count": int(query.get("row_count") or 0),
         "cache_only": True,
         "external_calls_triggered": False,
@@ -2006,6 +2048,7 @@ def parquet_dataset_status(
 def factor_values_status(
     *,
     limit: int = 100,
+    cursor: str | int | None = None,
     ts_code: str | None = None,
     trade_date: str | int | None = None,
     start_date: str | int | None = None,
@@ -2014,6 +2057,7 @@ def factor_values_status(
     packet = parquet_dataset_status(
         "factor_values",
         limit=limit,
+        cursor=cursor,
         ts_code=ts_code,
         trade_date=trade_date,
         start_date=start_date,

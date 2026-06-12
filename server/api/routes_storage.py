@@ -21,6 +21,7 @@ def get_storage_overview(limit: int = 20) -> dict:
 @router.get("/factor-values")
 def get_factor_values_status(
     limit: int = 100,
+    cursor: str | None = None,
     ts_code: str | None = None,
     trade_date: str | None = None,
     start_date: str | None = None,
@@ -28,6 +29,7 @@ def get_factor_values_status(
 ) -> dict:
     packet = storage_service.factor_values_status(
         limit=limit,
+        cursor=cursor,
         ts_code=ts_code,
         trade_date=trade_date,
         start_date=start_date,
@@ -82,6 +84,7 @@ def run_storage_cache_ttl_dry_run(payload: dict[str, Any] | None = None) -> dict
 def get_parquet_dataset_status(
     dataset: str,
     limit: int = 100,
+    cursor: str | None = None,
     ts_code: str | None = None,
     trade_date: str | None = None,
     start_date: str | None = None,
@@ -90,6 +93,7 @@ def get_parquet_dataset_status(
     packet = storage_service.parquet_dataset_status(
         dataset,
         limit=limit,
+        cursor=cursor,
         ts_code=ts_code,
         trade_date=trade_date,
         start_date=start_date,
