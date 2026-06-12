@@ -19,6 +19,15 @@ SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan"}
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
+FULL_POOL_FILTER_DEFAULTS = {
+    "exclude_st": True,
+    "exclude_chinext": True,
+    "exclude_star": True,
+    "exclude_bj": True,
+    "exclude_low_amount": True,
+    "trend_up_only": True,
+}
+FULL_POOL_REQUIRED_STORAGE_DATASETS = ["daily", "daily_basic", "moneyflow", "trade_cal"]
 LEGACY_RADAR_SIGNAL_GROUPS = [
     {
         "group": "radar_packet",
@@ -163,10 +172,10 @@ SCAN_MODE_STATUS_ROWS = [
     },
     {
         "scan_mode": "full_pool_scan",
-        "status": "planned_future_task",
+        "status": "planned_future_task_read_plan_available",
         "scope": "A-share broad/index pool scan",
         "external_calls": "button_gated_future",
-        "notes": "Must move slow provider refreshes behind explicit POST tasks, never render.",
+        "notes": "Full-pool plan can be generated locally; actual scan still requires future worker execution and explicit provider refresh tasks.",
     },
     {
         "scan_mode": "manual_deep_research",
@@ -1193,6 +1202,237 @@ def _scan_coverage(
     }
 
 
+def _full_pool_filter_rows(payload_safe: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key, default in FULL_POOL_FILTER_DEFAULTS.items():
+        value = payload_safe.get(key, default)
+        if isinstance(value, str):
+            enabled = value.strip().lower() not in {"false", "0", "no", "off"}
+        else:
+            enabled = bool(value)
+        rows.append(
+            {
+                "filter_key": key,
+                "enabled": enabled,
+                "default_enabled": default,
+                "source": "payload" if key in payload_safe else "default",
+                "effect": "candidate_exclusion_before_scoring",
+                "applied_now": False,
+                "requires_future_scan_execution": True,
+                "does_not_scan_full_market_on_plan": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_execute_trades": True,
+            }
+        )
+    return rows
+
+
+def _full_pool_stage_rows(
+    *,
+    provider_rows: list[dict[str, Any]],
+    freshness_state: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    provider_gap_count = sum(1 for row in provider_rows if row.get("coverage_status") != "available")
+    freshness_missing = freshness_state.get("source") == "missing"
+    return [
+        {
+            "stage": "load_universe",
+            "status": "planned_worker_required",
+            "source": "future local universe dataset or explicit task payload",
+            "executed_now": False,
+            "external_calls_triggered": False,
+            "blocker": "full_pool_universe_not_loaded_in_plan_task",
+        },
+        {
+            "stage": "apply_filters",
+            "status": "planned_filters_declared",
+            "source": "full_pool_filter_rows",
+            "executed_now": False,
+            "external_calls_triggered": False,
+            "blocker": "",
+        },
+        {
+            "stage": "read_local_storage",
+            "status": "planned_storage_contract_required",
+            "source": ",".join(FULL_POOL_REQUIRED_STORAGE_DATASETS),
+            "executed_now": False,
+            "external_calls_triggered": False,
+            "blocker": "storage_query_contracts_must_be_consumed_by_future_worker",
+        },
+        {
+            "stage": "provider_refresh",
+            "status": "blocked_until_explicit_provider_tasks" if provider_gap_count else "optional_if_cache_fresh",
+            "source": "Tushare button-gated refresh tasks",
+            "executed_now": False,
+            "external_calls_triggered": False,
+            "blocker": "provider_gaps_present" if provider_gap_count else "",
+        },
+        {
+            "stage": "freshness_gate",
+            "status": "blocked_until_current_freshness" if freshness_missing else "planned_gate_required",
+            "source": "data_freshness/trade_cal",
+            "executed_now": False,
+            "external_calls_triggered": False,
+            "blocker": "freshness_state_missing" if freshness_missing else "",
+        },
+        {
+            "stage": "score_candidates",
+            "status": "planned_research_only",
+            "source": "legacy radar scoring parity map",
+            "executed_now": False,
+            "external_calls_triggered": False,
+            "blocker": "scoring_not_executed_in_plan_task",
+        },
+        {
+            "stage": "write_candidate_packet",
+            "status": "planned_after_worker_scan",
+            "source": PACKET_KEY,
+            "executed_now": False,
+            "external_calls_triggered": False,
+            "blocker": "full_pool_packet_not_written_by_plan",
+        },
+    ]
+
+
+def _full_pool_blocker_rows(
+    *,
+    provider_rows: list[dict[str, Any]],
+    freshness_state: Mapping[str, Any],
+    source_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = [
+        {
+            "blocker_key": "worker_required",
+            "severity": "production_required",
+            "status": "blocked",
+            "message": "full_pool_scan must run through future worker/task execution, not page render.",
+            "blocks_full_pool_scan": True,
+        }
+    ]
+    if freshness_state.get("source") == "missing":
+        rows.append(
+            {
+                "blocker_key": "freshness_missing",
+                "severity": "freshness_gap",
+                "status": "blocked",
+                "message": "freshness_state is missing; full-pool candidates would be research-only.",
+                "blocks_full_pool_scan": True,
+            }
+        )
+    for row in provider_rows:
+        if row.get("coverage_status") == "available":
+            continue
+        rows.append(
+            {
+                "blocker_key": f"provider_{row.get('signal_group')}",
+                "severity": row.get("severity") or "coverage_gap",
+                "status": row.get("coverage_status") or "unknown",
+                "message": f"{row.get('label')} provider coverage is {row.get('coverage_status')}.",
+                "blocks_full_pool_scan": True,
+            }
+        )
+    missing_groups = [row.get("group") for row in source_rows if not row.get("present")]
+    if missing_groups:
+        rows.append(
+            {
+                "blocker_key": "legacy_signal_group_gaps",
+                "severity": "parity_gap",
+                "status": "missing_reported",
+                "message": "Legacy radar signal groups are not all mapped in current cache.",
+                "missing_signal_groups": missing_groups,
+                "blocks_full_pool_scan": False,
+            }
+        )
+    for row in rows:
+        row.update(
+            {
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _full_pool_required_signal_rows(provider_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    by_group = {str(row.get("signal_group") or ""): row for row in provider_rows}
+    for requirement in RADAR_PROVIDER_SIGNAL_REQUIREMENTS:
+        coverage = by_group.get(str(requirement["signal_group"])) or {}
+        rows.append(
+            {
+                "signal_group": requirement["signal_group"],
+                "label": requirement["label"],
+                "required_apis": requirement["apis"],
+                "legacy_role": requirement["legacy_role"],
+                "coverage_status": coverage.get("coverage_status") or "missing_provider_data",
+                "matched_provider_row_count": coverage.get("matched_provider_row_count") or 0,
+                "ready_for_full_pool": coverage.get("coverage_status") == "available",
+                "requires_explicit_provider_task": coverage.get("coverage_status") != "available",
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _build_full_pool_scan_plan(
+    snapshot_map: Mapping[str, Any],
+    payload_safe: Mapping[str, Any],
+    *,
+    now: str,
+) -> dict[str, Any]:
+    provider_rows = _provider_coverage_rows(snapshot_map)
+    freshness_state = _candidate_freshness_state(snapshot_map)
+    source_rows = _source_group_rows(snapshot_map)
+    filter_rows = _full_pool_filter_rows(payload_safe)
+    blocker_rows = _full_pool_blocker_rows(
+        provider_rows=provider_rows,
+        freshness_state=freshness_state,
+        source_rows=source_rows,
+    )
+    stage_rows = _full_pool_stage_rows(provider_rows=provider_rows, freshness_state=freshness_state)
+    signal_rows = _full_pool_required_signal_rows(provider_rows)
+    blocking_count = sum(1 for row in blocker_rows if row.get("blocks_full_pool_scan"))
+    return {
+        "schema_version": "candidate_radar_full_pool_plan.v1",
+        "status": "full_pool_plan_ready",
+        "task_type": "run_candidate_radar_full_pool_plan",
+        "created_at": now,
+        "requested_scan_mode": "full_pool_scan",
+        "full_pool_scan_done": False,
+        "full_pool_validation_done": False,
+        "worker_task_required": True,
+        "worker_task_consumption_plan_ready": True,
+        "page_render_starts_full_pool": False,
+        "cache_get_starts_full_pool": False,
+        "provider_refresh_executed": False,
+        "candidate_scoring_executed": False,
+        "candidate_packet_written_by_plan": False,
+        "storage_datasets_required": list(FULL_POOL_REQUIRED_STORAGE_DATASETS),
+        "required_signal_group_count": len(signal_rows),
+        "ready_signal_group_count": sum(1 for row in signal_rows if row.get("ready_for_full_pool")),
+        "provider_gap_count": sum(1 for row in signal_rows if not row.get("ready_for_full_pool")),
+        "blocking_issue_count": blocking_count,
+        "filter_rows": filter_rows,
+        "stage_rows": stage_rows,
+        "required_signal_rows": signal_rows,
+        "blocker_rows": blocker_rows,
+        "legacy_signal_group_rows": source_rows,
+        "freshness_state": freshness_state,
+        "research_only": True,
+        "candidate_is_not_buy_instruction": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "warning": "Full-pool plan only records prerequisites and blockers; it does not scan the market or produce buy candidates.",
+    }
+
+
 def _build_candidate_radar_packet(
     snapshot: Mapping[str, Any],
     *,
@@ -1202,6 +1442,7 @@ def _build_candidate_radar_packet(
     request_params_safe: dict[str, Any] | None = None,
     local_pool_audit: Mapping[str, Any] | None = None,
     local_pool_skipped_rows: list[dict[str, Any]] | None = None,
+    full_pool_scan_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
@@ -1239,6 +1480,12 @@ def _build_candidate_radar_packet(
     counts["missing_provider_data_group_count"] = coverage["coverage_detail_summary"]["missing_provider_data_group_count"]
     counts["degraded_mode_active_count"] = coverage["coverage_detail_summary"]["degraded_mode_active_count"]
     counts["universe_size"] = coverage["coverage_detail_summary"]["universe_size"]
+    plan = dict(full_pool_scan_plan or _as_dict(snapshot_map.get("full_pool_scan_plan")))
+    full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
+    if plan:
+        counts["full_pool_plan_blocking_issue_count"] = plan.get("blocking_issue_count")
+        counts["full_pool_plan_ready_signal_group_count"] = plan.get("ready_signal_group_count")
+        counts["full_pool_plan_provider_gap_count"] = plan.get("provider_gap_count")
 
     if candidate_rows:
         status = "ready"
@@ -1295,6 +1542,11 @@ def _build_candidate_radar_packet(
             excluded_candidates=excluded_candidates,
         ),
         "scan_mode_status_rows": [dict(row) for row in SCAN_MODE_STATUS_ROWS],
+        "full_pool_scan_plan": plan,
+        "full_pool_plan_stage_rows": _as_list(plan.get("stage_rows")),
+        "full_pool_plan_filter_rows": _as_list(plan.get("filter_rows")),
+        "full_pool_required_signal_rows": _as_list(plan.get("required_signal_rows")),
+        "full_pool_blocker_rows": full_pool_blocker_rows,
         "skipped_reason_rows": coverage["skipped_reason_rows"],
         "freshness_state": coverage["freshness_state"],
         "candidate_rows": candidate_rows,
@@ -1322,6 +1574,9 @@ def _build_candidate_radar_packet(
             "stale_inputs_are_research_only": True,
             "degraded_modes_are_visible": True,
             "full_pool_scan_requires_future_worker": True,
+            "full_pool_plan_is_not_full_pool_scan": True,
+            "full_pool_plan_writes_no_candidates": True,
+            "full_pool_plan_provider_refresh_executed": False,
             "does_not_run_backtest": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -1504,4 +1759,85 @@ def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
         current_step=f"candidate_radar_{task_scan_label}_completed",
         call_ledger=[quick_ledger],
         warning=final_warning,
+    ) or task
+
+
+def run_candidate_full_pool_plan_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_candidate_radar_full_pool_plan",
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_full_pool_plan_queued",
+        warnings=[
+            "下一票雷达 full-pool plan 只生成本地准备度计划；不会扫描全市场、不会调用 Tushare、DeepSeek 或 GitHub。",
+            "计划结果只说明 worker、freshness、provider 覆盖和 legacy parity 阻断项；不会生成买入候选或修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="reading_local_candidate_radar_plan_inputs",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    snapshot = packet_service.load_snapshot_cache()
+    safe_snapshot = _safe_value(snapshot)
+    snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    now = _now_iso()
+    plan = _build_full_pool_scan_plan(snapshot_map, payload_safe, now=now)
+    request_params_safe = {
+        "scan_mode": "full_pool_scan",
+        "plan_only": True,
+        "filter_count": len(plan.get("filter_rows") or []),
+        "required_signal_group_count": plan.get("required_signal_group_count"),
+        "blocking_issue_count": plan.get("blocking_issue_count"),
+        "external_sources_allowed": False,
+        "full_pool_scan_done": False,
+    }
+    packet = _build_candidate_radar_packet(
+        snapshot_map,
+        mode="full_pool_plan",
+        cache_source="full_pool_plan_task",
+        scan_mode="full_pool_plan",
+        request_params_safe=request_params_safe,
+        full_pool_scan_plan=plan,
+    )
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_full_pool_plan",
+        source_snapshot="command_center_latest.json",
+        row_count=len(plan.get("blocker_rows") or []),
+        call_status="full_pool_plan_ready",
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["full_pool_plan_completed_at"] = now
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "下一票雷达 full-pool plan 只记录准备度和阻断项；不扫描全市场、不刷新 provider、不生成买入候选。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "full-pool plan" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "full_pool_plan_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_full_pool_plan_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_full_pool_plan_storage_write_failed",
+            error_message_safe="candidate_radar_full_pool_plan_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_full_pool_plan_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_full_pool_plan_ready",
+        call_ledger=[ledger],
+        warning="candidate_radar_full_pool_plan_ready_no_external_call",
     ) or task

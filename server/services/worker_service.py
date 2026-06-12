@@ -52,6 +52,12 @@ def _worker_module_rows() -> list[dict[str, Any]]:
             "task_types": ["refresh_factor_data", "run_factor_light", "run_factor_universe_research_plan"],
         },
         {
+            "module": "worker.tasks_candidate",
+            "file": "worker/tasks_candidate.py",
+            "role": "Candidate radar task wrappers",
+            "task_types": ["run_candidate_radar_full_pool_plan"],
+        },
+        {
             "module": "worker.tasks_deepseek",
             "file": "worker/tasks_deepseek.py",
             "role": "Guarded DeepSeek explanation task wrapper",

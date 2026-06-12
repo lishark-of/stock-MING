@@ -22,3 +22,9 @@ def get_candidate_radar_cache() -> dict:
 def scan_candidate_radar_quick(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_quick_scan_task(payload)
     return task_envelope(task)
+
+
+@router.post("/full-pool-plan")
+def plan_candidate_radar_full_pool(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_full_pool_plan_task(payload)
+    return task_envelope(task)

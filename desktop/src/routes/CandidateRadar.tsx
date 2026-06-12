@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -50,6 +50,11 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchFullPoolPlan = () =>
+    void postCandidateRadarFullPoolPlan({ scan_mode: "full_pool_scan", plan_only: true }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -60,6 +65,7 @@ export default function CandidateRadar() {
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
   const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
+  const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
   const localPoolAudit = (cache.local_candidate_pool_audit as Record<string, unknown> | undefined) ?? {};
   const overview = (cache.candidate_execution_evidence_overview as Record<string, unknown> | undefined) ?? {};
@@ -74,6 +80,10 @@ export default function CandidateRadar() {
   const scanModeRows = rows(cache.scan_mode_status_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
+  const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
+  const fullPoolFilterRows = rows(cache.full_pool_plan_filter_rows);
+  const fullPoolSignalRows = rows(cache.full_pool_required_signal_rows);
+  const fullPoolBlockerRows = rows(cache.full_pool_blocker_rows);
 
   return (
     <>
@@ -104,6 +114,9 @@ export default function CandidateRadar() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "市场扫描", value: policy.does_not_scan_market === true ? "不会" : "可能", tone: policy.does_not_scan_market === true ? "good" : "bad" },
           { label: "quick scan", value: policy.quick_scan_reads_cache_only === true ? "本地" : "未知", tone: policy.quick_scan_reads_cache_only === true ? "good" : "warn" },
+          { label: "full-pool plan", value: String(fullPoolPlan.status ?? "missing"), tone: fullPoolPlan.status === "full_pool_plan_ready" ? "good" : "neutral" },
+          { label: "full-pool done", value: fullPoolPlan.full_pool_scan_done === true ? "完成" : "未执行", tone: fullPoolPlan.full_pool_scan_done === true ? "bad" : "good" },
+          { label: "full-pool blockers", value: fullPoolPlan.blocking_issue_count as number | undefined, tone: Number(fullPoolPlan.blocking_issue_count ?? 0) ? "warn" : "good" },
           { label: "local pool", value: localPoolAudit.normalized_candidate_count as number | undefined },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
@@ -134,6 +147,7 @@ export default function CandidateRadar() {
           />
           <div className="actions">
             <button onClick={launchCustomScan}>运行 custom pool scan</button>
+            <button onClick={launchFullPoolPlan}>生成 full-pool 计划</button>
           </div>
           <TaskLaunchReceipt receipt={taskReceipt} />
           <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
@@ -177,6 +191,17 @@ export default function CandidateRadar() {
 
       <PacketCard title="扫描模式状态" subtitle="scan_mode_status_rows；当前本地实现 quick/watchlist/custom，full pool 仍是未来任务" status="mode">
         <DataLineageTable rows={scanModeRows} />
+      </PacketCard>
+
+      <PacketCard title="Full-pool 准备计划" subtitle="POST /api/candidate-radar/full-pool-plan；只生成计划，不扫描全市场" status={String(fullPoolPlan.status ?? "plan_missing")}>
+        <p>full_pool_scan_plan 是 plan-only：不刷新 provider、不执行 full_pool_scan、不生成买入候选、不修改 strategy action。</p>
+        <p>page_render_starts_full_pool: {String(fullPoolPlan.page_render_starts_full_pool === true)}</p>
+        <p>worker_task_required: {String(fullPoolPlan.worker_task_required === true)}</p>
+        <DataLineageTable rows={objectRow(fullPoolPlan)} />
+        <DataLineageTable rows={fullPoolStageRows} />
+        <DataLineageTable rows={fullPoolFilterRows} />
+        <DataLineageTable rows={fullPoolSignalRows} />
+        <DataLineageTable rows={fullPoolBlockerRows} />
       </PacketCard>
 
       <PacketCard title="本地候选池审计" subtitle="local_candidate_pool_audit；watchlist/custom 只读本地输入" status={String(localPoolAudit.input_source ?? "cache")}>

@@ -212,6 +212,13 @@ export function postCandidateRadarQuickScan(payload: Record<string, unknown> = {
   });
 }
 
+export function postCandidateRadarFullPoolPlan(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/full-pool-plan", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getRiskGuardrailsCache() {
   return request<Record<string, unknown>>("/api/risk/cache");
 }
