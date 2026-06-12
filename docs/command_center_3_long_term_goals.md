@@ -212,12 +212,15 @@ Promote Factor Test Lab to research-grade metrics
 
 - light mode runs.
 - Current scope is mainly single stock, position, or watchlist style usage.
+- Factor Quant Hub now exposes a universe research contract for `current_target`, `watchlist`, `custom_pool`, and `full_pool`.
+- Current implemented pipeline remains `current_target` light mode; watchlist/custom/full-pool are declared as future task/worker modes.
 
 ### Gaps
 
 - Full-market universe is incomplete.
 - Industry and market-cap neutral full-sample validation is incomplete.
 - Factor combination research is incomplete.
+- The universe contract does not perform watchlist/custom/full-pool batch research yet.
 
 ### Implementation Phases
 
@@ -232,6 +235,7 @@ Promote Factor Test Lab to research-grade metrics
 - React displays progress and final results only.
 - Heavy calculation does not run in frontend or Streamlit synchronous path.
 - Research outputs remain outside `strategy action`.
+- Partial pools are explicitly not full-market proof, and page render does not start full-pool research.
 
 ### Forbidden
 

@@ -62,6 +62,7 @@ export default function FactorQuantHub() {
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
   const freshnessGate = packet.data_freshness_gate ?? {};
+  const universeResearch = packet.universe_research_contract ?? {};
   const factorLibrary = packet.factor_library ?? {};
   const factorTests = packet.factor_tests ?? {};
   const factorTestQuality = factorTests.quality_summary ?? {};
@@ -77,6 +78,8 @@ export default function FactorQuantHub() {
   const scoreChartRows = toRows(scoreChart.bucket_rows);
   const scoreChartContractRows = objectRows(scoreChartContract as Record<string, unknown>, "chart_contract");
   const deepseekValidationRows = objectRows(deepseekValidation as Record<string, unknown>, "deepseek_validation");
+  const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
+  const universeModeRows = toRows(packet.universe_research_mode_rows);
   const factorTestRows = toRows(factorTests.items);
   const factorTestMetricRows = toRows(factorTests.metric_schema);
   const factorTestModeRows = toRows(factorTests.mode_plan);
@@ -152,6 +155,11 @@ export default function FactorQuantHub() {
           { label: "trading lag", value: freshnessGate.max_trading_day_lag ?? "unknown", tone: freshnessGate.usable_for_score === false ? "bad" : "neutral" },
           { label: "coverage", value: runtime.coverage ?? 0 },
           { label: "missing", value: runtime.missing_count ?? 0 },
+          { label: "universe", value: universeResearch.current_universe_type ?? "current_target" },
+          { label: "universe size", value: universeResearch.current_universe_size ?? 0 },
+          { label: "full pool", value: universeResearch.full_pool_validation_done === true ? "完成" : "未完成", tone: universeResearch.full_pool_validation_done === true ? "good" : "neutral" },
+          { label: "render scan", value: universeResearch.page_render_starts_full_pool === true ? "会启动" : "不启动", tone: universeResearch.page_render_starts_full_pool === true ? "bad" : "good" },
+          { label: "frontend rank/zscore", value: universeResearch.frontend_computes_rank_zscore === true ? "会计算" : "不计算", tone: universeResearch.frontend_computes_rank_zscore === true ? "bad" : "good" },
           { label: "score band", value: score.score_band ?? "missing" },
           { label: "factor tests", value: factorTests.status ?? "scaffold_missing", tone: factorTests.status === "scaffold_ready" ? "warn" : "neutral" },
           { label: "test rows", value: factorTestRows.length },
@@ -237,6 +245,10 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>
       <DataLineageTable rows={toRows(runtime.factor_values)} />
+      <h3>Factor Universe 研究合同</h3>
+      <p className="risk-note">current_target / watchlist / custom_pool / full_pool 是研究 universe 合同；页面渲染不启动 full-pool，不在前端计算 rank/zscore，也不把 partial pool 当全市场证明。</p>
+      <DataLineageTable rows={universeResearchRows} />
+      <DataLineageTable rows={universeModeRows} />
       <h3>Factor Test Lab</h3>
       <p className="risk-note">当前为 light 小样本研究指标：IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益只用于研究检验，不代表已验证交易信号。</p>
       <DataLineageTable rows={factorTestRows} />

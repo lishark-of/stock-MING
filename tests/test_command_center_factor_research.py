@@ -615,6 +615,63 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertTrue(packet["tushare_called"])
         self.assertEqual(packet["call_ledger"][0]["api"], "daily")
 
+    def test_factor_quant_hub_declares_universe_research_contract_without_full_pool_scan(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            universe={"type": "custom_pool", "items": ["002008.SZ", "300750.SZ"], "size": 2},
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            moneyflow_packet={"main_net_yi": 1.2},
+            now="2026-06-09T11:25:00",
+        )
+
+        contract = packet["universe_research_contract"]
+        rows = {row["universe_mode"]: row for row in packet["universe_research_mode_rows"]}
+
+        self.assertEqual(contract["status"], "universe_contract_ready")
+        self.assertEqual(contract["scope"], "local_contract_not_full_market_pipeline")
+        self.assertEqual(contract["current_universe_type"], "custom_pool")
+        self.assertEqual(contract["current_universe_size"], 2)
+        self.assertEqual(contract["mode_count"], 4)
+        self.assertEqual(contract["implemented_now"], ["current_target"])
+        self.assertEqual(set(contract["future_task_modes"]), {"watchlist", "custom_pool", "full_pool"})
+        self.assertFalse(contract["large_universe_pipeline_done"])
+        self.assertFalse(contract["full_pool_validation_done"])
+        self.assertFalse(contract["watchlist_pipeline_done"])
+        self.assertFalse(contract["custom_pool_pipeline_done"])
+        self.assertFalse(contract["cross_sectional_rank_zscore_done"])
+        self.assertFalse(contract["full_sample_neutralization_done"])
+        self.assertTrue(contract["react_displays_progress_and_results_only"])
+        self.assertFalse(contract["cache_get_external_calls"])
+        self.assertFalse(contract["page_render_starts_full_pool"])
+        self.assertFalse(contract["heavy_compute_on_render"])
+        self.assertFalse(contract["frontend_computes_rank_zscore"])
+        self.assertFalse(contract["frontend_computes_trade_action"])
+        self.assertFalse(contract["writes_universe_data_to_git"])
+        self.assertFalse(contract["partial_pool_is_full_market_proof"])
+        self.assertTrue(contract["does_not_execute_trades"])
+        self.assertTrue(contract["does_not_modify_strategy_action"])
+        self.assertEqual(rows["current_target"]["current_status"], "local_light_pipeline_enabled")
+        self.assertTrue(rows["current_target"]["implemented_now"])
+        self.assertEqual(rows["watchlist"]["batch_execution"], "future_post_task_required")
+        self.assertEqual(rows["custom_pool"]["batch_execution"], "future_post_task_required")
+        self.assertTrue(rows["custom_pool"]["is_current_universe"])
+        self.assertEqual(rows["custom_pool"]["current_universe_size"], 2)
+        self.assertEqual(rows["full_pool"]["current_status"], "future_worker_required")
+        for row in rows.values():
+            self.assertFalse(row["page_render_starts_scan"])
+            self.assertFalse(row["frontend_computes_rank_zscore"])
+            self.assertFalse(row["heavy_compute_on_render"])
+            self.assertFalse(row["writes_universe_data_to_git"])
+            self.assertFalse(row["partial_pool_is_full_market_proof"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+        self.assertIn("watchlist/custom/full-pool 批量研究仍需后续 POST task/worker", " ".join(packet["warnings"]))
+
     def test_stale_data_date_blocks_composite_score_support(self):
         packet = factor_research.build_factor_quant_hub_packet(
             mode="light",

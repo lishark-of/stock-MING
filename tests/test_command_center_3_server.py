@@ -3045,6 +3045,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(chokepoint_strategy["contains_secret"])
         self.assertFalse(chokepoint_strategy["external_call_on_cache_read"])
         self.assertEqual(by_type["run_factor_light"]["possible_external_sources"], [])
+        self.assertEqual(by_type["run_factor_light"]["universe_modes"], ["current_target"])
+        self.assertEqual(by_type["run_factor_light"]["future_universe_modes"], ["watchlist", "custom_pool", "full_pool"])
+        self.assertEqual(
+            by_type["run_factor_light"]["factor_universe_contract_status"],
+            "current_target_only_local_light_pipeline",
+        )
+        self.assertTrue(by_type["run_factor_light"]["full_pool_requires_worker"])
+        self.assertFalse(by_type["run_factor_light"]["frontend_computes_rank_zscore"])
+        self.assertFalse(by_type["run_factor_light"]["page_render_starts_full_pool"])
+        self.assertFalse(by_type["run_factor_light"]["partial_pool_is_full_market_proof"])
         self.assertEqual(by_type["build_next_session_projection"]["current_backend"], "local_cache_pipeline")
         self.assertEqual(by_type["build_next_session_projection"]["possible_external_sources"], [])
         self.assertEqual(by_type["run_candidate_radar_quick_scan"]["route"], "POST /api/candidate-radar/scan-quick")

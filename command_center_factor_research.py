@@ -167,6 +167,49 @@ FACTOR_TEST_MODE_PLAN = [
     },
 ]
 
+FACTOR_UNIVERSE_RESEARCH_MODES = [
+    {
+        "universe_mode": "current_target",
+        "target_state": "single target light research",
+        "current_status": "local_light_pipeline_enabled",
+        "implemented_now": True,
+        "input_contract": "payload ts_code/ticker or local snapshot target",
+        "batch_execution": "not_required",
+        "cross_sectional_rank_zscore": "not_applicable",
+        "neutralization": "not_applicable",
+    },
+    {
+        "universe_mode": "watchlist",
+        "target_state": "watchlist batch research",
+        "current_status": "contract_ready_task_pending",
+        "implemented_now": False,
+        "input_contract": "local watchlist or explicit payload list",
+        "batch_execution": "future_post_task_required",
+        "cross_sectional_rank_zscore": "planned",
+        "neutralization": "planned_after_small_pool_validation",
+    },
+    {
+        "universe_mode": "custom_pool",
+        "target_state": "custom pool batch research",
+        "current_status": "contract_ready_task_pending",
+        "implemented_now": False,
+        "input_contract": "explicit payload list; no provider fetch on render",
+        "batch_execution": "future_post_task_required",
+        "cross_sectional_rank_zscore": "planned",
+        "neutralization": "planned_after_pool_size_and_metadata_checks",
+    },
+    {
+        "universe_mode": "full_pool",
+        "target_state": "full market research pipeline",
+        "current_status": "future_worker_required",
+        "implemented_now": False,
+        "input_contract": "storage-backed universe dataset plus worker task",
+        "batch_execution": "future_worker_pipeline_required",
+        "cross_sectional_rank_zscore": "required_before_production",
+        "neutralization": "required_before_production",
+    },
+]
+
 FACTOR_RESEARCH_LIBRARY = [
     {
         "factor_key": "momentum_5d",
@@ -1655,6 +1698,72 @@ def build_factor_runtime_packet(
     }
 
 
+def _factor_universe_research_mode_rows(universe: Any, runtime: Mapping[str, Any]) -> list[dict[str, Any]]:
+    universe_map = _as_mapping(universe)
+    current_type = str(universe_map.get("type") or "current_target")
+    current_size = int(_to_number(universe_map.get("size"), len(universe_map.get("items") or [])) or 0)
+    rows = []
+    for row in FACTOR_UNIVERSE_RESEARCH_MODES:
+        mode = str(row["universe_mode"])
+        is_current = mode == current_type
+        rows.append(
+            {
+                **row,
+                "is_current_universe": is_current,
+                "current_universe_size": current_size if is_current else 0,
+                "runtime_factor_value_count": len(_as_list(runtime.get("factor_values"))) if is_current else 0,
+                "cache_get_external_calls": False,
+                "page_render_starts_scan": False,
+                "frontend_computes_rank_zscore": False,
+                "heavy_compute_on_render": False,
+                "writes_universe_data_to_git": False,
+                "partial_pool_is_full_market_proof": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+            }
+        )
+    return rows
+
+
+def _factor_universe_research_contract(universe: Any, runtime: Mapping[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    universe_map = _as_mapping(universe)
+    items = list(universe_map.get("items") or [])
+    current_type = str(universe_map.get("type") or "current_target")
+    current_size = int(_to_number(universe_map.get("size"), len(items)) or 0)
+    return {
+        "status": "universe_contract_ready",
+        "scope": "local_contract_not_full_market_pipeline",
+        "current_universe_type": current_type,
+        "current_universe_size": current_size,
+        "mode_count": len(rows),
+        "implemented_now": [row["universe_mode"] for row in rows if row.get("implemented_now")],
+        "future_task_modes": [row["universe_mode"] for row in rows if not row.get("implemented_now")],
+        "large_universe_pipeline_done": False,
+        "full_pool_validation_done": False,
+        "watchlist_pipeline_done": False,
+        "custom_pool_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "full_sample_neutralization_done": False,
+        "factor_combination_research_done": False,
+        "react_displays_progress_and_results_only": True,
+        "cache_get_external_calls": False,
+        "page_render_starts_full_pool": False,
+        "heavy_compute_on_render": False,
+        "frontend_computes_rank_zscore": False,
+        "frontend_computes_trade_action": False,
+        "writes_universe_data_to_git": False,
+        "partial_pool_is_full_market_proof": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "runtime_status": runtime.get("status") or "not_run",
+        "note": "LTG-04 universe modes are declared as an audit contract; full-pool and batch research still require future POST task/worker implementation.",
+    }
+
+
 def _classify_factor_test_row(row: Mapping[str, Any]) -> str:
     pit_check = str(row.get("pit_check") or "pending")
     lookahead_check = str(row.get("lookahead_check") or "pending")
@@ -2547,6 +2656,8 @@ def build_factor_quant_hub_packet(
     score = score_packet if isinstance(score_packet, Mapping) else build_factor_score_packet(runtime_packet=runtime, now=now_text)
     sanitized_deepseek = sanitize_factor_deepseek_explanation(deepseek_explanation) if deepseek_explanation else {"called": False, "payload": None}
     universe_map = _as_mapping(universe)
+    universe_research_mode_rows = _factor_universe_research_mode_rows(universe_map, runtime)
+    universe_research_contract = _factor_universe_research_contract(universe_map, runtime, universe_research_mode_rows)
     governance_state = "evidence_effect_only" if score.get("status") == "ready" else "research_only"
     bridge_preview = _build_factor_evidence_preview(score)
     warnings = list(score.get("warnings") or [])
@@ -2554,6 +2665,8 @@ def build_factor_quant_hub_packet(
         warnings.append("多因子覆盖率偏低，仅可作为研究解释。")
     if freshness_gate.get("gate_applied") and freshness_gate.get("status") != "fresh":
         warnings.append("数据时效门控未通过：过期或陈旧数据不得进入 composite score、强 support 或交易解释。")
+    if universe_research_contract["current_universe_type"] != "current_target":
+        warnings.append("当前 universe 仅作为研究合同展示；watchlist/custom/full-pool 批量研究仍需后续 POST task/worker。")
     return {
         "packet_key": QUANT_HUB_PACKET_KEY,
         "schema_version": QUANT_HUB_SCHEMA_VERSION,
@@ -2567,6 +2680,8 @@ def build_factor_quant_hub_packet(
         "data_ledger": _copy_json(ledger),
         "factor_library": _copy_json(library),
         "runtime": _copy_json(runtime),
+        "universe_research_contract": _copy_json(universe_research_contract),
+        "universe_research_mode_rows": _copy_json(universe_research_mode_rows),
         "factor_tests": _copy_json(tests),
         "score": _copy_json(score),
         "data_freshness_gate": _copy_json(freshness_gate),
