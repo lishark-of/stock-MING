@@ -178,6 +178,7 @@ Validate extended Tushare refresh task pipeline
 - Factor Test Lab now exposes a research-state acceptance contract for `research_pass`, `watchlist`, `disabled`, `invalid`, and `not_enough_data`.
 - React displays the state contract and explicitly marks `research_pass` as a research label, not a trade signal.
 - GET factor cache now attaches a read-only `factor_values` DuckDB query consumption contract for Factor Test Lab: typed projection, query result contract, cursor page info, and local query lineage are visible without computing production IC metrics from the query rows.
+- Factor Test Lab packets now expose `small_pool_acceptance`: a local light-observation readiness audit for IC / Rank IC / ICIR, group return, cost, drawdown, neutral IC, sample split/decay, and PIT/lookahead/survivorship checks. This audit does not treat storage query rows as metric samples and does not prove real small-pool or full-market production validation.
 
 ### Gaps
 
@@ -186,6 +187,7 @@ Validate extended Tushare refresh task pipeline
 - Production-grade transaction cost assumptions are not validated.
 - Industry and market-cap neutral stability needs larger samples.
 - The research-state contract and DuckDB query consumption contract are local/light-mode governance and do not prove full-market validation.
+- The small-pool acceptance audit is a local readiness contract; provider-backed small-pool samples are still pending.
 
 ### Implementation Phases
 
@@ -203,6 +205,7 @@ Validate extended Tushare refresh task pipeline
 - Results never enter `strategy action`.
 - All result states remain research-only and do not enter `core_action`, `evidence_effects`, `next_session_projection`, or frontend-computed action.
 - DuckDB query consumption remains local/read-only, does not write Parquet on GET, does not call providers, and does not convert query rows into trade signals or production IC acceptance.
+- `small_pool_acceptance.status=local_small_pool_acceptance_ready` only means local light observations satisfy the readiness checklist; `real_small_pool_validation_done` and `full_market_validation_done` must remain false until provider-backed samples are validated.
 
 ### Forbidden
 
@@ -210,6 +213,7 @@ Validate extended Tushare refresh task pipeline
 - Do not promote `research_pass` to action without separate approval.
 - Do not compute action in frontend.
 - Do not treat storage query consumption as real small-pool, full-market, or production factor validation.
+- Do not treat local small-pool readiness as real provider-backed production validation.
 
 ### Recommended Commit Message
 

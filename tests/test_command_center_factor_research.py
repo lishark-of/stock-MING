@@ -272,6 +272,19 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(packet["quality_summary"]["state_transition_count"], 5)
         self.assertEqual(packet["window_summary"]["valid_pair_count"], 0)
         self.assertGreater(packet["required_metric_gap_counts"]["ic_mean"], 0)
+        self.assertEqual(packet["small_pool_acceptance"]["schema_version"], "factor_test_small_pool_acceptance.v1")
+        self.assertEqual(packet["small_pool_acceptance"]["status"], "local_small_pool_acceptance_blocked")
+        self.assertEqual(packet["small_pool_acceptance"]["scope"], "local_light_observation_acceptance_not_full_market_or_trade_signal")
+        self.assertFalse(packet["small_pool_acceptance"]["local_light_observation_acceptance_done"])
+        self.assertFalse(packet["small_pool_acceptance"]["real_small_pool_validation_done"])
+        self.assertFalse(packet["small_pool_acceptance"]["full_market_validation_done"])
+        self.assertFalse(packet["small_pool_acceptance"]["storage_query_rows_used_as_metrics"])
+        self.assertFalse(packet["small_pool_acceptance"]["external_calls_triggered"])
+        self.assertTrue(packet["small_pool_acceptance"]["research_pass_is_not_trade_signal"])
+        acceptance_rows = {row["criterion"]: row for row in packet["small_pool_acceptance_rows"]}
+        self.assertEqual(acceptance_rows["local_light_observations_present"]["status"], "blocked")
+        self.assertEqual(acceptance_rows["research_only_boundary_enforced"]["status"], "passed")
+        self.assertEqual(acceptance_rows["no_external_or_trade_side_effects"]["status"], "passed")
         self.assertIn("small_research", {item["mode"] for item in packet["mode_plan"]})
         self.assertIn("full", {item["mode"] for item in packet["mode_plan"]})
         self.assertEqual(packet["acceptance_contract"]["status"], "state_contract_ready")
@@ -279,6 +292,9 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(packet["acceptance_contract"]["state_count"], 5)
         self.assertFalse(packet["acceptance_contract"]["full_market_validation_done"])
         self.assertFalse(packet["acceptance_contract"]["real_small_pool_validation_done"])
+        self.assertEqual(packet["acceptance_contract"]["small_pool_acceptance_status"], "local_small_pool_acceptance_blocked")
+        self.assertFalse(packet["acceptance_contract"]["local_light_observation_acceptance_done"])
+        self.assertFalse(packet["acceptance_contract"]["storage_query_rows_used_as_metrics"])
         self.assertTrue(packet["acceptance_contract"]["all_result_states_are_research_only"])
         self.assertTrue(packet["acceptance_contract"]["research_pass_is_not_trade_signal"])
         self.assertTrue(packet["acceptance_contract"]["does_not_modify_strategy_action"])
@@ -381,6 +397,8 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                         "forward_return": stock_index * 0.006 + day_index * 0.0003,
                         "transaction_cost": 0.001,
                         "turnover": 0.2 + stock_index * 0.01,
+                        "industry": "设备" if stock_index % 2 else "半导体",
+                        "market_cap": 100 + (stock_index % 3) * 35 + day_index * 7,
                         "pit_validated": True,
                         "lookahead_check": "passed",
                         "survivorship_check": "passed",
@@ -437,7 +455,27 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(row["sample_split_stability"]["split_after_trade_date"], "20260602")
         self.assertIsNotNone(row["sample_split_stability"]["early_window_ic"])
         self.assertIsNotNone(row["sample_split_stability"]["recent_window_ic"])
+        self.assertIsNotNone(row["industry_neutral_ic"])
+        self.assertIsNotNone(row["market_cap_neutral_ic"])
         self.assertIn("light observations", row["sample_split_stability"]["status_note"])
+        small_pool = packet["small_pool_acceptance"]
+        self.assertEqual(small_pool["status"], "local_small_pool_acceptance_ready")
+        self.assertTrue(small_pool["local_light_observation_acceptance_done"])
+        self.assertFalse(small_pool["real_small_pool_validation_done"])
+        self.assertFalse(small_pool["full_market_validation_done"])
+        self.assertFalse(small_pool["storage_query_rows_used_as_metrics"])
+        self.assertEqual(small_pool["blocked_required_criterion_count"], 0)
+        acceptance_rows = {item["criterion"]: item for item in packet["small_pool_acceptance_rows"]}
+        self.assertEqual(acceptance_rows["core_ic_metrics_present"]["status"], "passed")
+        self.assertEqual(acceptance_rows["group_return_present"]["status"], "passed")
+        self.assertEqual(acceptance_rows["cost_model_present"]["status"], "passed")
+        self.assertEqual(acceptance_rows["drawdown_present"]["status"], "passed")
+        self.assertEqual(acceptance_rows["neutral_ic_present"]["status"], "passed")
+        self.assertEqual(acceptance_rows["out_of_sample_decay_present"]["status"], "passed")
+        self.assertEqual(acceptance_rows["bias_checks_passed"]["status"], "passed")
+        self.assertTrue(small_pool["research_pass_is_not_trade_signal"])
+        self.assertEqual(packet["acceptance_contract"]["small_pool_acceptance_status"], "local_small_pool_acceptance_ready")
+        self.assertTrue(packet["acceptance_contract"]["local_light_observation_acceptance_done"])
         self.assertNotIn("strategy_action", row)
         self.assertFalse(row["enters_strategy_action"])
         self.assertFalse(packet["external_calls_triggered"])

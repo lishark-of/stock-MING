@@ -2570,6 +2570,177 @@ def _factor_test_acceptance_contract(rows: list[dict], state_rows: list[dict[str
     }
 
 
+def _factor_test_small_pool_metric_rows(rows: list[dict]) -> list[dict]:
+    return [
+        row
+        for row in rows
+        if row.get("data_status") in {"metric_supplied", "computed_from_light_observations"}
+    ]
+
+
+def _factor_test_metric_present(row: Mapping[str, Any], key: str) -> bool:
+    value = row.get(key)
+    return value not in (None, "", [], {}, "not_run", "not_enough_data")
+
+
+def _factor_test_small_pool_acceptance_rows(
+    rows: list[dict],
+    quality_summary: Mapping[str, Any],
+    *,
+    computed_count: int,
+) -> list[dict[str, Any]]:
+    metric_rows = _factor_test_small_pool_metric_rows(rows)
+    window_summary = quality_summary.get("window_summary") if isinstance(quality_summary.get("window_summary"), Mapping) else {}
+
+    def _all_metric_rows_have(keys: list[str]) -> bool:
+        return bool(metric_rows) and all(all(_factor_test_metric_present(row, key) for key in keys) for row in metric_rows)
+
+    def _row(criterion: str, label: str, passed: bool, detail: str, *, required: bool = True) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "label": label,
+            "status": "passed" if passed else "blocked",
+            "required_for_local_small_pool_acceptance": required,
+            "detail": detail,
+            "metric_row_count": len(metric_rows),
+            "computed_item_count": computed_count,
+            "observation_count": int(_to_number(window_summary.get("observation_count"), 0) or 0),
+            "valid_pair_count": int(_to_number(window_summary.get("valid_pair_count"), 0) or 0),
+            "max_trade_date_count": int(_to_number(window_summary.get("max_trade_date_count"), 0) or 0),
+            "research_only": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows_out = [
+        _row(
+            "local_light_observations_present",
+            "本地 light observations",
+            computed_count > 0,
+            "必须由调用方提供本地 observations；storage query rows 不能冒充 IC 样本。",
+        ),
+        _row(
+            "forward_return_pairs_present",
+            "forward return 样本对",
+            int(_to_number(window_summary.get("valid_pair_count"), 0) or 0) > 0 and bool(window_summary.get("has_forward_returns")),
+            "需要 factor_value 与 forward_return 成对出现。",
+        ),
+        _row(
+            "core_ic_metrics_present",
+            "IC / Rank IC / ICIR",
+            _all_metric_rows_have(["ic_mean", "rank_ic_mean", "icir"]),
+            "单因子研究至少需要 IC、Rank IC 和 ICIR。",
+        ),
+        _row(
+            "group_return_present",
+            "分组收益 / Top-Bottom",
+            _all_metric_rows_have(["top_bottom_group_return", "group_return_buckets"]),
+            "需要分组收益桶和 Top-Bottom 差值。",
+        ),
+        _row(
+            "cost_model_present",
+            "换手 / 成本后收益",
+            _all_metric_rows_have(["turnover", "cost_adjusted_return"]),
+            "需要换手和成本后收益，避免把毛收益当研究结论。",
+        ),
+        _row(
+            "drawdown_present",
+            "最大回撤",
+            bool(metric_rows) and all(_factor_test_metric_present(row, "max_drawdown") and int(_to_number(row.get("max_drawdown_window_count"), 0) or 0) >= 2 for row in metric_rows),
+            "需要基于 Top-Bottom 日度 spread 的最大回撤窗口。",
+        ),
+        _row(
+            "neutral_ic_present",
+            "行业 / 市值中性 IC",
+            _all_metric_rows_have(["industry_neutral_ic", "market_cap_neutral_ic"]),
+            "需要行业与市值中性 IC；缺失时只能保留为小样本 partial。",
+        ),
+        _row(
+            "out_of_sample_decay_present",
+            "样本外 / 衰减",
+            _all_metric_rows_have(["out_of_sample_stability", "recent_decay"]),
+            "需要前后窗口稳定性和近期衰减状态。",
+        ),
+        _row(
+            "bias_checks_passed",
+            "PIT / 未来函数 / 幸存者偏差",
+            bool(metric_rows) and all(row.get("pit_check") == "passed" and row.get("lookahead_check") == "passed" and row.get("survivorship_check") == "passed" for row in metric_rows),
+            "所有小池样本都必须通过 PIT、未来函数和幸存者偏差检查。",
+        ),
+        _row(
+            "research_only_boundary_enforced",
+            "研究状态不进 action",
+            all(row.get("enters_strategy_action") is False and row.get("enters_core_action") is False for row in rows),
+            "即使 research_pass 也只是研究标签，不进入 strategy action 或 core action。",
+        ),
+        _row(
+            "no_external_or_trade_side_effects",
+            "无外联 / 无交易副作用",
+            True,
+            "该验收只审计本地 packet，不调用 Tushare、DeepSeek、GitHub，不执行真实交易。",
+        ),
+    ]
+    return rows_out
+
+
+def _factor_test_small_pool_acceptance(
+    rows: list[dict],
+    quality_summary: Mapping[str, Any],
+    *,
+    computed_count: int,
+) -> dict[str, Any]:
+    acceptance_rows = _factor_test_small_pool_acceptance_rows(rows, quality_summary, computed_count=computed_count)
+    required_rows = [row for row in acceptance_rows if row.get("required_for_local_small_pool_acceptance")]
+    blocked_rows = [row for row in required_rows if row.get("status") != "passed"]
+    metric_rows = _factor_test_small_pool_metric_rows(rows)
+    if not metric_rows:
+        status = "local_small_pool_acceptance_blocked"
+    elif blocked_rows:
+        status = "local_small_pool_acceptance_partial"
+    else:
+        status = "local_small_pool_acceptance_ready"
+    window_summary = quality_summary.get("window_summary") if isinstance(quality_summary.get("window_summary"), Mapping) else {}
+    return {
+        "schema_version": "factor_test_small_pool_acceptance.v1",
+        "status": status,
+        "scope": "local_light_observation_acceptance_not_full_market_or_trade_signal",
+        "factor_count": len(rows),
+        "metric_row_count": len(metric_rows),
+        "computed_item_count": computed_count,
+        "research_pass_count": int(quality_summary.get("research_pass_count") or 0),
+        "watchlist_count": int(quality_summary.get("watchlist_count") or 0),
+        "disabled_count": int(quality_summary.get("disabled_count") or 0),
+        "invalid_count": int(quality_summary.get("invalid_count") or 0),
+        "not_enough_data_count": int(quality_summary.get("not_enough_data_count") or 0),
+        "observation_count": int(_to_number(window_summary.get("observation_count"), 0) or 0),
+        "valid_pair_count": int(_to_number(window_summary.get("valid_pair_count"), 0) or 0),
+        "max_trade_date_count": int(_to_number(window_summary.get("max_trade_date_count"), 0) or 0),
+        "required_criterion_count": len(required_rows),
+        "passed_required_criterion_count": len(required_rows) - len(blocked_rows),
+        "blocked_required_criterion_count": len(blocked_rows),
+        "blocked_criteria": [str(row.get("criterion")) for row in blocked_rows],
+        "local_light_observation_acceptance_done": status == "local_small_pool_acceptance_ready",
+        "storage_query_rows_used_as_metrics": False,
+        "real_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "all_states_research_only": True,
+        "research_pass_is_not_trade_signal": True,
+        "frontend_computes_metrics": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": acceptance_rows,
+        "note": "This is a local light-observation readiness audit. It does not prove provider-backed small-pool or full-market production validation.",
+    }
+
+
 def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None, items: Any = None, observations: Any = None, now: Any = None) -> dict:
     now_text = _now_iso(now)
     selected_mode = mode if mode in {"light", "small_research", "full", "research", "cache_only"} else "light"
@@ -2587,6 +2758,11 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
     quality_summary = _factor_test_quality_summary(rows, computed_count=computed_count)
     state_transition_rows = _factor_test_state_transition_rows()
     acceptance_contract = _factor_test_acceptance_contract(rows, state_transition_rows, computed_count=computed_count)
+    small_pool_acceptance = _factor_test_small_pool_acceptance(rows, quality_summary, computed_count=computed_count)
+    acceptance_contract["small_pool_acceptance_status"] = small_pool_acceptance["status"]
+    acceptance_contract["local_light_observation_acceptance_done"] = small_pool_acceptance["local_light_observation_acceptance_done"]
+    acceptance_contract["storage_query_rows_used_as_metrics"] = False
+    acceptance_contract["real_small_pool_validation_done"] = False
     return {
         "packet_key": TEST_PACKET_KEY,
         "schema_version": "factor_test.v2",
@@ -2598,6 +2774,8 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
         "quality_summary": quality_summary,
         "required_metric_gap_counts": quality_summary["required_metric_gap_counts"],
         "window_summary": quality_summary["window_summary"],
+        "small_pool_acceptance": small_pool_acceptance,
+        "small_pool_acceptance_rows": small_pool_acceptance["rows"],
         "metric_schema": FACTOR_TEST_METRIC_SCHEMA,
         "mode_plan": FACTOR_TEST_MODE_PLAN,
         "result_categories": VALIDATION_STANDARDS,
@@ -2644,6 +2822,8 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
                 "request_params_safe": {"mode": selected_mode, "factor_count": len(rows)},
                 "row_count": len(rows),
                 "state_transition_count": len(state_transition_rows),
+                "small_pool_acceptance_status": small_pool_acceptance["status"],
+                "local_light_observation_acceptance_done": small_pool_acceptance["local_light_observation_acceptance_done"],
                 "data_date": None,
                 "local_fetched_at": now_text,
                 "call_status": "scaffold_ready",

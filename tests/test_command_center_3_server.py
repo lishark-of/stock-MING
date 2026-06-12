@@ -6920,9 +6920,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(storage_query["does_not_modify_strategy_action"])
         self.assertEqual(storage_query["call_ledger"][0]["api"], "local_factor_test_storage_query_consumption")
         self.assert_local_ledger_boundary(storage_query["call_ledger"][0])
+        small_pool = factor["data"]["factor_tests"]["small_pool_acceptance"]
+        self.assertEqual(small_pool["schema_version"], "factor_test_small_pool_acceptance.v1")
+        self.assertEqual(small_pool["status"], "local_small_pool_acceptance_blocked")
+        self.assertFalse(small_pool["local_light_observation_acceptance_done"])
+        self.assertFalse(small_pool["storage_query_rows_used_as_metrics"])
+        self.assertFalse(small_pool["real_small_pool_validation_done"])
+        self.assertFalse(small_pool["full_market_validation_done"])
+        self.assertFalse(small_pool["external_calls_triggered"])
+        self.assertEqual(factor["data"]["factor_tests"]["small_pool_acceptance_rows"][0]["criterion"], "local_light_observations_present")
         self.assertEqual(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_contract_consumed"], True)
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_metrics_computed"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_enters_strategy_action"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["local_light_observation_acceptance_done"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_rows_used_as_metrics"])
         self.assertEqual(factor["data"]["factor_tests"]["storage_query_consumption_rows"][0]["dataset"], "factor_values")
 
     def test_factor_universe_research_plan_endpoint_is_local_read_plan(self):

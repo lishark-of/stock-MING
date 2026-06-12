@@ -69,6 +69,7 @@ export default function FactorQuantHub() {
   const factorTestQuality = factorTests.quality_summary ?? {};
   const factorTestAcceptance = factorTests.acceptance_contract ?? {};
   const factorTestStorageQuery = factorTests.storage_query_consumption ?? {};
+  const factorTestSmallPool = factorTests.small_pool_acceptance ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -95,6 +96,8 @@ export default function FactorQuantHub() {
   const factorTestWindowRows = objectRows((factorTests.window_summary ?? factorTestQuality.window_summary ?? {}) as Record<string, unknown>, "window_metric");
   const factorTestStorageQueryRows = objectRows(factorTestStorageQuery as Record<string, unknown>, "storage_query_contract");
   const factorTestStorageQueryTableRows = toRows(factorTests.storage_query_consumption_rows);
+  const factorTestSmallPoolRows = objectRows(factorTestSmallPool as Record<string, unknown>, "small_pool_acceptance");
+  const factorTestSmallPoolCriterionRows = toRows(factorTests.small_pool_acceptance_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -178,6 +181,9 @@ export default function FactorQuantHub() {
           { label: "storage query", value: factorTestStorageQuery.status ?? "missing", tone: factorTestStorageQuery.external_calls_triggered === true ? "bad" : "neutral" },
           { label: "storage query rows", value: factorTestStorageQuery.returned_row_count ?? 0 },
           { label: "storage query metrics", value: factorTestStorageQuery.metrics_computed_from_storage_query === true ? "会计算" : "不计算", tone: factorTestStorageQuery.metrics_computed_from_storage_query === true ? "bad" : "good" },
+          { label: "small pool audit", value: factorTestSmallPool.status ?? "missing", tone: factorTestSmallPool.status === "local_small_pool_acceptance_ready" ? "good" : "warn" },
+          { label: "local small pool", value: factorTestSmallPool.local_light_observation_acceptance_done === true ? "ready" : "pending", tone: factorTestSmallPool.local_light_observation_acceptance_done === true ? "good" : "warn" },
+          { label: "real small pool", value: factorTestSmallPool.real_small_pool_validation_done === true ? "完成" : "未完成", tone: factorTestSmallPool.real_small_pool_validation_done === true ? "bad" : "good" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
           { label: "state contract", value: factorTestAcceptance.status ?? "missing", tone: factorTestAcceptance.all_result_states_are_research_only === false ? "bad" : "good" },
@@ -274,6 +280,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">Factor Test Lab 只消费 factor_values DuckDB 查询合同、投影列和分页元信息；不把查询样本当作生产 IC 验收，不进入 strategy action。</p>
       <DataLineageTable rows={factorTestStorageQueryTableRows} />
       <DataLineageTable rows={factorTestStorageQueryRows} />
+      <h3>Factor Test 小股票池验收</h3>
+      <p className="risk-note">small_pool_acceptance 只审计本地 light observations 的 IC / Rank IC / ICIR / 分组收益 / 成本 / 回撤 / 中性 IC / 样本外与偏差检查；不把 storage query rows 当指标样本，不代表真实小股票池或全市场生产验收。</p>
+      <DataLineageTable rows={factorTestSmallPoolCriterionRows} />
+      <DataLineageTable rows={factorTestSmallPoolRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>
