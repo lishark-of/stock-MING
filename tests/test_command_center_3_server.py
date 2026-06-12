@@ -3303,6 +3303,37 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["api_validation_summary"]["does_not_claim_unselected_apis_verified"])
         self.assertIn("trade_cal", persisted["api_validation_matrix_policy"]["matrix_only_apis"])
         self.assertIn("target_readiness_scope", persisted["api_validation_matrix_policy"])
+        self.assertIn("acceptance_audit_scope", persisted["api_validation_matrix_policy"])
+        self.assertIn("api_acceptance_audit", persisted)
+        audit = persisted["api_acceptance_audit"]
+        self.assertEqual(audit["schema_version"], "tushare_api_acceptance_audit.v1")
+        self.assertEqual(audit["status"], "acceptance_audit_passed")
+        self.assertEqual(audit["scope"], "local_call_ledger_semantic_audit_not_provider_call")
+        self.assertEqual(audit["selected_api_count"], 3)
+        self.assertEqual(audit["called_api_count"], 3)
+        self.assertGreater(audit["matrix_only_api_count"], 0)
+        self.assertEqual(audit["acceptance_issue_count"], 0)
+        self.assertEqual(audit["false_verified_count"], 0)
+        self.assertEqual(audit["required_field_gap_count"], 0)
+        self.assertEqual(audit["unsafe_request_param_count"], 0)
+        self.assertEqual(audit["unsafe_error_message_count"], 0)
+        self.assertEqual(audit["false_parquet_write_claim_count"], 0)
+        self.assertTrue(audit["selected_interfaces_have_call_ledger"])
+        self.assertTrue(audit["does_not_claim_unselected_apis_verified"])
+        self.assertTrue(audit["safe_request_params"])
+        self.assertTrue(audit["safe_errors_redacted"])
+        self.assertFalse(audit["full_interface_acceptance_done"])
+        self.assertTrue(audit["provider_validation_done_in_this_task"])
+        self.assertFalse(audit["audit_external_calls_triggered"])
+        self.assertFalse(audit["audit_calls_tushare"])
+        self.assertTrue(persisted["api_acceptance_audit_passed"])
+        self.assertEqual(persisted["api_acceptance_issue_count"], 0)
+        self.assertFalse(persisted["full_interface_acceptance_done"])
+        acceptance_by_api = {row["api"]: row for row in persisted["api_acceptance_audit_rows"]}
+        self.assertEqual(acceptance_by_api["daily"]["acceptance_status"], "passed")
+        self.assertTrue(acceptance_by_api["daily"]["safe_success_state_visible"])
+        self.assertTrue(acceptance_by_api["trade_cal"]["matrix_only_not_verified"])
+        self.assertFalse(acceptance_by_api["trade_cal"]["unselected_false_verified"])
         target_by_key = {row["target"]: row for row in persisted["api_validation_target_rows"]}
         self.assertEqual(target_by_key["trade_calendar"]["readiness"], "matrix_only")
         self.assertEqual(target_by_key["margin_financing"]["readiness"], "matrix_only")
@@ -3437,6 +3468,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(target_by_key["chip_distribution"]["readiness"], "matrix_only")
         self.assertEqual(persisted["api_validation_target_summary"]["validated_target_count"], 5)
         self.assertGreaterEqual(persisted["api_validation_target_summary"]["partial_or_failed_target_count"], 1)
+        audit = persisted["api_acceptance_audit"]
+        self.assertEqual(audit["status"], "acceptance_audit_passed")
+        self.assertEqual(audit["selected_api_count"], 9)
+        self.assertEqual(audit["called_api_count"], 9)
+        self.assertEqual(audit["safe_failure_state_count"], 1)
+        self.assertEqual(audit["safe_empty_state_count"], 3)
+        self.assertEqual(audit["false_verified_count"], 0)
+        self.assertEqual(audit["false_parquet_write_claim_count"], 0)
+        self.assertEqual(audit["unsafe_error_message_count"], 0)
+        self.assertFalse(audit["full_interface_acceptance_done"])
+        acceptance_by_api = {row["api"]: row for row in persisted["api_acceptance_audit_rows"]}
+        self.assertEqual(acceptance_by_api["limit_cpt_list"]["acceptance_status"], "passed")
+        self.assertTrue(acceptance_by_api["limit_cpt_list"]["safe_failure_state_visible"])
+        self.assertFalse(acceptance_by_api["limit_cpt_list"]["error_message_safe_has_unsafe_text"])
+        self.assertFalse(acceptance_by_api["margin_detail"]["false_parquet_write_claim"])
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -3480,6 +3526,51 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(validation_by_api["daily"]["validation_scope"], "preflight_blocked")
         self.assertEqual(validation_by_api["trade_cal"]["validation_scope"], "task_call_result")
         self.assertEqual(persisted["api_validation_matrix_policy"]["matrix_only_apis"], [])
+        audit = persisted["api_acceptance_audit"]
+        self.assertEqual(audit["status"], "acceptance_audit_passed")
+        self.assertEqual(audit["selected_api_count"], len(tushare_task_service.ALL_REFRESH_APIS))
+        self.assertEqual(audit["selected_missing_call_ledger_count"], 0)
+        self.assertEqual(audit["safe_blocked_state_count"], len(expected_blocked))
+        self.assertGreaterEqual(audit["safe_failure_state_count"], 1)
+        self.assertEqual(audit["false_verified_count"], 0)
+        self.assertEqual(audit["required_field_gap_count"], 0)
+        self.assertEqual(audit["unsafe_error_message_count"], 0)
+        self.assertFalse(audit["full_interface_acceptance_done"])
+        acceptance_by_api = {row["api"]: row for row in persisted["api_acceptance_audit_rows"]}
+        self.assertTrue(acceptance_by_api["daily"]["safe_blocked_state_visible"])
+        self.assertEqual(acceptance_by_api["daily"]["acceptance_status"], "passed")
+        self.assertEqual(acceptance_by_api["trade_cal"]["acceptance_status"], "passed")
+
+    def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
+        call_ledger = []
+        for index, api in enumerate(tushare_task_service.REFRESH_API_SPECS):
+            is_first = index == 0
+            call_ledger.append(
+                {
+                    "api": api,
+                    "request_params_safe": {"ts_code": "002008.SZ"},
+                    "row_count": 1 if is_first else 0,
+                    "data_date": "20260610" if is_first else None,
+                    "local_fetched_at": "2026-06-10T16:31:00",
+                    "call_status": "success" if is_first else "empty",
+                    "error_message_safe": "",
+                    "parquet_status": "written" if tushare_task_service.REFRESH_API_SPECS[api].get("parquet_dataset") and is_first else "not_enabled",
+                    "parquet_row_count": 1 if tushare_task_service.REFRESH_API_SPECS[api].get("parquet_dataset") and is_first else 0,
+                    "external_calls_triggered": True,
+                }
+            )
+
+        validation_rows = tushare_task_service._api_validation_rows(tushare_task_service.REFRESH_API_SPECS.keys(), call_ledger)
+        audit = tushare_task_service._api_acceptance_audit(validation_rows, call_ledger)
+
+        self.assertEqual(audit["status"], "acceptance_audit_passed")
+        self.assertEqual(audit["selected_api_count"], len(tushare_task_service.REFRESH_API_SPECS))
+        self.assertEqual(audit["called_api_count"], len(tushare_task_service.REFRESH_API_SPECS))
+        self.assertEqual(audit["successful_selected_api_count"], 1)
+        self.assertGreater(audit["safe_empty_state_count"], 0)
+        self.assertEqual(audit["acceptance_issue_count"], 0)
+        self.assertFalse(audit["full_interface_acceptance_done"])
+        self.assertIn("non-empty successful samples", audit["full_interface_acceptance_scope"])
 
     def test_tushare_refresh_task_validates_chip_and_hard_risk_domains(self):
         db_path = self._with_meta_store()
@@ -3977,6 +4068,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("stk_surv", by_type["refresh_tushare_facts"]["optional_extended_apis"])
         self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
         self.assertIn("unselected APIs are capability matrix only", by_type["refresh_tushare_facts"]["api_validation_matrix_policy"])
+        self.assertIn("call_ledger_required_fields", by_type["refresh_tushare_facts"]["api_acceptance_audit_contract"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
         self.assertEqual(by_type["refresh_factor_data"]["current_backend"], "button_gated_tushare_pipeline")
@@ -3984,6 +4077,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["refresh_factor_data"]["calendar_apis"], ["trade_cal"])
         self.assertIn("fina_indicator", by_type["refresh_factor_data"]["optional_extended_apis"])
         self.assertEqual(by_type["refresh_factor_data"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
+        self.assertIn("call_ledger semantic audit", by_type["refresh_factor_data"]["api_acceptance_audit_contract"])
+        self.assertFalse(by_type["refresh_factor_data"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
         self.assertEqual(by_type["run_deepseek_factor_explanation"]["deepseek_model_strategy_purpose"], "factor_explain")

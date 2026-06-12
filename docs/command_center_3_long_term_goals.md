@@ -127,6 +127,7 @@ Harden A-share trading-calendar freshness production gate
 - `daily / daily_basic / moneyflow` have been run through the real light path.
 - Other interfaces are mostly `matrix`, `button-gated`, `mock`, or capability-state only.
 - GET cache APIs do not call Tushare.
+- Button-gated Tushare refresh packets now expose `api_acceptance_audit`: a local call-ledger semantic audit that checks required fields, safe terminal states, redacted errors, unselected APIs not being marked verified, and non-Parquet interfaces not claiming physical writes.
 
 ### Gaps
 
@@ -137,6 +138,7 @@ Harden A-share trading-calendar freshness production gate
 - `cyq_perf / cyq_chips`.
 - `anns_d / forecast / pledge / holdertrade / share_float / stk_surv`.
 - `fina_indicator`.
+- Provider-backed all-interface acceptance is still incomplete; `api_acceptance_audit` proves packet semantics, not real provider coverage.
 
 ### Implementation Phases
 
@@ -151,12 +153,14 @@ Harden A-share trading-calendar freshness production gate
 - Every interface records `call_ledger`, `row_count`, `data_date`, `local_fetched_at`, `call_status`, and `error_message_safe`.
 - Permission denied, no record, empty window, parse failure, missing parameter, and blocked state are distinguishable.
 - Unselected APIs never display as `verified`.
+- `api_acceptance_audit.status=acceptance_audit_passed` only means call-ledger semantics are safe; `full_interface_acceptance_done` must remain false until all declared APIs are selected and provider-validated.
 - Tokens are never printed, stored in packets, or exposed to frontend.
 
 ### Forbidden
 
 - Do not call Tushare from GET cache or page render.
 - Do not mark matrix-only rows as real validation.
+- Do not treat `api_acceptance_audit` as proof that provider coverage or production refresh is complete.
 - Do not commit fetched data artifacts.
 
 ### Recommended Commit Message

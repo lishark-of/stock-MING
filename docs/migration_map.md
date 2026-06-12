@@ -121,7 +121,7 @@
 
 Factor Quant Hub freshness gate 已从自然日 MVP 升级为 A 股交易日历语义：当本地 `trade_cal` cache 可见时使用 `cal_date/is_open` 推导 `expected_data_date`，盘中或盘后未到 EOD 可得时间时使用上一已完成交易日；没有 `trade_cal` 时仅使用工作日近似并标记 `calendar_validated=false`。`fresh/stale/expired/future_unavailable` 只影响因子证据是否进入 `composite_score` 和 `next_session_bridge.preview`，不修改 `strategy action`。
 
-Tushare 任务管线已补充扩展接口验证矩阵：`POST /api/tasks/refresh-tushare-facts` 支持 `trade_cal`、两融、涨跌停、筹码、公告/预告、股东增减持、限售解禁、质押等接口按按钮 payload 进入 `call_ledger` 和 `api_validation_rows`；默认按钮仍只刷新 `daily/daily_basic/moneyflow`。当前 Parquet 落盘启用核心三接口与 `trade_cal`，其他扩展接口会标注 `parquet_status=not_enabled`，避免把“已调用/空数据/失败/缺参阻断”误读为已完成本地数据生产化。
+Tushare 任务管线已补充扩展接口验证矩阵和 acceptance audit：`POST /api/tasks/refresh-tushare-facts` 支持 `trade_cal`、两融、涨跌停、筹码、公告/预告、股东增减持、限售解禁、质押等接口按按钮 payload 进入 `call_ledger`、`api_validation_rows` 和 `api_acceptance_audit`；默认按钮仍只刷新 `daily/daily_basic/moneyflow`。当前 Parquet 落盘启用核心三接口与 `trade_cal`，其他扩展接口会标注 `parquet_status=not_enabled`。`api_acceptance_audit` 只审计字段完整性、安全终态、错误清洗、未选接口不误标 verified、非 Parquet 接口不假写入，不代表全接口 provider 验收或生产刷新完成。
 
 ECharts 次日操作图谱已进入成熟版只读合同：`GET /api/next-session/cache` 返回 `chart_payload`，包含真实 close 历史段、参考线、操作区、情景路径、数据可信度、持仓冲突、DeepSeek 状态、latest close 锚定校验、参考线来源和操作区点击说明。React 只负责渲染与展示 hover/click 说明，不计算 action、不改价格/持仓、不改 `operation_zones`。
 

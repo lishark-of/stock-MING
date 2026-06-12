@@ -95,6 +95,7 @@ CALL_LEDGER_REQUIRED_FIELDS = (
     "call_status",
     "error_message_safe",
 )
+ACCEPTANCE_SAFE_TERMINAL_STATUSES = {"success", "empty", "failed"}
 
 
 def _now_iso() -> str:
@@ -410,6 +411,180 @@ def _validation_target_summary(target_rows: list[dict[str, Any]]) -> dict[str, A
     }
 
 
+def _safe_call_status(status: Any) -> bool:
+    text = str(status or "")
+    return text in ACCEPTANCE_SAFE_TERMINAL_STATUSES or text.startswith("blocked_")
+
+
+def _has_sensitive_key(mapping: Any) -> bool:
+    if not isinstance(mapping, Mapping):
+        return False
+    return any(any(marker in str(key).lower() for marker in SECRET_MARKERS) for key in mapping)
+
+
+def _has_unsafe_error_text(value: Any) -> bool:
+    text = str(value or "").lower()
+    return any(marker in text for marker in SECRET_MARKERS) or any(marker in text for marker in STACK_MARKERS)
+
+
+def _api_acceptance_audit_rows(api_validation_rows: list[dict[str, Any]], call_ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ledger_by_api = {str(row.get("api") or ""): row for row in call_ledger}
+    rows: list[dict[str, Any]] = []
+    for validation in api_validation_rows:
+        api = str(validation.get("api") or "")
+        ledger = ledger_by_api.get(api, {})
+        selected = bool(validation.get("selected"))
+        called = bool(validation.get("called"))
+        call_status = str(validation.get("call_status") or "")
+        validation_status = str(validation.get("validation_status") or "")
+        validation_scope = str(validation.get("validation_scope") or "")
+        missing_required_fields = [
+            field
+            for field in CALL_LEDGER_REQUIRED_FIELDS
+            if called and field not in ledger
+        ]
+        unsafe_request_params = _has_sensitive_key(ledger.get("request_params_safe"))
+        unsafe_error_message = _has_unsafe_error_text(ledger.get("error_message_safe"))
+        false_verified = bool(not selected and (called or validation_status.startswith("validated_")))
+        selected_missing_ledger = bool(selected and not called)
+        false_parquet_claim = bool(
+            not validation.get("parquet_enabled")
+            and (
+                validation.get("parquet_status") == "written"
+                or int(validation.get("parquet_row_count") or 0) > 0
+            )
+        )
+        invalid_call_status = bool(called and not _safe_call_status(call_status))
+        failure_state_visible = bool(call_status == "failed" and validation_status == "validated_failed")
+        blocked_state_visible = bool(call_status.startswith("blocked_") and validation_status == "blocked")
+        empty_state_visible = bool(call_status == "empty" and validation_status == "validated_empty")
+        success_state_visible = bool(call_status == "success" and validation_status == "validated_success")
+        issue_count = sum(
+            1
+            for flag in (
+                bool(missing_required_fields),
+                unsafe_request_params,
+                unsafe_error_message,
+                false_verified,
+                selected_missing_ledger,
+                false_parquet_claim,
+                invalid_call_status,
+            )
+            if flag
+        )
+        rows.append(
+            {
+                "api": api,
+                "domain": validation.get("domain"),
+                "group": validation.get("group"),
+                "selected": selected,
+                "called": called,
+                "validation_status": validation_status,
+                "validation_scope": validation_scope,
+                "call_status": call_status,
+                "row_count": int(validation.get("row_count") or 0),
+                "data_date": validation.get("data_date"),
+                "local_fetched_at": validation.get("local_fetched_at"),
+                "missing_required_fields": missing_required_fields,
+                "required_field_gap_count": len(missing_required_fields),
+                "request_params_safe_has_secret_key": unsafe_request_params,
+                "error_message_safe_has_unsafe_text": unsafe_error_message,
+                "unselected_false_verified": false_verified,
+                "selected_missing_call_ledger": selected_missing_ledger,
+                "false_parquet_write_claim": false_parquet_claim,
+                "invalid_call_status": invalid_call_status,
+                "safe_failure_state_visible": failure_state_visible,
+                "safe_blocked_state_visible": blocked_state_visible,
+                "safe_empty_state_visible": empty_state_visible,
+                "safe_success_state_visible": success_state_visible,
+                "matrix_only_not_verified": bool(validation_scope == "capability_matrix_only" and not validation_status.startswith("validated_")),
+                "safe_terminal_state": bool((not called and not selected) or (called and _safe_call_status(call_status))),
+                "acceptance_issue_count": issue_count,
+                "acceptance_status": "passed" if issue_count == 0 else "blocked",
+                "acceptance_meaning": (
+                    "call_ledger semantic audit passed; this does not promote the API to production data."
+                    if issue_count == 0
+                    else "call_ledger semantic audit found a blocker; do not treat this API as accepted."
+                ),
+                "audit_external_calls_triggered": False,
+                "cache_get_external_calls": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _api_acceptance_audit(api_validation_rows: list[dict[str, Any]], call_ledger: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = _api_acceptance_audit_rows(api_validation_rows, call_ledger)
+    acceptance_issue_count = sum(int(row.get("acceptance_issue_count") or 0) for row in rows)
+    selected_rows = [row for row in rows if row.get("selected")]
+    called_rows = [row for row in rows if row.get("called")]
+    matrix_only_rows = [row for row in rows if row.get("validation_scope") == "capability_matrix_only"]
+    selected_missing_rows = [row for row in rows if row.get("selected_missing_call_ledger")]
+    unsafe_param_rows = [row for row in rows if row.get("request_params_safe_has_secret_key")]
+    unsafe_error_rows = [row for row in rows if row.get("error_message_safe_has_unsafe_text")]
+    false_verified_rows = [row for row in rows if row.get("unselected_false_verified")]
+    false_parquet_rows = [row for row in rows if row.get("false_parquet_write_claim")]
+    required_gap_rows = [row for row in rows if int(row.get("required_field_gap_count") or 0) > 0]
+    invalid_status_rows = [row for row in rows if row.get("invalid_call_status")]
+    successful_selected_rows = [
+        row
+        for row in selected_rows
+        if row.get("called")
+        and row.get("call_status") == "success"
+        and row.get("validation_status") == "validated_success"
+        and int(row.get("row_count") or 0) > 0
+    ]
+    full_interface_acceptance_done = bool(
+        len(selected_rows) == len(REFRESH_API_SPECS)
+        and selected_rows
+        and len(successful_selected_rows) == len(selected_rows)
+        and acceptance_issue_count == 0
+    )
+    return {
+        "schema_version": "tushare_api_acceptance_audit.v1",
+        "status": "acceptance_audit_passed" if acceptance_issue_count == 0 else "acceptance_audit_blocked",
+        "scope": "local_call_ledger_semantic_audit_not_provider_call",
+        "api_count": len(rows),
+        "selected_api_count": len(selected_rows),
+        "called_api_count": len(called_rows),
+        "matrix_only_api_count": len(matrix_only_rows),
+        "selected_missing_call_ledger_count": len(selected_missing_rows),
+        "required_field_gap_count": len(required_gap_rows),
+        "unsafe_request_param_count": len(unsafe_param_rows),
+        "unsafe_error_message_count": len(unsafe_error_rows),
+        "false_verified_count": len(false_verified_rows),
+        "false_parquet_write_claim_count": len(false_parquet_rows),
+        "invalid_call_status_count": len(invalid_status_rows),
+        "safe_success_state_count": len([row for row in rows if row.get("safe_success_state_visible")]),
+        "safe_empty_state_count": len([row for row in rows if row.get("safe_empty_state_visible")]),
+        "safe_failure_state_count": len([row for row in rows if row.get("safe_failure_state_visible")]),
+        "safe_blocked_state_count": len([row for row in rows if row.get("safe_blocked_state_visible")]),
+        "successful_selected_api_count": len(successful_selected_rows),
+        "matrix_only_not_verified_count": len([row for row in matrix_only_rows if row.get("matrix_only_not_verified")]),
+        "acceptance_issue_count": acceptance_issue_count,
+        "selected_interfaces_have_call_ledger": not selected_missing_rows,
+        "does_not_claim_unselected_apis_verified": not false_verified_rows,
+        "safe_errors_redacted": not unsafe_error_rows,
+        "safe_request_params": not unsafe_param_rows,
+        "non_parquet_interfaces_do_not_claim_writes": not false_parquet_rows,
+        "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
+        "full_interface_acceptance_done": full_interface_acceptance_done,
+        "full_interface_acceptance_scope": "all declared APIs must be selected, called, and validated with non-empty successful samples before this can be true.",
+        "provider_validation_done_in_this_task": any(row.get("external_calls_triggered") is True for row in call_ledger),
+        "audit_external_calls_triggered": False,
+        "cache_get_external_calls": False,
+        "audit_calls_tushare": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "note": "This audit validates call_ledger semantics only. It does not call Tushare and does not convert matrix/preflight/mock states into production acceptance.",
+    }
+
+
 def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     safe = _safe_payload(payload)
     if "ticker" in safe and "ts_code" not in safe:
@@ -636,6 +811,7 @@ def run_tushare_refresh_task(
     api_validation_summary = _api_validation_summary(api_validation_rows)
     validation_target_rows = _validation_target_rows(api_validation_rows)
     validation_target_summary = _validation_target_summary(validation_target_rows)
+    api_acceptance_audit = _api_acceptance_audit(api_validation_rows, call_ledger)
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -660,15 +836,20 @@ def run_tushare_refresh_task(
         "api_validation_summary": api_validation_summary,
         "api_validation_target_rows": validation_target_rows,
         "api_validation_target_summary": validation_target_summary,
+        "api_acceptance_audit": api_acceptance_audit,
+        "api_acceptance_audit_rows": api_acceptance_audit["rows"],
+        "api_acceptance_audit_status": api_acceptance_audit["status"],
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
             "matrix_only_apis": [row["api"] for row in api_validation_rows if row.get("validation_scope") == "capability_matrix_only"],
             "target_readiness_scope": "目标领域 readiness 只汇总本次按钮任务的 call_ledger；matrix_only 不代表真实验证。",
+            "acceptance_audit_scope": "api_acceptance_audit 只审计 call_ledger 语义和安全边界，不发起 provider 调用。",
             "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
             "cache_get_external_calls": False,
             "button_gated_external_calls_only": True,
             "does_not_claim_unselected_apis_verified": True,
+            "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
         },
@@ -680,6 +861,9 @@ def run_tushare_refresh_task(
         "parquet_enabled_api_count": api_validation_summary["parquet_enabled_api_count"],
         "extended_api_count": api_validation_summary["extended_api_count"],
         "calendar_api_count": api_validation_summary["calendar_api_count"],
+        "api_acceptance_issue_count": api_acceptance_audit["acceptance_issue_count"],
+        "api_acceptance_audit_passed": api_acceptance_audit["status"] == "acceptance_audit_passed",
+        "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
         "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in call_ledger),
         "tushare_called": any(row.get("tushare_called") is True for row in call_ledger),
         "deepseek_called": False,
