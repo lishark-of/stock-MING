@@ -32,6 +32,8 @@ DEEPSEEK_EXPLANATION_ALLOWED_KEYS = {
     "discipline_notes",
 }
 SCORE_EXCLUDED_FACTOR_KEYS = {"chokepoint_method_hint", "serenity_method_source"}
+FRESHNESS_MAX_AGE_DAYS = 7
+FRESHNESS_STALE_MAX_AGE_DAYS = 30
 
 DECISION_USAGE_POLICY = {
     "display_only": True,
@@ -474,6 +476,55 @@ def _now_iso(now: Any = None) -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
 
+def _parse_date(value: Any) -> _dt.date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = _date_text(text)
+    for candidate, fmt in ((text[:8], "%Y%m%d"), (normalized[:10], "%Y-%m-%d"), (text[:10], "%Y/%m/%d")):
+        try:
+            return _dt.datetime.strptime(candidate, fmt).date()
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _now_date(now: Any = None) -> _dt.date:
+    if isinstance(now, _dt.datetime):
+        return now.date()
+    if isinstance(now, _dt.date):
+        return now
+    parsed = _parse_date(now)
+    return parsed if parsed is not None else _dt.datetime.now().date()
+
+
+def _freshness_row_fields(data_date: Any, *, now: Any = None, max_age_days: int = FRESHNESS_MAX_AGE_DAYS) -> dict[str, Any]:
+    parsed = _parse_date(data_date)
+    if parsed is None:
+        return {
+            "data_age_days": None,
+            "freshness_state": "unknown",
+            "freshness_max_age_days": max_age_days,
+            "freshness_usable_for_score": False,
+        }
+    age_days = max(0, (_now_date(now) - parsed).days)
+    if age_days <= max_age_days:
+        state = "fresh"
+        usable = True
+    elif age_days <= FRESHNESS_STALE_MAX_AGE_DAYS:
+        state = "stale"
+        usable = False
+    else:
+        state = "expired"
+        usable = False
+    return {
+        "data_age_days": age_days,
+        "freshness_state": state,
+        "freshness_max_age_days": max_age_days,
+        "freshness_usable_for_score": usable,
+    }
+
+
 def _packet_keys(available_packets: Any = None) -> set[str]:
     if isinstance(available_packets, Mapping):
         return {str(key) for key, value in available_packets.items() if value}
@@ -794,7 +845,7 @@ def _packet_number(packet: Any, *keys: str) -> float | None:
     return None
 
 
-def _call_ledger_rows(call_ledger: Any = None) -> list[dict]:
+def _call_ledger_rows(call_ledger: Any = None, *, now: Any = None) -> list[dict]:
     if isinstance(call_ledger, Mapping):
         rows = call_ledger.get("items") or call_ledger.get("call_ledger") or []
     else:
@@ -804,19 +855,98 @@ def _call_ledger_rows(call_ledger: Any = None) -> list[dict]:
         item = _as_mapping(raw)
         if not item:
             continue
+        data_date = _date_text(item.get("data_date") or item.get("trade_date"))
         cleaned.append(
             {
                 "api": item.get("api") or item.get("source_interface") or item.get("fact_key"),
                 "source_interfaces": list(item.get("source_interfaces") or ([] if not item.get("source_interface") else [item.get("source_interface")])),
                 "ts_code": item.get("ts_code") or item.get("target_ts_code"),
                 "row_count": int(_to_number(item.get("row_count"), 0) or 0),
-                "data_date": _date_text(item.get("data_date") or item.get("trade_date")),
+                "data_date": data_date,
                 "local_fetched_at": item.get("local_fetched_at") or item.get("updated_at"),
                 "call_status": item.get("call_status") or item.get("status") or "not_called",
                 "error_message_safe": item.get("error_message_safe") or item.get("error") or "",
+                **_freshness_row_fields(data_date, now=now),
             }
         )
     return cleaned
+
+
+def _build_data_freshness_gate(call_rows: list[dict], *, now: Any = None) -> dict[str, Any]:
+    dated_rows = [row for row in call_rows if _parse_date(row.get("data_date")) is not None]
+    if not dated_rows:
+        return {
+            "status": "unknown",
+            "gate_applied": False,
+            "usable_for_score": True,
+            "latest_data_date": None,
+            "max_data_age_days": None,
+            "fresh_count": 0,
+            "stale_count": 0,
+            "expired_count": 0,
+            "unknown_count": len(call_rows),
+            "max_age_days": FRESHNESS_MAX_AGE_DAYS,
+            "note": "未发现可解析 data_date；保持原有 cache-only 降级，不强行判定过期。",
+        }
+    latest = max((_parse_date(row.get("data_date")) for row in dated_rows if _parse_date(row.get("data_date")) is not None), default=None)
+    ages = [row.get("data_age_days") for row in dated_rows if isinstance(row.get("data_age_days"), int)]
+    states = [str(row.get("freshness_state") or "unknown") for row in dated_rows]
+    expired_count = states.count("expired")
+    stale_count = states.count("stale")
+    fresh_count = states.count("fresh")
+    if expired_count:
+        status = "expired"
+    elif stale_count:
+        status = "stale"
+    elif fresh_count == len(dated_rows):
+        status = "fresh"
+    else:
+        status = "unknown"
+    usable = status == "fresh"
+    return {
+        "status": status,
+        "gate_applied": True,
+        "usable_for_score": usable,
+        "latest_data_date": latest.isoformat() if latest else None,
+        "max_data_age_days": max(ages) if ages else None,
+        "fresh_count": fresh_count,
+        "stale_count": stale_count,
+        "expired_count": expired_count,
+        "unknown_count": len(call_rows) - len(dated_rows),
+        "max_age_days": FRESHNESS_MAX_AGE_DAYS,
+        "stale_after_days": FRESHNESS_MAX_AGE_DAYS,
+        "expired_after_days": FRESHNESS_STALE_MAX_AGE_DAYS,
+        "note": "过期或陈旧数据仅允许审计展示，不得进入 composite score 或强 support。",
+    }
+
+
+def _apply_freshness_gate_to_runtime(runtime: Mapping[str, Any], freshness_gate: Mapping[str, Any]) -> dict[str, Any]:
+    gated = dict(runtime)
+    if freshness_gate.get("usable_for_score") is not False or not freshness_gate.get("gate_applied"):
+        gated["data_freshness_gate"] = dict(freshness_gate)
+        return gated
+    values = []
+    for raw in _as_list(gated.get("factor_values")):
+        item = dict(_as_mapping(raw))
+        if item.get("enters_composite_score"):
+            note = item.get("status_note") or ""
+            item["status_note"] = (note + "；" if note else "") + "数据时效门控未通过，保留原值审计但不进入 composite score。"
+            item["data_status"] = "stale_data"
+            item["freshness_usable_for_score"] = False
+            item["effect_before_freshness_gate"] = item.get("effect")
+            item["effect"] = "neutral"
+            item["score_impact"] = 0.0
+            item["enters_composite_score"] = False
+        values.append(item)
+    gated["factor_values"] = values
+    gated["available_count_before_freshness_gate"] = gated.get("available_count")
+    gated["available_count"] = sum(1 for item in values if item.get("enters_composite_score"))
+    gated["data_freshness_gate"] = dict(freshness_gate)
+    gated["status"] = "stale_data" if values else gated.get("status")
+    warnings = list(gated.get("warnings") or [])
+    warnings.append("数据时效门控未通过：本轮 runtime 只保留审计展示，不进入 composite score。")
+    gated["warnings"] = warnings
+    return gated
 
 
 def _calculate_factor_value(
@@ -1565,6 +1695,9 @@ def build_factor_quant_hub_packet(
             "missing_count": len(library.get("factors") or []),
             "calculated_at": now_text,
         }
+    call_rows = _call_ledger_rows(call_ledger, now=now_text)
+    freshness_gate = _build_data_freshness_gate(call_rows, now=now_text)
+    runtime = _apply_freshness_gate_to_runtime(runtime, freshness_gate)
     tests = factor_test_packet if isinstance(factor_test_packet, Mapping) else build_factor_test_packet(mode=selected_mode, now=now_text)
     score = score_packet if isinstance(score_packet, Mapping) else build_factor_score_packet(runtime_packet=runtime, now=now_text)
     sanitized_deepseek = sanitize_factor_deepseek_explanation(deepseek_explanation) if deepseek_explanation else {"called": False, "payload": None}
@@ -1574,6 +1707,8 @@ def build_factor_quant_hub_packet(
     warnings = list(score.get("warnings") or [])
     if runtime.get("coverage", 0) < 0.35:
         warnings.append("多因子覆盖率偏低，仅可作为研究解释。")
+    if freshness_gate.get("gate_applied") and freshness_gate.get("status") != "fresh":
+        warnings.append("数据时效门控未通过：过期或陈旧数据不得进入 composite score、强 support 或交易解释。")
     return {
         "packet_key": QUANT_HUB_PACKET_KEY,
         "schema_version": QUANT_HUB_SCHEMA_VERSION,
@@ -1589,6 +1724,7 @@ def build_factor_quant_hub_packet(
         "runtime": _copy_json(runtime),
         "factor_tests": _copy_json(tests),
         "score": _copy_json(score),
+        "data_freshness_gate": _copy_json(freshness_gate),
         "governance": {
             "state": governance_state,
             "allow_evidence_effects": True,
@@ -1616,11 +1752,11 @@ def build_factor_quant_hub_packet(
             "legacy_quant_packet": bool(_as_mapping(legacy_quant_packet)),
         },
         "warnings": warnings,
-        "call_ledger": _call_ledger_rows(call_ledger),
+        "call_ledger": call_rows,
         "updated_at": now_text,
         "deepseek_called": bool(_as_mapping(sanitized_deepseek).get("called")),
-        "tushare_called": bool(_call_ledger_rows(call_ledger)),
-        "external_calls_triggered": bool(_call_ledger_rows(call_ledger)),
+        "tushare_called": bool(call_rows),
+        "external_calls_triggered": bool(call_rows),
         "does_not_modify_strategy_action": True,
         "does_not_modify_next_session_operation_zones": True,
         "does_not_execute_trades": True,

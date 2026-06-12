@@ -60,6 +60,7 @@ export default function FactorQuantHub() {
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
+  const freshnessGate = packet.data_freshness_gate ?? {};
   const factorLibrary = packet.factor_library ?? {};
   const factorTests = packet.factor_tests ?? {};
   const dataLedger = packet.data_ledger ?? {};
@@ -85,6 +86,7 @@ export default function FactorQuantHub() {
     ...toRows(score.conflict_factors, "conflict")
   ];
   const bridgeRows = objectRows(bridge, "next_session_bridge");
+  const freshnessRows = objectRows(freshnessGate, "freshness_gate");
   const governanceRows = objectRows(governance, "governance");
   const riskRows = toRows(factorLibrary.risk_boundaries).map((row) => ({ risk_boundary: row.value ?? row.item ?? "", ...row }));
   const researchRows = Object.entries(researchContext).map(([key, value]) => ({
@@ -121,6 +123,9 @@ export default function FactorQuantHub() {
         items={[
           { label: "mode", value: packet.mode ?? "cache_only" },
           { label: "runtime", value: runtime.status ?? "not_run" },
+          { label: "freshness", value: freshnessGate.status ?? "unknown", tone: freshnessGate.usable_for_score === false ? "bad" : "good" },
+          { label: "latest data", value: freshnessGate.latest_data_date ?? "unknown" },
+          { label: "max age days", value: freshnessGate.max_data_age_days ?? "unknown", tone: freshnessGate.usable_for_score === false ? "bad" : "neutral" },
           { label: "coverage", value: runtime.coverage ?? 0 },
           { label: "missing", value: runtime.missing_count ?? 0 },
           { label: "score band", value: score.score_band ?? "missing" },
@@ -198,6 +203,9 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={scoreRows} />
       <h3>治理边界</h3>
       <DataLineageTable rows={governanceRows} />
+      <h3>数据时效门控</h3>
+      <p className="risk-note">stale / expired 数据只允许审计展示，不进入 composite score、强 support 或交易解释。</p>
+      <DataLineageTable rows={freshnessRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>

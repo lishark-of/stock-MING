@@ -422,6 +422,54 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertTrue(packet["tushare_called"])
         self.assertEqual(packet["call_ledger"][0]["api"], "daily")
 
+    def test_stale_data_date_blocks_composite_score_support(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            moneyflow_packet={"main_net_yi": 1.2},
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20240131", "call_status": "success"},
+                {"api": "daily_basic", "row_count": 22, "data_date": "20240131", "call_status": "success"},
+                {"api": "moneyflow", "row_count": 22, "data_date": "20240131", "call_status": "success"},
+            ],
+            now="2026-06-12T10:00:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "expired")
+        self.assertFalse(gate["usable_for_score"])
+        self.assertGreater(gate["max_data_age_days"], 30)
+        self.assertEqual(packet["runtime"]["status"], "stale_data")
+        self.assertEqual(packet["runtime"]["available_count"], 0)
+        self.assertIsNone(packet["score"]["composite_score"])
+        self.assertEqual(packet["score"]["support_factors"], [])
+        self.assertEqual(packet["score"]["suppress_factors"], [])
+        self.assertEqual(packet["next_session_bridge"]["preview"], [])
+        self.assertTrue(
+            all(not item.get("enters_composite_score") for item in packet["runtime"]["factor_values"])
+        )
+        self.assertIn("数据时效门控未通过", " ".join(packet["warnings"]))
+
+    def test_fresh_data_date_keeps_score_available(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            moneyflow_packet={"main_net_yi": 1.2},
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260608", "call_status": "success"},
+                {"api": "daily_basic", "row_count": 22, "data_date": "20260608", "call_status": "success"},
+                {"api": "moneyflow", "row_count": 22, "data_date": "20260608", "call_status": "success"},
+            ],
+            now="2026-06-12T10:00:00",
+        )
+
+        self.assertEqual(packet["data_freshness_gate"]["status"], "fresh")
+        self.assertTrue(packet["data_freshness_gate"]["usable_for_score"])
+        self.assertIsNotNone(packet["score"]["composite_score"])
+        self.assertNotEqual(packet["runtime"]["status"], "stale_data")
+
     def test_deepseek_prompt_and_sanitizer_are_explanation_only(self):
         hub = factor_research.build_factor_quant_hub_packet(mode="cache_only")
         prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)
