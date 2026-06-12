@@ -619,6 +619,8 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
     today_is_open = today in open_days
     previous_open = _previous_open_day(open_days, today)
     next_open = _next_open_day(open_days, today)
+    coverage_status = _calendar_coverage_status(rows, today, validated=calendar_validated)
+    today_calendar_row_found = bool(any(row["cal_date"] == today for row in rows))
     days_since_previous_open = (today - previous_open).days if previous_open else None
     days_until_next_open = (next_open - today).days if next_open else None
     today_eod_available = bool(today_is_open and now_dt.time() >= A_SHARE_DATA_READY_TIME)
@@ -654,7 +656,17 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
     if expected is None:
         expected_source = "unavailable"
     warnings = []
-    coverage_status = _calendar_coverage_status(rows, today, validated=calendar_validated)
+    if calendar_validated and coverage_status == "partial_missing_today":
+        phase = "calendar_gap"
+        expected = None
+        expected_source = "unavailable"
+        session_detail = "calendar_gap_missing_today"
+        today_eod_available = False
+        data_update_delay_guard_active = False
+        pre_market_guard_active = False
+        provider_update_grace_active = False
+        session_allows_current_trading_day_data = False
+        warnings.append("trade_cal 缺少当前日期，无法判断今天是否交易日；已禁止当前证据进入 composite score。")
     expected_is_open = bool(expected and any(row["cal_date"] == expected and row.get("is_open") for row in rows))
     expected_validated_by_calendar = bool(calendar_validated and expected_is_open)
     if data_update_delay_guard_active:
@@ -675,6 +687,9 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         market_closed_reason = "trade_cal_marks_today_closed"
     else:
         market_closed_reason = "fallback_weekday_calendar_marks_today_closed"
+    if calendar_validated and coverage_status == "partial_missing_today":
+        market_closed_reason = "trade_cal_missing_today"
+        data_update_delay_reason = "trade_cal_missing_today_cannot_infer_session"
     if not calendar_validated:
         warnings.append("未接入交易所 trade_cal，本次 freshness 使用工作日 fallback；节假日判断需降级。")
     elif coverage_status != "validated":
@@ -697,6 +712,7 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         "days_since_previous_open": days_since_previous_open,
         "days_until_next_open": days_until_next_open,
         "market_closed_reason": market_closed_reason,
+        "today_calendar_row_found": today_calendar_row_found,
         "previous_open_found": bool(previous_open),
         "next_open_found": bool(next_open),
         "calendar_source": "trade_cal_packet" if calendar_validated else "fallback_weekday_calendar",
@@ -758,6 +774,7 @@ def _freshness_row_fields(
         "days_since_previous_open": context.get("days_since_previous_open"),
         "days_until_next_open": context.get("days_until_next_open"),
         "market_closed_reason": context.get("market_closed_reason"),
+        "today_calendar_row_found": bool(context.get("today_calendar_row_found")),
         "previous_open_found": bool(context.get("previous_open_found")),
         "next_open_found": bool(context.get("next_open_found")),
         "market_phase": context.get("market_phase"),
@@ -1226,6 +1243,7 @@ def _build_data_freshness_gate(
             "days_since_previous_open": context.get("days_since_previous_open"),
             "days_until_next_open": context.get("days_until_next_open"),
             "market_closed_reason": context.get("market_closed_reason"),
+            "today_calendar_row_found": bool(context.get("today_calendar_row_found")),
             "previous_open_found": bool(context.get("previous_open_found")),
             "next_open_found": bool(context.get("next_open_found")),
             "market_phase": context.get("market_phase"),
@@ -1303,6 +1321,7 @@ def _build_data_freshness_gate(
         "days_since_previous_open": context.get("days_since_previous_open"),
         "days_until_next_open": context.get("days_until_next_open"),
         "market_closed_reason": context.get("market_closed_reason"),
+        "today_calendar_row_found": bool(context.get("today_calendar_row_found")),
         "previous_open_found": bool(context.get("previous_open_found")),
         "next_open_found": bool(context.get("next_open_found")),
         "market_phase": context.get("market_phase"),
