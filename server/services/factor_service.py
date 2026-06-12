@@ -312,24 +312,40 @@ def _deepseek_model_strategy(purpose: str = "factor_explain") -> dict[str, Any]:
     return model_strategy_service.build_deepseek_model_strategy_ref(purpose)
 
 
-def _deepseek_explanation_call_ledger(now: str, *, sanitized_payload: bool, input_hash: str = "", token_estimate: int = 0) -> list[dict[str, Any]]:
+def _deepseek_explanation_call_ledger(
+    now: str,
+    *,
+    sanitized_payload: bool,
+    input_hash: str = "",
+    token_estimate: int = 0,
+    output_hash: str = "",
+    parse_failed: bool | None = None,
+    model_call_status: str = "not_called",
+) -> list[dict[str, Any]]:
     strategy = _deepseek_model_strategy("factor_explain")
+    call_status = "not_called"
+    if sanitized_payload:
+        call_status = "provided_payload_parse_failed" if parse_failed else "provided_payload_sanitized"
     return [
         {
             "api": "deepseek_factor_explanation",
             "request_params_safe": {
                 "mode": "guarded_prompt_only",
                 "provided_explanation_payload": sanitized_payload,
+                "validation_mode": "local_sanitizer_only",
                 "model_used": strategy.get("model"),
                 "model_purpose": strategy.get("purpose"),
+                "model_call_status": model_call_status,
                 "input_hash": input_hash,
+                "output_hash": output_hash,
                 "token_estimate": token_estimate,
+                "parse_failed": parse_failed if parse_failed is not None else False,
                 "deepseek_model_strategy": strategy,
             },
             "row_count": 0,
             "data_date": None,
             "local_fetched_at": now,
-            "call_status": "provided_payload_sanitized" if sanitized_payload else "not_called",
+            "call_status": call_status,
             "error_message_safe": "",
             **_local_ledger_boundary(),
         }
@@ -351,6 +367,37 @@ def _deepseek_prompt_preview(hub: dict[str, Any]) -> dict[str, Any]:
         "does_not_include_full_packet": bool(prompt.get("does_not_include_full_packet")),
         "does_not_include_price_or_position": True,
         "does_not_include_factor_values": True,
+    }
+
+
+def _deepseek_validation_summary(
+    *,
+    explanation: dict[str, Any],
+    prompt_preview: dict[str, Any],
+    model_strategy: dict[str, Any],
+) -> dict[str, Any]:
+    ignored_keys = explanation.get("ignored_keys") if isinstance(explanation.get("ignored_keys"), list) else []
+    return {
+        "status": explanation.get("status") or "not_called",
+        "validation_mode": "local_sanitizer_only",
+        "model_used": model_strategy.get("model"),
+        "model_purpose": model_strategy.get("purpose"),
+        "model_call_status": explanation.get("model_call_status") or "not_called",
+        "input_hash": explanation.get("input_hash") or prompt_preview.get("input_hash") or "",
+        "output_hash": explanation.get("output_hash") or "",
+        "prompt_token_estimate": prompt_preview.get("token_estimate") or 0,
+        "output_token_estimate": explanation.get("token_estimate") or 0,
+        "parse_failed": bool(explanation.get("parse_failed")),
+        "allowed_top_level_keys": prompt_preview.get("allowed_top_level_keys") or [],
+        "ignored_key_count": len(ignored_keys),
+        "ignored_keys": sorted(str(key) for key in ignored_keys),
+        "invalid_output_discarded": bool(explanation.get("parse_failed")),
+        "does_not_override_numeric_values": explanation.get("does_not_override_numeric_values") is not False,
+        "does_not_output_strategy_action": explanation.get("does_not_output_strategy_action") is not False,
+        "does_not_modify_strategy_action": True,
+        "external_calls_triggered": False,
+        "deepseek_called": False,
+        "contains_secret": False,
     }
 
 
@@ -404,11 +451,24 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
             explanation["source"] = "provided_payload_sanitized_no_model_call"
             explanation["allowed_keys_enforced"] = True
             explanation["deepseek_model_strategy"] = model_strategy
-            call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=True, input_hash=input_hash, token_estimate=token_estimate)
+            call_ledger = _deepseek_explanation_call_ledger(
+                now,
+                sanitized_payload=True,
+                input_hash=input_hash,
+                token_estimate=token_estimate,
+                output_hash=str(explanation.get("output_hash") or ""),
+                parse_failed=bool(explanation.get("parse_failed")),
+                model_call_status=str(explanation.get("model_call_status") or "not_called"),
+            )
             current_step = "deepseek_explanation_sanitized_without_model_call"
 
         hub["deepseek_explanation_prompt_preview"] = prompt_preview
         hub["deepseek_explanation"] = explanation
+        hub["deepseek_validation_summary"] = _deepseek_validation_summary(
+            explanation=explanation,
+            prompt_preview=prompt_preview,
+            model_strategy=model_strategy,
+        )
         hub["deepseek_model_strategy"] = model_strategy
         hub["deepseek_called"] = False
         hub["deepseek_model_called"] = False

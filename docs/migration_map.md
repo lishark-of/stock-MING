@@ -106,7 +106,7 @@
 
 `/api/next-session/generate` 已从纯 stub 升级为本地 cache pipeline：只读取已有次日图谱 cache，发现精确 `command_center_next_session_projection_packet` 时写入 SQLite meta cache；没有精确 packet 时返回 `cache_missing` 任务状态，不写入假 packet。该任务仍不调用 Tushare、DeepSeek、GitHub，不修改 strategy action、价格、持仓或 operation_zones。
 
-`/api/factor-quant/deepseek-explain` 已从纯 stub 升级为 guarded explanation pipeline：只读取已有 Factor Quant Hub cache，生成未发送的安全 prompt 预览；如传入本地解释 payload，只保留 `summary`、`support_notes`、`suppress_notes`、`conflict_notes`、`missing_data_notes`、`discipline_notes` 六类字段并写回 SQLite cache。当前阶段不真实调用 DeepSeek，不输出价格/持仓/因子值/买卖指令，不覆盖任何数值 packet。
+`/api/factor-quant/deepseek-explain` 已从纯 stub 升级为 guarded explanation pipeline：只读取已有 Factor Quant Hub cache，生成未发送的安全 prompt 预览；如传入本地解释 payload，只保留 `summary`、`support_notes`、`suppress_notes`、`conflict_notes`、`missing_data_notes`、`discipline_notes` 六类字段并写回 SQLite cache，并输出 `deepseek_validation_summary`、输入/输出 hash、parse 结果和模型调用状态。当前阶段不真实调用 DeepSeek，不输出价格/持仓/因子值/买卖指令，不覆盖任何数值 packet。
 
 Factor Quant Hub freshness gate 已从自然日 MVP 升级为 A 股交易日历语义：当本地 `trade_cal` cache 可见时使用 `cal_date/is_open` 推导 `expected_data_date`，盘中或盘后未到 EOD 可得时间时使用上一已完成交易日；没有 `trade_cal` 时仅使用工作日近似并标记 `calendar_validated=false`。`fresh/stale/expired/future_unavailable` 只影响因子证据是否进入 `composite_score` 和 `next_session_bridge.preview`，不修改 `strategy action`。
 

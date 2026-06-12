@@ -2523,6 +2523,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(task_model_strategy["contains_secret"])
         self.assertEqual(task["call_ledger"][0]["request_params_safe"]["model_used"], task_model_strategy["model"])
         self.assertTrue(task["call_ledger"][0]["request_params_safe"]["input_hash"])
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["model_call_status"], "not_called")
+        self.assertFalse(task["call_ledger"][0]["request_params_safe"]["parse_failed"])
         self.assertGreater(task["call_ledger"][0]["request_params_safe"]["token_estimate"], 0)
         self.assertFalse(task["deepseek_called"])
         self.assertFalse(task["external_calls_triggered"])
@@ -2545,6 +2547,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreater(packet["deepseek_explanation_prompt_preview"]["token_estimate"], 0)
         self.assertEqual(packet["deepseek_model_strategy"]["purpose"], "factor_explain")
         self.assertEqual(packet["deepseek_explanation_prompt_preview"]["deepseek_model_strategy"]["purpose"], "factor_explain")
+        self.assertEqual(packet["deepseek_validation_summary"]["status"], "not_called")
+        self.assertEqual(packet["deepseek_validation_summary"]["validation_mode"], "local_sanitizer_only")
+        self.assertEqual(packet["deepseek_validation_summary"]["model_call_status"], "not_called")
+        self.assertFalse(packet["deepseek_validation_summary"]["parse_failed"])
+        self.assertFalse(packet["deepseek_validation_summary"]["deepseek_called"])
+        self.assertFalse(packet["deepseek_validation_summary"]["external_calls_triggered"])
+        self.assertTrue(packet["deepseek_validation_summary"]["does_not_modify_strategy_action"])
         self.assertFalse(packet["deepseek_model_strategy"]["contains_secret"])
         self.assertFalse(packet["governance"]["allow_core_action"])
         self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
@@ -2578,6 +2587,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "factor_explain",
         )
         self.assertTrue(task["call_ledger"][0]["request_params_safe"]["input_hash"])
+        self.assertTrue(task["call_ledger"][0]["request_params_safe"]["output_hash"])
+        self.assertFalse(task["call_ledger"][0]["request_params_safe"]["parse_failed"])
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["model_call_status"], "not_called")
         self.assertGreater(task["call_ledger"][0]["request_params_safe"]["token_estimate"], 0)
         self.assertEqual(task["payload_safe"], {"provided_explanation_payload": True})
         self.assertNotIn("api_key", task["payload_safe"])
@@ -2596,6 +2608,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(explanation["input_hash"])
         self.assertTrue(explanation["output_hash"])
         self.assertGreater(explanation["token_estimate"], 0)
+        self.assertEqual(packet["deepseek_validation_summary"]["status"], "success")
+        self.assertEqual(packet["deepseek_validation_summary"]["output_hash"], explanation["output_hash"])
+        self.assertEqual(packet["deepseek_validation_summary"]["ignored_key_count"], 6)
+        self.assertFalse(packet["deepseek_validation_summary"]["parse_failed"])
+        self.assertFalse(packet["deepseek_validation_summary"]["deepseek_called"])
+        self.assertTrue(packet["deepseek_validation_summary"]["does_not_override_numeric_values"])
+        self.assertTrue(packet["deepseek_validation_summary"]["does_not_output_strategy_action"])
         self.assertEqual(explanation["payload"]["summary"], "只解释已有结构化结果")
         self.assertEqual(set(explanation["payload"]), {
             "summary",
@@ -2608,6 +2627,41 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         for forbidden_key in ("strategy_action", "action", "price", "position", "factor_values", "packet"):
             self.assertIn(forbidden_key, explanation["ignored_keys"])
             self.assertNotIn(forbidden_key, explanation["payload"])
+
+    def test_deepseek_explanation_task_marks_invalid_json_as_parse_failed_without_pollution(self):
+        self._with_meta_store()
+
+        task = factor_service.create_factor_task(
+            "run_deepseek_factor_explanation",
+            payload={"mock_deepseek_output": "not json price=99 action=buy token=DROP"},
+        )
+        packet = packet_service.build_factor_quant_cache()
+        explanation = packet["deepseek_explanation"]
+        validation = packet["deepseek_validation_summary"]
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "provided_payload_parse_failed")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assertTrue(task["call_ledger"][0]["request_params_safe"]["parse_failed"])
+        self.assertTrue(task["call_ledger"][0]["request_params_safe"]["output_hash"])
+        self.assertNotIn("price=99", json.dumps(task, ensure_ascii=False))
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["external_calls_triggered"])
+
+        self.assertEqual(explanation["status"], "parse_failed")
+        self.assertTrue(explanation["parse_failed"])
+        self.assertEqual(explanation["payload"]["summary"], "")
+        self.assertEqual(explanation["payload"]["support_notes"], [])
+        self.assertTrue(explanation["output_hash"])
+        self.assertEqual(validation["status"], "parse_failed")
+        self.assertTrue(validation["parse_failed"])
+        self.assertTrue(validation["invalid_output_discarded"])
+        self.assertEqual(validation["model_call_status"], "not_called")
+        self.assertFalse(validation["deepseek_called"])
+        self.assertFalse(validation["external_calls_triggered"])
+        self.assertTrue(validation["does_not_modify_strategy_action"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+        self.assertTrue(packet["next_session_bridge"]["does_not_modify_action"])
         self.assertTrue(explanation["does_not_override_numeric_values"])
         self.assertFalse(packet["governance"]["allow_core_action"])
         self.assertTrue(packet["next_session_bridge"]["does_not_modify_operation_zones"])

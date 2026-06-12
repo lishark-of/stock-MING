@@ -68,10 +68,12 @@ export default function FactorQuantHub() {
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
   const deepseek = packet.deepseek_explanation ?? {};
+  const deepseekValidation = packet.deepseek_validation_summary ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
   const scoreChartRows = toRows(scoreChart.bucket_rows);
   const scoreChartContractRows = objectRows(scoreChartContract as Record<string, unknown>, "chart_contract");
+  const deepseekValidationRows = objectRows(deepseekValidation as Record<string, unknown>, "deepseek_validation");
   const factorTestRows = toRows(factorTests.items);
   const factorTestMetricRows = toRows(factorTests.metric_schema);
   const factorTestModeRows = toRows(factorTests.mode_plan);
@@ -160,6 +162,9 @@ export default function FactorQuantHub() {
           { label: "DeepSeek", value: deepseek.status ?? "not_called", tone: deepseek.called === true ? "warn" : "good" },
           { label: "DS model", value: deepseek.model_used ?? "not_called" },
           { label: "DS parse_failed", value: deepseek.parse_failed === true ? "是" : "否", tone: deepseek.parse_failed === true ? "bad" : "good" },
+          { label: "DS validation", value: deepseekValidation.validation_mode ?? "local_sanitizer_only" },
+          { label: "DS model call", value: deepseekValidation.model_call_status ?? "not_called", tone: deepseekValidation.model_call_status === "not_called" ? "good" : "warn" },
+          { label: "DS invalid discarded", value: deepseekValidation.invalid_output_discarded === true ? "是" : "否", tone: deepseekValidation.invalid_output_discarded === true ? "warn" : "good" },
           { label: "DS token estimate", value: deepseek.token_estimate ?? 0 },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" }
         ]}
@@ -196,8 +201,13 @@ export default function FactorQuantHub() {
         <p>output_hash: {String(deepseek.output_hash ?? "")}</p>
         <p>parse_failed: {String(deepseek.parse_failed ?? false)}</p>
         <p>token_estimate: {String(deepseek.token_estimate ?? 0)}</p>
+        <p>validation_mode: {String(deepseekValidation.validation_mode ?? "local_sanitizer_only")}</p>
+        <p>model_call_status: {String(deepseekValidation.model_call_status ?? "not_called")}</p>
+        <p>invalid_output_discarded: {String(deepseekValidation.invalid_output_discarded ?? false)}</p>
         <p>allowed: summary / support_notes / suppress_notes / conflict_notes / missing_data_notes / discipline_notes</p>
       </PacketCard>
+      <h3>DeepSeek 解释校验</h3>
+      <DataLineageTable rows={deepseekValidationRows} />
       <h3>因子库</h3>
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>
