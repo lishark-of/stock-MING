@@ -8,6 +8,10 @@ class CommandCenterStreamlitLegacyBoundaryTests(unittest.TestCase):
 
         self.assertIn('STREAMLIT_LEGACY_MODE_STATUS = "legacy/admin/debug"', source)
         self.assertIn('COMMAND_CENTER_3_OFFICIAL_ENTRY = "React/Vite/Tauri + FastAPI"', source)
+        self.assertIn("STREAMLIT_LEGACY_EXIT_POLICY", source)
+        self.assertIn('"streamlit_is_primary_entry": False', source)
+        self.assertIn('"startup_task_creation": False', source)
+        self.assertIn('"can_bypass_strategy_guardrails": False', source)
         self.assertIn("def render_streamlit_legacy_admin_notice", source)
         self.assertIn("当前 Streamlit 工作台已降级为 legacy/admin/debug", source)
         self.assertIn("普通主路径请使用", source)
@@ -20,7 +24,9 @@ class CommandCenterStreamlitLegacyBoundaryTests(unittest.TestCase):
         )[0]
 
         self.assertIn("外部刷新、DeepSeek、GitHub 校验仍需按钮门控", notice_body)
+        self.assertIn("不会自动创建任务", notice_body)
         self.assertIn("不会自动执行真实交易", notice_body)
+        self.assertIn("不会改写 strategy action", notice_body)
         self.assertNotIn("自动下单", notice_body)
 
 

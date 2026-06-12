@@ -210,7 +210,12 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
             "does_not_modify_holdings": True,
             "streamlit_role": "legacy/admin/debug",
+            "official_primary_entry": "React/Vite/Tauri + FastAPI",
+            "streamlit_is_official_primary_entry": False,
             "react_tauri_is_primary_entry": True,
+            "legacy_startup_external_calls": False,
+            "legacy_startup_task_creation": False,
+            "legacy_can_bypass_guardrails": False,
             "legacy_bridge_is_not_trade_instruction": True,
             "post_task_required_for_migration_work": True,
         },
@@ -234,7 +239,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "contains_secret": False,
         "warnings": [
             "GET /api/legacy/cache 只读展示旧工作台桥接和迁移清单；不会打开 Streamlit 或运行旧工具。",
-            "Streamlit 仅保留为 legacy/admin/debug；普通主流程迁往 React/Tauri + FastAPI。",
+            "Streamlit 仅保留为 legacy/admin/debug；不是正式主入口，普通主流程迁往 React/Tauri + FastAPI。",
+            "Legacy 启动不创建任务、不自动外联、不绕过 strategy guardrails。",
             "本页不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。",
         ],
     }

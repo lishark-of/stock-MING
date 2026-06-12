@@ -74,6 +74,9 @@ export default function LegacyTools() {
           items={[
             { label: "正式入口", value: "Command Center 3" },
             { label: "Streamlit", value: "legacy/admin/debug" },
+            { label: "Streamlit 主入口", value: policy.streamlit_is_official_primary_entry === true ? "仍是" : "不是", tone: policy.streamlit_is_official_primary_entry === true ? "bad" : "good" },
+            { label: "启动创建任务", value: policy.legacy_startup_task_creation === true ? "会" : "不会", tone: policy.legacy_startup_task_creation === true ? "bad" : "good" },
+            { label: "绕过 guard", value: policy.legacy_can_bypass_guardrails === true ? "可能" : "禁止", tone: policy.legacy_can_bypass_guardrails === true ? "bad" : "good" },
             { label: "bridge status", value: String(cache.status ?? "cache") },
             { label: "checklist", value: `${String(counts.checklist_done_count ?? 0)} / ${String(counts.checklist_pending_count ?? 0)}` },
             { label: "bridge items", value: counts.bridge_item_count as number | undefined },
@@ -88,7 +91,7 @@ export default function LegacyTools() {
         />
         <p>旧版 Streamlit 入口仍保留在 app.py，用于排查、管理、旧功能回退和阶段性兼容。</p>
         <p>普通主流程请使用 Command Center 3；3.0 正式主路径会逐步迁移到 React + FastAPI + Tauri。</p>
-        <p>Legacy 页面不会创建任务，不调用 Tushare、DeepSeek 或 GitHub，也不会打开 Streamlit 或运行旧工具。</p>
+        <p>Streamlit 不是正式主入口；Legacy 页面不会创建任务，不调用 Tushare、DeepSeek 或 GitHub，也不会打开 Streamlit 或运行旧工具。</p>
         <p>GET /api/legacy/cache 只读展示旧工作台桥接和迁移清单，不会绕过 strategy_execution_packet。</p>
       </PacketCard>
 
@@ -100,6 +103,10 @@ export default function LegacyTools() {
 
       <PacketCard title="Legacy 边界" subtitle="旧入口保留，但不得重新成为主路径" status="read_only">
         <DataLineageTable rows={LEGACY_BOUNDARIES} />
+      </PacketCard>
+
+      <PacketCard title="Legacy Policy" subtitle="Streamlit 退出普通主流程；React/Tauri 为正式入口" status="policy">
+        <DataLineageTable rows={objectRow(policy)} />
       </PacketCard>
 
       <PacketCard title="允许用途" subtitle="回退和调试可保留，普通主流程逐步迁出" status="guarded">
