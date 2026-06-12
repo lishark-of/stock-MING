@@ -68,9 +68,19 @@ export default function NextSessionMap() {
   const chartSummary = (packet.chart_summary as Record<string, unknown> | undefined) ?? (chartPayload?.chart_summary as Record<string, unknown> | undefined) ?? {};
   const chartContract = chartPayload?.chart_contract as Record<string, unknown> | undefined;
   const chartContractCounts = chartContract?.series_counts as Record<string, unknown> | undefined;
+  const chartMaturity = (chartPayload?.chart_maturity as Record<string, unknown> | undefined) ?? {};
+  const latestCloseAnchor = (chartPayload?.latest_close_anchor as Record<string, unknown> | undefined) ?? {};
+  const dataTrustSummary = (chartPayload?.data_trust_summary as Record<string, unknown> | undefined) ?? {};
+  const positionConflict = (chartPayload?.position_conflict as Record<string, unknown> | undefined) ?? {};
   const historicalRows = rowsFromArray(chartPayload?.historical_points).slice(0, 20);
   const referenceRows = rowsFromArray(chartPayload?.reference_lines);
   const operationRows = rowsFromArray(chartPayload?.operation_zones);
+  const referenceLineRows = rowsFromArray(chartPayload?.reference_line_rows);
+  const zoneInteractionRows = rowsFromArray(chartPayload?.zone_interaction_rows);
+  const scenarioAnchorRows = rowsFromArray(chartPayload?.scenario_anchor_rows);
+  const dataTrustRows = rowsFromArray(dataTrustSummary.facts);
+  const humanTrustRows = rowsFromArray(dataTrustSummary.human_summary, "summary");
+  const positionConflictRows = rowsFromArray(positionConflict.conflict_flags, "conflict_flag");
   const warningRows = rowsFromArray(chartPayload?.warnings, "warning");
   const chartContractRows = chartContract
     ? [
@@ -141,6 +151,11 @@ export default function NextSessionMap() {
           { label: "参考线", value: chartSummary.reference_line_count as number | undefined },
           { label: "操作区", value: chartSummary.operation_zone_count as number | undefined },
           { label: "历史点", value: chartSummary.historical_point_count as number | undefined },
+          { label: "成熟度", value: String(chartMaturity.status ?? chartSummary.maturity_status ?? "partial"), tone: chartMaturity.status === "ready" ? "good" : "warn" },
+          { label: "路径锚定", value: `${String(chartMaturity.scenario_anchored_count ?? chartSummary.scenario_anchored_count ?? 0)}/${String(chartMaturity.scenario_anchor_count ?? 0)}` },
+          { label: "最新 close", value: String(latestCloseAnchor.price ?? "--") },
+          { label: "持仓冲突", value: positionConflict.has_conflict === true ? "有" : "无", tone: positionConflict.has_conflict === true ? "bad" : "good" },
+          { label: "DeepSeek", value: String(chartPayload?.deepseek_status ?? chartSummary.deepseek_status ?? "not_called"), tone: chartPayload?.deepseek_status === "success" ? "good" : "neutral" },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
           { label: "修改 action", value: packet.does_not_modify_action === false ? "会" : "不会", tone: packet.does_not_modify_action === false ? "bad" : "good" },
@@ -161,10 +176,21 @@ export default function NextSessionMap() {
       <DataLineageTable rows={rowsFromArray(cacheWarnings, "warning")} />
       <h3>情景路径</h3>
       <DataLineageTable rows={scenarioRows} />
+      <h3>路径锚定校验</h3>
+      <DataLineageTable rows={scenarioAnchorRows} />
       <h3>参考线</h3>
       <DataLineageTable rows={referenceRows} />
+      <h3>参考线来源</h3>
+      <DataLineageTable rows={referenceLineRows} />
       <h3>操作区</h3>
       <DataLineageTable rows={operationRows} />
+      <h3>操作区点击说明</h3>
+      <DataLineageTable rows={zoneInteractionRows} />
+      <h3>数据可信度</h3>
+      <DataLineageTable rows={dataTrustRows} />
+      <DataLineageTable rows={humanTrustRows} />
+      <h3>持仓冲突提示</h3>
+      <DataLineageTable rows={positionConflictRows} />
       <h3>历史 close 样例</h3>
       <DataLineageTable rows={historicalRows} />
       <h3>图表风险提示</h3>

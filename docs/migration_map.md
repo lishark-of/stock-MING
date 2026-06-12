@@ -112,6 +112,8 @@ Factor Quant Hub freshness gate 已从自然日 MVP 升级为 A 股交易日历�
 
 Tushare 任务管线已补充扩展接口验证矩阵：`POST /api/tasks/refresh-tushare-facts` 支持 `trade_cal`、两融、涨跌停、筹码、公告/预告、股东增减持、限售解禁、质押等接口按按钮 payload 进入 `call_ledger` 和 `api_validation_rows`；默认按钮仍只刷新 `daily/daily_basic/moneyflow`。当前 Parquet 落盘仅启用核心三接口，扩展接口会标注 `parquet_status=not_enabled`，避免把“已调用/空数据/失败/缺参阻断”误读为已完成本地数据生产化。
 
+ECharts 次日操作图谱已进入成熟版只读合同：`GET /api/next-session/cache` 返回 `chart_payload`，包含真实 close 历史段、参考线、操作区、情景路径、数据可信度、持仓冲突、DeepSeek 状态、latest close 锚定校验、参考线来源和操作区点击说明。React 只负责渲染与展示 hover/click 说明，不计算 action、不改价格/持仓、不改 `operation_zones`。
+
 `/api/trade-review/cache` 已接入交易记录实验室只读迁移：只读取 `.stock_ming_cache/trade_review_log.jsonl`，返回复盘记录摘要、记录表和本地读取血缘；不创建记录、不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
 `/api/quant/cache` 已接入旧量化/回测只读迁移：读取 `command_center_quant_packet` 或本地 snapshot 构建轻量缓存摘要；不运行 `backtester`、不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。完整回测后续必须通过按钮门控 POST task。

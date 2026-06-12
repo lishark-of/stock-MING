@@ -173,6 +173,9 @@ def _chart_point(item: Any) -> dict[str, Any] | None:
         "t": t_value,
         "price": round(price, 4),
         "source": item.get("source") or "cache_projection",
+        "trigger_condition": item.get("trigger_condition"),
+        "risk_note": item.get("risk_note") or item.get("confidence_note"),
+        "confidence": item.get("confidence"),
     }
 
 
@@ -219,6 +222,105 @@ def _chart_y_axis_range(payload: dict[str, Any]) -> list[float | None]:
     return [round(low - padding, 4), round(high + padding, 4)]
 
 
+def _latest_historical_point(payload: dict[str, Any]) -> dict[str, Any]:
+    points = [item for item in payload.get("historical_points") or [] if isinstance(item, dict)]
+    if not points:
+        return {"available": False, "x": None, "price": None, "source": ""}
+    latest = points[-1]
+    return {
+        "available": True,
+        "x": latest.get("x"),
+        "price": latest.get("price"),
+        "source": latest.get("source") or payload.get("historical_source_label") or "",
+    }
+
+
+def _scenario_anchor_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    latest = _latest_historical_point(payload)
+    latest_price = _to_number(latest.get("price"))
+    rows: list[dict[str, Any]] = []
+    for series in payload.get("scenario_series") or []:
+        if not isinstance(series, dict):
+            continue
+        points = [item for item in series.get("points") or [] if isinstance(item, dict)]
+        first = points[0] if points else {}
+        first_price = _to_number(first.get("price"))
+        anchor_delta = None if latest_price is None or first_price is None else round(first_price - latest_price, 4)
+        rows.append(
+            {
+                "scenario_key": series.get("scenario_key") or series.get("scenario_name"),
+                "scenario_name": series.get("scenario_name") or series.get("scenario_key"),
+                "first_x": first.get("x"),
+                "first_price": first_price,
+                "latest_close": latest_price,
+                "anchor_delta": anchor_delta,
+                "anchored_to_latest_close": anchor_delta is not None and abs(anchor_delta) <= 0.01,
+                "trigger_condition": series.get("trigger_condition") or first.get("trigger_condition") or "路径仅展示条件，不生成交易动作。",
+                "risk_note": series.get("risk_note") or first.get("risk_note") or "情景路径不覆盖 strategy action。",
+                "source": series.get("source") or payload.get("future_source_label") or "GET /api/next-session/cache",
+            }
+        )
+    return rows
+
+
+def _reference_line_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in payload.get("reference_lines") or []:
+        if not isinstance(line, dict):
+            continue
+        rows.append(
+            {
+                "key": line.get("key"),
+                "label": line.get("label"),
+                "value": line.get("value"),
+                "tone": line.get("tone"),
+                "source": line.get("source") or payload.get("source_packet") or "GET /api/next-session/cache",
+                "frontend_mutable": False,
+            }
+        )
+    return rows
+
+
+def _zone_interaction_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for zone in payload.get("operation_zones") or []:
+        if not isinstance(zone, dict):
+            continue
+        rows.append(
+            {
+                "zone_key": zone.get("zone_key"),
+                "zone_name": zone.get("zone_name"),
+                "price_range": zone.get("price_range"),
+                "action_mode": zone.get("action_mode") or "condition_only",
+                "source": zone.get("source") or "chart_payload.operation_zones",
+                "click_displays": "guardrail",
+                "guardrail": zone.get("guardrail") or "只读区域，不改写 operation_zones 或 strategy action。",
+                "frontend_mutable": False,
+            }
+        )
+    return rows
+
+
+def _chart_maturity_status(payload: dict[str, Any]) -> dict[str, Any]:
+    anchor_rows = _scenario_anchor_rows(payload)
+    position_conflict = payload.get("position_conflict") if isinstance(payload.get("position_conflict"), dict) else {}
+    data_trust = payload.get("data_trust_summary") if isinstance(payload.get("data_trust_summary"), dict) else {}
+    deepseek = data_trust.get("deepseek") if isinstance(data_trust.get("deepseek"), dict) else {}
+    deepseek_status = str(payload.get("deepseek_status") or deepseek.get("status") or "not_called")
+    return {
+        "status": "ready" if payload.get("is_exact_next_session_packet") and payload.get("uses_real_daily_close") else "partial",
+        "has_real_60d_close": bool(payload.get("uses_real_daily_close")) and len(payload.get("historical_points") or []) >= 1,
+        "latest_close_anchor": _latest_historical_point(payload),
+        "scenario_anchor_count": len(anchor_rows),
+        "scenario_anchored_count": len([row for row in anchor_rows if row.get("anchored_to_latest_close")]),
+        "position_conflict": bool(position_conflict.get("has_conflict") or position_conflict.get("conflict_flags")),
+        "deepseek_status": deepseek_status,
+        "frontend_render_only": True,
+        "does_not_modify_action": True,
+        "does_not_modify_operation_zones": True,
+    }
+
+
 def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "contract_key": "next_session_echarts_payload",
@@ -240,6 +342,7 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
             "hover_displays": ["price", "source", "trigger_condition", "risk_note"],
             "click_path_displays": "trigger_condition",
             "click_zone_displays": "guardrail",
+            "click_reference_displays": "line_source",
             "y_axis_dynamic_scale": True,
             "frontend_render_only": True,
             "frontend_must_not_calculate_action": True,
@@ -249,6 +352,7 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
             "scenario_series": len(payload.get("scenario_series") or []),
             "reference_lines": len(payload.get("reference_lines") or []),
             "operation_zones": len(payload.get("operation_zones") or []),
+            "scenario_anchor_rows": len(payload.get("scenario_anchor_rows") or []),
         },
         "required_fields": [
             "historical_points",
@@ -256,6 +360,7 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
             "reference_lines",
             "operation_zones",
             "y_axis_range",
+            "scenario_anchor_rows",
         ],
         "guardrails": [
             "GET /api/next-session/cache 不触发 Tushare、DeepSeek 或 GitHub。",
@@ -289,6 +394,10 @@ def _next_session_chart_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "deepseek_called": bool(contract.get("deepseek_called")),
         "github_called": bool(contract.get("github_called")),
         "does_not_execute_trades": contract.get("does_not_execute_trades") is not False,
+        "maturity_status": (payload.get("chart_maturity") or {}).get("status") if isinstance(payload.get("chart_maturity"), dict) else "partial",
+        "scenario_anchored_count": (payload.get("chart_maturity") or {}).get("scenario_anchored_count") if isinstance(payload.get("chart_maturity"), dict) else 0,
+        "position_conflict": bool((payload.get("position_conflict") or {}).get("has_conflict") or (payload.get("position_conflict") or {}).get("conflict_flags")) if isinstance(payload.get("position_conflict"), dict) else False,
+        "deepseek_status": payload.get("deepseek_status") or "not_called",
     }
 
 
@@ -302,6 +411,11 @@ def _attach_next_session_chart_contract(payload: dict[str, Any], source_packet: 
         payload["source_packet"] = source_packet
     if "y_axis_range" not in payload:
         payload["y_axis_range"] = _chart_y_axis_range(payload)
+    payload["latest_close_anchor"] = _latest_historical_point(payload)
+    payload["scenario_anchor_rows"] = _scenario_anchor_rows(payload)
+    payload["reference_line_rows"] = _reference_line_rows(payload)
+    payload["zone_interaction_rows"] = _zone_interaction_rows(payload)
+    payload["chart_maturity"] = _chart_maturity_status(payload)
     payload["chart_contract"] = _next_session_echarts_contract(payload)
     payload["chart_summary"] = _next_session_chart_summary(payload)
     return payload
@@ -450,12 +564,23 @@ def _legacy_projection_chart_payload(projection: Any) -> dict[str, Any]:
 def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
     source = packet if isinstance(packet, dict) else {}
     model = source.get("chart_render_model") if isinstance(source.get("chart_render_model"), dict) else {}
+    position = source.get("position_context") if isinstance(source.get("position_context"), dict) else {}
+    data_trust_summary = source.get("data_trust_summary") if isinstance(source.get("data_trust_summary"), dict) else {}
+    deepseek_synthesis = source.get("deepseek_synthesis") if isinstance(source.get("deepseek_synthesis"), dict) else {}
+    deepseek_status = deepseek_synthesis.get("status") or (data_trust_summary.get("deepseek", {}) if isinstance(data_trust_summary.get("deepseek"), dict) else {}).get("status") or "not_called"
     if not model:
         return _attach_next_session_chart_contract({
             "status": "missing",
             "source_packet": next_session_projection.PACKET_KEY,
             "is_exact_next_session_packet": True,
             "uses_real_daily_close": False,
+            "data_trust_summary": data_trust_summary,
+            "position_conflict": {
+                "has_conflict": bool(position.get("conflict_flags")),
+                "conflict_flags": position.get("conflict_flags") or [],
+                "source_packet": position.get("source_packet"),
+            },
+            "deepseek_status": deepseek_status,
             "historical_points": [],
             "scenario_series": [],
             "reference_lines": [],
@@ -470,6 +595,13 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
         "uses_real_daily_close": bool(model.get("uses_real_daily_close") or _summary_of_packet(source).get("available")),
         "historical_source_label": "command_center_next_session_projection_packet.chart_render_model",
         "future_source_label": "scenario_paths",
+        "data_trust_summary": data_trust_summary,
+        "position_conflict": {
+            "has_conflict": bool(position.get("conflict_flags")),
+            "conflict_flags": position.get("conflict_flags") or [],
+            "source_packet": position.get("source_packet"),
+        },
+        "deepseek_status": deepseek_status,
         "historical_points": _chart_points(model.get("historical_series") or model.get("historical_points") or model.get("daily_close_points") or []),
         "scenario_series": [
             {
@@ -478,6 +610,8 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
                 "color": item.get("color"),
                 "points": _chart_points(item.get("points")),
                 "source": "chart_render_model",
+                "trigger_condition": item.get("trigger_condition") or item.get("action_timing_note"),
+                "risk_note": item.get("risk_note") or item.get("confidence_note"),
             }
             for item in model.get("scenario_series") or []
             if isinstance(item, dict)

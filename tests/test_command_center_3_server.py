@@ -359,6 +359,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                             {
                                 "scenario_key": "neutral",
                                 "scenario_name": "中性路径",
+                                "trigger_condition": "放量但不追高",
+                                "confidence_note": "中性路径只作基准",
                                 "points": [{"x": "T0", "price": 10.4}, {"x": "T+1_close", "price": 10.8}],
                             }
                         ],
@@ -378,6 +380,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                         "y_axis_range": [9.0, 12.0],
                     },
                     "operation_zones": [{"zone_key": "fallback_should_not_win", "price_range": [1, 2]}],
+                    "position_context": {"conflict_flags": ["cost_price_conflict"], "source_packet": "position_profile"},
+                    "data_trust_summary": {
+                        "facts": [{"fact_key": "moneyflow", "call_status": "verified_present"}],
+                        "human_summary": ["真实日线：已接入", "持仓：存在冲突，需先核验"],
+                        "deepseek": {"label": "DeepSeek", "status": "not_called"},
+                    },
+                    "deepseek_synthesis": {"status": "not_called"},
                 }
             }
         )
@@ -407,13 +416,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(contract["series_counts"]["scenario_series"], 1)
         self.assertEqual(contract["series_counts"]["reference_lines"], 6)
         self.assertEqual(contract["series_counts"]["operation_zones"], 1)
+        self.assertEqual(contract["series_counts"]["scenario_anchor_rows"], 1)
         self.assertEqual(contract["interaction_contract"]["hover_displays"], ["price", "source", "trigger_condition", "risk_note"])
         self.assertEqual(contract["interaction_contract"]["source_endpoint"], "GET /api/next-session/cache")
         self.assertTrue(contract["interaction_contract"]["frontend_render_only"])
+        self.assertEqual(contract["interaction_contract"]["click_reference_displays"], "line_source")
         self.assertTrue(chart["chart_summary"]["is_exact_next_session_packet"])
+        self.assertEqual(chart["latest_close_anchor"]["price"], 10.4)
+        self.assertEqual(chart["scenario_anchor_rows"][0]["latest_close"], 10.4)
+        self.assertTrue(chart["scenario_anchor_rows"][0]["anchored_to_latest_close"])
+        self.assertEqual(chart["scenario_anchor_rows"][0]["trigger_condition"], "放量但不追高")
+        self.assertEqual(chart["reference_line_rows"][0]["frontend_mutable"], False)
+        self.assertEqual(chart["zone_interaction_rows"][0]["click_displays"], "guardrail")
+        self.assertEqual(chart["position_conflict"]["conflict_flags"], ["cost_price_conflict"])
+        self.assertEqual(chart["data_trust_summary"]["facts"][0]["fact_key"], "moneyflow")
+        self.assertEqual(chart["deepseek_status"], "not_called")
+        self.assertEqual(chart["chart_maturity"]["status"], "ready")
+        self.assertTrue(chart["chart_maturity"]["position_conflict"])
+        self.assertEqual(chart["chart_maturity"]["scenario_anchored_count"], 1)
         self.assertTrue(packet["chart_summary"]["is_exact_next_session_packet"])
         self.assertTrue(packet["chart_summary"]["uses_real_daily_close"])
         self.assertEqual(packet["chart_summary"]["operation_zone_count"], 1)
+        self.assertEqual(packet["chart_summary"]["maturity_status"], "ready")
+        self.assertTrue(packet["chart_summary"]["position_conflict"])
+        self.assertEqual(packet["chart_summary"]["scenario_anchored_count"], 1)
+        self.assertEqual(packet["chart_summary"]["deepseek_status"], "not_called")
         self.assertFalse(packet["chart_summary"]["frontend_computes_trade_action"])
         self.assertIn("前端不得修改 strategy action", " ".join(contract["guardrails"]))
 
