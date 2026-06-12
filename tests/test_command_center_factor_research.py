@@ -708,6 +708,50 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["status"], "fresh")
         self.assertTrue(gate["usable_for_score"])
 
+    def test_a_share_provider_delay_grace_blocks_previous_day_after_ready_time(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260611", "call_status": "success"},
+            ],
+            now="2026-06-12T17:00:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "provider_delay_grace")
+        self.assertTrue(gate["provider_update_grace_active"])
+        self.assertEqual(gate["provider_delay_grace_until"], "18:00")
+        self.assertEqual(gate["expected_data_date"], "2026-06-12")
+        self.assertFalse(gate["usable_for_score"])
+        self.assertEqual(gate["provider_delay_grace_count"], 1)
+        self.assertEqual(packet["call_ledger"][0]["freshness_reason"], "provider_delay_grace_previous_completed_trading_day")
+        self.assertTrue(packet["call_ledger"][0]["freshness_blocks_composite_score"])
+        self.assertIsNone(packet["score"]["composite_score"])
+        self.assertEqual(packet["score"]["support_factors"], [])
+        self.assertEqual(packet["next_session_bridge"]["preview"], [])
+
+    def test_a_share_provider_delay_grace_expires_after_grace_window(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260611", "call_status": "success"},
+            ],
+            now="2026-06-12T18:30:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "stale")
+        self.assertFalse(gate["provider_update_grace_active"])
+        self.assertEqual(gate["provider_delay_grace_count"], 0)
+        self.assertEqual(packet["call_ledger"][0]["freshness_reason"], "lags_expected_by_1_trading_days")
+        self.assertFalse(gate["usable_for_score"])
+
     def test_a_share_calendar_weekend_expected_date_uses_last_open_day(self):
         packet = factor_research.build_factor_quant_hub_packet(
             mode="light",

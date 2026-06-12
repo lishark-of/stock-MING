@@ -41,6 +41,7 @@ A_SHARE_MORNING_CLOSE_TIME = _dt.time(11, 30)
 A_SHARE_AFTERNOON_OPEN_TIME = _dt.time(13, 0)
 A_SHARE_MARKET_CLOSE_TIME = _dt.time(15, 0)
 A_SHARE_DATA_READY_TIME = _dt.time(16, 30)
+A_SHARE_PROVIDER_DELAY_GRACE_END_TIME = _dt.time(18, 0)
 
 DECISION_USAGE_POLICY = {
     "display_only": True,
@@ -623,6 +624,10 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
     current_time = now_dt.time()
     pre_market_guard_active = bool(today_is_open and current_time < A_SHARE_MARKET_OPEN_TIME)
     session_allows_current_trading_day_data = bool(today_is_open and current_time >= A_SHARE_DATA_READY_TIME)
+    provider_update_grace_active = bool(
+        today_is_open
+        and A_SHARE_DATA_READY_TIME <= current_time < A_SHARE_PROVIDER_DELAY_GRACE_END_TIME
+    )
     if today_is_open and now_dt.time() < A_SHARE_MARKET_OPEN_TIME:
         phase = "pre_open"
         expected = previous_open
@@ -692,10 +697,17 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         "current_eod_available": bool(expected and (not today_is_open or today_eod_available)),
         "session_allows_current_trading_day_data": session_allows_current_trading_day_data,
         "pre_market_guard_active": pre_market_guard_active,
+        "provider_update_grace_active": provider_update_grace_active,
+        "provider_delay_grace_until": A_SHARE_PROVIDER_DELAY_GRACE_END_TIME.strftime("%H:%M"),
+        "provider_update_grace_reason": (
+            "provider_may_lag_after_ready_time_previous_day_data_not_scored"
+            if provider_update_grace_active
+            else ""
+        ),
         "data_update_delay_guard_active": data_update_delay_guard_active,
         "data_update_delay_reason": data_update_delay_reason,
         "data_ready_time": A_SHARE_DATA_READY_TIME.strftime("%H:%M"),
-        "data_availability_policy": "A 股 EOD 因子仅在交易日 16:30 后把当日数据视为当前证据；盘中和盘后未就绪时使用上一已完成交易日。",
+        "data_availability_policy": "A 股 EOD 因子仅在交易日 16:30 后把当日数据视为当前证据；16:30-18:00 允许标记供应商延迟宽限但不放行上一交易日数据进分数。",
         "warnings": warnings,
         "note": "盘中或盘后未到数据可得时间时，EOD 因子应使用上一已完成交易日。",
     }
@@ -742,6 +754,9 @@ def _freshness_row_fields(
         "current_eod_available": bool(context.get("current_eod_available")),
         "session_allows_current_trading_day_data": bool(context.get("session_allows_current_trading_day_data")),
         "pre_market_guard_active": bool(context.get("pre_market_guard_active")),
+        "provider_update_grace_active": bool(context.get("provider_update_grace_active")),
+        "provider_delay_grace_until": context.get("provider_delay_grace_until"),
+        "provider_update_grace_reason": context.get("provider_update_grace_reason"),
         "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
         "data_update_delay_reason": context.get("data_update_delay_reason"),
         "trading_day_lag": None,
@@ -768,10 +783,21 @@ def _freshness_row_fields(
         }
     age_days = max(0, (_now_date(now) - parsed).days)
     trading_lag = _trading_day_lag(parsed, expected, trade_calendar_packet) if expected else None
+    previous_open = _parse_date(context.get("previous_open_date"))
     if expected and parsed > expected:
         state = "future_unavailable"
         usable = False
         reason = "data_date_after_expected_trading_day"
+    elif (
+        context.get("provider_update_grace_active")
+        and previous_open is not None
+        and parsed == previous_open
+        and expected
+        and parsed < expected
+    ):
+        state = "provider_delay_grace"
+        usable = False
+        reason = "provider_delay_grace_previous_completed_trading_day"
     elif trading_lag == 0:
         state = "fresh"
         usable = True
@@ -1193,6 +1219,9 @@ def _build_data_freshness_gate(
             "current_eod_available": bool(context.get("current_eod_available")),
             "session_allows_current_trading_day_data": bool(context.get("session_allows_current_trading_day_data")),
             "pre_market_guard_active": bool(context.get("pre_market_guard_active")),
+            "provider_update_grace_active": bool(context.get("provider_update_grace_active")),
+            "provider_delay_grace_until": context.get("provider_delay_grace_until"),
+            "provider_update_grace_reason": context.get("provider_update_grace_reason"),
             "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
             "data_update_delay_reason": context.get("data_update_delay_reason"),
             "data_ready_time": context.get("data_ready_time"),
@@ -1213,11 +1242,14 @@ def _build_data_freshness_gate(
     lags = [row.get("trading_day_lag") for row in dated_rows if isinstance(row.get("trading_day_lag"), int)]
     states = [str(row.get("freshness_state") or "unknown") for row in dated_rows]
     future_count = states.count("future_unavailable")
+    provider_delay_count = states.count("provider_delay_grace")
     expired_count = states.count("expired")
     stale_count = states.count("stale")
     fresh_count = states.count("fresh")
     if future_count:
         status = "future_unavailable"
+    elif provider_delay_count:
+        status = "provider_delay_grace"
     elif expired_count:
         status = "expired"
     elif stale_count:
@@ -1261,6 +1293,9 @@ def _build_data_freshness_gate(
         "current_eod_available": bool(context.get("current_eod_available")),
         "session_allows_current_trading_day_data": bool(context.get("session_allows_current_trading_day_data")),
         "pre_market_guard_active": bool(context.get("pre_market_guard_active")),
+        "provider_update_grace_active": bool(context.get("provider_update_grace_active")),
+        "provider_delay_grace_until": context.get("provider_delay_grace_until"),
+        "provider_update_grace_reason": context.get("provider_update_grace_reason"),
         "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
         "data_update_delay_reason": context.get("data_update_delay_reason"),
         "today_is_trading_day": bool(context.get("today_is_trading_day")),
@@ -1270,6 +1305,7 @@ def _build_data_freshness_gate(
         "fresh_count": fresh_count,
         "stale_count": stale_count,
         "expired_count": expired_count,
+        "provider_delay_grace_count": provider_delay_count,
         "future_unavailable_count": future_count,
         "unknown_count": len(call_rows) - len(dated_rows),
         "blocking_reasons": blocking_reasons,
