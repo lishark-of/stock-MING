@@ -184,9 +184,9 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
     return [
         {
             "control": "retry_policy",
-            "status": "audit_ready",
-            "current_coverage": "task catalog and task records expose per-task manual retry audit metadata; automatic retry/backoff remains disabled.",
-            "next_action": "add an explicit manual retry POST route, then enable Celery retry only after locks and dedupe are enforced.",
+            "status": "local_ready",
+            "current_coverage": "task catalog, task records, POST /api/tasks/{task_id}/retry, and React Task Monitor expose manual retry; automatic retry/backoff remains disabled.",
+            "next_action": "enable Celery retry/backoff only after production worker locks, dedupe, and operator approval are enforced.",
             "external_calls_triggered": False,
         },
         {

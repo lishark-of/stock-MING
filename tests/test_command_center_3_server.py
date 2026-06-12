@@ -2657,7 +2657,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("redis_broker", readiness_by_component)
         self.assertIn("apscheduler", readiness_by_component)
         worker_controls = {row["control"]: row for row in packet["production_readiness"]["production_control_rows"]}
-        self.assertEqual(worker_controls["retry_policy"]["status"], "audit_ready")
+        self.assertEqual(worker_controls["retry_policy"]["status"], "local_ready")
+        self.assertIn("POST /api/tasks/{task_id}/retry", worker_controls["retry_policy"]["current_coverage"])
+        self.assertIn("React Task Monitor", worker_controls["retry_policy"]["current_coverage"])
         self.assertIn("automatic retry/backoff remains disabled", worker_controls["retry_policy"]["current_coverage"])
         self.assertEqual(worker_controls["task_cancel"]["status"], "local_ready")
         self.assertEqual(worker_controls["concurrency_lock"]["status"], "audit_ready")
