@@ -253,6 +253,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                 "max_drawdown",
                 "industry_neutral_ic",
                 "market_cap_neutral_ic",
+                "sample_split_stability",
                 "pit_check",
                 "lookahead_check",
             }.issubset(metric_keys)
@@ -374,6 +375,13 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertGreater(row["cost_adjusted_return"], 0)
         self.assertEqual(row["pit_check"], "passed")
         self.assertEqual(row["lookahead_check"], "passed")
+        self.assertEqual(row["sample_split_stability"]["method"], "chronological_half_split_light_observations")
+        self.assertEqual(row["sample_split_stability"]["early_window_date_count"], 2)
+        self.assertEqual(row["sample_split_stability"]["recent_window_date_count"], 2)
+        self.assertEqual(row["sample_split_stability"]["split_after_trade_date"], "20260602")
+        self.assertIsNotNone(row["sample_split_stability"]["early_window_ic"])
+        self.assertIsNotNone(row["sample_split_stability"]["recent_window_ic"])
+        self.assertIn("light observations", row["sample_split_stability"]["status_note"])
         self.assertNotIn("strategy_action", row)
         self.assertFalse(row["enters_strategy_action"])
         self.assertFalse(packet["external_calls_triggered"])

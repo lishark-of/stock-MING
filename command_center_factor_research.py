@@ -90,6 +90,7 @@ FACTOR_TEST_METRIC_SCHEMA = [
     {"metric_key": "industry_neutral_ic", "label": "行业中性 IC", "required": True, "unit": "decimal"},
     {"metric_key": "market_cap_neutral_ic", "label": "市值中性 IC", "required": True, "unit": "decimal"},
     {"metric_key": "out_of_sample_stability", "label": "样本外稳定性", "required": True, "unit": "status"},
+    {"metric_key": "sample_split_stability", "label": "样本内/样本外窗口明细", "required": False, "unit": "object"},
     {"metric_key": "recent_decay", "label": "近期衰减", "required": True, "unit": "status"},
     {"metric_key": "pit_check", "label": "PIT 检查", "required": True, "unit": "status"},
     {"metric_key": "lookahead_check", "label": "未来函数检查", "required": True, "unit": "status"},
@@ -1782,11 +1783,24 @@ def _neutral_ic_from_observations(
     return _pearson(x_resid, y_resid)
 
 
-def _stability_from_date_splits(by_date: Mapping[str, list[tuple[float, float]]]) -> tuple[str, str]:
+def _stability_detail_from_date_splits(by_date: Mapping[str, list[tuple[float, float]]]) -> dict[str, Any]:
     dates = sorted(key for key, pairs in by_date.items() if len(pairs) >= 3)
+    base = {
+        "method": "chronological_half_split_light_observations",
+        "date_count": len(dates),
+        "early_window_date_count": 0,
+        "recent_window_date_count": 0,
+        "early_window_ic": None,
+        "recent_window_ic": None,
+        "split_after_trade_date": None,
+        "out_of_sample_stability": "not_enough_data",
+        "recent_decay": "not_enough_data",
+    }
     if len(dates) < 4:
-        return "not_enough_data", "not_enough_data"
+        return {**base, "status_note": "需要至少 4 个有效交易日窗口，当前仅保留研究占位。"}
     midpoint = len(dates) // 2
+    early_dates = dates[:midpoint]
+    recent_dates = dates[midpoint:]
 
     def _date_ic(date_keys: list[str]) -> float | None:
         values = []
@@ -1797,10 +1811,18 @@ def _stability_from_date_splits(by_date: Mapping[str, list[tuple[float, float]]]
                 values.append(ic)
         return statistics.fmean(values) if values else None
 
-    early = _date_ic(dates[:midpoint])
-    recent = _date_ic(dates[midpoint:])
+    early = _date_ic(early_dates)
+    recent = _date_ic(recent_dates)
+    detail = {
+        **base,
+        "early_window_date_count": len(early_dates),
+        "recent_window_date_count": len(recent_dates),
+        "early_window_ic": round(early, 6) if early is not None else None,
+        "recent_window_ic": round(recent, 6) if recent is not None else None,
+        "split_after_trade_date": early_dates[-1] if early_dates else None,
+    }
     if early is None or recent is None:
-        return "not_enough_data", "not_enough_data"
+        return {**detail, "status_note": "前后窗口 IC 不足，不能声明样本外稳定。"}
     stable = early == 0 or (early > 0 and recent > 0) or (early < 0 and recent < 0)
     if not stable:
         stability = "unstable_direction"
@@ -1809,7 +1831,17 @@ def _stability_from_date_splits(by_date: Mapping[str, list[tuple[float, float]]]
     else:
         stability = "weak_recent_window"
     decay = "decaying" if abs(recent) < abs(early) * 0.5 else "not_detected"
-    return stability, decay
+    return {
+        **detail,
+        "out_of_sample_stability": stability,
+        "recent_decay": decay,
+        "status_note": "仅为 light observations 的前后窗口研究审计，不代表全市场样本外通过。",
+    }
+
+
+def _stability_from_date_splits(by_date: Mapping[str, list[tuple[float, float]]]) -> tuple[str, str]:
+    detail = _stability_detail_from_date_splits(by_date)
+    return str(detail.get("out_of_sample_stability") or "not_enough_data"), str(detail.get("recent_decay") or "not_enough_data")
 
 
 def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[dict]:
@@ -1875,7 +1907,9 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
         lookahead_passed = all(row.get("lookahead_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
         industry_neutral_ic = _neutral_ic_from_observations(valid_pairs, neutralizer="industry")
         market_cap_neutral_ic = _neutral_ic_from_observations(valid_pairs, neutralizer="market_cap")
-        stability, recent_decay = _stability_from_date_splits(by_date)
+        stability_detail = _stability_detail_from_date_splits(by_date)
+        stability = str(stability_detail.get("out_of_sample_stability") or "not_enough_data")
+        recent_decay = str(stability_detail.get("recent_decay") or "not_enough_data")
         row = {
             "factor_key": factor_key,
             "mode": "light",
@@ -1900,6 +1934,7 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
                 "market_cap": "computed_light_observation_residual_ic" if market_cap_neutral_ic is not None else "not_enough_data",
             },
             "out_of_sample_stability": stability,
+            "sample_split_stability": stability_detail,
             "recent_decay": recent_decay,
             "pit_check": "passed" if pit_passed else "pending",
             "lookahead_check": "passed" if lookahead_passed else "pending",
@@ -1941,6 +1976,12 @@ def _factor_test_scaffold_row(factor: Mapping[str, Any], *, mode: str, now: str)
         "industry_neutral_ic": None,
         "market_cap_neutral_ic": None,
         "out_of_sample_stability": "not_run",
+        "sample_split_stability": {
+            "method": "chronological_half_split_light_observations",
+            "out_of_sample_stability": "not_run",
+            "recent_decay": "not_run",
+            "status_note": "尚未提供 light observations，不能计算样本内/样本外窗口明细。",
+        },
         "recent_decay": "not_run",
         "pit_check": "pending" if not factor.get("pit_validated") else "declared",
         "lookahead_check": "pending",
