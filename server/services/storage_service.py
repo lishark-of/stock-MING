@@ -33,6 +33,77 @@ DATASET_TTL_SECONDS = {
     "backtest_results": 30 * 24 * 60 * 60,
 }
 DATASET_COMPACTION_SIZE_THRESHOLD_BYTES = 128 * 1024 * 1024
+LOCAL_ARTIFACT_HYGIENE_TARGETS = [
+    {
+        "artifact": "command_center_runtime_cache",
+        "path_parts": [".stock_ming_3"],
+        "artifact_type": "runtime_cache_dir",
+        "expected_kind": "directory",
+        "git_policy": "ignored_local_only",
+        "cleanup_policy": "manual_only_after_review",
+        "reason": "SQLite metadata, Parquet datasets, task packets and local runtime state must stay out of git.",
+    },
+    {
+        "artifact": "legacy_streamlit_cache",
+        "path_parts": [".stock_ming_cache"],
+        "artifact_type": "legacy_cache_dir",
+        "expected_kind": "directory",
+        "git_policy": "ignored_local_only",
+        "cleanup_policy": "manual_only_after_review",
+        "reason": "Legacy fallback cache may contain local snapshots and should not be committed.",
+    },
+    {
+        "artifact": "desktop_build_output",
+        "path_parts": ["desktop", "dist"],
+        "artifact_type": "frontend_build_dir",
+        "expected_kind": "directory",
+        "git_policy": "ignored_generated_output",
+        "cleanup_policy": "manual_or_build_tool_only",
+        "reason": "Vite build output is reproducible generated UI artifact.",
+    },
+    {
+        "artifact": "desktop_dependencies",
+        "path_parts": ["desktop", "node_modules"],
+        "artifact_type": "dependency_dir",
+        "expected_kind": "directory",
+        "git_policy": "ignored_generated_output",
+        "cleanup_policy": "package_manager_only",
+        "reason": "Node dependencies are restored from lockfiles and must not enter git.",
+    },
+    {
+        "artifact": "tauri_build_output",
+        "path_parts": ["desktop", "src-tauri", "target"],
+        "artifact_type": "rust_build_dir",
+        "expected_kind": "directory",
+        "git_policy": "ignored_generated_output",
+        "cleanup_policy": "manual_or_cargo_only",
+        "reason": "Rust/Tauri target output is generated and can be large.",
+    },
+    {
+        "artifact": "python_bytecode_cache",
+        "path_parts": ["__pycache__"],
+        "artifact_type": "bytecode_cache_dir",
+        "expected_kind": "directory",
+        "git_policy": "ignored_generated_output",
+        "cleanup_policy": "manual_only_after_review",
+        "reason": "Python bytecode caches are generated and not source artifacts.",
+    },
+]
+LOCAL_ARTIFACT_GIT_EXCLUDED_PATTERNS = [
+    "desktop/node_modules",
+    "desktop/dist",
+    "desktop/src-tauri/target",
+    "target/",
+    "__pycache__/",
+    "*.parquet",
+    "*.duckdb",
+    "*.sqlite",
+    "*.db",
+    "*.log",
+    ".env",
+    ".stock_ming_3/",
+    ".stock_ming_cache/",
+]
 DATASET_SCHEMA_CONTRACTS = {
     "factor_values": {
         "schema_version": "storage.factor_values.v1",
@@ -386,13 +457,99 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "next_action": "add explicit manual compaction task after partitioned layout is enabled.",
             "external_calls_triggered": False,
         },
+        {
+            "control": "local_artifact_hygiene",
+            "status": "audit_ready",
+            "current_coverage": "storage overview exposes path-only generated artifact hygiene, git exclusion patterns and manual cleanup boundaries.",
+            "next_action": "add an explicit dry-run cleanup task before allowing any delete operation.",
+            "external_calls_triggered": False,
+        },
     ]
+
+
+def _safe_directory_child_count(path: Path) -> int | None:
+    if not path.exists() or not path.is_dir():
+        return None
+    try:
+        return sum(1 for _ in path.iterdir())
+    except OSError:
+        return None
+
+
+def _artifact_hygiene_row(target: Mapping[str, Any]) -> dict[str, Any]:
+    path_parts = [str(part) for part in target.get("path_parts") or []]
+    path = PROJECT_ROOT.joinpath(*path_parts)
+    exists = path.exists()
+    expected_kind = str(target.get("expected_kind") or "directory")
+    actual_kind = "missing"
+    status = "not_present"
+    if exists:
+        if path.is_dir():
+            actual_kind = "directory"
+        elif path.is_file():
+            actual_kind = "file"
+        else:
+            actual_kind = "other"
+        status = "present_local_only" if actual_kind == expected_kind else "review_required_type_mismatch"
+    return {
+        "artifact": str(target.get("artifact") or ""),
+        "artifact_type": str(target.get("artifact_type") or ""),
+        "path": _path_label(path),
+        "expected_kind": expected_kind,
+        "actual_kind": actual_kind,
+        "exists": exists,
+        "status": status,
+        "top_level_entry_count": _safe_directory_child_count(path),
+        "git_policy": str(target.get("git_policy") or "ignored_local_only"),
+        "cleanup_policy": str(target.get("cleanup_policy") or "manual_only_after_review"),
+        "reason": str(target.get("reason") or ""),
+        "delete_files_on_get": False,
+        "auto_cleanup_on_get": False,
+        "external_calls_triggered": False,
+        "does_not_read_file_payloads": True,
+        "does_not_read_env_files": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def storage_artifact_hygiene_status() -> dict[str, Any]:
+    rows = [_artifact_hygiene_row(target) for target in LOCAL_ARTIFACT_HYGIENE_TARGETS]
+    review_required = [row for row in rows if row.get("status") == "review_required_type_mismatch"]
+    present_rows = [row for row in rows if row.get("exists")]
+    return {
+        "schema_version": "command_center_3_storage_artifact_hygiene.v1",
+        "status": "review_required" if review_required else "audit_ready",
+        "scope": "local_generated_artifact_hygiene",
+        "rows": rows,
+        "present_artifact_count": len(present_rows),
+        "review_required_count": len(review_required),
+        "git_excluded_patterns": list(LOCAL_ARTIFACT_GIT_EXCLUDED_PATTERNS),
+        "tracked_artifact_gate": "scripts/push_gate_3_0.sh generated artifact scan",
+        "cleanup_policy": "manual_only_no_delete_on_get",
+        "cleanup_task_status": "not_implemented",
+        "dry_run_required_before_delete": True,
+        "data_files_allowed_in_git": False,
+        "delete_files_on_get": False,
+        "auto_cleanup_on_get": False,
+        "does_not_scan_secret_values": True,
+        "does_not_read_file_payloads": True,
+        "does_not_read_env_files": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "note": "Artifact hygiene is path-only audit data. It never deletes files, reads payloads, scans secret values, refreshes providers or touches strategy action.",
+    }
 
 
 def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
     parquet_dependency = parquet_store.dependency_status()
     duckdb_dependency = duckdb_store.dependency_status()
     sqlite_status = str((sqlite_meta or {}).get("status") or ("ready" if SQLITE_META_PATH.exists() else "missing"))
+    artifact_hygiene = storage_artifact_hygiene_status()
     rows = [
         {
             "component": "sqlite_meta",
@@ -426,6 +583,14 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "blocking_for_cache_read": False,
             "next_action": "keep node_modules/dist/parquet/cache artifacts ignored and out of commits.",
         },
+        {
+            "component": "artifact_hygiene",
+            "status": artifact_hygiene["status"],
+            "production_role": "path-only audit for generated data/build/cache artifacts before any manual cleanup",
+            "current_backend": "local_path_preflight_no_payload_reads",
+            "blocking_for_cache_read": False,
+            "next_action": "add explicit dry-run cleanup task; keep GET storage read-only.",
+        },
     ]
     blockers = [
         row["component"]
@@ -442,6 +607,9 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "cache_ttl_policy": "audit_only_no_auto_refresh",
         "compaction_policy": "audit_only_manual_task_required",
+        "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",
+        "artifact_hygiene_status": artifact_hygiene["status"],
+        "artifact_hygiene_present_count": artifact_hygiene["present_artifact_count"],
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -528,6 +696,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     catalog = dataset_catalog()
     implementation_status = dataset_implementation_status()
     production_readiness = storage_production_readiness()
+    artifact_hygiene = storage_artifact_hygiene_status()
     packet = {
         "schema_version": "command_center_3_storage_dataset_catalog.v1",
         "store": "parquet_duckdb",
@@ -535,6 +704,8 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "mode": "cache_only",
         "dataset_catalog": catalog,
         "dataset_implementation_status": implementation_status,
+        "production_readiness": production_readiness,
+        "artifact_hygiene": artifact_hygiene,
         "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
         "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
         "dataset_count": len(catalog),
@@ -769,6 +940,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     datasets = [parquet_dataset_status(name, limit=limit) for name in CANONICAL_PARQUET_DATASETS]
     sqlite_meta = sqlite_meta_status(limit=limit)
     implementation_status = dataset_implementation_status()
+    artifact_hygiene = storage_artifact_hygiene_status()
     production_readiness = storage_production_readiness(sqlite_meta)
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
@@ -791,6 +963,10 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "dataset_implementation_state_counts": implementation_status["state_counts"],
         "dataset_parquet_status_counts": implementation_status["parquet_status_counts"],
         "production_readiness": production_readiness,
+        "artifact_hygiene": artifact_hygiene,
+        "artifact_hygiene_status": artifact_hygiene["status"],
+        "artifact_hygiene_present_count": artifact_hygiene["present_artifact_count"],
+        "artifact_hygiene_review_required_count": artifact_hygiene["review_required_count"],
         "sqlite_meta": sqlite_meta,
         "metadata_status": sqlite_meta["status"],
         "packet_metadata_count": sqlite_meta["packet_count"],

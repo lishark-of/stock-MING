@@ -246,6 +246,8 @@ Add factor universe research pipeline
 - `factor_values` has a Parquet write path.
 - `trade_cal` is declared as a dataset.
 - Schema validation and partition writer scaffold exist.
+- Storage overview now exposes path-only local artifact hygiene for `.stock_ming_3`, legacy cache, frontend build output, Node dependencies, Tauri target output, and Python bytecode cache boundaries.
+- The artifact hygiene audit is `manual_only_no_delete_on_get`: it reports generated/data artifact boundaries but does not delete files, read payloads, scan secret values, refresh providers, or touch `strategy action`.
 
 ### Gaps
 
@@ -255,7 +257,7 @@ Add factor universe research pipeline
 - Compaction.
 - Cache TTL production policy.
 - DuckDB query service.
-- Local artifact cleanup.
+- Explicit dry-run cleanup task and reviewed manual cleanup workflow.
 
 ### Implementation Phases
 
@@ -271,6 +273,7 @@ Add factor universe research pipeline
 - UI does not directly read large DataFrames.
 - Queries go through DuckDB/service.
 - Data files do not enter git.
+- Generated artifact hygiene is auditable and remains path-only until an explicit dry-run cleanup task exists.
 - Write failure does not pollute packet or action.
 
 ### Forbidden

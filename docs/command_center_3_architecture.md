@@ -169,6 +169,7 @@ scripts/run_scheduler.sh
 - SQLite：packet 元数据、任务状态、用户配置。当前已落地 packet payload、packet metadata 和 task lifecycle metadata。
 - Parquet：daily、daily_basic、moneyflow、trade_cal、factor_values、backtest_results。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 文件状态接口和 dataset catalog，并由 light-mode 因子任务写入 `factor_values`。
 - DuckDB：直接查询 Parquet。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 缺文件安全查询和只读状态 API。
+- Artifact hygiene：`GET /api/storage` 只读展示 `.stock_ming_3`、legacy cache、frontend build、Node dependencies、Tauri target 和 Python bytecode 的路径级边界；不会删除文件、读取 payload、扫描 secret 值、刷新外部服务或修改 `strategy action`。
 - Redis：Celery broker、任务状态、热点 packet cache；未安装时可使用 memory fallback。
 
 ## 边界

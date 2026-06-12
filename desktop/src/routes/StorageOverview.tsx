@@ -60,6 +60,9 @@ export default function StorageOverview() {
   const sqliteMetadataSourceRows = (sqliteMeta.metadata_source_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const sqlitePacketStatusCounts = sqliteMeta.packet_status_counts as Record<string, unknown> | undefined;
   const sqliteTaskStatusCounts = sqliteMeta.task_status_counts as Record<string, unknown> | undefined;
+  const artifactHygiene = (overview.artifact_hygiene as Record<string, unknown> | undefined) ?? (storageCatalog.artifact_hygiene as Record<string, unknown> | undefined) ?? {};
+  const artifactRows = (artifactHygiene.rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const artifactPatternRows = ((artifactHygiene.git_excluded_patterns as Array<string> | undefined) ?? []).map((pattern, index) => ({ index: index + 1, pattern }));
   const implementationStateCounts = datasetImplementation.state_counts as Record<string, unknown> | undefined;
   const implementationParquetStatusCounts = datasetImplementation.parquet_status_counts as Record<string, unknown> | undefined;
   const implementationRows = (datasetImplementation.dataset_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -117,7 +120,10 @@ export default function StorageOverview() {
           { label: "backtest_results", value: String(datasetStatus?.backtest_results ?? "missing") },
           { label: "sqlite meta", value: String(overview.metadata_status ?? sqliteMeta.status ?? "missing") },
           { label: "packets", value: overview.packet_metadata_count ?? sqliteMeta.packet_count ?? 0 },
-          { label: "tasks", value: overview.task_metadata_count ?? sqliteMeta.task_count ?? 0 }
+          { label: "tasks", value: overview.task_metadata_count ?? sqliteMeta.task_count ?? 0 },
+          { label: "artifact hygiene", value: String(artifactHygiene.status ?? overview.artifact_hygiene_status ?? "audit_ready") },
+          { label: "local artifacts", value: artifactHygiene.present_artifact_count ?? overview.artifact_hygiene_present_count ?? 0 },
+          { label: "artifact review", value: artifactHygiene.review_required_count ?? overview.artifact_hygiene_review_required_count ?? 0 }
         ]}
       />
 
@@ -159,6 +165,20 @@ export default function StorageOverview() {
         <p>state_counts: {JSON.stringify(implementationStateCounts ?? {})}</p>
         <p>parquet_status_counts: {JSON.stringify(implementationParquetStatusCounts ?? {})}</p>
         <DataLineageTable rows={implementationRows} />
+      </PacketCard>
+
+      <PacketCard title="Local artifact hygiene" subtitle="路径级预检；只展示本地生成物边界，不删除、不读 payload、不外联" status={String(artifactHygiene.status ?? "audit_ready")}>
+        <p>cleanup_policy: {String(artifactHygiene.cleanup_policy ?? "manual_only_no_delete_on_get")}</p>
+        <p>cleanup_task_status: {String(artifactHygiene.cleanup_task_status ?? "not_implemented")}</p>
+        <p>delete_files_on_get / auto_cleanup_on_get: {String(artifactHygiene.delete_files_on_get ?? false)} / {String(artifactHygiene.auto_cleanup_on_get ?? false)}</p>
+        <p>does_not_read_file_payloads / does_not_scan_secret_values: {String(artifactHygiene.does_not_read_file_payloads ?? true)} / {String(artifactHygiene.does_not_scan_secret_values ?? true)}</p>
+        <DataLineageTable rows={artifactRows} />
+      </PacketCard>
+
+      <PacketCard title="Generated artifact git guard" subtitle="push gate 使用这些边界阻止生成物、数据文件和本地缓存进入 git" status="artifact_guard">
+        <p>tracked_artifact_gate: {String(artifactHygiene.tracked_artifact_gate ?? "scripts/push_gate_3_0.sh generated artifact scan")}</p>
+        <p>data_files_allowed_in_git: {String(artifactHygiene.data_files_allowed_in_git ?? false)}</p>
+        <DataLineageTable rows={artifactPatternRows} />
       </PacketCard>
 
       <PacketCard title="数据集明细" subtitle="GET /api/storage/{dataset} 只读查询本地 Parquet；不刷新数据" status="dataset_cache">
@@ -228,6 +248,7 @@ export default function StorageOverview() {
       <PacketCard title="原始 storage payload" subtitle="调试用 JSON；cache API 永不外联" status="safe">
         <JsonDetails title="storage overview raw" data={overview} />
         <JsonDetails title="storage catalog raw" data={storageCatalog} />
+        <JsonDetails title="artifact hygiene raw" data={artifactHygiene} />
         <JsonDetails title="factor values raw" data={factorValues} />
         <JsonDetails title="sqlite meta raw" data={sqliteMeta} />
         <JsonDetails title="daily raw" data={datasetDetails.daily ?? {}} />
