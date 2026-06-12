@@ -506,13 +506,13 @@ Retire Streamlit from primary user workflow
 ### Current Status
 
 - Local test, frontend build, smoke, and diff checks are available.
-- Secret/artifact scans are currently run manually during push gate.
+- `scripts/push_gate_3_0.sh` now codifies the local push gate: Python tests, desktop build, smoke, diff check, high-risk secret scan, generated artifact scan, and final clean-worktree check.
+- Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 
 ### Gaps
 
-- Standard release gate is not fully codified.
 - CI status for all checks may not mirror local gate.
-- Secret and generated artifact scanning needs a stable checklist.
+- Push gate still needs CI mirroring and periodic review of false-positive allowlists.
 
 ### Implementation Phases
 
@@ -679,7 +679,7 @@ Add Command Center 3 motion clarity system
 
 | priority | focus | note |
 |---|---|---|
-| P0 | Current unpushed commit push gate | For any future local commits: review, tests, safety scan, user confirmation, then push. Current baseline after `2994c58` has no unpushed code commits. |
+| P0 | Current unpushed commit push gate | Use `git log origin/main..HEAD` as the authoritative unpushed list; run `scripts/push_gate_3_0.sh`, review results, wait for user confirmation, then push. |
 | P1 | A 股交易日历 freshness 生产验收 | This blocks trustworthy current evidence. |
 | P2 | Tushare 全接口真实流水线 | Validate provider data groups one by one through button-gated tasks. |
 | P3 | Factor Test Lab 真实小股票池研究 | Promote from light research metrics to research-grade validation. |
