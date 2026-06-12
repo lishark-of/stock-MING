@@ -63,6 +63,15 @@ export type TaskCreationData = {
 
 export type TaskCreationEnvelope = ApiEnvelope<TaskCreationData>;
 
+export type StorageQueryParams = {
+  limit?: number;
+  cursor?: string;
+  ts_code?: string;
+  trade_date?: string;
+  start_date?: string;
+  end_date?: string;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710";
 
 function errorToMessage(error: unknown): string | null {
@@ -96,6 +105,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
     call_ledger: payload.call_ledger ?? [],
     warnings: payload.warnings ?? [],
   } as ApiEnvelope<T>;
+}
+
+function queryString(params: Record<string, string | number | undefined | null> = {}): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    query.set(key, String(value));
+  }
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
 }
 
 export function getHealth() {
@@ -201,16 +220,16 @@ export function getRecoveryCenterCache() {
   return request<Record<string, unknown>>("/api/recovery/cache");
 }
 
-export function getFactorValuesStorage() {
-  return request<Record<string, unknown>>("/api/storage/factor-values");
+export function getFactorValuesStorage(params: StorageQueryParams = {}) {
+  return request<Record<string, unknown>>(`/api/storage/factor-values${queryString(params)}`);
 }
 
 export function getSQLiteMetaStorage() {
   return request<Record<string, unknown>>("/api/storage/sqlite-meta");
 }
 
-export function getStorageDataset(dataset: string) {
-  return request<Record<string, unknown>>(`/api/storage/${encodeURIComponent(dataset)}`);
+export function getStorageDataset(dataset: string, params: StorageQueryParams = {}) {
+  return request<Record<string, unknown>>(`/api/storage/${encodeURIComponent(dataset)}${queryString(params)}`);
 }
 
 export function getStorageCatalog() {

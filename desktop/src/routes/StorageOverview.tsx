@@ -20,6 +20,12 @@ import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
+const STORAGE_DATASET_ENDPOINTS = ["daily", "daily-basic", "moneyflow", "trade-cal", "backtest-results"];
+
+function storageCursor(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
 export default function StorageOverview() {
   const [overview, setOverview] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -27,6 +33,7 @@ export default function StorageOverview() {
   const [storageCatalog, setStorageCatalog] = useState<Record<string, unknown>>({});
   const [catalogEnvelopeLedger, setCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [catalogEnvelopeWarnings, setCatalogEnvelopeWarnings] = useState<Array<string>>([]);
+  const [datasetCursors, setDatasetCursors] = useState<Record<string, string>>({});
   const [factorValues, setFactorValues] = useState<Record<string, unknown>>({});
   const [sqliteMeta, setSqliteMeta] = useState<Record<string, unknown>>({});
   const [datasetDetails, setDatasetDetails] = useState<Record<string, Record<string, unknown>>>({});
@@ -52,11 +59,22 @@ export default function StorageOverview() {
       setCatalogEnvelopeLedger(res.call_ledger ?? []);
       setCatalogEnvelopeWarnings(res.warnings ?? []);
     });
-    void getFactorValuesStorage().then((res) => setFactorValues(res.data));
+    void getFactorValuesStorage({ cursor: datasetCursors.factor_values }).then((res) => setFactorValues(res.data));
     void getSQLiteMetaStorage().then((res) => setSqliteMeta(res.data));
-    void Promise.all(["daily", "daily-basic", "moneyflow", "trade-cal", "backtest-results"].map((dataset) => getStorageDataset(dataset).then((res) => [dataset, res.data] as const))).then((items) =>
+    void Promise.all(STORAGE_DATASET_ENDPOINTS.map((dataset) => getStorageDataset(dataset, { cursor: datasetCursors[dataset] }).then((res) => [dataset, res.data] as const))).then((items) =>
       setDatasetDetails(Object.fromEntries(items))
     );
+  };
+  const loadStorageDatasetPage = (cursorKey: string, dataset: string, cursor = "") => {
+    const nextCursor = storageCursor(cursor);
+    setDatasetCursors((prev) => ({ ...prev, [cursorKey]: nextCursor }));
+    if (cursorKey === "factor_values") {
+      void getFactorValuesStorage({ cursor: nextCursor }).then((res) => setFactorValues(res.data));
+      return;
+    }
+    void getStorageDataset(dataset, { cursor: nextCursor }).then((res) => {
+      setDatasetDetails((prev) => ({ ...prev, [dataset]: res.data }));
+    });
   };
   const launchArtifactCleanupDryRun = () =>
     void postStorageArtifactCleanupDryRun({ source: "storage_overview_button" }).then((res) => {
@@ -98,12 +116,12 @@ export default function StorageOverview() {
     (storageCatalog.dataset_catalog as Array<Record<string, unknown>> | undefined) ??
     (overview.dataset_catalog as Array<Record<string, unknown>> | undefined);
   const datasetCards = [
-    { key: "factor_values", label: "factor_values", packet: factorValues },
-    { key: "daily", label: "daily", packet: datasetDetails.daily ?? {} },
-    { key: "daily_basic", label: "daily_basic", packet: datasetDetails["daily-basic"] ?? {} },
-    { key: "moneyflow", label: "moneyflow", packet: datasetDetails.moneyflow ?? {} },
-    { key: "trade_cal", label: "trade_cal", packet: datasetDetails["trade-cal"] ?? {} },
-    { key: "backtest_results", label: "backtest_results", packet: datasetDetails["backtest-results"] ?? {} }
+    { key: "factor_values", cursorKey: "factor_values", endpoint: "factor-values", label: "factor_values", packet: factorValues },
+    { key: "daily", cursorKey: "daily", endpoint: "daily", label: "daily", packet: datasetDetails.daily ?? {} },
+    { key: "daily_basic", cursorKey: "daily-basic", endpoint: "daily-basic", label: "daily_basic", packet: datasetDetails["daily-basic"] ?? {} },
+    { key: "moneyflow", cursorKey: "moneyflow", endpoint: "moneyflow", label: "moneyflow", packet: datasetDetails.moneyflow ?? {} },
+    { key: "trade_cal", cursorKey: "trade-cal", endpoint: "trade-cal", label: "trade_cal", packet: datasetDetails["trade-cal"] ?? {} },
+    { key: "backtest_results", cursorKey: "backtest-results", endpoint: "backtest-results", label: "backtest_results", packet: datasetDetails["backtest-results"] ?? {} }
   ];
   const factorMetadata = factorValues.metadata as Record<string, unknown> | undefined;
   const factorQuery = factorValues.query as Record<string, unknown> | undefined;
@@ -180,6 +198,23 @@ export default function StorageOverview() {
       has_more: pageInfo?.has_more ?? false,
       next_cursor: pageInfo?.next_cursor ?? "",
       returned_row_count: pageInfo?.returned_row_count ?? item.packet.row_count ?? 0
+    };
+  });
+  const cursorControlRows = datasetCards.map((item) => {
+    const pageInfo = item.packet.page_info as Record<string, unknown> | undefined;
+    const contract = item.packet.query_result_contract as Record<string, unknown> | undefined;
+    const nextCursor = storageCursor(pageInfo?.next_cursor ?? contract?.next_cursor);
+    return {
+      dataset: item.label,
+      endpoint: item.endpoint,
+      current_ui_cursor: datasetCursors[item.cursorKey] ?? "",
+      returned_cursor: pageInfo?.cursor ?? "",
+      cursor_status: pageInfo?.cursor_status ?? "not_provided",
+      has_more: pageInfo?.has_more ?? contract?.has_more ?? false,
+      next_cursor: nextCursor,
+      can_load_next: Boolean(nextCursor),
+      read_only_get_cursor: true,
+      external_calls_triggered: item.packet.external_calls_triggered ?? false
     };
   });
   const datasetCallLedgerRows = [
@@ -296,6 +331,30 @@ export default function StorageOverview() {
 
       <PacketCard title="DuckDB cursor pagination" subtitle="cursor 使用 offset 合同；React 只展示 page_info，不直接读取 Parquet" status="pagination_contract">
         <DataLineageTable rows={queryPageRows} />
+      </PacketCard>
+
+      <PacketCard title="DuckDB cursor controls" subtitle="按钮只改变 GET storage cursor；不刷新数据、不写 Parquet、不外联" status="ui_cursor_controls">
+        <p>control_policy: read_only_get_cursor_v1</p>
+        <p>cursor source: page_info.next_cursor / query_result_contract.next_cursor</p>
+        <p>reset cursor 会回到第一页；不会调用 Tushare、DeepSeek、GitHub，也不会执行真实交易。</p>
+        <DataLineageTable rows={cursorControlRows} />
+        <div className="actions">
+          {datasetCards.map((item) => {
+            const pageInfo = item.packet.page_info as Record<string, unknown> | undefined;
+            const contract = item.packet.query_result_contract as Record<string, unknown> | undefined;
+            const nextCursor = storageCursor(pageInfo?.next_cursor ?? contract?.next_cursor);
+            return (
+              <button key={`${item.key}-next-cursor`} disabled={!nextCursor} onClick={() => loadStorageDatasetPage(item.cursorKey, item.endpoint, nextCursor)}>
+                下一页 {item.label}
+              </button>
+            );
+          })}
+          {datasetCards.map((item) => (
+            <button key={`${item.key}-reset-cursor`} onClick={() => loadStorageDatasetPage(item.cursorKey, item.endpoint, "")}>
+              重置 {item.label}
+            </button>
+          ))}
+        </div>
       </PacketCard>
 
       <PacketCard title="Dataset version policy" subtitle="只读版本策略矩阵；声明版本不等于物理版本已验收，不写 manifest" status={String(datasetVersionPolicy.status ?? "policy_ready")}>

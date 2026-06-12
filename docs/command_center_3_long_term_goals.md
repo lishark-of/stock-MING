@@ -270,6 +270,7 @@ Add factor universe research pipeline
 - `POST /api/storage/cache-ttl/dry-run` now creates a local task and packet that lists fresh/stale/missing TTL states and refresh recommendations without refreshing providers or writing Parquet.
 - DuckDB query service policy is visible in storage overview/catalog: canonical dataset paths, supported filters, limit guard, safe parameter binding, and frontend no-direct-DataFrame boundaries are auditable.
 - DuckDB dataset reads now return typed projection columns, `duckdb_query_result_contract.v1`, and offset cursor `page_info` for local Parquet reads.
+- React Storage now exposes read-only DuckDB cursor controls that pass `page_info.next_cursor` back through FastAPI GET storage APIs; the controls do not refresh providers, write Parquet, or read DataFrames directly.
 
 ### Gaps
 
@@ -278,7 +279,7 @@ Add factor universe research pipeline
 - Physical partition migration execution.
 - Physical compaction execution beyond the button-gated dry-run.
 - Physical refresh scheduling/execution beyond the button-gated cache TTL dry-run.
-- UI cursor controls, typed projection consumption by Factor Test Lab / full-pool research, and query result contract hardening beyond the current local DuckDB read path.
+- Typed projection consumption by Factor Test Lab / full-pool research, richer UI filters, and query result contract hardening beyond the current local DuckDB read path.
 - Reviewed manual cleanup workflow after dry-run.
 
 ### Implementation Phases
@@ -303,6 +304,7 @@ Add factor universe research pipeline
 - Cache TTL dry-run is button-gated, calls no providers, writes no Parquet, and records fresh/stale/missing refresh recommendations before any refresh task.
 - DuckDB query service remains local/canonical-path-only, uses safe parameter binding and limit guards, and is visible to React as a policy matrix; React does not query Parquet or hold large DataFrames directly.
 - DuckDB query results expose projection columns, missing projection columns, order columns, `page_info`, and `next_cursor`; these remain read-only local contracts and do not refresh data.
+- React cursor controls use only GET storage API cursor parameters, can reset to the first page, and preserve the no-provider-refresh / no-Parquet-write / no-trade-action boundary.
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
 - Write failure does not pollute packet or action.
 
