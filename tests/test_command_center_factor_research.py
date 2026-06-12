@@ -556,8 +556,14 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["market_session_detail"], "morning_continuous_auction")
         self.assertTrue(gate["calendar_validated"])
         self.assertEqual(gate["calendar_coverage_status"], "validated")
+        self.assertFalse(gate["calendar_requires_refresh"])
+        self.assertTrue(gate["expected_data_date_available"])
+        self.assertTrue(gate["expected_data_date_calendar_validated"])
+        self.assertTrue(gate["previous_open_found"])
+        self.assertTrue(gate["next_open_found"])
         self.assertFalse(gate["current_eod_available"])
         self.assertFalse(gate["data_update_delay_guard_active"])
+        self.assertEqual(gate["data_update_delay_reason"], "intraday_uses_previous_completed_trading_day")
         self.assertEqual(packet["call_ledger"][0]["trading_day_lag"], 0)
         self.assertEqual(packet["call_ledger"][0]["freshness_reason"], "matches_expected_trading_day")
         self.assertFalse(packet["call_ledger"][0]["freshness_blocks_composite_score"])
@@ -623,6 +629,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["expected_data_date"], "2026-06-11")
         self.assertFalse(gate["current_eod_available"])
         self.assertTrue(gate["data_update_delay_guard_active"])
+        self.assertEqual(gate["data_update_delay_reason"], "post_close_before_data_ready_time")
         self.assertEqual(gate["status"], "future_unavailable")
         self.assertFalse(gate["usable_for_score"])
 
@@ -645,6 +652,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["expected_data_date_source"], "current_trading_day_after_ready_time")
         self.assertTrue(gate["current_eod_available"])
         self.assertFalse(gate["data_update_delay_guard_active"])
+        self.assertEqual(gate["data_update_delay_reason"], "after_ready_time_current_trading_day_allowed")
         self.assertEqual(gate["status"], "fresh")
         self.assertTrue(gate["usable_for_score"])
 
@@ -696,6 +704,43 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["expected_data_date"], "2026-06-11")
         self.assertFalse(gate["today_is_trading_day"])
         self.assertTrue(gate["calendar_validated"])
+
+    def test_a_share_calendar_missing_previous_open_blocks_current_evidence(self):
+        incomplete_calendar = {
+            "status": "ready",
+            "rows": [
+                {"cal_date": "20260612", "is_open": 1},
+                {"cal_date": "20260615", "is_open": 1},
+            ],
+        }
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=incomplete_calendar,
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260612", "call_status": "success"},
+            ],
+            now="2026-06-12T10:00:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "unknown")
+        self.assertFalse(gate["usable_for_score"])
+        self.assertEqual(gate["expected_data_date"], None)
+        self.assertFalse(gate["expected_data_date_available"])
+        self.assertEqual(gate["expected_data_date_source"], "unavailable")
+        self.assertEqual(gate["calendar_coverage_status"], "partial_missing_previous_open")
+        self.assertTrue(gate["calendar_requires_refresh"])
+        self.assertFalse(gate["previous_open_found"])
+        self.assertTrue(gate["next_open_found"])
+        self.assertIn("expected_data_date_unavailable", gate["blocking_reasons"])
+        self.assertEqual(packet["call_ledger"][0]["freshness_reason"], "expected_data_date_unavailable")
+        self.assertTrue(packet["call_ledger"][0]["freshness_blocks_composite_score"])
+        self.assertIsNone(packet["score"]["composite_score"])
+        self.assertEqual(packet["score"]["support_factors"], [])
+        self.assertEqual(packet["next_session_bridge"]["preview"], [])
+        self.assertIn("无法确认最近应可得交易日", " ".join(gate["warnings"]))
 
     def test_fallback_weekday_calendar_is_marked_unvalidated(self):
         packet = factor_research.build_factor_quant_hub_packet(
