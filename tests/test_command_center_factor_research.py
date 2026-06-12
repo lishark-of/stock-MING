@@ -295,6 +295,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                     "market_cap_neutral_ic": 0.019,
                     "pit_check": "passed",
                     "lookahead_check": "passed",
+                    "survivorship_check": "passed",
                     "strategy_action": "buy",
                     "price": 99,
                 },
@@ -340,6 +341,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                         "turnover": 0.2 + stock_index * 0.01,
                         "pit_validated": True,
                         "lookahead_check": "passed",
+                        "survivorship_check": "passed",
                         "forward_return_horizon": "1d",
                         "strategy_action": "buy",
                     }
@@ -378,6 +380,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(row["max_drawdown_window_count"], 4)
         self.assertEqual(row["pit_check"], "passed")
         self.assertEqual(row["lookahead_check"], "passed")
+        self.assertEqual(row["survivorship_check"], "passed")
         self.assertEqual(row["sample_split_stability"]["method"], "chronological_half_split_light_observations")
         self.assertEqual(row["sample_split_stability"]["early_window_date_count"], 2)
         self.assertEqual(row["sample_split_stability"]["recent_window_date_count"], 2)
@@ -411,6 +414,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                         "turnover": 0.2,
                         "pit_validated": True,
                         "lookahead_check": "passed",
+                        "survivorship_check": "passed",
                     }
                 )
 
@@ -444,6 +448,32 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertNotEqual(row["result_status"], "research_pass")
         self.assertFalse(row["enters_strategy_action"])
         self.assertFalse(row["enters_core_action"])
+
+    def test_factor_test_lab_requires_survivorship_check_for_research_pass(self):
+        observations = []
+        for day_index, trade_date in enumerate(["20260601", "20260602", "20260603", "20260604"], start=1):
+            for stock_index in range(1, 7):
+                observations.append(
+                    {
+                        "factor_key": "momentum_20d",
+                        "ts_code": f"00000{stock_index}.SZ",
+                        "trade_date": trade_date,
+                        "factor_value": stock_index * 0.1,
+                        "forward_return": stock_index * 0.006 + day_index * 0.0003,
+                        "transaction_cost": 0.001,
+                        "turnover": 0.22,
+                        "pit_validated": True,
+                        "lookahead_check": "passed",
+                    }
+                )
+
+        packet = factor_research.compute_light_mode_factor_ic_metrics(observations=observations)
+        row = {item["factor_key"]: item for item in packet["items"]}["momentum_20d"]
+
+        self.assertEqual(row["survivorship_check"], "pending")
+        self.assertEqual(row["result_status"], "watchlist")
+        self.assertEqual(packet["quality_summary"]["research_pass_count"], 0)
+        self.assertFalse(row["enters_strategy_action"])
 
     def test_light_mode_factor_ic_metrics_compute_neutralized_research_metrics(self):
         observations = []

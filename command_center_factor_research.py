@@ -1610,7 +1610,8 @@ def build_factor_runtime_packet(
 def _classify_factor_test_row(row: Mapping[str, Any]) -> str:
     pit_check = str(row.get("pit_check") or "pending")
     lookahead_check = str(row.get("lookahead_check") or "pending")
-    if pit_check == "failed" or lookahead_check == "failed":
+    survivorship_check = str(row.get("survivorship_check") or "pending")
+    if pit_check == "failed" or lookahead_check == "failed" or survivorship_check == "failed":
         return "invalid"
     coverage = _to_number(row.get("coverage"))
     missing_rate = _to_number(row.get("missing_rate"))
@@ -1627,9 +1628,9 @@ def _classify_factor_test_row(row: Mapping[str, Any]) -> str:
     if missing_rate > 0.25 or icir < 0 or monotonic is False:
         return "disabled"
     same_direction_rank_ic = (ic_mean >= 0 and rank_ic >= 0) or (ic_mean <= 0 and rank_ic <= 0)
-    pit_and_lookahead_passed = pit_check == "passed" and lookahead_check == "passed"
+    bias_checks_passed = pit_check == "passed" and lookahead_check == "passed" and survivorship_check == "passed"
     if (
-        pit_and_lookahead_passed
+        bias_checks_passed
         and coverage >= 0.8
         and missing_rate <= 0.15
         and abs(ic_mean) >= 0.02
@@ -1950,6 +1951,23 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
         turnover = statistics.fmean([value for value in turnover_values if value is not None]) if any(value is not None for value in turnover_values) else None
         pit_passed = all(row.get("pit_validated") is True or row.get("pit_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
         lookahead_passed = all(row.get("lookahead_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
+        survivorship_failed = any(
+            row.get("survivorship_check") == "failed"
+            or row.get("survivorship_bias_check") == "failed"
+            or row.get("survivorship_validated") is False
+            for _, _, _, row in valid_pairs
+        )
+        survivorship_passed = (
+            all(
+                row.get("survivorship_check") == "passed"
+                or row.get("survivorship_bias_check") == "passed"
+                or row.get("survivorship_validated") is True
+                or row.get("universe_membership_validated") is True
+                for _, _, _, row in valid_pairs
+            )
+            if valid_pairs
+            else False
+        )
         industry_neutral_ic = _neutral_ic_from_observations(valid_pairs, neutralizer="industry")
         market_cap_neutral_ic = _neutral_ic_from_observations(valid_pairs, neutralizer="market_cap")
         stability_detail = _stability_detail_from_date_splits(by_date)
@@ -1985,7 +2003,7 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
             "recent_decay": recent_decay,
             "pit_check": "passed" if pit_passed else "pending",
             "lookahead_check": "passed" if lookahead_passed else "pending",
-            "survivorship_check": "pending",
+            "survivorship_check": "failed" if survivorship_failed else ("passed" if survivorship_passed else "pending"),
             "test_window": {
                 "trade_date_count": len(by_date),
                 "observation_count": total,
@@ -2161,6 +2179,9 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
                 "top_bottom_group_return": "positive",
                 "cost_adjusted_return": "positive",
                 "group_return_monotonicity": True,
+                "pit_check": "passed",
+                "lookahead_check": "passed",
+                "survivorship_check": "passed",
             },
             "disabled": {
                 "missing_rate_gt": 0.25,
