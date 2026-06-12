@@ -229,9 +229,10 @@ TASK_RETRY_POLICY_BY_TYPE: dict[str, dict[str, Any]] = {
     },
 }
 TASK_RETRYABLE_STATUSES = ["failed"]
-TASK_LOCK_POLICY_VERSION = "task_lock_policy.audit.v1"
+TASK_LOCK_POLICY_VERSION = "task_lock_policy.local_dispatch.v1"
 TASK_DEDUPE_POLICY_VERSION = "task_dedupe_policy.audit.v1"
 TASK_TERMINAL_STATUSES = {"success", "failed", "cancelled"}
+TASK_LOCK_ENFORCED = True
 TASK_DISPATCH_DEDUPE_ENFORCED = True
 
 
@@ -439,17 +440,18 @@ def _lock_policy_for_task(
         "input_hash": str(input_hash or ""),
         "lock_active": lock_active,
         "lock_enforced": False,
-        "audit_only": True,
+        "lock_enforcement_enabled": TASK_LOCK_ENFORCED,
+        "audit_only": not TASK_LOCK_ENFORCED,
         "conflict_detection_enabled": True,
         "lock_conflict_detected": bool(lock_active and active_conflicts),
         "active_conflict_count": len(active_conflicts) if lock_active else 0,
         "active_conflict_task_ids": active_conflicts[:5] if lock_active else [],
         "cache_api_can_acquire_lock": False,
-        "auto_blocks_task_creation": False,
+        "auto_blocks_task_creation": TASK_LOCK_ENFORCED,
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
-        "note": "本地并发锁目前只做冲突审计；不会自动阻塞任务、不会自动外联。",
+        "note": "本地 dispatch 锁会复用同 task_type+payload 的非终态任务；不会自动外联。",
     }
 
 
@@ -480,10 +482,11 @@ def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
         "policy_version": TASK_LOCK_POLICY_VERSION,
         "lock_scope": "task_type_payload",
         "lock_enforced": False,
-        "audit_only": True,
+        "lock_enforcement_enabled": TASK_LOCK_ENFORCED,
+        "audit_only": not TASK_LOCK_ENFORCED,
         "conflict_detection_enabled": True,
         "cache_api_can_acquire_lock": False,
-        "auto_blocks_task_creation": False,
+        "auto_blocks_task_creation": TASK_LOCK_ENFORCED,
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -785,6 +788,29 @@ def _dedupe_reuse_call_ledger(existing_task_id: str, now: str, *, task_type: str
     }
 
 
+def _lock_reuse_call_ledger(existing_task_id: str, now: str, *, task_type: str, input_hash: str) -> dict[str, Any]:
+    return {
+        "api": "local_task_dispatch_lock",
+        "request_params_safe": {
+            "existing_task_id": _safe_text(existing_task_id, limit=120),
+            "task_type": _safe_text(task_type, limit=120),
+            "input_hash": _safe_text(input_hash, limit=120),
+        },
+        "row_count": 1,
+        "data_date": None,
+        "local_fetched_at": now,
+        "call_status": "lock_reused_active_task_no_external_call",
+        "error_message_safe": "",
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def task_not_found_call_ledger(task_id: str, *, api: str = "local_task_status_lookup") -> list[dict[str, Any]]:
     return [
         {
@@ -910,11 +936,31 @@ def _mark_task_reused_by_dedupe(task: dict[str, Any], *, candidate: dict[str, An
         }
     )
     task["dedupe_policy"] = dedupe_policy
+    lock_policy = dict(task.get("lock_policy") if isinstance(task.get("lock_policy"), dict) else {})
+    lock_policy.update(
+        {
+            "lock_enforcement_enabled": TASK_LOCK_ENFORCED,
+            "lock_enforced": True,
+            "audit_only": False,
+            "auto_blocks_task_creation": True,
+            "lock_conflict_detected": True,
+            "active_conflict_count": int(lock_policy.get("active_conflict_count") or 0) + 1,
+            "blocked_duplicate_candidate_task_id": candidate.get("task_id"),
+            "blocked_duplicate_creation_count": int(lock_policy.get("blocked_duplicate_creation_count") or 0) + 1,
+            "reused_existing_task_id": task.get("task_id"),
+            "note": "本地 dispatch 锁已复用同 task_type+payload 的非终态任务；不会创建并发重复任务、不会自动外联。",
+        }
+    )
+    task["lock_policy"] = lock_policy
+    task["lock_enforced"] = True
     task["dedupe_reused_existing"] = True
     task["dedupe_reuse_count"] = int(task.get("dedupe_reuse_count") or 0) + 1
-    task.setdefault("warnings", []).append("task_creation_deduped_reused_active_task_no_external_call")
+    task.setdefault("warnings", []).append("task_creation_deduped_and_lock_reused_active_task_no_external_call")
     task.setdefault("call_ledger", []).append(
         _dedupe_reuse_call_ledger(str(task.get("task_id") or ""), now, task_type=task_type, input_hash=input_hash)
+    )
+    task.setdefault("call_ledger", []).append(
+        _lock_reuse_call_ledger(str(task.get("task_id") or ""), now, task_type=task_type, input_hash=input_hash)
     )
     task.setdefault("task_log", []).append(
         _task_log_event(
@@ -1279,6 +1325,11 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             for task in sorted_tasks
             if isinstance(task.get("dedupe_policy"), dict)
         ),
+        "lock_blocked_creation_count": sum(
+            int(task.get("lock_policy", {}).get("blocked_duplicate_creation_count") or 0)
+            for task in sorted_tasks
+            if isinstance(task.get("lock_policy"), dict)
+        ),
         "manual_retry_eligible_count": sum(
             1
             for task in sorted_tasks
@@ -1384,6 +1435,7 @@ def build_task_status_index() -> dict[str, Any]:
                 "dedupe_duplicate_audit_count": persistence["dedupe_duplicate_audit_count"],
                 "dispatch_dedupe_enforced_count": persistence["dispatch_dedupe_enforced_count"],
                 "dedupe_blocked_creation_count": persistence["dedupe_blocked_creation_count"],
+                "lock_blocked_creation_count": persistence["lock_blocked_creation_count"],
                 "manual_retry_eligible_count": persistence["manual_retry_eligible_count"],
                 "automatic_retry_enabled_count": persistence["automatic_retry_enabled_count"],
                 "lock_conflict_audit_count": persistence["lock_conflict_audit_count"],

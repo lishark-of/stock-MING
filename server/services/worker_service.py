@@ -198,9 +198,9 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "concurrency_lock",
-            "status": "audit_ready",
-            "current_coverage": "task records expose lock_policy with task_type+payload lock keys and local conflict counts; lock enforcement remains disabled.",
-            "next_action": "enforce locks before dispatch only after manual retry and task dedupe routes are stable.",
+            "status": "local_ready",
+            "current_coverage": "task records expose lock_policy and local dispatch reuses active tasks with the same lock_key before queue execution.",
+            "next_action": "extend lock enforcement to Celery/Redis dispatch once production worker is enabled.",
             "external_calls_triggered": False,
         },
         {
