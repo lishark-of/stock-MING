@@ -47,6 +47,15 @@ HARD_RISK_REFRESH_APIS = (
     "stk_surv",
 )
 ALL_REFRESH_APIS = CORE_REFRESH_APIS + CALENDAR_REFRESH_APIS + EXTENDED_REFRESH_APIS
+VALIDATION_TARGET_GROUPS = (
+    ("trade_calendar", "交易日历", CALENDAR_REFRESH_APIS),
+    ("margin_financing", "融资融券", MARGIN_REFRESH_APIS),
+    ("dragon_tiger", "龙虎榜/机构席位", DRAGON_TIGER_REFRESH_APIS),
+    ("limit_emotion", "涨跌停/情绪", LIMIT_EMOTION_REFRESH_APIS),
+    ("chip_distribution", "筹码分布", CHIP_REFRESH_APIS),
+    ("financial_disclosure", "财务披露", FINANCIAL_DISCLOSURE_REFRESH_APIS),
+    ("hard_risk", "硬风险公告", HARD_RISK_REFRESH_APIS),
+)
 PARQUET_DATASETS = {
     "daily": "daily",
     "daily_basic": "daily_basic",
@@ -324,6 +333,83 @@ def _api_validation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _validation_target_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_api = {str(row.get("api") or ""): row for row in rows}
+    target_rows: list[dict[str, Any]] = []
+    for target_key, label, apis in VALIDATION_TARGET_GROUPS:
+        api_rows = [by_api[api] for api in apis if api in by_api]
+        selected_rows = [row for row in api_rows if row.get("selected")]
+        called_rows = [row for row in api_rows if row.get("called")]
+        validated_rows = [row for row in api_rows if str(row.get("validation_status") or "").startswith("validated_")]
+        failed_rows = [row for row in api_rows if row.get("validation_status") == "validated_failed"]
+        blocked_rows = [row for row in api_rows if row.get("validation_status") == "blocked"]
+        if not selected_rows:
+            readiness = "matrix_only"
+            meaning = "仅展示能力矩阵；本次没有请求该领域接口，不能视为真实验证。"
+        elif blocked_rows:
+            readiness = "blocked"
+            meaning = "本次任务被缺参或预检阻断，没有产生外部调用结果。"
+        elif failed_rows and validated_rows:
+            readiness = "partial_failed"
+            meaning = "部分接口返回成功或空数据，至少一个接口失败；以 call_ledger 为准。"
+        elif failed_rows:
+            readiness = "failed"
+            meaning = "已请求但接口失败；不得伪装成 verified。"
+        elif len(called_rows) < len(selected_rows):
+            readiness = "selected_not_called"
+            meaning = "已被选择但缺少 call_ledger 结果；不得视为 verified。"
+        elif len(validated_rows) == len(selected_rows):
+            readiness = "validated"
+            meaning = "本次选择的该领域接口都有 call_ledger 结果；success/empty 都只代表已验证调用状态。"
+        elif validated_rows:
+            readiness = "partial"
+            meaning = "本次只验证了该领域的部分接口。"
+        else:
+            readiness = "unknown"
+            meaning = "状态未知；不得进入交易判断。"
+        target_rows.append(
+            {
+                "target": target_key,
+                "label": label,
+                "apis": list(apis),
+                "selected_apis": [str(row.get("api")) for row in selected_rows],
+                "called_api_count": len(called_rows),
+                "selected_api_count": len(selected_rows),
+                "validated_api_count": len(validated_rows),
+                "failed_api_count": len(failed_rows),
+                "blocked_api_count": len(blocked_rows),
+                "readiness": readiness,
+                "readiness_meaning": meaning,
+                "cache_get_external_calls": False,
+                "button_gated_external_calls_only": True,
+                "does_not_claim_unselected_apis_verified": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return target_rows
+
+
+def _validation_target_summary(target_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for row in target_rows:
+        readiness = str(row.get("readiness") or "unknown")
+        counts[readiness] = counts.get(readiness, 0) + 1
+    return {
+        "status": "ready",
+        "target_count": len(target_rows),
+        "readiness_counts": counts,
+        "validated_target_count": counts.get("validated", 0),
+        "partial_or_failed_target_count": sum(counts.get(key, 0) for key in ("partial", "partial_failed", "failed", "blocked", "selected_not_called")),
+        "matrix_only_target_count": counts.get("matrix_only", 0),
+        "cache_get_external_calls": False,
+        "button_gated_external_calls_only": True,
+        "does_not_claim_unselected_apis_verified": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     safe = _safe_payload(payload)
     if "ticker" in safe and "ts_code" not in safe:
@@ -548,6 +634,8 @@ def run_tushare_refresh_task(
 
     api_validation_rows = _api_validation_rows(selected_apis, call_ledger)
     api_validation_summary = _api_validation_summary(api_validation_rows)
+    validation_target_rows = _validation_target_rows(api_validation_rows)
+    validation_target_summary = _validation_target_summary(validation_target_rows)
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -570,10 +658,13 @@ def run_tushare_refresh_task(
         "api_capability_rows": _api_capability_rows(selected_apis),
         "api_validation_rows": api_validation_rows,
         "api_validation_summary": api_validation_summary,
+        "api_validation_target_rows": validation_target_rows,
+        "api_validation_target_summary": validation_target_summary,
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
             "matrix_only_apis": [row["api"] for row in api_validation_rows if row.get("validation_scope") == "capability_matrix_only"],
+            "target_readiness_scope": "目标领域 readiness 只汇总本次按钮任务的 call_ledger；matrix_only 不代表真实验证。",
             "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
             "cache_get_external_calls": False,
             "button_gated_external_calls_only": True,

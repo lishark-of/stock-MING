@@ -1991,6 +1991,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(validation_by_api["limit_list_d"]["selected"])
         self.assertTrue(persisted["api_validation_summary"]["does_not_claim_unselected_apis_verified"])
         self.assertIn("trade_cal", persisted["api_validation_matrix_policy"]["matrix_only_apis"])
+        self.assertIn("target_readiness_scope", persisted["api_validation_matrix_policy"])
+        target_by_key = {row["target"]: row for row in persisted["api_validation_target_rows"]}
+        self.assertEqual(target_by_key["trade_calendar"]["readiness"], "matrix_only")
+        self.assertEqual(target_by_key["margin_financing"]["readiness"], "matrix_only")
+        self.assertTrue(target_by_key["trade_calendar"]["does_not_claim_unselected_apis_verified"])
+        self.assertEqual(persisted["api_validation_target_summary"]["matrix_only_target_count"], 7)
+        self.assertEqual(persisted["api_validation_target_summary"]["validated_target_count"], 0)
         self.assertEqual(persisted["api_validation_matrix_policy"]["call_ledger_required_fields"][0], "api")
 
     def test_tushare_refresh_task_validates_trade_calendar_and_extended_apis_without_false_parquet_claims(self):
@@ -2108,6 +2115,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["api_validation_summary"]["validated_financial_disclosure_api_count"], 1)
         self.assertEqual(persisted["api_validation_summary"]["task_call_result_count"], 9)
         self.assertIn("daily", persisted["api_validation_matrix_policy"]["matrix_only_apis"])
+        target_by_key = {row["target"]: row for row in persisted["api_validation_target_rows"]}
+        self.assertEqual(target_by_key["trade_calendar"]["readiness"], "validated")
+        self.assertEqual(target_by_key["margin_financing"]["readiness"], "validated")
+        self.assertEqual(target_by_key["dragon_tiger"]["readiness"], "validated")
+        self.assertEqual(target_by_key["limit_emotion"]["readiness"], "partial_failed")
+        self.assertEqual(target_by_key["financial_disclosure"]["readiness"], "validated")
+        self.assertEqual(target_by_key["hard_risk"]["readiness"], "validated")
+        self.assertEqual(target_by_key["hard_risk"]["selected_apis"], ["stk_surv"])
+        self.assertEqual(target_by_key["chip_distribution"]["readiness"], "matrix_only")
+        self.assertEqual(persisted["api_validation_target_summary"]["validated_target_count"], 5)
+        self.assertGreaterEqual(persisted["api_validation_target_summary"]["partial_or_failed_target_count"], 1)
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -2264,6 +2282,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(validation_by_api["daily"]["validation_status"], "not_requested")
         self.assertEqual(validation_by_api["daily"]["validation_scope"], "capability_matrix_only")
         self.assertTrue(persisted["api_validation_summary"]["does_not_claim_unselected_apis_verified"])
+        target_by_key = {row["target"]: row for row in persisted["api_validation_target_rows"]}
+        self.assertEqual(target_by_key["chip_distribution"]["readiness"], "validated")
+        self.assertEqual(target_by_key["hard_risk"]["readiness"], "partial_failed")
+        self.assertEqual(target_by_key["limit_emotion"]["readiness"], "matrix_only")
+        self.assertEqual(target_by_key["hard_risk"]["failed_api_count"], 1)
 
     def test_tushare_refresh_task_failure_keeps_safe_error_and_action_boundary(self):
         self._with_meta_store()
