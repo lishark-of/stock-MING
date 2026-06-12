@@ -170,7 +170,19 @@ TASK_LIFECYCLE_POST_ROUTES = [
         "call_ledger_required": True,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
-    }
+    },
+    {
+        "route": "POST /api/tasks/{task_id}/retry",
+        "label": "手动重试本地任务",
+        "route_type": "local_lifecycle",
+        "button_gated": True,
+        "current_backend": "local_retry_record_only",
+        "external_call_policy": "local_retry_no_external_call",
+        "possible_external_sources": [],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
 ]
 
 TASK_RETRY_POLICY_VERSION = "task_retry_policy.audit.v1"
@@ -246,6 +258,8 @@ def _build_route_coverage() -> dict[str, Any]:
         ),
         "cache_reads_create_no_tasks": True,
         "cancel_routes_external_calls": False,
+        "retry_routes_external_calls": False,
+        "lifecycle_routes_external_calls": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
@@ -520,7 +534,9 @@ def build_task_catalog() -> dict[str, Any]:
             "automatic_retry_enabled": False,
             "manual_retry_requires_post_task": True,
             "cancel_task_external_calls": False,
+            "retry_task_external_calls": False,
             "cancel_route_in_lifecycle_catalog": True,
+            "retry_route_in_lifecycle_catalog": True,
             "post_task_may_trigger_external_request": True,
             "cache_api_external_calls": False,
             "does_not_execute_trades": True,
@@ -703,6 +719,36 @@ def _cancel_call_ledger(task_id: str, now: str, *, reason_safe: str = "") -> dic
         "local_fetched_at": now,
         "call_status": "cancelled_locally_no_external_call",
         "error_message_safe": "",
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _retry_call_ledger(
+    task_id: str,
+    now: str,
+    *,
+    new_task_id: str = "",
+    call_status: str = "manual_retry_created_no_external_call",
+    reason_safe: str = "",
+) -> dict[str, Any]:
+    return {
+        "api": "local_task_retry",
+        "request_params_safe": {
+            "source_task_id": _safe_text(task_id, limit=120),
+            "new_task_id": _safe_text(new_task_id, limit=120),
+            "reason": reason_safe,
+        },
+        "row_count": 1 if new_task_id else 0,
+        "data_date": None,
+        "local_fetched_at": now,
+        "call_status": call_status,
+        "error_message_safe": "" if call_status == "manual_retry_created_no_external_call" else call_status,
         "external": False,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -948,6 +994,103 @@ def cancel_task(task_id: str, payload: Any = None) -> dict[str, Any] | None:
         call_ledger=cancel_ledger,
         warning="task_cancelled_locally_no_external_call",
     )
+
+
+def retry_task(task_id: str, payload: Any = None) -> dict[str, Any] | None:
+    source = read_task_status(task_id)
+    if source is None:
+        return None
+
+    payload_safe = _safe_payload(payload)
+    reason_safe = _safe_text(payload_safe.get("reason", "")) if isinstance(payload_safe, dict) else ""
+    now = _now_iso()
+    source_policy = source.get("retry_policy") if isinstance(source.get("retry_policy"), dict) else {}
+    task_type = str(source.get("task_type") or "")
+    retry_policy = _retry_policy_for_task(
+        task_type,
+        status=str(source.get("status") or ""),
+        attempt_number=source_policy.get("attempt_number") if isinstance(source_policy, dict) else None,
+    )
+    if not retry_policy.get("manual_retry_eligible"):
+        ledger = [_retry_call_ledger(str(task_id), now, call_status="manual_retry_not_eligible_no_external_call", reason_safe=reason_safe)]
+        source.setdefault("warnings", []).append("manual_retry_not_eligible_no_external_call")
+        source.setdefault("task_log", []).append(
+            _task_log_event(
+                "manual_retry_not_eligible",
+                status=str(source.get("status") or "unknown"),
+                current_step=str(source.get("current_step") or ""),
+                message=reason_safe or "manual retry rejected by retry policy",
+                at=now,
+            )
+        )
+        source["call_ledger"] = list(source.get("call_ledger") or []) + ledger
+        source["external_calls_triggered"] = False
+        source["tushare_called"] = False
+        source["deepseek_called"] = False
+        source["github_called"] = False
+        source["does_not_execute_trades"] = True
+        source["does_not_modify_strategy_action"] = True
+        _persist_task(source)
+        return {
+            "ok": False,
+            "error": "manual_retry_not_eligible",
+            "task": source,
+            "call_ledger": ledger,
+            "warnings": ["manual retry 只允许 failed 且仍有 attempts_remaining 的任务；不会自动外联或交易。"],
+        }
+
+    attempt_number = int(retry_policy.get("attempt_number") or 1) + 1
+    new_task = build_task_record(
+        task_type,
+        output_packet_key=str(source.get("output_packet_key") or ""),
+        payload=source.get("payload_safe") or {},
+        status="pending",
+        progress=0.0,
+        current_step="manual_retry_queued_no_external_call",
+        warnings=[
+            "manual retry 仅创建新的本地任务记录；不会在 retry 路由中自动调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+            f"source_task_id={_safe_text(task_id, limit=120)}",
+        ],
+    )
+    retry_ledger = [_retry_call_ledger(str(task_id), now, new_task_id=str(new_task["task_id"]), reason_safe=reason_safe)]
+    new_task["retry_source_task_id"] = str(task_id)
+    new_task["retry_created_by"] = "POST /api/tasks/{task_id}/retry"
+    new_task["retry_policy"] = _retry_policy_for_task(task_type, status="pending", attempt_number=attempt_number)
+    new_task["call_ledger"] = retry_ledger
+    new_task["external_calls_triggered"] = False
+    new_task["tushare_called"] = False
+    new_task["deepseek_called"] = False
+    new_task["github_called"] = False
+    new_task["does_not_execute_trades"] = True
+    new_task["does_not_modify_strategy_action"] = True
+    new_task.setdefault("task_log", []).append(
+        _task_log_event(
+            "manual_retry_task_created",
+            status="pending",
+            current_step="manual_retry_queued_no_external_call",
+            message=reason_safe or "manual retry task created without external work",
+            at=now,
+        )
+    )
+    persisted_new = _persist_task(new_task)
+    source.setdefault("task_log", []).append(
+        _task_log_event(
+            "manual_retry_spawned_new_task",
+            status=str(source.get("status") or ""),
+            current_step=str(source.get("current_step") or ""),
+            message=f"new_task_id={persisted_new['task_id']}",
+            at=now,
+        )
+    )
+    source.setdefault("warnings", []).append("manual_retry_spawned_new_task_no_external_call")
+    _persist_task(source)
+    return {
+        "ok": True,
+        "task": persisted_new,
+        "source_task": source,
+        "call_ledger": retry_ledger,
+        "warnings": persisted_new.get("warnings") or [],
+    }
 
 
 def create_task_stub(

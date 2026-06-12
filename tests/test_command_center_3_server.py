@@ -2456,7 +2456,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["policy"]["automatic_retry_enabled"])
         self.assertTrue(catalog["policy"]["manual_retry_requires_post_task"])
         self.assertFalse(catalog["policy"]["cancel_task_external_calls"])
+        self.assertFalse(catalog["policy"]["retry_task_external_calls"])
         self.assertTrue(catalog["policy"]["cancel_route_in_lifecycle_catalog"])
+        self.assertTrue(catalog["policy"]["retry_route_in_lifecycle_catalog"])
         self.assertFalse(catalog["external_calls_triggered"])
         self.assertFalse(catalog["tushare_called"])
         self.assertFalse(catalog["deepseek_called"])
@@ -2473,13 +2475,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 8)
+        self.assertEqual(route_coverage["known_post_route_count"], 9)
         self.assertEqual(route_coverage["task_creation_route_count"], 7)
-        self.assertEqual(route_coverage["local_lifecycle_route_count"], 1)
+        self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
         self.assertTrue(route_coverage["call_ledger_required_for_all_known_post_routes"])
         self.assertFalse(route_coverage["cancel_routes_external_calls"])
+        self.assertFalse(route_coverage["retry_routes_external_calls"])
+        self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
         self.assertEqual(implementation_status["task_count"], 7)
         self.assertEqual(implementation_status["stub_task_count"], 2)
@@ -2513,8 +2517,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(retry_policy_summary["cache_api_can_retry"])
         self.assertEqual(set(retry_policy_summary["task_policies"]), set(by_type))
         self.assertIn("POST /api/tasks/{task_id}/cancel", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/tasks/{task_id}/retry", route_coverage["known_post_routes"])
         self.assertEqual(catalog["task_lifecycle_routes"][0]["route"], "POST /api/tasks/{task_id}/cancel")
         self.assertEqual(catalog["task_lifecycle_routes"][0]["external_call_policy"], "local_cancel_no_external_call")
+        self.assertEqual(catalog["task_lifecycle_routes"][1]["route"], "POST /api/tasks/{task_id}/retry")
+        self.assertEqual(catalog["task_lifecycle_routes"][1]["external_call_policy"], "local_retry_no_external_call")
         self.assertEqual(by_type["refresh_tushare_facts"]["route"], "POST /api/tasks/refresh-tushare-facts")
         self.assertEqual(by_type["refresh_tushare_facts"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertFalse(by_type["refresh_tushare_facts"]["retry_policy"]["auto_retry_enabled"])
@@ -4426,6 +4433,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("POST /api/tasks/{task_id}/cancel", cancelled["warnings"][0])
         self.assertNotIn("SHOULD_DROP", json.dumps(cancelled, ensure_ascii=False))
 
+        retried = self.client.post("/api/tasks/token=SHOULD_DROP/retry", json={"reason": "token=SHOULD_DROP"}).json()
+
+        self.assertFalse(retried["ok"])
+        self.assertEqual(retried["error"], "task_not_found")
+        self.assertEqual(retried["call_ledger"][0]["api"], "local_task_retry")
+        self.assertEqual(retried["call_ledger"][0]["call_status"], "task_not_found_no_external_call")
+        self.assertEqual(retried["call_ledger"][0]["request_params_safe"]["task_id"], "[redacted_sensitive_text]")
+        self.assert_local_ledger_boundary(retried["call_ledger"][0])
+        self.assertIn("POST /api/tasks/{task_id}/retry", retried["warnings"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(retried, ensure_ascii=False))
+
     def test_button_gated_stub_task_endpoints_expose_top_level_lineage(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -4517,6 +4535,71 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cancelled, ensure_ascii=False))
+
+    def test_task_retry_endpoint_creates_new_pending_task_without_external_work(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task = task_service.create_task_record(
+            "run_factor_light",
+            output_packet_key="command_center_factor_quant_hub_packet",
+            payload={"authorization": "Bearer SHOULD_DROP", "ts_code": "002008.SZ"},
+        )
+        failed = task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=0.4,
+            current_step="failed_before_retry",
+            error_message_safe="provider unavailable token=SHOULD_DROP",
+        )
+
+        retried = self.client.post(f"/api/tasks/{task['task_id']}/retry", json={"reason": "manual token=SHOULD_DROP"}).json()
+
+        self.assertTrue(retried["ok"])
+        new_task = retried["data"]["task"]
+        self.assertNotEqual(new_task["task_id"], task["task_id"])
+        self.assertEqual(new_task["status"], "pending")
+        self.assertEqual(new_task["task_type"], "run_factor_light")
+        self.assertEqual(new_task["retry_source_task_id"], task["task_id"])
+        self.assertEqual(new_task["current_step"], "manual_retry_queued_no_external_call")
+        self.assertEqual(new_task["call_ledger"][0]["api"], "local_task_retry")
+        self.assertEqual(new_task["call_ledger"][0]["call_status"], "manual_retry_created_no_external_call")
+        self.assertEqual(new_task["call_ledger"][0]["request_params_safe"]["source_task_id"], task["task_id"])
+        self.assertEqual(new_task["retry_policy"]["attempt_number"], failed["retry_policy"]["attempt_number"] + 1)
+        self.assertFalse(new_task["retry_policy"]["auto_retry_enabled"])
+        self.assertFalse(new_task["external_calls_triggered"])
+        self.assertFalse(new_task["tushare_called"])
+        self.assertFalse(new_task["deepseek_called"])
+        self.assertFalse(new_task["github_called"])
+        self.assertTrue(new_task["does_not_execute_trades"])
+        self.assertTrue(new_task["does_not_modify_strategy_action"])
+        self.assertNotIn("authorization", new_task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(retried, ensure_ascii=False))
+
+        source = self.client.get(f"/api/tasks/{task['task_id']}").json()["data"]
+        self.assertIn("manual_retry_spawned_new_task_no_external_call", source["warnings"])
+        self.assertEqual(source["task_log"][-1]["event"], "manual_retry_spawned_new_task")
+
+    def test_task_retry_endpoint_rejects_non_failed_task_without_external_work(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task = task_service.create_task_record(
+            "run_factor_light",
+            output_packet_key="command_center_factor_quant_hub_packet",
+            payload={"ts_code": "002008.SZ"},
+        )
+
+        retried = self.client.post(f"/api/tasks/{task['task_id']}/retry", json={"reason": "manual"}).json()
+
+        self.assertFalse(retried["ok"])
+        self.assertEqual(retried["error"], "manual_retry_not_eligible")
+        packet = retried["data"]["task"]
+        self.assertEqual(packet["status"], "pending")
+        self.assertEqual(retried["call_ledger"][0]["api"], "local_task_retry")
+        self.assertEqual(retried["call_ledger"][0]["call_status"], "manual_retry_not_eligible_no_external_call")
+        self.assert_local_ledger_boundary(retried["call_ledger"][0])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_worker_runtime_cache_endpoint_returns_local_backend_readiness(self):
         response = self.client.get("/api/worker/cache").json()

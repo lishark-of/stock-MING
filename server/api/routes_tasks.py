@@ -56,3 +56,30 @@ def cancel_task(task_id: str, payload: dict[str, Any] | None = None) -> dict:
             warnings=task_service.task_not_found_warnings("POST /api/tasks/{task_id}/cancel"),
         )
     return task_envelope(task)
+
+
+@router.post("/{task_id}/retry")
+def retry_task(task_id: str, payload: dict[str, Any] | None = None) -> dict:
+    result = task_service.retry_task(task_id, payload)
+    if result is None:
+        return envelope(
+            {},
+            ok=False,
+            error="task_not_found",
+            call_ledger=task_service.task_not_found_call_ledger(task_id, api="local_task_retry"),
+            warnings=task_service.task_not_found_warnings("POST /api/tasks/{task_id}/retry"),
+        )
+    if not result.get("ok"):
+        return envelope(
+            {"task": result.get("task")},
+            ok=False,
+            error=result.get("error") or "manual_retry_not_eligible",
+            call_ledger=result.get("call_ledger"),
+            warnings=result.get("warnings"),
+        )
+    task = result["task"]
+    return envelope(
+        {"task_id": task["task_id"], "task": task, "source_task_id": task.get("retry_source_task_id")},
+        call_ledger=result.get("call_ledger") or task.get("call_ledger"),
+        warnings=result.get("warnings") or task.get("warnings"),
+    )
