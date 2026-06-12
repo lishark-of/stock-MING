@@ -618,6 +618,8 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
     today_is_open = today in open_days
     previous_open = _previous_open_day(open_days, today)
     next_open = _next_open_day(open_days, today)
+    days_since_previous_open = (today - previous_open).days if previous_open else None
+    days_until_next_open = (next_open - today).days if next_open else None
     today_eod_available = bool(today_is_open and now_dt.time() >= A_SHARE_DATA_READY_TIME)
     session_detail = _market_session_detail(now_dt, today_is_open=today_is_open)
     data_update_delay_guard_active = bool(today_is_open and A_SHARE_MARKET_CLOSE_TIME <= now_dt.time() < A_SHARE_DATA_READY_TIME)
@@ -666,6 +668,12 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         data_update_delay_reason = "non_trading_day_uses_previous_completed_trading_day"
     else:
         data_update_delay_reason = "standard_previous_completed_trading_day_policy"
+    if today_is_open:
+        market_closed_reason = ""
+    elif calendar_validated:
+        market_closed_reason = "trade_cal_marks_today_closed"
+    else:
+        market_closed_reason = "fallback_weekday_calendar_marks_today_closed"
     if not calendar_validated:
         warnings.append("未接入交易所 trade_cal，本次 freshness 使用工作日 fallback；节假日判断需降级。")
     elif coverage_status != "validated":
@@ -685,6 +693,9 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         "latest_completed_trading_day": expected.isoformat() if expected else None,
         "previous_open_date": previous_open.isoformat() if previous_open else None,
         "next_open_date": next_open.isoformat() if next_open else None,
+        "days_since_previous_open": days_since_previous_open,
+        "days_until_next_open": days_until_next_open,
+        "market_closed_reason": market_closed_reason,
         "previous_open_found": bool(previous_open),
         "next_open_found": bool(next_open),
         "calendar_source": "trade_cal_packet" if calendar_validated else "fallback_weekday_calendar",
@@ -743,6 +754,9 @@ def _freshness_row_fields(
         "expected_data_date_calendar_validated": bool(context.get("expected_data_date_calendar_validated")),
         "latest_completed_trading_day": context.get("latest_completed_trading_day"),
         "next_open_date": context.get("next_open_date"),
+        "days_since_previous_open": context.get("days_since_previous_open"),
+        "days_until_next_open": context.get("days_until_next_open"),
+        "market_closed_reason": context.get("market_closed_reason"),
         "previous_open_found": bool(context.get("previous_open_found")),
         "next_open_found": bool(context.get("next_open_found")),
         "market_phase": context.get("market_phase"),
@@ -1208,6 +1222,9 @@ def _build_data_freshness_gate(
             "expected_data_date_calendar_validated": bool(context.get("expected_data_date_calendar_validated")),
             "latest_completed_trading_day": context.get("latest_completed_trading_day"),
             "next_open_date": context.get("next_open_date"),
+            "days_since_previous_open": context.get("days_since_previous_open"),
+            "days_until_next_open": context.get("days_until_next_open"),
+            "market_closed_reason": context.get("market_closed_reason"),
             "previous_open_found": bool(context.get("previous_open_found")),
             "next_open_found": bool(context.get("next_open_found")),
             "market_phase": context.get("market_phase"),
@@ -1282,6 +1299,9 @@ def _build_data_freshness_gate(
         "expected_data_date_calendar_validated": bool(context.get("expected_data_date_calendar_validated")),
         "latest_completed_trading_day": context.get("latest_completed_trading_day"),
         "next_open_date": context.get("next_open_date"),
+        "days_since_previous_open": context.get("days_since_previous_open"),
+        "days_until_next_open": context.get("days_until_next_open"),
+        "market_closed_reason": context.get("market_closed_reason"),
         "previous_open_found": bool(context.get("previous_open_found")),
         "next_open_found": bool(context.get("next_open_found")),
         "market_phase": context.get("market_phase"),

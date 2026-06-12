@@ -771,7 +771,12 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["expected_data_date"], "2026-06-12")
         self.assertFalse(gate["today_is_trading_day"])
         self.assertEqual(gate["next_open_date"], "2026-06-15")
+        self.assertEqual(gate["days_since_previous_open"], 1)
+        self.assertEqual(gate["days_until_next_open"], 2)
+        self.assertEqual(gate["market_closed_reason"], "trade_cal_marks_today_closed")
         self.assertTrue(gate["current_eod_available"])
+        self.assertEqual(packet["call_ledger"][0]["days_since_previous_open"], 1)
+        self.assertEqual(packet["call_ledger"][0]["days_until_next_open"], 2)
 
     def test_a_share_calendar_weekday_holiday_expected_date_uses_last_open_day(self):
         holiday_calendar = {
@@ -800,6 +805,10 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["expected_data_date"], "2026-06-11")
         self.assertFalse(gate["today_is_trading_day"])
         self.assertTrue(gate["calendar_validated"])
+        self.assertEqual(gate["days_since_previous_open"], 1)
+        self.assertEqual(gate["days_until_next_open"], 3)
+        self.assertEqual(gate["market_closed_reason"], "trade_cal_marks_today_closed")
+        self.assertEqual(packet["call_ledger"][0]["market_closed_reason"], "trade_cal_marks_today_closed")
 
     def test_a_share_calendar_missing_previous_open_blocks_current_evidence(self):
         incomplete_calendar = {
