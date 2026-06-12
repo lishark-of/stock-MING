@@ -107,6 +107,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `/api/model-strategy/cache` 已独立暴露 DeepSeek 模型策略：`default/explain/projection/factor_explain` 默认走解释级模型，`fast/healthcheck/feeder` 默认走 fast 模型；模型名统一从 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 或集中默认值读取，调用点、任务目录和任务回执不得硬编码。
 - `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 只读状态和 dataset catalog；缺文件返回 `missing`，不触发 Tushare、回测或因子计算。
 - `GET /api/storage` 与 `GET /api/storage/catalog` 暴露 `schema_migration_preflight`，只展示 canonical dataset 的目标 schema version、required columns、primary key、partition expectation 和 manual migration boundary；`physical_validation_done_count=0`、`migration_executed_count=0`，不读取 payload、不写 Parquet、不执行真实迁移。
+- `GET /api/storage` 与 `GET /api/storage/catalog` 暴露 `dataset_version_policy`，只展示 declared dataset version、未来 manifest 路径、物理版本验证边界和 `manifest_written_on_get=false`；它不创建 manifest、不验证物理版本、不代表 dataset version migration 已完成。
 - `POST /api/storage/schema-validation/dry-run` 读取本地 Parquet schema metadata，比较物理列与 schema contract，输出 `schema_validated` / `schema_mismatch` / `missing_dataset`，但不读取行 payload、不写 Parquet、不执行真实迁移。
 - `POST /api/storage/partition-migration/dry-run` 结合 schema validation 与 partition contract 生成分区迁移计划，输出 ready/blocked/missing 行；不会读取行 payload、不会写 partitioned Parquet、不会执行真实迁移。
 - `GET /api/storage/catalog` 独立暴露 dataset catalog，供前端、worker 和后续任务读取数据集用途、别名、写入边界和未来任务归属；该接口只读、不写 Parquet、不外联。
@@ -178,6 +179,7 @@ scripts/run_scheduler.sh
 - Parquet：daily、daily_basic、moneyflow、trade_cal、factor_values、backtest_results。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 文件状态接口和 dataset catalog，并由 light-mode 因子任务写入 `factor_values`。
 - DuckDB：直接查询 Parquet。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 缺文件安全查询和只读状态 API。
 - Schema migration preflight：当前只做 metadata-only 预检，列出 schema version、required columns、primary key、partition expectation、当前 parquet 状态和人工迁移边界；不做物理列校验、不迁移、不重写数据集。
+- Dataset version policy：当前只做 cache-only 版本策略矩阵，列出 declared dataset version、manifest 路径和物理验证状态；不写 `_dataset_versions.json`、不读取 payload、不把声明版本当成生产版本验收。
 - Schema validation dry-run：按钮门控读取 Parquet schema metadata，比较实际列与 canonical contract；它可以证明某个本地文件当前 schema 是否匹配，但仍不是 production migration，也不会重写数据集。
 - Partition migration dry-run：按钮门控生成目标 partitioned path、partition columns、ready/blocked/missing 状态；它不调用 partition writer，不创建分区目录，不代表真实 partition migration 完成。
 - Artifact hygiene：`GET /api/storage` 只读展示 `.stock_ming_3`、legacy cache、frontend build、Node dependencies、Tauri target 和 Python bytecode 的路径级边界；`POST /api/storage/artifact-hygiene/dry-run` 只生成本地清理预检任务和候选清单。两者都不会删除文件、读取 payload、扫描 secret 值、刷新外部服务或修改 `strategy action`。

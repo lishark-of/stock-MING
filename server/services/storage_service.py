@@ -38,6 +38,7 @@ DATASET_TTL_SECONDS = {
     "backtest_results": 30 * 24 * 60 * 60,
 }
 DATASET_COMPACTION_SIZE_THRESHOLD_BYTES = 128 * 1024 * 1024
+DATASET_VERSION_MANIFEST_NAME = "_dataset_versions.json"
 LOCAL_ARTIFACT_HYGIENE_TARGETS = [
     {
         "artifact": "command_center_runtime_cache",
@@ -376,6 +377,93 @@ def storage_schema_migration_preflight() -> dict[str, Any]:
         "status_counts": _count_values(row.get("migration_status") for row in rows),
         "rows": rows,
         "note": "Schema migration preflight is contract-only; physical validation and migration remain explicit future tasks.",
+    }
+
+
+def _dataset_version_manifest_path() -> Path:
+    return PARQUET_ROOT / DATASET_VERSION_MANIFEST_NAME
+
+
+def _dataset_version_policy_row(dataset: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    contract = _schema_contract(dataset)
+    path = parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)
+    metadata = dict(metadata or parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset))
+    manifest_path = _dataset_version_manifest_path()
+    dataset_exists = bool(metadata.get("exists"))
+    manifest_present = manifest_path.exists()
+    if not contract.get("schema_version"):
+        version_status = "missing_schema_contract"
+    elif not dataset_exists:
+        version_status = "contract_declared_dataset_missing"
+    elif manifest_present:
+        version_status = "manifest_present_physical_validation_pending"
+    else:
+        version_status = "contract_declared_manifest_missing"
+    return {
+        "dataset": dataset,
+        "status": version_status,
+        "version_status": version_status,
+        "declared_dataset_version": contract.get("schema_version"),
+        "current_schema_version": contract.get("schema_version"),
+        "target_schema_version": contract.get("schema_version"),
+        "version_source": "local_schema_contract",
+        "version_claim_level": "contract_only_not_physical_proof",
+        "dataset_path": _path_label(Path(str(metadata.get("path") or path))),
+        "version_manifest_path": _path_label(manifest_path),
+        "version_manifest_present": manifest_present,
+        "physical_dataset_exists": dataset_exists,
+        "physical_version_metadata_present": False,
+        "physical_version_validated": False,
+        "dataset_version_migration_executed": False,
+        "dataset_manifest_write_required": True,
+        "manual_version_manifest_task_required": True,
+        "physical_validation_required_before_version_claim": True,
+        "cache_get_writes_files": False,
+        "cache_get_reads_payloads": False,
+        "manifest_written_on_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def storage_dataset_version_policy() -> dict[str, Any]:
+    rows = [_dataset_version_policy_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    status_counts = _count_values(row.get("version_status") for row in rows)
+    return {
+        "schema_version": "command_center_3_storage_dataset_version_policy.v1",
+        "status": "policy_ready"
+        if all(row.get("declared_dataset_version") for row in rows)
+        else "contract_gap",
+        "scope": "dataset_versioning_contract_before_manifest_write",
+        "mode": "cache_only_read_only_policy",
+        "dataset_count": len(rows),
+        "target_version_declared_count": sum(1 for row in rows if row.get("declared_dataset_version")),
+        "version_manifest_present_count": sum(1 for row in rows if row.get("version_manifest_present")),
+        "physical_dataset_version_validated_count": sum(1 for row in rows if row.get("physical_version_validated")),
+        "dataset_version_migration_executed_count": sum(
+            1 for row in rows if row.get("dataset_version_migration_executed")
+        ),
+        "manifest_written_on_get_count": sum(1 for row in rows if row.get("manifest_written_on_get")),
+        "status_counts": status_counts,
+        "rows": rows,
+        "version_manifest_path": _path_label(_dataset_version_manifest_path()),
+        "version_policy": "contract_only_manifest_write_requires_explicit_task",
+        "manifest_write_task_required": True,
+        "physical_validation_required_before_version_claim": True,
+        "cache_get_writes_files": False,
+        "cache_get_reads_payloads": False,
+        "manifest_written_on_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "note": "Dataset version policy is a read-only contract matrix. It does not create a manifest or validate physical dataset versions.",
     }
 
 
@@ -779,6 +867,7 @@ def dataset_implementation_status() -> dict[str, Any]:
         dataset = str(item.get("dataset") or "")
         metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
         schema_contract = _schema_contract(dataset)
+        version_policy = _dataset_version_policy_row(dataset, metadata=metadata)
         partition_plan = _partition_plan(dataset)
         compaction_plan = _compaction_plan(dataset, parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset), metadata)
         schema_migration = _schema_migration_row(dataset, metadata=metadata)
@@ -804,6 +893,12 @@ def dataset_implementation_status() -> dict[str, Any]:
                 "button_gated": "button_gated" in external_refresh_policy or write_policy == "task_pipeline_write_allowed",
                 "schema_contract_status": schema_contract.get("status"),
                 "schema_version": schema_contract.get("schema_version"),
+                "dataset_version_status": version_policy.get("version_status"),
+                "declared_dataset_version": version_policy.get("declared_dataset_version"),
+                "version_claim_level": version_policy.get("version_claim_level"),
+                "version_manifest_present": bool(version_policy.get("version_manifest_present")),
+                "physical_dataset_version_validated": bool(version_policy.get("physical_version_validated")),
+                "dataset_version_migration_executed": bool(version_policy.get("dataset_version_migration_executed")),
                 "schema_migration_status": schema_migration.get("migration_status"),
                 "physical_schema_validation_status": schema_migration.get("physical_column_validation_status"),
                 "schema_migration_executed": bool(schema_migration.get("schema_migration_executed")),
@@ -825,6 +920,7 @@ def dataset_implementation_status() -> dict[str, Any]:
         "dataset_rows": rows,
         "state_counts": _count_values(row.get("implementation_state") for row in rows),
         "parquet_status_counts": _count_values(row.get("parquet_status") for row in rows),
+        "dataset_version_status_counts": _count_values(row.get("dataset_version_status") for row in rows),
         "local_pipeline_dataset_count": sum(1 for row in rows if row.get("implementation_state") == "local_pipeline_enabled"),
         "future_button_gated_dataset_count": sum(1 for row in rows if row.get("implementation_state") == "future_button_gated"),
         "catalog_only_dataset_count": sum(1 for row in rows if row.get("implementation_state") == "catalog_only"),
@@ -833,6 +929,15 @@ def dataset_implementation_status() -> dict[str, Any]:
         "tushare_capable_dataset_count": sum(1 for row in rows if row.get("tushare_capable")),
         "local_compute_capable_dataset_count": sum(1 for row in rows if row.get("local_compute_capable")),
         "schema_contract_ready_count": sum(1 for row in rows if row.get("schema_contract_status") == "contract_ready"),
+        "dataset_version_declared_count": sum(1 for row in rows if row.get("declared_dataset_version")),
+        "dataset_version_manifest_present_count": sum(1 for row in rows if row.get("version_manifest_present")),
+        "physical_dataset_version_validated_count": sum(
+            1 for row in rows if row.get("physical_dataset_version_validated")
+        ),
+        "dataset_version_migration_executed_count": sum(
+            1 for row in rows if row.get("dataset_version_migration_executed")
+        ),
+        "dataset_version_policy": storage_dataset_version_policy(),
         "schema_migration_preflight": storage_schema_migration_preflight(),
         "schema_migration_status_counts": _count_values(row.get("schema_migration_status") for row in rows),
         "schema_migration_executed_count": sum(1 for row in rows if row.get("schema_migration_executed")),
@@ -859,6 +964,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "status": "local_ready",
             "current_coverage": "all canonical Parquet datasets expose local schema contracts with schema_version, date column, primary key and required columns.",
             "next_action": "validate physical files against contracts before full-market research writes.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "dataset_version_policy",
+            "status": "policy_ready",
+            "current_coverage": "all canonical datasets expose a read-only version policy with declared dataset version, manifest path and physical validation boundary.",
+            "next_action": "add an explicit manifest writer/validator task after physical schema validation is stable.",
             "external_calls_triggered": False,
         },
         {
@@ -1137,6 +1249,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     sqlite_status = str((sqlite_meta or {}).get("status") or ("ready" if SQLITE_META_PATH.exists() else "missing"))
     artifact_hygiene = storage_artifact_hygiene_status()
     schema_migration_preflight = storage_schema_migration_preflight()
+    dataset_version_policy = storage_dataset_version_policy()
     rows = [
         {
             "component": "sqlite_meta",
@@ -1153,6 +1266,14 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "current_backend": "metadata_only_contract_rows",
             "blocking_for_cache_read": False,
             "next_action": "add explicit physical schema validation and migration tasks; never run them from GET cache.",
+        },
+        {
+            "component": "dataset_version_policy",
+            "status": dataset_version_policy["status"],
+            "production_role": "dataset version manifest policy before production reads/writes claim physical versioning",
+            "current_backend": "read_only_contract_matrix_no_manifest_write",
+            "blocking_for_cache_read": False,
+            "next_action": "add explicit manifest writer/validator task after schema validation dry-run passes.",
         },
         {
             "component": "parquet_store",
@@ -1199,6 +1320,14 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "production_control_rows": _storage_production_control_rows(),
         "blockers": blockers,
         "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
+        "dataset_version_policy": "contract_only_manifest_write_requires_explicit_task",
+        "dataset_version_policy_status": dataset_version_policy["status"],
+        "dataset_version_policy_dataset_count": dataset_version_policy["dataset_count"],
+        "dataset_version_declared_count": dataset_version_policy["target_version_declared_count"],
+        "dataset_version_manifest_present_count": dataset_version_policy["version_manifest_present_count"],
+        "physical_dataset_version_validated_count": dataset_version_policy["physical_dataset_version_validated_count"],
+        "dataset_version_migration_executed_count": dataset_version_policy["dataset_version_migration_executed_count"],
+        "dataset_version_manifest_written_on_get": False,
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "schema_migration_policy": "preflight_only_no_physical_migration_on_get",
         "schema_migration_preflight_status": schema_migration_preflight["status"],
@@ -1308,6 +1437,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     implementation_status = dataset_implementation_status()
     production_readiness = storage_production_readiness()
     artifact_hygiene = storage_artifact_hygiene_status()
+    dataset_version_policy = storage_dataset_version_policy()
     schema_migration_preflight = storage_schema_migration_preflight()
     packet = {
         "schema_version": "command_center_3_storage_dataset_catalog.v1",
@@ -1318,6 +1448,9 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "dataset_implementation_status": implementation_status,
         "production_readiness": production_readiness,
         "artifact_hygiene": artifact_hygiene,
+        "dataset_version_policy": dataset_version_policy,
+        "dataset_version_rows": dataset_version_policy["rows"],
+        "dataset_version_status_counts": dataset_version_policy["status_counts"],
         "schema_migration_preflight": schema_migration_preflight,
         "schema_migration_rows": schema_migration_preflight["rows"],
         "schema_migration_status_counts": schema_migration_preflight["status_counts"],
@@ -1375,6 +1508,7 @@ def parquet_dataset_status(
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=selected)
     cache_ttl = _cache_ttl_status(selected, path, metadata)
     schema_contract = _schema_contract(selected)
+    dataset_version_policy = _dataset_version_policy_row(selected, metadata=metadata)
     schema_migration = _schema_migration_row(selected, metadata=metadata)
     partition_plan = _partition_plan(selected)
     compaction_plan = _compaction_plan(selected, path, metadata)
@@ -1396,6 +1530,7 @@ def parquet_dataset_status(
         "metadata": metadata,
         "cache_ttl": cache_ttl,
         "schema_contract": schema_contract,
+        "dataset_version_policy": dataset_version_policy,
         "schema_migration": schema_migration,
         "partition_plan": partition_plan,
         "compaction_plan": compaction_plan,
@@ -1559,6 +1694,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     implementation_status = dataset_implementation_status()
     artifact_hygiene = storage_artifact_hygiene_status()
     production_readiness = storage_production_readiness(sqlite_meta)
+    dataset_version_policy = storage_dataset_version_policy()
     schema_migration_preflight = storage_schema_migration_preflight()
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
@@ -1575,6 +1711,13 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "dataset_ttl_status": {item["dataset"]: item["cache_ttl"]["ttl_state"] for item in datasets},
         "dataset_ttl_state_counts": _count_values(item["cache_ttl"]["ttl_state"] for item in datasets),
         "dataset_schema_contract_status": {item["dataset"]: item["schema_contract"]["status"] for item in datasets},
+        "dataset_version_policy": dataset_version_policy,
+        "dataset_version_rows": dataset_version_policy["rows"],
+        "dataset_version_status": {item["dataset"]: item["dataset_version_policy"]["version_status"] for item in datasets},
+        "dataset_version_status_counts": dataset_version_policy["status_counts"],
+        "dataset_version_declared_count": dataset_version_policy["target_version_declared_count"],
+        "physical_dataset_version_validated_count": dataset_version_policy["physical_dataset_version_validated_count"],
+        "dataset_version_migration_executed_count": dataset_version_policy["dataset_version_migration_executed_count"],
         "dataset_partition_plan_status": {item["dataset"]: item["partition_plan"]["status"] for item in datasets},
         "dataset_compaction_status": {item["dataset"]: item["compaction_plan"]["status"] for item in datasets},
         "manual_compaction_recommended_count": sum(1 for item in datasets if item["compaction_plan"]["manual_compaction_recommended"]),

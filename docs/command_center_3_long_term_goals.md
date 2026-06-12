@@ -263,13 +263,14 @@ Add factor universe research pipeline
 - The artifact hygiene audit is `manual_only_no_delete_on_get`: it reports generated/data artifact boundaries but does not delete files, read payloads, scan secret values, refresh providers, or touch `strategy action`.
 - `POST /api/storage/artifact-hygiene/dry-run` now creates a local task and dry-run packet that lists cleanup candidates without deleting files, reading payloads, scanning secret values, or calling external providers.
 - Storage overview and catalog now expose a metadata-only schema migration preflight for all canonical datasets: target schema version, required columns, primary key, partition expectation, current parquet status, and manual migration boundaries are visible without reading payloads or writing Parquet.
+- Storage overview and catalog now expose a cache-only dataset version policy matrix: declared dataset version, manifest path, physical validation boundary, and no-write-on-GET guarantees are visible before any production manifest writer exists.
 - `POST /api/storage/schema-validation/dry-run` now creates a local task and packet that reads Parquet schema metadata only, compares physical columns with canonical schema contracts, and reports `schema_validated` / `schema_mismatch` / `missing_dataset` before any migration.
 - `POST /api/storage/partition-migration/dry-run` now creates a local task and packet that builds per-dataset partition migration plans from schema validation and partition contracts, without reading row payloads or writing partitioned Parquet.
 
 ### Gaps
 
 - Production schema migration execution.
-- Dataset versioning beyond the local schema migration preflight.
+- Physical dataset version manifest writing and validation beyond the read-only version policy matrix.
 - Physical partition migration execution.
 - Compaction.
 - Cache TTL production policy.
@@ -291,6 +292,7 @@ Add factor universe research pipeline
 - Queries go through DuckDB/service.
 - Data files do not enter git.
 - Schema migration preflight remains visibly `preflight_ready`, with `physical_validation_done_count=0` and `migration_executed_count=0` until explicit future tasks prove otherwise.
+- Dataset version policy remains visibly `policy_ready`, but `physical_dataset_version_validated_count=0` and `dataset_version_migration_executed_count=0` until explicit future manifest/validation tasks prove otherwise.
 - Schema validation dry-run is button-gated, reads no row payload, writes no Parquet, and records missing/mismatch/validated rows before any migration.
 - Partition migration dry-run is button-gated, writes no partitioned Parquet, and records ready/blocked/missing rows before any partition writer task.
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
@@ -300,6 +302,7 @@ Add factor universe research pipeline
 
 - Do not write Parquet from GET cache.
 - Do not treat schema migration preflight as physical validation or production migration completion.
+- Do not treat dataset version policy as physical dataset version validation or manifest migration completion.
 - Do not treat schema validation dry-run as production schema migration completion.
 - Do not treat partition migration dry-run as physical partition migration completion.
 - Do not commit `.parquet`, `.duckdb`, `.sqlite`, `.db`, cache, or generated data.

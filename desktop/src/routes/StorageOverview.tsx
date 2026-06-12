@@ -104,6 +104,16 @@ export default function StorageOverview() {
     (overview.schema_migration_preflight as Record<string, unknown> | undefined) ??
     (storageCatalog.schema_migration_preflight as Record<string, unknown> | undefined) ??
     {};
+  const datasetVersionPolicy =
+    (overview.dataset_version_policy as Record<string, unknown> | undefined) ??
+    (storageCatalog.dataset_version_policy as Record<string, unknown> | undefined) ??
+    {};
+  const datasetVersionRows =
+    (overview.dataset_version_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.dataset_version_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const datasetVersionStatusCounts =
+    (overview.dataset_version_status_counts as Record<string, unknown> | undefined) ??
+    ((storageCatalog.dataset_version_status_counts as Record<string, unknown> | undefined) ?? {});
   const schemaMigrationRows =
     (overview.schema_migration_rows as Array<Record<string, unknown>> | undefined) ??
     ((schemaMigration.rows as Array<Record<string, unknown>> | undefined) ?? []);
@@ -172,6 +182,9 @@ export default function StorageOverview() {
           { label: "local artifacts", value: artifactHygiene.present_artifact_count ?? overview.artifact_hygiene_present_count ?? 0 },
           { label: "artifact review", value: artifactHygiene.review_required_count ?? overview.artifact_hygiene_review_required_count ?? 0 },
           { label: "schema migration", value: String(schemaMigration.status ?? overview.schema_migration_preflight_status ?? "preflight") },
+          { label: "dataset version", value: String(datasetVersionPolicy.status ?? "policy_ready") },
+          { label: "declared versions", value: datasetVersionPolicy.target_version_declared_count ?? overview.dataset_version_declared_count ?? 0 },
+          { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
           { label: "migration rows", value: schemaMigrationRows.length },
           { label: "migrations executed", value: schemaMigration.migration_executed_count ?? overview.schema_migration_executed_count ?? 0 },
           { label: "physical schema checks", value: schemaMigration.physical_validation_done_count ?? overview.physical_schema_validation_done_count ?? 0 }
@@ -216,6 +229,16 @@ export default function StorageOverview() {
         <p>state_counts: {JSON.stringify(implementationStateCounts ?? {})}</p>
         <p>parquet_status_counts: {JSON.stringify(implementationParquetStatusCounts ?? {})}</p>
         <DataLineageTable rows={implementationRows} />
+      </PacketCard>
+
+      <PacketCard title="Dataset version policy" subtitle="只读版本策略矩阵；声明版本不等于物理版本已验收，不写 manifest" status={String(datasetVersionPolicy.status ?? "policy_ready")}>
+        <p>mode: {String(datasetVersionPolicy.mode ?? "cache_only_read_only_policy")}</p>
+        <p>version_policy: {String(datasetVersionPolicy.version_policy ?? "contract_only_manifest_write_requires_explicit_task")}</p>
+        <p>manifest_path: {String(datasetVersionPolicy.version_manifest_path ?? "--")}</p>
+        <p>declared / physical validated: {String(datasetVersionPolicy.target_version_declared_count ?? 0)} / {String(datasetVersionPolicy.physical_dataset_version_validated_count ?? 0)}</p>
+        <p>manifest_written_on_get / cache_get_writes_files: {String(datasetVersionPolicy.manifest_written_on_get ?? false)} / {String(datasetVersionPolicy.cache_get_writes_files ?? false)}</p>
+        <p>status_counts: {JSON.stringify(datasetVersionStatusCounts)}</p>
+        <DataLineageTable rows={datasetVersionRows} />
       </PacketCard>
 
       <PacketCard title="Schema migration preflight" subtitle="schema/version 迁移预检；只读、不写 Parquet、不读 payload、不外联" status={String(schemaMigration.status ?? "preflight_ready")}>
