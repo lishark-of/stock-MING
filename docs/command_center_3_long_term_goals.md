@@ -218,14 +218,17 @@ Promote Factor Test Lab to research-grade metrics
 - light mode runs.
 - Current scope is mainly single stock, position, or watchlist style usage.
 - Factor Quant Hub now exposes a universe research contract for `current_target`, `watchlist`, `custom_pool`, and `full_pool`.
-- Current implemented pipeline remains `current_target` light mode; watchlist/custom/full-pool are declared as future task/worker modes.
+- Current implemented compute pipeline remains `current_target` light mode.
+- A button-gated local `run_factor_universe_research_plan` task now consumes storage query contracts for `factor_values`, `daily`, `daily_basic`, `moneyflow`, and `trade_cal`, then writes `universe_research_task_plan` back to Factor Quant Hub cache.
+- The read-plan task is a worker/task consumption plan, not full-pool research validation.
 
 ### Gaps
 
 - Full-market universe is incomplete.
 - Industry and market-cap neutral full-sample validation is incomplete.
 - Factor combination research is incomplete.
-- The universe contract does not perform watchlist/custom/full-pool batch research yet.
+- The universe read plan does not perform watchlist/custom/full-pool batch research yet.
+- Cross-sectional rank, zscore, neutralization, result summaries, and worker-backed large-universe execution are still incomplete.
 
 ### Implementation Phases
 
@@ -241,6 +244,7 @@ Promote Factor Test Lab to research-grade metrics
 - Heavy calculation does not run in frontend or Streamlit synchronous path.
 - Research outputs remain outside `strategy action`.
 - Partial pools are explicitly not full-market proof, and page render does not start full-pool research.
+- Storage query read plans remain local metadata contracts until real research execution and full-pool validation are complete.
 
 ### Forbidden
 
@@ -275,6 +279,7 @@ Add factor universe research pipeline
 - DuckDB dataset reads now return typed projection columns, `duckdb_query_result_contract.v1`, and offset cursor `page_info` for local Parquet reads.
 - React Storage now exposes read-only DuckDB cursor controls that pass `page_info.next_cursor` back through FastAPI GET storage APIs; the controls do not refresh providers, write Parquet, or read DataFrames directly.
 - React Storage now exposes read-only dataset filters for `limit`, `ts_code`, `trade_date`, `start_date`, and `end_date`; applying filters resets to the first page and still routes only through GET storage APIs.
+- Factor Universe now has a button-gated local read-plan task that consumes storage query contracts and records dataset-level projection/page metadata for future worker consumption.
 
 ### Gaps
 
@@ -283,6 +288,7 @@ Add factor universe research pipeline
 - Physical partition migration execution.
 - Physical compaction execution beyond the button-gated dry-run.
 - Physical refresh scheduling/execution beyond the button-gated cache TTL dry-run.
+- Real large-universe research execution beyond the local Factor Universe read plan.
 - Full-pool research consumption, richer query result contract hardening beyond the current local DuckDB read path, and production-grade query ergonomics beyond the current basic UI filters.
 - Reviewed manual cleanup workflow after dry-run.
 

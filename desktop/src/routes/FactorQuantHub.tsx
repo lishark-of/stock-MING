@@ -63,6 +63,7 @@ export default function FactorQuantHub() {
   const bridge = packet.next_session_bridge ?? {};
   const freshnessGate = packet.data_freshness_gate ?? {};
   const universeResearch = packet.universe_research_contract ?? {};
+  const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
   const factorLibrary = packet.factor_library ?? {};
   const factorTests = packet.factor_tests ?? {};
   const factorTestQuality = factorTests.quality_summary ?? {};
@@ -81,6 +82,8 @@ export default function FactorQuantHub() {
   const deepseekValidationRows = objectRows(deepseekValidation as Record<string, unknown>, "deepseek_validation");
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
+  const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
+  const universeResearchDatasetRows = toRows(packet.universe_research_task_plan_rows);
   const factorTestRows = toRows(factorTests.items);
   const factorTestMetricRows = toRows(factorTests.metric_schema);
   const factorTestModeRows = toRows(factorTests.mode_plan);
@@ -139,6 +142,7 @@ export default function FactorQuantHub() {
           run-light 成功后尝试自动排队解释
         </label>
         <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行计算</button>
+        <button onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}>生成读取计划</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>
       </div>
       <p className="risk-note">DeepSeek 解释模式：{String(deepseekGovernance.mode ?? "manual_only")}；auto_after_task 默认关闭。自动解释已关闭时，可手动点击生成解释。</p>
@@ -163,6 +167,10 @@ export default function FactorQuantHub() {
           { label: "full pool", value: universeResearch.full_pool_validation_done === true ? "完成" : "未完成", tone: universeResearch.full_pool_validation_done === true ? "good" : "neutral" },
           { label: "render scan", value: universeResearch.page_render_starts_full_pool === true ? "会启动" : "不启动", tone: universeResearch.page_render_starts_full_pool === true ? "bad" : "good" },
           { label: "frontend rank/zscore", value: universeResearch.frontend_computes_rank_zscore === true ? "会计算" : "不计算", tone: universeResearch.frontend_computes_rank_zscore === true ? "bad" : "good" },
+          { label: "universe read plan", value: universeResearchTaskPlan.status ?? "missing", tone: universeResearchTaskPlan.status === "read_plan_ready" ? "good" : "neutral" },
+          { label: "worker plan", value: universeResearchTaskPlan.worker_task_consumption_plan_ready === true ? "ready" : "missing", tone: universeResearchTaskPlan.worker_task_consumption_plan_ready === true ? "good" : "neutral" },
+          { label: "read plan datasets", value: universeResearchTaskPlan.dataset_count ?? 0 },
+          { label: "plan full pool done", value: universeResearchTaskPlan.full_pool_validation_done === true ? "完成" : "未完成", tone: universeResearchTaskPlan.full_pool_validation_done === true ? "bad" : "good" },
           { label: "score band", value: score.score_band ?? "missing" },
           { label: "factor tests", value: factorTests.status ?? "scaffold_missing", tone: factorTests.status === "scaffold_ready" ? "warn" : "neutral" },
           { label: "test rows", value: factorTestRows.length },
@@ -255,6 +263,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">current_target / watchlist / custom_pool / full_pool 是研究 universe 合同；页面渲染不启动 full-pool，不在前端计算 rank/zscore，也不把 partial pool 当全市场证明。</p>
       <DataLineageTable rows={universeResearchRows} />
       <DataLineageTable rows={universeModeRows} />
+      <h3>Factor Universe 任务化读取计划</h3>
+      <p className="risk-note">universe_research_task_plan 由按钮任务生成；只读本地 storage 查询合同和分页元信息，不跑 full-pool 研究、不在页面渲染时读取全市场、不进入 strategy action。</p>
+      <DataLineageTable rows={universeResearchDatasetRows} />
+      <DataLineageTable rows={universeResearchTaskPlanRows} />
       <h3>Factor Test Lab</h3>
       <p className="risk-note">当前为 light 小样本研究指标：IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益只用于研究检验，不代表已验证交易信号。</p>
       <DataLineageTable rows={factorTestRows} />

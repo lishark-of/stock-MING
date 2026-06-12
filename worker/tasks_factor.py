@@ -14,3 +14,8 @@ def refresh_factor_data(payload: dict[str, Any] | None = None) -> dict[str, Any]
 @task("run_factor_light")
 def run_factor_light(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return create_task_stub("run_factor_light", output_packet_key="command_center_factor_quant_hub_packet", payload=payload)
+
+
+@task("run_factor_universe_research_plan")
+def run_factor_universe_research_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return create_task_stub("run_factor_universe_research_plan", output_packet_key="command_center_factor_quant_hub_packet", payload=payload)

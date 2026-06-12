@@ -34,6 +34,12 @@ def run_factor_light(payload: dict[str, Any] | None = None) -> dict:
     return task_envelope(task)
 
 
+@router.post("/universe-research-plan")
+def plan_factor_universe_research(payload: dict[str, Any] | None = None) -> dict:
+    task = factor_service.create_factor_task("run_factor_universe_research_plan", payload)
+    return task_envelope(task)
+
+
 @router.post("/deepseek-explain")
 def explain_factor_with_deepseek(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload)

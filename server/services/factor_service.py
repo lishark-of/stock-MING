@@ -15,6 +15,9 @@ from .task_service import create_task_record, create_task_stub, update_task_stat
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
 DEEPSEEK_FACTOR_PROMPT_VERSION = "factor_deepseek_explanation_prompt.v1"
+FACTOR_UNIVERSE_RESEARCH_PLAN_MODES = {"watchlist", "custom_pool", "full_pool"}
+FACTOR_UNIVERSE_RESEARCH_PLAN_DATASETS = ("factor_values", "daily", "daily_basic", "moneyflow", "trade_cal")
+FACTOR_UNIVERSE_ITEM_SECRET_MARKERS = ("token", "api_key", "secret", "password", "authorization", "bearer")
 
 
 def _now_iso() -> str:
@@ -313,6 +316,164 @@ def _attach_factor_test_storage_query_consumption(packet: dict[str, Any], now: s
     return packet, list(consumption.get("call_ledger") or [])
 
 
+def _factor_universe_mode_from_payload(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return "watchlist"
+    mode = str(payload.get("universe_mode") or payload.get("mode") or "watchlist")
+    if mode in FACTOR_UNIVERSE_RESEARCH_PLAN_MODES:
+        return mode
+    return "watchlist"
+
+
+def _factor_universe_items_from_payload(payload: Any) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    values: list[Any] = []
+    for key in ("universe", "items", "ts_codes", "symbols", "watchlist", "custom_pool"):
+        candidate = payload.get(key)
+        if isinstance(candidate, list):
+            values.extend(candidate)
+        elif isinstance(candidate, str) and candidate.strip():
+            values.extend(part.strip() for part in candidate.replace(";", ",").split(","))
+    items: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        if any(marker in text.lower() for marker in FACTOR_UNIVERSE_ITEM_SECRET_MARKERS):
+            continue
+        seen.add(text)
+        items.append(text[:32])
+    return items[:100]
+
+
+def _factor_universe_task_payload_summary(payload: Any) -> dict[str, Any]:
+    mode = _factor_universe_mode_from_payload(payload)
+    items = _factor_universe_items_from_payload(payload)
+    return {
+        "universe_mode": mode,
+        "universe_size": len(items),
+        "universe_items": items[:20],
+        "external_sources_allowed": False,
+        "full_pool_validation_requested": mode == "full_pool",
+        "full_pool_validation_done": False,
+    }
+
+
+def _factor_universe_storage_packet(dataset: str, *, limit: int) -> dict[str, Any]:
+    if dataset == "factor_values":
+        return storage_service.factor_values_status(limit=limit)
+    return storage_service.parquet_dataset_status(dataset, limit=limit)
+
+
+def _factor_universe_storage_read_rows(*, limit: int = 5) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for dataset in FACTOR_UNIVERSE_RESEARCH_PLAN_DATASETS:
+        packet = _factor_universe_storage_packet(dataset, limit=limit)
+        contract = packet.get("query_result_contract") if isinstance(packet.get("query_result_contract"), dict) else {}
+        page_info = packet.get("page_info") if isinstance(packet.get("page_info"), dict) else {}
+        metadata = packet.get("metadata") if isinstance(packet.get("metadata"), dict) else {}
+        query = packet.get("query") if isinstance(packet.get("query"), dict) else {}
+        projected_columns = packet.get("projected_columns") if isinstance(packet.get("projected_columns"), list) else []
+        missing_projected_columns = packet.get("missing_projected_columns") if isinstance(packet.get("missing_projected_columns"), list) else []
+        returned_row_count = int(page_info.get("returned_row_count") or packet.get("row_count") or 0)
+        rows.append(
+            {
+                "dataset": dataset,
+                "source_endpoint": "GET /api/storage/factor-values" if dataset == "factor_values" else f"GET /api/storage/{dataset}",
+                "storage_status": packet.get("status") or metadata.get("status") or "missing",
+                "query_status": contract.get("status") or query.get("status") or packet.get("status") or "missing",
+                "query_wrapper": packet.get("query_wrapper") or query.get("query_wrapper") or "duckdb_filtered_parquet.v1",
+                "query_result_contract_schema_version": contract.get("schema_version") or "duckdb_query_result_contract.v1",
+                "query_result_contract_consumed": bool(contract),
+                "cursor_pagination_consumed": bool(page_info),
+                "projected_columns": projected_columns,
+                "missing_projected_columns": missing_projected_columns,
+                "returned_row_count": returned_row_count,
+                "storage_row_count": int(packet.get("row_count") or 0),
+                "next_cursor": page_info.get("next_cursor") or "",
+                "sample_row_limit": limit,
+                "row_payload_exposed_to_factor_research": False,
+                "metrics_computed_from_storage_query": False,
+                "full_pool_validation_done": False,
+                "large_universe_pipeline_done": False,
+                "cache_get_writes_files": False,
+                "writes_parquet_on_get": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _build_factor_universe_research_read_plan(payload: Any, now: str) -> dict[str, Any]:
+    mode = _factor_universe_mode_from_payload(payload)
+    items = _factor_universe_items_from_payload(payload)
+    rows = _factor_universe_storage_read_rows(limit=5)
+    missing_contract_count = sum(1 for row in rows if not row["query_result_contract_consumed"])
+    missing_dataset_count = sum(1 for row in rows if str(row.get("storage_status") or "") == "missing")
+    return {
+        "schema_version": "factor_universe_research_read_plan.v1",
+        "status": "read_plan_ready",
+        "task_type": "run_factor_universe_research_plan",
+        "created_at": now,
+        "requested_universe_mode": mode,
+        "universe_items": items[:50],
+        "universe_size": len(items),
+        "dataset_count": len(rows),
+        "storage_query_contract_count": len(rows) - missing_contract_count,
+        "missing_query_contract_count": missing_contract_count,
+        "missing_dataset_count": missing_dataset_count,
+        "storage_query_rows": rows,
+        "worker_task_consumption_plan_ready": True,
+        "large_universe_pipeline_done": False,
+        "full_pool_validation_done": False,
+        "watchlist_pipeline_done": False,
+        "custom_pool_pipeline_done": False,
+        "metrics_computed": False,
+        "cross_sectional_rank_zscore_done": False,
+        "neutralization_done": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "partial_pool_is_full_market_proof": False,
+        "cache_only_storage_contracts": True,
+        "post_task_required": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "warning": "Factor universe 读取计划只消费本地 storage 查询合同；不跑 full-pool 研究、不计算交易动作。",
+    }
+
+
+def _factor_universe_read_plan_call_ledger(plan: dict[str, Any], now: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_factor_universe_research_read_plan",
+            "request_params_safe": {
+                "universe_mode": plan.get("requested_universe_mode"),
+                "universe_size": plan.get("universe_size"),
+                "dataset_count": plan.get("dataset_count"),
+                "storage_query_contract_count": plan.get("storage_query_contract_count"),
+                "full_pool_validation_done": False,
+            },
+            "row_count": int(plan.get("dataset_count") or 0),
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": str(plan.get("status") or "read_plan_ready"),
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+
+
 def _snapshot_value(snapshot: dict[str, Any], key: str) -> Any:
     return snapshot.get(key)
 
@@ -480,6 +641,88 @@ def run_factor_light_task(payload: Any = None) -> dict[str, Any]:
             progress=1.0,
             current_step="factor_light_failed",
             error_message_safe=str(exc)[:500],
+        ) or task
+
+
+def run_factor_universe_research_plan_task(payload: Any = None) -> dict[str, Any]:
+    task = create_task_record(
+        "run_factor_universe_research_plan",
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=_factor_universe_task_payload_summary(payload),
+        current_step="factor_universe_research_plan_queued",
+        warnings=[
+            "Factor universe 读取计划只消费本地 DuckDB/Parquet 查询合同，不调用 Tushare、DeepSeek 或 GitHub。",
+            "本任务不跑 full-pool 因子研究，不计算 strategy action，不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(task["task_id"], status="running", progress=0.25, current_step="reading_local_storage_query_contracts")
+    now = _now_iso()
+    call_ledger: list[dict[str, Any]] = []
+    try:
+        plan = _build_factor_universe_research_read_plan(payload, now)
+        call_ledger = _factor_universe_read_plan_call_ledger(plan, now)
+        update_task_status(
+            task["task_id"],
+            status="running",
+            progress=0.65,
+            current_step="writing_factor_universe_read_plan_cache",
+            call_ledger=call_ledger,
+        )
+        hub = dict(read_factor_quant_cache())
+        universe_contract = hub.get("universe_research_contract") if isinstance(hub.get("universe_research_contract"), dict) else {}
+        universe_contract = dict(universe_contract)
+        universe_contract.update(
+            {
+                "storage_query_contract_consumed": True,
+                "worker_task_consumption_plan_ready": True,
+                "requested_universe_mode": plan["requested_universe_mode"],
+                "storage_query_contract_count": plan["storage_query_contract_count"],
+                "large_universe_pipeline_done": False,
+                "full_pool_validation_done": False,
+                "page_render_starts_full_pool": False,
+                "frontend_computes_rank_zscore": False,
+                "partial_pool_is_full_market_proof": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+        existing_ledger = hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else []
+        existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
+        plan_warning = "Factor Universe 任务化读取计划已生成：只读本地 storage 合同，不代表 full-pool 生产验收完成。"
+        hub["universe_research_contract"] = universe_contract
+        hub["universe_research_task_plan"] = plan
+        hub["universe_research_task_plan_rows"] = list(plan.get("storage_query_rows") or [])
+        hub["universe_research_task_call_ledger"] = call_ledger
+        hub["call_ledger"] = call_ledger + list(existing_ledger)
+        hub["warnings"] = [plan_warning] + [item for item in existing_warnings if item != plan_warning]
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+        return update_task_status(
+            task["task_id"],
+            status="success",
+            progress=1.0,
+            current_step="factor_universe_research_plan_ready",
+            call_ledger=call_ledger,
+        ) or task
+    except Exception as exc:
+        return update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="factor_universe_research_plan_failed",
+            error_message_safe=str(exc)[:500],
+            call_ledger=call_ledger,
         ) or task
 
 
@@ -773,6 +1016,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         )
     if task_type == "run_factor_light":
         return run_factor_light_task(payload)
+    if task_type == "run_factor_universe_research_plan":
+        return run_factor_universe_research_plan_task(payload)
     if task_type == "run_deepseek_factor_explanation":
         return run_factor_deepseek_explanation_task(payload)
     return create_task_stub(

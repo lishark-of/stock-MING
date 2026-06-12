@@ -49,7 +49,7 @@ def _worker_module_rows() -> list[dict[str, Any]]:
             "module": "worker.tasks_factor",
             "file": "worker/tasks_factor.py",
             "role": "Factor quant task wrappers",
-            "task_types": ["refresh_factor_data", "run_factor_light"],
+            "task_types": ["refresh_factor_data", "run_factor_light", "run_factor_universe_research_plan"],
         },
         {
             "module": "worker.tasks_deepseek",
