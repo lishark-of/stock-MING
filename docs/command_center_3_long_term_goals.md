@@ -268,6 +268,7 @@ Add factor universe research pipeline
 - `POST /api/storage/partition-migration/dry-run` now creates a local task and packet that builds per-dataset partition migration plans from schema validation and partition contracts, without reading row payloads or writing partitioned Parquet.
 - `POST /api/storage/compaction/dry-run` now creates a local task and packet that lists Parquet compaction ready/not-needed/missing rows without reading row payloads or rewriting Parquet.
 - `POST /api/storage/cache-ttl/dry-run` now creates a local task and packet that lists fresh/stale/missing TTL states and refresh recommendations without refreshing providers or writing Parquet.
+- DuckDB query service policy is visible in storage overview/catalog: canonical dataset paths, supported filters, limit guard, safe parameter binding, and frontend no-direct-DataFrame boundaries are auditable.
 
 ### Gaps
 
@@ -276,7 +277,7 @@ Add factor universe research pipeline
 - Physical partition migration execution.
 - Physical compaction execution beyond the button-gated dry-run.
 - Physical refresh scheduling/execution beyond the button-gated cache TTL dry-run.
-- DuckDB query service.
+- Typed dataset-specific projections, cursor pagination, and query result contracts beyond the current read-only DuckDB query service policy.
 - Reviewed manual cleanup workflow after dry-run.
 
 ### Implementation Phases
@@ -299,6 +300,7 @@ Add factor universe research pipeline
 - Partition migration dry-run is button-gated, writes no partitioned Parquet, and records ready/blocked/missing rows before any partition writer task.
 - Compaction dry-run is button-gated, writes no Parquet, reads no row payload, and records ready/not-needed/missing rows before any physical compaction task.
 - Cache TTL dry-run is button-gated, calls no providers, writes no Parquet, and records fresh/stale/missing refresh recommendations before any refresh task.
+- DuckDB query service remains local/canonical-path-only, uses safe parameter binding and limit guards, and is visible to React as a policy matrix; React does not query Parquet or hold large DataFrames directly.
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
 - Write failure does not pollute packet or action.
 
@@ -311,6 +313,7 @@ Add factor universe research pipeline
 - Do not treat partition migration dry-run as physical partition migration completion.
 - Do not treat compaction dry-run as physical Parquet compaction completion.
 - Do not treat cache TTL dry-run as data refresh completion or provider acceptance.
+- Do not let frontend bypass the FastAPI + DuckDB query service or run direct Parquet/DataFrame reads.
 - Do not commit `.parquet`, `.duckdb`, `.sqlite`, `.db`, cache, or generated data.
 - Do not hide schema mismatch.
 

@@ -136,6 +136,10 @@ export default function StorageOverview() {
   const schemaMigrationStatusCounts =
     (overview.schema_migration_status_counts as Record<string, unknown> | undefined) ??
     ((schemaMigration.status_counts as Record<string, unknown> | undefined) ?? {});
+  const duckdbQueryService = (overview.duckdb_query_service as Record<string, unknown> | undefined) ?? {};
+  const duckdbQueryRows =
+    (overview.duckdb_query_service_rows as Array<Record<string, unknown>> | undefined) ??
+    ((duckdbQueryService.rows as Array<Record<string, unknown>> | undefined) ?? []);
   const implementationStateCounts = datasetImplementation.state_counts as Record<string, unknown> | undefined;
   const implementationParquetStatusCounts = datasetImplementation.parquet_status_counts as Record<string, unknown> | undefined;
   const implementationRows = (datasetImplementation.dataset_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -200,6 +204,8 @@ export default function StorageOverview() {
           { label: "artifact review", value: artifactHygiene.review_required_count ?? overview.artifact_hygiene_review_required_count ?? 0 },
           { label: "schema migration", value: String(schemaMigration.status ?? overview.schema_migration_preflight_status ?? "preflight") },
           { label: "dataset version", value: String(datasetVersionPolicy.status ?? "policy_ready") },
+          { label: "DuckDB query service", value: String(duckdbQueryService.status ?? overview.duckdb_query_service_status ?? "service_ready") },
+          { label: "DuckDB max limit", value: duckdbQueryService.max_limit ?? overview.duckdb_query_max_limit ?? 0 },
           { label: "declared versions", value: datasetVersionPolicy.target_version_declared_count ?? overview.dataset_version_declared_count ?? 0 },
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
           { label: "migration rows", value: schemaMigrationRows.length },
@@ -246,6 +252,15 @@ export default function StorageOverview() {
         <p>state_counts: {JSON.stringify(implementationStateCounts ?? {})}</p>
         <p>parquet_status_counts: {JSON.stringify(implementationParquetStatusCounts ?? {})}</p>
         <DataLineageTable rows={implementationRows} />
+      </PacketCard>
+
+      <PacketCard title="DuckDB query service policy" subtitle="所有数据集查询走 FastAPI + DuckDB wrapper；前端不直接读 DataFrame、不写 Parquet" status={String(duckdbQueryService.status ?? "service_ready")}>
+        <p>query_wrapper: {String(duckdbQueryService.query_wrapper ?? overview.duckdb_query_wrapper ?? "duckdb_filtered_parquet.v1")}</p>
+        <p>supported_filter_params: {JSON.stringify(duckdbQueryService.supported_filter_params ?? ["limit", "ts_code", "trade_date", "start_date", "end_date"])}</p>
+        <p>default_limit / max_limit: {String(duckdbQueryService.default_limit ?? 100)} / {String(duckdbQueryService.max_limit ?? overview.duckdb_query_max_limit ?? 10000)}</p>
+        <p>safe_parameter_binding / safe_limit_enforced: {String(duckdbQueryService.safe_parameter_binding ?? true)} / {String(duckdbQueryService.safe_limit_enforced ?? true)}</p>
+        <p>frontend_executes_query / cache_get_writes_files: {String(duckdbQueryService.frontend_executes_query ?? false)} / {String(duckdbQueryService.cache_get_writes_files ?? false)}</p>
+        <DataLineageTable rows={duckdbQueryRows} />
       </PacketCard>
 
       <PacketCard title="Dataset version policy" subtitle="只读版本策略矩阵；声明版本不等于物理版本已验收，不写 manifest" status={String(datasetVersionPolicy.status ?? "policy_ready")}>

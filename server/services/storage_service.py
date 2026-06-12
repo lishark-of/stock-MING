@@ -31,6 +31,9 @@ SUPPORTED_PARQUET_DATASETS = {
     "backtest-results": "backtest_results",
 }
 CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"]
+DUCKDB_QUERY_DEFAULT_LIMIT = 100
+DUCKDB_QUERY_MAX_LIMIT = 10000
+DUCKDB_QUERY_FILTER_PARAMS = ["limit", "ts_code", "trade_date", "start_date", "end_date"]
 DATASET_TTL_SECONDS = {
     "factor_values": 6 * 60 * 60,
     "daily": 24 * 60 * 60,
@@ -1173,6 +1176,106 @@ def dataset_catalog() -> list[dict[str, Any]]:
     return [dict(item) for item in DATASET_CATALOG]
 
 
+def _duckdb_query_service_row(dataset: str) -> dict[str, Any]:
+    contract = _schema_contract(dataset)
+    catalog_item = _dataset_catalog_item(dataset)
+    metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
+    date_column = str(contract.get("date_column") or "")
+    entity_columns = [str(item) for item in contract.get("entity_columns") or []]
+    filter_columns = {
+        "limit": "result_limit",
+        "ts_code": "ts_code" if "ts_code" in entity_columns or dataset in {"daily", "daily_basic", "moneyflow", "factor_values"} else "",
+        "trade_date": date_column,
+        "start_date": date_column,
+        "end_date": date_column,
+    }
+    supported_filters = [
+        filter_name
+        for filter_name in DUCKDB_QUERY_FILTER_PARAMS
+        if filter_name == "limit" or filter_columns.get(filter_name)
+    ]
+    skipped_filters = [
+        {
+            "filter": filter_name,
+            "reason": "dataset_column_not_declared",
+        }
+        for filter_name in DUCKDB_QUERY_FILTER_PARAMS
+        if filter_name != "limit" and not filter_columns.get(filter_name)
+    ]
+    return {
+        "dataset": dataset,
+        "cache_endpoint": catalog_item.get("cache_endpoint") or f"GET /api/storage/{dataset}",
+        "query_wrapper": "duckdb_filtered_parquet.v1",
+        "query_backend": "duckdb_read_parquet",
+        "parquet_status": metadata.get("status", "missing"),
+        "path": _path_label(parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)),
+        "date_column": date_column,
+        "entity_columns": entity_columns,
+        "supported_filter_params": supported_filters,
+        "filter_columns": filter_columns,
+        "skipped_filter_params": skipped_filters,
+        "default_limit": DUCKDB_QUERY_DEFAULT_LIMIT,
+        "max_limit": DUCKDB_QUERY_MAX_LIMIT,
+        "safe_limit_enforced": True,
+        "safe_parameter_binding": True,
+        "query_path_policy": "canonical_dataset_path_only",
+        "frontend_executes_query": False,
+        "ui_direct_dataframe_read": False,
+        "cache_get_external_calls": False,
+        "cache_get_writes_files": False,
+        "writes_parquet_on_get": False,
+        "auto_refresh_on_get": False,
+        "reads_env_files": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def duckdb_query_service_policy() -> dict[str, Any]:
+    dependency = duckdb_store.dependency_status()
+    rows = [_duckdb_query_service_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    status = "service_ready" if dependency.get("available") else "dependency_missing"
+    return {
+        "schema_version": "command_center_3_storage_duckdb_query_service.v1",
+        "status": status,
+        "mode": "cache_only_read_only_query_service",
+        "query_wrapper": "duckdb_filtered_parquet.v1",
+        "query_backend": "duckdb_read_parquet",
+        "dataset_count": len(rows),
+        "rows": rows,
+        "supported_filter_params": list(DUCKDB_QUERY_FILTER_PARAMS),
+        "default_limit": DUCKDB_QUERY_DEFAULT_LIMIT,
+        "max_limit": DUCKDB_QUERY_MAX_LIMIT,
+        "safe_limit_enforced": True,
+        "safe_parameter_binding": True,
+        "canonical_path_only": True,
+        "frontend_executes_query": False,
+        "ui_direct_dataframe_read": False,
+        "cache_get_external_calls": False,
+        "cache_get_writes_files": False,
+        "writes_parquet_on_get": False,
+        "auto_refresh_on_get": False,
+        "reads_env_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "dependency": dependency,
+        "next_action": "add typed projections and cursor pagination before full-pool Factor Test Lab reads.",
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_duckdb_query_service_policy",
+            endpoint="GET /api/storage",
+            status=status,
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "DuckDB query service policy 只描述本地 Parquet 查询包装；不会刷新数据、不会写 Parquet、不会外联。",
+        ],
+    }
+
+
 def dataset_implementation_status() -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for item in DATASET_CATALOG:
@@ -1557,11 +1660,11 @@ def run_storage_artifact_cleanup_dry_run_task(payload: Any = None) -> dict[str, 
 
 def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
     parquet_dependency = parquet_store.dependency_status()
-    duckdb_dependency = duckdb_store.dependency_status()
     sqlite_status = str((sqlite_meta or {}).get("status") or ("ready" if SQLITE_META_PATH.exists() else "missing"))
     artifact_hygiene = storage_artifact_hygiene_status()
     schema_migration_preflight = storage_schema_migration_preflight()
     dataset_version_policy = storage_dataset_version_policy()
+    duckdb_query_service = duckdb_query_service_policy()
     rows = [
         {
             "component": "sqlite_meta",
@@ -1597,11 +1700,16 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         },
         {
             "component": "duckdb_query",
-            "status": "available" if duckdb_dependency.get("available") else "dependency_missing",
+            "status": duckdb_query_service["status"],
             "production_role": "query Parquet without loading large DataFrames into UI state",
             "current_backend": "duckdb_read_parquet",
             "blocking_for_cache_read": False,
-            "next_action": "wrap common factor/date/universe queries before full Factor Test Lab.",
+            "query_wrapper": duckdb_query_service["query_wrapper"],
+            "max_limit": duckdb_query_service["max_limit"],
+            "safe_parameter_binding": duckdb_query_service["safe_parameter_binding"],
+            "frontend_executes_query": duckdb_query_service["frontend_executes_query"],
+            "cache_get_writes_files": duckdb_query_service["cache_get_writes_files"],
+            "next_action": duckdb_query_service["next_action"],
         },
         {
             "component": "local_data_git_guard",
@@ -1650,6 +1758,16 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "schema_validation_dry_run_button_gated": True,
         "schema_validation_dry_run_writes_parquet": False,
         "schema_validation_dry_run_reads_row_payloads": False,
+        "duckdb_query_service_policy": "read_only_service_wrappers_local_parquet_only",
+        "duckdb_query_service_status": duckdb_query_service["status"],
+        "duckdb_query_service_dataset_count": duckdb_query_service["dataset_count"],
+        "duckdb_query_wrapper": duckdb_query_service["query_wrapper"],
+        "duckdb_query_max_limit": duckdb_query_service["max_limit"],
+        "duckdb_query_safe_parameter_binding": duckdb_query_service["safe_parameter_binding"],
+        "duckdb_query_frontend_executes_queries": duckdb_query_service["frontend_executes_query"],
+        "duckdb_query_cache_get_external_calls": duckdb_query_service["cache_get_external_calls"],
+        "duckdb_query_cache_get_writes_files": duckdb_query_service["cache_get_writes_files"],
+        "duckdb_query_writes_parquet_on_get": duckdb_query_service["writes_parquet_on_get"],
         "partition_migration_dry_run_route": "POST /api/storage/partition-migration/dry-run",
         "partition_migration_dry_run_button_gated": True,
         "partition_migration_dry_run_writes_parquet": False,
@@ -1761,6 +1879,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     schema_migration_preflight = storage_schema_migration_preflight()
+    duckdb_query_service = duckdb_query_service_policy()
     packet = {
         "schema_version": "command_center_3_storage_dataset_catalog.v1",
         "store": "parquet_duckdb",
@@ -1776,6 +1895,9 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "schema_migration_preflight": schema_migration_preflight,
         "schema_migration_rows": schema_migration_preflight["rows"],
         "schema_migration_status_counts": schema_migration_preflight["status_counts"],
+        "duckdb_query_service": duckdb_query_service,
+        "duckdb_query_service_rows": duckdb_query_service["rows"],
+        "duckdb_query_service_status": duckdb_query_service["status"],
         "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
         "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
         "dataset_count": len(catalog),
@@ -1857,6 +1979,7 @@ def parquet_dataset_status(
         "partition_plan": partition_plan,
         "compaction_plan": compaction_plan,
         "query": query,
+        "query_service_policy": _duckdb_query_service_row(selected),
         "query_wrapper": query.get("query_wrapper"),
         "query_filters": query.get("query_filters") or {},
         "applied_filters": query.get("applied_filters") or [],
@@ -2018,6 +2141,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     production_readiness = storage_production_readiness(sqlite_meta)
     dataset_version_policy = storage_dataset_version_policy()
     schema_migration_preflight = storage_schema_migration_preflight()
+    duckdb_query_service = duckdb_query_service_policy()
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
         "store": "parquet_duckdb",
@@ -2051,6 +2175,11 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "schema_migration_preflight_status": schema_migration_preflight["status"],
         "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
         "physical_schema_validation_done_count": schema_migration_preflight["physical_validation_done_count"],
+        "duckdb_query_service": duckdb_query_service,
+        "duckdb_query_service_rows": duckdb_query_service["rows"],
+        "duckdb_query_service_status": duckdb_query_service["status"],
+        "duckdb_query_wrapper": duckdb_query_service["query_wrapper"],
+        "duckdb_query_max_limit": duckdb_query_service["max_limit"],
         "production_readiness": production_readiness,
         "artifact_hygiene": artifact_hygiene,
         "artifact_hygiene_status": artifact_hygiene["status"],
