@@ -34,6 +34,10 @@ DEEPSEEK_EXPLANATION_ALLOWED_KEYS = {
 SCORE_EXCLUDED_FACTOR_KEYS = {"chokepoint_method_hint", "serenity_method_source"}
 FRESHNESS_MAX_AGE_DAYS = 7
 FRESHNESS_STALE_MAX_AGE_DAYS = 30
+FRESHNESS_STALE_TRADING_DAY_LAG = 3
+A_SHARE_MARKET_OPEN_TIME = _dt.time(9, 30)
+A_SHARE_MARKET_CLOSE_TIME = _dt.time(15, 0)
+A_SHARE_DATA_READY_TIME = _dt.time(16, 30)
 
 DECISION_USAGE_POLICY = {
     "display_only": True,
@@ -489,26 +493,170 @@ def _parse_date(value: Any) -> _dt.date | None:
     return None
 
 
-def _now_date(now: Any = None) -> _dt.date:
+def _now_datetime(now: Any = None) -> _dt.datetime:
     if isinstance(now, _dt.datetime):
-        return now.date()
-    if isinstance(now, _dt.date):
         return now
-    parsed = _parse_date(now)
-    return parsed if parsed is not None else _dt.datetime.now().date()
+    if isinstance(now, _dt.date):
+        return _dt.datetime.combine(now, _dt.time.min)
+    text = str(now or "").strip()
+    if text:
+        try:
+            return _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = _parse_date(text)
+            if parsed is not None:
+                return _dt.datetime.combine(parsed, _dt.time.min)
+    return _dt.datetime.now()
 
 
-def _freshness_row_fields(data_date: Any, *, now: Any = None, max_age_days: int = FRESHNESS_MAX_AGE_DAYS) -> dict[str, Any]:
+def _now_date(now: Any = None) -> _dt.date:
+    return _now_datetime(now).date()
+
+
+def _rows_from_packet(packet: Any) -> list[dict]:
+    mapping = _as_mapping(packet)
+    candidates = packet if isinstance(packet, list) else []
+    if mapping:
+        for key in ("rows", "data", "items", "records"):
+            value = mapping.get(key)
+            if isinstance(value, list):
+                candidates = value
+                break
+        if not candidates and isinstance(mapping.get("data"), Mapping):
+            nested = _as_mapping(mapping.get("data"))
+            for key in ("rows", "items", "records"):
+                value = nested.get(key)
+                if isinstance(value, list):
+                    candidates = value
+                    break
+    return [dict(item) for item in candidates if isinstance(item, Mapping)]
+
+
+def _calendar_is_open(value: Any) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "open", "交易"}
+
+
+def _clean_trade_calendar_rows(trade_calendar_packet: Any = None) -> list[dict[str, Any]]:
+    rows = []
+    for item in _rows_from_packet(trade_calendar_packet):
+        date_value = _parse_date(item.get("cal_date") or item.get("trade_date") or item.get("date"))
+        if date_value is None:
+            continue
+        rows.append({"cal_date": date_value, "is_open": _calendar_is_open(item.get("is_open", 1))})
+    rows.sort(key=lambda row: row["cal_date"])
+    return rows
+
+
+def _fallback_weekday_calendar(today: _dt.date, *, lookback_days: int = 120, lookahead_days: int = 10) -> list[dict[str, Any]]:
+    start = today - _dt.timedelta(days=lookback_days)
+    end = today + _dt.timedelta(days=lookahead_days)
+    rows = []
+    cursor = start
+    while cursor <= end:
+        rows.append({"cal_date": cursor, "is_open": cursor.weekday() < 5})
+        cursor += _dt.timedelta(days=1)
+    return rows
+
+
+def _previous_open_day(open_days: list[_dt.date], today: _dt.date) -> _dt.date | None:
+    candidates = [day for day in open_days if day < today]
+    return candidates[-1] if candidates else None
+
+
+def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> dict[str, Any]:
+    now_dt = _now_datetime(now)
+    today = now_dt.date()
+    rows = _clean_trade_calendar_rows(trade_calendar_packet)
+    calendar_validated = bool(rows)
+    if not rows:
+        rows = _fallback_weekday_calendar(today)
+    open_days = sorted(row["cal_date"] for row in rows if row.get("is_open"))
+    today_is_open = today in open_days
+    previous_open = _previous_open_day(open_days, today)
+    if today_is_open and now_dt.time() < A_SHARE_MARKET_OPEN_TIME:
+        phase = "pre_open"
+        expected = previous_open
+    elif today_is_open and now_dt.time() < A_SHARE_MARKET_CLOSE_TIME:
+        phase = "intraday"
+        expected = previous_open
+    elif today_is_open and now_dt.time() < A_SHARE_DATA_READY_TIME:
+        phase = "post_close_pending_eod"
+        expected = previous_open
+    elif today_is_open:
+        phase = "post_close_data_ready"
+        expected = today
+    else:
+        phase = "market_closed"
+        expected = max((day for day in open_days if day < today), default=previous_open)
+    return {
+        "market": "A_SHARE",
+        "now": _now_iso(now_dt),
+        "today": today.isoformat(),
+        "market_phase": phase,
+        "today_is_trading_day": today_is_open,
+        "expected_data_date": expected.isoformat() if expected else None,
+        "previous_open_date": previous_open.isoformat() if previous_open else None,
+        "calendar_source": "trade_cal_packet" if calendar_validated else "fallback_weekday_calendar",
+        "calendar_validated": calendar_validated,
+        "calendar_row_count": len(rows),
+        "data_ready_time": A_SHARE_DATA_READY_TIME.strftime("%H:%M"),
+        "note": "盘中或盘后未到数据可得时间时，EOD 因子应使用上一已完成交易日。",
+    }
+
+
+def _trading_day_lag(data_date: _dt.date, expected_date: _dt.date, trade_calendar_packet: Any = None) -> int | None:
+    if data_date > expected_date:
+        return None
+    rows = _clean_trade_calendar_rows(trade_calendar_packet)
+    if not rows:
+        rows = _fallback_weekday_calendar(expected_date, lookback_days=max((expected_date - data_date).days + 10, 120), lookahead_days=0)
+    open_days = sorted(row["cal_date"] for row in rows if row.get("is_open"))
+    if not open_days:
+        return None
+    return len([day for day in open_days if data_date < day <= expected_date])
+
+
+def _freshness_row_fields(
+    data_date: Any,
+    *,
+    now: Any = None,
+    max_age_days: int = FRESHNESS_MAX_AGE_DAYS,
+    calendar_context: Mapping[str, Any] | None = None,
+    trade_calendar_packet: Any = None,
+) -> dict[str, Any]:
     parsed = _parse_date(data_date)
+    context = dict(calendar_context or _expected_data_date(now, trade_calendar_packet))
+    expected = _parse_date(context.get("expected_data_date"))
+    base = {
+        "expected_data_date": context.get("expected_data_date"),
+        "market_phase": context.get("market_phase"),
+        "calendar_source": context.get("calendar_source"),
+        "calendar_validated": bool(context.get("calendar_validated")),
+        "trading_day_lag": None,
+    }
     if parsed is None:
         return {
+            **base,
             "data_age_days": None,
             "freshness_state": "unknown",
             "freshness_max_age_days": max_age_days,
             "freshness_usable_for_score": False,
         }
     age_days = max(0, (_now_date(now) - parsed).days)
-    if age_days <= max_age_days:
+    trading_lag = _trading_day_lag(parsed, expected, trade_calendar_packet) if expected else None
+    if expected and parsed > expected:
+        state = "future_unavailable"
+        usable = False
+    elif trading_lag == 0:
+        state = "fresh"
+        usable = True
+    elif trading_lag is not None and trading_lag <= FRESHNESS_STALE_TRADING_DAY_LAG:
+        state = "stale"
+        usable = False
+    elif trading_lag is not None:
+        state = "expired"
+        usable = False
+    elif age_days <= max_age_days:
         state = "fresh"
         usable = True
     elif age_days <= FRESHNESS_STALE_MAX_AGE_DAYS:
@@ -518,10 +666,12 @@ def _freshness_row_fields(data_date: Any, *, now: Any = None, max_age_days: int 
         state = "expired"
         usable = False
     return {
+        **base,
         "data_age_days": age_days,
         "freshness_state": state,
         "freshness_max_age_days": max_age_days,
         "freshness_usable_for_score": usable,
+        "trading_day_lag": trading_lag,
     }
 
 
@@ -845,7 +995,13 @@ def _packet_number(packet: Any, *keys: str) -> float | None:
     return None
 
 
-def _call_ledger_rows(call_ledger: Any = None, *, now: Any = None) -> list[dict]:
+def _call_ledger_rows(
+    call_ledger: Any = None,
+    *,
+    now: Any = None,
+    calendar_context: Mapping[str, Any] | None = None,
+    trade_calendar_packet: Any = None,
+) -> list[dict]:
     if isinstance(call_ledger, Mapping):
         rows = call_ledger.get("items") or call_ledger.get("call_ledger") or []
     else:
@@ -866,13 +1022,19 @@ def _call_ledger_rows(call_ledger: Any = None, *, now: Any = None) -> list[dict]
                 "local_fetched_at": item.get("local_fetched_at") or item.get("updated_at"),
                 "call_status": item.get("call_status") or item.get("status") or "not_called",
                 "error_message_safe": item.get("error_message_safe") or item.get("error") or "",
-                **_freshness_row_fields(data_date, now=now),
+                **_freshness_row_fields(data_date, now=now, calendar_context=calendar_context, trade_calendar_packet=trade_calendar_packet),
             }
         )
     return cleaned
 
 
-def _build_data_freshness_gate(call_rows: list[dict], *, now: Any = None) -> dict[str, Any]:
+def _build_data_freshness_gate(
+    call_rows: list[dict],
+    *,
+    now: Any = None,
+    calendar_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    context = dict(calendar_context or _expected_data_date(now))
     dated_rows = [row for row in call_rows if _parse_date(row.get("data_date")) is not None]
     if not dated_rows:
         return {
@@ -880,21 +1042,31 @@ def _build_data_freshness_gate(call_rows: list[dict], *, now: Any = None) -> dic
             "gate_applied": False,
             "usable_for_score": True,
             "latest_data_date": None,
+            "expected_data_date": context.get("expected_data_date"),
+            "market_phase": context.get("market_phase"),
+            "calendar_source": context.get("calendar_source"),
+            "calendar_validated": bool(context.get("calendar_validated")),
             "max_data_age_days": None,
+            "max_trading_day_lag": None,
             "fresh_count": 0,
             "stale_count": 0,
             "expired_count": 0,
+            "future_unavailable_count": 0,
             "unknown_count": len(call_rows),
             "max_age_days": FRESHNESS_MAX_AGE_DAYS,
             "note": "未发现可解析 data_date；保持原有 cache-only 降级，不强行判定过期。",
         }
     latest = max((_parse_date(row.get("data_date")) for row in dated_rows if _parse_date(row.get("data_date")) is not None), default=None)
     ages = [row.get("data_age_days") for row in dated_rows if isinstance(row.get("data_age_days"), int)]
+    lags = [row.get("trading_day_lag") for row in dated_rows if isinstance(row.get("trading_day_lag"), int)]
     states = [str(row.get("freshness_state") or "unknown") for row in dated_rows]
+    future_count = states.count("future_unavailable")
     expired_count = states.count("expired")
     stale_count = states.count("stale")
     fresh_count = states.count("fresh")
-    if expired_count:
+    if future_count:
+        status = "future_unavailable"
+    elif expired_count:
         status = "expired"
     elif stale_count:
         status = "stale"
@@ -908,15 +1080,22 @@ def _build_data_freshness_gate(call_rows: list[dict], *, now: Any = None) -> dic
         "gate_applied": True,
         "usable_for_score": usable,
         "latest_data_date": latest.isoformat() if latest else None,
+        "expected_data_date": context.get("expected_data_date"),
+        "market_phase": context.get("market_phase"),
+        "calendar_source": context.get("calendar_source"),
+        "calendar_validated": bool(context.get("calendar_validated")),
+        "today_is_trading_day": bool(context.get("today_is_trading_day")),
         "max_data_age_days": max(ages) if ages else None,
+        "max_trading_day_lag": max(lags) if lags else None,
         "fresh_count": fresh_count,
         "stale_count": stale_count,
         "expired_count": expired_count,
+        "future_unavailable_count": future_count,
         "unknown_count": len(call_rows) - len(dated_rows),
         "max_age_days": FRESHNESS_MAX_AGE_DAYS,
-        "stale_after_days": FRESHNESS_MAX_AGE_DAYS,
-        "expired_after_days": FRESHNESS_STALE_MAX_AGE_DAYS,
-        "note": "过期或陈旧数据仅允许审计展示，不得进入 composite score 或强 support。",
+        "stale_after_trading_day_lag": 0,
+        "expired_after_trading_day_lag": FRESHNESS_STALE_TRADING_DAY_LAG,
+        "note": "非 expected_data_date 的过期、陈旧或未来不可得数据仅允许审计展示，不得进入 composite score 或强 support。",
     }
 
 
@@ -1115,6 +1294,7 @@ def build_factor_runtime_packet(
     factor_library: Any = None,
     daily_close_packet: Any = None,
     daily_basic_packet: Any = None,
+    trade_calendar_packet: Any = None,
     moneyflow_packet: Any = None,
     hard_risk_packet: Any = None,
     limit_emotion_packet: Any = None,
@@ -1649,6 +1829,7 @@ def build_factor_quant_hub_packet(
     score_packet: Any = None,
     daily_close_packet: Any = None,
     daily_basic_packet: Any = None,
+    trade_calendar_packet: Any = None,
     moneyflow_packet: Any = None,
     hard_risk_packet: Any = None,
     limit_emotion_packet: Any = None,
@@ -1695,8 +1876,14 @@ def build_factor_quant_hub_packet(
             "missing_count": len(library.get("factors") or []),
             "calculated_at": now_text,
         }
-    call_rows = _call_ledger_rows(call_ledger, now=now_text)
-    freshness_gate = _build_data_freshness_gate(call_rows, now=now_text)
+    trading_calendar_context = _expected_data_date(now_text, trade_calendar_packet)
+    call_rows = _call_ledger_rows(
+        call_ledger,
+        now=now_text,
+        calendar_context=trading_calendar_context,
+        trade_calendar_packet=trade_calendar_packet,
+    )
+    freshness_gate = _build_data_freshness_gate(call_rows, now=now_text, calendar_context=trading_calendar_context)
     runtime = _apply_freshness_gate_to_runtime(runtime, freshness_gate)
     tests = factor_test_packet if isinstance(factor_test_packet, Mapping) else build_factor_test_packet(mode=selected_mode, now=now_text)
     score = score_packet if isinstance(score_packet, Mapping) else build_factor_score_packet(runtime_packet=runtime, now=now_text)
@@ -1725,6 +1912,7 @@ def build_factor_quant_hub_packet(
         "factor_tests": _copy_json(tests),
         "score": _copy_json(score),
         "data_freshness_gate": _copy_json(freshness_gate),
+        "trading_calendar_context": _copy_json(trading_calendar_context),
         "governance": {
             "state": governance_state,
             "allow_evidence_effects": True,
@@ -1744,6 +1932,7 @@ def build_factor_quant_hub_packet(
         "research_context": _research_context(chokepoint_packet, serenity_packet),
         "linked_packets": {
             "a_share_fact_lineage_summary": bool(_as_mapping(a_share_fact_lineage_summary)),
+            "trade_calendar_packet": bool(_as_mapping(trade_calendar_packet)),
             "command_center_daily_close_packet": bool(_as_mapping(daily_close_packet)),
             "command_center_next_session_projection_packet": bool(_as_mapping(next_session_projection_packet)),
             "strategy_execution_packet": bool(_as_mapping(strategy_execution_packet)),

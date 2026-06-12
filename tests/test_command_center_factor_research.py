@@ -38,6 +38,18 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
             ],
         }
 
+    def _trade_calendar_packet(self):
+        return {
+            "status": "ready",
+            "rows": [
+                {"cal_date": "20260610", "is_open": 1},
+                {"cal_date": "20260611", "is_open": 1},
+                {"cal_date": "20260612", "is_open": 1},
+                {"cal_date": "20260613", "is_open": 0},
+                {"cal_date": "20260614", "is_open": 0},
+            ],
+        }
+
     def test_factor_library_is_local_research_only_scaffold(self):
         packet = factor_research.build_factor_library_packet(now="2026-06-09T10:00:00")
 
@@ -458,17 +470,75 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
             daily_basic_packet=self._daily_basic_packet(),
             moneyflow_packet={"main_net_yi": 1.2},
             call_ledger=[
-                {"api": "daily", "row_count": 22, "data_date": "20260608", "call_status": "success"},
-                {"api": "daily_basic", "row_count": 22, "data_date": "20260608", "call_status": "success"},
-                {"api": "moneyflow", "row_count": 22, "data_date": "20260608", "call_status": "success"},
+                {"api": "daily", "row_count": 22, "data_date": "20260612", "call_status": "success"},
+                {"api": "daily_basic", "row_count": 22, "data_date": "20260612", "call_status": "success"},
+                {"api": "moneyflow", "row_count": 22, "data_date": "20260612", "call_status": "success"},
             ],
-            now="2026-06-12T10:00:00",
+            now="2026-06-12T17:00:00",
         )
 
         self.assertEqual(packet["data_freshness_gate"]["status"], "fresh")
         self.assertTrue(packet["data_freshness_gate"]["usable_for_score"])
         self.assertIsNotNone(packet["score"]["composite_score"])
         self.assertNotEqual(packet["runtime"]["status"], "stale_data")
+
+    def test_a_share_calendar_uses_previous_trading_day_during_intraday(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260611", "call_status": "success"},
+                {"api": "daily_basic", "row_count": 22, "data_date": "20260611", "call_status": "success"},
+            ],
+            now="2026-06-12T10:00:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "fresh")
+        self.assertEqual(gate["expected_data_date"], "2026-06-11")
+        self.assertEqual(gate["market_phase"], "intraday")
+        self.assertTrue(gate["calendar_validated"])
+        self.assertEqual(packet["call_ledger"][0]["trading_day_lag"], 0)
+        self.assertTrue(packet["linked_packets"]["trade_calendar_packet"])
+
+    def test_a_share_calendar_blocks_same_day_data_before_eod_ready(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260612", "call_status": "success"},
+            ],
+            now="2026-06-12T10:00:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "future_unavailable")
+        self.assertFalse(gate["usable_for_score"])
+        self.assertEqual(gate["expected_data_date"], "2026-06-11")
+        self.assertEqual(packet["score"]["support_factors"], [])
+        self.assertEqual(packet["next_session_bridge"]["preview"], [])
+
+    def test_a_share_calendar_weekend_expected_date_uses_last_open_day(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260612", "call_status": "success"},
+            ],
+            now="2026-06-13T11:00:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "fresh")
+        self.assertEqual(gate["market_phase"], "market_closed")
+        self.assertEqual(gate["expected_data_date"], "2026-06-12")
+        self.assertFalse(gate["today_is_trading_day"])
 
     def test_deepseek_prompt_and_sanitizer_are_explanation_only(self):
         hub = factor_research.build_factor_quant_hub_packet(mode="cache_only")

@@ -33,6 +33,7 @@ SNAPSHOT_PACKET_ALIASES = {
     "command_center_projection_packet": "projection_packet",
     "command_center_quant_packet": "quant_packet",
     "command_center_radar_packet": "radar_packet",
+    "command_center_trade_calendar_packet": "trade_cal_packet",
     "decision_packet": "decision_packet",
     "strategy_execution_packet": "strategy_packet",
     "strategy_packet": "strategy_packet",
