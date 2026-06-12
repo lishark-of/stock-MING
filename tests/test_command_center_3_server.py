@@ -2564,6 +2564,41 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         persisted = read_task_status(task["task_id"])
         self.assertEqual(persisted["status"], "cancelled")
 
+    def test_task_records_include_safe_idempotency_and_lock_keys(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task_a = task_service.create_task_record(
+            "refresh_tushare_facts",
+            output_packet_key="command_center_tushare_refresh_packet",
+            payload={"ts_code": "002008.SZ", "api_key": "SHOULD_DROP_A"},
+        )
+        task_b = task_service.create_task_record(
+            "refresh_tushare_facts",
+            output_packet_key="command_center_tushare_refresh_packet",
+            payload={"ts_code": "002008.SZ", "api_key": "SHOULD_DROP_B"},
+        )
+
+        self.assertEqual(task_a["input_hash"], task_b["input_hash"])
+        self.assertEqual(task_a["idempotency_key"], task_b["idempotency_key"])
+        self.assertTrue(task_a["idempotency_key"].startswith("refresh_tushare_facts:"))
+        self.assertTrue(task_a["lock_key"].startswith("lock:refresh_tushare_facts:"))
+        self.assertFalse(task_a["lock_enforced"])
+        self.assertFalse(task_a["retry_policy"]["enabled"])
+        self.assertNotIn("api_key", task_a["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps([task_a, task_b], ensure_ascii=False))
+
+        listing = task_service.build_task_status_index()
+        self.assertTrue(listing["persistence"]["task_rows_include_idempotency_key"])
+        self.assertTrue(listing["persistence"]["task_rows_include_lock_key"])
+        self.assertTrue(listing["persistence"]["task_rows_include_retry_policy"])
+        self.assertEqual(listing["persistence"]["idempotency_key_count"], 1)
+        self.assertEqual(listing["persistence"]["duplicate_idempotency_key_count"], 1)
+        self.assertEqual(listing["call_ledger"][0]["idempotency_key_count"], 1)
+        self.assertEqual(listing["call_ledger"][0]["duplicate_idempotency_key_count"], 1)
+        self.assertFalse(listing["external_calls_triggered"])
+        self.assertTrue(listing["does_not_execute_trades"])
+        self.assertTrue(listing["does_not_modify_strategy_action"])
+
     def test_task_status_update_supports_failed_state_without_secret_leak(self):
         self._with_meta_store()
         task = create_task_stub("run_factor_light", payload={"authorization": "Bearer secret", "ts_code": "002008.SZ"})

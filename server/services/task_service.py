@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -351,6 +353,15 @@ def _safe_payload(payload: Any = None) -> dict[str, Any]:
     return {str(key): safe for key, value in payload.items() if (safe := _safe_value(key, value)) is not None}
 
 
+def _task_input_hash(task_type: str, payload_safe: dict[str, Any]) -> str:
+    payload = {
+        "task_type": str(task_type or ""),
+        "payload_safe": payload_safe,
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
+
+
 def _status_event(status: str, *, progress: float, current_step: str, at: str | None = None) -> dict[str, Any]:
     return {
         "status": status,
@@ -488,9 +499,21 @@ def build_task_record(
 ) -> dict[str, Any]:
     selected_status = status if status in TASK_STATUSES else "pending"
     now = _now_iso()
+    payload_safe = _safe_payload(payload)
+    input_hash = _task_input_hash(task_type, payload_safe)
     record = {
         "task_id": task_id or f"local-{uuid.uuid4().hex[:12]}",
         "task_type": task_type,
+        "input_hash": input_hash,
+        "idempotency_key": f"{task_type}:{input_hash}",
+        "dedupe_scope": "local_task_type_payload",
+        "lock_key": f"lock:{task_type}:{input_hash}",
+        "lock_enforced": False,
+        "retry_policy": {
+            "enabled": False,
+            "max_attempts": 1,
+            "backoff": "not_enabled",
+        },
         "status": selected_status,
         "created_at": now,
         "started_at": now if selected_status in {"running", "success", "failed"} else None,
@@ -499,7 +522,7 @@ def build_task_record(
         "current_step": current_step,
         "error_message_safe": "",
         "output_packet_key": output_packet_key,
-        "payload_safe": _safe_payload(payload),
+        "payload_safe": payload_safe,
         "warnings": list(warnings or []),
         "call_ledger": list(call_ledger or []),
         "backend": "local_fallback",
@@ -682,12 +705,21 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         reverse=True,
     )
     persistence = {
+        "task_rows_include_idempotency_key": True,
+        "task_rows_include_lock_key": True,
+        "task_rows_include_retry_policy": True,
         "storage_backend": "memory_plus_sqlite_fallback",
         "sqlite_fallback_enabled": True,
         "sqlite_meta_path_label": ".stock_ming_3/meta.sqlite",
         "memory_task_count": len(memory_ids),
         "sqlite_task_count": len(persisted_ids),
         "deduplicated_task_count": len(sorted_tasks),
+        "idempotency_key_count": len({str(task.get("idempotency_key") or "") for task in sorted_tasks if task.get("idempotency_key")}),
+        "duplicate_idempotency_key_count": max(
+            0,
+            len([task for task in sorted_tasks if task.get("idempotency_key")])
+            - len({str(task.get("idempotency_key") or "") for task in sorted_tasks if task.get("idempotency_key")}),
+        ),
         "memory_only_task_count": len(memory_ids - persisted_ids),
         "sqlite_only_task_count": len(persisted_ids - memory_ids),
         "memory_and_sqlite_task_count": len(shared_ids),
@@ -759,6 +791,8 @@ def build_task_status_index() -> dict[str, Any]:
                 "memory_task_count": persistence["memory_task_count"],
                 "sqlite_task_count": persistence["sqlite_task_count"],
                 "deduplicated_task_count": persistence["deduplicated_task_count"],
+                "idempotency_key_count": persistence["idempotency_key_count"],
+                "duplicate_idempotency_key_count": persistence["duplicate_idempotency_key_count"],
                 "storage_backend": persistence["storage_backend"],
                 "data_date": None,
                 "local_fetched_at": _now_iso(),
