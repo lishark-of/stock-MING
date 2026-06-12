@@ -82,6 +82,76 @@ def _worker_module_rows() -> list[dict[str, Any]]:
     return rows
 
 
+def _queue_for_task_type(task_type: str) -> str:
+    if task_type in {"refresh_tushare_facts", "refresh_factor_data"}:
+        return "provider_refresh"
+    if task_type == "run_deepseek_factor_explanation":
+        return "model_explain"
+    if task_type in {"run_chokepoint_scan", "probe_serenity_github"}:
+        return "external_probe"
+    if task_type == "run_storage_artifact_cleanup_dry_run":
+        return "local_maintenance"
+    return "local_compute"
+
+
+def _worker_dispatch_plan_rows(
+    catalog: dict[str, Any],
+    *,
+    celery_available: bool,
+    redis_configured: bool,
+    scheduled_refresh_enabled: bool,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in catalog.get("tasks") or []:
+        task_type = str(item.get("task_type") or "")
+        queue = _queue_for_task_type(task_type)
+        external_sources = [str(source) for source in item.get("possible_external_sources") or []]
+        backend = str(item.get("current_backend") or "")
+        if "stub" in backend:
+            dispatch_status = "stub_worker_pending"
+            next_action = "replace local stub with explicit worker implementation before production dispatch."
+        elif celery_available and redis_configured:
+            dispatch_status = "celery_dispatch_preflight_ready"
+            next_action = "operator may route this task to Celery only through explicit POST task dispatch."
+        else:
+            dispatch_status = "local_fallback_ready_worker_pending"
+            next_action = "keep local fallback; configure Redis and start Celery manually before worker dispatch."
+        rows.append(
+            {
+                "task_type": task_type,
+                "route": item.get("route"),
+                "output_packet_key": item.get("output_packet_key"),
+                "current_backend": backend,
+                "future_queue": queue,
+                "dispatch_status": dispatch_status,
+                "local_fallback_supported": True,
+                "celery_available": celery_available,
+                "redis_configured": redis_configured,
+                "redis_required_for_celery": True,
+                "redis_pinged": False,
+                "celery_started": False,
+                "button_gated": item.get("button_gated") is True,
+                "cache_get_external_calls": item.get("cache_get_external_calls") is True,
+                "possible_external_sources": external_sources,
+                "possible_external_source_count": len(external_sources),
+                "automatic_scheduler_allowed": False,
+                "scheduled_refresh_enabled": scheduled_refresh_enabled,
+                "scheduler_default_off": not scheduled_refresh_enabled,
+                "retry_policy_required": True,
+                "cancel_policy_required": True,
+                "lock_policy_required": True,
+                "dedupe_policy_required": True,
+                "safe_task_log_required": True,
+                "error_message_safe_required": True,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "next_action": next_action,
+            }
+        )
+    return rows
+
+
 def _backend_rows(*, celery_available: bool, redis_available: bool, apscheduler_available: bool, scheduled_refresh_enabled: bool) -> list[dict[str, Any]]:
     return [
         {
@@ -296,6 +366,13 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
             "next_action": "move safe task logs to append-only worker log storage when Celery/Redis production worker is enabled.",
             "external_calls_triggered": False,
         },
+        {
+            "control": "worker_dispatch_plan",
+            "status": "contract_ready",
+            "current_coverage": "worker runtime exposes a per-task dispatch plan with future Celery queue, local fallback, Redis requirement, scheduler boundary, lock/dedupe/retry/log requirements, and external-call boundaries.",
+            "next_action": "wire Celery queue routing only after Redis configuration and worker startup are manually verified.",
+            "external_calls_triggered": False,
+        },
     ]
 
 
@@ -318,6 +395,16 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         apscheduler_available=apscheduler_available,
         scheduled_refresh_enabled=scheduled_refresh_enabled,
     )
+    dispatch_plan_rows = _worker_dispatch_plan_rows(
+        catalog,
+        celery_available=celery_available,
+        redis_configured=redis_configured,
+        scheduled_refresh_enabled=scheduled_refresh_enabled,
+    )
+    dispatch_plan_status_counts: dict[str, int] = {}
+    for row in dispatch_plan_rows:
+        status_key = str(row.get("dispatch_status") or "unknown")
+        dispatch_plan_status_counts[status_key] = dispatch_plan_status_counts.get(status_key, 0) + 1
     production_readiness = _production_readiness(
         celery_available=celery_available,
         redis_available=redis_available,
@@ -392,6 +479,24 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "task_persistence": task_persistence,
         "task_persistence_source_rows": task_persistence_source_rows,
         "production_readiness": production_readiness,
+        "dispatch_plan_status": "contract_ready_local_fallback",
+        "dispatch_plan_rows": dispatch_plan_rows,
+        "dispatch_plan_summary": {
+            "task_count": len(dispatch_plan_rows),
+            "queue_names": sorted({str(row.get("future_queue") or "") for row in dispatch_plan_rows if row.get("future_queue")}),
+            "status_counts": dispatch_plan_status_counts,
+            "local_fallback_supported_count": sum(1 for row in dispatch_plan_rows if row.get("local_fallback_supported")),
+            "celery_ready_count": sum(1 for row in dispatch_plan_rows if row.get("dispatch_status") == "celery_dispatch_preflight_ready"),
+            "stub_worker_pending_count": sum(1 for row in dispatch_plan_rows if row.get("dispatch_status") == "stub_worker_pending"),
+            "all_routes_button_gated": all(row.get("button_gated") for row in dispatch_plan_rows),
+            "cache_get_external_call_count": sum(1 for row in dispatch_plan_rows if row.get("cache_get_external_calls")),
+            "scheduler_auto_task_count": sum(1 for row in dispatch_plan_rows if row.get("automatic_scheduler_allowed")),
+            "redis_pinged": False,
+            "celery_started": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
         "backend_rows": backend_rows,
         "worker_module_rows": worker_module_rows,
         "counts": {
@@ -411,6 +516,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "production_blocker_count": len(production_readiness.get("production_blockers") or []),
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
+            "dispatch_plan_task_count": len(dispatch_plan_rows),
+            "dispatch_plan_queue_count": len({str(row.get("future_queue") or "") for row in dispatch_plan_rows if row.get("future_queue")}),
         },
         "policy": {
             "cache_api_external_calls": False,

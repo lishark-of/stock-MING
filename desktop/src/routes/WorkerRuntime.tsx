@@ -29,6 +29,8 @@ export default function WorkerRuntime() {
   const taskStatus = (cache.task_status_summary as Record<string, unknown> | undefined) ?? {};
   const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? ((taskStatus.persistence as Record<string, unknown> | undefined) ?? {});
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
+  const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
+  const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -65,6 +67,8 @@ export default function WorkerRuntime() {
           { label: "task call ledger", value: counts.task_status_call_ledger_count as number | undefined },
           { label: "manual preflight", value: counts.manual_preflight_step_count as number | undefined },
           { label: "operator actions", value: counts.manual_preflight_operator_action_count as number | undefined, tone: Number(counts.manual_preflight_operator_action_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "dispatch tasks", value: counts.dispatch_plan_task_count as number | undefined },
+          { label: "dispatch queues", value: counts.dispatch_plan_queue_count as number | undefined },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
           { label: "Redis package", value: runtime.redis_package_available, tone: runtime.redis_package_available === true ? "good" : "warn" },
@@ -128,6 +132,15 @@ export default function WorkerRuntime() {
 
       <PacketCard title="Backend 状态" subtitle="local fallback / Celery / Redis / APScheduler；cache API 不连接外部服务" status="backends">
         <DataLineageTable rows={rows(cache.backend_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Worker dispatch plan" subtitle="每类任务的未来队列、local fallback、Redis/Celery 前置条件和调度边界；只读、不派发" status={String(cache.dispatch_plan_status ?? "contract_ready_local_fallback")}>
+        <p>queue names: {Array.isArray(dispatchPlanSummary.queue_names) ? dispatchPlanSummary.queue_names.join(" / ") : "--"}</p>
+        <p>local fallback supported: {String(dispatchPlanSummary.local_fallback_supported_count ?? 0)}</p>
+        <p>celery ready / stub pending: {String(dispatchPlanSummary.celery_ready_count ?? 0)} / {String(dispatchPlanSummary.stub_worker_pending_count ?? 0)}</p>
+        <p>cache GET external calls / scheduler auto tasks: {String(dispatchPlanSummary.cache_get_external_call_count ?? 0)} / {String(dispatchPlanSummary.scheduler_auto_task_count ?? 0)}</p>
+        <p>status_counts: {JSON.stringify(dispatchPlanStatusCounts ?? {})}</p>
+        <DataLineageTable rows={rows(cache.dispatch_plan_rows)} />
       </PacketCard>
 
       <PacketCard title="生产 worker 人工预检" subtitle="只读 checklist；不启动 Celery、不 ping Redis、不调度任务" status={String(productionReadiness.status ?? "preflight")}>

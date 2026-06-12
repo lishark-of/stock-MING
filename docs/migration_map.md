@@ -28,7 +28,7 @@
 | DeepSeek 解释器 | `analysis_engine.py`, `deepseek_safety.py`, `command_center_*` | `POST /api/factor-quant/deepseek-explain` 等 | 页面按钮 | 只解释已有结构化结果 | 是，当前 stub |
 | Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否；读取优先级为 `sqlite_meta > snapshot > local_builder > missing` | 否 |
 | Storage datasets | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage`, `GET /api/storage/catalog`, `GET /api/storage/{dataset}`, `POST /api/storage/artifact-hygiene/dry-run` | `CommandCenterHome.tsx`, `StorageOverview.tsx` | GET 只读 Parquet/DuckDB 状态、数据集目录和 artifact hygiene；POST dry-run 只生成本地清理预检任务和候选清单，不删除文件、不读取 payload、不外联 | 是，artifact cleanup dry-run 为本地按钮任务；真实 cleanup 仍未接入 |
-| Worker / Task runtime | `worker/celery_app.py`, `worker/tasks_*.py`, `worker/scheduler.py`, `server/services/task_service.py` | `GET /api/worker/cache`, `GET /api/tasks`, `POST /api/tasks/{task_id}/cancel` | `WorkerRuntime.tsx`, `TaskCatalog.tsx` | cache GET 不连接 Redis、不启动 Celery、不启动 APScheduler；取消任务只改本地状态 | 是，POST task / cancel 走 FastAPI lifecycle |
+| Worker / Task runtime | `worker/celery_app.py`, `worker/tasks_*.py`, `worker/scheduler.py`, `server/services/task_service.py` | `GET /api/worker/cache`, `GET /api/tasks`, `POST /api/tasks/{task_id}/cancel` | `WorkerRuntime.tsx`, `TaskCatalog.tsx` | cache GET 不连接 Redis、不启动 Celery、不启动 APScheduler；`dispatch_plan_rows` 只读展示未来队列、local fallback、Redis/Celery 前置条件和调度边界；取消任务只改本地状态 | 是，POST task / cancel 走 FastAPI lifecycle；dispatch plan 仍是合同，不是 production worker 完成 |
 | Tauri desktop shell | `desktop/src-tauri/*`, `scripts/check_tauri_env.sh`, `server/services/desktop_service.py` | `GET /api/desktop/preflight-cache`，连接本地 FastAPI `8710` | `DesktopShellPreflight.tsx` / Tauri window / Vite dev | 否，预检只展示 `api_base_info` 与 `dev_launch_plan`，不启动 Tauri、不自动拉起 FastAPI | 否 |
 | Streamlit 旧工作台 | `app.py`, `visual_components.py` | `GET /api/legacy/cache`；作为 legacy | `LegacyTools.tsx` | cache GET 只读展示旧工作台桥接、迁移清单、旧数据缺失账本，不运行旧工具 | 后续任务化；当前不提供 POST |
 
@@ -72,7 +72,7 @@
 
 `/api/model-strategy/cache` 已接入 DeepSeek 模型策略只读迁移：读取集中配置中的 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 选择逻辑，输出用途到模型映射、配置键名、默认/覆盖状态和调用血缘；不调用 DeepSeek、不读取凭据、不调用 Tushare/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。同一模型策略引用已进入 `GET /api/tasks/catalog`、DeepSeek-capable local stub 的 `call_ledger.request_params_safe`、Factor Quant Hub guarded explanation packet 和 React 任务目录页；前端通用表格会以 JSON 展开嵌套审计字段，便于直接核验 `does_not_hardcode_model` 和 `contains_secret=false`。
 
-`/api/worker/cache` 已接入 Worker / Task runtime 只读迁移：检查本地 `worker` scaffold、Celery/Redis/APScheduler 依赖可见性、task catalog 和 local fallback 状态；不连接 Redis、不启动 Celery worker、不启动 APScheduler、不调度真实 Tushare/DeepSeek/GitHub 任务、不执行真实交易、不修改 `strategy_execution_packet.action`。
+`/api/worker/cache` 已接入 Worker / Task runtime 只读迁移：检查本地 `worker` scaffold、Celery/Redis/APScheduler 依赖可见性、task catalog、local fallback 状态和 `dispatch_plan_rows` 调度合同；不连接 Redis、不启动 Celery worker、不启动 APScheduler、不调度真实 Tushare/DeepSeek/GitHub 任务、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
 `/api/market/cache` 已接入市场环境 / 盘面证据只读迁移：读取本地 `market_packet`、`market_profile_evidence`、`moneyflow_packet`、`margin_packet`、`dragon_tiger_packet`、`limit_emotion_packet`、`chip_packet`、`etf_packet` 和 `margin_etf_summary`，输出盘面状态、资金流、两融、龙虎榜、涨跌停情绪、筹码和 ETF 替代说明；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不刷新行情或资金流、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
 

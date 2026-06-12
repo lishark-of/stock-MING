@@ -295,6 +295,7 @@ Productionize Command Center 3 storage datasets
 
 - local task fallback, retry, cancel, lock, dedupe, and task logs exist.
 - worker preflight exists.
+- Worker runtime now exposes a read-only dispatch plan matrix: every task has a future queue, local fallback state, Redis/Celery preconditions, retry/cancel/lock/dedupe/log requirements, and scheduler/external-call boundaries.
 - Celery/Redis are not production enabled.
 
 ### Gaps
@@ -310,10 +311,11 @@ Productionize Command Center 3 storage datasets
 ### Implementation Phases
 
 1. Keep local fallback stable.
-2. Add Celery worker execution behind explicit configuration.
-3. Add Redis broker configuration and health reporting without cache API pinging Redis.
-4. Add retry/cancel/lock behavior for real worker tasks.
-5. Keep scheduler default off.
+2. Keep the dispatch plan matrix current as tasks are added, so future Celery/Redis routing has an auditable contract before execution is enabled.
+3. Add Celery worker execution behind explicit configuration.
+4. Add Redis broker configuration and health reporting without cache API pinging Redis.
+5. Add retry/cancel/lock behavior for real worker tasks.
+6. Keep scheduler default off.
 
 ### Acceptance Criteria
 
