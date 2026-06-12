@@ -356,6 +356,7 @@ Productionize Command Center 3 storage datasets
 - local task fallback, retry, cancel, lock, dedupe, and task logs exist.
 - worker preflight exists.
 - Worker runtime now exposes a read-only dispatch plan matrix: every task has a future queue, local fallback state, Redis/Celery preconditions, retry/cancel/lock/dedupe/log requirements, and scheduler/external-call boundaries.
+- Worker runtime now exposes `worker_production_blocker_audit`: a read-only blocker audit for Redis package/config, Celery package/worker start, stub task migration, queue contracts, button gating, call ledger requirements, scheduler default-off, cache GET no-dispatch, and local-only retry/cancel/lock/dedupe/log controls. It does not start Celery, ping Redis, start APScheduler, or dispatch tasks.
 - Celery/Redis are not production enabled.
 
 ### Gaps
@@ -384,6 +385,7 @@ Productionize Command Center 3 storage datasets
 - Worker executes heavy tasks.
 - Redis absence gracefully falls back or reports clear blocker.
 - Worker not started state is visible in UI.
+- Production blocker rows are visible in UI, and `production_worker_complete` remains false until a future explicit worker health check proves Celery/Redis startup outside GET cache.
 - Real Tushare/DeepSeek scheduling is never automatic.
 - Failures include `error_message_safe`.
 
@@ -392,6 +394,7 @@ Productionize Command Center 3 storage datasets
 - Do not start Celery, Redis, or scheduler from GET cache.
 - Do not auto-schedule real provider/model tasks.
 - Do not report preflight as production worker completion.
+- Do not report blocker audit as production worker completion.
 
 ### Recommended Commit Message
 

@@ -388,6 +388,169 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
     ]
 
 
+def _worker_production_blocker_audit(
+    *,
+    celery_available: bool,
+    redis_available: bool,
+    redis_configured: bool,
+    scheduled_refresh_enabled: bool,
+    dispatch_plan_rows: list[dict[str, Any]],
+    task_implementation_status: dict[str, Any],
+    task_retry_policy_summary: dict[str, Any],
+    task_persistence: dict[str, Any],
+) -> dict[str, Any]:
+    stub_count = int(task_implementation_status.get("stub_task_count") or 0)
+    external_capable_button_gated = bool(task_implementation_status.get("all_external_capable_tasks_are_button_gated", True))
+    external_capable_call_ledger = bool(task_implementation_status.get("all_external_capable_tasks_require_call_ledger", True))
+    scheduler_auto_task_count = sum(1 for row in dispatch_plan_rows if row.get("automatic_scheduler_allowed"))
+    unsafe_cache_get_count = sum(1 for row in dispatch_plan_rows if row.get("cache_get_external_calls"))
+    missing_queue_contract_count = sum(1 for row in dispatch_plan_rows if not row.get("future_queue"))
+
+    def _row(
+        criterion: str,
+        component: str,
+        status: str,
+        detail: str,
+        next_action: str,
+        *,
+        required: bool = True,
+        blocks_desktop_mvp: bool = False,
+    ) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "component": component,
+            "status": status,
+            "required_for_production_worker": required,
+            "blocks_desktop_mvp": blocks_desktop_mvp,
+            "blocks_production_worker": bool(required and status != "passed"),
+            "detail": detail,
+            "next_action": next_action,
+            "cache_api_can_resolve": False,
+            "operator_action_required": bool(required and status != "passed"),
+            "external_calls_triggered": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "redis_python_package_available",
+            "redis_broker",
+            "passed" if redis_available else "blocked",
+            "Redis Python package is visible locally." if redis_available else "Redis Python package is not visible to this environment.",
+            "Install project dependencies before enabling Celery broker routing.",
+        ),
+        _row(
+            "redis_broker_url_configured",
+            "redis_broker",
+            "passed" if redis_configured else "blocked",
+            "Redis broker URL is configured but not exposed or pinged." if redis_configured else "Redis broker URL is not configured; cache API intentionally does not ping Redis.",
+            "Configure Redis broker URL manually and verify it outside GET cache.",
+        ),
+        _row(
+            "celery_python_package_available",
+            "celery_worker",
+            "passed" if celery_available else "blocked",
+            "Celery package is visible locally." if celery_available else "Celery package is not visible to this environment.",
+            "Install project dependencies before routing heavy tasks to Celery.",
+        ),
+        _row(
+            "celery_worker_started",
+            "celery_worker",
+            "blocked",
+            "GET /api/worker/cache never starts worker processes; production worker is not proven running by this preflight.",
+            "Start Celery manually and add a future explicit worker health check that does not run real provider/model tasks.",
+        ),
+        _row(
+            "stub_tasks_migrated",
+            "task_catalog",
+            "passed" if stub_count == 0 else "blocked",
+            f"{stub_count} task(s) still report stub backend; scaffold cannot be called production worker completion.",
+            "Replace stub task backends or keep them clearly marked as non-production.",
+        ),
+        _row(
+            "dispatch_queue_contract_complete",
+            "dispatch_plan",
+            "passed" if missing_queue_contract_count == 0 else "blocked",
+            f"{len(dispatch_plan_rows) - missing_queue_contract_count}/{len(dispatch_plan_rows)} task(s) have future queue contracts.",
+            "Assign future queue contracts before Celery routing is enabled.",
+        ),
+        _row(
+            "external_tasks_button_gated",
+            "task_catalog",
+            "passed" if external_capable_button_gated else "blocked",
+            "External-capable tasks remain button-gated." if external_capable_button_gated else "At least one external-capable task is not button-gated.",
+            "Keep provider/model/probe tasks behind explicit POST buttons.",
+        ),
+        _row(
+            "external_tasks_call_ledger_required",
+            "task_catalog",
+            "passed" if external_capable_call_ledger else "blocked",
+            "External-capable tasks require call_ledger." if external_capable_call_ledger else "At least one external-capable task lacks call_ledger requirement.",
+            "Require call_ledger before enabling worker routing.",
+        ),
+        _row(
+            "scheduler_default_off",
+            "scheduler",
+            "passed" if not scheduled_refresh_enabled and scheduler_auto_task_count == 0 else "blocked",
+            "Scheduler is off by default and dispatch plan contains no automatic scheduler tasks." if not scheduled_refresh_enabled and scheduler_auto_task_count == 0 else "Scheduler auto dispatch is enabled or planned.",
+            "Keep scheduler disabled until explicit production scheduling design is approved.",
+        ),
+        _row(
+            "cache_get_never_dispatches_external_work",
+            "cache_api",
+            "passed" if unsafe_cache_get_count == 0 else "blocked",
+            f"Dispatch plan has {unsafe_cache_get_count} cache GET external-call row(s).",
+            "Ensure all external work is POST/task gated.",
+        ),
+        _row(
+            "retry_cancel_lock_dedupe_local_only",
+            "task_controls",
+            "passed"
+            if task_retry_policy_summary.get("manual_retry_supported") and task_persistence.get("sqlite_fallback_enabled", True)
+            else "blocked",
+            "Manual retry/cancel/lock/dedupe/log controls are local-ready but not Celery-process complete.",
+            "Extend these controls to Celery/Redis before claiming production worker completion.",
+        ),
+        _row(
+            "no_real_trade_or_action_mutation",
+            "safety",
+            "passed",
+            "Worker runtime cache is diagnostic and does not execute trades or mutate strategy action.",
+            "Preserve this boundary when production worker dispatch is added.",
+            required=True,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_production_worker"]]
+    return {
+        "schema_version": "worker_production_blocker_audit.v1",
+        "status": "production_worker_blocked" if blocking_rows else "production_worker_preflight_ready",
+        "scope": "local_worker_runtime_blocker_audit_no_process_start",
+        "criterion_count": len(rows),
+        "blocking_criterion_count": len(blocking_rows),
+        "passed_criterion_count": len(rows) - len(blocking_rows),
+        "blocking_criteria": [str(row["criterion"]) for row in blocking_rows],
+        "desktop_mvp_blocking_count": sum(1 for row in rows if row["blocks_desktop_mvp"]),
+        "local_fallback_available": True,
+        "production_worker_complete": False if blocking_rows else False,
+        "cache_api_started_workers": False,
+        "cache_api_pinged_redis": False,
+        "cache_api_started_scheduler": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "note": "This audit lists production worker blockers. It is not a Celery/Redis health check and does not start processes or dispatch tasks.",
+    }
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -424,6 +587,19 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         apscheduler_available=apscheduler_available,
         scheduled_refresh_enabled=scheduled_refresh_enabled,
     )
+    production_blocker_audit = _worker_production_blocker_audit(
+        celery_available=celery_available,
+        redis_available=redis_available,
+        redis_configured=redis_configured,
+        scheduled_refresh_enabled=scheduled_refresh_enabled,
+        dispatch_plan_rows=dispatch_plan_rows,
+        task_implementation_status=task_implementation_status,
+        task_retry_policy_summary=task_retry_policy_summary,
+        task_persistence=task_persistence,
+    )
+    production_readiness["production_blocker_audit"] = production_blocker_audit
+    production_readiness["production_blocker_rows"] = production_blocker_audit["rows"]
+    production_readiness["production_worker_complete"] = False
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
     manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
@@ -491,6 +667,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "task_persistence": task_persistence,
         "task_persistence_source_rows": task_persistence_source_rows,
         "production_readiness": production_readiness,
+        "worker_production_blocker_audit": production_blocker_audit,
+        "worker_production_blocker_rows": production_blocker_audit["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
         "dispatch_plan_rows": dispatch_plan_rows,
         "dispatch_plan_summary": {
@@ -526,6 +704,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
             "deduplicated_task_count": task_persistence.get("deduplicated_task_count", task_index.get("task_count", 0)),
             "production_blocker_count": len(production_readiness.get("production_blockers") or []),
+            "production_blocker_audit_count": production_blocker_audit["blocking_criterion_count"],
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
             "dispatch_plan_task_count": len(dispatch_plan_rows),

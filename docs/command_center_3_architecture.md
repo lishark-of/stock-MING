@@ -179,7 +179,7 @@ scripts/run_scheduler.sh
 ```
 
 默认不启用真实收盘后刷新。只有显式设置 `COMMAND_CENTER_ENABLE_SCHEDULED_REFRESH=1` 后才进入定时任务模式。
-`GET /api/worker/cache` 会展示每类任务的 `dispatch_plan_rows`：未来 Celery queue、local fallback、Redis/Celery 前置条件、retry/cancel/lock/dedupe/task_log 要求和 scheduler 边界。该矩阵是只读合同，不派发任务、不 ping Redis、不启动 worker、不把 preflight 误写为 production worker 完成。
+`GET /api/worker/cache` 会展示每类任务的 `dispatch_plan_rows`：未来 Celery queue、local fallback、Redis/Celery 前置条件、retry/cancel/lock/dedupe/task_log 要求和 scheduler 边界。它还会展示 `worker_production_blocker_audit`，把 Redis 包/配置、Celery 包/worker 启动、stub 任务迁移、队列合同、按钮门控、call_ledger 要求、scheduler 默认关闭、GET cache 不派发和本地控制面只读状态列成阻断审计。该矩阵和 blocker audit 都是只读合同，不派发任务、不 ping Redis、不启动 worker、不把 preflight 误写为 production worker 完成。
 
 ### Storage
 

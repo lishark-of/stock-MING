@@ -29,6 +29,7 @@ export default function WorkerRuntime() {
   const taskStatus = (cache.task_status_summary as Record<string, unknown> | undefined) ?? {};
   const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? ((taskStatus.persistence as Record<string, unknown> | undefined) ?? {});
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
+  const productionBlockerAudit = (productionReadiness.production_blocker_audit as Record<string, unknown> | undefined) ?? ((cache.worker_production_blocker_audit as Record<string, unknown> | undefined) ?? {});
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -69,6 +70,8 @@ export default function WorkerRuntime() {
           { label: "operator actions", value: counts.manual_preflight_operator_action_count as number | undefined, tone: Number(counts.manual_preflight_operator_action_count ?? 0) > 0 ? "warn" : "good" },
           { label: "dispatch tasks", value: counts.dispatch_plan_task_count as number | undefined },
           { label: "dispatch queues", value: counts.dispatch_plan_queue_count as number | undefined },
+          { label: "worker blockers", value: productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count, tone: Number(productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
           { label: "Redis package", value: runtime.redis_package_available, tone: runtime.redis_package_available === true ? "good" : "warn" },
@@ -147,6 +150,12 @@ export default function WorkerRuntime() {
         <p>这些步骤用于后续生产化验收；GET /api/worker/cache 只展示状态，不执行任何一步。</p>
         <p>cache_api_can_execute 必须保持 false；operator_action_required 表示需要人工显式操作。</p>
         <DataLineageTable rows={rows(productionReadiness.manual_preflight_steps)} />
+      </PacketCard>
+
+      <PacketCard title="生产 worker 阻断审计" subtitle="只读 blocker audit；本地 fallback 可用不等于 Celery/Redis 生产完成" status={String(productionBlockerAudit.status ?? "production_worker_blocked")}>
+        <p>production_worker_complete 必须保持 false，直到未来显式 worker health check 证明 Celery/Redis 已人工启动并可安全调度。</p>
+        <p>这张表不启动 worker、不 ping Redis、不调度 Tushare/DeepSeek/GitHub，也不执行真实交易。</p>
+        <DataLineageTable rows={rows(productionReadiness.production_blocker_rows ?? cache.worker_production_blocker_rows)} />
       </PacketCard>
 
       <PacketCard title="Worker 模块" subtitle="worker.tasks_* 和 scheduler scaffold；只读文件/模块可见性" status="modules">
