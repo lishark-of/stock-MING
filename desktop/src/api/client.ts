@@ -221,6 +221,13 @@ export function getStorageOverview() {
   return request<Record<string, unknown>>("/api/storage");
 }
 
+export function postStorageArtifactCleanupDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/artifact-hygiene/dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>(path, {
     method: "POST",

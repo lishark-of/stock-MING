@@ -1,10 +1,20 @@
 import { useEffect, useState } from "react";
-import { getFactorValuesStorage, getSQLiteMetaStorage, getStorageCatalog, getStorageDataset, getStorageOverview } from "../api/client";
+import {
+  getFactorValuesStorage,
+  getSQLiteMetaStorage,
+  getStorageCatalog,
+  getStorageDataset,
+  getStorageOverview,
+  postStorageArtifactCleanupDryRun,
+  type TaskCreationEnvelope
+} from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 export default function StorageOverview() {
   const [overview, setOverview] = useState<Record<string, unknown>>({});
@@ -16,8 +26,10 @@ export default function StorageOverview() {
   const [factorValues, setFactorValues] = useState<Record<string, unknown>>({});
   const [sqliteMeta, setSqliteMeta] = useState<Record<string, unknown>>({});
   const [datasetDetails, setDatasetDetails] = useState<Record<string, Record<string, unknown>>>({});
+  const [dryRunTaskId, setDryRunTaskId] = useState("");
+  const [dryRunReceipt, setDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  useEffect(() => {
+  const refreshStorage = () => {
     void getStorageOverview().then((res) => {
       setOverview(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
@@ -33,6 +45,15 @@ export default function StorageOverview() {
     void Promise.all(["daily", "daily-basic", "moneyflow", "trade-cal", "backtest-results"].map((dataset) => getStorageDataset(dataset).then((res) => [dataset, res.data] as const))).then((items) =>
       setDatasetDetails(Object.fromEntries(items))
     );
+  };
+  const launchArtifactCleanupDryRun = () =>
+    void postStorageArtifactCleanupDryRun({ source: "storage_overview_button" }).then((res) => {
+      setDryRunReceipt(res);
+      if (res.ok) setDryRunTaskId(res.data.task_id);
+    });
+
+  useEffect(() => {
+    refreshStorage();
   }, []);
 
   const datasetStatus = overview.dataset_status as Record<string, unknown> | undefined;
@@ -169,9 +190,15 @@ export default function StorageOverview() {
 
       <PacketCard title="Local artifact hygiene" subtitle="路径级预检；只展示本地生成物边界，不删除、不读 payload、不外联" status={String(artifactHygiene.status ?? "audit_ready")}>
         <p>cleanup_policy: {String(artifactHygiene.cleanup_policy ?? "manual_only_no_delete_on_get")}</p>
-        <p>cleanup_task_status: {String(artifactHygiene.cleanup_task_status ?? "not_implemented")}</p>
+        <p>cleanup_task_status: {String(artifactHygiene.cleanup_task_status ?? "dry_run_button_gated")}</p>
+        <p>cleanup_dry_run_route: {String(artifactHygiene.cleanup_dry_run_route ?? "POST /api/storage/artifact-hygiene/dry-run")}</p>
         <p>delete_files_on_get / auto_cleanup_on_get: {String(artifactHygiene.delete_files_on_get ?? false)} / {String(artifactHygiene.auto_cleanup_on_get ?? false)}</p>
         <p>does_not_read_file_payloads / does_not_scan_secret_values: {String(artifactHygiene.does_not_read_file_payloads ?? true)} / {String(artifactHygiene.does_not_scan_secret_values ?? true)}</p>
+        <div className="actions">
+          <button onClick={launchArtifactCleanupDryRun}>生成 cleanup dry-run</button>
+        </div>
+        <TaskLaunchReceipt receipt={dryRunReceipt} />
+        <TaskStatusPanel taskId={dryRunTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={artifactRows} />
       </PacketCard>
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter
 
+from server.api.task_response import task_envelope
 from server.schemas.packets import envelope
 from server.services import storage_service
 
@@ -43,6 +46,12 @@ def get_sqlite_meta_status(limit: int = 100) -> dict:
 def get_storage_dataset_catalog() -> dict:
     packet = storage_service.storage_dataset_catalog()
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
+@router.post("/artifact-hygiene/dry-run")
+def run_storage_artifact_cleanup_dry_run(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_artifact_cleanup_dry_run_task(payload)
+    return task_envelope(task)
 
 
 @router.get("/{dataset}")

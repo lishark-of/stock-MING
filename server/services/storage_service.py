@@ -8,9 +8,12 @@ from typing import Any, Mapping
 from storage import duckdb_store, parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
+from . import task_service
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PARQUET_ROOT = PROJECT_ROOT / ".stock_ming_3" / "parquet"
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup_dry_run_packet"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -460,8 +463,8 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
         {
             "control": "local_artifact_hygiene",
             "status": "audit_ready",
-            "current_coverage": "storage overview exposes path-only generated artifact hygiene, git exclusion patterns and manual cleanup boundaries.",
-            "next_action": "add an explicit dry-run cleanup task before allowing any delete operation.",
+            "current_coverage": "storage overview exposes path-only generated artifact hygiene, git exclusion patterns, manual cleanup boundaries and a button-gated dry-run task.",
+            "next_action": "keep any real cleanup/delete operation separate, explicit and manually approved after dry-run review.",
             "external_calls_triggered": False,
         },
     ]
@@ -527,7 +530,8 @@ def storage_artifact_hygiene_status() -> dict[str, Any]:
         "git_excluded_patterns": list(LOCAL_ARTIFACT_GIT_EXCLUDED_PATTERNS),
         "tracked_artifact_gate": "scripts/push_gate_3_0.sh generated artifact scan",
         "cleanup_policy": "manual_only_no_delete_on_get",
-        "cleanup_task_status": "not_implemented",
+        "cleanup_task_status": "dry_run_button_gated",
+        "cleanup_dry_run_route": "POST /api/storage/artifact-hygiene/dry-run",
         "dry_run_required_before_delete": True,
         "data_files_allowed_in_git": False,
         "delete_files_on_get": False,
@@ -543,6 +547,138 @@ def storage_artifact_hygiene_status() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "note": "Artifact hygiene is path-only audit data. It never deletes files, reads payloads, scans secret values, refreshes providers or touches strategy action.",
     }
+
+
+def storage_artifact_cleanup_dry_run_packet(*, task_id: str | None = None, payload_safe: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    hygiene = storage_artifact_hygiene_status()
+    rows: list[dict[str, Any]] = []
+    for row in hygiene["rows"]:
+        exists = bool(row.get("exists"))
+        cleanup_policy = str(row.get("cleanup_policy") or "")
+        if not exists:
+            dry_run_status = "not_present_no_action"
+            candidate_action = "none"
+        elif cleanup_policy == "package_manager_only":
+            dry_run_status = "present_package_manager_owned"
+            candidate_action = "review_with_package_manager"
+        else:
+            dry_run_status = "present_manual_review_required"
+            candidate_action = "manual_cleanup_candidate_after_review"
+        rows.append(
+            {
+                "artifact": row.get("artifact"),
+                "artifact_type": row.get("artifact_type"),
+                "path": row.get("path"),
+                "exists": exists,
+                "actual_kind": row.get("actual_kind"),
+                "top_level_entry_count": row.get("top_level_entry_count"),
+                "git_policy": row.get("git_policy"),
+                "cleanup_policy": cleanup_policy,
+                "dry_run_status": dry_run_status,
+                "candidate_action": candidate_action,
+                "would_delete_on_this_task": False,
+                "requires_manual_confirmation": exists,
+                "does_not_read_file_payloads": True,
+                "does_not_read_env_files": True,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    candidate_rows = [row for row in rows if row["candidate_action"] != "none"]
+    payload = dict(payload_safe or {})
+    packet = {
+        "packet_key": ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY,
+        "schema_version": "command_center_3_storage_artifact_cleanup_dry_run.v1",
+        "status": "ready",
+        "mode": "dry_run",
+        "task_id": task_id or "",
+        "scope": "local_generated_artifact_cleanup_preflight",
+        "artifact_hygiene_status": hygiene["status"],
+        "cleanup_policy": "dry_run_only_no_delete",
+        "cleanup_dry_run_route": "POST /api/storage/artifact-hygiene/dry-run",
+        "candidate_rows": rows,
+        "candidate_count": len(candidate_rows),
+        "present_artifact_count": hygiene["present_artifact_count"],
+        "review_required_count": hygiene["review_required_count"],
+        "git_excluded_patterns": list(hygiene["git_excluded_patterns"]),
+        "tracked_artifact_gate": hygiene["tracked_artifact_gate"],
+        "request_params_safe": {
+            "source": payload.get("source") or "storage_page_button",
+            "confirm_delete": False,
+            "delete_requested": False,
+            "external_sources_allowed": False,
+        },
+        "delete_files_on_post": False,
+        "auto_cleanup_on_post": False,
+        "would_delete_files": False,
+        "dry_run_required_before_delete": True,
+        "does_not_scan_secret_values": True,
+        "does_not_read_file_payloads": True,
+        "does_not_read_env_files": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_artifact_cleanup_dry_run",
+            endpoint="POST /api/storage/artifact-hygiene/dry-run",
+            status="dry_run_completed",
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "POST /api/storage/artifact-hygiene/dry-run 只生成本地清理预检清单；不会删除文件。",
+            "dry-run 不读取 payload、不扫描 secret 值、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+    return packet
+
+
+def run_storage_artifact_cleanup_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_storage_artifact_cleanup_dry_run",
+        output_packet_key=ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY,
+        payload=payload,
+        current_step="storage_artifact_cleanup_dry_run_queued",
+        warnings=[
+            "storage artifact cleanup dry-run 只生成清理候选清单；不会删除文件、不会读取 payload、不会调用外部源。",
+            "任何真实清理必须在 dry-run 审阅后另行手动确认；本任务不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="building_storage_artifact_cleanup_dry_run",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_artifact_cleanup_dry_run_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_artifact_cleanup_dry_run_storage_write_failed",
+            error_message_safe="storage_artifact_cleanup_dry_run_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_artifact_cleanup_dry_run_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_artifact_cleanup_dry_run_completed",
+        call_ledger=packet["call_ledger"],
+        warning="storage_artifact_cleanup_dry_run_completed_no_delete_no_external_call",
+    ) or task
 
 
 def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -610,6 +746,9 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",
         "artifact_hygiene_status": artifact_hygiene["status"],
         "artifact_hygiene_present_count": artifact_hygiene["present_artifact_count"],
+        "artifact_cleanup_dry_run_route": "POST /api/storage/artifact-hygiene/dry-run",
+        "artifact_cleanup_dry_run_button_gated": True,
+        "artifact_cleanup_dry_run_deletes_files": False,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,

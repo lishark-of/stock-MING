@@ -1096,10 +1096,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(overview["production_readiness"]["cache_ttl_policy"], "audit_only_no_auto_refresh")
         self.assertEqual(overview["production_readiness"]["compaction_policy"], "audit_only_manual_task_required")
         self.assertEqual(overview["production_readiness"]["artifact_hygiene_policy"], "path_only_manual_cleanup_no_delete_on_get")
+        self.assertEqual(overview["production_readiness"]["artifact_cleanup_dry_run_route"], "POST /api/storage/artifact-hygiene/dry-run")
+        self.assertTrue(overview["production_readiness"]["artifact_cleanup_dry_run_button_gated"])
+        self.assertFalse(overview["production_readiness"]["artifact_cleanup_dry_run_deletes_files"])
         self.assertIn("artifact_hygiene", overview)
         self.assertEqual(overview["artifact_hygiene"]["status"], overview["artifact_hygiene_status"])
         self.assertEqual(overview["artifact_hygiene"]["cleanup_policy"], "manual_only_no_delete_on_get")
-        self.assertEqual(overview["artifact_hygiene"]["cleanup_task_status"], "not_implemented")
+        self.assertEqual(overview["artifact_hygiene"]["cleanup_task_status"], "dry_run_button_gated")
+        self.assertEqual(overview["artifact_hygiene"]["cleanup_dry_run_route"], "POST /api/storage/artifact-hygiene/dry-run")
         self.assertTrue(overview["artifact_hygiene"]["dry_run_required_before_delete"])
         self.assertFalse(overview["artifact_hygiene"]["delete_files_on_get"])
         self.assertFalse(overview["artifact_hygiene"]["auto_cleanup_on_get"])
@@ -1306,7 +1310,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(hygiene["present_artifact_count"], 3)
         self.assertEqual(hygiene["review_required_count"], 0)
         self.assertEqual(hygiene["cleanup_policy"], "manual_only_no_delete_on_get")
-        self.assertEqual(hygiene["cleanup_task_status"], "not_implemented")
+        self.assertEqual(hygiene["cleanup_task_status"], "dry_run_button_gated")
+        self.assertEqual(hygiene["cleanup_dry_run_route"], "POST /api/storage/artifact-hygiene/dry-run")
         self.assertTrue(hygiene["dry_run_required_before_delete"])
         self.assertFalse(hygiene["delete_files_on_get"])
         self.assertFalse(hygiene["auto_cleanup_on_get"])
@@ -1329,6 +1334,89 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("*.sqlite", hygiene["git_excluded_patterns"])
         self.assertIn(".stock_ming_3/", hygiene["git_excluded_patterns"])
         self.assertNotIn("local fixture", json.dumps(hygiene, ensure_ascii=False))
+
+    def test_storage_artifact_cleanup_dry_run_task_never_deletes_or_reads_payloads(self):
+        db_path = self._with_meta_store()
+        original_root = storage_service.PROJECT_ROOT
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        (root / ".stock_ming_3").mkdir()
+        (root / ".stock_ming_3" / "meta.sqlite").write_text("local fixture secret=SHOULD_NOT_LEAK", encoding="utf-8")
+        (root / "desktop" / "dist").mkdir(parents=True)
+        storage_service.PROJECT_ROOT = root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, storage_service, "PROJECT_ROOT", original_root)
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        task = storage_service.run_storage_artifact_cleanup_dry_run_task(
+            {"source": "unit_test", "api_key": "SHOULD_DROP", "confirm_delete": True}
+        )
+
+        self.assertEqual(task["task_type"], "run_storage_artifact_cleanup_dry_run")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "storage_artifact_cleanup_dry_run_completed")
+        self.assertEqual(task["output_packet_key"], "command_center_3_storage_artifact_cleanup_dry_run_packet")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertEqual(task["call_ledger"][0]["api"], "local_storage_artifact_cleanup_dry_run")
+        self.assertEqual(task["call_ledger"][0]["endpoint"], "POST /api/storage/artifact-hygiene/dry-run")
+        self.assertFalse(task["call_ledger"][0]["external"])
+        self.assertEqual(task["call_ledger"][0]["call_status"], "dry_run_completed")
+        self.assertTrue((root / ".stock_ming_3" / "meta.sqlite").exists())
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_3_storage_artifact_cleanup_dry_run_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["mode"], "dry_run")
+        self.assertEqual(persisted["cleanup_policy"], "dry_run_only_no_delete")
+        self.assertFalse(persisted["delete_files_on_post"])
+        self.assertFalse(persisted["auto_cleanup_on_post"])
+        self.assertFalse(persisted["would_delete_files"])
+        self.assertTrue(persisted["does_not_read_file_payloads"])
+        self.assertTrue(persisted["does_not_scan_secret_values"])
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertTrue(persisted["does_not_execute_trades"])
+        rows_by_artifact = {row["artifact"]: row for row in persisted["candidate_rows"]}
+        self.assertEqual(rows_by_artifact["command_center_runtime_cache"]["dry_run_status"], "present_manual_review_required")
+        self.assertFalse(rows_by_artifact["command_center_runtime_cache"]["would_delete_on_this_task"])
+        self.assertEqual(rows_by_artifact["desktop_build_output"]["candidate_action"], "manual_cleanup_candidate_after_review")
+        dumped = json.dumps({"task": task, "packet": persisted}, ensure_ascii=False)
+        self.assertNotIn("SHOULD_DROP", dumped)
+        self.assertNotIn("SHOULD_NOT_LEAK", dumped)
+
+    def test_storage_artifact_cleanup_dry_run_endpoint_is_button_gated_local_task(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).post(
+            "/api/storage/artifact-hygiene/dry-run",
+            json={"source": "api_test", "token": "SHOULD_DROP", "confirm_delete": True},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertIn("task_id", response["data"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_storage_artifact_cleanup_dry_run")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "storage_artifact_cleanup_dry_run_completed")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_storage_artifact_cleanup_dry_run")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_storage_sqlite_meta_status_lists_metadata_without_payloads(self):
         db_path = self._with_meta_store()
@@ -2806,7 +2894,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 8)
+        self.assertEqual(catalog["task_count"], 9)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -2825,7 +2913,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 8)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 9)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -2836,8 +2924,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 10)
-        self.assertEqual(route_coverage["task_creation_route_count"], 8)
+        self.assertEqual(route_coverage["known_post_route_count"], 11)
+        self.assertEqual(route_coverage["task_creation_route_count"], 9)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -2846,11 +2934,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 8)
+        self.assertEqual(implementation_status["task_count"], 9)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 5)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 6)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 6)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 7)
         self.assertEqual(implementation_status["external_capable_task_count"], 5)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -2864,6 +2952,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_light",
                 "build_next_session_projection",
                 "run_candidate_radar_quick_scan",
+                "run_storage_artifact_cleanup_dry_run",
             },
         )
         self.assertEqual(implementation_status["guarded_local_task_types"], ["run_deepseek_factor_explanation"])
@@ -2875,6 +2964,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_light",
                 "build_next_session_projection",
                 "run_candidate_radar_quick_scan",
+                "run_storage_artifact_cleanup_dry_run",
                 "run_deepseek_factor_explanation",
             },
         )
@@ -2967,6 +3057,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ["quick_cache_scan", "watchlist_scan", "custom_pool_scan"],
         )
         self.assertIn("full_pool_scan", by_type["run_candidate_radar_quick_scan"]["future_scan_modes"])
+        self.assertEqual(by_type["run_storage_artifact_cleanup_dry_run"]["route"], "POST /api/storage/artifact-hygiene/dry-run")
+        self.assertEqual(by_type["run_storage_artifact_cleanup_dry_run"]["current_backend"], "local_cache_pipeline")
+        self.assertEqual(by_type["run_storage_artifact_cleanup_dry_run"]["possible_external_sources"], [])
+        self.assertEqual(by_type["run_storage_artifact_cleanup_dry_run"]["external_call_policy"], "local_dry_run_no_delete_no_external_call")
+        self.assertEqual(by_type["run_storage_artifact_cleanup_dry_run"]["cleanup_policy"], "dry_run_only_no_delete")
+        self.assertFalse(by_type["run_storage_artifact_cleanup_dry_run"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_storage_artifact_cleanup_dry_run"]["delete_files_on_post"])
+        self.assertFalse(by_type["run_storage_artifact_cleanup_dry_run"]["reads_file_payloads"])
+        self.assertFalse(by_type["run_storage_artifact_cleanup_dry_run"]["reads_env_files"])
+        self.assertTrue(by_type["run_storage_artifact_cleanup_dry_run"]["call_ledger_required"])
 
     def test_task_catalog_covers_all_fastapi_post_routes(self):
         catalog = task_service.build_task_catalog()
@@ -2983,6 +3083,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/run-light", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
         self.assertIn("POST /api/candidate-radar/scan-quick", discovered_routes)
+        self.assertIn("POST /api/storage/artifact-hygiene/dry-run", discovered_routes)
 
     def test_worker_runtime_cache_reads_local_scaffold_without_starting_backends(self):
         self._with_meta_store()
@@ -3002,16 +3103,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 5)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 6)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 6)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 7)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 5)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 6)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 6)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 7)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -3081,9 +3182,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 5)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 6)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 6)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 7)
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])
@@ -3147,9 +3248,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 5)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 6)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 6)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 7)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 5)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -3180,9 +3281,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 5)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 6)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 6)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 7)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -4130,9 +4231,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 8)
+        self.assertEqual(task_catalog["data"]["task_count"], 9)
         self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/scan-quick", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn("POST /api/storage/artifact-hygiene/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertTrue(task_catalog["data"]["policy"]["get_catalog_cache_only"])
         self.assertTrue(task_catalog["data"]["policy"]["all_tasks_button_gated"])
         self.assertTrue(task_catalog["data"]["policy"]["call_ledger_required_for_all"])

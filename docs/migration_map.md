@@ -27,7 +27,7 @@
 | Serenity 方法雷达 | `command_center_serenity_method_radar.py`, `app.py` | `GET /api/serenity/cache`, `POST /api/serenity/github-probe` | `SerenityMethodRadar.tsx` | cache 使用本地方法基线；probe 后续外联 | 是，POST 当前 stub |
 | DeepSeek 解释器 | `analysis_engine.py`, `deepseek_safety.py`, `command_center_*` | `POST /api/factor-quant/deepseek-explain` 等 | 页面按钮 | 只解释已有结构化结果 | 是，当前 stub |
 | Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否；读取优先级为 `sqlite_meta > snapshot > local_builder > missing` | 否 |
-| Storage datasets | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage`, `GET /api/storage/catalog`, `GET /api/storage/{dataset}` | `CommandCenterHome.tsx` | 否，只读 Parquet/DuckDB 状态和数据集目录；白名单 `factor_values/daily/daily_basic/moneyflow/trade_cal/backtest_results` | 否 |
+| Storage datasets | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage`, `GET /api/storage/catalog`, `GET /api/storage/{dataset}`, `POST /api/storage/artifact-hygiene/dry-run` | `CommandCenterHome.tsx`, `StorageOverview.tsx` | GET 只读 Parquet/DuckDB 状态、数据集目录和 artifact hygiene；POST dry-run 只生成本地清理预检任务和候选清单，不删除文件、不读取 payload、不外联 | 是，artifact cleanup dry-run 为本地按钮任务；真实 cleanup 仍未接入 |
 | Worker / Task runtime | `worker/celery_app.py`, `worker/tasks_*.py`, `worker/scheduler.py`, `server/services/task_service.py` | `GET /api/worker/cache`, `GET /api/tasks`, `POST /api/tasks/{task_id}/cancel` | `WorkerRuntime.tsx`, `TaskCatalog.tsx` | cache GET 不连接 Redis、不启动 Celery、不启动 APScheduler；取消任务只改本地状态 | 是，POST task / cancel 走 FastAPI lifecycle |
 | Tauri desktop shell | `desktop/src-tauri/*`, `scripts/check_tauri_env.sh`, `server/services/desktop_service.py` | `GET /api/desktop/preflight-cache`，连接本地 FastAPI `8710` | `DesktopShellPreflight.tsx` / Tauri window / Vite dev | 否，预检只展示 `api_base_info` 与 `dev_launch_plan`，不启动 Tauri、不自动拉起 FastAPI | 否 |
 | Streamlit 旧工作台 | `app.py`, `visual_components.py` | `GET /api/legacy/cache`；作为 legacy | `LegacyTools.tsx` | cache GET 只读展示旧工作台桥接、迁移清单、旧数据缺失账本，不运行旧工具 | 后续任务化；当前不提供 POST |
@@ -53,6 +53,7 @@
 - `/api/storage/catalog`
 - `/api/storage/factor-values`
 - `/api/storage/{dataset}`
+- `POST /api/storage/artifact-hygiene/dry-run`
 - `/api/legacy/cache`
 - `/api/strategy/cache`
 - `/api/position/cache`
