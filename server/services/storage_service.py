@@ -24,6 +24,14 @@ SUPPORTED_PARQUET_DATASETS = {
     "backtest-results": "backtest_results",
 }
 CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"]
+DATASET_TTL_SECONDS = {
+    "factor_values": 6 * 60 * 60,
+    "daily": 24 * 60 * 60,
+    "daily_basic": 24 * 60 * 60,
+    "moneyflow": 24 * 60 * 60,
+    "trade_cal": 14 * 24 * 60 * 60,
+    "backtest_results": 30 * 24 * 60 * 60,
+}
 DATASET_CATALOG = [
     {
         "dataset": "factor_values",
@@ -105,6 +113,36 @@ def _path_label(path: Path) -> str:
         return str(path.relative_to(PROJECT_ROOT))
     except ValueError:
         return str(path)
+
+
+def _cache_ttl_status(dataset: str, path: Path, metadata: Mapping[str, Any]) -> dict[str, Any]:
+    ttl_seconds = int(DATASET_TTL_SECONDS.get(dataset, 24 * 60 * 60))
+    exists = bool(metadata.get("exists"))
+    state = "missing"
+    age_seconds = None
+    stale_reason = "dataset_missing"
+    if exists and path.exists():
+        updated_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+        age_seconds = max(0, int((datetime.now(timezone.utc) - updated_at).total_seconds()))
+        state = "fresh" if age_seconds <= ttl_seconds else "stale"
+        stale_reason = "within_ttl" if state == "fresh" else "age_exceeds_ttl"
+    return {
+        "dataset": dataset,
+        "ttl_seconds": ttl_seconds,
+        "ttl_hours": round(ttl_seconds / 3600, 2),
+        "cache_age_seconds": age_seconds,
+        "ttl_state": state,
+        "stale_reason": stale_reason,
+        "refresh_policy": "post_task_required",
+        "auto_refresh_on_get": False,
+        "cache_read_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
 
 
 def _canonical_dataset(dataset: str) -> str:
@@ -199,9 +237,9 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "cache_ttl",
-            "status": "planned",
-            "current_coverage": "cache reads are explicit and safe; freshness TTL is not yet a storage-level invalidation policy.",
-            "next_action": "store per-packet TTL and stale reason without auto-refreshing GET cache.",
+            "status": "local_ready",
+            "current_coverage": "Parquet cache endpoints expose audit-only TTL state and stale reason without auto-refreshing GET cache.",
+            "next_action": "wire TTL state into task scheduling hints while keeping refresh explicit and button-gated.",
             "external_calls_triggered": False,
         },
         {
@@ -264,7 +302,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "production_control_rows": _storage_production_control_rows(),
         "blockers": blockers,
         "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
-        "cache_ttl_policy": "not_enabled_yet",
+        "cache_ttl_policy": "audit_only_no_auto_refresh",
         "compaction_policy": "planned_for_full_market_factor_research",
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -411,6 +449,7 @@ def parquet_dataset_status(
         )
     path = parquet_store.dataset_path(root=PARQUET_ROOT, name=selected)
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=selected)
+    cache_ttl = _cache_ttl_status(selected, path, metadata)
     query = duckdb_store.query_parquet_dataset(
         path,
         limit=limit,
@@ -427,6 +466,7 @@ def parquet_dataset_status(
         "status": metadata.get("status", "missing"),
         "dataset": selected,
         "metadata": metadata,
+        "cache_ttl": cache_ttl,
         "query": query,
         "query_wrapper": query.get("query_wrapper"),
         "query_filters": query.get("query_filters") or {},
@@ -598,6 +638,8 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
         "dataset_count": len(CANONICAL_PARQUET_DATASETS),
         "dataset_status": {item["dataset"]: item["metadata"]["status"] for item in datasets},
+        "dataset_ttl_status": {item["dataset"]: item["cache_ttl"]["ttl_state"] for item in datasets},
+        "dataset_ttl_state_counts": _count_values(item["cache_ttl"]["ttl_state"] for item in datasets),
         "dataset_implementation_state_counts": implementation_status["state_counts"],
         "dataset_parquet_status_counts": implementation_status["parquet_status_counts"],
         "production_readiness": production_readiness,

@@ -1035,6 +1035,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(status["call_ledger"][0]["api"], "local_storage_factor_values_cache")
         self.assertFalse(status["call_ledger"][0]["external"])
         self.assertIn("GET /api/storage/factor-values", status["warnings"][0])
+        self.assertEqual(status["cache_ttl"]["ttl_state"], "missing")
+        self.assertFalse(status["cache_ttl"]["auto_refresh_on_get"])
+        self.assertEqual(status["cache_ttl"]["refresh_policy"], "post_task_required")
 
     def test_storage_overview_covers_daily_moneyflow_and_factor_values(self):
         self._with_parquet_root()
@@ -1078,6 +1081,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("cache_ttl", controls_by_key)
         self.assertIn("parquet_compaction", controls_by_key)
         self.assertEqual(controls_by_key["parquet_partitioning"]["status"], "planned")
+        self.assertEqual(controls_by_key["cache_ttl"]["status"], "local_ready")
+        self.assertEqual(overview["production_readiness"]["cache_ttl_policy"], "audit_only_no_auto_refresh")
+        self.assertEqual(set(overview["dataset_ttl_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
+        self.assertIn("missing", overview["dataset_ttl_state_counts"])
         self.assertTrue(all(row["external_calls_triggered"] is False for row in controls_by_key.values()))
         self.assertFalse(overview["production_readiness"]["external_calls_triggered"])
         self.assertFalse(overview["production_readiness"]["tushare_called"])
@@ -1104,6 +1111,49 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(overview["call_ledger"][0]["api"], "local_storage_overview_cache")
         self.assertFalse(overview["call_ledger"][0]["external"])
         self.assertIn("GET /api/storage", overview["warnings"][0])
+
+    def test_storage_cache_ttl_marks_stale_without_auto_refreshing(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        import pandas as pd
+
+        root = self._with_parquet_root()
+        out = storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"ts_code": ["002008.SZ"], "trade_date": ["20260611"], "close": [10.8]}),
+            root=root,
+            name="daily",
+        )
+        old_timestamp = 1_700_000_000
+        os.utime(out["path"], (old_timestamp, old_timestamp))
+
+        status = storage_service.parquet_dataset_status("daily")
+
+        self.assertEqual(status["cache_ttl"]["ttl_state"], "stale")
+        self.assertEqual(status["cache_ttl"]["stale_reason"], "age_exceeds_ttl")
+        self.assertFalse(status["cache_ttl"]["auto_refresh_on_get"])
+        self.assertFalse(status["cache_ttl"]["external_calls_triggered"])
+        self.assertFalse(status["cache_ttl"]["tushare_called"])
+        self.assertTrue(status["cache_ttl"]["does_not_modify_strategy_action"])
+        self.assertTrue(status["cache_ttl"]["does_not_execute_trades"])
+
+    def test_storage_cache_ttl_marks_fresh_local_dataset(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        import pandas as pd
+
+        root = self._with_parquet_root()
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"ts_code": ["002008.SZ"], "trade_date": ["20260611"], "close": [10.8]}),
+            root=root,
+            name="daily",
+        )
+
+        status = storage_service.parquet_dataset_status("daily")
+
+        self.assertEqual(status["cache_ttl"]["ttl_state"], "fresh")
+        self.assertEqual(status["cache_ttl"]["stale_reason"], "within_ttl")
+        self.assertFalse(status["cache_ttl"]["auto_refresh_on_get"])
+        self.assertFalse(status["external_calls_triggered"])
 
     def test_storage_dataset_catalog_is_independent_cache_only_endpoint(self):
         catalog = storage_service.storage_dataset_catalog()
