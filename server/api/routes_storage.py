@@ -72,6 +72,12 @@ def run_storage_compaction_dry_run(payload: dict[str, Any] | None = None) -> dic
     return task_envelope(task)
 
 
+@router.post("/cache-ttl/dry-run")
+def run_storage_cache_ttl_dry_run(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_cache_ttl_dry_run_task(payload)
+    return task_envelope(task)
+
+
 @router.get("/{dataset}")
 def get_parquet_dataset_status(
     dataset: str,

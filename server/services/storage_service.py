@@ -17,6 +17,7 @@ ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup
 SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validation_dry_run_packet"
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
+CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -272,6 +273,165 @@ def _cache_ttl_status(dataset: str, path: Path, metadata: Mapping[str, Any]) -> 
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
     }
+
+
+def _cache_ttl_dry_run_row(dataset: str) -> dict[str, Any]:
+    path = parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)
+    metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
+    ttl_status = _cache_ttl_status(dataset, path, metadata)
+    catalog_item = _dataset_catalog_item(dataset)
+    ttl_state = str(ttl_status.get("ttl_state") or "unknown")
+    if ttl_state == "stale":
+        dry_run_status = "refresh_recommended"
+    elif ttl_state == "fresh":
+        dry_run_status = "fresh_no_action"
+    elif ttl_state == "missing":
+        dry_run_status = "missing_dataset"
+    else:
+        dry_run_status = ttl_state
+    refresh_policy = str(catalog_item.get("external_refresh_policy") or "")
+    return {
+        "dataset": dataset,
+        "status": dry_run_status,
+        "cache_ttl_dry_run_status": dry_run_status,
+        "ttl_state": ttl_state,
+        "stale_reason": ttl_status.get("stale_reason"),
+        "ttl_seconds": ttl_status.get("ttl_seconds"),
+        "ttl_hours": ttl_status.get("ttl_hours"),
+        "cache_age_seconds": ttl_status.get("cache_age_seconds"),
+        "path": _path_label(path),
+        "parquet_status": metadata.get("status", "missing"),
+        "refresh_policy": "post_task_required",
+        "refresh_task_required": True,
+        "refresh_recommended": dry_run_status == "refresh_recommended",
+        "refresh_task_route": catalog_item.get("writer"),
+        "external_refresh_policy": refresh_policy,
+        "button_gated": "button_gated" in refresh_policy or str(catalog_item.get("write_policy") or "") == "task_pipeline_write_allowed",
+        "tushare_capable": "tushare" in refresh_policy,
+        "local_compute_capable": "local_compute" in refresh_policy or "local_cache_pipeline" in refresh_policy,
+        "auto_refresh_on_get": False,
+        "auto_refresh_on_post": False,
+        "refresh_executed": False,
+        "would_call_external_source": False,
+        "would_write_parquet": False,
+        "post_dry_run_writes_parquet": False,
+        "post_dry_run_reads_row_payloads": False,
+        "cache_get_writes_files": False,
+        "cache_get_reads_payloads": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def storage_cache_ttl_dry_run_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    rows = [_cache_ttl_dry_run_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    status_counts = _count_values(row.get("cache_ttl_dry_run_status") for row in rows)
+    refresh_recommended_count = sum(1 for row in rows if row.get("refresh_recommended"))
+    packet = {
+        "schema_version": "command_center_3_storage_cache_ttl_dry_run.v1",
+        "packet_key": CACHE_TTL_DRY_RUN_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": "dry_run_completed",
+        "mode": "dry_run",
+        "scope": "cache_ttl_refresh_plan_before_provider_call",
+        "dataset_count": len(rows),
+        "refresh_recommended_count": refresh_recommended_count,
+        "fresh_no_action_count": status_counts.get("fresh_no_action", 0),
+        "missing_dataset_count": status_counts.get("missing_dataset", 0),
+        "refresh_executed_count": 0,
+        "status_counts": status_counts,
+        "rows": rows,
+        "request_params_safe": {
+            "source": (payload_safe or {}).get("source") or "storage_page_button",
+            "dry_run": True,
+            "external_sources_allowed": False,
+            "refresh_allowed": False,
+            "write_parquet_allowed": False,
+        },
+        "cache_get_writes_files": False,
+        "post_dry_run_writes_parquet": False,
+        "post_dry_run_reads_row_payloads": False,
+        "post_dry_run_reads_env_files": False,
+        "auto_refresh_on_get": False,
+        "refresh_executed": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_cache_ttl_dry_run",
+            endpoint="POST /api/storage/cache-ttl/dry-run",
+            status="dry_run_completed",
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "POST /api/storage/cache-ttl/dry-run 只生成本地 TTL 刷新建议；不会刷新数据。",
+            "cache TTL dry-run 不读取行 payload、不写 Parquet、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+    return packet
+
+
+def run_storage_cache_ttl_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "dry_run": True,
+        "external_sources_allowed": False,
+        "refresh_allowed": False,
+        "write_parquet_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_cache_ttl_dry_run",
+        output_packet_key=CACHE_TTL_DRY_RUN_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_cache_ttl_dry_run_queued",
+        warnings=[
+            "storage cache TTL dry-run 只读取本地文件 metadata/mtime；不会刷新外部源、不会读取行 payload、不会写 Parquet。",
+            "任何真实 refresh 必须走单独按钮任务；本任务不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="building_storage_cache_ttl_refresh_plan",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_cache_ttl_dry_run_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(CACHE_TTL_DRY_RUN_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_cache_ttl_dry_run_storage_write_failed",
+            error_message_safe="storage_cache_ttl_dry_run_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_cache_ttl_dry_run_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_cache_ttl_dry_run_completed",
+        call_ledger=packet["call_ledger"],
+        warning="storage_cache_ttl_dry_run_completed_no_refresh_no_external_call",
+    ) or task
 
 
 def _schema_contract(dataset: str) -> dict[str, Any]:
@@ -1162,9 +1322,9 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "cache_ttl",
-            "status": "local_ready",
-            "current_coverage": "Parquet cache endpoints expose audit-only TTL state and stale reason without auto-refreshing GET cache.",
-            "next_action": "wire TTL state into task scheduling hints while keeping refresh explicit and button-gated.",
+            "status": "button_gated_ready",
+            "current_coverage": "Parquet cache endpoints expose audit-only TTL state and POST cache TTL dry-run records refresh-recommended/fresh/missing rows without refreshing data.",
+            "next_action": "review TTL dry-run before launching any explicit provider refresh task.",
             "external_calls_triggered": False,
         },
         {
@@ -1494,7 +1654,12 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "partition_migration_dry_run_button_gated": True,
         "partition_migration_dry_run_writes_parquet": False,
         "partition_migration_dry_run_reads_row_payloads": False,
-        "cache_ttl_policy": "audit_only_no_auto_refresh",
+        "cache_ttl_policy": "dry_run_button_gated_no_auto_refresh",
+        "cache_ttl_dry_run_route": "POST /api/storage/cache-ttl/dry-run",
+        "cache_ttl_dry_run_button_gated": True,
+        "cache_ttl_dry_run_writes_parquet": False,
+        "cache_ttl_dry_run_reads_row_payloads": False,
+        "cache_ttl_refresh_executed_count": 0,
         "compaction_policy": "dry_run_button_gated_no_parquet_rewrite",
         "compaction_dry_run_route": "POST /api/storage/compaction/dry-run",
         "compaction_dry_run_button_gated": True,

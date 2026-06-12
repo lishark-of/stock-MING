@@ -6,6 +6,7 @@ import {
   getStorageDataset,
   getStorageOverview,
   postStorageArtifactCleanupDryRun,
+  postStorageCacheTtlDryRun,
   postStorageCompactionDryRun,
   postStoragePartitionMigrationDryRun,
   postStorageSchemaValidationDryRun,
@@ -37,6 +38,8 @@ export default function StorageOverview() {
   const [partitionDryRunReceipt, setPartitionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [compactionDryRunTaskId, setCompactionDryRunTaskId] = useState("");
   const [compactionDryRunReceipt, setCompactionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [cacheTtlDryRunTaskId, setCacheTtlDryRunTaskId] = useState("");
+  const [cacheTtlDryRunReceipt, setCacheTtlDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -74,6 +77,11 @@ export default function StorageOverview() {
     void postStorageCompactionDryRun({ source: "storage_overview_button" }).then((res) => {
       setCompactionDryRunReceipt(res);
       if (res.ok) setCompactionDryRunTaskId(res.data.task_id);
+    });
+  const launchCacheTtlDryRun = () =>
+    void postStorageCacheTtlDryRun({ source: "storage_overview_button" }).then((res) => {
+      setCacheTtlDryRunReceipt(res);
+      if (res.ok) setCacheTtlDryRunTaskId(res.data.task_id);
     });
 
   useEffect(() => {
@@ -148,6 +156,7 @@ export default function StorageOverview() {
     ...datasetCards.flatMap((item) => ((item.packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? []).map((row) => ({ dataset: item.label, ...row }))),
     ...((sqliteMeta.call_ledger as Array<Record<string, unknown>> | undefined) ?? []).map((row) => ({ dataset: "sqlite_meta", ...row }))
   ];
+  const productionReadiness = (overview.production_readiness as Record<string, unknown> | undefined) ?? {};
 
   return (
     <>
@@ -249,11 +258,23 @@ export default function StorageOverview() {
         <DataLineageTable rows={datasetVersionRows} />
       </PacketCard>
 
-      <PacketCard title="Compaction dry-run" subtitle="按钮门控生成 Parquet 压缩预检清单；不重写 Parquet、不读行 payload" status={String(overview.production_readiness && (overview.production_readiness as Record<string, unknown>).compaction_policy ? "button_gated_ready" : "audit_ready")}>
-        <p>compaction_policy: {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_policy ?? "dry_run_button_gated_no_parquet_rewrite")}</p>
-        <p>compaction_dry_run_route: {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_dry_run_route ?? "POST /api/storage/compaction/dry-run")}</p>
-        <p>recommended / executed: {String(overview.manual_compaction_recommended_count ?? 0)} / {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_executed_count ?? 0)}</p>
-        <p>writes_parquet / reads_row_payloads: {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_dry_run_writes_parquet ?? false)} / {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_dry_run_reads_row_payloads ?? false)}</p>
+      <PacketCard title="Cache TTL dry-run" subtitle="按钮门控生成缓存刷新建议；不自动刷新、不调用 Tushare、不写 Parquet" status={String(productionReadiness.cache_ttl_policy ? "button_gated_ready" : "audit_ready")}>
+        <p>cache_ttl_policy: {String(productionReadiness.cache_ttl_policy ?? "dry_run_button_gated_no_auto_refresh")}</p>
+        <p>cache_ttl_dry_run_route: {String(productionReadiness.cache_ttl_dry_run_route ?? "POST /api/storage/cache-ttl/dry-run")}</p>
+        <p>ttl_state_counts: {JSON.stringify(overview.dataset_ttl_state_counts ?? {})}</p>
+        <p>refresh_executed / writes_parquet: {String(productionReadiness.cache_ttl_refresh_executed_count ?? 0)} / {String(productionReadiness.cache_ttl_dry_run_writes_parquet ?? false)}</p>
+        <div className="actions">
+          <button onClick={launchCacheTtlDryRun}>生成 cache TTL dry-run</button>
+        </div>
+        <TaskLaunchReceipt receipt={cacheTtlDryRunReceipt} />
+        <TaskStatusPanel taskId={cacheTtlDryRunTaskId} onSuccess={refreshStorage} />
+      </PacketCard>
+
+      <PacketCard title="Compaction dry-run" subtitle="按钮门控生成 Parquet 压缩预检清单；不重写 Parquet、不读行 payload" status={String(productionReadiness.compaction_policy ? "button_gated_ready" : "audit_ready")}>
+        <p>compaction_policy: {String(productionReadiness.compaction_policy ?? "dry_run_button_gated_no_parquet_rewrite")}</p>
+        <p>compaction_dry_run_route: {String(productionReadiness.compaction_dry_run_route ?? "POST /api/storage/compaction/dry-run")}</p>
+        <p>recommended / executed: {String(overview.manual_compaction_recommended_count ?? 0)} / {String(productionReadiness.compaction_executed_count ?? 0)}</p>
+        <p>writes_parquet / reads_row_payloads: {String(productionReadiness.compaction_dry_run_writes_parquet ?? false)} / {String(productionReadiness.compaction_dry_run_reads_row_payloads ?? false)}</p>
         <div className="actions">
           <button onClick={launchCompactionDryRun}>生成 compaction dry-run</button>
         </div>

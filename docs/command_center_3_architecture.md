@@ -81,6 +81,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `POST /api/storage/schema-validation/dry-run`
 - `POST /api/storage/partition-migration/dry-run`
 - `POST /api/storage/compaction/dry-run`
+- `POST /api/storage/cache-ttl/dry-run`
 - `GET /api/tasks/catalog`
 - `GET /api/tasks/{task_id}`
 
@@ -113,6 +114,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `POST /api/storage/schema-validation/dry-run` 读取本地 Parquet schema metadata，比较物理列与 schema contract，输出 `schema_validated` / `schema_mismatch` / `missing_dataset`，但不读取行 payload、不写 Parquet、不执行真实迁移。
 - `POST /api/storage/partition-migration/dry-run` 结合 schema validation 与 partition contract 生成分区迁移计划，输出 ready/blocked/missing 行；不会读取行 payload、不会写 partitioned Parquet、不会执行真实迁移。
 - `POST /api/storage/compaction/dry-run` 基于本地 Parquet metadata 和 size threshold 生成 compaction ready/not-needed/missing 行；不会读取行 payload、不会重写 Parquet、不会执行物理压缩。
+- `POST /api/storage/cache-ttl/dry-run` 基于本地文件 metadata 生成 TTL fresh/stale/missing 与 refresh recommendation 清单；不会补数、不会调用 Tushare/DeepSeek/GitHub、不会写 Parquet，也不代表 provider refresh 已完成。
 - `GET /api/storage/catalog` 独立暴露 dataset catalog，供前端、worker 和后续任务读取数据集用途、别名、写入边界和未来任务归属；该接口只读、不写 Parquet、不外联。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
@@ -186,6 +188,7 @@ scripts/run_scheduler.sh
 - Schema validation dry-run：按钮门控读取 Parquet schema metadata，比较实际列与 canonical contract；它可以证明某个本地文件当前 schema 是否匹配，但仍不是 production migration，也不会重写数据集。
 - Partition migration dry-run：按钮门控生成目标 partitioned path、partition columns、ready/blocked/missing 状态；它不调用 partition writer，不创建分区目录，不代表真实 partition migration 完成。
 - Compaction dry-run：按钮门控生成 compaction ready/not-needed/missing 清单；它不调用 compaction writer、不重写 Parquet、不代表真实 compaction 完成。
+- Cache TTL dry-run：按钮门控生成 fresh/stale/missing 与 refresh-recommended 清单；它只读取本地文件状态，不执行 provider refresh、不写 Parquet、不读取行 payload、不代表数据新鲜度生产验收完成。
 - Artifact hygiene：`GET /api/storage` 只读展示 `.stock_ming_3`、legacy cache、frontend build、Node dependencies、Tauri target 和 Python bytecode 的路径级边界；`POST /api/storage/artifact-hygiene/dry-run` 只生成本地清理预检任务和候选清单。两者都不会删除文件、读取 payload、扫描 secret 值、刷新外部服务或修改 `strategy action`。
 - Redis：Celery broker、任务状态、热点 packet cache；未安装时可使用 memory fallback。
 
