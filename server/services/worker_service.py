@@ -212,9 +212,9 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "task_logs",
-            "status": "partial_ready",
-            "current_coverage": "task packets preserve call_ledger and error_message_safe; step-level append-only logs are not persisted.",
-            "next_action": "persist safe task step logs without stack traces, tokens, or raw provider payloads.",
+            "status": "local_ready",
+            "current_coverage": "task packets persist safe task_log entries alongside call_ledger and error_message_safe; no raw payloads, stack traces, or tokens are included.",
+            "next_action": "move safe task logs to append-only worker log storage when Celery/Redis production worker is enabled.",
             "external_calls_triggered": False,
         },
     ]
@@ -290,6 +290,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "latest_task_type": task_index.get("latest_task_type"),
             "latest_task_status": task_index.get("latest_task_status"),
             "call_ledger_count": task_index.get("call_ledger_count", 0),
+            "task_log_count": task_index.get("task_log_count", 0),
             "persistence": task_persistence,
             "persistence_source_rows": task_persistence_source_rows,
             "memory_task_count": task_persistence.get("memory_task_count", 0),

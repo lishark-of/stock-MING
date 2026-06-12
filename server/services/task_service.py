@@ -371,6 +371,27 @@ def _status_event(status: str, *, progress: float, current_step: str, at: str | 
     }
 
 
+def _task_log_event(
+    event: str,
+    *,
+    status: str,
+    current_step: str,
+    message: str = "",
+    at: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "event": _safe_text(event, limit=80),
+        "status": status if status in TASK_STATUSES else "unknown",
+        "current_step": _safe_text(current_step, limit=160),
+        "message_safe": _safe_text(message, limit=240),
+        "at": at or _now_iso(),
+        "external": False,
+        "external_calls_triggered": False,
+        "contains_secret": False,
+        "stack_trace_included": False,
+    }
+
+
 def _persist_task(task: dict[str, Any]) -> dict[str, Any]:
     _TASKS[str(task["task_id"])] = task
     try:
@@ -533,6 +554,15 @@ def build_task_record(
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "status_history": [_status_event(selected_status, progress=progress, current_step=current_step, at=now)],
+        "task_log": [
+            _task_log_event(
+                "task_created",
+                status=selected_status,
+                current_step=current_step,
+                message="local task record created without external work",
+                at=now,
+            )
+        ],
     }
     return record
 
@@ -601,6 +631,15 @@ def update_task_status(
     task.setdefault("status_history", []).append(
         _status_event(status, progress=float(task.get("progress") or 0.0), current_step=str(task.get("current_step") or ""), at=now)
     )
+    task.setdefault("task_log", []).append(
+        _task_log_event(
+            "task_status_updated",
+            status=status,
+            current_step=str(task.get("current_step") or ""),
+            message=error_message_safe or warning or "local task status updated",
+            at=now,
+        )
+    )
     return _persist_task(task)
 
 
@@ -618,6 +657,15 @@ def cancel_task(task_id: str, payload: Any = None) -> dict[str, Any] | None:
     if task.get("status") in terminal:
         task["call_ledger"] = cancel_ledger
         task.setdefault("warnings", []).append("task_cancel_noop_already_terminal")
+        task.setdefault("task_log", []).append(
+            _task_log_event(
+                "task_cancel_noop_already_terminal",
+                status=str(task.get("status") or "unknown"),
+                current_step=str(task.get("current_step") or ""),
+                message=reason_safe,
+                at=now,
+            )
+        )
         task["external_calls_triggered"] = False
         task["deepseek_called"] = False
         task["tushare_called"] = False
@@ -708,6 +756,7 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         "task_rows_include_idempotency_key": True,
         "task_rows_include_lock_key": True,
         "task_rows_include_retry_policy": True,
+        "task_rows_include_task_log": True,
         "storage_backend": "memory_plus_sqlite_fallback",
         "sqlite_fallback_enabled": True,
         "sqlite_meta_path_label": ".stock_ming_3/meta.sqlite",
@@ -720,6 +769,7 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             len([task for task in sorted_tasks if task.get("idempotency_key")])
             - len({str(task.get("idempotency_key") or "") for task in sorted_tasks if task.get("idempotency_key")}),
         ),
+        "task_log_count": sum(len(task.get("task_log") or []) for task in sorted_tasks),
         "memory_only_task_count": len(memory_ids - persisted_ids),
         "sqlite_only_task_count": len(persisted_ids - memory_ids),
         "memory_and_sqlite_task_count": len(shared_ids),
@@ -749,6 +799,7 @@ def build_task_status_index() -> dict[str, Any]:
     github_called = any(task.get("github_called") is True for task in tasks)
     does_not_execute_trades = all(task.get("does_not_execute_trades") is not False for task in tasks)
     does_not_modify_strategy_action = all(task.get("does_not_modify_strategy_action") is not False for task in tasks)
+    task_log_count = sum(len(task.get("task_log") or []) for task in tasks)
     latest_task = tasks[0] if tasks else {}
     return {
         "packet_key": "command_center_3_task_status_index",
@@ -762,6 +813,7 @@ def build_task_status_index() -> dict[str, Any]:
         "latest_task_type": latest_task.get("task_type"),
         "latest_task_status": latest_task.get("status"),
         "call_ledger_count": call_ledger_count,
+        "task_log_count": task_log_count,
         "persistence": persistence,
         "persistence_source_rows": [
             {"source": "memory", "task_count": persistence["memory_task_count"], "external": False},
@@ -776,6 +828,8 @@ def build_task_status_index() -> dict[str, Any]:
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
+            "task_logs_safe": True,
+            "task_logs_include_no_raw_payload": True,
         },
         "external_calls_triggered": external_calls_triggered,
         "tushare_called": tushare_called,
@@ -793,6 +847,7 @@ def build_task_status_index() -> dict[str, Any]:
                 "deduplicated_task_count": persistence["deduplicated_task_count"],
                 "idempotency_key_count": persistence["idempotency_key_count"],
                 "duplicate_idempotency_key_count": persistence["duplicate_idempotency_key_count"],
+                "task_log_count": task_log_count,
                 "storage_backend": persistence["storage_backend"],
                 "data_date": None,
                 "local_fetched_at": _now_iso(),
