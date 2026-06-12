@@ -4467,7 +4467,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(data_health["data"]["policy"]["post_task_required_for_provider_probe"])
         self.assertTrue(data_health["data"]["policy"]["freshness_acceptance_matrix_is_local_contract"])
         self.assertFalse(data_health["data"]["policy"]["freshness_acceptance_matrix_calls_trade_cal"])
+        self.assertTrue(data_health["data"]["policy"]["freshness_long_window_sample_is_local_fixture"])
+        self.assertTrue(data_health["data"]["policy"]["freshness_long_window_sample_uses_actual_gate"])
+        self.assertFalse(data_health["data"]["policy"]["freshness_long_window_sample_calls_trade_cal"])
         self.assertFalse(data_health["data"]["policy"]["real_trade_cal_long_window_validation_done"])
+        self.assertEqual(
+            data_health["data"]["freshness_long_window_sample_validation"]["status"],
+            "local_sample_validation_passed",
+        )
         self.assertTrue(data_health["data"]["does_not_modify_strategy_action"])
         self.assertTrue(data_health["data"]["does_not_execute_trades"])
 
@@ -4957,6 +4964,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         packet = response["data"]
         matrix = packet["freshness_acceptance_matrix"]
         summary = packet["freshness_acceptance_summary"]
+        sample = packet["freshness_long_window_sample_validation"]
+        sample_rows = {row["scenario_id"]: row for row in packet["freshness_long_window_sample_rows"]}
         rows_by_id = {row["scenario_id"]: row for row in matrix}
 
         self.assertEqual(summary["status"], "acceptance_matrix_ready")
@@ -4976,6 +4985,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(summary["does_not_execute_trades"])
 
         self.assertEqual(packet["counts"]["freshness_acceptance_scenario_count"], 8)
+        self.assertEqual(packet["counts"]["freshness_long_window_sample_scenario_count"], 9)
+        self.assertEqual(packet["counts"]["freshness_long_window_sample_passed_count"], 9)
+        self.assertEqual(packet["counts"]["freshness_long_window_sample_failed_count"], 0)
+        self.assertEqual(sample["status"], "local_sample_validation_passed")
+        self.assertEqual(sample["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
+        self.assertTrue(sample["local_sample_validation_done"])
+        self.assertTrue(sample["uses_actual_freshness_gate"])
+        self.assertTrue(sample["fixture_is_synthetic"])
+        self.assertFalse(sample["trade_cal_long_window_validation_done"])
+        self.assertFalse(sample["external_calls_triggered"])
+        self.assertFalse(packet["policy"]["freshness_long_window_sample_calls_trade_cal"])
+        self.assertEqual(response["call_ledger"][0]["freshness_long_window_sample_scenario_count"], 9)
+        self.assertEqual(response["call_ledger"][0]["freshness_long_window_sample_status"], "local_sample_validation_passed")
+        self.assertEqual(sample_rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
+        self.assertTrue(sample_rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
+        self.assertEqual(sample_rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")
+        self.assertEqual(sample_rows["sample_missing_today_blocks_current_evidence"]["actual_state"], "unknown")
         self.assertEqual(rows_by_id["premarket_open_day"]["expected_trade_date_rule"], "previous_completed_trading_day")
         self.assertEqual(rows_by_id["postclose_after_1630"]["expected_trade_date_rule"], "current_trading_day")
         self.assertEqual(rows_by_id["weekend_or_holiday"]["expected_trade_date_rule"], "most_recent_completed_trading_day")

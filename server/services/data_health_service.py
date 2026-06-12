@@ -14,6 +14,12 @@ SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "pass
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 
 
+def _freshness_long_window_sample_validation() -> dict[str, Any]:
+    from command_center_factor_research import build_a_share_freshness_long_window_sample_validation
+
+    return build_a_share_freshness_long_window_sample_validation()
+
+
 def _freshness_acceptance_matrix_rows() -> list[dict[str, Any]]:
     base = {
         "acceptance_contract": "a_share_trading_calendar_freshness",
@@ -282,6 +288,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     issue_explainer = _first_value(snapshot_map, "data_issue_explainer")
     freshness_acceptance_matrix = _freshness_acceptance_matrix_rows()
     freshness_acceptance_summary = _freshness_acceptance_summary(freshness_acceptance_matrix)
+    freshness_long_window_sample_validation = _freshness_long_window_sample_validation()
+    freshness_long_window_sample_rows = _as_list(freshness_long_window_sample_validation.get("rows"))
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -342,6 +350,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "home_data_issue_brief",
             "data_issue_explainer",
             "freshness_acceptance_matrix",
+            "freshness_long_window_sample_validation",
         ],
         "summary": visibility_summary.get("summary")
         or visibility_summary.get("headline")
@@ -359,6 +368,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "data_coverage": data_coverage,
         "freshness_acceptance_matrix": freshness_acceptance_matrix,
         "freshness_acceptance_summary": freshness_acceptance_summary,
+        "freshness_long_window_sample_validation": freshness_long_window_sample_validation,
+        "freshness_long_window_sample_rows": freshness_long_window_sample_rows,
         "timeline_rows": timeline_rows,
         "recovery_action_rows": recovery_action_rows,
         "provider_rows": provider_rows,
@@ -373,6 +384,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "recovery_action_count": len(recovery_action_rows),
             "gap_count": len(gap_rows),
             "freshness_acceptance_scenario_count": len(freshness_acceptance_matrix),
+            "freshness_long_window_sample_scenario_count": len(freshness_long_window_sample_rows),
+            "freshness_long_window_sample_passed_count": int(freshness_long_window_sample_validation.get("passed_count") or 0),
+            "freshness_long_window_sample_failed_count": int(freshness_long_window_sample_validation.get("failed_count") or 0),
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -392,6 +406,11 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "post_task_required_for_provider_probe": True,
             "freshness_acceptance_matrix_is_local_contract": True,
             "freshness_acceptance_matrix_calls_trade_cal": False,
+            "freshness_long_window_sample_is_local_fixture": True,
+            "freshness_long_window_sample_uses_actual_gate": bool(
+                freshness_long_window_sample_validation.get("uses_actual_freshness_gate")
+            ),
+            "freshness_long_window_sample_calls_trade_cal": False,
             "real_trade_cal_long_window_validation_done": False,
         },
         "call_ledger": [
@@ -404,6 +423,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "recovery_action_count": len(recovery_action_rows),
                 "gap_count": len(gap_rows),
                 "freshness_acceptance_scenario_count": len(freshness_acceptance_matrix),
+                "freshness_long_window_sample_scenario_count": len(freshness_long_window_sample_rows),
+                "freshness_long_window_sample_status": freshness_long_window_sample_validation.get("status"),
                 "call_status": "cache_read" if snapshot else "cache_missing",
                 "local_fetched_at": _now_iso(),
                 "external": False,
@@ -424,6 +445,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "GET /api/data-health/cache 只读本地数据健康时间线；不会 ping provider 或刷新数据。",
             "数据健康只做诊断说明，不进入 strategy action，不执行真实交易。",
             "本页不调用 Tushare、AkShare、yfinance、Supabase、DeepSeek 或 GitHub。",
+            "freshness 长窗口样本验收只使用本地 synthetic trade_cal fixture，不代表真实 Tushare trade_cal 长窗口验收完成。",
         ],
     }
     if status == "cache_missing":

@@ -79,6 +79,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - stale / expired / historical data is blocked from `composite_score`, `support_factors`, and evidence preview.
 - Existing tests cover part of premarket, intraday, postmarket, closing auction, non-trading day, provider delay grace, and calendar fallback behavior.
 - Data Health now exposes a cache-only freshness acceptance matrix for premarket, intraday, closing auction, post-16:30, weekend/holiday, missing `trade_cal`, provider delay grace, and stale/expired/historical/unknown boundaries.
+- Data Health now also exposes a local synthetic long-window sample validation that runs the actual freshness gate across premarket, intraday, closing auction, post-16:30, provider grace, holiday cluster, long-weekend, and missing-today scenarios.
 
 ### Gaps
 
@@ -86,7 +87,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Needs a real long-window `trade_cal` validation sample.
 - Needs holiday, weekend, post-close data availability, and most recent completed trading day acceptance.
 - Needs stronger separation between historical samples and current evidence.
-- The acceptance matrix is a local contract and does not prove real long-window `trade_cal` validation.
+- The acceptance matrix and synthetic long-window sample are local contracts; they do not prove real long-window `trade_cal` validation.
 
 ### Implementation Phases
 
@@ -103,6 +104,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Missing `trade_cal` falls back safely and emits a warning.
 - Failing data does not enter score, support, evidence preview, or action.
 - Data Health shows the acceptance matrix without calling Tushare/DeepSeek/GitHub or modifying `strategy action`.
+- Data Health shows synthetic long-window sample results separately from real `trade_cal` validation, with `trade_cal_long_window_validation_done=false` until provider-backed acceptance is complete.
 
 ### Forbidden
 

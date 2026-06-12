@@ -32,6 +32,7 @@ export default function DataHealthTimeline() {
   const visibility = (cache.data_health_visibility_summary as Record<string, unknown> | undefined) ?? {};
   const providerCockpit = (cache.provider_data_capability_cockpit as Record<string, unknown> | undefined) ?? {};
   const freshnessAcceptance = (cache.freshness_acceptance_summary as Record<string, unknown> | undefined) ?? {};
+  const freshnessSample = (cache.freshness_long_window_sample_validation as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -52,7 +53,10 @@ export default function DataHealthTimeline() {
           { label: "数据缺口", value: counts.gap_count as number | undefined },
           { label: "健康账本", value: counts.ledger_count as number | undefined },
           { label: "freshness 场景", value: counts.freshness_acceptance_scenario_count as number | undefined },
+          { label: "长窗样本", value: counts.freshness_long_window_sample_scenario_count as number | undefined },
+          { label: "样本通过", value: counts.freshness_long_window_sample_passed_count as number | undefined, tone: counts.freshness_long_window_sample_failed_count === 0 ? "good" : "bad" },
           { label: "trade_cal 长窗", value: freshnessAcceptance.trade_cal_long_window_validation_done === true ? "完成" : "待验收", tone: freshnessAcceptance.trade_cal_long_window_validation_done === true ? "good" : "neutral" },
+          { label: "样本类型", value: freshnessSample.fixture_is_synthetic === true ? "fixture" : "unknown", tone: freshnessSample.fixture_is_synthetic === true ? "warn" : "neutral" },
           { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
@@ -95,6 +99,13 @@ export default function DataHealthTimeline() {
         <p>不合格数据不能进入 composite score、support factors、evidence preview、next-session bridge preview 或 strategy action。</p>
         <DataLineageTable rows={objectRow(freshnessAcceptance)} />
         <DataLineageTable rows={rows(cache.freshness_acceptance_matrix)} />
+      </PacketCard>
+
+      <PacketCard title="Freshness 长窗口样本验收" subtitle="local synthetic trade_cal fixture；使用实际 freshness gate，不调用 Tushare" status={String(freshnessSample.status ?? "sample_validation")}>
+        <p>样本覆盖盘前、盘中、收盘集合竞价、16:30 后、provider grace、节假日簇、长周末和缺今日行；它验证本地 gate 行为，但仍不是真实 trade_cal 长窗口验收。</p>
+        <p>sample fixture 不能替代后续 Tushare trade_cal 真实长窗口验收；失败、陈旧、未来不可得或未知状态仍只允许 research-only 审计展示。</p>
+        <DataLineageTable rows={objectRow(freshnessSample)} />
+        <DataLineageTable rows={rows(cache.freshness_long_window_sample_rows)} />
       </PacketCard>
 
       <div className="grid">

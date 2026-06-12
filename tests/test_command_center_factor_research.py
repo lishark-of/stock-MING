@@ -1107,6 +1107,50 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["calendar_coverage_status"], "fallback_weekday_calendar")
         self.assertIn("交易日历未验证", " ".join(gate["warnings"]))
 
+    def test_a_share_freshness_long_window_sample_validation_uses_actual_gate(self):
+        validation = factor_research.build_a_share_freshness_long_window_sample_validation()
+        rows = {row["scenario_id"]: row for row in validation["rows"]}
+
+        self.assertEqual(validation["status"], "local_sample_validation_passed")
+        self.assertEqual(validation["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
+        self.assertEqual(validation["sample_window_start"], "2026-06-01")
+        self.assertEqual(validation["sample_window_end"], "2026-06-30")
+        self.assertEqual(validation["sample_calendar_row_count"], 30)
+        self.assertEqual(validation["scenario_count"], 9)
+        self.assertEqual(validation["passed_count"], 9)
+        self.assertEqual(validation["failed_count"], 0)
+        self.assertTrue(validation["local_sample_validation_done"])
+        self.assertTrue(validation["uses_actual_freshness_gate"])
+        self.assertTrue(validation["fixture_is_synthetic"])
+        self.assertFalse(validation["trade_cal_long_window_validation_done"])
+        self.assertFalse(validation["real_provider_validation_done"])
+        self.assertFalse(validation["external_calls_triggered"])
+        self.assertFalse(validation["tushare_called"])
+        self.assertFalse(validation["deepseek_called"])
+        self.assertFalse(validation["github_called"])
+
+        self.assertEqual(rows["sample_premarket_previous_completed"]["actual_expected_data_date"], "2026-06-11")
+        self.assertEqual(rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
+        self.assertTrue(rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
+        self.assertEqual(rows["sample_closing_auction_previous_completed"]["actual_state"], "fresh")
+        self.assertEqual(rows["sample_postclose_current_trading_day"]["actual_expected_data_date"], "2026-06-12")
+        self.assertEqual(rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")
+        self.assertTrue(rows["sample_provider_delay_grace_previous_day"]["blocks_support_factors"])
+        self.assertEqual(rows["sample_provider_grace_expired"]["actual_state"], "stale")
+        self.assertEqual(rows["sample_weekday_holiday_cluster"]["actual_expected_data_date"], "2026-06-17")
+        self.assertEqual(rows["sample_long_weekend_bridge"]["actual_expected_data_date"], "2026-06-17")
+        self.assertEqual(rows["sample_missing_today_blocks_current_evidence"]["actual_state"], "unknown")
+        self.assertIn(
+            "expected_data_date_unavailable",
+            rows["sample_missing_today_blocks_current_evidence"]["blocking_reasons"],
+        )
+        for row in rows.values():
+            self.assertEqual(row["validation_status"], "passed")
+            self.assertTrue(row["calendar_validated"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertFalse(row["external_calls_triggered"])
+
     def test_deepseek_prompt_and_sanitizer_are_explanation_only(self):
         hub = factor_research.build_factor_quant_hub_packet(mode="cache_only")
         prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)

@@ -1448,6 +1448,214 @@ def _build_data_freshness_gate(
     }
 
 
+def _a_share_freshness_sample_trade_calendar_packet() -> dict[str, Any]:
+    start = _dt.date(2026, 6, 1)
+    end = _dt.date(2026, 6, 30)
+    synthetic_holidays = {_dt.date(2026, 6, 18), _dt.date(2026, 6, 19)}
+    rows = []
+    cursor = start
+    while cursor <= end:
+        is_open = cursor.weekday() < 5 and cursor not in synthetic_holidays
+        rows.append({"cal_date": cursor.strftime("%Y%m%d"), "is_open": 1 if is_open else 0})
+        cursor += _dt.timedelta(days=1)
+    return {
+        "status": "local_synthetic_fixture",
+        "fixture_scope": "long_window_sample_not_real_trade_cal",
+        "rows": rows,
+    }
+
+
+def _a_share_freshness_missing_today_sample_calendar_packet() -> dict[str, Any]:
+    packet = _copy_json(_a_share_freshness_sample_trade_calendar_packet())
+    packet["rows"] = [row for row in packet["rows"] if row.get("cal_date") != "20260612"]
+    packet["fixture_scope"] = "missing_today_gap_sample_not_real_trade_cal"
+    return packet
+
+
+def build_a_share_freshness_long_window_sample_validation() -> dict[str, Any]:
+    """Run the freshness gate against a local long-window calendar fixture.
+
+    This is intentionally a deterministic sample validation, not a Tushare or exchange
+    trade_cal acceptance run.
+    """
+    calendar_packet = _a_share_freshness_sample_trade_calendar_packet()
+    missing_today_packet = _a_share_freshness_missing_today_sample_calendar_packet()
+    clean_rows = _clean_trade_calendar_rows(calendar_packet)
+    cases = [
+        {
+            "scenario_id": "sample_premarket_previous_completed",
+            "scenario": "盘前交易日使用上一已完成交易日",
+            "now": "2026-06-12T08:50:00",
+            "data_date": "20260611",
+            "expected_data_date": "2026-06-11",
+            "expected_state": "fresh",
+            "expected_usable_for_score": True,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_intraday_current_day_blocked",
+            "scenario": "盘中同日 EOD 数据不可得，必须阻断",
+            "now": "2026-06-12T10:00:00",
+            "data_date": "20260612",
+            "expected_data_date": "2026-06-11",
+            "expected_state": "future_unavailable",
+            "expected_usable_for_score": False,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_closing_auction_previous_completed",
+            "scenario": "收盘集合竞价仍使用上一已完成交易日",
+            "now": "2026-06-12T14:58:00",
+            "data_date": "20260611",
+            "expected_data_date": "2026-06-11",
+            "expected_state": "fresh",
+            "expected_usable_for_score": True,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_postclose_current_trading_day",
+            "scenario": "16:30 后允许当日 EOD 数据",
+            "now": "2026-06-12T17:00:00",
+            "data_date": "20260612",
+            "expected_data_date": "2026-06-12",
+            "expected_state": "fresh",
+            "expected_usable_for_score": True,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_provider_delay_grace_previous_day",
+            "scenario": "provider delay grace 只审计上一交易日，不放行进分数",
+            "now": "2026-06-12T17:00:00",
+            "data_date": "20260611",
+            "expected_data_date": "2026-06-12",
+            "expected_state": "provider_delay_grace",
+            "expected_usable_for_score": False,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_provider_grace_expired",
+            "scenario": "grace 结束后上一交易日变 stale",
+            "now": "2026-06-12T18:30:00",
+            "data_date": "20260611",
+            "expected_data_date": "2026-06-12",
+            "expected_state": "stale",
+            "expected_usable_for_score": False,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_weekday_holiday_cluster",
+            "scenario": "工作日节假日簇使用最近已完成交易日",
+            "now": "2026-06-18T10:00:00",
+            "data_date": "20260617",
+            "expected_data_date": "2026-06-17",
+            "expected_state": "fresh",
+            "expected_usable_for_score": True,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_long_weekend_bridge",
+            "scenario": "长周末/节假日桥接使用最近已完成交易日",
+            "now": "2026-06-20T11:00:00",
+            "data_date": "20260617",
+            "expected_data_date": "2026-06-17",
+            "expected_state": "fresh",
+            "expected_usable_for_score": True,
+            "calendar_packet": calendar_packet,
+        },
+        {
+            "scenario_id": "sample_missing_today_blocks_current_evidence",
+            "scenario": "trade_cal 缺今日行时禁止当前证据",
+            "now": "2026-06-12T10:00:00",
+            "data_date": "20260611",
+            "expected_data_date": None,
+            "expected_state": "unknown",
+            "expected_usable_for_score": False,
+            "calendar_packet": missing_today_packet,
+        },
+    ]
+    validation_rows: list[dict[str, Any]] = []
+    for case in cases:
+        case_calendar = case["calendar_packet"]
+        context = _expected_data_date(case["now"], case_calendar)
+        freshness = _freshness_row_fields(
+            case["data_date"],
+            now=case["now"],
+            calendar_context=context,
+            trade_calendar_packet=case_calendar,
+        )
+        call_row = {
+            "api": "local_synthetic_trade_cal_fixture",
+            "data_date": case["data_date"],
+            "call_status": "local_fixture",
+            **freshness,
+        }
+        gate = _build_data_freshness_gate([call_row], now=case["now"], calendar_context=context)
+        passed = bool(
+            gate.get("expected_data_date") == case["expected_data_date"]
+            and gate.get("status") == case["expected_state"]
+            and gate.get("usable_for_score") is case["expected_usable_for_score"]
+        )
+        validation_rows.append(
+            {
+                "scenario_id": case["scenario_id"],
+                "scenario": case["scenario"],
+                "now": case["now"],
+                "data_date": _parse_date(case["data_date"]).isoformat() if _parse_date(case["data_date"]) else case["data_date"],
+                "expected_data_date": case["expected_data_date"],
+                "actual_expected_data_date": gate.get("expected_data_date"),
+                "expected_state": case["expected_state"],
+                "actual_state": gate.get("status"),
+                "expected_usable_for_score": case["expected_usable_for_score"],
+                "actual_usable_for_score": gate.get("usable_for_score"),
+                "validation_status": "passed" if passed else "failed",
+                "market_phase": gate.get("market_phase"),
+                "market_session_detail": gate.get("market_session_detail"),
+                "calendar_coverage_status": gate.get("calendar_coverage_status"),
+                "calendar_validated": bool(gate.get("calendar_validated")),
+                "provider_delay_grace_count": gate.get("provider_delay_grace_count", 0),
+                "blocking_reasons": list(gate.get("blocking_reasons") or []),
+                "blocks_composite_score": gate.get("usable_for_score") is False,
+                "blocks_support_factors": gate.get("usable_for_score") is False,
+                "blocks_evidence_preview": gate.get("usable_for_score") is False,
+                "blocks_next_session_bridge_preview": gate.get("usable_for_score") is False,
+                "does_not_modify_strategy_action": True,
+                "does_not_execute_trades": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+            }
+        )
+    passed_count = len([row for row in validation_rows if row["validation_status"] == "passed"])
+    failed_count = len(validation_rows) - passed_count
+    return {
+        "status": "local_sample_validation_passed" if failed_count == 0 else "local_sample_validation_failed",
+        "scope": "local_synthetic_long_window_not_real_trade_cal_validation",
+        "sample_window_start": clean_rows[0]["cal_date"].isoformat() if clean_rows else None,
+        "sample_window_end": clean_rows[-1]["cal_date"].isoformat() if clean_rows else None,
+        "sample_calendar_row_count": len(clean_rows),
+        "sample_open_day_count": len([row for row in clean_rows if row.get("is_open")]),
+        "sample_closed_day_count": len([row for row in clean_rows if not row.get("is_open")]),
+        "scenario_count": len(validation_rows),
+        "passed_count": passed_count,
+        "failed_count": failed_count,
+        "local_sample_validation_done": True,
+        "trade_cal_long_window_validation_done": False,
+        "real_provider_validation_done": False,
+        "uses_actual_freshness_gate": True,
+        "fixture_is_synthetic": True,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "rows": validation_rows,
+        "note": "This validates freshness-gate behavior against a deterministic local fixture; it does not prove real Tushare trade_cal long-window acceptance.",
+    }
+
+
 def _apply_freshness_gate_to_runtime(runtime: Mapping[str, Any], freshness_gate: Mapping[str, Any]) -> dict[str, Any]:
     gated = dict(runtime)
     if freshness_gate.get("usable_for_score") is not False or not freshness_gate.get("gate_applied"):
