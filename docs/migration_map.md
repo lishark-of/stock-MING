@@ -1,5 +1,9 @@
 # Command Center 3.0 Migration Map
 
+长期目标、未完成项、优先级和验收标准集中维护在
+[`docs/command_center_3_long_term_goals.md`](command_center_3_long_term_goals.md)。
+本文件只描述现有模块到 3.0 API/UI 的迁移映射，不把 scaffold / preflight / mock / sanitizer 误写为 production complete。
+
 | Streamlit/现有模块 | 当前文件 | 3.0 API | 3.0 前端页面 | 是否重计算 | 是否任务化 |
 |---|---|---|---|---|---|
 | 调用审计 / 外部边界 | `server/services/*_service.py`, `server/services/task_service.py` | `GET /api/audit/cache` | `CallLedgerAudit.tsx` | cache GET 聚合本地 cache API 与任务 `call_ledger`；不刷新、不外联 | 否；只读审计 |

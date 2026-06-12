@@ -20,6 +20,10 @@ Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为
 
 后续规划以这张基线为准，不在每轮重新估算方向：
 
+长期未完成项、优先级和验收标准集中维护在
+[`docs/command_center_3_long_term_goals.md`](command_center_3_long_term_goals.md)。
+架构文档描述当前系统形态；长期目标文档描述后续生产化路线。
+
 | 模块 | 当前程度 |
 |---|---:|
 | Streamlit 保留为 legacy | 70% |
@@ -181,6 +185,8 @@ scripts/run_scheduler.sh
 - 不 push，等待用户确认。
 
 ## 后续阶段
+
+详细路线图见 [`docs/command_center_3_long_term_goals.md`](command_center_3_long_term_goals.md)。后续开发应围绕该文档中的 LTG-01 到 LTG-14 推进，并保持 cache/task/model/provider/trading 边界。
 
 1. 继续扩大 SQLite/Redis 持久化 packet 覆盖面，逐步减少只能从本地快照读取的旧 packet。
 2. 把 `refresh_factor_data` 等 local fallback task stub 迁移到 Celery worker，并保留相同任务状态合同。
