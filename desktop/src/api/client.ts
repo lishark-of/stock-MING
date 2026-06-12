@@ -186,6 +186,13 @@ export function getCandidateRadarCache() {
   return request<Record<string, unknown>>("/api/candidate-radar/cache");
 }
 
+export function postCandidateRadarQuickScan(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/scan-quick", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getRiskGuardrailsCache() {
   return request<Record<string, unknown>>("/api/risk/cache");
 }

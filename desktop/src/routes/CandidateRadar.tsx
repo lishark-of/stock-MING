@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -18,23 +20,37 @@ export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [taskId, setTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  useEffect(() => {
+  const refreshCache = () => {
     void getCandidateRadarCache().then((res) => {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
     });
+  };
+  const launchQuickScan = () =>
+    void postCandidateRadarQuickScan({ scan_mode: "quick_cache_scan", universe_mode: "cache_snapshot" }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+
+  useEffect(() => {
+    refreshCache();
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
+  const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
+  const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const overview = (cache.candidate_execution_evidence_overview as Record<string, unknown> | undefined) ?? {};
   const radarPacket = (cache.radar_packet as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
+  const legacySignalRows = rows(cache.legacy_signal_group_rows);
 
   return (
     <>
@@ -50,8 +66,14 @@ export default function CandidateRadar() {
           { label: "可准备", value: counts.ready_count as number | undefined },
           { label: "只观察", value: counts.observe_count as number | undefined },
           { label: "待验证", value: counts.verify_count as number | undefined },
+          { label: "scan mode", value: String(cache.scan_mode ?? "--") },
+          { label: "覆盖组", value: scanCoverage.mapped_signal_group_count as number | undefined },
+          { label: "缺口组", value: scanCoverage.missing_signal_group_count as number | undefined, tone: scanCoverage.missing_signal_group_count ? "warn" : "good" },
+          { label: "跳过原因", value: scanCoverage.skipped_reason_count as number | undefined, tone: scanCoverage.skipped_reason_count ? "warn" : "good" },
+          { label: "freshness", value: String(freshnessState.state ?? "unknown"), tone: freshnessState.source === "missing" ? "warn" : "good" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "市场扫描", value: policy.does_not_scan_market === true ? "不会" : "可能", tone: policy.does_not_scan_market === true ? "good" : "bad" },
+          { label: "quick scan", value: policy.quick_scan_reads_cache_only === true ? "本地" : "未知", tone: policy.quick_scan_reads_cache_only === true ? "good" : "warn" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
           { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
@@ -67,10 +89,38 @@ export default function CandidateRadar() {
           <p>候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。</p>
         </PacketCard>
 
+        <PacketCard title="快速雷达扫描" subtitle="POST /api/candidate-radar/scan-quick 只读取本地 snapshot/cache" status={String(scanCoverage.coverage_status ?? "cache")}>
+          <div className="actions">
+            <button onClick={refreshCache}>查看缓存</button>
+            <button onClick={launchQuickScan}>运行 quick scan</button>
+          </div>
+          <TaskLaunchReceipt receipt={taskReceipt} />
+          <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+          <p>quick scan 只做本地 cache 快速重建和覆盖缺口标记，不调用 Tushare、DeepSeek 或 GitHub。</p>
+          <p>scan_coverage 和 legacy_signal_group_rows 用来确认旧模块下一票雷达能力没有被静默丢失。</p>
+          <p>skipped_reason_rows 和 freshness_state 会把缺失、跳过、陈旧或未知输入直接显示出来。</p>
+          <p>任务血缘写入 local_candidate_radar_quick_scan，GET cache 仍然只读。</p>
+          <p>quick_scan_reads_cache_only: {String(policy.quick_scan_reads_cache_only === true)}</p>
+          <DataLineageTable rows={objectRow(scanCoverage)} />
+        </PacketCard>
+
         <PacketCard title="执行证据概览" subtitle="候选证据只作补证路线，不生成交易动作" status={String(overview.tone ?? overview.status ?? "cache")}>
           <p>headline: {String(overview.headline ?? "--")}</p>
           <p>stage: {String(overview.stage_text ?? "--")}</p>
           <p>guardrail: {String(overview.decision_guardrail ?? "--")}</p>
+        </PacketCard>
+      </div>
+
+      <PacketCard title="旧雷达信号组覆盖" subtitle="legacy_signal_group_rows；缺口只报告，不静默降能" status={String(scanCoverage.coverage_status ?? "coverage")}>
+        <DataLineageTable rows={legacySignalRows} />
+      </PacketCard>
+
+      <div className="grid">
+        <PacketCard title="跳过原因" subtitle="skipped_reason_rows；缺失和降级不会被隐藏" status="coverage">
+          <DataLineageTable rows={rows(cache.skipped_reason_rows)} />
+        </PacketCard>
+        <PacketCard title="Freshness 状态" subtitle="freshness_state；未知或陈旧只作为 research-only 缺口展示" status={String(freshnessState.state ?? "unknown")}>
+          <DataLineageTable rows={objectRow(freshnessState)} />
         </PacketCard>
       </div>
 

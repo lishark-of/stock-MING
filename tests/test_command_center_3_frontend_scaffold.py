@@ -716,7 +716,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         post_task_pages = []
         for path in sorted(route_dir.glob("*.tsx")):
             source = path.read_text(encoding="utf-8")
-            if "postTask(" not in source:
+            if "postTask(" not in source and "postCandidateRadarQuickScan(" not in source:
                 continue
             post_task_pages.append(path.name)
             with self.subTest(page=path.name):
@@ -737,7 +737,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertEqual(
             post_task_pages,
-            ["ChokepointScan.tsx", "FactorQuantHub.tsx", "NextSessionMap.tsx", "SerenityMethodRadar.tsx", "TaskCatalog.tsx"],
+            [
+                "CandidateRadar.tsx",
+                "ChokepointScan.tsx",
+                "FactorQuantHub.tsx",
+                "NextSessionMap.tsx",
+                "SerenityMethodRadar.tsx",
+                "TaskCatalog.tsx",
+            ],
         )
 
     def test_health_page_reads_startup_state_without_external_calls(self):
@@ -1227,13 +1234,25 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         page = (ROOT / "src" / "routes" / "CandidateRadar.tsx").read_text(encoding="utf-8")
 
         self.assertIn("/api/candidate-radar/cache", client)
+        self.assertIn("/api/candidate-radar/scan-quick", client)
         self.assertIn("getCandidateRadarCache", page)
+        self.assertIn("postCandidateRadarQuickScan", page)
         self.assertIn("getCandidateRadarCache", home)
         self.assertIn("setCacheEnvelopeLedger(res.call_ledger ?? [])", page)
         self.assertIn("setCacheEnvelopeWarnings(res.warnings ?? [])", page)
         self.assertIn("GET /api/candidate-radar/cache", page)
+        self.assertIn("POST /api/candidate-radar/scan-quick", page)
         self.assertIn("radar_packet", page)
         self.assertIn("next_ticket_candidates", page)
+        self.assertIn("scan_coverage", page)
+        self.assertIn("legacy_signal_group_rows", page)
+        self.assertIn("skipped_reason_rows", page)
+        self.assertIn("freshness_state", page)
+        self.assertIn("quick_scan_reads_cache_only", page)
+        self.assertIn("local_candidate_radar_quick_scan", page)
+        self.assertIn("TaskLaunchReceipt", page)
+        self.assertIn("TaskStatusPanel", page)
+        self.assertIn("未知或陈旧只作为 research-only 缺口展示", page)
         self.assertIn("不会自动全市场扫描", page)
         self.assertIn("候选不是买入指令", page)
         self.assertIn("不会调用 Tushare、DeepSeek 或 GitHub", page)
