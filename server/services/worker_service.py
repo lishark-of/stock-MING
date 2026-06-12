@@ -115,6 +115,70 @@ def _backend_rows(*, celery_available: bool, redis_available: bool, apscheduler_
     ]
 
 
+def _production_readiness(
+    *,
+    celery_available: bool,
+    redis_available: bool,
+    redis_configured: bool,
+    apscheduler_available: bool,
+    scheduled_refresh_enabled: bool,
+) -> dict[str, Any]:
+    rows = [
+        {
+            "component": "local_fallback_runner",
+            "status": "ready",
+            "production_role": "single-user local task execution and test fallback",
+            "blocks_desktop_mvp": False,
+            "blocks_production_worker": False,
+            "next_action": "Keep as fallback even after Celery is enabled.",
+        },
+        {
+            "component": "celery_worker_process",
+            "status": "dependency_available_not_started" if celery_available else "dependency_missing",
+            "production_role": "background long-running jobs",
+            "blocks_desktop_mvp": False,
+            "blocks_production_worker": True,
+            "next_action": "Start with scripts/run_worker.sh after Redis broker is configured.",
+        },
+        {
+            "component": "redis_broker",
+            "status": "configured_not_pinged" if redis_configured else ("package_available_not_configured" if redis_available else "dependency_missing"),
+            "production_role": "Celery broker / hot task status cache",
+            "blocks_desktop_mvp": False,
+            "blocks_production_worker": True,
+            "next_action": "Configure a local Redis broker URL and verify manually; cache API must not ping Redis.",
+        },
+        {
+            "component": "apscheduler",
+            "status": "configured_enabled" if scheduled_refresh_enabled else ("configured_disabled" if apscheduler_available else "dependency_missing"),
+            "production_role": "optional scheduled refresh trigger",
+            "blocks_desktop_mvp": False,
+            "blocks_production_worker": False,
+            "next_action": "Keep scheduled refresh disabled by default; enable only by explicit config.",
+        },
+    ]
+    blockers = [row["component"] for row in rows if row.get("blocks_production_worker") and str(row.get("status")) != "configured_not_pinged"]
+    if redis_configured and celery_available:
+        blockers = [item for item in blockers if item != "celery_worker_process"]
+    return {
+        "status": "desktop_mvp_ready_worker_production_pending" if blockers else "production_worker_preflight_ready",
+        "scope": "worker_task_pipeline_productionization_preflight",
+        "rows": rows,
+        "production_blockers": blockers,
+        "local_fallback_available": True,
+        "cache_api_starts_no_workers": True,
+        "cache_api_pings_no_redis": True,
+        "scheduled_refresh_default_off": not scheduled_refresh_enabled,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "Worker production readiness is diagnostic; it does not start Celery, ping Redis, schedule Tushare, or run real jobs.",
+    }
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -130,6 +194,13 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     backend_rows = _backend_rows(
         celery_available=celery_available,
         redis_available=redis_available,
+        apscheduler_available=apscheduler_available,
+        scheduled_refresh_enabled=scheduled_refresh_enabled,
+    )
+    production_readiness = _production_readiness(
+        celery_available=celery_available,
+        redis_available=redis_available,
+        redis_configured=redis_configured,
         apscheduler_available=apscheduler_available,
         scheduled_refresh_enabled=scheduled_refresh_enabled,
     )
@@ -190,6 +261,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         },
         "task_persistence": task_persistence,
         "task_persistence_source_rows": task_persistence_source_rows,
+        "production_readiness": production_readiness,
         "backend_rows": backend_rows,
         "worker_module_rows": worker_module_rows,
         "counts": {
@@ -206,6 +278,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "memory_task_count": task_persistence.get("memory_task_count", 0),
             "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
             "deduplicated_task_count": task_persistence.get("deduplicated_task_count", task_index.get("task_count", 0)),
+            "production_blocker_count": len(production_readiness.get("production_blockers") or []),
         },
         "policy": {
             "cache_api_external_calls": False,

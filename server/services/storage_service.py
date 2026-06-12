@@ -174,6 +174,67 @@ def dataset_implementation_status() -> dict[str, Any]:
     }
 
 
+def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    parquet_dependency = parquet_store.dependency_status()
+    duckdb_dependency = duckdb_store.dependency_status()
+    sqlite_status = str((sqlite_meta or {}).get("status") or ("ready" if SQLITE_META_PATH.exists() else "missing"))
+    rows = [
+        {
+            "component": "sqlite_meta",
+            "status": sqlite_status,
+            "production_role": "packet metadata / task metadata / local config",
+            "current_backend": "sqlite_file",
+            "blocking_for_cache_read": False,
+            "next_action": "keep payload-safe metadata views; do not expose payload_json in cache endpoints.",
+        },
+        {
+            "component": "parquet_store",
+            "status": "available" if parquet_dependency.get("available") else "dependency_missing",
+            "production_role": "large local datasets and factor values",
+            "current_backend": "local_parquet_files",
+            "blocking_for_cache_read": False,
+            "next_action": "add schema version / compaction / partition policy before full-market research.",
+        },
+        {
+            "component": "duckdb_query",
+            "status": "available" if duckdb_dependency.get("available") else "dependency_missing",
+            "production_role": "query Parquet without loading large DataFrames into UI state",
+            "current_backend": "duckdb_read_parquet",
+            "blocking_for_cache_read": False,
+            "next_action": "wrap common factor/date/universe queries before full Factor Test Lab.",
+        },
+        {
+            "component": "local_data_git_guard",
+            "status": "ready",
+            "production_role": "prevent parquet/cache/db files from entering git",
+            "current_backend": ".stock_ming_3 local cache directory",
+            "blocking_for_cache_read": False,
+            "next_action": "keep node_modules/dist/parquet/cache artifacts ignored and out of commits.",
+        },
+    ]
+    blockers = [
+        row["component"]
+        for row in rows
+        if str(row.get("status")) in {"dependency_missing", "read_failed"} and row.get("component") in {"parquet_store", "duckdb_query"}
+    ]
+    return {
+        "status": "foundation_ready" if not blockers else "partial_dependency_missing",
+        "scope": "storage_productionization_preflight",
+        "rows": rows,
+        "blockers": blockers,
+        "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
+        "cache_ttl_policy": "not_enabled_yet",
+        "compaction_policy": "planned_for_full_market_factor_research",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "Storage production readiness is diagnostic only; it does not create datasets or connect to external services.",
+    }
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -249,6 +310,7 @@ def _attach_storage_lineage(
 def storage_dataset_catalog() -> dict[str, Any]:
     catalog = dataset_catalog()
     implementation_status = dataset_implementation_status()
+    production_readiness = storage_production_readiness()
     packet = {
         "schema_version": "command_center_3_storage_dataset_catalog.v1",
         "store": "parquet_duckdb",
@@ -449,6 +511,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     datasets = [parquet_dataset_status(name, limit=limit) for name in CANONICAL_PARQUET_DATASETS]
     sqlite_meta = sqlite_meta_status(limit=limit)
     implementation_status = dataset_implementation_status()
+    production_readiness = storage_production_readiness(sqlite_meta)
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
         "store": "parquet_duckdb",
@@ -463,6 +526,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "dataset_status": {item["dataset"]: item["metadata"]["status"] for item in datasets},
         "dataset_implementation_state_counts": implementation_status["state_counts"],
         "dataset_parquet_status_counts": implementation_status["parquet_status_counts"],
+        "production_readiness": production_readiness,
         "sqlite_meta": sqlite_meta,
         "metadata_status": sqlite_meta["status"],
         "packet_metadata_count": sqlite_meta["packet_count"],
