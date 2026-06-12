@@ -33,6 +33,7 @@ export default function DataHealthTimeline() {
   const providerCockpit = (cache.provider_data_capability_cockpit as Record<string, unknown> | undefined) ?? {};
   const freshnessAcceptance = (cache.freshness_acceptance_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessSample = (cache.freshness_long_window_sample_validation as Record<string, unknown> | undefined) ?? {};
+  const tradeCalPhysical = (cache.trade_cal_physical_validation as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -56,6 +57,9 @@ export default function DataHealthTimeline() {
           { label: "长窗样本", value: counts.freshness_long_window_sample_scenario_count as number | undefined },
           { label: "样本通过", value: counts.freshness_long_window_sample_passed_count as number | undefined, tone: counts.freshness_long_window_sample_failed_count === 0 ? "good" : "bad" },
           { label: "trade_cal 长窗", value: freshnessAcceptance.trade_cal_long_window_validation_done === true ? "完成" : "待验收", tone: freshnessAcceptance.trade_cal_long_window_validation_done === true ? "good" : "neutral" },
+          { label: "本地 trade_cal", value: tradeCalPhysical.status as string | undefined, tone: tradeCalPhysical.local_trade_cal_physical_validation_done === true ? "good" : "warn" },
+          { label: "物理验收", value: tradeCalPhysical.trade_cal_long_window_validation_done === true ? "通过" : "待验收", tone: tradeCalPhysical.trade_cal_long_window_validation_done === true ? "good" : "neutral" },
+          { label: "trade_cal 行数", value: tradeCalPhysical.local_trade_cal_row_count as number | undefined },
           { label: "样本类型", value: freshnessSample.fixture_is_synthetic === true ? "fixture" : "unknown", tone: freshnessSample.fixture_is_synthetic === true ? "warn" : "neutral" },
           { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -99,6 +103,13 @@ export default function DataHealthTimeline() {
         <p>不合格数据不能进入 composite score、support factors、evidence preview、next-session bridge preview 或 strategy action。</p>
         <DataLineageTable rows={objectRow(freshnessAcceptance)} />
         <DataLineageTable rows={rows(cache.freshness_acceptance_matrix)} />
+      </PacketCard>
+
+      <PacketCard title="Trade_cal 本地文件验收" subtitle="只读已有 Parquet/DuckDB cache；不是页面启动外联" status={String(tradeCalPhysical.status ?? "local_trade_cal_validation")}>
+        <p>如果本地 trade_cal Parquet 已存在，这里只读取 schema、日期窗口、开闭市行和当前日期覆盖；不会调用 Tushare，也不会写文件。</p>
+        <p>通过只代表本地物理文件可用于 freshness 长窗口验收，不代表本次页面打开执行了 provider 刷新。</p>
+        <DataLineageTable rows={objectRow(tradeCalPhysical)} />
+        <DataLineageTable rows={rows(cache.trade_cal_physical_validation_rows)} />
       </PacketCard>
 
       <PacketCard title="Freshness 长窗口样本验收" subtitle="local synthetic trade_cal fixture；使用实际 freshness gate，不调用 Tushare" status={String(freshnessSample.status ?? "sample_validation")}>

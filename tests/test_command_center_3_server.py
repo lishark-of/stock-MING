@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import datetime as _dt
 import importlib.util
 import json
 import os
@@ -5117,6 +5118,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def test_health_and_cache_endpoints(self):
         self._with_meta_store()
+        self._with_parquet_root()
         health = self.client.get("/health").json()
         self.assertTrue(health["ok"])
         self.assertFalse(health["data"]["external_calls_on_startup"])
@@ -5626,6 +5628,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(data_health["data"]["policy"]["freshness_long_window_sample_is_local_fixture"])
         self.assertTrue(data_health["data"]["policy"]["freshness_long_window_sample_uses_actual_gate"])
         self.assertFalse(data_health["data"]["policy"]["freshness_long_window_sample_calls_trade_cal"])
+        self.assertIn("trade_cal_physical_validation", data_health["data"])
+        self.assertTrue(data_health["data"]["policy"]["trade_cal_physical_validation_is_local_artifact"])
+        self.assertFalse(data_health["data"]["policy"]["trade_cal_physical_validation_calls_trade_cal_provider"])
         self.assertFalse(data_health["data"]["policy"]["real_trade_cal_long_window_validation_done"])
         self.assertEqual(
             data_health["data"]["freshness_long_window_sample_validation"]["status"],
@@ -6194,6 +6199,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("GET /api/data-capability/cache", response["warnings"][0])
 
     def test_data_health_cache_endpoint_returns_provider_timeline_without_ping(self):
+        self._with_parquet_root()
         self._with_snapshot_cache(
             {
                 "data_health_timeline": [{"event": "daily_basic stale", "provider": "Tushare"}],
@@ -6222,6 +6228,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["post_task_required_for_provider_probe"])
         self.assertTrue(packet["policy"]["freshness_acceptance_matrix_is_local_contract"])
         self.assertFalse(packet["policy"]["freshness_acceptance_matrix_calls_trade_cal"])
+        self.assertEqual(packet["trade_cal_physical_validation"]["status"], "local_trade_cal_dataset_missing")
+        self.assertFalse(packet["trade_cal_physical_validation"]["trade_cal_long_window_validation_done"])
+        self.assertFalse(packet["trade_cal_physical_validation"]["external_calls_triggered"])
+        self.assertFalse(packet["trade_cal_physical_validation"]["tushare_called"])
         self.assertFalse(packet["policy"]["real_trade_cal_long_window_validation_done"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
@@ -6231,6 +6241,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("GET /api/data-health/cache", response["warnings"][0])
 
     def test_data_health_cache_exposes_freshness_acceptance_matrix_as_local_contract(self):
+        self._with_parquet_root()
         self._with_snapshot_cache(
             {
                 "data_freshness": {
@@ -6249,6 +6260,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         matrix = packet["freshness_acceptance_matrix"]
         summary = packet["freshness_acceptance_summary"]
         sample = packet["freshness_long_window_sample_validation"]
+        physical = packet["trade_cal_physical_validation"]
         sample_rows = {row["scenario_id"]: row for row in packet["freshness_long_window_sample_rows"]}
         rows_by_id = {row["scenario_id"]: row for row in matrix}
 
@@ -6272,6 +6284,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["freshness_long_window_sample_scenario_count"], 9)
         self.assertEqual(packet["counts"]["freshness_long_window_sample_passed_count"], 9)
         self.assertEqual(packet["counts"]["freshness_long_window_sample_failed_count"], 0)
+        self.assertEqual(packet["counts"]["trade_cal_physical_validation_row_count"], 5)
+        self.assertGreater(packet["counts"]["trade_cal_physical_validation_blocker_count"], 0)
         self.assertEqual(sample["status"], "local_sample_validation_passed")
         self.assertEqual(sample["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
         self.assertTrue(sample["local_sample_validation_done"])
@@ -6279,9 +6293,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(sample["fixture_is_synthetic"])
         self.assertFalse(sample["trade_cal_long_window_validation_done"])
         self.assertFalse(sample["external_calls_triggered"])
+        self.assertEqual(physical["status"], "local_trade_cal_dataset_missing")
+        self.assertEqual(physical["scope"], "local_physical_trade_cal_parquet_validation")
+        self.assertFalse(physical["fixture_is_synthetic"])
+        self.assertFalse(physical["trade_cal_long_window_validation_done"])
+        self.assertFalse(physical["real_provider_validation_done"])
+        self.assertIn("local_trade_cal_parquet_missing", physical["blockers"])
+        self.assertFalse(physical["external_calls_triggered"])
+        self.assertFalse(physical["tushare_called"])
+        self.assertFalse(physical["deepseek_called"])
+        self.assertFalse(physical["github_called"])
+        self.assertTrue(physical["does_not_execute_trades"])
+        self.assertTrue(physical["does_not_modify_strategy_action"])
         self.assertFalse(packet["policy"]["freshness_long_window_sample_calls_trade_cal"])
+        self.assertTrue(packet["policy"]["trade_cal_physical_validation_is_local_artifact"])
+        self.assertFalse(packet["policy"]["trade_cal_physical_validation_calls_trade_cal_provider"])
+        self.assertTrue(packet["policy"]["trade_cal_physical_validation_reads_local_rows"])
+        self.assertFalse(packet["policy"]["trade_cal_physical_validation_writes_files"])
         self.assertEqual(response["call_ledger"][0]["freshness_long_window_sample_scenario_count"], 9)
         self.assertEqual(response["call_ledger"][0]["freshness_long_window_sample_status"], "local_sample_validation_passed")
+        self.assertEqual(response["call_ledger"][0]["trade_cal_physical_validation_status"], "local_trade_cal_dataset_missing")
+        self.assertFalse(response["call_ledger"][0]["trade_cal_physical_validation_done"])
         self.assertEqual(sample_rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
         self.assertTrue(sample_rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
         self.assertEqual(sample_rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")
@@ -6309,6 +6341,62 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertFalse(row["deepseek_called"])
             self.assertFalse(row["github_called"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+    def test_data_health_cache_validates_local_trade_cal_parquet_without_provider_call(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        import pandas as pd
+
+        root = self._with_parquet_root()
+        today = _dt.date.today()
+        start = today - _dt.timedelta(days=220)
+        end = today + _dt.timedelta(days=20)
+        rows = []
+        cursor = start
+        previous_open = ""
+        while cursor <= end:
+            is_open = cursor.weekday() < 5
+            rows.append(
+                {
+                    "exchange": "SSE",
+                    "cal_date": cursor.strftime("%Y%m%d"),
+                    "is_open": 1 if is_open else 0,
+                    "pretrade_date": previous_open,
+                }
+            )
+            if is_open:
+                previous_open = cursor.strftime("%Y%m%d")
+            cursor += _dt.timedelta(days=1)
+        storage_service.parquet_store.write_dataset(pd.DataFrame(rows), root=root, name="trade_cal")
+        self._with_snapshot_cache({"data_freshness": {"state": "fresh", "expected_trade_date": today.strftime("%Y-%m-%d")}})
+
+        packet = data_health_service.read_data_health_timeline_cache()
+        physical = packet["trade_cal_physical_validation"]
+
+        self.assertEqual(physical["status"], "local_trade_cal_validation_passed")
+        self.assertEqual(physical["scope"], "local_physical_trade_cal_parquet_validation")
+        self.assertTrue(physical["local_trade_cal_physical_validation_done"])
+        self.assertTrue(physical["trade_cal_long_window_validation_done"])
+        self.assertTrue(physical["real_provider_validation_done"])
+        self.assertTrue(physical["uses_actual_freshness_gate"])
+        self.assertFalse(physical["fixture_is_synthetic"])
+        self.assertFalse(physical["provider_refresh_called_by_validation"])
+        self.assertFalse(physical["external_calls_triggered"])
+        self.assertFalse(physical["tushare_called"])
+        self.assertFalse(physical["deepseek_called"])
+        self.assertFalse(physical["github_called"])
+        self.assertTrue(physical["does_not_execute_trades"])
+        self.assertTrue(physical["does_not_modify_strategy_action"])
+        self.assertEqual(physical["blockers"], [])
+        self.assertGreaterEqual(physical["window_days"], 180)
+        self.assertGreaterEqual(physical["open_day_count"], 60)
+        self.assertGreater(physical["closed_day_count"], 0)
+        self.assertTrue(physical["today_row_found"])
+        self.assertIsNotNone(physical["latest_completed_trading_day"])
+        self.assertEqual(packet["policy"]["real_trade_cal_long_window_validation_done"], True)
+        self.assertEqual(packet["call_ledger"][0]["trade_cal_physical_validation_status"], "local_trade_cal_validation_passed")
+        self.assertTrue(packet["call_ledger"][0]["trade_cal_physical_validation_done"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
 
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(

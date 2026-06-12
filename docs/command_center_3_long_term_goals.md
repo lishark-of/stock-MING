@@ -80,14 +80,15 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Existing tests cover part of premarket, intraday, postmarket, closing auction, non-trading day, provider delay grace, and calendar fallback behavior.
 - Data Health now exposes a cache-only freshness acceptance matrix for premarket, intraday, closing auction, post-16:30, weekend/holiday, missing `trade_cal`, provider delay grace, and stale/expired/historical/unknown boundaries.
 - Data Health now also exposes a local synthetic long-window sample validation that runs the actual freshness gate across premarket, intraday, closing auction, post-16:30, provider grace, holiday cluster, long-weekend, and missing-today scenarios.
+- Data Health now separately validates an existing local `trade_cal` Parquet artifact through the storage/DuckDB cache path: schema columns, date window, open/closed rows, current-date coverage, latest completed trading day, and freshness gate context are visible without refreshing providers.
 
 ### Gaps
 
 - Full A-share trading-calendar production acceptance is not complete.
-- Needs a real long-window `trade_cal` validation sample.
+- Needs provider-backed long-window `trade_cal` acceptance evidence beyond the local artifact check.
 - Needs holiday, weekend, post-close data availability, and most recent completed trading day acceptance.
 - Needs stronger separation between historical samples and current evidence.
-- The acceptance matrix and synthetic long-window sample are local contracts; they do not prove real long-window `trade_cal` validation.
+- The acceptance matrix is a contract, the synthetic sample is a fixture, and the local Parquet validation is a physical artifact check; none of them call Tushare on page render.
 
 ### Implementation Phases
 
@@ -105,6 +106,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Failing data does not enter score, support, evidence preview, or action.
 - Data Health shows the acceptance matrix without calling Tushare/DeepSeek/GitHub or modifying `strategy action`.
 - Data Health shows synthetic long-window sample results separately from real `trade_cal` validation, with `trade_cal_long_window_validation_done=false` until provider-backed acceptance is complete.
+- Data Health shows local `trade_cal` Parquet validation separately from the synthetic fixture; when missing or too short, blockers remain visible and production acceptance stays pending.
 
 ### Forbidden
 

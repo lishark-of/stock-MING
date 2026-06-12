@@ -12,12 +12,227 @@ PACKET_KEY = "command_center_3_data_health_timeline_cache"
 SCHEMA_VERSION = "data_health_timeline_cache.v1"
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
+REAL_TRADE_CAL_QUERY_LIMIT = 10000
+REAL_TRADE_CAL_MIN_WINDOW_DAYS = 180
+REAL_TRADE_CAL_MIN_OPEN_DAYS = 60
+REAL_TRADE_CAL_REQUIRED_COLUMNS = ("exchange", "cal_date", "is_open")
 
 
 def _freshness_long_window_sample_validation() -> dict[str, Any]:
     from command_center_factor_research import build_a_share_freshness_long_window_sample_validation
 
     return build_a_share_freshness_long_window_sample_validation()
+
+
+def _parse_cal_date(value: Any) -> _dt.date | None:
+    text = str(value or "").strip()
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) >= 8:
+        digits = digits[:8]
+        try:
+            return _dt.datetime.strptime(digits, "%Y%m%d").date()
+        except ValueError:
+            return None
+    try:
+        return _dt.date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _trade_cal_is_open(value: Any) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "open", "交易"}
+
+
+def _local_trade_cal_physical_validation() -> dict[str, Any]:
+    from command_center_factor_research import _expected_data_date
+    from server.services import storage_service
+
+    status = storage_service.parquet_dataset_status("trade_cal", limit=REAL_TRADE_CAL_QUERY_LIMIT)
+    schema_metadata = storage_service.parquet_store.dataset_schema_metadata(
+        root=storage_service.PARQUET_ROOT,
+        name="trade_cal",
+    )
+    metadata = _as_dict(status.get("metadata"))
+    query = _as_dict(status.get("query"))
+    physical_columns = [str(column) for column in schema_metadata.get("columns") or query.get("available_columns") or []]
+    missing_required_columns = [column for column in REAL_TRADE_CAL_REQUIRED_COLUMNS if column not in physical_columns]
+    raw_rows = _as_list(query.get("rows"))
+    cleaned_rows: list[dict[str, Any]] = []
+    invalid_date_count = 0
+    duplicate_key_count = 0
+    seen_keys: set[tuple[str, _dt.date]] = set()
+
+    for raw in raw_rows:
+        if not isinstance(raw, Mapping):
+            continue
+        cal_date = _parse_cal_date(raw.get("cal_date") or raw.get("trade_date") or raw.get("date"))
+        if cal_date is None:
+            invalid_date_count += 1
+            continue
+        exchange = _safe_text(raw.get("exchange") or "unknown", limit=40) or "unknown"
+        key = (exchange, cal_date)
+        if key in seen_keys:
+            duplicate_key_count += 1
+        seen_keys.add(key)
+        cleaned_rows.append(
+            {
+                "exchange": exchange,
+                "cal_date": cal_date,
+                "is_open": _trade_cal_is_open(raw.get("is_open", 1)),
+            }
+        )
+    cleaned_rows.sort(key=lambda row: (str(row.get("exchange") or ""), row["cal_date"]))
+    dates = sorted({row["cal_date"] for row in cleaned_rows})
+    open_dates = sorted({row["cal_date"] for row in cleaned_rows if row.get("is_open")})
+    closed_dates = sorted({row["cal_date"] for row in cleaned_rows if not row.get("is_open")})
+    start_date = dates[0] if dates else None
+    end_date = dates[-1] if dates else None
+    window_days = ((end_date - start_date).days + 1) if start_date and end_date else 0
+    today = _dt.date.today()
+    today_row_found = today in set(dates)
+    latest_completed = max((day for day in open_dates if day <= today), default=None)
+    previous_open = max((day for day in open_dates if day < today), default=None)
+    next_open = min((day for day in open_dates if day > today), default=None)
+    exchange_count = len({str(row.get("exchange") or "") for row in cleaned_rows})
+    gate_context: dict[str, Any] = {}
+    if cleaned_rows:
+        gate_packet = {
+            "rows": [
+                {"cal_date": row["cal_date"].strftime("%Y%m%d"), "is_open": 1 if row.get("is_open") else 0}
+                for row in cleaned_rows
+            ]
+        }
+        gate_context = _expected_data_date(_now_iso(), gate_packet)
+
+    blockers: list[str] = []
+    if not metadata.get("exists"):
+        blockers.append("local_trade_cal_parquet_missing")
+    if schema_metadata.get("status") != "ready":
+        blockers.append(f"schema_metadata_{schema_metadata.get('status') or 'unavailable'}")
+    if missing_required_columns:
+        blockers.append("missing_required_columns")
+    if not cleaned_rows:
+        blockers.append("local_trade_cal_rows_missing")
+    if window_days < REAL_TRADE_CAL_MIN_WINDOW_DAYS:
+        blockers.append("window_too_short_for_long_window_acceptance")
+    if len(open_dates) < REAL_TRADE_CAL_MIN_OPEN_DAYS:
+        blockers.append("open_day_count_too_low")
+    if not closed_dates:
+        blockers.append("closed_day_rows_missing")
+    if not today_row_found:
+        blockers.append("today_calendar_row_missing")
+    if not latest_completed:
+        blockers.append("latest_completed_trading_day_missing")
+    if duplicate_key_count:
+        blockers.append("duplicate_exchange_cal_date_keys")
+    if invalid_date_count:
+        blockers.append("invalid_cal_date_rows")
+    if gate_context and gate_context.get("calendar_coverage_status") not in {"validated", "validated_no_next_open"}:
+        blockers.append("freshness_gate_calendar_coverage_not_validated")
+
+    validation_done = bool(not blockers)
+    validation_status = (
+        "local_trade_cal_validation_passed"
+        if validation_done
+        else "local_trade_cal_dataset_missing"
+        if "local_trade_cal_parquet_missing" in blockers
+        else "local_trade_cal_validation_pending"
+    )
+    validation_rows = [
+        {
+            "check": "physical_dataset",
+            "status": "passed" if metadata.get("exists") else "blocked",
+            "detail": metadata.get("status") or "missing",
+            "path": metadata.get("path") or status.get("path") or "",
+        },
+        {
+            "check": "schema_columns",
+            "status": "passed" if not missing_required_columns and schema_metadata.get("status") == "ready" else "blocked",
+            "required_columns": list(REAL_TRADE_CAL_REQUIRED_COLUMNS),
+            "missing_required_columns": missing_required_columns,
+            "physical_columns": physical_columns,
+        },
+        {
+            "check": "long_window",
+            "status": "passed"
+            if window_days >= REAL_TRADE_CAL_MIN_WINDOW_DAYS and len(open_dates) >= REAL_TRADE_CAL_MIN_OPEN_DAYS
+            else "blocked",
+            "window_days": window_days,
+            "min_window_days": REAL_TRADE_CAL_MIN_WINDOW_DAYS,
+            "open_day_count": len(open_dates),
+            "min_open_days": REAL_TRADE_CAL_MIN_OPEN_DAYS,
+            "closed_day_count": len(closed_dates),
+        },
+        {
+            "check": "current_coverage",
+            "status": "passed" if today_row_found and latest_completed else "blocked",
+            "today": today.isoformat(),
+            "today_row_found": today_row_found,
+            "latest_completed_trading_day": latest_completed.isoformat() if latest_completed else None,
+            "previous_open_date": previous_open.isoformat() if previous_open else None,
+            "next_open_date": next_open.isoformat() if next_open else None,
+        },
+        {
+            "check": "freshness_gate_context",
+            "status": "passed"
+            if gate_context.get("calendar_coverage_status") in {"validated", "validated_no_next_open"}
+            else "blocked",
+            "expected_data_date": gate_context.get("expected_data_date"),
+            "market_phase": gate_context.get("market_phase"),
+            "calendar_coverage_status": gate_context.get("calendar_coverage_status"),
+            "calendar_validated": bool(gate_context.get("calendar_validated")),
+        },
+    ]
+    return {
+        "status": validation_status,
+        "scope": "local_physical_trade_cal_parquet_validation",
+        "source_endpoint": "GET /api/storage/trade-cal",
+        "dataset": "trade_cal",
+        "path": metadata.get("path") or status.get("path") or "",
+        "schema_metadata_status": schema_metadata.get("status"),
+        "parquet_status": metadata.get("status") or status.get("status"),
+        "query_status": query.get("status"),
+        "query_limit": REAL_TRADE_CAL_QUERY_LIMIT,
+        "query_returned_row_count": len(raw_rows),
+        "row_count_metadata": schema_metadata.get("row_count_metadata"),
+        "local_trade_cal_row_count": len(cleaned_rows),
+        "exchange_count": exchange_count,
+        "window_start": start_date.isoformat() if start_date else None,
+        "window_end": end_date.isoformat() if end_date else None,
+        "window_days": window_days,
+        "min_window_days": REAL_TRADE_CAL_MIN_WINDOW_DAYS,
+        "open_day_count": len(open_dates),
+        "min_open_days": REAL_TRADE_CAL_MIN_OPEN_DAYS,
+        "closed_day_count": len(closed_dates),
+        "today": today.isoformat(),
+        "today_row_found": today_row_found,
+        "latest_completed_trading_day": latest_completed.isoformat() if latest_completed else None,
+        "previous_open_date": previous_open.isoformat() if previous_open else None,
+        "next_open_date": next_open.isoformat() if next_open else None,
+        "missing_required_columns": missing_required_columns,
+        "invalid_cal_date_count": invalid_date_count,
+        "duplicate_key_count": duplicate_key_count,
+        "blockers": blockers,
+        "blocker_count": len(blockers),
+        "rows": validation_rows,
+        "local_trade_cal_physical_validation_done": validation_done,
+        "trade_cal_long_window_validation_done": validation_done,
+        "real_provider_validation_done": validation_done,
+        "provider_refresh_called_by_validation": False,
+        "uses_actual_freshness_gate": bool(gate_context),
+        "freshness_gate_context": gate_context,
+        "fixture_is_synthetic": False,
+        "cache_only": True,
+        "cache_get_reads_local_trade_cal_rows": True,
+        "cache_get_writes_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "note": "This validates an existing local trade_cal Parquet artifact only; it does not refresh providers and does not prove a provider call happened in this request.",
+    }
 
 
 def _freshness_acceptance_matrix_rows() -> list[dict[str, Any]]:
@@ -290,6 +505,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     freshness_acceptance_summary = _freshness_acceptance_summary(freshness_acceptance_matrix)
     freshness_long_window_sample_validation = _freshness_long_window_sample_validation()
     freshness_long_window_sample_rows = _as_list(freshness_long_window_sample_validation.get("rows"))
+    trade_cal_physical_validation = _local_trade_cal_physical_validation()
+    trade_cal_physical_validation_rows = _as_list(trade_cal_physical_validation.get("rows"))
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -351,6 +568,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "data_issue_explainer",
             "freshness_acceptance_matrix",
             "freshness_long_window_sample_validation",
+            "trade_cal_physical_validation",
         ],
         "summary": visibility_summary.get("summary")
         or visibility_summary.get("headline")
@@ -370,6 +588,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "freshness_acceptance_summary": freshness_acceptance_summary,
         "freshness_long_window_sample_validation": freshness_long_window_sample_validation,
         "freshness_long_window_sample_rows": freshness_long_window_sample_rows,
+        "trade_cal_physical_validation": trade_cal_physical_validation,
+        "trade_cal_physical_validation_rows": trade_cal_physical_validation_rows,
         "timeline_rows": timeline_rows,
         "recovery_action_rows": recovery_action_rows,
         "provider_rows": provider_rows,
@@ -387,6 +607,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_long_window_sample_scenario_count": len(freshness_long_window_sample_rows),
             "freshness_long_window_sample_passed_count": int(freshness_long_window_sample_validation.get("passed_count") or 0),
             "freshness_long_window_sample_failed_count": int(freshness_long_window_sample_validation.get("failed_count") or 0),
+            "trade_cal_physical_validation_row_count": len(trade_cal_physical_validation_rows),
+            "trade_cal_physical_validation_blocker_count": int(trade_cal_physical_validation.get("blocker_count") or 0),
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -411,7 +633,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 freshness_long_window_sample_validation.get("uses_actual_freshness_gate")
             ),
             "freshness_long_window_sample_calls_trade_cal": False,
-            "real_trade_cal_long_window_validation_done": False,
+            "trade_cal_physical_validation_is_local_artifact": True,
+            "trade_cal_physical_validation_calls_trade_cal_provider": False,
+            "trade_cal_physical_validation_reads_local_rows": True,
+            "trade_cal_physical_validation_writes_files": False,
+            "real_trade_cal_long_window_validation_done": bool(
+                trade_cal_physical_validation.get("trade_cal_long_window_validation_done")
+            ),
         },
         "call_ledger": [
             {
@@ -425,6 +653,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "freshness_acceptance_scenario_count": len(freshness_acceptance_matrix),
                 "freshness_long_window_sample_scenario_count": len(freshness_long_window_sample_rows),
                 "freshness_long_window_sample_status": freshness_long_window_sample_validation.get("status"),
+                "trade_cal_physical_validation_status": trade_cal_physical_validation.get("status"),
+                "trade_cal_physical_validation_done": bool(
+                    trade_cal_physical_validation.get("local_trade_cal_physical_validation_done")
+                ),
+                "trade_cal_physical_validation_blocker_count": int(
+                    trade_cal_physical_validation.get("blocker_count") or 0
+                ),
                 "call_status": "cache_read" if snapshot else "cache_missing",
                 "local_fetched_at": _now_iso(),
                 "external": False,
@@ -446,6 +681,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "数据健康只做诊断说明，不进入 strategy action，不执行真实交易。",
             "本页不调用 Tushare、AkShare、yfinance、Supabase、DeepSeek 或 GitHub。",
             "freshness 长窗口样本验收只使用本地 synthetic trade_cal fixture，不代表真实 Tushare trade_cal 长窗口验收完成。",
+            "trade_cal 本地文件验收只读取已有 Parquet/DuckDB cache；不会刷新 provider，缺失或覆盖不足时仍保持待验收。",
         ],
     }
     if status == "cache_missing":
