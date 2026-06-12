@@ -249,6 +249,8 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                 "top_bottom_group_return",
                 "group_return_buckets",
                 "turnover",
+                "avg_transaction_cost",
+                "estimated_turnover_cost",
                 "cost_adjusted_return",
                 "max_drawdown",
                 "industry_neutral_ic",
@@ -375,6 +377,14 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
             row["group_return_buckets"][-1]["mean_forward_return"],
         )
         self.assertGreater(row["cost_adjusted_return"], 0)
+        self.assertEqual(row["avg_transaction_cost"], 0.001)
+        self.assertAlmostEqual(row["estimated_turnover_cost"], row["avg_transaction_cost"] * row["turnover"], places=6)
+        self.assertEqual(row["cost_model"], "turnover_adjusted_light")
+        self.assertAlmostEqual(
+            row["cost_adjusted_return"],
+            row["top_bottom_group_return"] - row["estimated_turnover_cost"],
+            places=6,
+        )
         self.assertEqual(row["max_drawdown"], 0.0)
         self.assertEqual(row["max_drawdown_scope"], "top_bottom_daily_spread")
         self.assertEqual(row["max_drawdown_window_count"], 4)

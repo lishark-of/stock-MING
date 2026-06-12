@@ -86,6 +86,8 @@ FACTOR_TEST_METRIC_SCHEMA = [
     {"metric_key": "group_return_monotonicity", "label": "分组收益单调性", "required": True, "unit": "boolean"},
     {"metric_key": "group_return_buckets", "label": "分组收益桶明细", "required": False, "unit": "list"},
     {"metric_key": "turnover", "label": "换手率", "required": True, "unit": "ratio"},
+    {"metric_key": "avg_transaction_cost", "label": "平均交易成本", "required": False, "unit": "ratio"},
+    {"metric_key": "estimated_turnover_cost", "label": "换手调整成本", "required": False, "unit": "return"},
     {"metric_key": "cost_adjusted_return", "label": "成本后收益", "required": True, "unit": "return"},
     {"metric_key": "max_drawdown", "label": "最大回撤", "required": True, "unit": "return"},
     {"metric_key": "industry_neutral_ic", "label": "行业中性 IC", "required": True, "unit": "decimal"},
@@ -1952,6 +1954,14 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
         avg_cost = statistics.fmean([value for value in costs if value is not None]) if any(value is not None for value in costs) else None
         turnover_values = [_to_number(row.get("turnover")) for _, _, _, row in valid_pairs]
         turnover = statistics.fmean([value for value in turnover_values if value is not None]) if any(value is not None for value in turnover_values) else None
+        estimated_turnover_cost = None
+        cost_model = "cost_missing"
+        if avg_cost is not None and turnover is not None:
+            estimated_turnover_cost = avg_cost * max(0.0, turnover)
+            cost_model = "turnover_adjusted_light"
+        elif avg_cost is not None:
+            estimated_turnover_cost = avg_cost
+            cost_model = "average_transaction_cost_only"
         pit_passed = all(row.get("pit_validated") is True or row.get("pit_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
         lookahead_passed = all(row.get("lookahead_check") == "passed" for _, _, _, row in valid_pairs) if valid_pairs else False
         survivorship_failed = any(
@@ -1991,7 +2001,10 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
             "group_return_monotonicity": monotonicity,
             "group_return_buckets": group_return_details["group_return_buckets"],
             "turnover": round(turnover, 6) if turnover is not None else None,
-            "cost_adjusted_return": round(top_bottom - (avg_cost or 0), 6) if top_bottom is not None else None,
+            "avg_transaction_cost": round(avg_cost, 6) if avg_cost is not None else None,
+            "estimated_turnover_cost": round(estimated_turnover_cost, 6) if estimated_turnover_cost is not None else None,
+            "cost_model": cost_model,
+            "cost_adjusted_return": round(top_bottom - (estimated_turnover_cost or 0), 6) if top_bottom is not None else None,
             "max_drawdown": round(max_drawdown, 6) if max_drawdown is not None else None,
             "max_drawdown_scope": "top_bottom_daily_spread" if len(daily_spread_returns) >= 2 else "not_enough_data",
             "max_drawdown_window_count": len(daily_spread_returns),
@@ -2039,6 +2052,9 @@ def _factor_test_scaffold_row(factor: Mapping[str, Any], *, mode: str, now: str)
         "group_return_monotonicity": None,
         "group_return_buckets": [],
         "turnover": None,
+        "avg_transaction_cost": None,
+        "estimated_turnover_cost": None,
+        "cost_model": "not_run",
         "cost_adjusted_return": None,
         "max_drawdown": None,
         "industry_neutral_ic": None,
