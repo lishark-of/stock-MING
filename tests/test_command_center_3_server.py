@@ -1660,6 +1660,96 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(task["deepseek_called"])
         self.assertFalse(task["github_called"])
 
+    def test_candidate_radar_custom_pool_scan_is_local_input_only_and_deduped(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache({"data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"}})
+
+        task = candidate_service.run_candidate_quick_scan_task(
+            {
+                "scan_mode": "custom_pool_scan",
+                "custom_candidates": [
+                    {"ticker": "002008.SZ", "name": "大族激光", "api_key": "SHOULD_DROP"},
+                    {"ts_code": "002008.SZ", "name": "重复候选"},
+                    {"code": "002837.SZ", "name": "禁用候选", "enabled": False},
+                    {"name": "缺代码候选"},
+                ],
+            }
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_candidate_radar_custom_pool_scan")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["scan_mode"], "custom_pool_scan")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["input_candidate_count"], 4)
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["normalized_candidate_count"], 1)
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+
+        persisted = SQLiteMetaStore(candidate_service.SQLITE_META_PATH).read_packet(candidate_service.PACKET_KEY)
+        self.assertEqual(persisted["mode"], "custom_pool_scan")
+        self.assertEqual(persisted["scan_mode"], "custom_pool_scan")
+        self.assertEqual(persisted["candidate_rows"][0]["ticker"], "002008.SZ")
+        self.assertEqual(persisted["candidate_rows"][0]["action_state"], "只观察")
+        self.assertEqual(persisted["local_candidate_pool_audit"]["input_source"], "payload.custom_candidates")
+        self.assertEqual(persisted["local_candidate_pool_audit"]["normalized_candidate_count"], 1)
+        self.assertEqual(persisted["local_candidate_pool_audit"]["duplicate_candidate_count"], 1)
+        self.assertEqual(persisted["local_candidate_pool_audit"]["disabled_candidate_count"], 1)
+        self.assertEqual(persisted["local_candidate_pool_audit"]["invalid_candidate_count"], 1)
+        skipped_reasons = {row["reason"] for row in persisted["skipped_reason_rows"]}
+        self.assertIn("local_pool_candidate_duplicate", skipped_reasons)
+        self.assertIn("local_pool_candidate_disabled", skipped_reasons)
+        self.assertIn("local_pool_candidate_missing_code", skipped_reasons)
+        self.assertTrue(persisted["policy"]["custom_pool_scan_reads_local_input_only"])
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(persisted, ensure_ascii=False))
+
+        cache_view = candidate_service.read_candidate_radar_cache()
+        self.assertEqual(cache_view["cache_source"], "sqlite_meta")
+        self.assertEqual(cache_view["scan_mode"], "custom_pool_scan")
+
+    def test_candidate_radar_watchlist_scan_reads_snapshot_watchlist_only(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "announcement_watchlist": {
+                    "updated_at": "2026-06-12T09:00:00",
+                    "targets": [
+                        {"ts_code": "002008.SZ", "name": "大族激光", "enabled": True},
+                        {"ts_code": "002837.SZ", "name": "英维克", "enabled": False},
+                    ],
+                }
+            }
+        )
+
+        task = candidate_service.run_candidate_quick_scan_task({"scan_mode": "watchlist_scan"})
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_candidate_radar_watchlist_scan")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["candidate_pool_source"], "snapshot.announcement_watchlist.targets")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+
+        persisted = SQLiteMetaStore(candidate_service.SQLITE_META_PATH).read_packet(candidate_service.PACKET_KEY)
+        self.assertEqual(persisted["mode"], "watchlist_scan")
+        self.assertEqual(persisted["scan_mode"], "watchlist_scan")
+        self.assertEqual(persisted["candidate_rows"][0]["ticker"], "002008.SZ")
+        self.assertEqual(persisted["local_candidate_pool_audit"]["input_candidate_count"], 2)
+        self.assertEqual(persisted["local_candidate_pool_audit"]["normalized_candidate_count"], 1)
+        self.assertEqual(persisted["local_candidate_pool_audit"]["disabled_candidate_count"], 1)
+        self.assertIn("local_pool_candidate_disabled", {row["reason"] for row in persisted["skipped_reason_rows"]})
+        self.assertTrue(persisted["policy"]["watchlist_scan_reads_local_input_only"])
+        self.assertTrue(persisted["policy"]["does_not_scan_market"])
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+
     def test_risk_guardrails_cache_reads_local_risk_fields_without_external_work(self):
         self._with_snapshot_cache(
             {
@@ -2775,7 +2865,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["run_candidate_radar_quick_scan"]["possible_external_sources"], [])
         self.assertEqual(by_type["run_candidate_radar_quick_scan"]["external_call_policy"], "local_cache_only_current_mvp")
         self.assertFalse(by_type["run_candidate_radar_quick_scan"]["cache_get_external_calls"])
-        self.assertEqual(by_type["run_candidate_radar_quick_scan"]["scan_modes"], ["quick_cache_scan"])
+        self.assertEqual(
+            by_type["run_candidate_radar_quick_scan"]["scan_modes"],
+            ["quick_cache_scan", "watchlist_scan", "custom_pool_scan"],
+        )
         self.assertIn("full_pool_scan", by_type["run_candidate_radar_quick_scan"]["future_scan_modes"])
 
     def test_task_catalog_covers_all_fastapi_post_routes(self):

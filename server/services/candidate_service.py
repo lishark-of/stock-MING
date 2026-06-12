@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ from server.services import packet_service, task_service
 PACKET_KEY = "command_center_3_candidate_radar_cache"
 SCHEMA_VERSION = "candidate_radar_cache.v1"
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
+SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan"}
+LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan"}
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 LEGACY_RADAR_SIGNAL_GROUPS = [
@@ -146,17 +149,17 @@ SCAN_MODE_STATUS_ROWS = [
     },
     {
         "scan_mode": "watchlist_scan",
-        "status": "planned_future_task",
-        "scope": "legacy 持续调查池 / watchlist",
+        "status": "implemented_local_input",
+        "scope": "local payload or snapshot watchlist",
         "external_calls": False,
-        "notes": "Must preserve watchlist source counts before enabling.",
+        "notes": "Reads only provided/local watchlist candidates; missing watchlist is reported as a gap.",
     },
     {
         "scan_mode": "custom_pool_scan",
-        "status": "planned_future_task",
+        "status": "implemented_local_input",
         "scope": "manual/custom candidate pool",
         "external_calls": False,
-        "notes": "Must preserve manual candidate parsing and duplicate handling.",
+        "notes": "Parses local manual candidates, de-duplicates them, and keeps all results research-only.",
     },
     {
         "scan_mode": "full_pool_scan",
@@ -227,6 +230,226 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _first_non_empty(mapping: Mapping[str, Any], keys: list[str]) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _split_candidate_text(value: Any) -> list[str]:
+    if not isinstance(value, str):
+        return []
+    return [part.strip() for part in re.split(r"[\s,，;；]+", value) if part.strip()]
+
+
+def _candidate_code_from_item(item: Mapping[str, Any]) -> str:
+    value = _first_non_empty(item, ["ticker", "ts_code", "code", "stock_code", "symbol"])
+    return _safe_text(value, limit=32).upper()
+
+
+def _candidate_name_from_item(item: Mapping[str, Any]) -> str:
+    value = _first_non_empty(item, ["name", "stock_name", "security_name", "display_name"])
+    return _safe_text(value, limit=80)
+
+
+def _local_pool_items_from_payload(payload_safe: Mapping[str, Any], scan_mode: str) -> tuple[list[Any], str]:
+    if scan_mode == "watchlist_scan":
+        keys = ["watchlist_candidates", "watchlist_targets", "candidates", "targets"]
+    else:
+        keys = ["custom_candidates", "custom_pool", "manual_candidates", "candidates", "targets"]
+    rows: list[Any] = []
+    source_key = ""
+    for key in keys:
+        value = payload_safe.get(key)
+        if value in (None, "", [], {}):
+            continue
+        source_key = f"payload.{key}"
+        if isinstance(value, str):
+            rows.extend(_split_candidate_text(value))
+        elif isinstance(value, list):
+            rows.extend(value)
+        else:
+            rows.append(value)
+        break
+    text_value = payload_safe.get("custom_pool_text") if scan_mode == "custom_pool_scan" else payload_safe.get("watchlist_text")
+    text_rows = _split_candidate_text(text_value)
+    if text_rows and not rows:
+        rows.extend(text_rows)
+        source_key = "payload.custom_pool_text" if scan_mode == "custom_pool_scan" else "payload.watchlist_text"
+    return rows, source_key
+
+
+def _local_watchlist_items_from_snapshot(snapshot_map: Mapping[str, Any]) -> tuple[list[Any], str]:
+    for key in [
+        "announcement_watchlist",
+        "announcement_watchlist_payload",
+        "watchlist",
+        "watchlist_payload",
+        "next_observation_targets",
+        "watchlist_targets",
+    ]:
+        value = snapshot_map.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, Mapping):
+            for child_key in ["targets", "items", "candidates", "rows"]:
+                rows = value.get(child_key)
+                if isinstance(rows, list):
+                    return rows, f"snapshot.{key}.{child_key}"
+        if isinstance(value, list):
+            return value, f"snapshot.{key}"
+    return [], ""
+
+
+def _normalize_local_pool_candidates(
+    raw_items: list[Any],
+    *,
+    scan_mode: str,
+    input_source: str,
+    max_items: int = 50,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    disabled_count = 0
+    invalid_count = 0
+    duplicate_count = 0
+    truncated_count = max(0, len(raw_items) - max_items)
+    source_label = "持续调查池本地输入" if scan_mode == "watchlist_scan" else "自定义候选池本地输入"
+
+    for index, raw in enumerate(raw_items[:max_items], start=1):
+        safe_raw = _safe_value(raw)
+        item = safe_raw if isinstance(safe_raw, dict) else {"ticker": safe_raw}
+        enabled = item.get("enabled", True)
+        if enabled is False or str(enabled).strip().lower() in {"false", "0", "no", "disabled"}:
+            disabled_count += 1
+            skipped.append(
+                {
+                    "reason": "local_pool_candidate_disabled",
+                    "group": scan_mode,
+                    "severity": "info",
+                    "row_index": index,
+                    "ticker": _candidate_code_from_item(item),
+                    "action": "skip_disabled_candidate_no_external_call",
+                }
+            )
+            continue
+        ticker = _candidate_code_from_item(item)
+        if not ticker:
+            invalid_count += 1
+            skipped.append(
+                {
+                    "reason": "local_pool_candidate_missing_code",
+                    "group": scan_mode,
+                    "severity": "input_gap",
+                    "row_index": index,
+                    "action": "skip_invalid_candidate_do_not_guess_code",
+                }
+            )
+            continue
+        if ticker in seen:
+            duplicate_count += 1
+            skipped.append(
+                {
+                    "reason": "local_pool_candidate_duplicate",
+                    "group": scan_mode,
+                    "severity": "dedupe",
+                    "row_index": index,
+                    "ticker": ticker,
+                    "action": "dedupe_local_candidate_keep_first",
+                }
+            )
+            continue
+        seen.add(ticker)
+        candidates.append(
+            {
+                "rank": len(candidates) + 1,
+                "ticker": ticker,
+                "name": _candidate_name_from_item(item),
+                "score": item.get("score"),
+                "status_label": item.get("status_label") or "本地候选待验证",
+                "action_state": item.get("action_state") or "只观察",
+                "tone": item.get("tone") or "warn",
+                "evidence_chain_summary": item.get("evidence_chain_summary") or "本地候选池输入；未刷新外部证据链。",
+                "trigger_condition": item.get("trigger_condition") or item.get("trigger") or "",
+                "invalidation_condition": item.get("invalidation_condition") or item.get("invalid_condition") or "",
+                "source": item.get("source") or source_label,
+                "updated_at": item.get("updated_at") or item.get("created_at"),
+                "data_gaps": item.get("data_gaps")
+                or ["local_pool_evidence_not_refreshed", "freshness_requires_current_cache_review"],
+            }
+        )
+
+    if truncated_count:
+        skipped.append(
+            {
+                "reason": "local_pool_candidate_limit_truncated",
+                "group": scan_mode,
+                "severity": "input_limit",
+                "row_count": truncated_count,
+                "action": "truncate_large_local_payload_keep_scan_fast",
+            }
+        )
+
+    audit = {
+        "scan_mode": scan_mode,
+        "input_source": input_source or "missing",
+        "input_candidate_count": len(raw_items),
+        "normalized_candidate_count": len(candidates),
+        "disabled_candidate_count": disabled_count,
+        "invalid_candidate_count": invalid_count,
+        "duplicate_candidate_count": duplicate_count,
+        "truncated_candidate_count": truncated_count,
+        "max_local_candidates": max_items,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "does_not_call_tushare": True,
+        "does_not_call_deepseek": True,
+        "does_not_call_github": True,
+        "does_not_scan_full_market": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+    return candidates, skipped, audit
+
+
+def _snapshot_with_local_candidate_pool(
+    snapshot_map: Mapping[str, Any],
+    payload_safe: Mapping[str, Any],
+    scan_mode: str,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    raw_items, input_source = _local_pool_items_from_payload(payload_safe, scan_mode)
+    if scan_mode == "watchlist_scan" and not raw_items:
+        raw_items, input_source = _local_watchlist_items_from_snapshot(snapshot_map)
+    candidates, skipped, audit = _normalize_local_pool_candidates(
+        raw_items,
+        scan_mode=scan_mode,
+        input_source=input_source,
+    )
+    overlay = dict(snapshot_map)
+    existing_radar = _as_dict(snapshot_map.get("radar_packet") or snapshot_map.get("command_center_radar_packet"))
+    source_text = "持续调查池本地扫描" if scan_mode == "watchlist_scan" else "自定义候选池本地扫描"
+    overlay["next_ticket_candidates"] = candidates
+    overlay["radar_packet"] = {
+        **existing_radar,
+        "status": "ready" if candidates else "cache_missing",
+        "source": source_text,
+        "summary": f"{source_text}生成 {len(candidates)} 个候选；未调用外部源，结果只用于 research-only 复核。",
+        "generated_at": _now_iso(),
+        "total_count": len(candidates),
+        "top_candidates": candidates,
+        "watch_candidates": [],
+        "excluded_candidates": _as_list(existing_radar.get("excluded_candidates")),
+        "manual_required_text": "本地候选池扫描不是买入指令；必须补齐证据链、freshness、纪律和仓位预算。",
+    }
+    overlay["local_candidate_pool_audit"] = audit
+    overlay["local_candidate_pool_skipped_rows"] = skipped
+    return overlay, audit, skipped
+
+
 def _snapshot_fingerprint(snapshot_map: Mapping[str, Any]) -> str:
     serialized = json.dumps(snapshot_map, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
@@ -279,6 +502,7 @@ def _candidate_rows(candidates: Any) -> list[dict[str, Any]]:
                 "invalidation_condition": item.get("invalidation_condition"),
                 "source": item.get("source"),
                 "updated_at": item.get("updated_at"),
+                "data_gaps": item.get("data_gaps"),
             }
         )
     return rows
@@ -516,8 +740,21 @@ def _skipped_reason_rows(
     candidate_rows: list[dict[str, Any]],
     excluded_candidates: list[Any],
     freshness_state: Mapping[str, Any],
+    local_pool_audit: Mapping[str, Any] | None = None,
+    local_pool_skipped_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = list(local_pool_skipped_rows or [])
+    audit = local_pool_audit or {}
+    if audit and not audit.get("normalized_candidate_count"):
+        rows.append(
+            {
+                "reason": "local_candidate_pool_empty",
+                "group": audit.get("scan_mode") or "local_candidate_pool",
+                "severity": "empty_result",
+                "input_source": audit.get("input_source") or "missing",
+                "action": "show_empty_state_do_not_scan_full_market",
+            }
+        )
     for row in source_rows:
         if row.get("present"):
             continue
@@ -577,6 +814,8 @@ def _scan_coverage(
     candidate_rows: list[dict[str, Any]],
     excluded_candidates: list[Any],
     scan_mode: str,
+    local_pool_audit: Mapping[str, Any] | None = None,
+    local_pool_skipped_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     source_rows = _source_group_rows(snapshot_map)
     present = [row for row in source_rows if row["present"]]
@@ -587,7 +826,10 @@ def _scan_coverage(
         candidate_rows=candidate_rows,
         excluded_candidates=excluded_candidates,
         freshness_state=freshness_state,
+        local_pool_audit=local_pool_audit,
+        local_pool_skipped_rows=local_pool_skipped_rows,
     )
+    audit = local_pool_audit or {}
     return {
         "scan_mode": scan_mode,
         "scan_scope": "local_snapshot_cache_only",
@@ -598,6 +840,12 @@ def _scan_coverage(
         "missing_signal_groups": missing,
         "legacy_signal_group_rows": source_rows,
         "candidate_count": len(candidate_rows),
+        "local_pool_input_candidate_count": audit.get("input_candidate_count"),
+        "local_pool_normalized_candidate_count": audit.get("normalized_candidate_count"),
+        "local_pool_duplicate_candidate_count": audit.get("duplicate_candidate_count"),
+        "local_pool_invalid_candidate_count": audit.get("invalid_candidate_count"),
+        "local_pool_disabled_candidate_count": audit.get("disabled_candidate_count"),
+        "local_pool_truncated_candidate_count": audit.get("truncated_candidate_count"),
         "excluded_candidate_count": len(excluded_candidates),
         "skipped_reason_count": len(skipped_rows),
         "skipped_reason_rows": skipped_rows,
@@ -605,6 +853,8 @@ def _scan_coverage(
         "coverage_status": "ready" if candidate_rows else ("partial_no_candidates" if present else "cache_missing"),
         "feature_loss_guard": "Missing legacy radar groups are reported as coverage gaps; they are not silently dropped.",
         "quick_scan_reads_cache_only": True,
+        "watchlist_scan_reads_local_input_only": scan_mode == "watchlist_scan",
+        "custom_pool_scan_reads_local_input_only": scan_mode == "custom_pool_scan",
         "does_not_scan_full_market_on_render": True,
         "does_not_call_external_sources": True,
         "does_not_execute_trades": True,
@@ -619,6 +869,8 @@ def _build_candidate_radar_packet(
     cache_source: str,
     scan_mode: str = "cache_only",
     request_params_safe: dict[str, Any] | None = None,
+    local_pool_audit: Mapping[str, Any] | None = None,
+    local_pool_skipped_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
@@ -641,10 +893,16 @@ def _build_candidate_radar_packet(
         candidate_rows=candidate_rows,
         excluded_candidates=excluded_candidates,
         scan_mode=scan_mode,
+        local_pool_audit=local_pool_audit,
+        local_pool_skipped_rows=local_pool_skipped_rows,
     )
     counts["legacy_parity_gap_count"] = parity_inventory["gap_or_future_count"]
     counts["legacy_parity_mapped_count"] = parity_inventory["mapped_or_partial_count"]
     counts["legacy_output_mapped_count"] = parity_inventory["output_contract_mapped_count"]
+    if local_pool_audit:
+        counts["local_pool_input_candidate_count"] = local_pool_audit.get("input_candidate_count")
+        counts["local_pool_normalized_candidate_count"] = local_pool_audit.get("normalized_candidate_count")
+        counts["local_pool_duplicate_candidate_count"] = local_pool_audit.get("duplicate_candidate_count")
 
     if candidate_rows:
         status = "ready"
@@ -668,12 +926,21 @@ def _build_candidate_radar_packet(
         "cache_source": cache_source,
         "scan_mode": scan_mode,
         "quick_scan_supported": True,
-        "source_packet_keys": ["radar_packet", "next_ticket_candidates", "candidate_execution_evidence_overview"],
+        "local_pool_scan_supported": True,
+        "supported_local_scan_modes": sorted(SUPPORTED_LOCAL_SCAN_MODES),
+        "source_packet_keys": [
+            "radar_packet",
+            "next_ticket_candidates",
+            "candidate_execution_evidence_overview",
+            "local_candidate_pool_audit",
+        ],
         "summary": radar_packet.get("summary") or "候选雷达 cache 只读展示；无缓存时不自动扫描。",
         "manual_required_text": radar_packet.get("manual_required_text")
         or "下一票候选来自本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
         "counts": counts,
         "scan_coverage": coverage,
+        "local_candidate_pool_audit": dict(local_pool_audit or _as_dict(snapshot_map.get("local_candidate_pool_audit"))),
+        "local_candidate_pool_skipped_rows": list(local_pool_skipped_rows or _as_list(snapshot_map.get("local_candidate_pool_skipped_rows"))),
         "legacy_signal_group_rows": coverage["legacy_signal_group_rows"],
         "legacy_parity_inventory": parity_inventory,
         "legacy_parity_rows": _legacy_parity_rows(
@@ -706,6 +973,9 @@ def _build_candidate_radar_packet(
             "does_not_call_github": True,
             "does_not_scan_market": True,
             "quick_scan_reads_cache_only": True,
+            "local_pool_scan_reads_local_input_only": scan_mode in LOCAL_POOL_SCAN_MODES,
+            "watchlist_scan_reads_local_input_only": scan_mode == "watchlist_scan",
+            "custom_pool_scan_reads_local_input_only": scan_mode == "custom_pool_scan",
             "quick_scan_preserves_legacy_signal_groups": True,
             "missing_legacy_groups_are_reported": True,
             "does_not_run_backtest": True,
@@ -754,11 +1024,12 @@ def _read_persisted_packet() -> dict[str, Any] | None:
 
 def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     row_count = len(_as_list(packet.get("candidate_rows")))
+    persisted_scan_mode = str(packet.get("scan_mode") or "local_scan")
     cache_row = _candidate_call_ledger_row(
         api="local_candidate_radar_cache",
         source_snapshot="sqlite_meta_candidate_radar_packet",
         row_count=row_count,
-        call_status="cache_read_persisted_quick_scan",
+        call_status=f"cache_read_persisted_{persisted_scan_mode}",
     )
     view = dict(_json_safe(packet))
     existing_ledger = _as_list(view.get("call_ledger"))
@@ -768,7 +1039,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["cache_source"] = "sqlite_meta"
     view["call_ledger"] = [cache_row] + [row for row in existing_ledger if isinstance(row, dict)]
     warnings = _as_list(view.get("warnings"))
-    first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 quick scan 结果；不会自动全市场扫描。"
+    first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
     view["warnings"] = [first_warning] + [str(item) for item in warnings if item != first_warning]
     view["external_calls_triggered"] = False
     view["tushare_called"] = False
@@ -786,7 +1057,10 @@ def read_candidate_radar_cache() -> dict[str, Any]:
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
     snapshot_hash = _snapshot_fingerprint(snapshot_map)
     persisted = _read_persisted_packet()
-    if persisted and persisted.get("source_snapshot_hash") == snapshot_hash:
+    if persisted and (
+        persisted.get("source_snapshot_hash") == snapshot_hash
+        or str(persisted.get("scan_mode") or "") in LOCAL_POOL_SCAN_MODES
+    ):
         return _cache_view_from_persisted(persisted)
     return _build_candidate_radar_packet(snapshot, mode="cache_only", cache_source="snapshot", scan_mode="cache_only")
 
@@ -813,31 +1087,52 @@ def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
     )
     payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
     requested_scan_mode = str(payload_safe.get("scan_mode") or "quick_cache_scan")
-    scan_mode = requested_scan_mode if requested_scan_mode == "quick_cache_scan" else "quick_cache_scan"
+    scan_mode = requested_scan_mode if requested_scan_mode in SUPPORTED_LOCAL_SCAN_MODES else "quick_cache_scan"
     request_params_safe = {
         "requested_scan_mode": requested_scan_mode,
         "scan_mode": scan_mode,
         "unsupported_scan_mode_fallback": requested_scan_mode != scan_mode,
-        "universe_mode": payload_safe.get("universe_mode") or "cache_snapshot",
+        "universe_mode": payload_safe.get("universe_mode")
+        or ("local_watchlist" if scan_mode == "watchlist_scan" else "manual_input" if scan_mode == "custom_pool_scan" else "cache_snapshot"),
         "external_sources_allowed": False,
+        "local_pool_scan": scan_mode in LOCAL_POOL_SCAN_MODES,
     }
     snapshot = packet_service.load_snapshot_cache()
+    safe_snapshot = _safe_value(snapshot)
+    snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    scan_snapshot: Mapping[str, Any] = snapshot
+    local_pool_audit: dict[str, Any] = {}
+    local_pool_skipped_rows: list[dict[str, Any]] = []
+    if scan_mode in LOCAL_POOL_SCAN_MODES:
+        scan_snapshot, local_pool_audit, local_pool_skipped_rows = _snapshot_with_local_candidate_pool(
+            snapshot_map,
+            payload_safe,
+            scan_mode,
+        )
+        request_params_safe["candidate_pool_source"] = local_pool_audit.get("input_source")
+        request_params_safe["input_candidate_count"] = local_pool_audit.get("input_candidate_count")
+        request_params_safe["normalized_candidate_count"] = local_pool_audit.get("normalized_candidate_count")
     packet = _build_candidate_radar_packet(
-        snapshot,
-        mode="quick_cache_scan",
-        cache_source="quick_scan_task",
+        scan_snapshot,
+        mode=scan_mode,
+        cache_source=f"{scan_mode}_task",
         scan_mode=scan_mode,
         request_params_safe=request_params_safe,
+        local_pool_audit=local_pool_audit,
+        local_pool_skipped_rows=local_pool_skipped_rows,
     )
+    task_scan_label = "quick_scan" if scan_mode == "quick_cache_scan" else scan_mode
+    ledger_api = "local_candidate_radar_quick_scan" if scan_mode == "quick_cache_scan" else f"local_candidate_radar_{scan_mode}"
     quick_ledger = _candidate_call_ledger_row(
-        api="local_candidate_radar_quick_scan",
+        api=ledger_api,
         source_snapshot="command_center_latest.json",
         row_count=len(_as_list(packet.get("candidate_rows"))),
-        call_status="quick_scan_completed" if snapshot else "quick_scan_cache_missing",
+        call_status=f"{task_scan_label}_completed" if scan_snapshot else f"{task_scan_label}_cache_missing",
         request_params_safe=request_params_safe,
     )
     packet["task_id"] = task["task_id"]
     packet["quick_scan_completed_at"] = _now_iso()
+    packet["local_scan_completed_at"] = packet["quick_scan_completed_at"]
     packet["call_ledger"] = [quick_ledger]
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
@@ -854,14 +1149,14 @@ def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
             warning="candidate_radar_quick_scan_failed_no_external_call",
         ) or task
 
-    final_warning = "candidate_radar_quick_scan_completed_no_external_call"
+    final_warning = f"candidate_radar_{task_scan_label}_completed_no_external_call"
     if not _as_list(packet.get("candidate_rows")):
-        final_warning = "candidate_radar_quick_scan_completed_no_candidates_no_external_call"
+        final_warning = f"candidate_radar_{task_scan_label}_completed_no_candidates_no_external_call"
     return task_service.update_task_status(
         task["task_id"],
         status="success",
         progress=1.0,
-        current_step="candidate_radar_quick_scan_completed",
+        current_step=f"candidate_radar_{task_scan_label}_completed",
         call_ledger=[quick_ledger],
         warning=final_warning,
     ) or task

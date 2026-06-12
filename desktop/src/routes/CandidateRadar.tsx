@@ -22,6 +22,7 @@ export default function CandidateRadar() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [customPoolText, setCustomPoolText] = useState("");
 
   const refreshCache = () => {
     void getCandidateRadarCache().then((res) => {
@@ -35,6 +36,20 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchWatchlistScan = () =>
+    void postCandidateRadarQuickScan({ scan_mode: "watchlist_scan", universe_mode: "local_watchlist" }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+  const launchCustomScan = () =>
+    void postCandidateRadarQuickScan({
+      scan_mode: "custom_pool_scan",
+      universe_mode: "manual_input",
+      custom_pool_text: customPoolText
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -45,6 +60,7 @@ export default function CandidateRadar() {
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
+  const localPoolAudit = (cache.local_candidate_pool_audit as Record<string, unknown> | undefined) ?? {};
   const overview = (cache.candidate_execution_evidence_overview as Record<string, unknown> | undefined) ?? {};
   const radarPacket = (cache.radar_packet as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -80,6 +96,7 @@ export default function CandidateRadar() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "市场扫描", value: policy.does_not_scan_market === true ? "不会" : "可能", tone: policy.does_not_scan_market === true ? "good" : "bad" },
           { label: "quick scan", value: policy.quick_scan_reads_cache_only === true ? "本地" : "未知", tone: policy.quick_scan_reads_cache_only === true ? "good" : "warn" },
+          { label: "local pool", value: localPoolAudit.normalized_candidate_count as number | undefined },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
           { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
@@ -99,13 +116,23 @@ export default function CandidateRadar() {
           <div className="actions">
             <button onClick={refreshCache}>查看缓存</button>
             <button onClick={launchQuickScan}>运行 quick scan</button>
+            <button onClick={launchWatchlistScan}>运行 watchlist scan</button>
+          </div>
+          <textarea
+            value={customPoolText}
+            onChange={(event) => setCustomPoolText(event.target.value)}
+            placeholder="002008.SZ, 002837.SZ"
+            rows={3}
+          />
+          <div className="actions">
+            <button onClick={launchCustomScan}>运行 custom pool scan</button>
           </div>
           <TaskLaunchReceipt receipt={taskReceipt} />
           <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
           <p>quick scan 只做本地 cache 快速重建和覆盖缺口标记，不调用 Tushare、DeepSeek 或 GitHub。</p>
           <p>scan_coverage 和 legacy_signal_group_rows 用来确认旧模块下一票雷达能力没有被静默丢失。</p>
           <p>skipped_reason_rows 和 freshness_state 会把缺失、跳过、陈旧或未知输入直接显示出来。</p>
-          <p>任务血缘写入 local_candidate_radar_quick_scan，GET cache 仍然只读。</p>
+          <p>任务血缘写入 local_candidate_radar_[scan_mode]，GET cache 仍然只读。</p>
           <p>quick_scan_reads_cache_only: {String(policy.quick_scan_reads_cache_only === true)}</p>
           <DataLineageTable rows={objectRow(scanCoverage)} />
         </PacketCard>
@@ -132,8 +159,13 @@ export default function CandidateRadar() {
         </PacketCard>
       </div>
 
-      <PacketCard title="扫描模式状态" subtitle="scan_mode_status_rows；当前只实现 quick_cache_scan" status="mode">
+      <PacketCard title="扫描模式状态" subtitle="scan_mode_status_rows；当前本地实现 quick/watchlist/custom，full pool 仍是未来任务" status="mode">
         <DataLineageTable rows={scanModeRows} />
+      </PacketCard>
+
+      <PacketCard title="本地候选池审计" subtitle="local_candidate_pool_audit；watchlist/custom 只读本地输入" status={String(localPoolAudit.input_source ?? "cache")}>
+        <DataLineageTable rows={objectRow(localPoolAudit)} />
+        <DataLineageTable rows={rows(cache.local_candidate_pool_skipped_rows)} />
       </PacketCard>
 
       <div className="grid">
