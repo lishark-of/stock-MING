@@ -218,6 +218,7 @@ TASK_RETRY_POLICY_BY_TYPE: dict[str, dict[str, Any]] = {
 }
 TASK_RETRYABLE_STATUSES = ["failed"]
 TASK_LOCK_POLICY_VERSION = "task_lock_policy.audit.v1"
+TASK_DEDUPE_POLICY_VERSION = "task_dedupe_policy.audit.v1"
 TASK_TERMINAL_STATUSES = {"success", "failed", "cancelled"}
 
 
@@ -352,6 +353,57 @@ def _active_lock_conflicts(lock_key: str, *, exclude_task_id: str = "") -> list[
     return sorted(conflicts)
 
 
+def _idempotency_duplicates(idempotency_key: str, *, exclude_task_id: str = "") -> tuple[list[str], list[str]]:
+    seen: set[str] = set()
+    active: list[str] = []
+    historical: list[str] = []
+    candidates = list(_TASKS.values()) + _list_persisted_tasks()
+    for task in candidates:
+        task_id = str(task.get("task_id") or "")
+        if not task_id or task_id == str(exclude_task_id or "") or task_id in seen:
+            continue
+        seen.add(task_id)
+        if str(task.get("idempotency_key") or "") != str(idempotency_key or ""):
+            continue
+        if str(task.get("status") or "pending") in TASK_TERMINAL_STATUSES:
+            historical.append(task_id)
+        else:
+            active.append(task_id)
+    return sorted(active), sorted(historical)
+
+
+def _dedupe_policy_for_task(
+    task_type: str,
+    *,
+    task_id: str,
+    input_hash: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    active_duplicates, historical_duplicates = _idempotency_duplicates(idempotency_key, exclude_task_id=task_id)
+    duplicate_detected = bool(active_duplicates or historical_duplicates)
+    return {
+        "policy_version": TASK_DEDUPE_POLICY_VERSION,
+        "dedupe_scope": "task_type_payload",
+        "idempotency_key": idempotency_key,
+        "task_type": str(task_type or ""),
+        "input_hash": str(input_hash or ""),
+        "duplicate_detection_enabled": True,
+        "duplicate_detected": duplicate_detected,
+        "active_duplicate_count": len(active_duplicates),
+        "historical_duplicate_count": len(historical_duplicates),
+        "active_duplicate_task_ids": active_duplicates[:5],
+        "historical_duplicate_task_ids": historical_duplicates[:5],
+        "dispatch_dedupe_enforced": False,
+        "audit_only": True,
+        "cache_api_can_dedupe": False,
+        "auto_blocks_task_creation": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "本地去重目前只做 idempotency 审计；不会自动吞掉任务、不会自动外联。",
+    }
+
+
 def _lock_policy_for_task(
     task_type: str,
     *,
@@ -415,6 +467,18 @@ def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
         "audit_only": True,
         "conflict_detection_enabled": True,
         "cache_api_can_acquire_lock": False,
+        "auto_blocks_task_creation": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    row["dedupe_policy"] = {
+        "policy_version": TASK_DEDUPE_POLICY_VERSION,
+        "dedupe_scope": "task_type_payload",
+        "duplicate_detection_enabled": True,
+        "dispatch_dedupe_enforced": False,
+        "audit_only": True,
+        "cache_api_can_dedupe": False,
         "auto_blocks_task_creation": False,
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
@@ -693,13 +757,20 @@ def build_task_record(
     payload_safe = _safe_payload(payload)
     input_hash = _task_input_hash(task_type, payload_safe)
     record_task_id = task_id or f"local-{uuid.uuid4().hex[:12]}"
+    idempotency_key = f"{task_type}:{input_hash}"
     lock_key = f"lock:{task_type}:{input_hash}"
     record = {
         "task_id": record_task_id,
         "task_type": task_type,
         "input_hash": input_hash,
-        "idempotency_key": f"{task_type}:{input_hash}",
+        "idempotency_key": idempotency_key,
         "dedupe_scope": "local_task_type_payload",
+        "dedupe_policy": _dedupe_policy_for_task(
+            task_type,
+            task_id=record_task_id,
+            input_hash=input_hash,
+            idempotency_key=idempotency_key,
+        ),
         "lock_key": lock_key,
         "lock_enforced": False,
         "lock_policy": _lock_policy_for_task(
@@ -800,6 +871,12 @@ def update_task_status(
     if warning:
         task.setdefault("warnings", []).append(warning)
     old_retry_policy = task.get("retry_policy") if isinstance(task.get("retry_policy"), dict) else {}
+    task["dedupe_policy"] = _dedupe_policy_for_task(
+        str(task.get("task_type") or ""),
+        task_id=str(task.get("task_id") or ""),
+        input_hash=str(task.get("input_hash") or ""),
+        idempotency_key=str(task.get("idempotency_key") or ""),
+    )
     task["lock_policy"] = _lock_policy_for_task(
         str(task.get("task_type") or ""),
         task_id=str(task.get("task_id") or ""),
@@ -942,6 +1019,7 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     )
     persistence = {
         "task_rows_include_idempotency_key": True,
+        "task_rows_include_dedupe_policy": True,
         "task_rows_include_lock_key": True,
         "task_rows_include_lock_policy": True,
         "task_rows_include_retry_policy": True,
@@ -957,6 +1035,18 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             0,
             len([task for task in sorted_tasks if task.get("idempotency_key")])
             - len({str(task.get("idempotency_key") or "") for task in sorted_tasks if task.get("idempotency_key")}),
+        ),
+        "dedupe_duplicate_audit_count": sum(
+            1
+            for task in sorted_tasks
+            if isinstance(task.get("dedupe_policy"), dict)
+            and task.get("dedupe_policy", {}).get("duplicate_detected") is True
+        ),
+        "dispatch_dedupe_enforced_count": sum(
+            1
+            for task in sorted_tasks
+            if isinstance(task.get("dedupe_policy"), dict)
+            and task.get("dedupe_policy", {}).get("dispatch_dedupe_enforced") is True
         ),
         "manual_retry_eligible_count": sum(
             1
@@ -1060,6 +1150,8 @@ def build_task_status_index() -> dict[str, Any]:
                 "deduplicated_task_count": persistence["deduplicated_task_count"],
                 "idempotency_key_count": persistence["idempotency_key_count"],
                 "duplicate_idempotency_key_count": persistence["duplicate_idempotency_key_count"],
+                "dedupe_duplicate_audit_count": persistence["dedupe_duplicate_audit_count"],
+                "dispatch_dedupe_enforced_count": persistence["dispatch_dedupe_enforced_count"],
                 "manual_retry_eligible_count": persistence["manual_retry_eligible_count"],
                 "automatic_retry_enabled_count": persistence["automatic_retry_enabled_count"],
                 "lock_conflict_audit_count": persistence["lock_conflict_audit_count"],

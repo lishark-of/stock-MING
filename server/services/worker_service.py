@@ -205,9 +205,9 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "task_dedupe",
-            "status": "partial_ready",
-            "current_coverage": "task index deduplicates memory and SQLite status views; dispatch idempotency is not enforced.",
-            "next_action": "deduplicate by task_type + target + input_hash before queue submission.",
+            "status": "audit_ready",
+            "current_coverage": "task records expose dedupe_policy with idempotency duplicate counts; dispatch dedupe remains disabled.",
+            "next_action": "add explicit dedupe enforcement before queue submission after operator-facing retry behavior is approved.",
             "external_calls_triggered": False,
         },
         {
@@ -303,6 +303,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "sqlite_fallback_enabled": task_persistence.get("sqlite_fallback_enabled", True),
             "lock_conflict_audit_count": task_persistence.get("lock_conflict_audit_count", 0),
             "lock_enforced_task_count": task_persistence.get("lock_enforced_task_count", 0),
+            "dedupe_duplicate_audit_count": task_persistence.get("dedupe_duplicate_audit_count", 0),
+            "dispatch_dedupe_enforced_count": task_persistence.get("dispatch_dedupe_enforced_count", 0),
             "external_calls_triggered": task_index.get("external_calls_triggered", False),
             "does_not_execute_trades": task_index.get("does_not_execute_trades", True),
             "does_not_modify_strategy_action": task_index.get("does_not_modify_strategy_action", True),
