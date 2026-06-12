@@ -563,19 +563,22 @@ Retire Streamlit from primary user workflow
 
 - Local test, frontend build, smoke, and diff checks are available.
 - `scripts/push_gate_3_0.sh` now codifies the local push gate: Python tests, desktop build, smoke, diff check, high-risk secret scan, generated artifact scan, and final clean-worktree check.
+- `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 
 ### Gaps
 
 - CI status for all checks may not mirror local gate.
 - Push gate still needs CI mirroring and periodic review of false-positive allowlists.
+- Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
 
 1. Document the release gate in one place.
 2. Keep `unittest`, frontend build, smoke, and `git diff --check` mandatory.
 3. Add repeatable secret and generated-artifact scan commands.
-4. Add CI coverage where safe and affordable.
+4. Keep optional local release-readiness reports explicit and outside tracked artifacts unless intentionally reviewed.
+5. Add CI coverage where safe and affordable.
 
 ### Acceptance Criteria
 
@@ -585,6 +588,7 @@ Retire Streamlit from primary user workflow
 - `git diff --check` passes.
 - Secret scan and generated artifact scan are clean or explained.
 - Worktree is clean before push.
+- Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
 
 ### Forbidden
 

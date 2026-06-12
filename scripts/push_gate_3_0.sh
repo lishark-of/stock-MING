@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
+PUSH_GATE_REPORT_PATH="${PUSH_GATE_REPORT_PATH:-}"
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "FAIL: expected project Python at $PYTHON_BIN. Do not use system Python for the push gate." >&2
   exit 1
@@ -82,12 +83,63 @@ worktree_clean_scan() {
   echo "worktree: clean"
 }
 
+write_release_readiness_report() {
+  if [ -z "$PUSH_GATE_REPORT_PATH" ]; then
+    echo "release readiness report: skipped; set PUSH_GATE_REPORT_PATH to write a local report"
+    return 0
+  fi
+
+  local report_dir branch head ahead_count generated_at
+  report_dir="$(dirname "$PUSH_GATE_REPORT_PATH")"
+  mkdir -p "$report_dir"
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  head="$(git rev-parse --short HEAD)"
+  ahead_count="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo unknown)"
+  generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  cat > "$PUSH_GATE_REPORT_PATH" <<REPORT
+# Command Center 3 Push Gate Report
+
+- generated_at_utc: $generated_at
+- branch: $branch
+- head: $head
+- origin_ahead_count: $ahead_count
+- worktree_clean_check_runs_after_report: true
+
+## Passed Checks
+
+- python_unittest: passed
+- desktop_build: passed
+- command_center_3_smoke: passed
+- diff_whitespace_check: passed
+- high_risk_secret_scan: clean
+- generated_artifact_scan: clean_or_allowed_assets_only
+
+## Safety Boundaries
+
+- did_not_push: true
+- did_not_call_external_providers: true
+- did_not_execute_trades: true
+- did_not_use_system_python: true
+- no_git_add_dot: true
+
+## Scope Notes
+
+- This report is local evidence for the current push gate run.
+- A report path inside the repository must be ignored or intentionally staged later; otherwise the final clean-worktree check fails.
+- Scaffold, preflight, matrix, mock, and sanitizer checks are not production completion evidence.
+REPORT
+
+  echo "release readiness report: $PUSH_GATE_REPORT_PATH"
+}
+
 run_step "Python unittest" "$PYTHON_BIN" -m unittest discover -s tests
 run_step "Desktop build" bash -c "cd desktop && npm run build"
 run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0.sh
 run_step "Diff whitespace check" git diff --check
 run_step "Secret scan" secret_high_risk_scan
 run_step "Generated artifact scan" artifact_scan
+run_step "Release readiness report" write_release_readiness_report
 run_step "Clean worktree check" worktree_clean_scan
 
 echo
