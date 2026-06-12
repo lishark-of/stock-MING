@@ -63,6 +63,7 @@ export default function FactorQuantHub() {
   const freshnessGate = packet.data_freshness_gate ?? {};
   const factorLibrary = packet.factor_library ?? {};
   const factorTests = packet.factor_tests ?? {};
+  const factorTestQuality = factorTests.quality_summary ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -75,6 +76,9 @@ export default function FactorQuantHub() {
   const factorTestMetricRows = toRows(factorTests.metric_schema);
   const factorTestModeRows = toRows(factorTests.mode_plan);
   const factorTestStatusRows = objectRows((factorTests.status_counts ?? {}) as Record<string, unknown>, "factor_test_status");
+  const factorTestQualityRows = objectRows(factorTestQuality as Record<string, unknown>, "quality_metric");
+  const factorTestMetricGapRows = objectRows((factorTests.required_metric_gap_counts ?? factorTestQuality.required_metric_gap_counts ?? {}) as Record<string, unknown>, "metric_gap");
+  const factorTestWindowRows = objectRows((factorTests.window_summary ?? factorTestQuality.window_summary ?? {}) as Record<string, unknown>, "window_metric");
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -135,6 +139,10 @@ export default function FactorQuantHub() {
           { label: "score band", value: score.score_band ?? "missing" },
           { label: "factor tests", value: factorTests.status ?? "scaffold_missing", tone: factorTests.status === "scaffold_ready" ? "warn" : "neutral" },
           { label: "test rows", value: factorTestRows.length },
+          { label: "test quality", value: factorTestQuality.status ?? "scaffold_only", tone: factorTestQuality.status === "computed_light_metrics_ready" ? "good" : "warn" },
+          { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
+          { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
+          { label: "metric gaps", value: factorTestQuality.largest_required_metric_gap ?? 0, tone: Number(factorTestQuality.largest_required_metric_gap ?? 0) > 0 ? "warn" : "good" },
           { label: "test core action", value: factorTests.governance?.allow_core_action === true ? "允许" : "禁止", tone: factorTests.governance?.allow_core_action === true ? "bad" : "good" },
           { label: "score chart", value: scoreChartContract.schema_version ?? "missing", tone: scoreChartContract.schema_version ? "good" : "warn" },
           { label: "chart external", value: scoreChartContract.external_calls_triggered === true ? "存在" : "无", tone: scoreChartContract.external_calls_triggered === true ? "bad" : "good" },
@@ -203,6 +211,12 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={factorTestModeRows} />
       <h3>Factor Test 状态分布</h3>
       <DataLineageTable rows={factorTestStatusRows} />
+      <h3>Factor Test 质量摘要</h3>
+      <DataLineageTable rows={factorTestQualityRows} />
+      <h3>Factor Test 必需指标缺口</h3>
+      <DataLineageTable rows={factorTestMetricGapRows} />
+      <h3>Factor Test 样本窗口</h3>
+      <DataLineageTable rows={factorTestWindowRows} />
       <h3>评分桶</h3>
       <DataLineageTable rows={scoreRows} />
       <h3>治理边界</h3>

@@ -92,6 +92,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - Factor Quant Hub freshness gate 已支持 A 股交易日历语义：优先使用本地 `trade_cal` cache 推导 `expected_data_date`、`market_phase` 与 `trading_day_lag`；没有交易日历时退回工作日近似并标记 `calendar_validated=false`。过期、陈旧或盘中不可得数据只可审计展示，不进入 `composite_score`、强 support 或 `next_session_bridge.preview`。
 - `POST /api/tasks/refresh-tushare-facts` 已具备扩展接口验证矩阵：默认只刷新 `daily/daily_basic/moneyflow`，按钮 payload 可选择 `trade_cal`、两融、涨跌停、筹码、公告/预告、股东增减持、限售解禁、质押等接口；每个接口会进入 `api_validation_rows` 与 `call_ledger`。当前只有核心三接口启用 Parquet 落盘，扩展接口以 `parquet_status=not_enabled` 审计展示，不能被当成生产化数据集。
 - `GET /api/next-session/cache` 已输出 ECharts 成熟版只读合同：`chart_payload` 除历史 close、参考线、操作区和三情景路径外，还包含数据可信度、持仓冲突、DeepSeek 状态、latest close 锚定校验、参考线来源与操作区点击说明。React/ECharts 只渲染这些后端 cache 字段，不计算交易动作、不改价格/持仓、不改 `operation_zones`。
+- Factor Test Lab 已从空 schema 进入 light research metrics：`command_center_factor_test_packet` 可对本地小样本 observations 计算 IC、Rank IC、ICIR、Top-Bottom 分组收益、换手、成本后收益、最大回撤，并输出 `quality_summary`、必需指标缺口与样本窗口摘要。该能力仍是 research-only，不跑 full market，不进入 `strategy action`。
 - `POST /api/factor-quant/deepseek-explain` 已接入 guarded explanation pipeline：读取 Factor Quant Hub cache，准备未发送的安全 prompt 预览；如提供本地解释 payload，仅按六个白名单字段清洗并写回 SQLite cache，不真实调用 DeepSeek、不覆盖数值、不修改 `strategy action`。
 - 任务生命周期已同步写入 SQLite metadata store；内存状态丢失后，`/api/tasks/{task_id}` 仍可从本地 SQLite fallback 读回任务状态。
 - `/api/packets` 已暴露 SQLite packet/task metadata 摘要、packet source rows 和固定读取优先级，便于前端判断哪些 packet 来自持久化 cache。

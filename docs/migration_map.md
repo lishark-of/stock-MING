@@ -114,6 +114,8 @@ Tushare 任务管线已补充扩展接口验证矩阵：`POST /api/tasks/refresh
 
 ECharts 次日操作图谱已进入成熟版只读合同：`GET /api/next-session/cache` 返回 `chart_payload`，包含真实 close 历史段、参考线、操作区、情景路径、数据可信度、持仓冲突、DeepSeek 状态、latest close 锚定校验、参考线来源和操作区点击说明。React 只负责渲染与展示 hover/click 说明，不计算 action、不改价格/持仓、不改 `operation_zones`。
 
+Factor Test Lab 已具备 light observation 研究指标计算：可从小样本本地 observations 计算 IC、Rank IC、ICIR、Top-Bottom 分组收益、换手、成本后收益和最大回撤，并输出 `quality_summary`、必需指标缺口和样本窗口摘要。当前仍是 research-only，不跑全市场，不进入 `strategy action`。
+
 `/api/trade-review/cache` 已接入交易记录实验室只读迁移：只读取 `.stock_ming_cache/trade_review_log.jsonl`，返回复盘记录摘要、记录表和本地读取血缘；不创建记录、不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。
 
 `/api/quant/cache` 已接入旧量化/回测只读迁移：读取 `command_center_quant_packet` 或本地 snapshot 构建轻量缓存摘要；不运行 `backtester`、不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不修改 `strategy_execution_packet.action`。完整回测后续必须通过按钮门控 POST task。

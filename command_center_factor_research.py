@@ -1609,6 +1609,60 @@ def _merge_factor_test_items(scaffold_rows: list[dict], supplied_items: Any, now
     return rows
 
 
+def _factor_test_required_metric_gaps(rows: list[dict]) -> dict[str, int]:
+    required_keys = [str(item["metric_key"]) for item in FACTOR_TEST_METRIC_SCHEMA if item.get("required")]
+    return {
+        key: sum(1 for row in rows if row.get(key) in (None, "", [], {}))
+        for key in required_keys
+    }
+
+
+def _factor_test_window_summary(rows: list[dict]) -> dict[str, Any]:
+    observation_count = 0
+    valid_pair_count = 0
+    trade_date_count = 0
+    for row in rows:
+        window = row.get("test_window") if isinstance(row.get("test_window"), Mapping) else {}
+        observation_count += int(_to_number(window.get("observation_count"), 0) or 0)
+        valid_pair_count += int(_to_number(window.get("valid_pair_count"), 0) or 0)
+        trade_date_count = max(trade_date_count, int(_to_number(window.get("trade_date_count"), 0) or 0))
+    return {
+        "observation_count": observation_count,
+        "valid_pair_count": valid_pair_count,
+        "max_trade_date_count": trade_date_count,
+        "has_forward_returns": valid_pair_count > 0,
+        "sample_scope": "current_holding_watchlist",
+        "full_market_research": False,
+    }
+
+
+def _factor_test_quality_summary(rows: list[dict], *, computed_count: int) -> dict[str, Any]:
+    status_counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get("result_status") or "not_enough_data")
+        status_counts[key] = status_counts.get(key, 0) + 1
+    metric_gaps = _factor_test_required_metric_gaps(rows)
+    return {
+        "status": "computed_light_metrics_ready" if computed_count else "scaffold_only",
+        "computed_item_count": computed_count,
+        "factor_count": len(rows),
+        "research_pass_count": status_counts.get("research_pass", 0),
+        "watchlist_count": status_counts.get("watchlist", 0),
+        "disabled_count": status_counts.get("disabled", 0),
+        "invalid_count": status_counts.get("invalid", 0),
+        "not_enough_data_count": status_counts.get("not_enough_data", 0),
+        "required_metric_gap_counts": metric_gaps,
+        "largest_required_metric_gap": max(metric_gaps.values()) if metric_gaps else 0,
+        "window_summary": _factor_test_window_summary(rows),
+        "allow_evidence_effects": False,
+        "allow_strategy_trace": False,
+        "allow_core_action": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "Factor Test Lab 指标只用于研究检验；即使 research_pass 也不会直接进入 strategy action。",
+    }
+
+
 def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None, items: Any = None, observations: Any = None, now: Any = None) -> dict:
     now_text = _now_iso(now)
     selected_mode = mode if mode in {"light", "small_research", "full", "research", "cache_only"} else "light"
@@ -1623,6 +1677,7 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
     for row in rows:
         key = str(row.get("result_status") or "not_enough_data")
         status_counts[key] = status_counts.get(key, 0) + 1
+    quality_summary = _factor_test_quality_summary(rows, computed_count=computed_count)
     return {
         "packet_key": TEST_PACKET_KEY,
         "schema_version": "factor_test.v2",
@@ -1631,6 +1686,9 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
         "status": "ready" if computed_count else "scaffold_ready",
         "items": rows,
         "computed_item_count": computed_count,
+        "quality_summary": quality_summary,
+        "required_metric_gap_counts": quality_summary["required_metric_gap_counts"],
+        "window_summary": quality_summary["window_summary"],
         "metric_schema": FACTOR_TEST_METRIC_SCHEMA,
         "mode_plan": FACTOR_TEST_MODE_PLAN,
         "result_categories": VALIDATION_STANDARDS,
