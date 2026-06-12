@@ -4455,6 +4455,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(data_health["data"]["policy"]["does_not_ping_supabase"])
         self.assertTrue(data_health["data"]["policy"]["does_not_refresh_data"])
         self.assertTrue(data_health["data"]["policy"]["post_task_required_for_provider_probe"])
+        self.assertTrue(data_health["data"]["policy"]["freshness_acceptance_matrix_is_local_contract"])
+        self.assertFalse(data_health["data"]["policy"]["freshness_acceptance_matrix_calls_trade_cal"])
+        self.assertFalse(data_health["data"]["policy"]["real_trade_cal_long_window_validation_done"])
         self.assertTrue(data_health["data"]["does_not_modify_strategy_action"])
         self.assertTrue(data_health["data"]["does_not_execute_trades"])
 
@@ -4916,11 +4919,76 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["does_not_ping_tushare"])
         self.assertTrue(packet["policy"]["does_not_refresh_data"])
         self.assertTrue(packet["policy"]["post_task_required_for_provider_probe"])
+        self.assertTrue(packet["policy"]["freshness_acceptance_matrix_is_local_contract"])
+        self.assertFalse(packet["policy"]["freshness_acceptance_matrix_calls_trade_cal"])
+        self.assertFalse(packet["policy"]["real_trade_cal_long_window_validation_done"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_data_health_timeline_cache")
+        self.assertEqual(response["call_ledger"][0]["freshness_acceptance_scenario_count"], 8)
         self.assertFalse(response["call_ledger"][0]["external"])
         self.assertIn("GET /api/data-health/cache", response["warnings"][0])
+
+    def test_data_health_cache_exposes_freshness_acceptance_matrix_as_local_contract(self):
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "stale",
+                    "expected_trade_date": "2026-06-12",
+                    "data_date": "2026-06-11",
+                    "authorization": "Bearer SHOULD_DROP",
+                }
+            }
+        )
+
+        response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        matrix = packet["freshness_acceptance_matrix"]
+        summary = packet["freshness_acceptance_summary"]
+        rows_by_id = {row["scenario_id"]: row for row in matrix}
+
+        self.assertEqual(summary["status"], "acceptance_matrix_ready")
+        self.assertEqual(summary["scope"], "local_contract_not_real_trade_cal_validation")
+        self.assertEqual(summary["scenario_count"], 8)
+        self.assertFalse(summary["trade_cal_long_window_validation_done"])
+        self.assertFalse(summary["real_provider_validation_done"])
+        self.assertTrue(summary["current_evidence_requires_expected_trade_date"])
+        self.assertTrue(summary["stale_expired_historical_unknown_are_research_only"])
+        self.assertTrue(summary["blocks_composite_score"])
+        self.assertTrue(summary["blocks_support_factors"])
+        self.assertTrue(summary["blocks_evidence_preview"])
+        self.assertTrue(summary["blocks_next_session_bridge_preview"])
+        self.assertTrue(summary["provider_delay_grace_is_bounded"])
+        self.assertTrue(summary["missing_trade_cal_falls_back_with_warning"])
+        self.assertTrue(summary["does_not_modify_strategy_action"])
+        self.assertTrue(summary["does_not_execute_trades"])
+
+        self.assertEqual(packet["counts"]["freshness_acceptance_scenario_count"], 8)
+        self.assertEqual(rows_by_id["premarket_open_day"]["expected_trade_date_rule"], "previous_completed_trading_day")
+        self.assertEqual(rows_by_id["postclose_after_1630"]["expected_trade_date_rule"], "current_trading_day")
+        self.assertEqual(rows_by_id["weekend_or_holiday"]["expected_trade_date_rule"], "most_recent_completed_trading_day")
+        self.assertIn("fallback", rows_by_id["trade_cal_missing_fallback"]["expected_trade_date_rule"])
+        self.assertIn("bounded", rows_by_id["provider_delay_grace"]["provider_delay_grace"])
+        self.assertIn(
+            "cannot_enter_score_support_evidence_preview_next_session_bridge_or_strategy_action",
+            rows_by_id["stale_expired_historical_unknown"]["action_boundary"],
+        )
+        for row in matrix:
+            self.assertTrue(row["current_evidence_requires_expected_trade_date"])
+            self.assertTrue(row["stale_expired_historical_unknown_are_research_only"])
+            self.assertTrue(row["blocks_composite_score"])
+            self.assertTrue(row["blocks_support_factors"])
+            self.assertTrue(row["blocks_evidence_preview"])
+            self.assertTrue(row["blocks_next_session_bridge_preview"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(

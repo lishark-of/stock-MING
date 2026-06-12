@@ -31,6 +31,7 @@ export default function DataHealthTimeline() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const visibility = (cache.data_health_visibility_summary as Record<string, unknown> | undefined) ?? {};
   const providerCockpit = (cache.provider_data_capability_cockpit as Record<string, unknown> | undefined) ?? {};
+  const freshnessAcceptance = (cache.freshness_acceptance_summary as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -50,6 +51,9 @@ export default function DataHealthTimeline() {
           { label: "恢复动作", value: counts.recovery_action_count as number | undefined },
           { label: "数据缺口", value: counts.gap_count as number | undefined },
           { label: "健康账本", value: counts.ledger_count as number | undefined },
+          { label: "freshness 场景", value: counts.freshness_acceptance_scenario_count as number | undefined },
+          { label: "trade_cal 长窗", value: freshnessAcceptance.trade_cal_long_window_validation_done === true ? "完成" : "待验收", tone: freshnessAcceptance.trade_cal_long_window_validation_done === true ? "good" : "neutral" },
+          { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "provider ping", value: policy.post_task_required_for_provider_probe === true ? "需任务" : "可能直接", tone: policy.post_task_required_for_provider_probe === true ? "good" : "bad" },
@@ -84,6 +88,13 @@ export default function DataHealthTimeline() {
 
       <PacketCard title="健康时间线" subtitle="data_health_timeline / data_freshness / data_coverage；不会重新探测接口" status="timeline">
         <DataLineageTable rows={rows(cache.timeline_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Freshness 验收矩阵" subtitle="LTG-01 A 股交易日历级 freshness；本地合同，不是真实 trade_cal 长窗口验收" status={String(freshnessAcceptance.status ?? "acceptance_matrix")}>
+        <p>盘前、盘中、收盘集合竞价、16:30 后、周末/节假日、trade_cal 缺失、provider delay grace 和 stale/expired/historical/unknown 都必须显式说明 expected trade date 与 research-only 边界。</p>
+        <p>不合格数据不能进入 composite score、support factors、evidence preview、next-session bridge preview 或 strategy action。</p>
+        <DataLineageTable rows={objectRow(freshnessAcceptance)} />
+        <DataLineageTable rows={rows(cache.freshness_acceptance_matrix)} />
       </PacketCard>
 
       <div className="grid">
