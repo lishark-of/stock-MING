@@ -232,7 +232,7 @@ export default function FactorQuantHub() {
       <h3>运行值</h3>
       <DataLineageTable rows={toRows(runtime.factor_values)} />
       <h3>Factor Test Lab</h3>
-      <p className="risk-note">当前为研究指标 scaffold：IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益尚未代表已验证交易信号。</p>
+      <p className="risk-note">当前为 light 小样本研究指标：IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益只用于研究检验，不代表已验证交易信号。</p>
       <DataLineageTable rows={factorTestRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />

@@ -204,6 +204,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("评分图表 buckets", source)
         self.assertIn("Factor Test Lab", source)
         self.assertIn("IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益", source)
+        self.assertIn("light 小样本研究指标", source)
+        self.assertIn("不代表已验证交易信号", source)
         self.assertIn("factorTestRows", source)
         self.assertIn("factorTestMetricRows", source)
         self.assertIn("factorTestModeRows", source)
