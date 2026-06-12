@@ -171,6 +171,7 @@ Validate extended Tushare refresh task pipeline
 - Current usage is research-only.
 - Factor Test Lab now exposes a research-state acceptance contract for `research_pass`, `watchlist`, `disabled`, `invalid`, and `not_enough_data`.
 - React displays the state contract and explicitly marks `research_pass` as a research label, not a trade signal.
+- GET factor cache now attaches a read-only `factor_values` DuckDB query consumption contract for Factor Test Lab: typed projection, query result contract, cursor page info, and local query lineage are visible without computing production IC metrics from the query rows.
 
 ### Gaps
 
@@ -178,7 +179,7 @@ Validate extended Tushare refresh task pipeline
 - Multi-window, multi-horizon, out-of-sample, and factor decay validation are incomplete.
 - Production-grade transaction cost assumptions are not validated.
 - Industry and market-cap neutral stability needs larger samples.
-- The research-state contract is local/light-mode governance and does not prove full-market validation.
+- The research-state contract and DuckDB query consumption contract are local/light-mode governance and do not prove full-market validation.
 
 ### Implementation Phases
 
@@ -195,12 +196,14 @@ Validate extended Tushare refresh task pipeline
 - Out-of-sample and recent decay are present.
 - Results never enter `strategy action`.
 - All result states remain research-only and do not enter `core_action`, `evidence_effects`, `next_session_projection`, or frontend-computed action.
+- DuckDB query consumption remains local/read-only, does not write Parquet on GET, does not call providers, and does not convert query rows into trade signals or production IC acceptance.
 
 ### Forbidden
 
 - Do not present research metrics as trading advice.
 - Do not promote `research_pass` to action without separate approval.
 - Do not compute action in frontend.
+- Do not treat storage query consumption as real small-pool, full-market, or production factor validation.
 
 ### Recommended Commit Message
 
@@ -280,7 +283,7 @@ Add factor universe research pipeline
 - Physical partition migration execution.
 - Physical compaction execution beyond the button-gated dry-run.
 - Physical refresh scheduling/execution beyond the button-gated cache TTL dry-run.
-- Typed projection consumption by Factor Test Lab / full-pool research, richer query result contract hardening beyond the current local DuckDB read path, and production-grade query ergonomics beyond the current basic UI filters.
+- Full-pool research consumption, richer query result contract hardening beyond the current local DuckDB read path, and production-grade query ergonomics beyond the current basic UI filters.
 - Reviewed manual cleanup workflow after dry-run.
 
 ### Implementation Phases

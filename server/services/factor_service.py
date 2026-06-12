@@ -35,15 +35,22 @@ def _local_ledger_boundary() -> dict[str, Any]:
 
 def read_factor_quant_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_factor_quant_cache())
+    now = _now_iso()
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
-    cache_ledger = _factor_quant_cache_call_ledger(packet, _now_iso())
+    packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
+    cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
-    packet["call_ledger"] = cache_ledger + list(existing_ledger)
+    packet["call_ledger"] = cache_ledger + storage_query_ledger + list(existing_ledger)
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
+    storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
-    packet["warnings"] = [cache_warning] + [item for item in existing_warnings if item != cache_warning]
+    packet["warnings"] = [cache_warning, storage_query_warning] + [
+        item
+        for item in existing_warnings
+        if item not in {cache_warning, storage_query_warning}
+    ]
     return packet
 
 
@@ -190,6 +197,120 @@ def _factor_quant_cache_call_ledger(packet: dict[str, Any], now: str) -> list[di
             **_local_ledger_boundary(),
         }
     ]
+
+
+def _factor_test_storage_query_consumption(now: str) -> dict[str, Any]:
+    storage_packet = storage_service.factor_values_status(limit=10)
+    contract = storage_packet.get("query_result_contract") if isinstance(storage_packet.get("query_result_contract"), dict) else {}
+    page_info = storage_packet.get("page_info") if isinstance(storage_packet.get("page_info"), dict) else {}
+    query = storage_packet.get("query") if isinstance(storage_packet.get("query"), dict) else {}
+    policy = storage_packet.get("query_service_policy") if isinstance(storage_packet.get("query_service_policy"), dict) else {}
+    projected_columns = storage_packet.get("projected_columns") if isinstance(storage_packet.get("projected_columns"), list) else []
+    missing_projected_columns = storage_packet.get("missing_projected_columns") if isinstance(storage_packet.get("missing_projected_columns"), list) else []
+    applied_filters = storage_packet.get("applied_filters") if isinstance(storage_packet.get("applied_filters"), list) else []
+    skipped_filters = storage_packet.get("skipped_filters") if isinstance(storage_packet.get("skipped_filters"), list) else []
+    returned_row_count = int(page_info.get("returned_row_count") or storage_packet.get("row_count") or 0)
+    query_status = str(contract.get("status") or storage_packet.get("status") or "missing")
+    return {
+        "status": "query_contract_consumed" if contract else "query_contract_missing",
+        "schema_version": "factor_test_storage_query_consumption.v1",
+        "consumer": "Factor Test Lab",
+        "dataset": "factor_values",
+        "source_endpoint": "GET /api/storage/factor-values",
+        "query_wrapper": storage_packet.get("query_wrapper") or query.get("query_wrapper") or "duckdb_filtered_parquet.v1",
+        "query_result_contract_schema_version": contract.get("schema_version") or "duckdb_query_result_contract.v1",
+        "storage_status": storage_packet.get("status") or query_status,
+        "query_status": query_status,
+        "storage_row_count": int(storage_packet.get("row_count") or 0),
+        "returned_row_count": returned_row_count,
+        "sample_row_limit": 10,
+        "projected_columns": projected_columns,
+        "missing_projected_columns": missing_projected_columns,
+        "projection_requested": True,
+        "typed_projection_consumed": bool(policy.get("typed_projection_enabled", True)),
+        "query_result_contract_consumed": bool(contract),
+        "cursor_pagination_consumed": bool(page_info),
+        "page_info": {
+            "limit": page_info.get("limit"),
+            "cursor": page_info.get("cursor") or "",
+            "cursor_status": page_info.get("cursor_status") or "not_provided",
+            "offset": page_info.get("offset") or 0,
+            "has_more": bool(page_info.get("has_more")),
+            "next_cursor": page_info.get("next_cursor") or "",
+            "returned_row_count": returned_row_count,
+        },
+        "applied_filters": applied_filters,
+        "skipped_filters": skipped_filters,
+        "metrics_computed_from_storage_query": False,
+        "storage_query_enters_strategy_action": False,
+        "full_market_validation_done": False,
+        "real_small_pool_validation_done": False,
+        "cache_only": True,
+        "cache_get_writes_files": False,
+        "writes_parquet_on_get": False,
+        "auto_refresh_on_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "warning": "Factor Test Lab 当前只消费 factor_values DuckDB 查询合同；不把本地查询样本当作 IC/Rank IC/ICIR 生产验收。",
+        "call_ledger": [
+            {
+                "api": "local_factor_test_storage_query_consumption",
+                "request_params_safe": {
+                    "dataset": "factor_values",
+                    "limit": 10,
+                    "source_endpoint": "GET /api/storage/factor-values",
+                    "query_wrapper": storage_packet.get("query_wrapper") or query.get("query_wrapper") or "duckdb_filtered_parquet.v1",
+                },
+                "row_count": returned_row_count,
+                "data_date": None,
+                "local_fetched_at": now,
+                "call_status": query_status,
+                "error_message_safe": str(storage_packet.get("error_message_safe") or query.get("error_message_safe") or "")[:240],
+                **_local_ledger_boundary(),
+            }
+        ],
+    }
+
+
+def _attach_factor_test_storage_query_consumption(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    consumption = _factor_test_storage_query_consumption(now)
+    factor_tests["storage_query_consumption"] = consumption
+    factor_tests["storage_query_consumption_rows"] = [
+        {
+            "dataset": consumption["dataset"],
+            "status": consumption["status"],
+            "storage_status": consumption["storage_status"],
+            "query_status": consumption["query_status"],
+            "query_wrapper": consumption["query_wrapper"],
+            "projected_columns": ",".join(str(item) for item in consumption["projected_columns"]),
+            "missing_projected_columns": ",".join(str(item) for item in consumption["missing_projected_columns"]),
+            "returned_row_count": consumption["returned_row_count"],
+            "next_cursor": consumption["page_info"]["next_cursor"],
+            "metrics_computed_from_storage_query": consumption["metrics_computed_from_storage_query"],
+            "storage_query_enters_strategy_action": consumption["storage_query_enters_strategy_action"],
+            "external_calls_triggered": consumption["external_calls_triggered"],
+        }
+    ]
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(existing_test_ledger) + list(consumption.get("call_ledger") or [])
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    if acceptance:
+        acceptance = dict(acceptance)
+        acceptance["storage_query_contract_consumed"] = consumption["query_result_contract_consumed"]
+        acceptance["storage_query_metrics_computed"] = False
+        acceptance["storage_query_enters_strategy_action"] = False
+        acceptance["does_not_call_tushare"] = True
+        acceptance["does_not_call_deepseek"] = True
+        acceptance["does_not_call_github"] = True
+        factor_tests["acceptance_contract"] = acceptance
+    packet["factor_tests"] = factor_tests
+    return packet, list(consumption.get("call_ledger") or [])
 
 
 def _snapshot_value(snapshot: dict[str, Any], key: str) -> Any:

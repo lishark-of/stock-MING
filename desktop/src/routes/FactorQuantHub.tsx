@@ -67,6 +67,7 @@ export default function FactorQuantHub() {
   const factorTests = packet.factor_tests ?? {};
   const factorTestQuality = factorTests.quality_summary ?? {};
   const factorTestAcceptance = factorTests.acceptance_contract ?? {};
+  const factorTestStorageQuery = factorTests.storage_query_consumption ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -89,6 +90,8 @@ export default function FactorQuantHub() {
   const factorTestQualityRows = objectRows(factorTestQuality as Record<string, unknown>, "quality_metric");
   const factorTestMetricGapRows = objectRows((factorTests.required_metric_gap_counts ?? factorTestQuality.required_metric_gap_counts ?? {}) as Record<string, unknown>, "metric_gap");
   const factorTestWindowRows = objectRows((factorTests.window_summary ?? factorTestQuality.window_summary ?? {}) as Record<string, unknown>, "window_metric");
+  const factorTestStorageQueryRows = objectRows(factorTestStorageQuery as Record<string, unknown>, "storage_query_contract");
+  const factorTestStorageQueryTableRows = toRows(factorTests.storage_query_consumption_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -164,6 +167,9 @@ export default function FactorQuantHub() {
           { label: "factor tests", value: factorTests.status ?? "scaffold_missing", tone: factorTests.status === "scaffold_ready" ? "warn" : "neutral" },
           { label: "test rows", value: factorTestRows.length },
           { label: "test quality", value: factorTestQuality.status ?? "scaffold_only", tone: factorTestQuality.status === "computed_light_metrics_ready" ? "good" : "warn" },
+          { label: "storage query", value: factorTestStorageQuery.status ?? "missing", tone: factorTestStorageQuery.external_calls_triggered === true ? "bad" : "neutral" },
+          { label: "storage query rows", value: factorTestStorageQuery.returned_row_count ?? 0 },
+          { label: "storage query metrics", value: factorTestStorageQuery.metrics_computed_from_storage_query === true ? "会计算" : "不计算", tone: factorTestStorageQuery.metrics_computed_from_storage_query === true ? "bad" : "good" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
           { label: "state contract", value: factorTestAcceptance.status ?? "missing", tone: factorTestAcceptance.all_result_states_are_research_only === false ? "bad" : "good" },
@@ -252,6 +258,10 @@ export default function FactorQuantHub() {
       <h3>Factor Test Lab</h3>
       <p className="risk-note">当前为 light 小样本研究指标：IC / Rank IC / ICIR / 分组收益 / 换手 / 成本后收益只用于研究检验，不代表已验证交易信号。</p>
       <DataLineageTable rows={factorTestRows} />
+      <h3>Factor Test Storage 查询消费合同</h3>
+      <p className="risk-note">Factor Test Lab 只消费 factor_values DuckDB 查询合同、投影列和分页元信息；不把查询样本当作生产 IC 验收，不进入 strategy action。</p>
+      <DataLineageTable rows={factorTestStorageQueryTableRows} />
+      <DataLineageTable rows={factorTestStorageQueryRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>
