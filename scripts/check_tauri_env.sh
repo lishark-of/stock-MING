@@ -11,7 +11,11 @@ echo "api_base=${VITE_API_BASE_URL:-http://127.0.0.1:8710}"
 echo "fastapi_dev_command=scripts/dev_server.sh"
 echo "vite_dev_command=cd desktop && npm run dev"
 echo "tauri_dev_command=cd desktop && npm run tauri dev"
+echo "tauri_build_command=cd desktop && npm run tauri build"
 echo "backend_autostart=false"
+echo "fastapi_sidecar_autostart=false"
+echo "production_package_build_attempted=false"
+echo "token_bundle_policy=frontend_never_stores_tokens"
 echo
 
 check_command() {
@@ -87,3 +91,4 @@ echo "secrets_loaded=false"
 echo "real_trading_triggered=false"
 echo "api_base_localhost=true"
 echo "frontend_uses_fastapi_only=true"
+echo "tauri_package_build_required_for_production=true"

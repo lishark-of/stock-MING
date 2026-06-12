@@ -81,6 +81,36 @@ def _package_json_summary() -> dict[str, Any]:
     }
 
 
+def _tauri_config_summary() -> dict[str, Any]:
+    path = DESKTOP_ROOT / "src-tauri" / "tauri.conf.json"
+    if not path.exists():
+        return {"available": False, "path": _path_label(path)}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"available": False, "path": _path_label(path), "error_message_safe": str(exc).splitlines()[0][:240]}
+    build = payload.get("build") if isinstance(payload.get("build"), dict) else {}
+    app = payload.get("app") if isinstance(payload.get("app"), dict) else {}
+    windows = app.get("windows") if isinstance(app.get("windows"), list) else []
+    dev_url = str(build.get("devUrl") or "")
+    return {
+        "available": True,
+        "path": _path_label(path),
+        "product_name": payload.get("productName"),
+        "version": payload.get("version"),
+        "identifier": payload.get("identifier"),
+        "frontend_dist": build.get("frontendDist"),
+        "dev_url": dev_url,
+        "dev_url_is_localhost": dev_url.startswith("http://127.0.0.1") or dev_url.startswith("http://localhost"),
+        "before_dev_command": build.get("beforeDevCommand"),
+        "before_build_command": build.get("beforeBuildCommand"),
+        "window_count": len(windows),
+        "backend_sidecar_configured": False,
+        "production_package_build_attempted": False,
+        "contains_secret": False,
+    }
+
+
 def _api_base_summary(api_base: str) -> dict[str, Any]:
     normalized = str(api_base or "").strip()
     is_local = normalized.startswith("http://127.0.0.1") or normalized.startswith("http://localhost")
@@ -136,8 +166,41 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
     ]
 
 
+def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "step": "1",
+            "name": "构建 React/Vite 静态资源",
+            "command": "cd desktop && npm run build",
+            "required_for": "Tauri package build",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+        },
+        {
+            "step": "2",
+            "name": "打包 Tauri 桌面应用",
+            "command": "cd desktop && npm run tauri build",
+            "required_for": "生产桌面包；需要 Rust/Cargo",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+        },
+        {
+            "step": "3",
+            "name": "启动 FastAPI 本地后端",
+            "command": "scripts/dev_server.sh",
+            "required_for": f"当前阶段桌面壳连接 {api_base.rstrip('/')}",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+        },
+    ]
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
+    tauri_config = _tauri_config_summary()
     file_rows = [
         _file_row(DESKTOP_ROOT / "package.json", "package_json", "React/Vite package manifest"),
         _file_row(DESKTOP_ROOT / "package-lock.json", "package_lock", "Reproducible npm dependency lockfile"),
@@ -167,6 +230,27 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     tauri_dev_ready = vite_dev_ready and rust_ready
     api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
     api_base_info = _api_base_summary(api_base)
+    production_readiness = {
+        "status": "tauri_preflight_ready" if tauri_dev_ready else ("vite_ready_tauri_toolchain_pending" if vite_dev_ready else "desktop_scaffold_partial"),
+        "scope": "tauri_desktop_production_preflight",
+        "vite_build_ready": vite_dev_ready,
+        "tauri_dev_ready": tauri_dev_ready,
+        "tauri_package_build_attempted": False,
+        "tauri_package_build_required_for_production": True,
+        "rust_toolchain_required": True,
+        "backend_sidecar_autostart_enabled": False,
+        "backend_sidecar_autostart_planned": True,
+        "frontend_stores_tokens": False,
+        "api_base_is_localhost": api_base_info["is_localhost"],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "blockers": [] if tauri_dev_ready else (["rust_cargo_missing"] if vite_dev_ready else ["desktop_scaffold_incomplete"]),
+        "note": "当前阶段验证 React/Vite 与 Tauri scaffold；生产 package build 和 FastAPI sidecar 自动拉起仍需后续阶段。",
+    }
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -179,7 +263,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "api_base": api_base,
         "api_base_info": api_base_info,
         "dev_launch_plan": _dev_launch_plan(api_base),
+        "production_launch_plan": _production_launch_plan(api_base),
         "package_json": package_summary,
+        "tauri_config": tauri_config,
+        "production_readiness": production_readiness,
         "file_rows": file_rows,
         "command_rows": command_rows,
         "counts": {
@@ -202,6 +289,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "api_base_is_localhost": api_base_info["is_localhost"],
             "api_health_endpoint": api_base_info["expected_health_endpoint"],
             "backend_autostart_configured": False,
+            "production_package_build_attempted": False,
+            "backend_sidecar_autostart_enabled": False,
         },
         "policy": {
             "cache_api_external_calls": False,
