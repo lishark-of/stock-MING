@@ -669,6 +669,27 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertFalse(gate["current_eod_available"])
         self.assertFalse(gate["data_update_delay_guard_active"])
 
+    def test_a_share_calendar_closing_call_auction_still_uses_previous_trading_day(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260611", "call_status": "success"},
+            ],
+            now="2026-06-12T14:58:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "fresh")
+        self.assertEqual(gate["market_phase"], "intraday")
+        self.assertEqual(gate["market_session_detail"], "closing_call_auction")
+        self.assertEqual(gate["expected_data_date"], "2026-06-11")
+        self.assertFalse(gate["current_eod_available"])
+        self.assertFalse(gate["session_allows_current_trading_day_data"])
+        self.assertEqual(gate["data_update_delay_reason"], "intraday_uses_previous_completed_trading_day")
+
     def test_a_share_calendar_pre_market_blocks_same_day_data(self):
         packet = factor_research.build_factor_quant_hub_packet(
             mode="light",

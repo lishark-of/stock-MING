@@ -39,6 +39,7 @@ A_SHARE_MARKET_OPEN_TIME = _dt.time(9, 30)
 A_SHARE_CALL_AUCTION_START_TIME = _dt.time(9, 15)
 A_SHARE_MORNING_CLOSE_TIME = _dt.time(11, 30)
 A_SHARE_AFTERNOON_OPEN_TIME = _dt.time(13, 0)
+A_SHARE_CLOSING_CALL_AUCTION_START_TIME = _dt.time(14, 57)
 A_SHARE_MARKET_CLOSE_TIME = _dt.time(15, 0)
 A_SHARE_DATA_READY_TIME = _dt.time(16, 30)
 A_SHARE_PROVIDER_DELAY_GRACE_END_TIME = _dt.time(18, 0)
@@ -601,6 +602,8 @@ def _market_session_detail(now_dt: _dt.datetime, *, today_is_open: bool) -> str:
         return "morning_continuous_auction"
     if current < A_SHARE_AFTERNOON_OPEN_TIME:
         return "lunch_break"
+    if current >= A_SHARE_CLOSING_CALL_AUCTION_START_TIME and current < A_SHARE_MARKET_CLOSE_TIME:
+        return "closing_call_auction"
     if current < A_SHARE_MARKET_CLOSE_TIME:
         return "afternoon_continuous_auction"
     if current < A_SHARE_DATA_READY_TIME:
