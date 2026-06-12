@@ -167,6 +167,8 @@ Validate extended Tushare refresh task pipeline
 
 - IC, Rank IC, ICIR, group return, Top-Bottom, max drawdown, industry/market-cap neutral IC, sample split stability, decay, and cost model exist in light form.
 - Current usage is research-only.
+- Factor Test Lab now exposes a research-state acceptance contract for `research_pass`, `watchlist`, `disabled`, `invalid`, and `not_enough_data`.
+- React displays the state contract and explicitly marks `research_pass` as a research label, not a trade signal.
 
 ### Gaps
 
@@ -174,6 +176,7 @@ Validate extended Tushare refresh task pipeline
 - Multi-window, multi-horizon, out-of-sample, and factor decay validation are incomplete.
 - Production-grade transaction cost assumptions are not validated.
 - Industry and market-cap neutral stability needs larger samples.
+- The research-state contract is local/light-mode governance and does not prove full-market validation.
 
 ### Implementation Phases
 
@@ -189,6 +192,7 @@ Validate extended Tushare refresh task pipeline
 - Turnover and cost-adjusted return are present.
 - Out-of-sample and recent decay are present.
 - Results never enter `strategy action`.
+- All result states remain research-only and do not enter `core_action`, `evidence_effects`, `next_session_projection`, or frontend-computed action.
 
 ### Forbidden
 

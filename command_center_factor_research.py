@@ -75,6 +75,49 @@ VALIDATION_STANDARDS = {
     "not_enough_data": "样本、forward return、行业/市值或 PIT 信息不足，只能保留为待检验研究项。",
 }
 
+FACTOR_TEST_STATE_TRANSITIONS = [
+    {
+        "research_state": "not_enough_data",
+        "classification_rule": "missing_required_metrics_or_coverage_lt_0_6",
+        "minimum_evidence": "coverage, missing_rate, IC/Rank IC/ICIR, forward return, PIT/lookahead/survivorship checks",
+        "target_state": "collect_more_observations",
+        "allowed_usage": "research_display_only",
+        "blocked_surfaces": "strategy_action, core_action, evidence_effects, next_session_projection",
+    },
+    {
+        "research_state": "invalid",
+        "classification_rule": "PIT_failed_or_lookahead_failed_or_survivorship_failed",
+        "minimum_evidence": "explicit failed bias check",
+        "target_state": "fix_data_lineage_or_disable_factor",
+        "allowed_usage": "research_rejection_audit_only",
+        "blocked_surfaces": "strategy_action, core_action, evidence_effects, next_session_projection",
+    },
+    {
+        "research_state": "disabled",
+        "classification_rule": "missing_rate_gt_0_25_or_icir_lt_0_or_non_monotonic_groups",
+        "minimum_evidence": "enough metrics to identify weak or harmful behavior",
+        "target_state": "disable_until_reworked",
+        "allowed_usage": "research_risk_audit_only",
+        "blocked_surfaces": "strategy_action, core_action, evidence_effects, next_session_projection",
+    },
+    {
+        "research_state": "watchlist",
+        "classification_rule": "directional_evidence_exists_but_research_pass_thresholds_not_met",
+        "minimum_evidence": "coverage and directional metrics are usable but stability, cost, or neutral checks are incomplete",
+        "target_state": "more_small_pool_validation",
+        "allowed_usage": "research_watchlist_only",
+        "blocked_surfaces": "strategy_action, core_action, evidence_effects, next_session_projection",
+    },
+    {
+        "research_state": "research_pass",
+        "classification_rule": "coverage_missing_rate_icir_group_cost_and_bias_checks_pass",
+        "minimum_evidence": "coverage >= 0.8, missing <= 0.15, abs(IC) >= 0.02, ICIR >= 0.3, positive top-bottom and cost-adjusted return, monotonic groups, PIT/lookahead/survivorship passed",
+        "target_state": "candidate_for_separate_review_not_action",
+        "allowed_usage": "research_pass_label_only",
+        "blocked_surfaces": "strategy_action, core_action, automatic_trade, frontend_action_compute",
+    },
+]
+
 FACTOR_TEST_METRIC_SCHEMA = [
     {"metric_key": "coverage", "label": "数据覆盖率", "required": True, "unit": "ratio"},
     {"metric_key": "missing_rate", "label": "缺失率", "required": True, "unit": "ratio"},
@@ -2154,7 +2197,59 @@ def _factor_test_quality_summary(rows: list[dict], *, computed_count: int) -> di
         "allow_core_action": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
+        "state_transition_count": len(FACTOR_TEST_STATE_TRANSITIONS),
+        "all_result_states_are_research_only": True,
+        "research_pass_is_not_trade_signal": True,
         "note": "Factor Test Lab 指标只用于研究检验；即使 research_pass 也不会直接进入 strategy action。",
+    }
+
+
+def _factor_test_state_transition_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            **row,
+            "governance_state": "research_only",
+            "allow_research_display": True,
+            "allow_evidence_effects": False,
+            "allow_strategy_trace": False,
+            "allow_core_action": False,
+            "allow_automatic_trade": False,
+            "frontend_computes_trade_action": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+        }
+        for row in FACTOR_TEST_STATE_TRANSITIONS
+    ]
+
+
+def _factor_test_acceptance_contract(rows: list[dict], state_rows: list[dict[str, Any]], *, computed_count: int) -> dict[str, Any]:
+    observed_states = sorted({str(row.get("result_status") or "not_enough_data") for row in rows})
+    unobserved_states = sorted(set(VALIDATION_STANDARDS) - set(observed_states))
+    return {
+        "status": "state_contract_ready",
+        "scope": "light_research_state_acceptance_not_full_market_validation",
+        "state_count": len(state_rows),
+        "observed_state_count": len(observed_states),
+        "observed_states": observed_states,
+        "unobserved_states_in_current_packet": unobserved_states,
+        "computed_item_count": computed_count,
+        "full_market_validation_done": False,
+        "small_pool_light_observation_validation_done": computed_count > 0,
+        "real_small_pool_validation_done": False,
+        "all_result_states_are_research_only": True,
+        "research_pass_is_not_trade_signal": True,
+        "cache_api_external_calls": False,
+        "react_render_external_calls": False,
+        "does_not_call_tushare": True,
+        "does_not_call_deepseek": True,
+        "does_not_call_github": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "Result states classify research evidence only; promotion to strategy action is outside this roadmap and requires separate approval.",
     }
 
 
@@ -2173,6 +2268,8 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
         key = str(row.get("result_status") or "not_enough_data")
         status_counts[key] = status_counts.get(key, 0) + 1
     quality_summary = _factor_test_quality_summary(rows, computed_count=computed_count)
+    state_transition_rows = _factor_test_state_transition_rows()
+    acceptance_contract = _factor_test_acceptance_contract(rows, state_transition_rows, computed_count=computed_count)
     return {
         "packet_key": TEST_PACKET_KEY,
         "schema_version": "factor_test.v2",
@@ -2187,6 +2284,8 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
         "metric_schema": FACTOR_TEST_METRIC_SCHEMA,
         "mode_plan": FACTOR_TEST_MODE_PLAN,
         "result_categories": VALIDATION_STANDARDS,
+        "state_transition_rows": state_transition_rows,
+        "acceptance_contract": acceptance_contract,
         "status_counts": status_counts,
         "summary": "Factor Test Lab 已声明 IC/Rank IC/ICIR/分组收益/换手/成本后收益等研究指标；light observations 仅用于小样本研究计算，不跑全市场回测。",
         "validation_thresholds": {
@@ -2218,6 +2317,8 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
             "allow_evidence_effects": False,
             "allow_strategy_trace": False,
             "allow_core_action": False,
+            "state_transitions_are_research_only": True,
+            "research_pass_is_not_trade_signal": True,
         },
         "decision_usage_policy": DECISION_USAGE_POLICY,
         "call_ledger": [
@@ -2225,6 +2326,7 @@ def build_factor_test_packet(*, mode: str = "light", factor_library: Any = None,
                 "api": "local_factor_test_lab_scaffold",
                 "request_params_safe": {"mode": selected_mode, "factor_count": len(rows)},
                 "row_count": len(rows),
+                "state_transition_count": len(state_transition_rows),
                 "data_date": None,
                 "local_fetched_at": now_text,
                 "call_status": "scaffold_ready",

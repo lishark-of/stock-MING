@@ -65,6 +65,7 @@ export default function FactorQuantHub() {
   const factorLibrary = packet.factor_library ?? {};
   const factorTests = packet.factor_tests ?? {};
   const factorTestQuality = factorTests.quality_summary ?? {};
+  const factorTestAcceptance = factorTests.acceptance_contract ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -79,6 +80,8 @@ export default function FactorQuantHub() {
   const factorTestRows = toRows(factorTests.items);
   const factorTestMetricRows = toRows(factorTests.metric_schema);
   const factorTestModeRows = toRows(factorTests.mode_plan);
+  const factorTestStateRows = toRows(factorTests.state_transition_rows);
+  const factorTestAcceptanceRows = objectRows(factorTestAcceptance as Record<string, unknown>, "factor_test_contract");
   const factorTestStatusRows = objectRows((factorTests.status_counts ?? {}) as Record<string, unknown>, "factor_test_status");
   const factorTestQualityRows = objectRows(factorTestQuality as Record<string, unknown>, "quality_metric");
   const factorTestMetricGapRows = objectRows((factorTests.required_metric_gap_counts ?? factorTestQuality.required_metric_gap_counts ?? {}) as Record<string, unknown>, "metric_gap");
@@ -155,6 +158,9 @@ export default function FactorQuantHub() {
           { label: "test quality", value: factorTestQuality.status ?? "scaffold_only", tone: factorTestQuality.status === "computed_light_metrics_ready" ? "good" : "warn" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
+          { label: "state contract", value: factorTestAcceptance.status ?? "missing", tone: factorTestAcceptance.all_result_states_are_research_only === false ? "bad" : "good" },
+          { label: "research-pass signal", value: factorTestAcceptance.research_pass_is_not_trade_signal === false ? "可能交易" : "非交易", tone: factorTestAcceptance.research_pass_is_not_trade_signal === false ? "bad" : "good" },
+          { label: "state rows", value: factorTestStateRows.length },
           { label: "metric gaps", value: factorTestQuality.largest_required_metric_gap ?? 0, tone: Number(factorTestQuality.largest_required_metric_gap ?? 0) > 0 ? "warn" : "good" },
           { label: "test core action", value: factorTests.governance?.allow_core_action === true ? "允许" : "禁止", tone: factorTests.governance?.allow_core_action === true ? "bad" : "good" },
           { label: "score chart", value: scoreChartContract.schema_version ?? "missing", tone: scoreChartContract.schema_version ? "good" : "warn" },
@@ -238,6 +244,10 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>
       <DataLineageTable rows={factorTestModeRows} />
+      <h3>Factor Test 状态验收合同</h3>
+      <p className="risk-note">research_pass / watchlist / disabled / invalid / not_enough_data 都是研究状态；research_pass 也不是买入信号，不进入 strategy action、core action、evidence_effects 或 next-session projection。</p>
+      <DataLineageTable rows={factorTestAcceptanceRows} />
+      <DataLineageTable rows={factorTestStateRows} />
       <h3>Factor Test 状态分布</h3>
       <DataLineageTable rows={factorTestStatusRows} />
       <h3>Factor Test 质量摘要</h3>
