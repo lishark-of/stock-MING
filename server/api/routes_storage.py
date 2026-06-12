@@ -16,8 +16,20 @@ def get_storage_overview(limit: int = 20) -> dict:
 
 
 @router.get("/factor-values")
-def get_factor_values_status(limit: int = 100) -> dict:
-    packet = storage_service.factor_values_status(limit=limit)
+def get_factor_values_status(
+    limit: int = 100,
+    ts_code: str | None = None,
+    trade_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    packet = storage_service.factor_values_status(
+        limit=limit,
+        ts_code=ts_code,
+        trade_date=trade_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
@@ -34,6 +46,20 @@ def get_storage_dataset_catalog() -> dict:
 
 
 @router.get("/{dataset}")
-def get_parquet_dataset_status(dataset: str, limit: int = 100) -> dict:
-    packet = storage_service.parquet_dataset_status(dataset, limit=limit)
+def get_parquet_dataset_status(
+    dataset: str,
+    limit: int = 100,
+    ts_code: str | None = None,
+    trade_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    packet = storage_service.parquet_dataset_status(
+        dataset,
+        limit=limit,
+        ts_code=ts_code,
+        trade_date=trade_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))

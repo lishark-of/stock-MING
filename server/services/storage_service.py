@@ -192,9 +192,9 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "duckdb_query_wrappers",
-            "status": "partial_ready",
-            "current_coverage": "DuckDB can query Parquet cache endpoints; common factor/date/universe research queries still need typed wrappers.",
-            "next_action": "add narrow query helpers before Factor Test Lab full/small research modes.",
+            "status": "local_ready",
+            "current_coverage": "DuckDB cache endpoints support safe local ts_code and date-window filters for Parquet datasets.",
+            "next_action": "add typed dataset-specific projections and pagination before Factor Test Lab full/small research modes.",
             "external_calls_triggered": False,
         },
         {
@@ -378,7 +378,15 @@ def storage_dataset_catalog() -> dict[str, Any]:
     )
 
 
-def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
+def parquet_dataset_status(
+    dataset: str,
+    *,
+    limit: int = 100,
+    ts_code: str | None = None,
+    trade_date: str | int | None = None,
+    start_date: str | int | None = None,
+    end_date: str | int | None = None,
+) -> dict[str, Any]:
     selected = _canonical_dataset(dataset)
     if not selected:
         return _attach_storage_lineage(
@@ -403,7 +411,14 @@ def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
         )
     path = parquet_store.dataset_path(root=PARQUET_ROOT, name=selected)
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=selected)
-    query = duckdb_store.query_parquet_dataset(path, limit=limit)
+    query = duckdb_store.query_parquet_dataset(
+        path,
+        limit=limit,
+        ts_code=ts_code,
+        trade_date=trade_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
     metadata["path"] = _path_label(path)
     query["path"] = _path_label(path)
     packet = {
@@ -413,6 +428,10 @@ def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
         "dataset": selected,
         "metadata": metadata,
         "query": query,
+        "query_wrapper": query.get("query_wrapper"),
+        "query_filters": query.get("query_filters") or {},
+        "applied_filters": query.get("applied_filters") or [],
+        "skipped_filters": query.get("skipped_filters") or [],
         "row_count": int(query.get("row_count") or 0),
         "cache_only": True,
         "external_calls_triggered": False,
@@ -432,8 +451,22 @@ def parquet_dataset_status(dataset: str, *, limit: int = 100) -> dict[str, Any]:
     )
 
 
-def factor_values_status(*, limit: int = 100) -> dict[str, Any]:
-    packet = parquet_dataset_status("factor_values", limit=limit)
+def factor_values_status(
+    *,
+    limit: int = 100,
+    ts_code: str | None = None,
+    trade_date: str | int | None = None,
+    start_date: str | int | None = None,
+    end_date: str | int | None = None,
+) -> dict[str, Any]:
+    packet = parquet_dataset_status(
+        "factor_values",
+        limit=limit,
+        ts_code=ts_code,
+        trade_date=trade_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
     packet["schema_version"] = "command_center_3_storage_factor_values.v1"
     return _attach_storage_lineage(
         packet,

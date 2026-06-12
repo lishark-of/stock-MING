@@ -3237,6 +3237,41 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(backtest_storage["call_ledger"][0]["external"])
         self.assertIn("GET /api/storage/backtest_results", backtest_storage["warnings"][0])
 
+        if importlib.util.find_spec("duckdb") is not None and importlib.util.find_spec("pyarrow") is not None and importlib.util.find_spec("pandas") is not None:
+            import pandas as pd
+
+            root = self._with_parquet_root()
+            storage_service.parquet_store.write_dataset(
+                pd.DataFrame(
+                    {
+                        "ts_code": ["002008.SZ", "002008.SZ", "600519.SH"],
+                        "trade_date": ["20260603", "20260611", "20260611"],
+                        "close": [10.1, 10.8, 1600.0],
+                    }
+                ),
+                root=root,
+                name="daily",
+            )
+            filtered_storage = self.client.get(
+                "/api/storage/daily",
+                params={"ts_code": "002008.SZ", "start_date": "2026-06-01", "end_date": "2026-06-10", "limit": 10},
+            ).json()
+            self.assertTrue(filtered_storage["ok"])
+            self.assertEqual(filtered_storage["data"]["query_wrapper"], "duckdb_filtered_parquet.v1")
+            self.assertEqual(filtered_storage["data"]["row_count"], 1)
+            self.assertEqual(filtered_storage["data"]["query"]["rows"][0]["ts_code"], "002008.SZ")
+            self.assertEqual(filtered_storage["data"]["query"]["rows"][0]["trade_date"], "20260603")
+            self.assertEqual({item["filter"] for item in filtered_storage["data"]["applied_filters"]}, {"ts_code", "start_date", "end_date"})
+            self.assertFalse(filtered_storage["data"]["skipped_filters"])
+            self.assertFalse(filtered_storage["data"]["external_calls_triggered"])
+            self.assertFalse(filtered_storage["data"]["tushare_called"])
+            self.assertFalse(filtered_storage["data"]["deepseek_called"])
+            self.assertFalse(filtered_storage["data"]["github_called"])
+            self.assertTrue(filtered_storage["data"]["does_not_modify_strategy_action"])
+            self.assertTrue(filtered_storage["data"]["does_not_execute_trades"])
+            self.assertEqual(filtered_storage["call_ledger"][0]["api"], "local_storage_dataset_cache")
+            self.assertFalse(filtered_storage["call_ledger"][0]["external"])
+
         migration = self.client.get("/api/migration/status").json()
         self.assertTrue(migration["ok"])
         self.assertEqual(migration["data"]["status"], "active_migration")

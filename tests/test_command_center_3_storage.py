@@ -74,6 +74,41 @@ class CommandCenter3StorageTests(unittest.TestCase):
             self.assertEqual(generic["status"], "ready")
             self.assertFalse(generic["external_calls_triggered"])
 
+    def test_duckdb_store_filters_parquet_by_symbol_and_date_window(self):
+        from storage import duckdb_store, parquet_store
+
+        if not duckdb_store.dependency_status()["available"]:
+            self.skipTest("duckdb dependency missing")
+        if not parquet_store.dependency_status()["available"]:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = parquet_store.write_dataset(
+                pd.DataFrame(
+                    {
+                        "ts_code": ["002008.SZ", "002008.SZ", "600519.SH"],
+                        "trade_date": ["20260603", "20260611", "20260611"],
+                        "close": [10.1, 10.8, 1600.0],
+                    }
+                ),
+                root=tmp,
+                name="daily",
+            )
+            result = duckdb_store.query_parquet_dataset(
+                out["path"],
+                ts_code="002008.SZ",
+                start_date="2026-06-01",
+                end_date="2026-06-10",
+            )
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["query_wrapper"], "duckdb_filtered_parquet.v1")
+        self.assertEqual(result["row_count"], 1)
+        self.assertEqual(result["rows"][0]["ts_code"], "002008.SZ")
+        self.assertEqual(result["rows"][0]["trade_date"], "20260603")
+        self.assertEqual({item["filter"] for item in result["applied_filters"]}, {"ts_code", "start_date", "end_date"})
+        self.assertFalse(result["skipped_filters"])
+        self.assertFalse(result["external_calls_triggered"])
+
     def test_duckdb_store_handles_parallel_cache_reads(self):
         from storage import duckdb_store, parquet_store
 
