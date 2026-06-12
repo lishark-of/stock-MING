@@ -620,6 +620,8 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
     session_detail = _market_session_detail(now_dt, today_is_open=today_is_open)
     data_update_delay_guard_active = bool(today_is_open and A_SHARE_MARKET_CLOSE_TIME <= now_dt.time() < A_SHARE_DATA_READY_TIME)
     current_time = now_dt.time()
+    pre_market_guard_active = bool(today_is_open and current_time < A_SHARE_MARKET_OPEN_TIME)
+    session_allows_current_trading_day_data = bool(today_is_open and current_time >= A_SHARE_DATA_READY_TIME)
     if today_is_open and now_dt.time() < A_SHARE_MARKET_OPEN_TIME:
         phase = "pre_open"
         expected = previous_open
@@ -687,6 +689,8 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         "market_session_detail": session_detail,
         "today_eod_available": today_eod_available,
         "current_eod_available": bool(expected and (not today_is_open or today_eod_available)),
+        "session_allows_current_trading_day_data": session_allows_current_trading_day_data,
+        "pre_market_guard_active": pre_market_guard_active,
         "data_update_delay_guard_active": data_update_delay_guard_active,
         "data_update_delay_reason": data_update_delay_reason,
         "data_ready_time": A_SHARE_DATA_READY_TIME.strftime("%H:%M"),
@@ -735,6 +739,8 @@ def _freshness_row_fields(
         "calendar_requires_refresh": bool(context.get("calendar_requires_refresh")),
         "market_session_detail": context.get("market_session_detail"),
         "current_eod_available": bool(context.get("current_eod_available")),
+        "session_allows_current_trading_day_data": bool(context.get("session_allows_current_trading_day_data")),
+        "pre_market_guard_active": bool(context.get("pre_market_guard_active")),
         "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
         "data_update_delay_reason": context.get("data_update_delay_reason"),
         "trading_day_lag": None,
@@ -1184,6 +1190,8 @@ def _build_data_freshness_gate(
             "calendar_coverage_status": context.get("calendar_coverage_status"),
             "calendar_requires_refresh": bool(context.get("calendar_requires_refresh")),
             "current_eod_available": bool(context.get("current_eod_available")),
+            "session_allows_current_trading_day_data": bool(context.get("session_allows_current_trading_day_data")),
+            "pre_market_guard_active": bool(context.get("pre_market_guard_active")),
             "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
             "data_update_delay_reason": context.get("data_update_delay_reason"),
             "data_ready_time": context.get("data_ready_time"),
@@ -1250,6 +1258,8 @@ def _build_data_freshness_gate(
         "calendar_coverage_status": context.get("calendar_coverage_status"),
         "calendar_requires_refresh": bool(context.get("calendar_requires_refresh")),
         "current_eod_available": bool(context.get("current_eod_available")),
+        "session_allows_current_trading_day_data": bool(context.get("session_allows_current_trading_day_data")),
+        "pre_market_guard_active": bool(context.get("pre_market_guard_active")),
         "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
         "data_update_delay_reason": context.get("data_update_delay_reason"),
         "today_is_trading_day": bool(context.get("today_is_trading_day")),

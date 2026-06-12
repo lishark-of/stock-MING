@@ -589,6 +589,51 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertFalse(gate["current_eod_available"])
         self.assertFalse(gate["data_update_delay_guard_active"])
 
+    def test_a_share_calendar_pre_market_blocks_same_day_data(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260612", "call_status": "success"},
+            ],
+            now="2026-06-12T08:50:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["market_phase"], "pre_open")
+        self.assertEqual(gate["market_session_detail"], "before_call_auction")
+        self.assertEqual(gate["expected_data_date"], "2026-06-11")
+        self.assertTrue(gate["pre_market_guard_active"])
+        self.assertFalse(gate["session_allows_current_trading_day_data"])
+        self.assertEqual(gate["data_update_delay_reason"], "pre_open_uses_previous_completed_trading_day")
+        self.assertEqual(gate["status"], "future_unavailable")
+        self.assertFalse(gate["usable_for_score"])
+        self.assertEqual(packet["score"]["support_factors"], [])
+        self.assertEqual(packet["next_session_bridge"]["preview"], [])
+
+    def test_a_share_calendar_call_auction_blocks_same_day_data(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260612", "call_status": "success"},
+            ],
+            now="2026-06-12T09:20:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["market_phase"], "pre_open")
+        self.assertEqual(gate["market_session_detail"], "opening_call_auction")
+        self.assertEqual(gate["expected_data_date"], "2026-06-11")
+        self.assertTrue(gate["pre_market_guard_active"])
+        self.assertFalse(gate["session_allows_current_trading_day_data"])
+        self.assertEqual(gate["status"], "future_unavailable")
+        self.assertFalse(gate["usable_for_score"])
+
     def test_a_share_calendar_blocks_same_day_data_before_eod_ready(self):
         packet = factor_research.build_factor_quant_hub_packet(
             mode="light",
