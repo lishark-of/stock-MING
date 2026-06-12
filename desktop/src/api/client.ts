@@ -242,6 +242,13 @@ export function postStoragePartitionMigrationDryRun(payload: Record<string, unkn
   });
 }
 
+export function postStorageCompactionDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/compaction/dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>(path, {
     method: "POST",

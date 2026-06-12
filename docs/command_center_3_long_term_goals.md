@@ -266,13 +266,14 @@ Add factor universe research pipeline
 - Storage overview and catalog now expose a cache-only dataset version policy matrix: declared dataset version, manifest path, physical validation boundary, and no-write-on-GET guarantees are visible before any production manifest writer exists.
 - `POST /api/storage/schema-validation/dry-run` now creates a local task and packet that reads Parquet schema metadata only, compares physical columns with canonical schema contracts, and reports `schema_validated` / `schema_mismatch` / `missing_dataset` before any migration.
 - `POST /api/storage/partition-migration/dry-run` now creates a local task and packet that builds per-dataset partition migration plans from schema validation and partition contracts, without reading row payloads or writing partitioned Parquet.
+- `POST /api/storage/compaction/dry-run` now creates a local task and packet that lists Parquet compaction ready/not-needed/missing rows without reading row payloads or rewriting Parquet.
 
 ### Gaps
 
 - Production schema migration execution.
 - Physical dataset version manifest writing and validation beyond the read-only version policy matrix.
 - Physical partition migration execution.
-- Compaction.
+- Physical compaction execution beyond the button-gated dry-run.
 - Cache TTL production policy.
 - DuckDB query service.
 - Reviewed manual cleanup workflow after dry-run.
@@ -295,6 +296,7 @@ Add factor universe research pipeline
 - Dataset version policy remains visibly `policy_ready`, but `physical_dataset_version_validated_count=0` and `dataset_version_migration_executed_count=0` until explicit future manifest/validation tasks prove otherwise.
 - Schema validation dry-run is button-gated, reads no row payload, writes no Parquet, and records missing/mismatch/validated rows before any migration.
 - Partition migration dry-run is button-gated, writes no partitioned Parquet, and records ready/blocked/missing rows before any partition writer task.
+- Compaction dry-run is button-gated, writes no Parquet, reads no row payload, and records ready/not-needed/missing rows before any physical compaction task.
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
 - Write failure does not pollute packet or action.
 
@@ -305,6 +307,7 @@ Add factor universe research pipeline
 - Do not treat dataset version policy as physical dataset version validation or manifest migration completion.
 - Do not treat schema validation dry-run as production schema migration completion.
 - Do not treat partition migration dry-run as physical partition migration completion.
+- Do not treat compaction dry-run as physical Parquet compaction completion.
 - Do not commit `.parquet`, `.duckdb`, `.sqlite`, `.db`, cache, or generated data.
 - Do not hide schema mismatch.
 

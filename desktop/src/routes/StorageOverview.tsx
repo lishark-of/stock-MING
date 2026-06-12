@@ -6,6 +6,7 @@ import {
   getStorageDataset,
   getStorageOverview,
   postStorageArtifactCleanupDryRun,
+  postStorageCompactionDryRun,
   postStoragePartitionMigrationDryRun,
   postStorageSchemaValidationDryRun,
   type TaskCreationEnvelope
@@ -34,6 +35,8 @@ export default function StorageOverview() {
   const [schemaValidationReceipt, setSchemaValidationReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [partitionDryRunTaskId, setPartitionDryRunTaskId] = useState("");
   const [partitionDryRunReceipt, setPartitionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [compactionDryRunTaskId, setCompactionDryRunTaskId] = useState("");
+  const [compactionDryRunReceipt, setCompactionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -66,6 +69,11 @@ export default function StorageOverview() {
     void postStoragePartitionMigrationDryRun({ source: "storage_overview_button" }).then((res) => {
       setPartitionDryRunReceipt(res);
       if (res.ok) setPartitionDryRunTaskId(res.data.task_id);
+    });
+  const launchCompactionDryRun = () =>
+    void postStorageCompactionDryRun({ source: "storage_overview_button" }).then((res) => {
+      setCompactionDryRunReceipt(res);
+      if (res.ok) setCompactionDryRunTaskId(res.data.task_id);
     });
 
   useEffect(() => {
@@ -239,6 +247,18 @@ export default function StorageOverview() {
         <p>manifest_written_on_get / cache_get_writes_files: {String(datasetVersionPolicy.manifest_written_on_get ?? false)} / {String(datasetVersionPolicy.cache_get_writes_files ?? false)}</p>
         <p>status_counts: {JSON.stringify(datasetVersionStatusCounts)}</p>
         <DataLineageTable rows={datasetVersionRows} />
+      </PacketCard>
+
+      <PacketCard title="Compaction dry-run" subtitle="按钮门控生成 Parquet 压缩预检清单；不重写 Parquet、不读行 payload" status={String(overview.production_readiness && (overview.production_readiness as Record<string, unknown>).compaction_policy ? "button_gated_ready" : "audit_ready")}>
+        <p>compaction_policy: {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_policy ?? "dry_run_button_gated_no_parquet_rewrite")}</p>
+        <p>compaction_dry_run_route: {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_dry_run_route ?? "POST /api/storage/compaction/dry-run")}</p>
+        <p>recommended / executed: {String(overview.manual_compaction_recommended_count ?? 0)} / {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_executed_count ?? 0)}</p>
+        <p>writes_parquet / reads_row_payloads: {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_dry_run_writes_parquet ?? false)} / {String((overview.production_readiness as Record<string, unknown> | undefined)?.compaction_dry_run_reads_row_payloads ?? false)}</p>
+        <div className="actions">
+          <button onClick={launchCompactionDryRun}>生成 compaction dry-run</button>
+        </div>
+        <TaskLaunchReceipt receipt={compactionDryRunReceipt} />
+        <TaskStatusPanel taskId={compactionDryRunTaskId} onSuccess={refreshStorage} />
       </PacketCard>
 
       <PacketCard title="Schema migration preflight" subtitle="schema/version 迁移预检；只读、不写 Parquet、不读 payload、不外联" status={String(schemaMigration.status ?? "preflight_ready")}>

@@ -16,6 +16,7 @@ SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup_dry_run_packet"
 SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validation_dry_run_packet"
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
+COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -850,6 +851,157 @@ def _compaction_plan(dataset: str, path: Path, metadata: Mapping[str, Any]) -> d
     }
 
 
+def _compaction_dry_run_row(dataset: str) -> dict[str, Any]:
+    path = parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)
+    metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
+    compaction_plan = _compaction_plan(dataset, path, metadata)
+    plan_status = str(compaction_plan.get("status") or "unknown")
+    if plan_status == "manual_compaction_recommended":
+        dry_run_status = "ready_for_manual_compaction"
+    elif plan_status == "not_needed":
+        dry_run_status = "not_needed"
+    elif plan_status == "not_applicable_missing":
+        dry_run_status = "missing_dataset"
+    else:
+        dry_run_status = plan_status
+    return {
+        "dataset": dataset,
+        "status": dry_run_status,
+        "compaction_dry_run_status": dry_run_status,
+        "compaction_plan_status": plan_status,
+        "reason": compaction_plan.get("reason"),
+        "source_parquet_status": metadata.get("status", "missing"),
+        "source_parquet_path": _path_label(path),
+        "size_bytes": compaction_plan.get("size_bytes", 0),
+        "threshold_bytes": compaction_plan.get("threshold_bytes", DATASET_COMPACTION_SIZE_THRESHOLD_BYTES),
+        "manual_compaction_recommended": bool(compaction_plan.get("manual_compaction_recommended")),
+        "manual_compaction_task_required": True,
+        "compaction_ready": dry_run_status == "ready_for_manual_compaction",
+        "compaction_executed": False,
+        "physical_compaction_executed": False,
+        "would_rewrite_parquet": False,
+        "post_dry_run_writes_parquet": False,
+        "post_dry_run_reads_row_payloads": False,
+        "cache_get_writes_files": False,
+        "cache_get_reads_payloads": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def storage_compaction_dry_run_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    rows = [_compaction_dry_run_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    status_counts = _count_values(row.get("compaction_dry_run_status") for row in rows)
+    ready_count = sum(1 for row in rows if row.get("compaction_ready"))
+    packet = {
+        "schema_version": "command_center_3_storage_compaction_dry_run.v1",
+        "packet_key": COMPACTION_DRY_RUN_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": "dry_run_completed",
+        "mode": "dry_run",
+        "scope": "parquet_compaction_plan_before_rewrite",
+        "dataset_count": len(rows),
+        "compaction_ready_count": ready_count,
+        "compaction_not_needed_count": status_counts.get("not_needed", 0),
+        "missing_dataset_count": status_counts.get("missing_dataset", 0),
+        "compaction_blocked_count": len(rows) - ready_count - status_counts.get("not_needed", 0),
+        "compaction_executed_count": 0,
+        "status_counts": status_counts,
+        "rows": rows,
+        "request_params_safe": {
+            "source": (payload_safe or {}).get("source") or "storage_page_button",
+            "dry_run": True,
+            "external_sources_allowed": False,
+            "rewrite_parquet_allowed": False,
+            "compaction_allowed": False,
+        },
+        "cache_get_writes_files": False,
+        "post_dry_run_writes_parquet": False,
+        "post_dry_run_reads_row_payloads": False,
+        "post_dry_run_reads_env_files": False,
+        "compaction_executed": False,
+        "physical_compaction_executed": False,
+        "manual_compaction_task_required": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_compaction_dry_run",
+            endpoint="POST /api/storage/compaction/dry-run",
+            status="dry_run_completed",
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "POST /api/storage/compaction/dry-run 只生成本地 Parquet compaction 预检清单；不会重写 Parquet。",
+            "compaction dry-run 不读取行 payload、不执行物理压缩、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+    return packet
+
+
+def run_storage_compaction_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "dry_run": True,
+        "external_sources_allowed": False,
+        "rewrite_parquet_allowed": False,
+        "compaction_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_compaction_dry_run",
+        output_packet_key=COMPACTION_DRY_RUN_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_compaction_dry_run_queued",
+        warnings=[
+            "storage compaction dry-run 只读取本地 Parquet metadata；不会读取行 payload、不会重写 Parquet、不会调用外部源。",
+            "任何真实 compaction 必须在 dry-run 审阅后另行手动确认；本任务不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="building_storage_compaction_plan",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_compaction_dry_run_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(COMPACTION_DRY_RUN_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_compaction_dry_run_storage_write_failed",
+            error_message_safe="storage_compaction_dry_run_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_compaction_dry_run_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_compaction_dry_run_completed",
+        call_ledger=packet["call_ledger"],
+        warning="storage_compaction_dry_run_completed_no_rewrite_no_external_call",
+    ) or task
+
+
 def _canonical_dataset(dataset: str) -> str:
     key = str(dataset or "").strip().lower().replace(" ", "_")
     if key not in SUPPORTED_PARQUET_DATASETS:
@@ -1017,9 +1169,9 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "parquet_compaction",
-            "status": "audit_ready",
-            "current_coverage": "dataset cache endpoints expose audit-only compaction plans; GET cache never rewrites Parquet files.",
-            "next_action": "add explicit manual compaction task after partitioned layout is enabled.",
+            "status": "button_gated_ready",
+            "current_coverage": "dataset cache endpoints expose audit-only compaction plans and POST compaction dry-run records ready/not-needed/missing rows without rewriting Parquet.",
+            "next_action": "review compaction dry-run before enabling any physical Parquet rewrite task.",
             "external_calls_triggered": False,
         },
         {
@@ -1343,7 +1495,12 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "partition_migration_dry_run_writes_parquet": False,
         "partition_migration_dry_run_reads_row_payloads": False,
         "cache_ttl_policy": "audit_only_no_auto_refresh",
-        "compaction_policy": "audit_only_manual_task_required",
+        "compaction_policy": "dry_run_button_gated_no_parquet_rewrite",
+        "compaction_dry_run_route": "POST /api/storage/compaction/dry-run",
+        "compaction_dry_run_button_gated": True,
+        "compaction_dry_run_writes_parquet": False,
+        "compaction_dry_run_reads_row_payloads": False,
+        "compaction_executed_count": 0,
         "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",
         "artifact_hygiene_status": artifact_hygiene["status"],
         "artifact_hygiene_present_count": artifact_hygiene["present_artifact_count"],

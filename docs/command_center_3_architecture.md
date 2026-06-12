@@ -77,8 +77,10 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/storage/catalog`
 - `GET /api/storage/factor-values`
 - `GET /api/storage/{dataset}`，当前白名单为 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results`
+- `POST /api/storage/artifact-hygiene/dry-run`
 - `POST /api/storage/schema-validation/dry-run`
 - `POST /api/storage/partition-migration/dry-run`
+- `POST /api/storage/compaction/dry-run`
 - `GET /api/tasks/catalog`
 - `GET /api/tasks/{task_id}`
 
@@ -110,6 +112,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/storage` 与 `GET /api/storage/catalog` 暴露 `dataset_version_policy`，只展示 declared dataset version、未来 manifest 路径、物理版本验证边界和 `manifest_written_on_get=false`；它不创建 manifest、不验证物理版本、不代表 dataset version migration 已完成。
 - `POST /api/storage/schema-validation/dry-run` 读取本地 Parquet schema metadata，比较物理列与 schema contract，输出 `schema_validated` / `schema_mismatch` / `missing_dataset`，但不读取行 payload、不写 Parquet、不执行真实迁移。
 - `POST /api/storage/partition-migration/dry-run` 结合 schema validation 与 partition contract 生成分区迁移计划，输出 ready/blocked/missing 行；不会读取行 payload、不会写 partitioned Parquet、不会执行真实迁移。
+- `POST /api/storage/compaction/dry-run` 基于本地 Parquet metadata 和 size threshold 生成 compaction ready/not-needed/missing 行；不会读取行 payload、不会重写 Parquet、不会执行物理压缩。
 - `GET /api/storage/catalog` 独立暴露 dataset catalog，供前端、worker 和后续任务读取数据集用途、别名、写入边界和未来任务归属；该接口只读、不写 Parquet、不外联。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
@@ -182,6 +185,7 @@ scripts/run_scheduler.sh
 - Dataset version policy：当前只做 cache-only 版本策略矩阵，列出 declared dataset version、manifest 路径和物理验证状态；不写 `_dataset_versions.json`、不读取 payload、不把声明版本当成生产版本验收。
 - Schema validation dry-run：按钮门控读取 Parquet schema metadata，比较实际列与 canonical contract；它可以证明某个本地文件当前 schema 是否匹配，但仍不是 production migration，也不会重写数据集。
 - Partition migration dry-run：按钮门控生成目标 partitioned path、partition columns、ready/blocked/missing 状态；它不调用 partition writer，不创建分区目录，不代表真实 partition migration 完成。
+- Compaction dry-run：按钮门控生成 compaction ready/not-needed/missing 清单；它不调用 compaction writer、不重写 Parquet、不代表真实 compaction 完成。
 - Artifact hygiene：`GET /api/storage` 只读展示 `.stock_ming_3`、legacy cache、frontend build、Node dependencies、Tauri target 和 Python bytecode 的路径级边界；`POST /api/storage/artifact-hygiene/dry-run` 只生成本地清理预检任务和候选清单。两者都不会删除文件、读取 payload、扫描 secret 值、刷新外部服务或修改 `strategy action`。
 - Redis：Celery broker、任务状态、热点 packet cache；未安装时可使用 memory fallback。
 
