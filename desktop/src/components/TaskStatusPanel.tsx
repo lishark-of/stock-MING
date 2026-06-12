@@ -97,7 +97,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   if (!task) {
     if (lookupError) {
       return (
-        <div className="task-panel">
+        <div className="task-panel task-panel--failed motion-surface">
           <div className="task-panel__head">
             <StatusBadge label={lookupError.error} tone="bad" />
             <span>{taskId}</span>
@@ -110,19 +110,19 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         </div>
       );
     }
-    return <p>任务状态读取中：{taskId}</p>;
+    return <p className="panel-loading">任务状态读取中：{taskId}</p>;
   }
   const callLedger = task.call_ledger ?? [];
   const statusHistory = task.status_history ?? [];
   const cancellable = task.status === "pending" || task.status === "running";
 
   return (
-    <div className="task-panel">
+    <div className={`task-panel task-panel--${task.status} motion-surface`}>
       <div className="task-panel__head">
         <StatusBadge label={task.status} tone={toneForStatus(task.status)} />
         <span>{task.task_type}</span>
       </div>
-      <progress value={task.progress ?? 0} max={1} />
+      <progress className="task-progress" value={task.progress ?? 0} max={1} />
       <p>{task.current_step}</p>
       <p>task_id: {task.task_id}</p>
       <p>backend: {task.backend ?? "local_fallback"}</p>

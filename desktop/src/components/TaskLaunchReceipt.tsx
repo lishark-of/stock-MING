@@ -13,7 +13,7 @@ export default function TaskLaunchReceipt({ receipt }: { receipt: TaskCreationEn
   const warnings = receipt.warnings.length ? receipt.warnings : task?.warnings ?? [];
 
   return (
-    <div className="task-panel">
+    <div className="task-panel task-panel--receipt motion-surface">
       <div className="task-panel__head">
         <span>任务创建回执</span>
         <span>{receipt.ok ? "accepted" : String(receipt.error ?? "failed")}</span>

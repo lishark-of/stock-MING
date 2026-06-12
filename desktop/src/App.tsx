@@ -153,7 +153,9 @@ export default function App() {
   return (
     <Layout active={route} onNavigate={navigateRoute}>
       <Suspense fallback={<div className="panel-loading">正在加载模块...</div>}>
-        <ActiveRoute />
+        <div className="route-stage" key={route}>
+          <ActiveRoute />
+        </div>
       </Suspense>
     </Layout>
   );

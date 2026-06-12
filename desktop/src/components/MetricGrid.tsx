@@ -1,4 +1,5 @@
 import StatusBadge from "./StatusBadge";
+import type { CSSProperties } from "react";
 
 export type MetricItem = {
   label: string;
@@ -23,8 +24,12 @@ function displayValue(value: MetricItem["value"]) {
 export default function MetricGrid({ items }: { items: MetricItem[] }) {
   return (
     <div className="metric-grid">
-      {items.map((item) => (
-        <div className="metric-card" key={item.label}>
+      {items.map((item, index) => (
+        <div
+          className="metric-card motion-surface"
+          key={item.label}
+          style={{ "--motion-delay": `${Math.min(index, 8) * 24}ms` } as CSSProperties}
+        >
           <span>{item.label}</span>
           <strong>{displayValue(item.value)}</strong>
           {item.tone ? <StatusBadge label={item.tone} tone={item.tone} /> : null}

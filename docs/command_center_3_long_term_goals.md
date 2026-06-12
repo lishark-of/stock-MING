@@ -633,15 +633,16 @@ Productionize non-blocking next-ticket radar scans
 ### Current Status
 
 - Current React UI is functional and audit-oriented.
-- The app does not yet have a systematic motion language.
-- Future polish should improve clarity without distracting from risk, freshness, and decision boundaries.
+- A first motion clarity layer exists for route staging, cards, metric tiles, task panels, progress state, focus rings, and reduced-motion fallback.
+- Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
+- Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
 ### Gaps
 
-- Need consistent transitions for route changes, panel expansion, chart updates, task progress, and cache refresh.
+- Need deeper transitions for panel expansion, chart updates, cache refresh, and candidate-radar result changes.
 - Need chart motion that helps users understand state changes instead of adding decoration.
-- Need accessibility support, especially `prefers-reduced-motion`.
-- Need performance guardrails so animation never reintroduces UI stalls.
+- Need broader viewport verification so animation never overlaps, occludes, or resizes critical text.
+- Need performance guardrails so later animation never reintroduces UI stalls.
 - Need visual hierarchy that makes status, freshness, blockers, and candidate changes obvious.
 
 ### Implementation Phases
