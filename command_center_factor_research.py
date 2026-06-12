@@ -82,6 +82,7 @@ FACTOR_TEST_METRIC_SCHEMA = [
     {"metric_key": "rank_ic_mean", "label": "Rank IC 均值", "required": True, "unit": "decimal"},
     {"metric_key": "top_bottom_group_return", "label": "Top-Bottom 分组收益", "required": True, "unit": "return"},
     {"metric_key": "group_return_monotonicity", "label": "分组收益单调性", "required": True, "unit": "boolean"},
+    {"metric_key": "group_return_buckets", "label": "分组收益桶明细", "required": False, "unit": "list"},
     {"metric_key": "turnover", "label": "换手率", "required": True, "unit": "ratio"},
     {"metric_key": "cost_adjusted_return", "label": "成本后收益", "required": True, "unit": "return"},
     {"metric_key": "max_drawdown", "label": "最大回撤", "required": True, "unit": "return"},
@@ -1615,23 +1616,57 @@ def _max_drawdown_from_returns(returns: list[float]) -> float | None:
     return max_drawdown
 
 
-def _group_return_summary(xs: list[float], ys: list[float]) -> tuple[float | None, bool | None]:
+def _group_return_details(xs: list[float], ys: list[float]) -> dict[str, Any]:
+    empty = {
+        "top_bottom_group_return": None,
+        "group_return_monotonicity": None,
+        "group_return_buckets": [],
+        "status": "not_enough_data",
+    }
     if len(xs) != len(ys) or len(xs) < 5:
-        return None, None
+        return empty
     ordered = [item for item in sorted(zip(xs, ys), key=lambda pair: pair[0]) if item[1] is not None]
     if len(ordered) < 5:
-        return None, None
+        return empty
     bucket_size = max(1, len(ordered) // 3)
-    bottom = [value for _, value in ordered[:bucket_size]]
-    middle_start = max(bucket_size, (len(ordered) - bucket_size) // 2)
-    middle = [value for _, value in ordered[middle_start : middle_start + bucket_size]]
-    top = [value for _, value in ordered[-bucket_size:]]
-    if not bottom or not middle or not top:
-        return None, None
-    bottom_mean = statistics.fmean(bottom)
-    middle_mean = statistics.fmean(middle)
-    top_mean = statistics.fmean(top)
-    return top_mean - bottom_mean, bottom_mean <= middle_mean <= top_mean
+    bottom_pairs = ordered[:bucket_size]
+    middle_pairs = ordered[bucket_size:-bucket_size]
+    top_pairs = ordered[-bucket_size:]
+    if not bottom_pairs or not middle_pairs or not top_pairs:
+        return empty
+
+    def _bucket(bucket_key: str, label: str, pairs: list[tuple[float, float]]) -> dict[str, Any]:
+        factor_values = [factor_value for factor_value, _ in pairs]
+        forward_returns = [forward_return for _, forward_return in pairs]
+        return {
+            "bucket_key": bucket_key,
+            "label": label,
+            "count": len(pairs),
+            "mean_factor_value": round(statistics.fmean(factor_values), 6),
+            "min_factor_value": round(min(factor_values), 6),
+            "max_factor_value": round(max(factor_values), 6),
+            "mean_forward_return": round(statistics.fmean(forward_returns), 6),
+        }
+
+    buckets = [
+        _bucket("bottom", "底组", bottom_pairs),
+        _bucket("middle", "中组", middle_pairs),
+        _bucket("top", "顶组", top_pairs),
+    ]
+    bottom_mean = buckets[0]["mean_forward_return"]
+    middle_mean = buckets[1]["mean_forward_return"]
+    top_mean = buckets[2]["mean_forward_return"]
+    return {
+        "top_bottom_group_return": round(top_mean - bottom_mean, 6),
+        "group_return_monotonicity": bottom_mean <= middle_mean <= top_mean,
+        "group_return_buckets": buckets,
+        "status": "computed",
+    }
+
+
+def _group_return_summary(xs: list[float], ys: list[float]) -> tuple[float | None, bool | None]:
+    details = _group_return_details(xs, ys)
+    return details["top_bottom_group_return"], details["group_return_monotonicity"]
 
 
 def _demean_by_group(values: list[float], groups: list[str]) -> list[float] | None:
@@ -1773,7 +1808,9 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
             icir = 9.99 if ic_mean > 0 else (-9.99 if ic_mean < 0 else 0.0)
         else:
             icir = None
-        top_bottom, monotonicity = _group_return_summary(xs, ys)
+        group_return_details = _group_return_details(xs, ys)
+        top_bottom = group_return_details["top_bottom_group_return"]
+        monotonicity = group_return_details["group_return_monotonicity"]
         costs = [_to_number(row.get("transaction_cost", row.get("cost"))) for _, _, _, row in valid_pairs]
         avg_cost = statistics.fmean([value for value in costs if value is not None]) if any(value is not None for value in costs) else None
         turnover_values = [_to_number(row.get("turnover")) for _, _, _, row in valid_pairs]
@@ -1796,6 +1833,7 @@ def _factor_test_rows_from_observations(observations: Any, *, now: str) -> list[
             "rank_ic_mean": round(rank_ic_mean, 6) if rank_ic_mean is not None else None,
             "top_bottom_group_return": round(top_bottom, 6) if top_bottom is not None else None,
             "group_return_monotonicity": monotonicity,
+            "group_return_buckets": group_return_details["group_return_buckets"],
             "turnover": round(turnover, 6) if turnover is not None else None,
             "cost_adjusted_return": round(top_bottom - (avg_cost or 0), 6) if top_bottom is not None else None,
             "max_drawdown": round(_max_drawdown_from_returns(ys), 6) if ys else None,
@@ -1840,6 +1878,7 @@ def _factor_test_scaffold_row(factor: Mapping[str, Any], *, mode: str, now: str)
         "rank_ic_mean": None,
         "top_bottom_group_return": None,
         "group_return_monotonicity": None,
+        "group_return_buckets": [],
         "turnover": None,
         "cost_adjusted_return": None,
         "max_drawdown": None,

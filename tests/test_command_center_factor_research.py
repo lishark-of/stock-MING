@@ -247,6 +247,7 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
                 "rank_ic_mean",
                 "icir",
                 "top_bottom_group_return",
+                "group_return_buckets",
                 "turnover",
                 "cost_adjusted_return",
                 "max_drawdown",
@@ -364,6 +365,12 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertGreater(row["icir"], 0)
         self.assertGreater(row["top_bottom_group_return"], 0)
         self.assertTrue(row["group_return_monotonicity"])
+        self.assertEqual([bucket["bucket_key"] for bucket in row["group_return_buckets"]], ["bottom", "middle", "top"])
+        self.assertEqual(sum(bucket["count"] for bucket in row["group_return_buckets"]), len(observations))
+        self.assertLess(
+            row["group_return_buckets"][0]["mean_forward_return"],
+            row["group_return_buckets"][-1]["mean_forward_return"],
+        )
         self.assertGreater(row["cost_adjusted_return"], 0)
         self.assertEqual(row["pit_check"], "passed")
         self.assertEqual(row["lookahead_check"], "passed")
