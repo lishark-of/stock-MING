@@ -31,6 +31,7 @@ export default function FactorQuantHub() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [autoAfterTask, setAutoAfterTask] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -46,8 +47,8 @@ export default function FactorQuantHub() {
       setError(err instanceof Error ? err.message : String(err));
     }).finally(() => setLoading(false));
   };
-  const launchTask = (path: string) =>
-    void postTask(path).then((res) => {
+  const launchTask = (path: string, payload: Record<string, unknown> = {}) =>
+    void postTask(path, payload).then((res) => {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
@@ -68,6 +69,7 @@ export default function FactorQuantHub() {
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
   const deepseek = packet.deepseek_explanation ?? {};
+  const deepseekGovernance = packet.deepseek_explain_governance ?? {};
   const deepseekValidation = packet.deepseek_validation_summary ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
@@ -119,9 +121,18 @@ export default function FactorQuantHub() {
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={() => launchTask("/api/factor-quant/refresh-data")}>刷新数据</button>
-        <button onClick={() => launchTask("/api/factor-quant/run-light")}>运行计算</button>
+        <label className="inline-toggle">
+          <input
+            type="checkbox"
+            checked={autoAfterTask}
+            onChange={(event) => setAutoAfterTask(event.target.checked)}
+          />
+          run-light 成功后尝试自动排队解释
+        </label>
+        <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行计算</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>
       </div>
+      <p className="risk-note">DeepSeek 解释模式：{String(deepseekGovernance.mode ?? "manual_only")}；auto_after_task 默认关闭。自动解释已关闭时，可手动点击生成解释。</p>
       <p className="risk-note">多因子量化不是交易建议；不改价格、持仓、operation_zones 或 strategy action。</p>
       <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
@@ -160,6 +171,9 @@ export default function FactorQuantHub() {
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
           { label: "DeepSeek", value: deepseek.status ?? "not_called", tone: deepseek.called === true ? "warn" : "good" },
+          { label: "DS mode", value: deepseekGovernance.mode ?? "manual_only", tone: deepseekGovernance.mode === "disabled" ? "bad" : "neutral" },
+          { label: "DS auto_after_task", value: deepseekGovernance.auto_after_task === true ? "开启" : "关闭", tone: deepseekGovernance.auto_after_task === true ? "warn" : "good" },
+          { label: "DS configured auto", value: deepseekGovernance.configured_auto_after_task === true ? "开启" : "关闭", tone: deepseekGovernance.configured_auto_after_task === true ? "warn" : "good" },
           { label: "DS model", value: deepseek.model_used ?? "not_called" },
           { label: "DS parse_failed", value: deepseek.parse_failed === true ? "是" : "否", tone: deepseek.parse_failed === true ? "bad" : "good" },
           { label: "DS validation", value: deepseekValidation.validation_mode ?? "local_sanitizer_only" },
@@ -195,10 +209,15 @@ export default function FactorQuantHub() {
       </div>
       <PacketCard title="DeepSeek 解释" subtitle="按钮门控；只整理已有结构化结果，不覆盖数值">
         <p>called: {String(Boolean(deepseek.called))}</p>
+        <p>mode: {String(deepseekGovernance.mode ?? "manual_only")}</p>
+        <p>auto_after_task: {String(deepseekGovernance.auto_after_task ?? false)}</p>
+        <p>cache_reads_never_call_deepseek: {String(deepseekGovernance.cache_reads_never_call_deepseek ?? true)}</p>
+        <p>react_render_never_calls_deepseek: {String(deepseekGovernance.react_render_never_calls_deepseek ?? true)}</p>
         <p>status: {String(deepseek.status ?? "not_called")}</p>
         <p>model_used: {String(deepseek.model_used ?? "not_called")}</p>
         <p>input_hash: {String(deepseek.input_hash ?? "")}</p>
         <p>output_hash: {String(deepseek.output_hash ?? "")}</p>
+        <p>cache_key: {JSON.stringify(packet.deepseek_explanation_cache_key ?? {})}</p>
         <p>parse_failed: {String(deepseek.parse_failed ?? false)}</p>
         <p>token_estimate: {String(deepseek.token_estimate ?? 0)}</p>
         <p>validation_mode: {String(deepseekValidation.validation_mode ?? "local_sanitizer_only")}</p>

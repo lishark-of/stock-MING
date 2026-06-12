@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(row["github_called"])
         self.assertTrue(row["does_not_execute_trades"])
         self.assertTrue(row["does_not_modify_strategy_action"])
+
+    def _with_deepseek_mode(self, mode=None, auto_enabled=None):
+        keys = ("DEEPSEEK_FACTOR_EXPLAIN_MODE", "DEEPSEEK_AUTO_EXPLAIN_ENABLED")
+        original = {key: os.environ.get(key) for key in keys}
+        if mode is None:
+            os.environ.pop("DEEPSEEK_FACTOR_EXPLAIN_MODE", None)
+        else:
+            os.environ["DEEPSEEK_FACTOR_EXPLAIN_MODE"] = str(mode)
+        if auto_enabled is None:
+            os.environ.pop("DEEPSEEK_AUTO_EXPLAIN_ENABLED", None)
+        else:
+            os.environ["DEEPSEEK_AUTO_EXPLAIN_ENABLED"] = "true" if auto_enabled else "false"
+
+        def restore():
+            for key, value in original.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.addCleanup(restore)
 
     def _discover_fastapi_post_routes(self):
         return self._discover_fastapi_routes("post")
@@ -2530,6 +2552,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def test_deepseek_explanation_task_prepares_prompt_without_model_call(self):
         self._with_meta_store()
+        self._with_deepseek_mode()
 
         task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload={"ts_code": "002008.SZ"})
         packet = packet_service.build_factor_quant_cache()
@@ -2568,6 +2591,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["deepseek_explanation_prompt_preview"]["input_hash"])
         self.assertGreater(packet["deepseek_explanation_prompt_preview"]["token_estimate"], 0)
         self.assertEqual(packet["deepseek_model_strategy"]["purpose"], "factor_explain")
+        self.assertEqual(packet["deepseek_explain_governance"]["mode"], "manual_only")
+        self.assertFalse(packet["deepseek_explain_governance"]["auto_after_task"])
+        self.assertFalse(packet["deepseek_explain_governance"]["configured_auto_after_task"])
+        self.assertTrue(packet["deepseek_explanation_cache_key"]["input_hash"])
+        self.assertEqual(packet["deepseek_explanation_cache_key"]["model_name"], task_model_strategy["model"])
+        self.assertEqual(packet["deepseek_explanation_cache_key"]["prompt_version"], "factor_deepseek_explanation_prompt.v1")
         self.assertEqual(packet["deepseek_explanation_prompt_preview"]["deepseek_model_strategy"]["purpose"], "factor_explain")
         self.assertEqual(packet["deepseek_validation_summary"]["status"], "not_called")
         self.assertEqual(packet["deepseek_validation_summary"]["validation_mode"], "local_sanitizer_only")
@@ -2582,6 +2611,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def test_deepseek_explanation_task_sanitizes_payload_without_overwriting_values(self):
         self._with_meta_store()
+        self._with_deepseek_mode()
         forbidden = {
             "summary": "只解释已有结构化结果",
             "support_notes": ["量能支持"],
@@ -2623,6 +2653,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         self.assertFalse(packet["deepseek_model_called"])
         self.assertEqual(packet["deepseek_model_strategy"]["purpose"], "factor_explain")
+        self.assertEqual(packet["deepseek_explain_governance"]["mode"], "manual_only")
+        self.assertTrue(packet["deepseek_explanation_cache_key"]["input_hash"])
         self.assertEqual(explanation["deepseek_model_strategy"]["purpose"], "factor_explain")
         self.assertEqual(explanation["status"], "success")
         self.assertFalse(explanation["parse_failed"])
@@ -2652,6 +2684,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def test_deepseek_explanation_task_marks_invalid_json_as_parse_failed_without_pollution(self):
         self._with_meta_store()
+        self._with_deepseek_mode()
 
         task = factor_service.create_factor_task(
             "run_deepseek_factor_explanation",
@@ -2687,6 +2720,102 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(explanation["does_not_override_numeric_values"])
         self.assertFalse(packet["governance"]["allow_core_action"])
         self.assertTrue(packet["next_session_bridge"]["does_not_modify_operation_zones"])
+
+    def test_deepseek_disabled_mode_rejects_explanation_task_without_model_call(self):
+        self._with_meta_store()
+        self._with_deepseek_mode("disabled", auto_enabled=False)
+
+        task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload={"ts_code": "002008.SZ"})
+
+        self.assertEqual(task["status"], "failed")
+        self.assertEqual(task["current_step"], "deepseek_explanation_disabled_by_governance")
+        self.assertEqual(task["error_message_safe"], "deepseek_factor_explain_disabled")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "disabled_by_governance")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["mode"], "disabled")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["model_call_status"], "disabled")
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["external_calls_triggered"])
+
+    def test_run_light_manual_only_does_not_auto_queue_deepseek_even_if_payload_requests_it(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        self._with_deepseek_mode("manual_only", auto_enabled=True)
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "timestamp": "2026-06-10T09:30:00",
+                "moneyflow_packet": {"status": "ready", "ticker": "002008.SZ", "main_net_yi": 1.2},
+                "strategy_packet": {"status": "ready", "action": "wait"},
+                "decision_packet": {"status": "ready"},
+                "quant_packet": {"status": "ready"},
+            }
+        )
+
+        task = factor_service.create_factor_task("run_factor_light", payload={"ts_code": "002008.SZ", "auto_after_task": True})
+        packet = packet_service.build_factor_quant_cache()
+        task_types = [item["task_type"] for item in task_service.list_task_statuses()]
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task_types.count("run_factor_light"), 1)
+        self.assertNotIn("run_deepseek_factor_explanation", task_types)
+        self.assertEqual(packet["deepseek_explain_governance"]["mode"], "manual_only")
+        self.assertFalse(packet["deepseek_explain_governance"]["auto_after_task"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+
+    def test_run_light_auto_after_task_requires_mode_config_and_payload(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        self._with_deepseek_mode("auto_after_task", auto_enabled=True)
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "timestamp": "2026-06-10T09:30:00",
+                "moneyflow_packet": {"status": "ready", "ticker": "002008.SZ", "main_net_yi": 1.2},
+                "strategy_packet": {"status": "ready", "action": "wait"},
+                "decision_packet": {"status": "ready"},
+                "quant_packet": {"status": "ready"},
+            }
+        )
+
+        task = factor_service.create_factor_task("run_factor_light", payload={"ts_code": "002008.SZ", "auto_after_task": True})
+        packet = packet_service.build_factor_quant_cache()
+        tasks = task_service.list_task_statuses()
+        task_types = [item["task_type"] for item in tasks]
+
+        self.assertEqual(task["status"], "success")
+        self.assertIn("run_deepseek_factor_explanation", task_types)
+        self.assertTrue(any(str(warning).startswith("auto_after_task_created:") for warning in task["warnings"]))
+        self.assertEqual(packet["deepseek_explain_governance"]["mode"], "auto_after_task")
+        self.assertTrue(packet["deepseek_explain_governance"]["auto_after_task"])
+        self.assertTrue(packet["deepseek_explain_governance"]["manual_task_allowed"])
+        self.assertTrue(packet["deepseek_explain_governance"]["auto_after_task_queued"])
+        self.assertEqual(packet["deepseek_explanation"]["status"], "not_called")
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertTrue(packet["deepseek_explanation_cache_key"]["input_hash"])
+        self.assertFalse(packet["governance"]["allow_core_action"])
+
+    def test_deepseek_explanation_same_input_hash_uses_cache_hit_no_duplicate_call(self):
+        self._with_meta_store()
+        self._with_deepseek_mode("manual_only", auto_enabled=False)
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        first = factor_service.create_factor_task(
+            "run_deepseek_factor_explanation",
+            payload={"provided_explanation": {"summary": "缓存一次", "discipline_notes": ["不改 action"]}},
+        )
+        second = factor_service.create_factor_task("run_deepseek_factor_explanation", payload={"ts_code": "002008.SZ"})
+        packet = packet_service.build_factor_quant_cache()
+
+        self.assertEqual(first["status"], "success")
+        self.assertEqual(second["status"], "success")
+        self.assertEqual(second["current_step"], "deepseek_explanation_cache_hit_no_model_call")
+        self.assertEqual(second["call_ledger"][0]["call_status"], "cache_hit_no_duplicate_model_call")
+        self.assertEqual(packet["deepseek_explanation_cache_hit"], True)
+        self.assertEqual(packet["deepseek_explanation"]["payload"]["summary"], "缓存一次")
+        self.assertFalse(second["deepseek_called"])
+        self.assertFalse(packet["deepseek_called"])
 
 
 @unittest.skipIf(importlib.util.find_spec("fastapi") is None, "FastAPI is not installed in this environment")

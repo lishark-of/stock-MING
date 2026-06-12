@@ -10,8 +10,10 @@ except ModuleNotFoundError:
 
 CONFIG_NAMES = {
     "DEEPSEEK_API_KEY",
+    "DEEPSEEK_AUTO_EXPLAIN_ENABLED",
     "DEEPSEEK_DEFAULT_MODEL",
     "DEEPSEEK_EXPLAIN_MODEL",
+    "DEEPSEEK_FACTOR_EXPLAIN_MODE",
     "DEEPSEEK_FAST_MODEL",
     "DEEPSEEK_TOKEN_1",
     "DEEPSEEK_TOKEN_2",
@@ -20,6 +22,8 @@ CONFIG_NAMES = {
     "DATABASE_URL",
     "TUSHARE_TOKEN",
 }
+
+DEEPSEEK_FACTOR_EXPLAIN_MODES = {"manual_only", "auto_after_task", "disabled"}
 
 DEEPSEEK_MODEL_DEFAULTS = {
     "default": "deepseek-v4-pro",
@@ -133,6 +137,25 @@ def get_deepseek_model_strategy():
         "contains_secret": False,
     })
     return strategy
+
+
+def get_deepseek_factor_explain_mode(default="manual_only"):
+    """Return the governed DeepSeek factor explanation mode.
+
+    The mode is intentionally separate from model selection: cache reads and
+    page renders must remain no-call regardless of the selected model.
+    """
+
+    selected = _clean_value(get_config_value("DEEPSEEK_FACTOR_EXPLAIN_MODE"), default)
+    selected = str(selected or default).strip().lower()
+    return selected if selected in DEEPSEEK_FACTOR_EXPLAIN_MODES else default
+
+
+def get_deepseek_auto_explain_enabled(default=False):
+    value = _clean_value(get_config_value("DEEPSEEK_AUTO_EXPLAIN_ENABLED"))
+    if value is None:
+        return bool(default)
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
 def get_supabase_config():

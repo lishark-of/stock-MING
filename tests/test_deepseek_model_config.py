@@ -14,7 +14,13 @@ class DeepSeekModelConfigTests(unittest.TestCase):
     def setUp(self):
         self._original_env = {
             key: os.environ.get(key)
-            for key in ("DEEPSEEK_DEFAULT_MODEL", "DEEPSEEK_EXPLAIN_MODEL", "DEEPSEEK_FAST_MODEL")
+            for key in (
+                "DEEPSEEK_DEFAULT_MODEL",
+                "DEEPSEEK_EXPLAIN_MODEL",
+                "DEEPSEEK_FAST_MODEL",
+                "DEEPSEEK_FACTOR_EXPLAIN_MODE",
+                "DEEPSEEK_AUTO_EXPLAIN_ENABLED",
+            )
         }
         self._original_loader = config._load_local_streamlit_secrets
         self._original_streamlit_secret = config._get_streamlit_secret
@@ -65,8 +71,24 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         text = example.read_text(encoding="utf-8")
 
         self.assertIn('DEEPSEEK_EXPLAIN_MODEL = "deepseek-v4-pro"', text)
+        self.assertIn('DEEPSEEK_FACTOR_EXPLAIN_MODE = "manual_only"', text)
+        self.assertIn("DEEPSEEK_AUTO_EXPLAIN_ENABLED = false", text)
         self.assertIn('DEEPSEEK_FAST_MODEL = "deepseek-v4-flash"', text)
         self.assertIn('DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-pro"', text)
+
+    def test_factor_explain_mode_defaults_to_manual_only_and_validates_values(self):
+        self.assertEqual(config.get_deepseek_factor_explain_mode(), "manual_only")
+        self.assertFalse(config.get_deepseek_auto_explain_enabled())
+
+        os.environ["DEEPSEEK_FACTOR_EXPLAIN_MODE"] = "auto_after_task"
+        os.environ["DEEPSEEK_AUTO_EXPLAIN_ENABLED"] = "true"
+        self.assertEqual(config.get_deepseek_factor_explain_mode(), "auto_after_task")
+        self.assertTrue(config.get_deepseek_auto_explain_enabled())
+
+        os.environ["DEEPSEEK_FACTOR_EXPLAIN_MODE"] = "surprise_mode"
+        os.environ["DEEPSEEK_AUTO_EXPLAIN_ENABLED"] = "0"
+        self.assertEqual(config.get_deepseek_factor_explain_mode(), "manual_only")
+        self.assertFalse(config.get_deepseek_auto_explain_enabled())
 
     def test_model_strategy_reference_helper_is_configurable_and_secret_free(self):
         os.environ["DEEPSEEK_DEFAULT_MODEL"] = "custom-default"

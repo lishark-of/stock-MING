@@ -7,12 +7,14 @@ from typing import Any
 import command_center_factor_research as factor_research
 import command_center_next_session_projection as next_session_projection
 import command_center_serenity_method_radar as serenity_radar
+from config import get_deepseek_auto_explain_enabled, get_deepseek_factor_explain_mode
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import model_strategy_service, packet_service, storage_service, tushare_task_service
 from .task_service import create_task_record, create_task_stub, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
+DEEPSEEK_FACTOR_PROMPT_VERSION = "factor_deepseek_explanation_prompt.v1"
 
 
 def _now_iso() -> str:
@@ -33,6 +35,7 @@ def _local_ledger_boundary() -> dict[str, Any]:
 
 def read_factor_quant_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_factor_quant_cache())
+    packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
     cache_ledger = _factor_quant_cache_call_ledger(packet, _now_iso())
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
@@ -42,6 +45,54 @@ def read_factor_quant_cache() -> dict[str, Any]:
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
     packet["warnings"] = [cache_warning] + [item for item in existing_warnings if item != cache_warning]
     return packet
+
+
+def _deepseek_explain_governance(*, payload: Any = None) -> dict[str, Any]:
+    mode = get_deepseek_factor_explain_mode()
+    configured_auto = get_deepseek_auto_explain_enabled(default=False)
+    payload_auto = bool(payload.get("auto_after_task")) if isinstance(payload, dict) else False
+    auto_after_task = mode == "auto_after_task" and configured_auto and payload_auto
+    return {
+        "mode": mode,
+        "auto_after_task": auto_after_task,
+        "configured_auto_after_task": configured_auto,
+        "payload_auto_after_task_requested": payload_auto,
+        "manual_task_allowed": mode != "disabled",
+        "disabled": mode == "disabled",
+        "model": _deepseek_model_strategy("factor_explain").get("model"),
+        "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
+        "cache_reads_never_call_deepseek": True,
+        "react_render_never_calls_deepseek": True,
+        "streamlit_render_never_calls_deepseek": True,
+        "does_not_override_numeric_values": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _factor_universe_cache_part(hub: dict[str, Any]) -> dict[str, Any]:
+    universe = hub.get("universe") if isinstance(hub.get("universe"), dict) else {}
+    items = universe.get("items") if isinstance(universe.get("items"), list) else []
+    return {
+        "universe_type": universe.get("type") or "unknown",
+        "items": [str(item) for item in items[:12]],
+        "size": universe.get("size") if universe.get("size") is not None else len(items),
+    }
+
+
+def _deepseek_explanation_cache_key(hub: dict[str, Any], *, input_hash: str, model_name: str) -> dict[str, Any]:
+    return {
+        "module": "factor_quant_hub",
+        **_factor_universe_cache_part(hub),
+        "ts_code": (_factor_universe_cache_part(hub).get("items") or [""])[0],
+        "trade_date": hub.get("trade_date") or hub.get("data_date") or "",
+        "input_hash": input_hash,
+        "model_name": model_name,
+        "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
+    }
+
+
+def _same_deepseek_cache_key(left: Any, right: Any) -> bool:
+    return isinstance(left, dict) and isinstance(right, dict) and left == right
 
 
 def _score_items(score: dict[str, Any], key: str) -> list[Any]:
@@ -269,14 +320,35 @@ def run_factor_light_task(payload: Any = None) -> dict[str, Any]:
         hub["tushare_called"] = False
         hub["deepseek_called"] = False
         hub["external_calls_triggered"] = False
+        hub["deepseek_explain_governance"] = _deepseek_explain_governance(payload=payload)
         update_task_status(task["task_id"], status="running", progress=0.8, current_step="writing_factor_quant_hub_cache", call_ledger=combined_ledger)
         SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+        auto_task = None
+        if hub["deepseek_explain_governance"]["auto_after_task"]:
+            universe = hub.get("universe") if isinstance(hub.get("universe"), dict) else {}
+            universe_items = universe.get("items") if isinstance(universe.get("items"), list) else []
+            auto_task = run_factor_deepseek_explanation_task({
+                "trigger": "auto_after_run_light",
+                "auto_after_task": True,
+                "ts_code": str(universe_items[0]) if universe_items else "",
+            })
+            latest_hub = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_factor_quant_hub_packet")
+            if isinstance(latest_hub, dict):
+                hub = latest_hub
+            hub.setdefault("deepseek_explain_governance", _deepseek_explain_governance(payload=payload))
+            hub["deepseek_explain_governance"]["auto_after_task_queued"] = True
+            hub["deepseek_explain_governance"]["auto_after_task_id"] = auto_task.get("task_id")
+            SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+        final_warning = ""
+        if auto_task:
+            final_warning = f"auto_after_task_created:{auto_task.get('task_id')}"
         return update_task_status(
             task["task_id"],
             status="success",
             progress=1.0,
             current_step="factor_light_completed_from_local_cache",
             call_ledger=combined_ledger,
+            warning=final_warning or None,
         ) or task
     except Exception as exc:
         return update_task_status(
@@ -321,16 +393,23 @@ def _deepseek_explanation_call_ledger(
     output_hash: str = "",
     parse_failed: bool | None = None,
     model_call_status: str = "not_called",
+    cache_key: dict[str, Any] | None = None,
+    call_status_override: str | None = None,
 ) -> list[dict[str, Any]]:
     strategy = _deepseek_model_strategy("factor_explain")
     call_status = "not_called"
     if sanitized_payload:
         call_status = "provided_payload_parse_failed" if parse_failed else "provided_payload_sanitized"
+    if call_status_override:
+        call_status = call_status_override
+    governance = _deepseek_explain_governance()
     return [
         {
             "api": "deepseek_factor_explanation",
             "request_params_safe": {
-                "mode": "guarded_prompt_only",
+                "mode": governance["mode"],
+                "auto_after_task": governance["auto_after_task"],
+                "configured_auto_after_task": governance["configured_auto_after_task"],
                 "provided_explanation_payload": sanitized_payload,
                 "validation_mode": "local_sanitizer_only",
                 "model_used": strategy.get("model"),
@@ -340,6 +419,8 @@ def _deepseek_explanation_call_ledger(
                 "output_hash": output_hash,
                 "token_estimate": token_estimate,
                 "parse_failed": parse_failed if parse_failed is not None else False,
+                "cache_key": cache_key or {},
+                "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
                 "deepseek_model_strategy": strategy,
             },
             "row_count": 0,
@@ -360,6 +441,7 @@ def _deepseek_prompt_preview(hub: dict[str, Any]) -> dict[str, Any]:
         "model_used": strategy.get("model"),
         "deepseek_model_strategy": strategy,
         "input_hash": prompt.get("input_hash"),
+        "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
         "token_estimate": prompt.get("token_estimate"),
         "allowed_top_level_keys": prompt.get("allowed_top_level_keys") or [],
         "would_enter_deepseek_prompt_if_user_authorizes": bool(prompt.get("enters_deepseek_prompt")),
@@ -385,6 +467,9 @@ def _deepseek_validation_summary(
         "model_call_status": explanation.get("model_call_status") or "not_called",
         "input_hash": explanation.get("input_hash") or prompt_preview.get("input_hash") or "",
         "output_hash": explanation.get("output_hash") or "",
+        "cache_key": explanation.get("cache_key") or {},
+        "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
+        "explain_governance": _deepseek_explain_governance(),
         "prompt_token_estimate": prompt_preview.get("token_estimate") or 0,
         "output_token_estimate": explanation.get("token_estimate") or 0,
         "parse_failed": bool(explanation.get("parse_failed")),
@@ -402,16 +487,33 @@ def _deepseek_validation_summary(
 
 
 def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
+    governance = _deepseek_explain_governance(payload=payload)
     task = create_task_record(
         "run_deepseek_factor_explanation",
         output_packet_key="command_center_factor_quant_hub_packet",
         payload=_deepseek_task_payload_summary(payload),
         current_step="deepseek_explanation_queued",
         warnings=[
-            "DeepSeek 因子解释任务本轮不调用模型；只准备安全 prompt 或清洗已提供的解释 JSON。",
+            "DeepSeek 因子解释任务本轮不调用模型；由治理模式控制，只准备安全 prompt 或清洗已提供的解释 JSON。",
             "解释输出只允许六个白名单字段，不覆盖因子数值、价格、持仓或 strategy action。",
+            f"DeepSeek explanation mode: {governance['mode']}；auto_after_task={governance['auto_after_task']}。",
         ],
     )
+    if governance["disabled"]:
+        ledger = _deepseek_explanation_call_ledger(
+            _now_iso(),
+            sanitized_payload=False,
+            model_call_status="disabled",
+            call_status_override="disabled_by_governance",
+        )
+        return update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="deepseek_explanation_disabled_by_governance",
+            error_message_safe="deepseek_factor_explain_disabled",
+            call_ledger=ledger,
+        ) or task
     update_task_status(task["task_id"], status="running", progress=0.2, current_step="reading_factor_quant_hub_cache")
     now = _now_iso()
     call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=False)
@@ -423,8 +525,38 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
         input_hash = str(prompt_preview.get("input_hash") or "")
         token_estimate = int(prompt_preview.get("token_estimate") or 0)
         model_used = str(model_strategy.get("model") or "")
-        call_ledger = _deepseek_explanation_call_ledger(now, sanitized_payload=False, input_hash=input_hash, token_estimate=token_estimate)
+        cache_key = _deepseek_explanation_cache_key(hub, input_hash=input_hash, model_name=model_used)
+        call_ledger = _deepseek_explanation_call_ledger(
+            now,
+            sanitized_payload=False,
+            input_hash=input_hash,
+            token_estimate=token_estimate,
+            cache_key=cache_key,
+        )
         provided_payload = _extract_provided_explanation_payload(payload)
+        existing_key = hub.get("deepseek_explanation_cache_key")
+        existing_explanation = hub.get("deepseek_explanation") if isinstance(hub.get("deepseek_explanation"), dict) else {}
+        if provided_payload is None and _same_deepseek_cache_key(existing_key, cache_key) and existing_explanation.get("status") in {"success", "parse_failed"}:
+            call_ledger = _deepseek_explanation_call_ledger(
+                now,
+                sanitized_payload=False,
+                input_hash=input_hash,
+                token_estimate=token_estimate,
+                cache_key=cache_key,
+                call_status_override="cache_hit_no_duplicate_model_call",
+            )
+            hub["deepseek_explain_governance"] = governance
+            hub["deepseek_explanation_cache_key"] = cache_key
+            hub["deepseek_explanation_cache_hit"] = True
+            update_task_status(task["task_id"], status="running", progress=0.75, current_step="deepseek_explanation_cache_hit", call_ledger=call_ledger)
+            SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+            return update_task_status(
+                task["task_id"],
+                status="success",
+                progress=1.0,
+                current_step="deepseek_explanation_cache_hit_no_model_call",
+                call_ledger=call_ledger,
+            ) or task
         if provided_payload is None:
             explanation = {
                 "called": False,
@@ -441,6 +573,8 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
                 "does_not_output_strategy_action": True,
                 "model_call_status": "not_called",
                 "source": "prompt_ready_no_model_call",
+                "cache_key": cache_key,
+                "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
                 "deepseek_model_strategy": model_strategy,
             }
             current_step = "deepseek_prompt_ready_without_model_call"
@@ -451,6 +585,8 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
             explanation["source"] = "provided_payload_sanitized_no_model_call"
             explanation["allowed_keys_enforced"] = True
             explanation["deepseek_model_strategy"] = model_strategy
+            explanation["cache_key"] = cache_key
+            explanation["prompt_version"] = DEEPSEEK_FACTOR_PROMPT_VERSION
             call_ledger = _deepseek_explanation_call_ledger(
                 now,
                 sanitized_payload=True,
@@ -459,9 +595,13 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
                 output_hash=str(explanation.get("output_hash") or ""),
                 parse_failed=bool(explanation.get("parse_failed")),
                 model_call_status=str(explanation.get("model_call_status") or "not_called"),
+                cache_key=cache_key,
             )
             current_step = "deepseek_explanation_sanitized_without_model_call"
 
+        hub["deepseek_explain_governance"] = governance
+        hub["deepseek_explanation_cache_key"] = cache_key
+        hub["deepseek_explanation_cache_hit"] = False
         hub["deepseek_explanation_prompt_preview"] = prompt_preview
         hub["deepseek_explanation"] = explanation
         hub["deepseek_validation_summary"] = _deepseek_validation_summary(
