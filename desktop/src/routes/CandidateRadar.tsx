@@ -84,6 +84,13 @@ export default function CandidateRadar() {
   const fullPoolFilterRows = rows(cache.full_pool_plan_filter_rows);
   const fullPoolSignalRows = rows(cache.full_pool_required_signal_rows);
   const fullPoolBlockerRows = rows(cache.full_pool_blocker_rows);
+  const radarMotionState = [
+    String(cache.status ?? "cache_missing"),
+    String(cache.scan_mode ?? "no_scan_mode"),
+    Number(scanCoverage.missing_signal_group_count ?? 0) ? "coverage_gap" : "coverage_ok",
+    Number(counts.provider_blocked_group_count ?? 0) ? "provider_blocked" : "provider_clear",
+    Number(counts.degraded_mode_active_count ?? 0) ? "degraded" : "steady"
+  ].join(" ");
 
   return (
     <>
@@ -126,7 +133,7 @@ export default function CandidateRadar() {
         ]}
       />
 
-      <div className="grid">
+      <div className="grid radar-result-cluster" data-radar-state={radarMotionState}>
         <PacketCard title="下一票候选池" subtitle="GET /api/candidate-radar/cache 只读读取 radar_packet / next_ticket_candidates" status={String(cache.status ?? "missing")}>
           <p>{String(cache.summary ?? "候选雷达 cache 只读展示。")}</p>
           <p>{String(cache.manual_required_text ?? "页面打开不会自动全市场扫描。")}</p>

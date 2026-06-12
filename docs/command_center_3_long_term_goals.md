@@ -69,7 +69,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
 | LTG-13 | 下一票雷达快扫生产化 | legacy radar exists; React cache page exists; full scan path needs non-blocking migration | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
-| LTG-14 | Command Center 3 动效与可视化清晰度优化 | current UI is functional; motion polish is not a production goal yet | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
+| LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer exists; chart/radar clarity is in progress | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
 
@@ -693,13 +693,15 @@ Productionize non-blocking next-ticket radar scans
 
 - Current React UI is functional and audit-oriented.
 - A first motion clarity layer exists for route staging, cards, metric tiles, task panels, progress state, focus rings, and reduced-motion fallback.
+- Next-session ECharts now has a short update clarity layer and respects reduced-motion preferences by disabling chart update animation.
+- Candidate radar now tags its primary result cluster with cache/coverage/blocker/degraded state so result transitions are visually easier to follow without recomputing candidates.
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
 ### Gaps
 
-- Need deeper transitions for panel expansion, chart updates, cache refresh, and candidate-radar result changes.
-- Need chart motion that helps users understand state changes instead of adding decoration.
+- Need deeper transitions for panel expansion, cache refresh, and later candidate-radar result deltas beyond the primary cluster.
+- Need broader chart motion verification so updates help users understand state changes instead of adding decoration.
 - Need broader viewport verification so animation never overlaps, occludes, or resizes critical text.
 - Need performance guardrails so later animation never reintroduces UI stalls.
 - Need visual hierarchy that makes status, freshness, blockers, and candidate changes obvious.

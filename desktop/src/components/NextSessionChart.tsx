@@ -1,5 +1,5 @@
 import type { EChartsOption, MarkAreaComponentOption, SeriesOption } from "echarts";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ChartSafetyStrip from "./ChartSafetyStrip";
 import EChartPanel, { type ChartClickParams } from "./EChartPanel";
 
@@ -124,6 +124,25 @@ type TooltipPoint = {
   value?: unknown;
 };
 
+function useReducedMotionPreference() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncPreference = () => setReducedMotion(query.matches);
+    syncPreference();
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", syncPreference);
+      return () => query.removeEventListener("change", syncPreference);
+    }
+    query.addListener(syncPreference);
+    return () => query.removeListener(syncPreference);
+  }, []);
+
+  return reducedMotion;
+}
+
 function referenceColor(line: ReferenceLine): string {
   const key = String(line.key ?? "").toLowerCase();
   const tone = String(line.tone ?? "").toLowerCase();
@@ -160,6 +179,7 @@ function lineStyleLabel(type: "solid" | "dashed" | "dotted"): string {
 
 export default function NextSessionChart({ payload }: { payload: ChartPayload | null | undefined }) {
   const [selectedInsight, setSelectedInsight] = useState<SelectedInsight | null>(null);
+  const reducedMotion = useReducedMotionPreference();
   const historicalPoints = payload?.historical_points ?? [];
   const historical = historicalPoints.map(pointTuple).filter(Boolean) as Array<[string, number]>;
   const scenarioSeries = payload?.scenario_series ?? [];
@@ -289,6 +309,11 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       };
     })
     .filter((item): item is { key: string; label: string; range: string; color: string; actionMode: string; source: string; guardrail: string } => item !== null);
+  const chartMotionState = [
+    payload.is_exact_next_session_packet === true ? "exact" : "preview",
+    payload.uses_real_daily_close === true ? "real-close" : "cache-close",
+    payload.warnings?.length ? "warnings" : "clear"
+  ].join(" ");
 
   const tooltipFormatter = (params: unknown): string => {
     const rows = Array.isArray(params) ? (params as TooltipPoint[]) : ([params] as TooltipPoint[]);
@@ -362,6 +387,11 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   ];
 
   const option: EChartsOption = {
+    animation: !reducedMotion,
+    animationDuration: reducedMotion ? 0 : 360,
+    animationDurationUpdate: reducedMotion ? 0 : 260,
+    animationEasing: "cubicOut",
+    animationEasingUpdate: "cubicOut",
     tooltip: { trigger: "axis", confine: true, formatter: tooltipFormatter },
     legend: { top: 0, type: "scroll" },
     grid: { left: 52, right: 24, top: 52, bottom: 68 },
@@ -381,7 +411,9 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
 
   return (
     <>
-      <EChartPanel option={option} onChartClick={handleChartClick} />
+      <div className="chart-refresh-frame" data-chart-state={chartMotionState}>
+        <EChartPanel option={option} onChartClick={handleChartClick} />
+      </div>
       <ChartSafetyStrip
         contract={contract}
         source={payload.source_packet}

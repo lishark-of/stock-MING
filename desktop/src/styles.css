@@ -5,6 +5,8 @@
   --motion-duration-fast: 140ms;
   --motion-duration-panel: 260ms;
   --motion-duration-route: 340ms;
+  --motion-duration-chart: 360ms;
+  --motion-duration-state: 300ms;
   --motion-delay-step: 24ms;
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
@@ -103,6 +105,43 @@ textarea:focus {
   animation: cc-heading-reveal var(--motion-duration-route) var(--motion-ease-emphasized) both;
 }
 
+.chart-refresh-frame,
+.radar-result-cluster {
+  animation-name: cc-state-clarity;
+  animation-duration: var(--motion-duration-state);
+  animation-timing-function: var(--motion-ease-emphasized);
+  animation-delay: 0ms;
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+  transform-origin: 50% 0;
+}
+
+.chart-refresh-frame {
+  contain: layout paint;
+  min-height: 380px;
+}
+
+.chart-refresh-frame .chart-panel {
+  animation-name: cc-chart-clarity;
+  animation-duration: var(--motion-duration-chart);
+  animation-timing-function: var(--motion-ease-emphasized);
+  animation-delay: 0ms;
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+}
+
+.radar-result-cluster > .packet-card:nth-child(1) {
+  --motion-delay: 0ms;
+}
+
+.radar-result-cluster > .packet-card:nth-child(2) {
+  --motion-delay: var(--motion-delay-step);
+}
+
+.radar-result-cluster > .packet-card:nth-child(3) {
+  --motion-delay: calc(var(--motion-delay-step) * 2);
+}
+
 @keyframes cc-route-reveal {
   from {
     opacity: 0;
@@ -133,6 +172,28 @@ textarea:focus {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes cc-state-clarity {
+  from {
+    opacity: 0.88;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cc-chart-clarity {
+  from {
+    opacity: 0.92;
+    transform: scale(0.998);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -636,6 +697,8 @@ pre {
   .motion-surface,
   .route-stage,
   .page-head,
+  .chart-refresh-frame,
+  .radar-result-cluster,
   .packet-card:hover,
   .metric-card:hover,
   button:hover:not(:disabled) {
