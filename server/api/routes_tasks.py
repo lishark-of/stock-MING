@@ -44,6 +44,20 @@ def get_task(task_id: str) -> dict:
     return envelope(task, call_ledger=task.get("call_ledger"), warnings=task.get("warnings"))
 
 
+@router.get("/{task_id}/logs")
+def get_task_logs(task_id: str) -> dict:
+    packet = task_service.build_task_log_packet(task_id)
+    if packet is None:
+        return envelope(
+            {},
+            ok=False,
+            error="task_not_found",
+            call_ledger=task_service.task_not_found_call_ledger(task_id, api="local_task_log_lookup"),
+            warnings=task_service.task_not_found_warnings("GET /api/tasks/{task_id}/logs"),
+        )
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
 @router.post("/{task_id}/cancel")
 def cancel_task(task_id: str, payload: dict[str, Any] | None = None) -> dict:
     task = task_service.cancel_task(task_id, payload)

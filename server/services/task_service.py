@@ -832,10 +832,75 @@ def task_not_found_call_ledger(task_id: str, *, api: str = "local_task_status_lo
     ]
 
 
+def task_log_call_ledger(task_id: str, *, row_count: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_task_log_lookup",
+            "request_params_safe": {"task_id": _safe_text(task_id, limit=120)},
+            "row_count": int(row_count),
+            "data_date": None,
+            "local_fetched_at": _now_iso(),
+            "call_status": "cache_read",
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
 def task_not_found_warnings(route: str) -> list[str]:
     return [
         f"{route} 只执行本地任务状态查询；任务不存在时不调用 Tushare、DeepSeek、GitHub、Redis 或真实交易接口。"
     ]
+
+
+def build_task_log_packet(task_id: str) -> dict[str, Any] | None:
+    task = read_task_status(task_id)
+    if task is None:
+        return None
+    task_log = list(task.get("task_log") or [])
+    status_history = list(task.get("status_history") or [])
+    call_ledger = task_log_call_ledger(str(task_id), row_count=len(task_log))
+    return {
+        "packet_key": "command_center_3_task_log_packet",
+        "schema_version": "command_center_3_task_log.v1",
+        "mode": "cache_only",
+        "status": "ready",
+        "task_id": str(task.get("task_id") or task_id),
+        "task_type": str(task.get("task_type") or ""),
+        "task_status": str(task.get("status") or ""),
+        "storage_source": task.get("storage_source") or "memory_or_sqlite_fallback",
+        "task_log": task_log,
+        "task_log_count": len(task_log),
+        "status_history": status_history,
+        "status_history_count": len(status_history),
+        "error_message_safe": _safe_text(task.get("error_message_safe", "")),
+        "policy": {
+            "get_task_logs_cache_only": True,
+            "does_not_create_tasks": True,
+            "does_not_call_external_sources": True,
+            "task_logs_safe": True,
+            "task_logs_include_no_raw_payload": True,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "call_ledger": call_ledger,
+        "warnings": [
+            "GET /api/tasks/{task_id}/logs 只读取本地任务日志；不会调用 Tushare、DeepSeek、GitHub、Redis 或真实交易接口。"
+        ],
+    }
 
 
 def build_task_record(

@@ -198,6 +198,14 @@ def _parameterized_get_route_specs() -> list[dict[str, Any]]:
             "external_calls_triggered": False,
             "requires_runtime_parameter": True,
         },
+        {
+            "route": "GET /api/tasks/{task_id}/logs",
+            "source": "task_log_detail",
+            "route_type": "parameterized_local_detail",
+            "cache_only": True,
+            "external_calls_triggered": False,
+            "requires_runtime_parameter": True,
+        },
     ]
 
 
