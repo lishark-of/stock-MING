@@ -48,9 +48,9 @@ This document is the long-term development baseline for unfinished Command Cente
 
 ## Local Implemented But Not Pushed
 
-As of the baseline after `2994c58 Add worker production manual preflight checklist`, there are no local code commits waiting to be pushed. Any future unpushed work must pass the push gate before it is treated as shared baseline.
+The local branch may contain roadmap or LTG implementation commits that are not yet pushed. Treat `git log origin/main..HEAD` as the authoritative list before any push gate.
 
-This document itself may be committed separately and must not be pushed until the user confirms.
+Current local LTG work must not be treated as shared baseline until tests, build, smoke, safety scans, and user confirmation pass. Do not push without confirmation.
 
 ## Long-Term Goals Table
 
@@ -585,15 +585,17 @@ Keep real trading isolated from Command Center 3 automation
 - Legacy module already has a next-ticket radar concept.
 - Command Center 3 has a React cache page and candidate-radar cache surface.
 - The migration has reduced UI stall risk by separating page render, cache reads, and task execution.
+- A local `quick_cache_scan` task exists: it reads local snapshot/cache, writes a SQLite candidate-radar packet, and shows coverage/freshness gaps without external calls.
+- The 3.0 page now exposes legacy signal-group coverage, parity inventory, output contract rows, skipped reasons, scan mode status, and freshness state.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
 ### Gaps
 
-- Need a fast radar scan that preserves legacy signal groups instead of reducing capability.
-- Need non-blocking scan execution through task/worker pipeline.
-- Need scan coverage accounting: universe size, skipped groups, stale inputs, missing provider data, and degraded modes.
+- Need watchlist/custom/full-pool scan modes beyond the current cache-only quick scan.
+- Need worker-backed async execution for slower scans beyond the local fallback path.
+- Need deeper scan coverage accounting: universe size, provider-blocked groups, stale inputs, missing provider data, and degraded modes.
 - Need clear distinction between quick scan, deep scan, and research-only candidates.
-- Need cache-first rendering so the page opens instantly even when a scan is pending.
+- Need parity acceptance before removing any Streamlit fallback.
 
 ### Implementation Phases
 

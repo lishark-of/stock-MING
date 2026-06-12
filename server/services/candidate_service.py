@@ -48,6 +48,131 @@ LEGACY_RADAR_SIGNAL_GROUPS = [
         "role": "candidate-level risk warnings and guardrails",
     },
 ]
+LEGACY_RADAR_PARITY_ITEMS = [
+    {
+        "key": "top_watch_excluded_split",
+        "label": "Top / Watch / Excluded 分层",
+        "legacy_sources": ["command_center_radar_packet.top_candidates", "watch_candidates", "excluded_candidates"],
+        "current_fields": ["candidate_rows", "excluded_candidates"],
+        "target_state": "top/watch/excluded all mapped or missing_reported",
+        "current_support": "mapped_from_cache",
+    },
+    {
+        "key": "evidence_links",
+        "label": "四类证据链",
+        "legacy_sources": ["moneyflow", "dragon_tiger", "limit_emotion", "hard_risk"],
+        "current_fields": ["evidence_chain_summary", "candidate_execution_evidence_overview", "evidence_recovery_actions"],
+        "target_state": "moneyflow/dragon-tiger/limit-emotion/hard-risk gaps are visible",
+        "current_support": "gap_reported",
+    },
+    {
+        "key": "scoring_dimensions",
+        "label": "规则评分维度",
+        "legacy_sources": ["trend_score", "money_score", "risk_score", "position_score", "information_score", "total_score"],
+        "current_fields": ["score"],
+        "target_state": "dimension scores preserved when present; missing dimensions are not invented",
+        "current_support": "partial_cache_projection",
+    },
+    {
+        "key": "trigger_invalidation",
+        "label": "触发 / 失效条件",
+        "legacy_sources": ["trigger_conditions", "invalid_conditions", "trigger_condition", "invalidation_condition"],
+        "current_fields": ["trigger_condition", "invalidation_condition"],
+        "target_state": "candidate rows keep trigger/invalidation text before action review",
+        "current_support": "mapped_from_cache",
+    },
+    {
+        "key": "holding_comparison",
+        "label": "当前持仓对比",
+        "legacy_sources": ["current_holding_context", "position_profile", "candidate_vs_holding_*", "switch_relation"],
+        "current_fields": ["position_risk_budget", "holding_action", "position_context"],
+        "target_state": "candidate-vs-holding comparison becomes explicit before replacing legacy fallback",
+        "current_support": "missing_reported",
+    },
+    {
+        "key": "candidate_pool_sources",
+        "label": "候选池来源",
+        "legacy_sources": ["manual_input", "TECH_SAMPLE_POOL", "watchlist", "A-share broad scan", "index pool", "mixed scan"],
+        "current_fields": ["radar_packet.source", "candidate_rows.source"],
+        "target_state": "quick/watchlist/custom/full-pool modes report universe and degraded mode",
+        "current_support": "quick_cache_only",
+    },
+    {
+        "key": "scan_filters",
+        "label": "扫描过滤条件",
+        "legacy_sources": ["exclude_st", "exclude_chinext", "exclude_star", "exclude_bj", "exclude_low_amount", "trend_up_only"],
+        "current_fields": ["scan_coverage.skipped_reason_rows"],
+        "target_state": "filters become task params and skipped_reason_rows before broad scan",
+        "current_support": "future_task_required",
+    },
+    {
+        "key": "timeout_and_fallback",
+        "label": "超时 / 上次成功缓存回退",
+        "legacy_sources": ["timeout_seconds", "previous_rows", "radar_scan_status"],
+        "current_fields": ["sqlite_meta persisted packet", "task status"],
+        "target_state": "last successful packet remains visible while new scan runs or fails",
+        "current_support": "mapped_from_sqlite_cache",
+    },
+    {
+        "key": "manual_deep_research",
+        "label": "手动深度研究",
+        "legacy_sources": ["call_deepseek_non_stream", "deep_research_results"],
+        "current_fields": ["future manual DeepSeek task"],
+        "target_state": "DeepSeek remains manual/button-gated and does not feed radar action",
+        "current_support": "not_in_quick_scan",
+    },
+]
+LEGACY_RADAR_OUTPUT_CONTRACT_FIELDS = [
+    {"field": "status", "role": "radar packet state", "required_for": "cache display"},
+    {"field": "source", "role": "candidate source label", "required_for": "coverage audit"},
+    {"field": "generated_at", "role": "last successful packet timestamp", "required_for": "cache freshness"},
+    {"field": "total_count", "role": "legacy scanned/result count", "required_for": "universe coverage"},
+    {"field": "top_candidates", "role": "primary Top candidates", "required_for": "next-ticket display"},
+    {"field": "watch_candidates", "role": "observe-only candidates", "required_for": "non-actionable visibility"},
+    {"field": "excluded_candidates", "role": "blocked/excluded candidates", "required_for": "feature parity"},
+    {"field": "decision_summary", "role": "execution-layer summary", "required_for": "manual review"},
+    {"field": "evidence_items", "role": "score/status/trigger/invalid/data-gap evidence cards", "required_for": "audit"},
+    {"field": "trigger_condition", "role": "candidate trigger text", "required_for": "no blind action"},
+    {"field": "invalidation_condition", "role": "candidate invalidation text", "required_for": "risk boundary"},
+    {"field": "data_gaps", "role": "missing evidence list", "required_for": "coverage gaps"},
+]
+SCAN_MODE_STATUS_ROWS = [
+    {
+        "scan_mode": "quick_cache_scan",
+        "status": "implemented_cache_only",
+        "scope": "local snapshot/cache candidate packet",
+        "external_calls": False,
+        "notes": "Current 3.0 button task writes SQLite packet and reports coverage gaps.",
+    },
+    {
+        "scan_mode": "watchlist_scan",
+        "status": "planned_future_task",
+        "scope": "legacy 持续调查池 / watchlist",
+        "external_calls": False,
+        "notes": "Must preserve watchlist source counts before enabling.",
+    },
+    {
+        "scan_mode": "custom_pool_scan",
+        "status": "planned_future_task",
+        "scope": "manual/custom candidate pool",
+        "external_calls": False,
+        "notes": "Must preserve manual candidate parsing and duplicate handling.",
+    },
+    {
+        "scan_mode": "full_pool_scan",
+        "status": "planned_future_task",
+        "scope": "A-share broad/index pool scan",
+        "external_calls": "button_gated_future",
+        "notes": "Must move slow provider refreshes behind explicit POST tasks, never render.",
+    },
+    {
+        "scan_mode": "manual_deep_research",
+        "status": "planned_manual_only",
+        "scope": "DeepSeek explanation for selected candidate",
+        "external_calls": "button_gated_future",
+        "notes": "Not part of quick scan; output must remain research-only.",
+    },
+]
 
 
 def _now_iso() -> str:
@@ -168,6 +293,170 @@ def _candidate_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "ready_count": ready,
         "observe_count": observe,
         "verify_count": verify,
+    }
+
+
+def _has_any_candidate_field(candidate_rows: list[dict[str, Any]], fields: list[str]) -> bool:
+    for row in candidate_rows:
+        for field in fields:
+            if row.get(field) not in (None, "", [], {}):
+                return True
+    return False
+
+
+def _has_any_packet_field(packet: Mapping[str, Any], fields: list[str]) -> bool:
+    for field in fields:
+        value = packet.get(field)
+        if value not in (None, "", [], {}):
+            return True
+    return False
+
+
+def _legacy_parity_rows(
+    *,
+    snapshot_map: Mapping[str, Any],
+    radar_packet: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+    excluded_candidates: list[Any],
+    evidence_recovery_actions: list[Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    source_group_map = {row["group"]: row for row in _source_group_rows(snapshot_map)}
+    for item in LEGACY_RADAR_PARITY_ITEMS:
+        key = str(item["key"])
+        support = str(item["current_support"])
+        present = False
+        status = support
+        if key == "top_watch_excluded_split":
+            present = bool(candidate_rows or excluded_candidates)
+            status = "mapped" if present else "missing_reported"
+        elif key == "evidence_links":
+            present = bool(_has_any_candidate_field(candidate_rows, ["evidence_chain_summary"]) or evidence_recovery_actions)
+            status = "mapped_or_gap_reported" if present else "missing_reported"
+        elif key == "scoring_dimensions":
+            present = bool(_has_any_candidate_field(candidate_rows, ["score"]))
+            status = "partial_mapped" if present else "missing_reported"
+        elif key == "trigger_invalidation":
+            present = bool(_has_any_candidate_field(candidate_rows, ["trigger_condition", "invalidation_condition"]))
+            status = "mapped" if present else "missing_reported"
+        elif key == "holding_comparison":
+            present = any(
+                snapshot_map.get(source_key) not in (None, "", [], {})
+                for source_key in ("position_risk_budget", "holding_action", "position_context", "current_holding_context")
+            )
+            status = "partial_mapped" if present else "missing_reported"
+        elif key == "candidate_pool_sources":
+            present = bool(radar_packet.get("source") or _has_any_candidate_field(candidate_rows, ["source"]))
+            status = "quick_cache_only" if present else "missing_reported"
+        elif key == "scan_filters":
+            present = False
+            status = "future_task_required"
+        elif key == "timeout_and_fallback":
+            present = bool(radar_packet or candidate_rows)
+            status = "mapped_from_cache" if present else "missing_reported"
+        elif key == "manual_deep_research":
+            present = False
+            status = "manual_only_future_task"
+
+        source_group = source_group_map.get("radar_packet") if key in {"top_watch_excluded_split", "timeout_and_fallback"} else None
+        rows.append(
+            {
+                "key": key,
+                "label": item["label"],
+                "legacy_sources": item["legacy_sources"],
+                "current_fields": item["current_fields"],
+                "present_in_current_cache": present,
+                "migration_status": status,
+                "target_state": item["target_state"],
+                "source_key_used": source_group.get("source_key_used") if source_group else "",
+                "does_not_call_external_sources": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _legacy_output_contract_rows(
+    *,
+    radar_packet: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+    excluded_candidates: list[Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in LEGACY_RADAR_OUTPUT_CONTRACT_FIELDS:
+        field = str(item["field"])
+        if field == "top_candidates":
+            present = bool(candidate_rows)
+            source = "candidate_rows/radar_packet.top_candidates"
+        elif field == "excluded_candidates":
+            present = bool(excluded_candidates)
+            source = "radar_packet.excluded_candidates"
+        elif field == "watch_candidates":
+            present = bool(_as_list(radar_packet.get("watch_candidates")))
+            source = "radar_packet.watch_candidates"
+        elif field in {"trigger_condition", "invalidation_condition", "data_gaps"}:
+            present = _has_any_candidate_field(candidate_rows, [field])
+            source = "candidate_rows"
+        elif field == "evidence_items":
+            present = _has_any_candidate_field(candidate_rows, ["evidence_chain_summary"])
+            source = "candidate_rows.evidence_chain_summary"
+        else:
+            present = _has_any_packet_field(radar_packet, [field])
+            source = "radar_packet"
+        rows.append(
+            {
+                "field": field,
+                "role": item["role"],
+                "required_for": item["required_for"],
+                "present": bool(present),
+                "source": source,
+                "migration_status": "mapped" if present else "missing_reported",
+                "does_not_invent_value": True,
+            }
+        )
+    return rows
+
+
+def _legacy_parity_inventory(
+    *,
+    snapshot_map: Mapping[str, Any],
+    radar_packet: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+    excluded_candidates: list[Any],
+    evidence_recovery_actions: list[Any],
+) -> dict[str, Any]:
+    parity_rows = _legacy_parity_rows(
+        snapshot_map=snapshot_map,
+        radar_packet=radar_packet,
+        candidate_rows=candidate_rows,
+        excluded_candidates=excluded_candidates,
+        evidence_recovery_actions=evidence_recovery_actions,
+    )
+    output_rows = _legacy_output_contract_rows(
+        radar_packet=radar_packet,
+        candidate_rows=candidate_rows,
+        excluded_candidates=excluded_candidates,
+    )
+    mapped = [row for row in parity_rows if str(row.get("migration_status")) in {"mapped", "mapped_or_gap_reported", "partial_mapped", "mapped_from_cache", "quick_cache_only"}]
+    gaps = [row for row in parity_rows if "missing" in str(row.get("migration_status")) or "future" in str(row.get("migration_status"))]
+    return {
+        "status": "partial_parity",
+        "scope": "legacy_next_ticket_radar_inventory",
+        "legacy_module_files": ["next_stock_radar.py", "command_center_radar_packet.py", "app.py"],
+        "parity_row_count": len(parity_rows),
+        "mapped_or_partial_count": len(mapped),
+        "gap_or_future_count": len(gaps),
+        "output_contract_field_count": len(output_rows),
+        "output_contract_mapped_count": sum(1 for row in output_rows if row["present"]),
+        "quick_scan_is_full_replacement": False,
+        "slow_paths_are_future_button_tasks": True,
+        "deep_research_is_manual_only_future": True,
+        "does_not_call_tushare": True,
+        "does_not_call_deepseek": True,
+        "does_not_call_github": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
     }
 
 
@@ -336,8 +625,16 @@ def _build_candidate_radar_packet(
     radar_packet = _as_dict(snapshot_map.get("radar_packet") or snapshot_map.get("command_center_radar_packet"))
     candidates = _as_list(snapshot_map.get("next_ticket_candidates")) or _as_list(radar_packet.get("top_candidates"))
     excluded_candidates = _as_list(radar_packet.get("excluded_candidates"))[:10]
+    evidence_recovery_actions = _as_list(snapshot_map.get("next_ticket_evidence_recovery_actions"))[:10]
     candidate_rows = _candidate_rows(candidates)
     counts = _candidate_counts(candidate_rows)
+    parity_inventory = _legacy_parity_inventory(
+        snapshot_map=snapshot_map,
+        radar_packet=radar_packet,
+        candidate_rows=candidate_rows,
+        excluded_candidates=excluded_candidates,
+        evidence_recovery_actions=evidence_recovery_actions,
+    )
     coverage = _scan_coverage(
         snapshot_available=bool(snapshot),
         snapshot_map=snapshot_map,
@@ -345,6 +642,9 @@ def _build_candidate_radar_packet(
         excluded_candidates=excluded_candidates,
         scan_mode=scan_mode,
     )
+    counts["legacy_parity_gap_count"] = parity_inventory["gap_or_future_count"]
+    counts["legacy_parity_mapped_count"] = parity_inventory["mapped_or_partial_count"]
+    counts["legacy_output_mapped_count"] = parity_inventory["output_contract_mapped_count"]
 
     if candidate_rows:
         status = "ready"
@@ -375,13 +675,27 @@ def _build_candidate_radar_packet(
         "counts": counts,
         "scan_coverage": coverage,
         "legacy_signal_group_rows": coverage["legacy_signal_group_rows"],
+        "legacy_parity_inventory": parity_inventory,
+        "legacy_parity_rows": _legacy_parity_rows(
+            snapshot_map=snapshot_map,
+            radar_packet=radar_packet,
+            candidate_rows=candidate_rows,
+            excluded_candidates=excluded_candidates,
+            evidence_recovery_actions=evidence_recovery_actions,
+        ),
+        "legacy_output_contract_rows": _legacy_output_contract_rows(
+            radar_packet=radar_packet,
+            candidate_rows=candidate_rows,
+            excluded_candidates=excluded_candidates,
+        ),
+        "scan_mode_status_rows": [dict(row) for row in SCAN_MODE_STATUS_ROWS],
         "skipped_reason_rows": coverage["skipped_reason_rows"],
         "freshness_state": coverage["freshness_state"],
         "candidate_rows": candidate_rows,
         "candidates": candidates[:10],
         "excluded_candidates": excluded_candidates,
         "candidate_execution_evidence_overview": _as_dict(snapshot_map.get("candidate_execution_evidence_overview")),
-        "evidence_recovery_actions": _as_list(snapshot_map.get("next_ticket_evidence_recovery_actions"))[:10],
+        "evidence_recovery_actions": evidence_recovery_actions,
         "old_workspace_packet_bridge": _as_dict(snapshot_map.get("old_workspace_packet_bridge")),
         "risk_alerts": _as_dict(snapshot_map.get("risk_alerts")),
         "radar_packet": radar_packet,

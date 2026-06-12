@@ -44,6 +44,7 @@ export default function CandidateRadar() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
+  const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
   const overview = (cache.candidate_execution_evidence_overview as Record<string, unknown> | undefined) ?? {};
   const radarPacket = (cache.radar_packet as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -51,6 +52,9 @@ export default function CandidateRadar() {
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const legacySignalRows = rows(cache.legacy_signal_group_rows);
+  const legacyParityRows = rows(cache.legacy_parity_rows);
+  const legacyOutputRows = rows(cache.legacy_output_contract_rows);
+  const scanModeRows = rows(cache.scan_mode_status_rows);
 
   return (
     <>
@@ -69,6 +73,8 @@ export default function CandidateRadar() {
           { label: "scan mode", value: String(cache.scan_mode ?? "--") },
           { label: "覆盖组", value: scanCoverage.mapped_signal_group_count as number | undefined },
           { label: "缺口组", value: scanCoverage.missing_signal_group_count as number | undefined, tone: scanCoverage.missing_signal_group_count ? "warn" : "good" },
+          { label: "parity gap", value: counts.legacy_parity_gap_count as number | undefined, tone: counts.legacy_parity_gap_count ? "warn" : "good" },
+          { label: "parity mapped", value: counts.legacy_parity_mapped_count as number | undefined },
           { label: "跳过原因", value: scanCoverage.skipped_reason_count as number | undefined, tone: scanCoverage.skipped_reason_count ? "warn" : "good" },
           { label: "freshness", value: String(freshnessState.state ?? "unknown"), tone: freshnessState.source === "missing" ? "warn" : "good" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -113,6 +119,21 @@ export default function CandidateRadar() {
 
       <PacketCard title="旧雷达信号组覆盖" subtitle="legacy_signal_group_rows；缺口只报告，不静默降能" status={String(scanCoverage.coverage_status ?? "coverage")}>
         <DataLineageTable rows={legacySignalRows} />
+      </PacketCard>
+
+      <div className="grid">
+        <PacketCard title="旧雷达 parity inventory" subtitle="legacy_parity_rows；映射、缺口、未来任务必须分清" status={String(legacyParityInventory.status ?? "partial_parity")}>
+          <p>quick_scan_is_full_replacement: {String(legacyParityInventory.quick_scan_is_full_replacement === true)}</p>
+          <p>slow_paths_are_future_button_tasks: {String(legacyParityInventory.slow_paths_are_future_button_tasks !== false)}</p>
+          <DataLineageTable rows={legacyParityRows} />
+        </PacketCard>
+        <PacketCard title="旧雷达输出合同" subtitle="legacy_output_contract_rows；字段缺失不造假" status="contract">
+          <DataLineageTable rows={legacyOutputRows} />
+        </PacketCard>
+      </div>
+
+      <PacketCard title="扫描模式状态" subtitle="scan_mode_status_rows；当前只实现 quick_cache_scan" status="mode">
+        <DataLineageTable rows={scanModeRows} />
       </PacketCard>
 
       <div className="grid">
