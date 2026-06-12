@@ -563,6 +563,24 @@ def _previous_open_day(open_days: list[_dt.date], today: _dt.date) -> _dt.date |
     return candidates[-1] if candidates else None
 
 
+def _next_open_day(open_days: list[_dt.date], today: _dt.date) -> _dt.date | None:
+    candidates = [day for day in open_days if day > today]
+    return candidates[0] if candidates else None
+
+
+def _calendar_coverage_status(rows: list[dict[str, Any]], today: _dt.date, *, validated: bool) -> str:
+    if not validated:
+        return "fallback_weekday_calendar"
+    if not rows:
+        return "missing_calendar_rows"
+    cal_dates = {row["cal_date"] for row in rows}
+    if today not in cal_dates:
+        return "partial_missing_today"
+    if not any(row["cal_date"] > today and row.get("is_open") for row in rows):
+        return "validated_no_next_open"
+    return "validated"
+
+
 def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> dict[str, Any]:
     now_dt = _now_datetime(now)
     today = now_dt.date()
@@ -573,21 +591,36 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
     open_days = sorted(row["cal_date"] for row in rows if row.get("is_open"))
     today_is_open = today in open_days
     previous_open = _previous_open_day(open_days, today)
+    next_open = _next_open_day(open_days, today)
+    today_eod_available = bool(today_is_open and now_dt.time() >= A_SHARE_DATA_READY_TIME)
     if today_is_open and now_dt.time() < A_SHARE_MARKET_OPEN_TIME:
         phase = "pre_open"
         expected = previous_open
+        expected_source = "previous_completed_trading_day"
     elif today_is_open and now_dt.time() < A_SHARE_MARKET_CLOSE_TIME:
         phase = "intraday"
         expected = previous_open
+        expected_source = "previous_completed_trading_day"
     elif today_is_open and now_dt.time() < A_SHARE_DATA_READY_TIME:
         phase = "post_close_pending_eod"
         expected = previous_open
+        expected_source = "previous_completed_trading_day"
     elif today_is_open:
         phase = "post_close_data_ready"
         expected = today
+        expected_source = "current_trading_day_after_ready_time"
     else:
         phase = "market_closed"
         expected = max((day for day in open_days if day < today), default=previous_open)
+        expected_source = "previous_completed_trading_day"
+    if expected is None:
+        expected_source = "unavailable"
+    warnings = []
+    coverage_status = _calendar_coverage_status(rows, today, validated=calendar_validated)
+    if not calendar_validated:
+        warnings.append("未接入交易所 trade_cal，本次 freshness 使用工作日 fallback；节假日判断需降级。")
+    elif coverage_status != "validated":
+        warnings.append("trade_cal 覆盖不完整，已保守输出 freshness 审计字段。")
     return {
         "market": "A_SHARE",
         "now": _now_iso(now_dt),
@@ -595,11 +628,19 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         "market_phase": phase,
         "today_is_trading_day": today_is_open,
         "expected_data_date": expected.isoformat() if expected else None,
+        "expected_data_date_source": expected_source,
+        "latest_completed_trading_day": expected.isoformat() if expected else None,
         "previous_open_date": previous_open.isoformat() if previous_open else None,
+        "next_open_date": next_open.isoformat() if next_open else None,
         "calendar_source": "trade_cal_packet" if calendar_validated else "fallback_weekday_calendar",
         "calendar_validated": calendar_validated,
+        "calendar_coverage_status": coverage_status,
         "calendar_row_count": len(rows),
+        "today_eod_available": today_eod_available,
+        "current_eod_available": bool(expected and (not today_is_open or today_eod_available)),
         "data_ready_time": A_SHARE_DATA_READY_TIME.strftime("%H:%M"),
+        "data_availability_policy": "A 股 EOD 因子仅在交易日 16:30 后把当日数据视为当前证据；盘中和盘后未就绪时使用上一已完成交易日。",
+        "warnings": warnings,
         "note": "盘中或盘后未到数据可得时间时，EOD 因子应使用上一已完成交易日。",
     }
 
@@ -629,9 +670,14 @@ def _freshness_row_fields(
     expected = _parse_date(context.get("expected_data_date"))
     base = {
         "expected_data_date": context.get("expected_data_date"),
+        "expected_data_date_source": context.get("expected_data_date_source"),
+        "latest_completed_trading_day": context.get("latest_completed_trading_day"),
+        "next_open_date": context.get("next_open_date"),
         "market_phase": context.get("market_phase"),
         "calendar_source": context.get("calendar_source"),
         "calendar_validated": bool(context.get("calendar_validated")),
+        "calendar_coverage_status": context.get("calendar_coverage_status"),
+        "current_eod_available": bool(context.get("current_eod_available")),
         "trading_day_lag": None,
     }
     if parsed is None:
@@ -639,38 +685,49 @@ def _freshness_row_fields(
             **base,
             "data_age_days": None,
             "freshness_state": "unknown",
+            "freshness_reason": "missing_or_unparseable_data_date",
             "freshness_max_age_days": max_age_days,
             "freshness_usable_for_score": False,
+            "freshness_blocks_composite_score": True,
         }
     age_days = max(0, (_now_date(now) - parsed).days)
     trading_lag = _trading_day_lag(parsed, expected, trade_calendar_packet) if expected else None
     if expected and parsed > expected:
         state = "future_unavailable"
         usable = False
+        reason = "data_date_after_expected_trading_day"
     elif trading_lag == 0:
         state = "fresh"
         usable = True
+        reason = "matches_expected_trading_day"
     elif trading_lag is not None and trading_lag <= FRESHNESS_STALE_TRADING_DAY_LAG:
         state = "stale"
         usable = False
+        reason = f"lags_expected_by_{trading_lag}_trading_days"
     elif trading_lag is not None:
         state = "expired"
         usable = False
+        reason = "lags_expected_beyond_stale_trading_day_threshold"
     elif age_days <= max_age_days:
         state = "fresh"
         usable = True
+        reason = "calendar_lag_unavailable_age_within_threshold"
     elif age_days <= FRESHNESS_STALE_MAX_AGE_DAYS:
         state = "stale"
         usable = False
+        reason = "calendar_lag_unavailable_age_stale"
     else:
         state = "expired"
         usable = False
+        reason = "calendar_lag_unavailable_age_expired"
     return {
         **base,
         "data_age_days": age_days,
         "freshness_state": state,
+        "freshness_reason": reason,
         "freshness_max_age_days": max_age_days,
         "freshness_usable_for_score": usable,
+        "freshness_blocks_composite_score": not usable,
         "trading_day_lag": trading_lag,
     }
 
@@ -1035,6 +1092,7 @@ def _build_data_freshness_gate(
     calendar_context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = dict(calendar_context or _expected_data_date(now))
+    context_warnings = list(context.get("warnings") or [])
     dated_rows = [row for row in call_rows if _parse_date(row.get("data_date")) is not None]
     if not dated_rows:
         return {
@@ -1043,9 +1101,15 @@ def _build_data_freshness_gate(
             "usable_for_score": True,
             "latest_data_date": None,
             "expected_data_date": context.get("expected_data_date"),
+            "expected_data_date_source": context.get("expected_data_date_source"),
+            "latest_completed_trading_day": context.get("latest_completed_trading_day"),
+            "next_open_date": context.get("next_open_date"),
             "market_phase": context.get("market_phase"),
             "calendar_source": context.get("calendar_source"),
             "calendar_validated": bool(context.get("calendar_validated")),
+            "calendar_coverage_status": context.get("calendar_coverage_status"),
+            "current_eod_available": bool(context.get("current_eod_available")),
+            "data_ready_time": context.get("data_ready_time"),
             "max_data_age_days": None,
             "max_trading_day_lag": None,
             "fresh_count": 0,
@@ -1053,6 +1117,8 @@ def _build_data_freshness_gate(
             "expired_count": 0,
             "future_unavailable_count": 0,
             "unknown_count": len(call_rows),
+            "blocking_reasons": [],
+            "warnings": context_warnings,
             "max_age_days": FRESHNESS_MAX_AGE_DAYS,
             "note": "未发现可解析 data_date；保持原有 cache-only 降级，不强行判定过期。",
         }
@@ -1075,16 +1141,34 @@ def _build_data_freshness_gate(
     else:
         status = "unknown"
     usable = status == "fresh"
+    blocking_reasons = sorted(
+        {
+            str(row.get("freshness_reason"))
+            for row in dated_rows
+            if row.get("freshness_usable_for_score") is False and row.get("freshness_reason")
+        }
+    )
+    warnings = list(context_warnings)
+    if not context.get("calendar_validated"):
+        warnings.append("交易日历未验证：freshness 可用于保守门控，但不代表交易所日历级最终验收。")
+    if not usable:
+        warnings.append("存在非当前 expected_data_date 的数据，已禁止进入当前 composite score 和 evidence preview。")
     return {
         "status": status,
         "gate_applied": True,
         "usable_for_score": usable,
         "latest_data_date": latest.isoformat() if latest else None,
         "expected_data_date": context.get("expected_data_date"),
+        "expected_data_date_source": context.get("expected_data_date_source"),
+        "latest_completed_trading_day": context.get("latest_completed_trading_day"),
+        "next_open_date": context.get("next_open_date"),
         "market_phase": context.get("market_phase"),
         "calendar_source": context.get("calendar_source"),
         "calendar_validated": bool(context.get("calendar_validated")),
+        "calendar_coverage_status": context.get("calendar_coverage_status"),
+        "current_eod_available": bool(context.get("current_eod_available")),
         "today_is_trading_day": bool(context.get("today_is_trading_day")),
+        "data_ready_time": context.get("data_ready_time"),
         "max_data_age_days": max(ages) if ages else None,
         "max_trading_day_lag": max(lags) if lags else None,
         "fresh_count": fresh_count,
@@ -1092,6 +1176,8 @@ def _build_data_freshness_gate(
         "expired_count": expired_count,
         "future_unavailable_count": future_count,
         "unknown_count": len(call_rows) - len(dated_rows),
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
         "max_age_days": FRESHNESS_MAX_AGE_DAYS,
         "stale_after_trading_day_lag": 0,
         "expired_after_trading_day_lag": FRESHNESS_STALE_TRADING_DAY_LAG,
