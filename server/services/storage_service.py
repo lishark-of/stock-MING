@@ -32,6 +32,7 @@ DATASET_TTL_SECONDS = {
     "trade_cal": 14 * 24 * 60 * 60,
     "backtest_results": 30 * 24 * 60 * 60,
 }
+DATASET_COMPACTION_SIZE_THRESHOLD_BYTES = 128 * 1024 * 1024
 DATASET_SCHEMA_CONTRACTS = {
     "factor_values": {
         "schema_version": "storage.factor_values.v1",
@@ -232,6 +233,41 @@ def _partition_plan(dataset: str) -> dict[str, Any]:
     }
 
 
+def _compaction_plan(dataset: str, path: Path, metadata: Mapping[str, Any]) -> dict[str, Any]:
+    exists = bool(metadata.get("exists"))
+    size_bytes = int(metadata.get("size_bytes") or 0)
+    if not exists:
+        status = "not_applicable_missing"
+        reason = "dataset_missing"
+        manual_compaction_recommended = False
+    elif size_bytes >= DATASET_COMPACTION_SIZE_THRESHOLD_BYTES:
+        status = "manual_compaction_recommended"
+        reason = "size_exceeds_threshold"
+        manual_compaction_recommended = True
+    else:
+        status = "not_needed"
+        reason = "size_within_threshold"
+        manual_compaction_recommended = False
+    return {
+        "dataset": dataset,
+        "status": status,
+        "reason": reason,
+        "size_bytes": size_bytes,
+        "threshold_bytes": DATASET_COMPACTION_SIZE_THRESHOLD_BYTES,
+        "path": _path_label(path),
+        "manual_compaction_recommended": manual_compaction_recommended,
+        "manual_compaction_task_required": True,
+        "auto_compact_on_get": False,
+        "physical_compaction_executed": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
 def _canonical_dataset(dataset: str) -> str:
     key = str(dataset or "").strip().lower().replace(" ", "_")
     if key not in SUPPORTED_PARQUET_DATASETS:
@@ -250,6 +286,7 @@ def dataset_implementation_status() -> dict[str, Any]:
         metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
         schema_contract = _schema_contract(dataset)
         partition_plan = _partition_plan(dataset)
+        compaction_plan = _compaction_plan(dataset, parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset), metadata)
         write_policy = str(item.get("write_policy") or "")
         external_refresh_policy = str(item.get("external_refresh_policy") or "")
         if write_policy == "task_pipeline_write_allowed":
@@ -274,6 +311,8 @@ def dataset_implementation_status() -> dict[str, Any]:
                 "schema_version": schema_contract.get("schema_version"),
                 "partition_plan_status": partition_plan.get("status"),
                 "recommended_partition_columns": partition_plan.get("recommended_partition_columns"),
+                "compaction_plan_status": compaction_plan.get("status"),
+                "manual_compaction_recommended": bool(compaction_plan.get("manual_compaction_recommended")),
                 "does_not_modify_strategy_action": item.get("does_not_modify_strategy_action") is not False,
                 "does_not_execute_trades": item.get("does_not_execute_trades") is not False,
                 "path": _path_label(Path(str(metadata.get("path") or parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)))),
@@ -296,6 +335,7 @@ def dataset_implementation_status() -> dict[str, Any]:
         "local_compute_capable_dataset_count": sum(1 for row in rows if row.get("local_compute_capable")),
         "schema_contract_ready_count": sum(1 for row in rows if row.get("schema_contract_status") == "contract_ready"),
         "partition_contract_ready_count": sum(1 for row in rows if row.get("partition_plan_status") == "contract_ready"),
+        "manual_compaction_recommended_count": sum(1 for row in rows if row.get("manual_compaction_recommended")),
         "all_external_refreshes_button_gated": all(
             bool(row.get("button_gated"))
             for row in rows
@@ -339,9 +379,9 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "parquet_compaction",
-            "status": "planned",
-            "current_coverage": "small local writes are allowed; compaction is not enabled for full-market factor datasets.",
-            "next_action": "add manual compaction task after partition policy is fixed.",
+            "status": "audit_ready",
+            "current_coverage": "dataset cache endpoints expose audit-only compaction plans; GET cache never rewrites Parquet files.",
+            "next_action": "add explicit manual compaction task after partitioned layout is enabled.",
             "external_calls_triggered": False,
         },
     ]
@@ -399,7 +439,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "cache_ttl_policy": "audit_only_no_auto_refresh",
-        "compaction_policy": "planned_for_full_market_factor_research",
+        "compaction_policy": "audit_only_manual_task_required",
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -548,6 +588,7 @@ def parquet_dataset_status(
     cache_ttl = _cache_ttl_status(selected, path, metadata)
     schema_contract = _schema_contract(selected)
     partition_plan = _partition_plan(selected)
+    compaction_plan = _compaction_plan(selected, path, metadata)
     query = duckdb_store.query_parquet_dataset(
         path,
         limit=limit,
@@ -567,6 +608,7 @@ def parquet_dataset_status(
         "cache_ttl": cache_ttl,
         "schema_contract": schema_contract,
         "partition_plan": partition_plan,
+        "compaction_plan": compaction_plan,
         "query": query,
         "query_wrapper": query.get("query_wrapper"),
         "query_filters": query.get("query_filters") or {},
@@ -742,6 +784,8 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "dataset_ttl_state_counts": _count_values(item["cache_ttl"]["ttl_state"] for item in datasets),
         "dataset_schema_contract_status": {item["dataset"]: item["schema_contract"]["status"] for item in datasets},
         "dataset_partition_plan_status": {item["dataset"]: item["partition_plan"]["status"] for item in datasets},
+        "dataset_compaction_status": {item["dataset"]: item["compaction_plan"]["status"] for item in datasets},
+        "manual_compaction_recommended_count": sum(1 for item in datasets if item["compaction_plan"]["manual_compaction_recommended"]),
         "dataset_implementation_state_counts": implementation_status["state_counts"],
         "dataset_parquet_status_counts": implementation_status["parquet_status_counts"],
         "production_readiness": production_readiness,

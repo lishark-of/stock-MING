@@ -1085,14 +1085,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(controls_by_key["schema_version"]["status"], "local_ready")
         self.assertEqual(controls_by_key["parquet_partitioning"]["status"], "contract_ready")
         self.assertEqual(controls_by_key["cache_ttl"]["status"], "local_ready")
+        self.assertEqual(controls_by_key["parquet_compaction"]["status"], "audit_ready")
         self.assertEqual(overview["production_readiness"]["schema_contract_policy"], "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.")
         self.assertEqual(overview["production_readiness"]["cache_ttl_policy"], "audit_only_no_auto_refresh")
+        self.assertEqual(overview["production_readiness"]["compaction_policy"], "audit_only_manual_task_required")
         self.assertEqual(set(overview["dataset_ttl_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
         self.assertIn("missing", overview["dataset_ttl_state_counts"])
         self.assertEqual(set(overview["dataset_schema_contract_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
         self.assertEqual(set(overview["dataset_partition_plan_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
+        self.assertEqual(set(overview["dataset_compaction_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
         self.assertTrue(all(status == "contract_ready" for status in overview["dataset_schema_contract_status"].values()))
         self.assertTrue(all(status == "contract_ready" for status in overview["dataset_partition_plan_status"].values()))
+        self.assertEqual(overview["manual_compaction_recommended_count"], 0)
         self.assertTrue(all(row["external_calls_triggered"] is False for row in controls_by_key.values()))
         self.assertFalse(overview["production_readiness"]["external_calls_triggered"])
         self.assertFalse(overview["production_readiness"]["tushare_called"])
@@ -1106,6 +1110,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(rows_by_dataset["factor_values"]["tushare_capable"])
         self.assertEqual(rows_by_dataset["daily"]["schema_version"], "storage.daily.v1")
         self.assertEqual(rows_by_dataset["trade_cal"]["recommended_partition_columns"], ["exchange"])
+        self.assertFalse(rows_by_dataset["daily"]["manual_compaction_recommended"])
         self.assertTrue(implementation["all_external_refreshes_button_gated"])
         self.assertTrue(implementation["all_datasets_do_not_modify_strategy_action"])
         self.assertTrue(implementation["all_datasets_do_not_execute_trades"])
@@ -1165,6 +1170,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(status["partition_plan"]["manual_compaction_required"])
         self.assertTrue(status["partition_plan"]["does_not_modify_strategy_action"])
         self.assertTrue(status["partition_plan"]["does_not_execute_trades"])
+        self.assertEqual(status["compaction_plan"]["status"], "not_applicable_missing")
+        self.assertFalse(status["compaction_plan"]["auto_compact_on_get"])
+        self.assertFalse(status["compaction_plan"]["physical_compaction_executed"])
+        self.assertTrue(status["compaction_plan"]["manual_compaction_task_required"])
+        self.assertTrue(status["compaction_plan"]["does_not_modify_strategy_action"])
 
     def test_storage_cache_ttl_marks_fresh_local_dataset(self):
         if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
@@ -1183,7 +1193,38 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(status["cache_ttl"]["ttl_state"], "fresh")
         self.assertEqual(status["cache_ttl"]["stale_reason"], "within_ttl")
         self.assertFalse(status["cache_ttl"]["auto_refresh_on_get"])
+        self.assertEqual(status["compaction_plan"]["status"], "not_needed")
+        self.assertEqual(status["compaction_plan"]["reason"], "size_within_threshold")
+        self.assertFalse(status["compaction_plan"]["manual_compaction_recommended"])
+        self.assertFalse(status["compaction_plan"]["auto_compact_on_get"])
+        self.assertFalse(status["compaction_plan"]["external_calls_triggered"])
         self.assertFalse(status["external_calls_triggered"])
+
+    def test_storage_compaction_plan_recommends_manual_task_for_large_cache(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        import pandas as pd
+
+        root = self._with_parquet_root()
+        out = storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"ts_code": ["002008.SZ"], "trade_date": ["20260611"], "close": [10.8]}),
+            root=root,
+            name="daily",
+        )
+        original_threshold = storage_service.DATASET_COMPACTION_SIZE_THRESHOLD_BYTES
+        storage_service.DATASET_COMPACTION_SIZE_THRESHOLD_BYTES = 1
+        self.addCleanup(setattr, storage_service, "DATASET_COMPACTION_SIZE_THRESHOLD_BYTES", original_threshold)
+
+        status = storage_service.parquet_dataset_status("daily")
+
+        self.assertEqual(status["compaction_plan"]["status"], "manual_compaction_recommended")
+        self.assertEqual(status["compaction_plan"]["reason"], "size_exceeds_threshold")
+        self.assertTrue(status["compaction_plan"]["manual_compaction_recommended"])
+        self.assertTrue(status["compaction_plan"]["manual_compaction_task_required"])
+        self.assertFalse(status["compaction_plan"]["auto_compact_on_get"])
+        self.assertFalse(status["compaction_plan"]["physical_compaction_executed"])
+        self.assertFalse(status["compaction_plan"]["external_calls_triggered"])
+        self.assertTrue(status["compaction_plan"]["does_not_execute_trades"])
 
     def test_storage_dataset_catalog_is_independent_cache_only_endpoint(self):
         catalog = storage_service.storage_dataset_catalog()
