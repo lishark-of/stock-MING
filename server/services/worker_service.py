@@ -198,9 +198,9 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "concurrency_lock",
-            "status": "planned",
-            "current_coverage": "task catalog is button-gated, but per-symbol/per-task locks are not enforced yet.",
-            "next_action": "add local lock keys before enabling overlapping Tushare/factor jobs.",
+            "status": "audit_ready",
+            "current_coverage": "task records expose lock_policy with task_type+payload lock keys and local conflict counts; lock enforcement remains disabled.",
+            "next_action": "enforce locks before dispatch only after manual retry and task dedupe routes are stable.",
             "external_calls_triggered": False,
         },
         {
@@ -301,6 +301,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
             "deduplicated_task_count": task_persistence.get("deduplicated_task_count", task_index.get("task_count", 0)),
             "sqlite_fallback_enabled": task_persistence.get("sqlite_fallback_enabled", True),
+            "lock_conflict_audit_count": task_persistence.get("lock_conflict_audit_count", 0),
+            "lock_enforced_task_count": task_persistence.get("lock_enforced_task_count", 0),
             "external_calls_triggered": task_index.get("external_calls_triggered", False),
             "does_not_execute_trades": task_index.get("does_not_execute_trades", True),
             "does_not_modify_strategy_action": task_index.get("does_not_modify_strategy_action", True),

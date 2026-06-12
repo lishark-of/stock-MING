@@ -217,6 +217,8 @@ TASK_RETRY_POLICY_BY_TYPE: dict[str, dict[str, Any]] = {
     },
 }
 TASK_RETRYABLE_STATUSES = ["failed"]
+TASK_LOCK_POLICY_VERSION = "task_lock_policy.audit.v1"
+TASK_TERMINAL_STATUSES = {"success", "failed", "cancelled"}
 
 
 def _now_iso() -> str:
@@ -333,6 +335,56 @@ def _retry_policy_for_task(
     }
 
 
+def _active_lock_conflicts(lock_key: str, *, exclude_task_id: str = "") -> list[str]:
+    seen: set[str] = set()
+    conflicts: list[str] = []
+    candidates = list(_TASKS.values()) + _list_persisted_tasks()
+    for task in candidates:
+        task_id = str(task.get("task_id") or "")
+        if not task_id or task_id == str(exclude_task_id or "") or task_id in seen:
+            continue
+        seen.add(task_id)
+        if str(task.get("lock_key") or "") != str(lock_key or ""):
+            continue
+        if str(task.get("status") or "pending") in TASK_TERMINAL_STATUSES:
+            continue
+        conflicts.append(task_id)
+    return sorted(conflicts)
+
+
+def _lock_policy_for_task(
+    task_type: str,
+    *,
+    task_id: str,
+    input_hash: str,
+    lock_key: str,
+    status: str = "pending",
+) -> dict[str, Any]:
+    active_conflicts = _active_lock_conflicts(lock_key, exclude_task_id=task_id)
+    lock_active = status not in TASK_TERMINAL_STATUSES
+    return {
+        "policy_version": TASK_LOCK_POLICY_VERSION,
+        "lock_scope": "task_type_payload",
+        "lock_key": lock_key,
+        "lock_key_source": "task_type_plus_input_hash",
+        "task_type": str(task_type or ""),
+        "input_hash": str(input_hash or ""),
+        "lock_active": lock_active,
+        "lock_enforced": False,
+        "audit_only": True,
+        "conflict_detection_enabled": True,
+        "lock_conflict_detected": bool(lock_active and active_conflicts),
+        "active_conflict_count": len(active_conflicts) if lock_active else 0,
+        "active_conflict_task_ids": active_conflicts[:5] if lock_active else [],
+        "cache_api_can_acquire_lock": False,
+        "auto_blocks_task_creation": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "本地并发锁目前只做冲突审计；不会自动阻塞任务、不会自动外联。",
+    }
+
+
 def _build_retry_policy_summary() -> dict[str, Any]:
     task_policies = {
         str(item.get("task_type") or ""): _retry_policy_for_task(str(item.get("task_type") or ""))
@@ -356,6 +408,18 @@ def _build_retry_policy_summary() -> dict[str, Any]:
 def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
     row = dict(item)
     row["retry_policy"] = _retry_policy_for_task(str(row.get("task_type") or ""))
+    row["lock_policy"] = {
+        "policy_version": TASK_LOCK_POLICY_VERSION,
+        "lock_scope": "task_type_payload",
+        "lock_enforced": False,
+        "audit_only": True,
+        "conflict_detection_enabled": True,
+        "cache_api_can_acquire_lock": False,
+        "auto_blocks_task_creation": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
     purpose = row.get("deepseek_model_strategy_purpose")
     if purpose:
         strategy = build_deepseek_model_strategy_ref(str(purpose))
@@ -628,14 +692,23 @@ def build_task_record(
     now = _now_iso()
     payload_safe = _safe_payload(payload)
     input_hash = _task_input_hash(task_type, payload_safe)
+    record_task_id = task_id or f"local-{uuid.uuid4().hex[:12]}"
+    lock_key = f"lock:{task_type}:{input_hash}"
     record = {
-        "task_id": task_id or f"local-{uuid.uuid4().hex[:12]}",
+        "task_id": record_task_id,
         "task_type": task_type,
         "input_hash": input_hash,
         "idempotency_key": f"{task_type}:{input_hash}",
         "dedupe_scope": "local_task_type_payload",
-        "lock_key": f"lock:{task_type}:{input_hash}",
+        "lock_key": lock_key,
         "lock_enforced": False,
+        "lock_policy": _lock_policy_for_task(
+            task_type,
+            task_id=record_task_id,
+            input_hash=input_hash,
+            lock_key=lock_key,
+            status=selected_status,
+        ),
         "retry_policy": _retry_policy_for_task(task_type, status=selected_status),
         "status": selected_status,
         "created_at": now,
@@ -727,6 +800,13 @@ def update_task_status(
     if warning:
         task.setdefault("warnings", []).append(warning)
     old_retry_policy = task.get("retry_policy") if isinstance(task.get("retry_policy"), dict) else {}
+    task["lock_policy"] = _lock_policy_for_task(
+        str(task.get("task_type") or ""),
+        task_id=str(task.get("task_id") or ""),
+        input_hash=str(task.get("input_hash") or ""),
+        lock_key=str(task.get("lock_key") or ""),
+        status=status,
+    )
     task["retry_policy"] = _retry_policy_for_task(
         str(task.get("task_type") or ""),
         status=status,
@@ -863,6 +943,7 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     persistence = {
         "task_rows_include_idempotency_key": True,
         "task_rows_include_lock_key": True,
+        "task_rows_include_lock_policy": True,
         "task_rows_include_retry_policy": True,
         "task_rows_include_task_log": True,
         "storage_backend": "memory_plus_sqlite_fallback",
@@ -888,6 +969,18 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             for task in sorted_tasks
             if isinstance(task.get("retry_policy"), dict)
             and task.get("retry_policy", {}).get("auto_retry_enabled") is True
+        ),
+        "lock_conflict_audit_count": sum(
+            1
+            for task in sorted_tasks
+            if isinstance(task.get("lock_policy"), dict)
+            and task.get("lock_policy", {}).get("lock_conflict_detected") is True
+        ),
+        "lock_enforced_task_count": sum(
+            1
+            for task in sorted_tasks
+            if isinstance(task.get("lock_policy"), dict)
+            and task.get("lock_policy", {}).get("lock_enforced") is True
         ),
         "task_log_count": sum(len(task.get("task_log") or []) for task in sorted_tasks),
         "memory_only_task_count": len(memory_ids - persisted_ids),
@@ -969,6 +1062,8 @@ def build_task_status_index() -> dict[str, Any]:
                 "duplicate_idempotency_key_count": persistence["duplicate_idempotency_key_count"],
                 "manual_retry_eligible_count": persistence["manual_retry_eligible_count"],
                 "automatic_retry_enabled_count": persistence["automatic_retry_enabled_count"],
+                "lock_conflict_audit_count": persistence["lock_conflict_audit_count"],
+                "lock_enforced_task_count": persistence["lock_enforced_task_count"],
                 "task_log_count": task_log_count,
                 "storage_backend": persistence["storage_backend"],
                 "data_date": None,
