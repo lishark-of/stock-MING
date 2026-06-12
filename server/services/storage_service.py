@@ -15,6 +15,7 @@ PARQUET_ROOT = PROJECT_ROOT / ".stock_ming_3" / "parquet"
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup_dry_run_packet"
 SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validation_dry_run_packet"
+PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -549,6 +550,165 @@ def run_storage_schema_validation_dry_run_task(payload: Any = None) -> dict[str,
     ) or task
 
 
+def _partition_migration_dry_run_row(dataset: str) -> dict[str, Any]:
+    metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
+    partition_plan = _partition_plan(dataset)
+    schema_validation = _schema_validation_row(dataset)
+    partition_columns = [str(column) for column in (partition_plan.get("recommended_partition_columns") or [])]
+    physical_columns = [str(column) for column in (schema_validation.get("physical_columns") or [])]
+    missing_partition_columns = [column for column in partition_columns if column not in physical_columns]
+    if metadata.get("status") == "missing":
+        dry_run_status = "missing_dataset"
+    elif schema_validation.get("validation_status") != "schema_validated":
+        dry_run_status = "blocked_schema_validation"
+    elif missing_partition_columns:
+        dry_run_status = "blocked_missing_partition_columns"
+    elif not partition_columns:
+        dry_run_status = "partition_contract_missing"
+    else:
+        dry_run_status = "ready_for_manual_partition_migration"
+    return {
+        "dataset": dataset,
+        "status": dry_run_status,
+        "partition_migration_status": dry_run_status,
+        "schema_validation_status": schema_validation.get("validation_status"),
+        "schema_version": schema_validation.get("schema_version"),
+        "source_parquet_status": metadata.get("status", "missing"),
+        "source_parquet_path": _path_label(Path(str(metadata.get("path") or parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)))),
+        "target_partitioned_path": _path_label(parquet_store.partitioned_dataset_path(root=PARQUET_ROOT, name=dataset)),
+        "partition_columns": partition_columns,
+        "missing_partition_columns": missing_partition_columns,
+        "physical_columns": physical_columns,
+        "row_count_metadata": schema_validation.get("row_count_metadata"),
+        "physical_schema_validation_done": bool(schema_validation.get("physical_validation_done")),
+        "partition_writer": partition_plan.get("partition_writer"),
+        "partition_migration_ready": dry_run_status == "ready_for_manual_partition_migration",
+        "partition_migration_executed": False,
+        "would_write_partitioned_dataset": False,
+        "post_dry_run_writes_parquet": False,
+        "post_dry_run_reads_row_payloads": False,
+        "cache_get_writes_files": False,
+        "manual_partition_migration_task_required": True,
+        "manual_compaction_required_after_migration": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def storage_partition_migration_dry_run_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    rows = [_partition_migration_dry_run_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    status_counts = _count_values(row.get("partition_migration_status") for row in rows)
+    ready_count = sum(1 for row in rows if row.get("partition_migration_ready"))
+    packet = {
+        "schema_version": "command_center_3_storage_partition_migration_dry_run.v1",
+        "packet_key": PARTITION_MIGRATION_DRY_RUN_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": "dry_run_completed",
+        "mode": "dry_run",
+        "scope": "partition_migration_plan_before_write",
+        "dataset_count": len(rows),
+        "partition_migration_ready_count": ready_count,
+        "partition_migration_blocked_count": len(rows) - ready_count,
+        "missing_dataset_count": status_counts.get("missing_dataset", 0),
+        "blocked_schema_validation_count": status_counts.get("blocked_schema_validation", 0),
+        "blocked_missing_partition_column_count": status_counts.get("blocked_missing_partition_columns", 0),
+        "partition_contract_missing_count": status_counts.get("partition_contract_missing", 0),
+        "partition_migration_executed_count": 0,
+        "status_counts": status_counts,
+        "rows": rows,
+        "request_params_safe": {
+            "source": (payload_safe or {}).get("source") or "storage_page_button",
+            "dry_run": True,
+            "external_sources_allowed": False,
+            "write_parquet_allowed": False,
+            "partition_migration_allowed": False,
+        },
+        "cache_get_writes_files": False,
+        "post_dry_run_writes_parquet": False,
+        "post_dry_run_reads_row_payloads": False,
+        "post_dry_run_reads_env_files": False,
+        "partition_migration_executed": False,
+        "manual_partition_migration_task_required": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_partition_migration_dry_run",
+            endpoint="POST /api/storage/partition-migration/dry-run",
+            status="dry_run_completed",
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "POST /api/storage/partition-migration/dry-run 只生成本地分区迁移计划；不会写 partitioned Parquet。",
+            "partition migration dry-run 不读取行 payload、不执行迁移、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+    return packet
+
+
+def run_storage_partition_migration_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "dry_run": True,
+        "external_sources_allowed": False,
+        "write_parquet_allowed": False,
+        "partition_migration_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_partition_migration_dry_run",
+        output_packet_key=PARTITION_MIGRATION_DRY_RUN_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_partition_migration_dry_run_queued",
+        warnings=[
+            "storage partition migration dry-run 只读取本地 Parquet metadata/schema；不会读取行 payload、不会写 Parquet、不会调用外部源。",
+            "任何真实 partition migration 必须在 dry-run 审阅后另行手动确认；本任务不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="building_storage_partition_migration_plan",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_partition_migration_dry_run_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PARTITION_MIGRATION_DRY_RUN_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_partition_migration_dry_run_storage_write_failed",
+            error_message_safe="storage_partition_migration_dry_run_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_partition_migration_dry_run_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_partition_migration_dry_run_completed",
+        call_ledger=packet["call_ledger"],
+        warning="storage_partition_migration_dry_run_completed_no_write_no_external_call",
+    ) or task
+
+
 def _partition_plan(dataset: str) -> dict[str, Any]:
     contract = _schema_contract(dataset)
     partition_columns = list(contract.get("recommended_partition_columns") or [])
@@ -713,6 +873,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "status": "button_gated_ready",
             "current_coverage": "POST schema validation dry-run reads local Parquet schema metadata only and records missing/mismatch/validated rows before migration.",
             "next_action": "review dry-run results before enabling any physical migration or partition rewrite task.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "partition_migration_dry_run",
+            "status": "button_gated_ready",
+            "current_coverage": "POST partition migration dry-run builds per-dataset partition plans from schema validation and partition contracts without writing partitioned Parquet.",
+            "next_action": "review ready/blocked rows before enabling any manual partition writer task.",
             "external_calls_triggered": False,
         },
         {
@@ -1042,6 +1209,10 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "schema_validation_dry_run_button_gated": True,
         "schema_validation_dry_run_writes_parquet": False,
         "schema_validation_dry_run_reads_row_payloads": False,
+        "partition_migration_dry_run_route": "POST /api/storage/partition-migration/dry-run",
+        "partition_migration_dry_run_button_gated": True,
+        "partition_migration_dry_run_writes_parquet": False,
+        "partition_migration_dry_run_reads_row_payloads": False,
         "cache_ttl_policy": "audit_only_no_auto_refresh",
         "compaction_policy": "audit_only_manual_task_required",
         "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",

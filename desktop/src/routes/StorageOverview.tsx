@@ -6,6 +6,7 @@ import {
   getStorageDataset,
   getStorageOverview,
   postStorageArtifactCleanupDryRun,
+  postStoragePartitionMigrationDryRun,
   postStorageSchemaValidationDryRun,
   type TaskCreationEnvelope
 } from "../api/client";
@@ -31,6 +32,8 @@ export default function StorageOverview() {
   const [dryRunReceipt, setDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [schemaValidationTaskId, setSchemaValidationTaskId] = useState("");
   const [schemaValidationReceipt, setSchemaValidationReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [partitionDryRunTaskId, setPartitionDryRunTaskId] = useState("");
+  const [partitionDryRunReceipt, setPartitionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -58,6 +61,11 @@ export default function StorageOverview() {
     void postStorageSchemaValidationDryRun({ source: "storage_overview_button" }).then((res) => {
       setSchemaValidationReceipt(res);
       if (res.ok) setSchemaValidationTaskId(res.data.task_id);
+    });
+  const launchPartitionMigrationDryRun = () =>
+    void postStoragePartitionMigrationDryRun({ source: "storage_overview_button" }).then((res) => {
+      setPartitionDryRunReceipt(res);
+      if (res.ok) setPartitionDryRunTaskId(res.data.task_id);
     });
 
   useEffect(() => {
@@ -219,9 +227,12 @@ export default function StorageOverview() {
         <p>status_counts: {JSON.stringify(schemaMigrationStatusCounts)}</p>
         <div className="actions">
           <button onClick={launchSchemaValidationDryRun}>运行 schema validation dry-run</button>
+          <button onClick={launchPartitionMigrationDryRun}>生成 partition migration dry-run</button>
         </div>
         <TaskLaunchReceipt receipt={schemaValidationReceipt} />
         <TaskStatusPanel taskId={schemaValidationTaskId} onSuccess={refreshStorage} />
+        <TaskLaunchReceipt receipt={partitionDryRunReceipt} />
+        <TaskStatusPanel taskId={partitionDryRunTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={schemaMigrationRows} />
       </PacketCard>
 

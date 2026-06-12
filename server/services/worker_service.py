@@ -89,7 +89,11 @@ def _queue_for_task_type(task_type: str) -> str:
         return "model_explain"
     if task_type in {"run_chokepoint_scan", "probe_serenity_github"}:
         return "external_probe"
-    if task_type in {"run_storage_artifact_cleanup_dry_run", "run_storage_schema_validation_dry_run"}:
+    if task_type in {
+        "run_storage_artifact_cleanup_dry_run",
+        "run_storage_schema_validation_dry_run",
+        "run_storage_partition_migration_dry_run",
+    }:
         return "local_maintenance"
     return "local_compute"
 
