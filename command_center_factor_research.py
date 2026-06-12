@@ -36,6 +36,9 @@ FRESHNESS_MAX_AGE_DAYS = 7
 FRESHNESS_STALE_MAX_AGE_DAYS = 30
 FRESHNESS_STALE_TRADING_DAY_LAG = 3
 A_SHARE_MARKET_OPEN_TIME = _dt.time(9, 30)
+A_SHARE_CALL_AUCTION_START_TIME = _dt.time(9, 15)
+A_SHARE_MORNING_CLOSE_TIME = _dt.time(11, 30)
+A_SHARE_AFTERNOON_OPEN_TIME = _dt.time(13, 0)
 A_SHARE_MARKET_CLOSE_TIME = _dt.time(15, 0)
 A_SHARE_DATA_READY_TIME = _dt.time(16, 30)
 
@@ -581,6 +584,25 @@ def _calendar_coverage_status(rows: list[dict[str, Any]], today: _dt.date, *, va
     return "validated"
 
 
+def _market_session_detail(now_dt: _dt.datetime, *, today_is_open: bool) -> str:
+    if not today_is_open:
+        return "non_trading_day"
+    current = now_dt.time()
+    if current < A_SHARE_CALL_AUCTION_START_TIME:
+        return "before_call_auction"
+    if current < A_SHARE_MARKET_OPEN_TIME:
+        return "opening_call_auction"
+    if current < A_SHARE_MORNING_CLOSE_TIME:
+        return "morning_continuous_auction"
+    if current < A_SHARE_AFTERNOON_OPEN_TIME:
+        return "lunch_break"
+    if current < A_SHARE_MARKET_CLOSE_TIME:
+        return "afternoon_continuous_auction"
+    if current < A_SHARE_DATA_READY_TIME:
+        return "post_close_data_delay_window"
+    return "after_eod_data_ready"
+
+
 def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> dict[str, Any]:
     now_dt = _now_datetime(now)
     today = now_dt.date()
@@ -593,6 +615,8 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
     previous_open = _previous_open_day(open_days, today)
     next_open = _next_open_day(open_days, today)
     today_eod_available = bool(today_is_open and now_dt.time() >= A_SHARE_DATA_READY_TIME)
+    session_detail = _market_session_detail(now_dt, today_is_open=today_is_open)
+    data_update_delay_guard_active = bool(today_is_open and A_SHARE_MARKET_CLOSE_TIME <= now_dt.time() < A_SHARE_DATA_READY_TIME)
     if today_is_open and now_dt.time() < A_SHARE_MARKET_OPEN_TIME:
         phase = "pre_open"
         expected = previous_open
@@ -636,8 +660,10 @@ def _expected_data_date(now: Any = None, trade_calendar_packet: Any = None) -> d
         "calendar_validated": calendar_validated,
         "calendar_coverage_status": coverage_status,
         "calendar_row_count": len(rows),
+        "market_session_detail": session_detail,
         "today_eod_available": today_eod_available,
         "current_eod_available": bool(expected and (not today_is_open or today_eod_available)),
+        "data_update_delay_guard_active": data_update_delay_guard_active,
         "data_ready_time": A_SHARE_DATA_READY_TIME.strftime("%H:%M"),
         "data_availability_policy": "A 股 EOD 因子仅在交易日 16:30 后把当日数据视为当前证据；盘中和盘后未就绪时使用上一已完成交易日。",
         "warnings": warnings,
@@ -677,7 +703,9 @@ def _freshness_row_fields(
         "calendar_source": context.get("calendar_source"),
         "calendar_validated": bool(context.get("calendar_validated")),
         "calendar_coverage_status": context.get("calendar_coverage_status"),
+        "market_session_detail": context.get("market_session_detail"),
         "current_eod_available": bool(context.get("current_eod_available")),
+        "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
         "trading_day_lag": None,
     }
     if parsed is None:
@@ -1105,10 +1133,12 @@ def _build_data_freshness_gate(
             "latest_completed_trading_day": context.get("latest_completed_trading_day"),
             "next_open_date": context.get("next_open_date"),
             "market_phase": context.get("market_phase"),
+            "market_session_detail": context.get("market_session_detail"),
             "calendar_source": context.get("calendar_source"),
             "calendar_validated": bool(context.get("calendar_validated")),
             "calendar_coverage_status": context.get("calendar_coverage_status"),
             "current_eod_available": bool(context.get("current_eod_available")),
+            "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
             "data_ready_time": context.get("data_ready_time"),
             "max_data_age_days": None,
             "max_trading_day_lag": None,
@@ -1163,10 +1193,12 @@ def _build_data_freshness_gate(
         "latest_completed_trading_day": context.get("latest_completed_trading_day"),
         "next_open_date": context.get("next_open_date"),
         "market_phase": context.get("market_phase"),
+        "market_session_detail": context.get("market_session_detail"),
         "calendar_source": context.get("calendar_source"),
         "calendar_validated": bool(context.get("calendar_validated")),
         "calendar_coverage_status": context.get("calendar_coverage_status"),
         "current_eod_available": bool(context.get("current_eod_available")),
+        "data_update_delay_guard_active": bool(context.get("data_update_delay_guard_active")),
         "today_is_trading_day": bool(context.get("today_is_trading_day")),
         "data_ready_time": context.get("data_ready_time"),
         "max_data_age_days": max(ages) if ages else None,

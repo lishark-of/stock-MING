@@ -553,13 +553,35 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertEqual(gate["latest_completed_trading_day"], "2026-06-11")
         self.assertEqual(gate["next_open_date"], "2026-06-15")
         self.assertEqual(gate["market_phase"], "intraday")
+        self.assertEqual(gate["market_session_detail"], "morning_continuous_auction")
         self.assertTrue(gate["calendar_validated"])
         self.assertEqual(gate["calendar_coverage_status"], "validated")
         self.assertFalse(gate["current_eod_available"])
+        self.assertFalse(gate["data_update_delay_guard_active"])
         self.assertEqual(packet["call_ledger"][0]["trading_day_lag"], 0)
         self.assertEqual(packet["call_ledger"][0]["freshness_reason"], "matches_expected_trading_day")
         self.assertFalse(packet["call_ledger"][0]["freshness_blocks_composite_score"])
         self.assertTrue(packet["linked_packets"]["trade_calendar_packet"])
+
+    def test_a_share_calendar_lunch_break_still_uses_previous_trading_day(self):
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=self._trade_calendar_packet(),
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260611", "call_status": "success"},
+            ],
+            now="2026-06-12T12:05:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "fresh")
+        self.assertEqual(gate["market_phase"], "intraday")
+        self.assertEqual(gate["market_session_detail"], "lunch_break")
+        self.assertEqual(gate["expected_data_date"], "2026-06-11")
+        self.assertFalse(gate["current_eod_available"])
+        self.assertFalse(gate["data_update_delay_guard_active"])
 
     def test_a_share_calendar_blocks_same_day_data_before_eod_ready(self):
         packet = factor_research.build_factor_quant_hub_packet(
@@ -597,8 +619,10 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
 
         gate = packet["data_freshness_gate"]
         self.assertEqual(gate["market_phase"], "post_close_pending_eod")
+        self.assertEqual(gate["market_session_detail"], "post_close_data_delay_window")
         self.assertEqual(gate["expected_data_date"], "2026-06-11")
         self.assertFalse(gate["current_eod_available"])
+        self.assertTrue(gate["data_update_delay_guard_active"])
         self.assertEqual(gate["status"], "future_unavailable")
         self.assertFalse(gate["usable_for_score"])
 
@@ -616,9 +640,11 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
 
         gate = packet["data_freshness_gate"]
         self.assertEqual(gate["market_phase"], "post_close_data_ready")
+        self.assertEqual(gate["market_session_detail"], "after_eod_data_ready")
         self.assertEqual(gate["expected_data_date"], "2026-06-12")
         self.assertEqual(gate["expected_data_date_source"], "current_trading_day_after_ready_time")
         self.assertTrue(gate["current_eod_available"])
+        self.assertFalse(gate["data_update_delay_guard_active"])
         self.assertEqual(gate["status"], "fresh")
         self.assertTrue(gate["usable_for_score"])
 
@@ -637,10 +663,39 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         gate = packet["data_freshness_gate"]
         self.assertEqual(gate["status"], "fresh")
         self.assertEqual(gate["market_phase"], "market_closed")
+        self.assertEqual(gate["market_session_detail"], "non_trading_day")
         self.assertEqual(gate["expected_data_date"], "2026-06-12")
         self.assertFalse(gate["today_is_trading_day"])
         self.assertEqual(gate["next_open_date"], "2026-06-15")
         self.assertTrue(gate["current_eod_available"])
+
+    def test_a_share_calendar_weekday_holiday_expected_date_uses_last_open_day(self):
+        holiday_calendar = {
+            "status": "ready",
+            "rows": [
+                {"cal_date": "20260611", "is_open": 1},
+                {"cal_date": "20260612", "is_open": 0},
+                {"cal_date": "20260615", "is_open": 1},
+            ],
+        }
+        packet = factor_research.build_factor_quant_hub_packet(
+            mode="light",
+            daily_close_packet=self._daily_packet(),
+            daily_basic_packet=self._daily_basic_packet(),
+            trade_calendar_packet=holiday_calendar,
+            call_ledger=[
+                {"api": "daily", "row_count": 22, "data_date": "20260611", "call_status": "success"},
+            ],
+            now="2026-06-12T10:00:00",
+        )
+
+        gate = packet["data_freshness_gate"]
+        self.assertEqual(gate["status"], "fresh")
+        self.assertEqual(gate["market_phase"], "market_closed")
+        self.assertEqual(gate["market_session_detail"], "non_trading_day")
+        self.assertEqual(gate["expected_data_date"], "2026-06-11")
+        self.assertFalse(gate["today_is_trading_day"])
+        self.assertTrue(gate["calendar_validated"])
 
     def test_fallback_weekday_calendar_is_marked_unvalidated(self):
         packet = factor_research.build_factor_quant_hub_packet(
