@@ -490,6 +490,8 @@ def run_tushare_refresh_task(
             "刷新结果不修改 strategy action，不执行真实交易。",
         ],
     )
+    if task.get("dedupe_reused_existing"):
+        return task
     update_task_status(task["task_id"], status="running", progress=0.05, current_step="preparing_tushare_refresh")
     adapter_module = adapter
     call_ledger: list[dict[str, Any]] = []

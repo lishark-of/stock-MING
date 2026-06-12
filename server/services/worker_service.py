@@ -205,9 +205,9 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
         },
         {
             "control": "task_dedupe",
-            "status": "audit_ready",
-            "current_coverage": "task records expose dedupe_policy with idempotency duplicate counts; dispatch dedupe remains disabled.",
-            "next_action": "add explicit dedupe enforcement before queue submission after operator-facing retry behavior is approved.",
+            "status": "local_ready",
+            "current_coverage": "task records expose dedupe_policy and local dispatch reuses active tasks with the same task_type+payload before queue execution.",
+            "next_action": "extend dedupe enforcement to Celery/Redis dispatch once production worker is enabled.",
             "external_calls_triggered": False,
         },
         {

@@ -306,6 +306,8 @@ def run_factor_light_task(payload: Any = None) -> dict[str, Any]:
             "本地 fallback 不调用 Tushare、DeepSeek、GitHub，也不修改 strategy action。",
         ],
     )
+    if task.get("dedupe_reused_existing"):
+        return task
     update_task_status(task["task_id"], status="running", progress=0.25, current_step="reading_local_snapshot_cache")
     try:
         hub, call_ledger = _build_light_hub_from_snapshot(payload)
@@ -499,6 +501,8 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
             f"DeepSeek explanation mode: {governance['mode']}；auto_after_task={governance['auto_after_task']}。",
         ],
     )
+    if task.get("dedupe_reused_existing"):
+        return task
     if governance["disabled"]:
         ledger = _deepseek_explanation_call_ledger(
             _now_iso(),

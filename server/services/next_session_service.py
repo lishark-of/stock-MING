@@ -115,6 +115,8 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
             "任务只读取并持久化已有次日图谱 packet，不修改 strategy action 或 operation_zones。",
         ],
     )
+    if task.get("dedupe_reused_existing"):
+        return task
     update_task_status(task["task_id"], status="running", progress=0.25, current_step="reading_next_session_cache")
     now = _now_iso()
     try:

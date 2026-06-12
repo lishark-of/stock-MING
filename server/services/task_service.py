@@ -232,6 +232,7 @@ TASK_RETRYABLE_STATUSES = ["failed"]
 TASK_LOCK_POLICY_VERSION = "task_lock_policy.audit.v1"
 TASK_DEDUPE_POLICY_VERSION = "task_dedupe_policy.audit.v1"
 TASK_TERMINAL_STATUSES = {"success", "failed", "cancelled"}
+TASK_DISPATCH_DEDUPE_ENFORCED = True
 
 
 def _now_iso() -> str:
@@ -407,14 +408,15 @@ def _dedupe_policy_for_task(
         "historical_duplicate_count": len(historical_duplicates),
         "active_duplicate_task_ids": active_duplicates[:5],
         "historical_duplicate_task_ids": historical_duplicates[:5],
+        "dispatch_dedupe_enabled": TASK_DISPATCH_DEDUPE_ENFORCED,
         "dispatch_dedupe_enforced": False,
-        "audit_only": True,
+        "audit_only": not TASK_DISPATCH_DEDUPE_ENFORCED,
         "cache_api_can_dedupe": False,
-        "auto_blocks_task_creation": False,
+        "auto_blocks_task_creation": TASK_DISPATCH_DEDUPE_ENFORCED,
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
-        "note": "本地去重目前只做 idempotency 审计；不会自动吞掉任务、不会自动外联。",
+        "note": "本地 dispatch 去重会复用同 task_type+payload 的非终态任务；不会自动外联。",
     }
 
 
@@ -490,10 +492,11 @@ def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
         "policy_version": TASK_DEDUPE_POLICY_VERSION,
         "dedupe_scope": "task_type_payload",
         "duplicate_detection_enabled": True,
+        "dispatch_dedupe_enabled": TASK_DISPATCH_DEDUPE_ENFORCED,
         "dispatch_dedupe_enforced": False,
-        "audit_only": True,
+        "audit_only": not TASK_DISPATCH_DEDUPE_ENFORCED,
         "cache_api_can_dedupe": False,
-        "auto_blocks_task_creation": False,
+        "auto_blocks_task_creation": TASK_DISPATCH_DEDUPE_ENFORCED,
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -759,6 +762,29 @@ def _retry_call_ledger(
     }
 
 
+def _dedupe_reuse_call_ledger(existing_task_id: str, now: str, *, task_type: str, input_hash: str) -> dict[str, Any]:
+    return {
+        "api": "local_task_dispatch_dedupe",
+        "request_params_safe": {
+            "existing_task_id": _safe_text(existing_task_id, limit=120),
+            "task_type": _safe_text(task_type, limit=120),
+            "input_hash": _safe_text(input_hash, limit=120),
+        },
+        "row_count": 1,
+        "data_date": None,
+        "local_fetched_at": now,
+        "call_status": "reused_active_task_no_external_call",
+        "error_message_safe": "",
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def task_not_found_call_ledger(task_id: str, *, api: str = "local_task_status_lookup") -> list[dict[str, Any]]:
     return [
         {
@@ -859,6 +885,55 @@ def build_task_record(
     return record
 
 
+def _active_duplicate_task(idempotency_key: str, *, exclude_task_id: str = "") -> dict[str, Any] | None:
+    active_duplicates, _ = _idempotency_duplicates(idempotency_key, exclude_task_id=exclude_task_id)
+    if not active_duplicates:
+        return None
+    return read_task_status(active_duplicates[0])
+
+
+def _mark_task_reused_by_dedupe(task: dict[str, Any], *, candidate: dict[str, Any]) -> dict[str, Any]:
+    now = _now_iso()
+    task_type = str(candidate.get("task_type") or task.get("task_type") or "")
+    input_hash = str(candidate.get("input_hash") or task.get("input_hash") or "")
+    dedupe_policy = dict(task.get("dedupe_policy") if isinstance(task.get("dedupe_policy"), dict) else {})
+    dedupe_policy.update(
+        {
+            "dispatch_dedupe_enforced": True,
+            "audit_only": False,
+            "auto_blocks_task_creation": True,
+            "duplicate_detected": True,
+            "reused_existing_task_id": task.get("task_id"),
+            "blocked_duplicate_candidate_task_id": candidate.get("task_id"),
+            "blocked_duplicate_creation_count": int(dedupe_policy.get("blocked_duplicate_creation_count") or 0) + 1,
+            "note": "本地 dispatch 去重已复用同 task_type+payload 的非终态任务；不会创建重复任务、不会自动外联。",
+        }
+    )
+    task["dedupe_policy"] = dedupe_policy
+    task["dedupe_reused_existing"] = True
+    task["dedupe_reuse_count"] = int(task.get("dedupe_reuse_count") or 0) + 1
+    task.setdefault("warnings", []).append("task_creation_deduped_reused_active_task_no_external_call")
+    task.setdefault("call_ledger", []).append(
+        _dedupe_reuse_call_ledger(str(task.get("task_id") or ""), now, task_type=task_type, input_hash=input_hash)
+    )
+    task.setdefault("task_log", []).append(
+        _task_log_event(
+            "task_creation_deduped_reused_active_task",
+            status=str(task.get("status") or "pending"),
+            current_step=str(task.get("current_step") or ""),
+            message="reused active task with same task_type and sanitized payload",
+            at=now,
+        )
+    )
+    task["external_calls_triggered"] = False
+    task["tushare_called"] = False
+    task["deepseek_called"] = False
+    task["github_called"] = False
+    task["does_not_execute_trades"] = True
+    task["does_not_modify_strategy_action"] = True
+    return _persist_task(task)
+
+
 def create_task_record(
     task_type: str,
     *,
@@ -876,6 +951,10 @@ def create_task_record(
         current_step=current_step,
         warnings=warnings,
     )
+    if TASK_DISPATCH_DEDUPE_ENFORCED:
+        duplicate = _active_duplicate_task(str(task.get("idempotency_key") or ""), exclude_task_id=str(task.get("task_id") or ""))
+        if duplicate is not None:
+            return _mark_task_reused_by_dedupe(duplicate, candidate=task)
     return _persist_task(task)
 
 
@@ -1110,6 +1189,10 @@ def create_task_stub(
         current_step="queued",
         warnings=["Command Center 3.0 MVP 任务接口为本地 lifecycle stub；没有调用 Tushare、DeepSeek、GitHub 或真实交易接口。"],
     )
+    if TASK_DISPATCH_DEDUPE_ENFORCED:
+        duplicate = _active_duplicate_task(str(task.get("idempotency_key") or ""), exclude_task_id=str(task.get("task_id") or ""))
+        if duplicate is not None:
+            return _mark_task_reused_by_dedupe(duplicate, candidate=task)
     _persist_task(task)
     update_task_status(task["task_id"], status="running", progress=0.5, current_step="local_fallback_running")
     return update_task_status(
@@ -1190,6 +1273,11 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             for task in sorted_tasks
             if isinstance(task.get("dedupe_policy"), dict)
             and task.get("dedupe_policy", {}).get("dispatch_dedupe_enforced") is True
+        ),
+        "dedupe_blocked_creation_count": sum(
+            int(task.get("dedupe_policy", {}).get("blocked_duplicate_creation_count") or 0)
+            for task in sorted_tasks
+            if isinstance(task.get("dedupe_policy"), dict)
         ),
         "manual_retry_eligible_count": sum(
             1
@@ -1295,6 +1383,7 @@ def build_task_status_index() -> dict[str, Any]:
                 "duplicate_idempotency_key_count": persistence["duplicate_idempotency_key_count"],
                 "dedupe_duplicate_audit_count": persistence["dedupe_duplicate_audit_count"],
                 "dispatch_dedupe_enforced_count": persistence["dispatch_dedupe_enforced_count"],
+                "dedupe_blocked_creation_count": persistence["dedupe_blocked_creation_count"],
                 "manual_retry_eligible_count": persistence["manual_retry_eligible_count"],
                 "automatic_retry_enabled_count": persistence["automatic_retry_enabled_count"],
                 "lock_conflict_audit_count": persistence["lock_conflict_audit_count"],
