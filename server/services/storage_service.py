@@ -1291,7 +1291,7 @@ def duckdb_query_service_policy() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
         "dependency": dependency,
-        "next_action": "add UI dataset filters and Factor Test Lab query consumption before full-pool research reads.",
+        "next_action": "connect Factor Test Lab query consumption before full-pool research reads.",
         "call_ledger": _storage_cache_call_ledger(
             "local_storage_duckdb_query_service_policy",
             endpoint="GET /api/storage",

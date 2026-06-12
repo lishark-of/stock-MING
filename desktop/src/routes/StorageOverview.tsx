@@ -10,6 +10,7 @@ import {
   postStorageCompactionDryRun,
   postStoragePartitionMigrationDryRun,
   postStorageSchemaValidationDryRun,
+  type StorageQueryParams,
   type TaskCreationEnvelope
 } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
@@ -22,8 +23,44 @@ import TaskStatusPanel from "../components/TaskStatusPanel";
 
 const STORAGE_DATASET_ENDPOINTS = ["daily", "daily-basic", "moneyflow", "trade-cal", "backtest-results"];
 
+type StorageFilterDraft = {
+  limit: string;
+  ts_code: string;
+  trade_date: string;
+  start_date: string;
+  end_date: string;
+};
+
 function storageCursor(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function defaultStorageFilterDraft(): StorageFilterDraft {
+  return {
+    limit: "100",
+    ts_code: "",
+    trade_date: "",
+    start_date: "",
+    end_date: ""
+  };
+}
+
+function storageFilterDraft(value: StorageFilterDraft | undefined): StorageFilterDraft {
+  return { ...defaultStorageFilterDraft(), ...(value ?? {}) };
+}
+
+function storageQueryParamsFromDraft(draft: StorageFilterDraft | undefined, cursor = ""): StorageQueryParams {
+  const filters = storageFilterDraft(draft);
+  const params: StorageQueryParams = {};
+  const safeLimit = Number.parseInt(filters.limit, 10);
+  if (Number.isFinite(safeLimit) && safeLimit > 0) params.limit = safeLimit;
+  const safeCursor = storageCursor(cursor);
+  if (safeCursor) params.cursor = safeCursor;
+  for (const key of ["ts_code", "trade_date", "start_date", "end_date"] as const) {
+    const value = filters[key].trim();
+    if (value) params[key] = value;
+  }
+  return params;
 }
 
 export default function StorageOverview() {
@@ -34,6 +71,7 @@ export default function StorageOverview() {
   const [catalogEnvelopeLedger, setCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [catalogEnvelopeWarnings, setCatalogEnvelopeWarnings] = useState<Array<string>>([]);
   const [datasetCursors, setDatasetCursors] = useState<Record<string, string>>({});
+  const [datasetFilters, setDatasetFilters] = useState<Record<string, StorageFilterDraft>>({});
   const [factorValues, setFactorValues] = useState<Record<string, unknown>>({});
   const [sqliteMeta, setSqliteMeta] = useState<Record<string, unknown>>({});
   const [datasetDetails, setDatasetDetails] = useState<Record<string, Record<string, unknown>>>({});
@@ -59,22 +97,37 @@ export default function StorageOverview() {
       setCatalogEnvelopeLedger(res.call_ledger ?? []);
       setCatalogEnvelopeWarnings(res.warnings ?? []);
     });
-    void getFactorValuesStorage({ cursor: datasetCursors.factor_values }).then((res) => setFactorValues(res.data));
+    void getFactorValuesStorage(storageQueryParamsFromDraft(datasetFilters.factor_values, datasetCursors.factor_values)).then((res) => setFactorValues(res.data));
     void getSQLiteMetaStorage().then((res) => setSqliteMeta(res.data));
-    void Promise.all(STORAGE_DATASET_ENDPOINTS.map((dataset) => getStorageDataset(dataset, { cursor: datasetCursors[dataset] }).then((res) => [dataset, res.data] as const))).then((items) =>
+    void Promise.all(STORAGE_DATASET_ENDPOINTS.map((dataset) => getStorageDataset(dataset, storageQueryParamsFromDraft(datasetFilters[dataset], datasetCursors[dataset])).then((res) => [dataset, res.data] as const))).then((items) =>
       setDatasetDetails(Object.fromEntries(items))
     );
   };
-  const loadStorageDatasetPage = (cursorKey: string, dataset: string, cursor = "") => {
+  const loadStorageDatasetPage = (cursorKey: string, dataset: string, cursor = "", filterOverride?: StorageFilterDraft) => {
     const nextCursor = storageCursor(cursor);
+    const queryParams = storageQueryParamsFromDraft(filterOverride ?? datasetFilters[cursorKey], nextCursor);
     setDatasetCursors((prev) => ({ ...prev, [cursorKey]: nextCursor }));
     if (cursorKey === "factor_values") {
-      void getFactorValuesStorage({ cursor: nextCursor }).then((res) => setFactorValues(res.data));
+      void getFactorValuesStorage(queryParams).then((res) => setFactorValues(res.data));
       return;
     }
-    void getStorageDataset(dataset, { cursor: nextCursor }).then((res) => {
+    void getStorageDataset(dataset, queryParams).then((res) => {
       setDatasetDetails((prev) => ({ ...prev, [dataset]: res.data }));
     });
+  };
+  const updateStorageDatasetFilter = (cursorKey: string, key: keyof StorageFilterDraft, value: string) => {
+    setDatasetFilters((prev) => ({
+      ...prev,
+      [cursorKey]: {
+        ...storageFilterDraft(prev[cursorKey]),
+        [key]: value
+      }
+    }));
+  };
+  const resetStorageDatasetFilters = (cursorKey: string, dataset: string) => {
+    const defaults = defaultStorageFilterDraft();
+    setDatasetFilters((prev) => ({ ...prev, [cursorKey]: defaults }));
+    loadStorageDatasetPage(cursorKey, dataset, "", defaults);
   };
   const launchArtifactCleanupDryRun = () =>
     void postStorageArtifactCleanupDryRun({ source: "storage_overview_button" }).then((res) => {
@@ -217,6 +270,23 @@ export default function StorageOverview() {
       external_calls_triggered: item.packet.external_calls_triggered ?? false
     };
   });
+  const datasetFilterRows = datasetCards.map((item) => {
+    const filters = storageFilterDraft(datasetFilters[item.cursorKey]);
+    const query = item.packet.query as Record<string, unknown> | undefined;
+    return {
+      dataset: item.label,
+      endpoint: item.endpoint,
+      limit: filters.limit,
+      ts_code: filters.ts_code,
+      trade_date: filters.trade_date,
+      start_date: filters.start_date,
+      end_date: filters.end_date,
+      applied_filters: JSON.stringify(query?.applied_filters ?? item.packet.applied_filters ?? []),
+      skipped_filters: JSON.stringify(query?.skipped_filters ?? item.packet.skipped_filters ?? []),
+      filter_policy: "read_only_get_query_params_v1",
+      external_calls_triggered: item.packet.external_calls_triggered ?? false
+    };
+  });
   const datasetCallLedgerRows = [
     ...datasetCards.flatMap((item) => ((item.packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? []).map((row) => ({ dataset: item.label, ...row }))),
     ...((sqliteMeta.call_ledger as Array<Record<string, unknown>> | undefined) ?? []).map((row) => ({ dataset: "sqlite_meta", ...row }))
@@ -354,6 +424,47 @@ export default function StorageOverview() {
               重置 {item.label}
             </button>
           ))}
+        </div>
+      </PacketCard>
+
+      <PacketCard title="DuckDB dataset filters" subtitle="筛选只作为 GET storage query params；应用筛选会回到第一页" status="ui_dataset_filters">
+        <p>filter_policy: read_only_get_query_params_v1</p>
+        <p>supported filters: limit / ts_code / trade_date / start_date / end_date / cursor</p>
+        <p>不会调用 Tushare、DeepSeek、GitHub，不写 Parquet，不执行真实交易，不修改 strategy action。</p>
+        <DataLineageTable rows={datasetFilterRows} />
+        <div className="storage-filter-grid">
+          {datasetCards.map((item) => {
+            const filters = storageFilterDraft(datasetFilters[item.cursorKey]);
+            return (
+              <div className="storage-filter-panel" key={`${item.key}-filters`}>
+                <h4>{item.label}</h4>
+                <label>
+                  limit
+                  <input type="number" min="1" max="10000" value={filters.limit} onChange={(event) => updateStorageDatasetFilter(item.cursorKey, "limit", event.target.value)} />
+                </label>
+                <label>
+                  ts_code
+                  <input value={filters.ts_code} onChange={(event) => updateStorageDatasetFilter(item.cursorKey, "ts_code", event.target.value)} />
+                </label>
+                <label>
+                  trade_date
+                  <input value={filters.trade_date} onChange={(event) => updateStorageDatasetFilter(item.cursorKey, "trade_date", event.target.value)} />
+                </label>
+                <label>
+                  start_date
+                  <input value={filters.start_date} onChange={(event) => updateStorageDatasetFilter(item.cursorKey, "start_date", event.target.value)} />
+                </label>
+                <label>
+                  end_date
+                  <input value={filters.end_date} onChange={(event) => updateStorageDatasetFilter(item.cursorKey, "end_date", event.target.value)} />
+                </label>
+                <div className="actions">
+                  <button onClick={() => loadStorageDatasetPage(item.cursorKey, item.endpoint, "")}>应用筛选</button>
+                  <button onClick={() => resetStorageDatasetFilters(item.cursorKey, item.endpoint)}>清空筛选</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </PacketCard>
 
