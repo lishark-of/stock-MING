@@ -184,9 +184,9 @@ def _worker_production_control_rows() -> list[dict[str, Any]]:
     return [
         {
             "control": "retry_policy",
-            "status": "planned",
-            "current_coverage": "failed tasks keep safe error metadata; automatic retry/backoff is not enabled.",
-            "next_action": "add opt-in retry rules per task type after idempotency keys are enforced.",
+            "status": "audit_ready",
+            "current_coverage": "task catalog and task records expose per-task manual retry audit metadata; automatic retry/backoff remains disabled.",
+            "next_action": "add an explicit manual retry POST route, then enable Celery retry only after locks and dedupe are enforced.",
             "external_calls_triggered": False,
         },
         {
@@ -228,6 +228,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     redis_configured = bool(os.getenv("COMMAND_CENTER_REDIS_URL"))
     catalog = task_service.build_task_catalog()
     task_implementation_status = catalog.get("implementation_status") or {}
+    task_retry_policy_summary = catalog.get("retry_policy_summary") or {}
     task_index = task_service.build_task_status_index()
     task_persistence = task_index.get("persistence") or {}
     task_persistence_source_rows = task_index.get("persistence_source_rows") or []
@@ -280,8 +281,11 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "local_pipeline_task_count": task_implementation_status.get("local_pipeline_task_count", 0),
             "guarded_local_task_count": task_implementation_status.get("guarded_local_task_count", 0),
             "implemented_local_task_count": task_implementation_status.get("implemented_local_task_count", 0),
+            "retry_policy_status": task_retry_policy_summary.get("status"),
+            "auto_retry_enabled": bool(task_retry_policy_summary.get("auto_retry_enabled")),
         },
         "task_implementation_status": task_implementation_status,
+        "task_retry_policy_summary": task_retry_policy_summary,
         "task_status_summary": {
             "packet_key": task_index.get("packet_key"),
             "task_count": task_index.get("task_count", 0),

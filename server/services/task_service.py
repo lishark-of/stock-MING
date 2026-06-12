@@ -173,6 +173,51 @@ TASK_LIFECYCLE_POST_ROUTES = [
     }
 ]
 
+TASK_RETRY_POLICY_VERSION = "task_retry_policy.audit.v1"
+TASK_RETRY_POLICY_DEFAULT = {
+    "manual_retry_allowed": True,
+    "max_attempts": 2,
+    "backoff": "manual_linear_15s_60s",
+}
+TASK_RETRY_POLICY_BY_TYPE: dict[str, dict[str, Any]] = {
+    "refresh_tushare_facts": {
+        "manual_retry_allowed": True,
+        "max_attempts": 3,
+        "backoff": "manual_exponential_30s_120s_300s",
+    },
+    "refresh_factor_data": {
+        "manual_retry_allowed": True,
+        "max_attempts": 3,
+        "backoff": "manual_exponential_30s_120s_300s",
+    },
+    "run_factor_light": {
+        "manual_retry_allowed": True,
+        "max_attempts": 2,
+        "backoff": "manual_linear_15s_60s",
+    },
+    "run_deepseek_factor_explanation": {
+        "manual_retry_allowed": True,
+        "max_attempts": 2,
+        "backoff": "manual_linear_15s_60s",
+    },
+    "build_next_session_projection": {
+        "manual_retry_allowed": True,
+        "max_attempts": 2,
+        "backoff": "manual_linear_15s_60s",
+    },
+    "run_chokepoint_scan": {
+        "manual_retry_allowed": True,
+        "max_attempts": 2,
+        "backoff": "manual_linear_15s_60s",
+    },
+    "probe_serenity_github": {
+        "manual_retry_allowed": True,
+        "max_attempts": 2,
+        "backoff": "manual_linear_15s_60s",
+    },
+}
+TASK_RETRYABLE_STATUSES = ["failed"]
+
 
 def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
@@ -253,8 +298,64 @@ def _build_implementation_status() -> dict[str, Any]:
     }
 
 
+def _retry_policy_for_task(
+    task_type: str,
+    *,
+    status: str = "pending",
+    attempt_number: int | None = None,
+) -> dict[str, Any]:
+    base = dict(TASK_RETRY_POLICY_DEFAULT)
+    base.update(TASK_RETRY_POLICY_BY_TYPE.get(str(task_type or ""), {}))
+    max_attempts = max(1, int(base.get("max_attempts") or 1))
+    attempt = max(1, int(attempt_number or 1))
+    attempts_remaining = max(0, max_attempts - attempt)
+    manual_retry_allowed = bool(base.get("manual_retry_allowed"))
+    manual_retry_eligible = bool(status in TASK_RETRYABLE_STATUSES and manual_retry_allowed and attempts_remaining > 0)
+    return {
+        "policy_version": TASK_RETRY_POLICY_VERSION,
+        "enabled": False,
+        "auto_retry_enabled": False,
+        "manual_retry_allowed": manual_retry_allowed,
+        "manual_retry_eligible": manual_retry_eligible,
+        "requires_new_task_id": True,
+        "max_attempts": max_attempts,
+        "attempt_number": attempt,
+        "attempts_remaining": attempts_remaining,
+        "backoff": str(base.get("backoff") or "manual_only_no_auto_backoff"),
+        "retryable_statuses": list(TASK_RETRYABLE_STATUSES),
+        "retry_scope": "manual_operator_triggered_new_task",
+        "cache_api_can_retry": False,
+        "auto_retry_on_get": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "审计元数据只说明失败后可人工重建任务；当前不会自动重试、不会自动外联。",
+    }
+
+
+def _build_retry_policy_summary() -> dict[str, Any]:
+    task_policies = {
+        str(item.get("task_type") or ""): _retry_policy_for_task(str(item.get("task_type") or ""))
+        for item in TASK_CATALOG
+    }
+    return {
+        "policy_version": TASK_RETRY_POLICY_VERSION,
+        "status": "audit_ready",
+        "auto_retry_enabled": False,
+        "manual_retry_supported": True,
+        "manual_retry_requires_new_task_id": True,
+        "cache_api_can_retry": False,
+        "retryable_statuses": list(TASK_RETRYABLE_STATUSES),
+        "task_policies": task_policies,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
     row = dict(item)
+    row["retry_policy"] = _retry_policy_for_task(str(row.get("task_type") or ""))
     purpose = row.get("deepseek_model_strategy_purpose")
     if purpose:
         strategy = build_deepseek_model_strategy_ref(str(purpose))
@@ -267,6 +368,7 @@ def _catalog_task_item(item: dict[str, Any]) -> dict[str, Any]:
 def build_task_catalog() -> dict[str, Any]:
     route_coverage = _build_route_coverage()
     implementation_status = _build_implementation_status()
+    retry_policy_summary = _build_retry_policy_summary()
     return {
         "packet_key": "command_center_3_task_catalog",
         "schema_version": "command_center_3_task_catalog.v1",
@@ -275,6 +377,7 @@ def build_task_catalog() -> dict[str, Any]:
         "task_lifecycle_routes": [dict(item) for item in TASK_LIFECYCLE_POST_ROUTES],
         "route_coverage": route_coverage,
         "implementation_status": implementation_status,
+        "retry_policy_summary": retry_policy_summary,
         "task_count": len(TASK_CATALOG),
         "policy": {
             "get_catalog_cache_only": True,
@@ -285,6 +388,9 @@ def build_task_catalog() -> dict[str, Any]:
             "implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "supports_local_task_cancel": True,
+            "retry_policy_audit_ready": True,
+            "automatic_retry_enabled": False,
+            "manual_retry_requires_post_task": True,
             "cancel_task_external_calls": False,
             "cancel_route_in_lifecycle_catalog": True,
             "post_task_may_trigger_external_request": True,
@@ -530,11 +636,7 @@ def build_task_record(
         "dedupe_scope": "local_task_type_payload",
         "lock_key": f"lock:{task_type}:{input_hash}",
         "lock_enforced": False,
-        "retry_policy": {
-            "enabled": False,
-            "max_attempts": 1,
-            "backoff": "not_enabled",
-        },
+        "retry_policy": _retry_policy_for_task(task_type, status=selected_status),
         "status": selected_status,
         "created_at": now,
         "started_at": now if selected_status in {"running", "success", "failed"} else None,
@@ -624,6 +726,12 @@ def update_task_status(
         task["does_not_modify_strategy_action"] = all(row.get("does_not_modify_strategy_action") is not False for row in task["call_ledger"])
     if warning:
         task.setdefault("warnings", []).append(warning)
+    old_retry_policy = task.get("retry_policy") if isinstance(task.get("retry_policy"), dict) else {}
+    task["retry_policy"] = _retry_policy_for_task(
+        str(task.get("task_type") or ""),
+        status=status,
+        attempt_number=old_retry_policy.get("attempt_number") if isinstance(old_retry_policy, dict) else None,
+    )
     if status in {"running", "success", "failed"} and not task.get("started_at"):
         task["started_at"] = now
     if status in {"success", "failed", "cancelled"}:
@@ -769,6 +877,18 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             len([task for task in sorted_tasks if task.get("idempotency_key")])
             - len({str(task.get("idempotency_key") or "") for task in sorted_tasks if task.get("idempotency_key")}),
         ),
+        "manual_retry_eligible_count": sum(
+            1
+            for task in sorted_tasks
+            if isinstance(task.get("retry_policy"), dict)
+            and task.get("retry_policy", {}).get("manual_retry_eligible") is True
+        ),
+        "automatic_retry_enabled_count": sum(
+            1
+            for task in sorted_tasks
+            if isinstance(task.get("retry_policy"), dict)
+            and task.get("retry_policy", {}).get("auto_retry_enabled") is True
+        ),
         "task_log_count": sum(len(task.get("task_log") or []) for task in sorted_tasks),
         "memory_only_task_count": len(memory_ids - persisted_ids),
         "sqlite_only_task_count": len(persisted_ids - memory_ids),
@@ -847,6 +967,8 @@ def build_task_status_index() -> dict[str, Any]:
                 "deduplicated_task_count": persistence["deduplicated_task_count"],
                 "idempotency_key_count": persistence["idempotency_key_count"],
                 "duplicate_idempotency_key_count": persistence["duplicate_idempotency_key_count"],
+                "manual_retry_eligible_count": persistence["manual_retry_eligible_count"],
+                "automatic_retry_enabled_count": persistence["automatic_retry_enabled_count"],
                 "task_log_count": task_log_count,
                 "storage_backend": persistence["storage_backend"],
                 "data_date": None,
