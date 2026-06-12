@@ -16,6 +16,24 @@ TASK_STATUSES = {"pending", "running", "success", "failed", "cancelled"}
 SECRET_KEYWORDS = ("token", "api_key", "secret", "password", "authorization", "bearer", "cookie")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
+TUSHARE_OPTIONAL_EXTENDED_APIS = [
+    "margin_detail",
+    "top_list",
+    "top_inst",
+    "stk_limit",
+    "limit_list_d",
+    "limit_cpt_list",
+    "cyq_perf",
+    "cyq_chips",
+    "anns_d",
+    "forecast",
+    "fina_indicator",
+    "stk_holdertrade",
+    "share_float",
+    "pledge_stat",
+    "pledge_detail",
+    "stk_surv",
+]
 
 TASK_CATALOG = [
     {
@@ -29,7 +47,7 @@ TASK_CATALOG = [
         "possible_external_sources": ["tushare"],
         "default_core_apis": ["daily", "daily_basic", "moneyflow"],
         "calendar_apis": ["trade_cal"],
-        "optional_extended_apis": ["margin_detail", "stk_limit", "limit_list_d", "limit_cpt_list", "cyq_perf", "cyq_chips", "anns_d", "forecast", "stk_holdertrade", "share_float", "pledge_stat", "pledge_detail"],
+        "optional_extended_apis": list(TUSHARE_OPTIONAL_EXTENDED_APIS),
         "parquet_enabled_apis": ["daily", "daily_basic", "moneyflow", "trade_cal"],
         "extended_validation_scope": "button_payload_apis_or_include_extended",
         "api_validation_matrix_policy": "selected APIs use call_ledger; unselected APIs are capability matrix only and must not be treated as verified.",
@@ -49,6 +67,7 @@ TASK_CATALOG = [
         "possible_external_sources": ["tushare"],
         "default_core_apis": ["daily", "daily_basic", "moneyflow"],
         "calendar_apis": ["trade_cal"],
+        "optional_extended_apis": list(TUSHARE_OPTIONAL_EXTENDED_APIS),
         "parquet_enabled_apis": ["daily", "daily_basic", "moneyflow", "trade_cal"],
         "extended_validation_scope": "refresh_data_delegates_to_tushare_task_pipeline",
         "api_validation_matrix_policy": "selected APIs use call_ledger; unselected APIs are capability matrix only and must not be treated as verified.",

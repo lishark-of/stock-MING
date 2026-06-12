@@ -16,6 +16,8 @@ CORE_REFRESH_APIS = ("daily", "daily_basic", "moneyflow")
 CALENDAR_REFRESH_APIS = ("trade_cal",)
 EXTENDED_REFRESH_APIS = (
     "margin_detail",
+    "top_list",
+    "top_inst",
     "stk_limit",
     "limit_list_d",
     "limit_cpt_list",
@@ -23,10 +25,12 @@ EXTENDED_REFRESH_APIS = (
     "cyq_chips",
     "anns_d",
     "forecast",
+    "fina_indicator",
     "stk_holdertrade",
     "share_float",
     "pledge_stat",
     "pledge_detail",
+    "stk_surv",
 )
 ALL_REFRESH_APIS = CORE_REFRESH_APIS + CALENDAR_REFRESH_APIS + EXTENDED_REFRESH_APIS
 PARQUET_DATASETS = {
@@ -41,6 +45,8 @@ REFRESH_API_SPECS = {
     "moneyflow": {"method": "get_moneyflow", "params": ("ts_code", "trade_date", "start_date", "end_date")},
     "trade_cal": {"method": "get_trade_cal", "params": ("start_date", "end_date", "exchange")},
     "margin_detail": {"method": "get_margin_detail", "params": ("ts_code", "trade_date", "start_date", "end_date")},
+    "top_list": {"method": "get_top_list", "params": ("trade_date", "ts_code")},
+    "top_inst": {"method": "get_top_inst", "params": ("trade_date", "ts_code")},
     "stk_limit": {"method": "get_stk_limit", "params": ("ts_code", "trade_date", "start_date", "end_date")},
     "limit_list_d": {"method": "get_limit_list_d", "params": ("ts_code", "trade_date", "start_date", "end_date", "limit_type")},
     "limit_cpt_list": {"method": "get_limit_cpt_list", "params": ("trade_date", "start_date", "end_date")},
@@ -48,10 +54,12 @@ REFRESH_API_SPECS = {
     "cyq_chips": {"method": "get_cyq_chips", "params": ("ts_code", "trade_date", "start_date", "end_date")},
     "anns_d": {"method": "get_anns_d", "params": ("ts_code", "ann_date", "start_date", "end_date")},
     "forecast": {"method": "get_forecast", "params": ("ts_code", "ann_date", "start_date", "end_date", "period")},
+    "fina_indicator": {"method": "get_fina_indicator", "params": ("ts_code", "ann_date", "start_date", "end_date", "period")},
     "stk_holdertrade": {"method": "get_stk_holdertrade", "params": ("ts_code", "ann_date", "start_date", "end_date", "trade_type", "holder_type")},
     "share_float": {"method": "get_share_float", "params": ("ts_code", "ann_date", "float_date", "start_date", "end_date")},
     "pledge_stat": {"method": "get_pledge_stat", "params": ("ts_code", "end_date")},
     "pledge_detail": {"method": "get_pledge_detail", "params": ("ts_code",)},
+    "stk_surv": {"method": "get_stk_surv", "params": ("ts_code", "trade_date", "start_date", "end_date")},
 }
 SECRET_MARKERS = ("token", "api_key", "apikey", "authorization", "bearer", "secret", "password")
 STACK_MARKERS = ("traceback", 'file "', " line ", "exception")

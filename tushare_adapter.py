@@ -378,6 +378,17 @@ def get_forecast(ts_code=None, ann_date=None, start_date=None, end_date=None, pe
     )
 
 
+def get_fina_indicator(ts_code=None, ann_date=None, start_date=None, end_date=None, period=None):
+    return _call_pro(
+        "fina_indicator",
+        ts_code=_normalize_ts_code(ts_code),
+        ann_date=_normalize_date(ann_date),
+        start_date=_normalize_date(start_date),
+        end_date=_normalize_date(end_date),
+        period=_normalize_date(period),
+    )
+
+
 def get_stk_holdertrade(
     ts_code=None,
     ann_date=None,

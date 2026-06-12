@@ -1852,15 +1852,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             def get_margin_detail(self, **params):
                 return {"ok": True, "data": [], "error": ""}
 
+            def get_top_list(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "amount": 1000}], "error": ""}
+
+            def get_top_inst(self, **params):
+                return {"ok": True, "data": [], "error": ""}
+
             def get_limit_cpt_list(self, **params):
                 return {"ok": False, "data": None, "error": "Traceback token=SHOULD_DROP"}
+
+            def get_fina_indicator(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "ann_date": "20260430", "roe": 8.2}], "error": ""}
+
+            def get_stk_surv(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "status": "L"}], "error": ""}
 
         task = tushare_task_service.run_tushare_refresh_task(
             {
                 "ts_code": "002008.SZ",
                 "start_date": "20260601",
                 "end_date": "20260610",
-                "apis": ["trade_cal", "margin_detail", "limit_cpt_list"],
+                "apis": ["trade_cal", "margin_detail", "top_list", "top_inst", "limit_cpt_list", "fina_indicator", "stk_surv"],
                 "api_key": "SHOULD_DROP",
             },
             adapter=ExtendedFakeTushareAdapter(),
@@ -1880,6 +1892,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn(ledger_by_api["trade_cal"]["parquet_status"], {"written", "dependency_missing"})
         self.assertEqual(ledger_by_api["margin_detail"]["call_status"], "empty")
         self.assertEqual(ledger_by_api["margin_detail"]["parquet_status"], "not_enabled")
+        self.assertEqual(ledger_by_api["top_list"]["call_status"], "success")
+        self.assertEqual(ledger_by_api["top_list"]["parquet_status"], "not_enabled")
+        self.assertEqual(ledger_by_api["top_inst"]["call_status"], "empty")
+        self.assertEqual(ledger_by_api["fina_indicator"]["call_status"], "success")
+        self.assertEqual(ledger_by_api["fina_indicator"]["data_date"], "20260430")
+        self.assertEqual(ledger_by_api["stk_surv"]["call_status"], "success")
         self.assertEqual(ledger_by_api["limit_cpt_list"]["call_status"], "failed")
         self.assertEqual(ledger_by_api["limit_cpt_list"]["error_message_safe"], "tushare_error_redacted_safe")
 
@@ -1888,11 +1906,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
         self.assertIsNotNone(persisted)
         self.assertEqual(persisted["status"], "success")
-        self.assertEqual(persisted["success_count"], 2)
+        self.assertEqual(persisted["success_count"], 6)
         self.assertEqual(persisted["failed_count"], 1)
-        self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], 3)
-        self.assertEqual(persisted["api_validation_summary"]["validated_success_count"], 1)
-        self.assertEqual(persisted["api_validation_summary"]["validated_empty_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], 7)
+        self.assertEqual(persisted["api_validation_summary"]["validated_success_count"], 4)
+        self.assertEqual(persisted["api_validation_summary"]["validated_empty_count"], 2)
         self.assertEqual(persisted["api_validation_summary"]["validated_failed_count"], 1)
         validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
         self.assertEqual(validation_by_api["trade_cal"]["group"], "calendar")
@@ -1903,11 +1921,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(validation_by_api["margin_detail"]["validation_status"], "validated_empty")
         self.assertEqual(validation_by_api["margin_detail"]["validation_scope"], "task_call_result")
         self.assertFalse(validation_by_api["margin_detail"]["parquet_enabled"])
+        self.assertEqual(validation_by_api["top_list"]["group"], "extended")
+        self.assertEqual(validation_by_api["top_list"]["validation_status"], "validated_success")
+        self.assertEqual(validation_by_api["top_inst"]["validation_status"], "validated_empty")
+        self.assertEqual(validation_by_api["fina_indicator"]["validation_status"], "validated_success")
+        self.assertEqual(validation_by_api["stk_surv"]["validation_status"], "validated_success")
         self.assertEqual(validation_by_api["limit_cpt_list"]["validation_status"], "validated_failed")
         self.assertEqual(validation_by_api["limit_cpt_list"]["validation_scope"], "task_call_result")
         self.assertEqual(validation_by_api["daily"]["validation_status"], "not_requested")
         self.assertEqual(validation_by_api["daily"]["validation_scope"], "capability_matrix_only")
-        self.assertEqual(persisted["api_validation_summary"]["task_call_result_count"], 3)
+        self.assertEqual(persisted["api_validation_summary"]["task_call_result_count"], 7)
         self.assertIn("daily", persisted["api_validation_matrix_policy"]["matrix_only_apis"])
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
@@ -2223,6 +2246,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["refresh_tushare_facts"]["default_core_apis"], ["daily", "daily_basic", "moneyflow"])
         self.assertEqual(by_type["refresh_tushare_facts"]["calendar_apis"], ["trade_cal"])
         self.assertIn("limit_cpt_list", by_type["refresh_tushare_facts"]["optional_extended_apis"])
+        self.assertIn("top_list", by_type["refresh_tushare_facts"]["optional_extended_apis"])
+        self.assertIn("top_inst", by_type["refresh_tushare_facts"]["optional_extended_apis"])
+        self.assertIn("fina_indicator", by_type["refresh_tushare_facts"]["optional_extended_apis"])
+        self.assertIn("stk_surv", by_type["refresh_tushare_facts"]["optional_extended_apis"])
         self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
         self.assertIn("unselected APIs are capability matrix only", by_type["refresh_tushare_facts"]["api_validation_matrix_policy"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
@@ -2230,6 +2257,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["refresh_factor_data"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertIn("tushare", by_type["refresh_factor_data"]["possible_external_sources"])
         self.assertEqual(by_type["refresh_factor_data"]["calendar_apis"], ["trade_cal"])
+        self.assertIn("fina_indicator", by_type["refresh_factor_data"]["optional_extended_apis"])
         self.assertEqual(by_type["refresh_factor_data"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
         self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
