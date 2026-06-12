@@ -643,6 +643,7 @@ Keep real trading isolated from Command Center 3 automation
 - The migration has reduced UI stall risk by separating page render, cache reads, and task execution.
 - Local `quick_cache_scan`, `watchlist_scan`, and `custom_pool_scan` task modes exist: they read local snapshot/payload, write a SQLite candidate-radar packet, and show coverage/freshness/local-pool gaps without external calls.
 - The 3.0 page now exposes legacy signal-group coverage, parity inventory, output contract rows, local candidate-pool audit, skipped reasons, scan mode status, freshness state, provider coverage rows, degraded mode rows, and universe-size coverage detail.
+- Candidate radar packets now include `scan_execution_summary` and `scan_acceptance_rows` so cache view, local scan, local pool scan, and full-pool plan-only outputs can be audited without treating them as production full-pool completion.
 - A button-gated local `run_candidate_radar_full_pool_plan` task now writes `full_pool_scan_plan`, stage rows, filter rows, required signal rows, and blocker rows; it is a plan-only readiness packet, not a full-pool scan.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
@@ -650,7 +651,7 @@ Keep real trading isolated from Command Center 3 automation
 
 - Need actual full-pool scan execution beyond the current local quick/watchlist/custom scans and full-pool readiness plan.
 - Need worker-backed async execution for slower scans beyond the local fallback path.
-- Deeper local scan coverage accounting now exists for universe size, provider-blocked groups, stale inputs, missing provider data, and degraded modes; it is still cache-only and does not prove full-pool or provider-backed scan acceptance.
+- Deeper local scan coverage accounting and scan acceptance rows now exist for universe size, provider-blocked groups, stale inputs, missing provider data, degraded modes, freshness, local pool, full-pool boundary, and trade isolation; they are still cache/local-only and do not prove full-pool or provider-backed scan acceptance.
 - Need clear distinction between quick scan, deep scan, and research-only candidates.
 - Need parity acceptance before removing any Streamlit fallback.
 

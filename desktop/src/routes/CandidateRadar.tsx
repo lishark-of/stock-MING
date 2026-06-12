@@ -64,6 +64,7 @@ export default function CandidateRadar() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
   const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
+  const scanExecutionSummary = (cache.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
@@ -78,6 +79,7 @@ export default function CandidateRadar() {
   const legacyParityRows = rows(cache.legacy_parity_rows);
   const legacyOutputRows = rows(cache.legacy_output_contract_rows);
   const scanModeRows = rows(cache.scan_mode_status_rows);
+  const scanAcceptanceRows = rows(cache.scan_acceptance_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
@@ -107,6 +109,7 @@ export default function CandidateRadar() {
           { label: "只观察", value: counts.observe_count as number | undefined },
           { label: "待验证", value: counts.verify_count as number | undefined },
           { label: "scan mode", value: String(cache.scan_mode ?? "--") },
+          { label: "scan family", value: String(scanExecutionSummary.scan_family ?? "--") },
           { label: "universe", value: coverageDetail.universe_size as number | undefined },
           { label: "覆盖组", value: scanCoverage.mapped_signal_group_count as number | undefined },
           { label: "缺口组", value: scanCoverage.missing_signal_group_count as number | undefined, tone: scanCoverage.missing_signal_group_count ? "warn" : "good" },
@@ -117,6 +120,7 @@ export default function CandidateRadar() {
           { label: "parity gap", value: counts.legacy_parity_gap_count as number | undefined, tone: counts.legacy_parity_gap_count ? "warn" : "good" },
           { label: "parity mapped", value: counts.legacy_parity_mapped_count as number | undefined },
           { label: "跳过原因", value: scanCoverage.skipped_reason_count as number | undefined, tone: scanCoverage.skipped_reason_count ? "warn" : "good" },
+          { label: "验收行", value: scanAcceptanceRows.length },
           { label: "freshness", value: String(freshnessState.state ?? "unknown"), tone: freshnessState.source === "missing" ? "warn" : "good" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "市场扫描", value: policy.does_not_scan_market === true ? "不会" : "可能", tone: policy.does_not_scan_market === true ? "good" : "bad" },
@@ -183,6 +187,13 @@ export default function CandidateRadar() {
         <DataLineageTable rows={objectRow(coverageDetail)} />
         <DataLineageTable rows={providerCoverageRows} />
         <DataLineageTable rows={degradedModeRows} />
+      </PacketCard>
+
+      <PacketCard title="扫描执行验收" subtitle="scan_execution_summary / scan_acceptance_rows；区分 cache、local scan 和 plan-only" status={String(scanExecutionSummary.scan_family ?? "audit")}>
+        <p>scan_execution_summary 只总结本地执行边界，不证明 full-pool scan 已完成。</p>
+        <p>scan_acceptance_rows 把 provider gap、freshness、local pool、full-pool 和交易隔离逐项展示。</p>
+        <DataLineageTable rows={objectRow(scanExecutionSummary)} />
+        <DataLineageTable rows={scanAcceptanceRows} />
       </PacketCard>
 
       <div className="grid">

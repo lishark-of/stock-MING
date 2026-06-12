@@ -1202,6 +1202,155 @@ def _scan_coverage(
     }
 
 
+def _scan_execution_summary(
+    *,
+    mode: str,
+    cache_source: str,
+    scan_mode: str,
+    request_params_safe: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+    local_pool_audit: Mapping[str, Any],
+    full_pool_scan_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
+    freshness_state = _as_dict(coverage.get("freshness_state"))
+    provider_gap_count = int(coverage_detail.get("provider_blocked_group_count") or 0) + int(
+        coverage_detail.get("stale_input_group_count") or 0
+    ) + int(coverage_detail.get("missing_provider_data_group_count") or 0)
+    scan_family = (
+        "full_pool_plan"
+        if scan_mode == "full_pool_plan"
+        else "local_pool_scan"
+        if scan_mode in LOCAL_POOL_SCAN_MODES
+        else "quick_cache_scan"
+        if scan_mode == "quick_cache_scan"
+        else "cache_view"
+    )
+    return {
+        "schema_version": "candidate_radar_scan_execution_summary.v1",
+        "mode": mode,
+        "scan_mode": scan_mode,
+        "scan_family": scan_family,
+        "cache_source": cache_source,
+        "requested_scan_mode": request_params_safe.get("requested_scan_mode") or request_params_safe.get("scan_mode") or scan_mode,
+        "unsupported_scan_mode_fallback": bool(request_params_safe.get("unsupported_scan_mode_fallback")),
+        "universe_mode": coverage_detail.get("universe_mode") or request_params_safe.get("universe_mode") or coverage.get("universe_mode"),
+        "universe_size": int(coverage_detail.get("universe_size") or coverage.get("universe_size") or 0),
+        "candidate_row_count": len(candidate_rows),
+        "skipped_reason_count": int(coverage.get("skipped_reason_count") or 0),
+        "provider_gap_count": provider_gap_count,
+        "degraded_mode_active_count": int(coverage_detail.get("degraded_mode_active_count") or 0),
+        "freshness_state": freshness_state.get("state") or "unknown",
+        "freshness_source": freshness_state.get("source") or "missing",
+        "local_pool_input_candidate_count": local_pool_audit.get("input_candidate_count"),
+        "local_pool_normalized_candidate_count": local_pool_audit.get("normalized_candidate_count"),
+        "full_pool_plan_ready": full_pool_scan_plan.get("status") == "full_pool_plan_ready",
+        "full_pool_scan_done": bool(full_pool_scan_plan.get("full_pool_scan_done") is True),
+        "full_pool_blocking_issue_count": full_pool_scan_plan.get("blocking_issue_count"),
+        "writes_sqlite_packet": mode != "cache_only",
+        "cache_view_only": mode == "cache_only",
+        "result_is_research_only": True,
+        "candidate_is_not_buy_instruction": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _scan_acceptance_rows(
+    *,
+    scan_mode: str,
+    coverage: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+    local_pool_audit: Mapping[str, Any],
+    full_pool_scan_plan: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
+    freshness_state = _as_dict(coverage.get("freshness_state"))
+    full_pool_plan_ready = full_pool_scan_plan.get("status") == "full_pool_plan_ready"
+    provider_gap_count = int(coverage_detail.get("provider_blocked_group_count") or 0) + int(
+        coverage_detail.get("stale_input_group_count") or 0
+    ) + int(coverage_detail.get("missing_provider_data_group_count") or 0)
+    freshness_ok = freshness_state.get("source") != "missing" and str(freshness_state.get("state") or "").lower() not in {
+        "stale",
+        "expired",
+        "historical",
+        "unknown",
+    }
+    rows = [
+        {
+            "check_key": "page_render_does_not_scan",
+            "status": "passed",
+            "observed": "GET cache and React render are read-only.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "external_call_boundary",
+            "status": "passed",
+            "observed": "No Tushare, DeepSeek, or GitHub call is made by this radar packet.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "scan_mode_contract",
+            "status": "passed" if scan_mode in SUPPORTED_LOCAL_SCAN_MODES or scan_mode in {"cache_only", "full_pool_plan"} else "fallback_reported",
+            "observed": scan_mode,
+            "user_visible": True,
+        },
+        {
+            "check_key": "candidate_result_boundary",
+            "status": "ready" if candidate_rows else "empty_reported",
+            "observed": f"{len(candidate_rows)} candidate rows; result remains research-only.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "provider_gap_visibility",
+            "status": "gap_reported" if provider_gap_count else "passed",
+            "observed": f"{provider_gap_count} provider gaps reported without refresh.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "freshness_boundary",
+            "status": "passed" if freshness_ok else "research_only_reported",
+            "observed": f"{freshness_state.get('source') or 'missing'}:{freshness_state.get('state') or 'unknown'}",
+            "user_visible": True,
+        },
+        {
+            "check_key": "local_pool_boundary",
+            "status": "input_reported" if local_pool_audit else "not_applicable",
+            "observed": f"input={local_pool_audit.get('input_candidate_count')} normalized={local_pool_audit.get('normalized_candidate_count')}"
+            if local_pool_audit
+            else "quick cache or full-pool plan does not consume local pool input.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "full_pool_boundary",
+            "status": "plan_only" if full_pool_plan_ready else "not_executed",
+            "observed": "full_pool_scan_done=false; plan does not score candidates or refresh providers.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "trade_action_boundary",
+            "status": "passed",
+            "observed": "Radar candidates do not modify strategy action, holdings, or execute trades.",
+            "user_visible": True,
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+            }
+        )
+    return rows
+
+
 def _full_pool_filter_rows(payload_safe: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key, default in FULL_POOL_FILTER_DEFAULTS.items():
@@ -1482,6 +1631,23 @@ def _build_candidate_radar_packet(
     counts["universe_size"] = coverage["coverage_detail_summary"]["universe_size"]
     plan = dict(full_pool_scan_plan or _as_dict(snapshot_map.get("full_pool_scan_plan")))
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
+    scan_execution_summary = _scan_execution_summary(
+        mode=mode,
+        cache_source=cache_source,
+        scan_mode=scan_mode,
+        request_params_safe=request_params_safe or {},
+        coverage=coverage,
+        candidate_rows=candidate_rows,
+        local_pool_audit=local_pool_audit or {},
+        full_pool_scan_plan=plan,
+    )
+    scan_acceptance_rows = _scan_acceptance_rows(
+        scan_mode=scan_mode,
+        coverage=coverage,
+        candidate_rows=candidate_rows,
+        local_pool_audit=local_pool_audit or {},
+        full_pool_scan_plan=plan,
+    )
     if plan:
         counts["full_pool_plan_blocking_issue_count"] = plan.get("blocking_issue_count")
         counts["full_pool_plan_ready_signal_group_count"] = plan.get("ready_signal_group_count")
@@ -1523,6 +1689,8 @@ def _build_candidate_radar_packet(
         "counts": counts,
         "scan_coverage": coverage,
         "coverage_detail_summary": coverage["coverage_detail_summary"],
+        "scan_execution_summary": scan_execution_summary,
+        "scan_acceptance_rows": scan_acceptance_rows,
         "provider_coverage_rows": coverage["provider_coverage_rows"],
         "degraded_mode_rows": coverage["degraded_mode_rows"],
         "local_candidate_pool_audit": dict(local_pool_audit or _as_dict(snapshot_map.get("local_candidate_pool_audit"))),
