@@ -213,6 +213,7 @@ export default function TaskCatalog() {
       <div className="grid">
         <PacketCard title="Tushare 刷新任务" subtitle="按钮门控 POST /api/tasks/refresh-tushare-facts；GET cache 不会触发" status="button_gated">
           <p>默认只刷新 daily / daily_basic / moneyflow；任务会写 call_ledger，不打印 token/key，不修改 strategy action。</p>
+          <p>日历接口 trade_cal 与 margin / limit / cyq / hard-risk 扩展接口只在按钮 payload 明确选择或 include_extended 时进入验证；扩展接口默认只写审计状态，未启用 Parquet 时不会伪装成落盘完成。</p>
           <button onClick={launchTushareRefresh}>刷新 Tushare facts</button>
           <TaskLaunchReceipt receipt={taskReceipt} />
         </PacketCard>

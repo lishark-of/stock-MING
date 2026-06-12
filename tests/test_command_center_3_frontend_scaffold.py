@@ -861,6 +861,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("launchTushareRefresh", task_catalog_page)
         self.assertIn("刷新 Tushare facts", task_catalog_page)
         self.assertIn("默认只刷新 daily / daily_basic / moneyflow", task_catalog_page)
+        self.assertIn("trade_cal 与 margin / limit / cyq / hard-risk 扩展接口", task_catalog_page)
+        self.assertIn("未启用 Parquet 时不会伪装成落盘完成", task_catalog_page)
         self.assertIn("不打印 token/key，不修改 strategy action", task_catalog_page)
         self.assertIn("TaskLaunchReceipt", task_catalog_page)
         self.assertIn("TaskStatusPanel", task_catalog_page)

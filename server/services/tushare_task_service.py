@@ -13,6 +13,7 @@ from .task_service import create_task_record, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
 CORE_REFRESH_APIS = ("daily", "daily_basic", "moneyflow")
+CALENDAR_REFRESH_APIS = ("trade_cal",)
 EXTENDED_REFRESH_APIS = (
     "margin_detail",
     "stk_limit",
@@ -27,6 +28,7 @@ EXTENDED_REFRESH_APIS = (
     "pledge_stat",
     "pledge_detail",
 )
+ALL_REFRESH_APIS = CORE_REFRESH_APIS + CALENDAR_REFRESH_APIS + EXTENDED_REFRESH_APIS
 PARQUET_DATASETS = {
     "daily": "daily",
     "daily_basic": "daily_basic",
@@ -36,6 +38,7 @@ REFRESH_API_SPECS = {
     "daily": {"method": "get_daily", "params": ("ts_code", "start_date", "end_date")},
     "daily_basic": {"method": "get_daily_basic", "params": ("ts_code", "start_date", "end_date")},
     "moneyflow": {"method": "get_moneyflow", "params": ("ts_code", "trade_date", "start_date", "end_date")},
+    "trade_cal": {"method": "get_trade_cal", "params": ("start_date", "end_date", "exchange")},
     "margin_detail": {"method": "get_margin_detail", "params": ("ts_code", "trade_date", "start_date", "end_date")},
     "stk_limit": {"method": "get_stk_limit", "params": ("ts_code", "trade_date", "start_date", "end_date")},
     "limit_list_d": {"method": "get_limit_list_d", "params": ("ts_code", "trade_date", "start_date", "end_date", "limit_type")},
@@ -87,7 +90,7 @@ def _payload_field(payload: Any, key: str, default: Any = None) -> Any:
 def _selected_apis(payload: Any, default_apis: Iterable[str]) -> list[str]:
     requested = _payload_field(payload, "apis")
     if requested is None and _payload_field(payload, "include_extended") is True:
-        requested = list(CORE_REFRESH_APIS + EXTENDED_REFRESH_APIS)
+        requested = list(ALL_REFRESH_APIS)
     if requested is None:
         requested = list(default_apis)
     if isinstance(requested, str):
@@ -99,7 +102,119 @@ def _selected_apis(payload: Any, default_apis: Iterable[str]) -> list[str]:
         key = str(item or "").strip()
         if key in REFRESH_API_SPECS and key not in selected:
             selected.append(key)
+    if _payload_field(payload, "include_calendar") is True:
+        for key in CALENDAR_REFRESH_APIS:
+            if key not in selected:
+                selected.append(key)
     return selected or list(default_apis)
+
+
+def _api_group(api: str) -> str:
+    if api in CORE_REFRESH_APIS:
+        return "core"
+    if api in CALENDAR_REFRESH_APIS:
+        return "calendar"
+    if api in EXTENDED_REFRESH_APIS:
+        return "extended"
+    return "unknown"
+
+
+def _api_capability_rows(selected_apis: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    selected = set(selected_apis or [])
+    rows: list[dict[str, Any]] = []
+    for api, spec in REFRESH_API_SPECS.items():
+        params = list(spec.get("params") or [])
+        dataset = PARQUET_DATASETS.get(api)
+        rows.append(
+            {
+                "api": api,
+                "group": _api_group(api),
+                "method": spec.get("method"),
+                "params": params,
+                "requires_ts_code": "ts_code" in params,
+                "selected": api in selected,
+                "parquet_enabled": bool(dataset),
+                "parquet_dataset": dataset,
+                "runtime_enabled": True,
+                "button_gated": True,
+                "cache_get_external_calls": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _validation_status(call_status: str) -> str:
+    if call_status == "success":
+        return "validated_success"
+    if call_status == "empty":
+        return "validated_empty"
+    if call_status == "failed":
+        return "validated_failed"
+    if call_status.startswith("blocked_"):
+        return "blocked"
+    if call_status == "not_requested":
+        return "not_requested"
+    return "unknown"
+
+
+def _api_validation_rows(selected_apis: Iterable[str], call_ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ledger_by_api = {str(row.get("api") or ""): row for row in call_ledger}
+    selected_set = set(selected_apis)
+    rows: list[dict[str, Any]] = []
+    for capability in _api_capability_rows(selected_apis):
+        api = str(capability["api"])
+        ledger = ledger_by_api.get(api, {})
+        call_status = str(ledger.get("call_status") or ("not_requested" if api not in selected_set else "not_called"))
+        rows.append(
+            {
+                **capability,
+                "called": bool(ledger),
+                "call_status": call_status,
+                "validation_status": _validation_status(call_status),
+                "row_count": int(ledger.get("row_count") or 0),
+                "data_date": ledger.get("data_date"),
+                "local_fetched_at": ledger.get("local_fetched_at"),
+                "error_message_safe": ledger.get("error_message_safe", ""),
+                "parquet_status": ledger.get("parquet_status", "not_enabled" if not capability.get("parquet_enabled") else "not_written"),
+                "parquet_row_count": int(ledger.get("parquet_row_count") or 0),
+            }
+        )
+    return rows
+
+
+def _api_validation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_status: dict[str, int] = {}
+    by_group: dict[str, dict[str, int]] = {}
+    for row in rows:
+        status = str(row.get("validation_status") or "unknown")
+        group = str(row.get("group") or "unknown")
+        by_status[status] = by_status.get(status, 0) + 1
+        group_counts = by_group.setdefault(group, {})
+        group_counts[status] = group_counts.get(status, 0) + 1
+    selected_rows = [row for row in rows if row.get("selected")]
+    return {
+        "status": "ready",
+        "api_count": len(rows),
+        "selected_api_count": len(selected_rows),
+        "core_api_count": len([row for row in rows if row.get("group") == "core"]),
+        "calendar_api_count": len([row for row in rows if row.get("group") == "calendar"]),
+        "extended_api_count": len([row for row in rows if row.get("group") == "extended"]),
+        "parquet_enabled_api_count": len([row for row in rows if row.get("parquet_enabled")]),
+        "called_api_count": len([row for row in rows if row.get("called")]),
+        "validated_success_count": len([row for row in rows if row.get("validation_status") == "validated_success"]),
+        "validated_empty_count": len([row for row in rows if row.get("validation_status") == "validated_empty"]),
+        "validated_failed_count": len([row for row in rows if row.get("validation_status") == "validated_failed"]),
+        "blocked_count": len([row for row in rows if row.get("validation_status") == "blocked"]),
+        "not_requested_count": len([row for row in rows if row.get("validation_status") == "not_requested"]),
+        "status_counts": by_status,
+        "group_status_counts": by_group,
+        "cache_get_external_calls": False,
+        "button_gated_external_calls_only": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
 
 
 def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
@@ -322,17 +437,32 @@ def run_tushare_refresh_task(
         current_step = "tushare_refresh_blocked_missing_params"
         error_message_safe = _safe_text(blocked[0].get("error_message_safe") or "missing_required_params")
 
+    api_validation_rows = _api_validation_rows(selected_apis, call_ledger)
+    api_validation_summary = _api_validation_summary(api_validation_rows)
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
         "status": status,
         "task_type": task_type,
         "selected_apis": selected_apis,
+        "api_groups": {
+            "core": list(CORE_REFRESH_APIS),
+            "calendar": list(CALENDAR_REFRESH_APIS),
+            "extended": list(EXTENDED_REFRESH_APIS),
+            "all": list(REFRESH_API_SPECS.keys()),
+            "parquet_enabled": list(PARQUET_DATASETS.keys()),
+        },
+        "api_capability_rows": _api_capability_rows(selected_apis),
+        "api_validation_rows": api_validation_rows,
+        "api_validation_summary": api_validation_summary,
         "call_ledger": call_ledger,
         "call_count": len(call_ledger),
         "success_count": len(success_or_empty),
         "failed_count": len(failed),
         "blocked_count": len(blocked),
+        "parquet_enabled_api_count": api_validation_summary["parquet_enabled_api_count"],
+        "extended_api_count": api_validation_summary["extended_api_count"],
+        "calendar_api_count": api_validation_summary["calendar_api_count"],
         "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in call_ledger),
         "tushare_called": any(row.get("tushare_called") is True for row in call_ledger),
         "deepseek_called": False,

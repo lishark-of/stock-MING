@@ -1717,6 +1717,121 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["failed_count"], 0)
         self.assertTrue(persisted["tushare_called"])
         self.assertTrue(persisted["does_not_modify_strategy_action"])
+        self.assertIn("api_validation_rows", persisted)
+        self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], 3)
+        self.assertEqual(persisted["api_validation_summary"]["validated_success_count"], 3)
+        self.assertEqual(persisted["api_validation_summary"]["calendar_api_count"], 1)
+        self.assertEqual(persisted["api_groups"]["calendar"], ["trade_cal"])
+        validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
+        self.assertEqual(validation_by_api["daily"]["validation_status"], "validated_success")
+        self.assertEqual(validation_by_api["daily"]["group"], "core")
+        self.assertTrue(validation_by_api["daily"]["parquet_enabled"])
+        self.assertEqual(validation_by_api["trade_cal"]["validation_status"], "not_requested")
+        self.assertEqual(validation_by_api["trade_cal"]["group"], "calendar")
+        self.assertFalse(validation_by_api["trade_cal"]["parquet_enabled"])
+        self.assertFalse(validation_by_api["limit_list_d"]["selected"])
+
+    def test_tushare_refresh_task_validates_trade_calendar_and_extended_apis_without_parquet_claims(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class ExtendedFakeTushareAdapter:
+            def get_trade_cal(self, **params):
+                return {"ok": True, "data": [{"cal_date": "20260610", "is_open": 1}], "error": ""}
+
+            def get_margin_detail(self, **params):
+                return {"ok": True, "data": [], "error": ""}
+
+            def get_limit_cpt_list(self, **params):
+                return {"ok": False, "data": None, "error": "Traceback token=SHOULD_DROP"}
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "ts_code": "002008.SZ",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "apis": ["trade_cal", "margin_detail", "limit_cpt_list"],
+                "api_key": "SHOULD_DROP",
+            },
+            adapter=ExtendedFakeTushareAdapter(),
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tushare_refresh_partial_safe")
+        self.assertTrue(task["external_calls_triggered"])
+        self.assertTrue(task["tushare_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        ledger_by_api = {row["api"]: row for row in task["call_ledger"]}
+        self.assertEqual(ledger_by_api["trade_cal"]["call_status"], "success")
+        self.assertEqual(ledger_by_api["trade_cal"]["data_date"], "20260610")
+        self.assertEqual(ledger_by_api["trade_cal"]["parquet_status"], "not_enabled")
+        self.assertEqual(ledger_by_api["margin_detail"]["call_status"], "empty")
+        self.assertEqual(ledger_by_api["margin_detail"]["parquet_status"], "not_enabled")
+        self.assertEqual(ledger_by_api["limit_cpt_list"]["call_status"], "failed")
+        self.assertEqual(ledger_by_api["limit_cpt_list"]["error_message_safe"], "tushare_error_redacted_safe")
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["status"], "success")
+        self.assertEqual(persisted["success_count"], 2)
+        self.assertEqual(persisted["failed_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], 3)
+        self.assertEqual(persisted["api_validation_summary"]["validated_success_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["validated_empty_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["validated_failed_count"], 1)
+        validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
+        self.assertEqual(validation_by_api["trade_cal"]["group"], "calendar")
+        self.assertEqual(validation_by_api["trade_cal"]["validation_status"], "validated_success")
+        self.assertFalse(validation_by_api["trade_cal"]["parquet_enabled"])
+        self.assertEqual(validation_by_api["margin_detail"]["group"], "extended")
+        self.assertEqual(validation_by_api["margin_detail"]["validation_status"], "validated_empty")
+        self.assertFalse(validation_by_api["margin_detail"]["parquet_enabled"])
+        self.assertEqual(validation_by_api["limit_cpt_list"]["validation_status"], "validated_failed")
+        self.assertEqual(validation_by_api["daily"]["validation_status"], "not_requested")
+
+    def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class CalendarOnlyFakeAdapter:
+            def get_trade_cal(self, **params):
+                return {"ok": True, "data": [{"cal_date": "20260610", "is_open": 1}], "error": ""}
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {"include_extended": True, "start_date": "20260601", "end_date": "20260610"},
+            adapter=CalendarOnlyFakeAdapter(),
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertTrue(task["tushare_called"])
+        ledger_by_api = {row["api"]: row for row in task["call_ledger"]}
+        self.assertEqual(ledger_by_api["trade_cal"]["call_status"], "success")
+        self.assertEqual(ledger_by_api["daily"]["call_status"], "blocked_missing_ts_code")
+        self.assertEqual(ledger_by_api["margin_detail"]["call_status"], "blocked_missing_ts_code")
+        self.assertEqual(ledger_by_api["limit_cpt_list"]["call_status"], "failed")
+        self.assertFalse(ledger_by_api["daily"]["external_calls_triggered"])
+        self.assertTrue(ledger_by_api["trade_cal"]["external_calls_triggered"])
+        self.assertNotIn("Traceback", json.dumps(task, ensure_ascii=False))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        expected_blocked = [
+            api for api, spec in tushare_task_service.REFRESH_API_SPECS.items()
+            if api != "limit_cpt_list" and "ts_code" in spec["params"]
+        ]
+        self.assertEqual(persisted["blocked_count"], len(expected_blocked))
+        self.assertEqual(persisted["api_validation_summary"]["calendar_api_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], len(tushare_task_service.ALL_REFRESH_APIS))
+        self.assertEqual(persisted["api_validation_summary"]["blocked_count"], persisted["blocked_count"])
 
     def test_tushare_refresh_task_failure_keeps_safe_error_and_action_boundary(self):
         self._with_meta_store()
@@ -1985,9 +2100,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["refresh_tushare_facts"]["route"], "POST /api/tasks/refresh-tushare-facts")
         self.assertEqual(by_type["refresh_tushare_facts"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertIn("tushare", by_type["refresh_tushare_facts"]["possible_external_sources"])
+        self.assertEqual(by_type["refresh_tushare_facts"]["default_core_apis"], ["daily", "daily_basic", "moneyflow"])
+        self.assertEqual(by_type["refresh_tushare_facts"]["calendar_apis"], ["trade_cal"])
+        self.assertIn("limit_cpt_list", by_type["refresh_tushare_facts"]["optional_extended_apis"])
+        self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
         self.assertEqual(by_type["refresh_factor_data"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertIn("tushare", by_type["refresh_factor_data"]["possible_external_sources"])
+        self.assertEqual(by_type["refresh_factor_data"]["calendar_apis"], ["trade_cal"])
+        self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])
         self.assertEqual(by_type["run_deepseek_factor_explanation"]["deepseek_model_strategy_purpose"], "factor_explain")
         self.assertIn("DEEPSEEK_EXPLAIN_MODEL", by_type["run_deepseek_factor_explanation"]["deepseek_model_config_keys"])
