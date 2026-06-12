@@ -81,6 +81,61 @@ def _package_json_summary() -> dict[str, Any]:
     }
 
 
+def _api_base_summary(api_base: str) -> dict[str, Any]:
+    normalized = str(api_base or "").strip()
+    is_local = normalized.startswith("http://127.0.0.1") or normalized.startswith("http://localhost")
+    return {
+        "api_base": normalized,
+        "is_localhost": is_local,
+        "expected_health_endpoint": f"{normalized.rstrip('/')}/health" if normalized else "",
+        "configured_by": "VITE_API_BASE_URL" if os.getenv("VITE_API_BASE_URL") else "default_localhost_8710",
+        "frontend_uses_fastapi_only": True,
+        "contains_secret": False,
+        "does_not_autostart_backend": True,
+    }
+
+
+def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "step": "1",
+            "name": "启动 FastAPI 后端",
+            "command": "scripts/dev_server.sh",
+            "required_for": "React/Tauri 页面读取 cache API",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+        },
+        {
+            "step": "2",
+            "name": "启动 Vite 前端",
+            "command": "cd desktop && npm run dev",
+            "required_for": "浏览器开发模式",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+        },
+        {
+            "step": "3",
+            "name": "启动 Tauri 桌面壳",
+            "command": "cd desktop && npm run tauri dev",
+            "required_for": "桌面窗口开发模式；需要 Rust/Cargo",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+        },
+        {
+            "step": "check",
+            "name": "连接检查",
+            "command": f"GET {api_base.rstrip('/')}/health",
+            "required_for": "确认前端只连接本地 FastAPI",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+        },
+    ]
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     file_rows = [
@@ -111,6 +166,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     vite_dev_ready = scaffold_ready and node_ready
     tauri_dev_ready = vite_dev_ready and rust_ready
     api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
+    api_base_info = _api_base_summary(api_base)
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -121,6 +177,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "read_only": True,
         "loaded_at": _now_iso(),
         "api_base": api_base,
+        "api_base_info": api_base_info,
+        "dev_launch_plan": _dev_launch_plan(api_base),
         "package_json": package_summary,
         "file_rows": file_rows,
         "command_rows": command_rows,
@@ -141,6 +199,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "tauri_build_attempted": False,
             "vite_build_attempted": False,
             "fastapi_dev_server_started": False,
+            "api_base_is_localhost": api_base_info["is_localhost"],
+            "api_health_endpoint": api_base_info["expected_health_endpoint"],
+            "backend_autostart_configured": False,
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -149,6 +210,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "does_not_run_tauri": True,
             "does_not_run_cargo": True,
             "does_not_start_fastapi": True,
+            "frontend_must_use_fastapi_api_client": True,
+            "backend_autostart_enabled": False,
+            "api_base_must_be_localhost": True,
             "does_not_call_tushare": True,
             "does_not_call_deepseek": True,
             "does_not_call_github": True,
@@ -176,6 +240,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "warnings": [
             "GET /api/desktop/preflight-cache 只读检查本地 React/Tauri scaffold；不会运行 npm install、npm build、cargo 或 Tauri。",
             "Rust/Cargo 缺失不阻断 Vite 前端；只有 Tauri dev/build 需要 Rust 工具链。",
+            "Tauri 开发模式当前不自动拉起 FastAPI；请先运行 scripts/dev_server.sh，再启动 Vite 或 Tauri dev。",
             "桌面壳预检不读取 token/key，不调用 Tushare、DeepSeek、GitHub，不执行真实交易。",
         ],
     }

@@ -17,11 +17,15 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("cargo_lock", source)
         self.assertIn("tauri_icon", source)
         self.assertIn("VITE_API_BASE_URL", source)
+        self.assertIn("fastapi_dev_command=scripts/dev_server.sh", source)
+        self.assertIn("tauri_dev_command=cd desktop && npm run tauri dev", source)
+        self.assertIn("backend_autostart=false", source)
         self.assertIn("external_calls_triggered=false", source)
         self.assertIn("secrets_loaded=false", source)
         self.assertIn("real_trading_triggered=false", source)
+        self.assertIn("frontend_uses_fastapi_only=true", source)
         self.assertNotIn("npm install", source)
-        self.assertNotIn("npm run tauri dev", source)
+        self.assertNotIn("npm run tauri dev >/dev/null", source)
         self.assertNotIn("cargo build", source)
 
     def test_preflight_script_runs_without_requiring_rust(self):
@@ -38,9 +42,12 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("tauri_dev_ready=", output)
         self.assertIn("cargo_lock=", output)
         self.assertIn("tauri_icon=", output)
+        self.assertIn("fastapi_dev_command=scripts/dev_server.sh", output)
+        self.assertIn("backend_autostart=false", output)
         self.assertIn("external_calls_triggered=false", output)
         self.assertIn("secrets_loaded=false", output)
         self.assertIn("real_trading_triggered=false", output)
+        self.assertIn("frontend_uses_fastapi_only=true", output)
 
 
 if __name__ == "__main__":

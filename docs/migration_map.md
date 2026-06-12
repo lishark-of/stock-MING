@@ -25,7 +25,7 @@
 | Packet Registry | `command_center_packet_registry.py` | `GET /api/packets`, `GET /api/packets/{packet_key}` | `CommandCenterHome.tsx` | 否；读取优先级为 `sqlite_meta > snapshot > local_builder > missing` | 否 |
 | Storage datasets | `storage/parquet_store.py`, `storage/duckdb_store.py` | `GET /api/storage`, `GET /api/storage/catalog`, `GET /api/storage/{dataset}` | `CommandCenterHome.tsx` | 否，只读 Parquet/DuckDB 状态和数据集目录；白名单 `factor_values/daily/daily_basic/moneyflow/trade_cal/backtest_results` | 否 |
 | Worker / Task runtime | `worker/celery_app.py`, `worker/tasks_*.py`, `worker/scheduler.py`, `server/services/task_service.py` | `GET /api/worker/cache`, `GET /api/tasks`, `POST /api/tasks/{task_id}/cancel` | `WorkerRuntime.tsx`, `TaskCatalog.tsx` | cache GET 不连接 Redis、不启动 Celery、不启动 APScheduler；取消任务只改本地状态 | 是，POST task / cancel 走 FastAPI lifecycle |
-| Tauri desktop shell | `desktop/src-tauri/*`, `scripts/check_tauri_env.sh` | 连接本地 FastAPI `8710` | Tauri window / Vite dev | 否，预检不启动 Tauri | 否 |
+| Tauri desktop shell | `desktop/src-tauri/*`, `scripts/check_tauri_env.sh`, `server/services/desktop_service.py` | `GET /api/desktop/preflight-cache`，连接本地 FastAPI `8710` | `DesktopShellPreflight.tsx` / Tauri window / Vite dev | 否，预检只展示 `api_base_info` 与 `dev_launch_plan`，不启动 Tauri、不自动拉起 FastAPI | 否 |
 | Streamlit 旧工作台 | `app.py`, `visual_components.py` | `GET /api/legacy/cache`；作为 legacy | `LegacyTools.tsx` | cache GET 只读展示旧工作台桥接、迁移清单、旧数据缺失账本，不运行旧工具 | 后续任务化；当前不提供 POST |
 
 ## 当前可用 API

@@ -8,6 +8,10 @@ echo "Command Center 3.0 Tauri preflight"
 echo "project_root=${ROOT_DIR}"
 echo "desktop_dir=${DESKTOP_DIR}"
 echo "api_base=${VITE_API_BASE_URL:-http://127.0.0.1:8710}"
+echo "fastapi_dev_command=scripts/dev_server.sh"
+echo "vite_dev_command=cd desktop && npm run dev"
+echo "tauri_dev_command=cd desktop && npm run tauri dev"
+echo "backend_autostart=false"
 echo
 
 check_command() {
@@ -81,3 +85,5 @@ fi
 echo "external_calls_triggered=false"
 echo "secrets_loaded=false"
 echo "real_trading_triggered=false"
+echo "api_base_localhost=true"
+echo "frontend_uses_fastapi_only=true"

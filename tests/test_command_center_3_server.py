@@ -170,6 +170,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["does_not_run_npm_build"])
         self.assertTrue(desktop["policy"]["does_not_run_tauri"])
         self.assertTrue(desktop["policy"]["does_not_run_cargo"])
+        self.assertTrue(desktop["policy"]["frontend_must_use_fastapi_api_client"])
+        self.assertFalse(desktop["policy"]["backend_autostart_enabled"])
+        self.assertTrue(desktop["policy"]["api_base_must_be_localhost"])
+        self.assertTrue(desktop["api_base_info"]["is_localhost"])
+        self.assertEqual(desktop["api_base_info"]["expected_health_endpoint"], "http://127.0.0.1:8710/health")
+        self.assertTrue(desktop["api_base_info"]["frontend_uses_fastapi_only"])
+        self.assertTrue(desktop["api_base_info"]["does_not_autostart_backend"])
+        self.assertEqual(desktop["runtime"]["api_health_endpoint"], "http://127.0.0.1:8710/health")
+        self.assertFalse(desktop["runtime"]["backend_autostart_configured"])
+        self.assertEqual([row["command"] for row in desktop["dev_launch_plan"][:3]], [
+            "scripts/dev_server.sh",
+            "cd desktop && npm run dev",
+            "cd desktop && npm run tauri dev",
+        ])
+        self.assertTrue(all(row["manual"] for row in desktop["dev_launch_plan"]))
+        self.assertTrue(all(row["external_calls_triggered"] is False for row in desktop["dev_launch_plan"]))
+        self.assertTrue(all(row["loads_token_or_key"] is False for row in desktop["dev_launch_plan"]))
         self.assertTrue(desktop["does_not_execute_trades"])
         self.assertTrue(desktop["does_not_modify_strategy_action"])
         self.assertEqual(desktop["call_ledger"][0]["api"], "local_desktop_shell_preflight_cache")
