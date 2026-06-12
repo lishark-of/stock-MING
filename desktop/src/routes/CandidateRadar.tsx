@@ -58,6 +58,7 @@ export default function CandidateRadar() {
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
+  const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
   const localPoolAudit = (cache.local_candidate_pool_audit as Record<string, unknown> | undefined) ?? {};
@@ -71,6 +72,8 @@ export default function CandidateRadar() {
   const legacyParityRows = rows(cache.legacy_parity_rows);
   const legacyOutputRows = rows(cache.legacy_output_contract_rows);
   const scanModeRows = rows(cache.scan_mode_status_rows);
+  const providerCoverageRows = rows(cache.provider_coverage_rows);
+  const degradedModeRows = rows(cache.degraded_mode_rows);
 
   return (
     <>
@@ -87,8 +90,13 @@ export default function CandidateRadar() {
           { label: "只观察", value: counts.observe_count as number | undefined },
           { label: "待验证", value: counts.verify_count as number | undefined },
           { label: "scan mode", value: String(cache.scan_mode ?? "--") },
+          { label: "universe", value: coverageDetail.universe_size as number | undefined },
           { label: "覆盖组", value: scanCoverage.mapped_signal_group_count as number | undefined },
           { label: "缺口组", value: scanCoverage.missing_signal_group_count as number | undefined, tone: scanCoverage.missing_signal_group_count ? "warn" : "good" },
+          { label: "provider blocked", value: counts.provider_blocked_group_count as number | undefined, tone: counts.provider_blocked_group_count ? "warn" : "good" },
+          { label: "stale inputs", value: counts.stale_input_group_count as number | undefined, tone: counts.stale_input_group_count ? "warn" : "good" },
+          { label: "missing provider", value: counts.missing_provider_data_group_count as number | undefined, tone: counts.missing_provider_data_group_count ? "warn" : "good" },
+          { label: "degraded modes", value: counts.degraded_mode_active_count as number | undefined, tone: counts.degraded_mode_active_count ? "warn" : "good" },
           { label: "parity gap", value: counts.legacy_parity_gap_count as number | undefined, tone: counts.legacy_parity_gap_count ? "warn" : "good" },
           { label: "parity mapped", value: counts.legacy_parity_mapped_count as number | undefined },
           { label: "跳过原因", value: scanCoverage.skipped_reason_count as number | undefined, tone: scanCoverage.skipped_reason_count ? "warn" : "good" },
@@ -146,6 +154,14 @@ export default function CandidateRadar() {
 
       <PacketCard title="旧雷达信号组覆盖" subtitle="legacy_signal_group_rows；缺口只报告，不静默降能" status={String(scanCoverage.coverage_status ?? "coverage")}>
         <DataLineageTable rows={legacySignalRows} />
+      </PacketCard>
+
+      <PacketCard title="扫描覆盖明细" subtitle="coverage_detail_summary / provider_coverage_rows / degraded_mode_rows；缺失不静默降能" status={String(coverageDetail.degraded_mode_active ? "degraded" : "coverage")}>
+        <p>universe size、provider-blocked groups、stale inputs、missing provider data 和 degraded modes 必须显式展示；页面渲染不会补数或触发 full-pool scan。</p>
+        <p>missing provider data is reported, not dropped；quick scan 仍是 research-only，不替代 legacy full scan。</p>
+        <DataLineageTable rows={objectRow(coverageDetail)} />
+        <DataLineageTable rows={providerCoverageRows} />
+        <DataLineageTable rows={degradedModeRows} />
       </PacketCard>
 
       <div className="grid">

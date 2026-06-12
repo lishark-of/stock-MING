@@ -1667,6 +1667,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 ],
                 "candidate_execution_evidence_overview": {"headline": "仍待验证"},
                 "next_ticket_evidence_recovery_actions": [{"label": "涨跌停/情绪", "status": "missing"}],
+                "a_share_capability_matrix": [
+                    {"provider": "Tushare", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                    {"provider": "Tushare", "api": "top_list", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"provider": "Tushare", "api": "limit_cpt_list", "capability_state": "stale_cache", "status": "使用缓存"},
+                    {"provider": "Tushare", "api": "cyq_perf", "capability_state": "empty_recent", "status": "近期无数据"},
+                ],
                 "data_freshness": {
                     "state": "fresh",
                     "expected_trade_date": "2026-06-12",
@@ -1688,6 +1694,29 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["freshness_state"]["state"], "fresh")
         self.assertEqual(packet["freshness_state"]["expected_trade_date"], "2026-06-12")
         self.assertGreaterEqual(packet["scan_coverage"]["skipped_reason_count"], 1)
+        self.assertEqual(packet["coverage_detail_summary"]["universe_size"], 1)
+        self.assertEqual(packet["coverage_detail_summary"]["provider_signal_group_count"], 5)
+        self.assertEqual(packet["coverage_detail_summary"]["provider_blocked_group_count"], 1)
+        self.assertEqual(packet["coverage_detail_summary"]["stale_input_group_count"], 1)
+        self.assertEqual(packet["coverage_detail_summary"]["missing_provider_data_group_count"], 2)
+        self.assertTrue(packet["coverage_detail_summary"]["degraded_mode_active"])
+        self.assertFalse(packet["coverage_detail_summary"]["full_pool_scan_done"])
+        self.assertTrue(packet["coverage_detail_summary"]["missing_data_is_reported_not_dropped"])
+        provider_by_group = {row["signal_group"]: row for row in packet["provider_coverage_rows"]}
+        self.assertEqual(provider_by_group["moneyflow"]["coverage_status"], "available")
+        self.assertEqual(provider_by_group["dragon_tiger"]["coverage_status"], "provider_blocked")
+        self.assertEqual(provider_by_group["limit_emotion"]["coverage_status"], "stale_input")
+        self.assertEqual(provider_by_group["chip_radar"]["coverage_status"], "missing_provider_data")
+        self.assertEqual(provider_by_group["hard_risk"]["coverage_status"], "missing_provider_data")
+        degraded_by_mode = {row["mode"]: row for row in packet["degraded_mode_rows"]}
+        self.assertTrue(degraded_by_mode["provider_blocked"]["active"])
+        self.assertTrue(degraded_by_mode["stale_input"]["active"])
+        self.assertTrue(degraded_by_mode["missing_provider_data"]["active"])
+        self.assertTrue(degraded_by_mode["full_pool_scan_pending"]["active"])
+        skipped_reasons = {row["reason"] for row in packet["skipped_reason_rows"]}
+        self.assertIn("radar_provider_blocked", skipped_reasons)
+        self.assertIn("radar_provider_stale_input", skipped_reasons)
+        self.assertIn("radar_provider_missing_data", skipped_reasons)
         self.assertIn("skipped_reason_rows", packet)
         self.assertEqual(packet["legacy_parity_inventory"]["status"], "partial_parity")
         self.assertFalse(packet["legacy_parity_inventory"]["quick_scan_is_full_replacement"])
@@ -1705,6 +1734,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
         self.assertTrue(packet["policy"]["does_not_scan_market"])
         self.assertTrue(packet["policy"]["candidate_is_not_buy_instruction"])
+        self.assertTrue(packet["policy"]["provider_gaps_are_reported"])
+        self.assertTrue(packet["policy"]["missing_provider_data_is_not_silently_dropped"])
+        self.assertTrue(packet["policy"]["stale_inputs_are_research_only"])
+        self.assertTrue(packet["policy"]["degraded_modes_are_visible"])
+        self.assertTrue(packet["policy"]["full_pool_scan_requires_future_worker"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -4740,6 +4774,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "next_ticket_candidates": [
                     {"rank": 1, "ticker": "002837.SZ", "name": "英维克", "score": 47, "action_state": "只观察"}
                 ],
+                "a_share_capability_matrix": [
+                    {"provider": "Tushare", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                    {"provider": "Tushare", "api": "top_inst", "capability_state": "permission_denied", "status": "权限不足"},
+                    {"provider": "Tushare", "api": "cyq_chips", "capability_state": "stale_cache", "status": "使用缓存"},
+                ],
             }
         )
 
@@ -4750,6 +4789,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["packet_key"], "command_center_3_candidate_radar_cache")
         self.assertEqual(packet["status"], "ready")
         self.assertEqual(packet["candidate_rows"][0]["ticker"], "002837.SZ")
+        self.assertEqual(packet["coverage_detail_summary"]["provider_blocked_group_count"], 1)
+        self.assertEqual(packet["coverage_detail_summary"]["stale_input_group_count"], 1)
+        self.assertGreaterEqual(packet["coverage_detail_summary"]["missing_provider_data_group_count"], 1)
+        self.assertIn("provider_coverage_rows", packet)
+        self.assertIn("degraded_mode_rows", packet)
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         self.assertTrue(packet["policy"]["does_not_scan_market"])
         self.assertTrue(packet["policy"]["candidate_is_not_buy_instruction"])

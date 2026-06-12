@@ -176,6 +176,61 @@ SCAN_MODE_STATUS_ROWS = [
         "notes": "Not part of quick scan; output must remain research-only.",
     },
 ]
+RADAR_PROVIDER_SIGNAL_REQUIREMENTS = [
+    {
+        "signal_group": "moneyflow",
+        "label": "资金流",
+        "apis": ["moneyflow"],
+        "legacy_role": "candidate fund-flow confirmation",
+    },
+    {
+        "signal_group": "dragon_tiger",
+        "label": "龙虎榜",
+        "apis": ["top_list", "top_inst"],
+        "legacy_role": "hot-money and institutional behavior",
+    },
+    {
+        "signal_group": "limit_emotion",
+        "label": "涨跌停/情绪",
+        "apis": ["stk_limit", "limit_list_d", "limit_cpt_list"],
+        "legacy_role": "limit-up/down and market emotion",
+    },
+    {
+        "signal_group": "chip_radar",
+        "label": "筹码/胜率",
+        "apis": ["cyq_perf", "cyq_chips"],
+        "legacy_role": "chip distribution and winner-rate pressure",
+    },
+    {
+        "signal_group": "hard_risk",
+        "label": "硬风险",
+        "apis": ["anns_d", "forecast", "pledge", "holdertrade", "share_float", "stk_surv"],
+        "legacy_role": "announcement and structural risk exclusion",
+    },
+]
+PROVIDER_BLOCKED_MARKERS = {
+    "blocked",
+    "permission_denied",
+    "not_configured",
+    "disabled_this_session",
+    "runtime_secret_missing",
+    "requires_manual_config",
+    "权限不足",
+    "未配置",
+    "本会话跳过",
+}
+PROVIDER_STALE_MARKERS = {"stale", "stale_cache", "expired", "historical", "fallback_used", "使用缓存", "过期"}
+PROVIDER_MISSING_MARKERS = {
+    "missing",
+    "empty_recent",
+    "not_loaded",
+    "no_data",
+    "cache_missing",
+    "matrix_only",
+    "近期无数据",
+    "缺失",
+}
+PROVIDER_AVAILABLE_MARKERS = {"available", "ready", "success", "validated", "可用", "完成"}
 
 
 def _now_iso() -> str:
@@ -734,12 +789,214 @@ def _candidate_freshness_state(snapshot_map: Mapping[str, Any]) -> dict[str, Any
     }
 
 
+def _rows_from_any(value: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if isinstance(value, Mapping):
+        for key in ("rows", "items", "providers", "capabilities", "data", "records"):
+            nested = value.get(key)
+            if isinstance(nested, list):
+                rows.extend(_rows_from_any(nested))
+        if not rows and any(key in value for key in ("provider", "api", "capability_state", "status", "state", "label")):
+            rows.append(dict(value))
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, Mapping):
+                rows.extend(_rows_from_any(item))
+    return rows[:120]
+
+
+def _provider_capability_rows(snapshot_map: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for source_key in (
+        "data_health_ledger",
+        "command_center_data_health_ledger",
+        "a_share_capability_matrix",
+        "provider_data_capability_cockpit",
+        "provider_recovery_matrix",
+        "data_gap_report",
+    ):
+        for row in _rows_from_any(snapshot_map.get(source_key)):
+            safe = _safe_value(row)
+            if not isinstance(safe, dict):
+                continue
+            safe.setdefault("source_key", source_key)
+            rows.append(safe)
+    return rows[:160]
+
+
+def _provider_row_api_text(row: Mapping[str, Any]) -> str:
+    values = [
+        row.get("api"),
+        row.get("interface"),
+        row.get("section"),
+        row.get("fact_key"),
+        row.get("group"),
+        row.get("label"),
+        row.get("name"),
+    ]
+    return " ".join(str(value or "").lower() for value in values)
+
+
+def _provider_status_text(row: Mapping[str, Any]) -> str:
+    values = [
+        row.get("capability_state"),
+        row.get("status"),
+        row.get("state"),
+        row.get("readiness"),
+        row.get("call_status"),
+        row.get("validation_status"),
+        row.get("error"),
+        row.get("message"),
+    ]
+    return " ".join(str(value or "").lower() for value in values)
+
+
+def _classify_provider_status(row: Mapping[str, Any]) -> str:
+    status_text = _provider_status_text(row)
+    if any(marker.lower() in status_text for marker in PROVIDER_BLOCKED_MARKERS):
+        return "provider_blocked"
+    if any(marker.lower() in status_text for marker in PROVIDER_STALE_MARKERS):
+        return "stale_input"
+    if any(marker.lower() in status_text for marker in PROVIDER_MISSING_MARKERS):
+        return "missing_provider_data"
+    if any(marker.lower() in status_text for marker in PROVIDER_AVAILABLE_MARKERS):
+        return "available"
+    return "unknown"
+
+
+def _provider_coverage_rows(snapshot_map: Mapping[str, Any]) -> list[dict[str, Any]]:
+    capability_rows = _provider_capability_rows(snapshot_map)
+    coverage_rows: list[dict[str, Any]] = []
+    for requirement in RADAR_PROVIDER_SIGNAL_REQUIREMENTS:
+        apis = [str(api).lower() for api in requirement["apis"]]
+        matched = [row for row in capability_rows if any(api in _provider_row_api_text(row) for api in apis)]
+        classifications = [_classify_provider_status(row) for row in matched]
+        if not matched:
+            coverage_status = "missing_provider_data"
+            severity = "coverage_gap"
+        elif "provider_blocked" in classifications:
+            coverage_status = "provider_blocked"
+            severity = "provider_blocked"
+        elif "stale_input" in classifications:
+            coverage_status = "stale_input"
+            severity = "freshness_gap"
+        elif "missing_provider_data" in classifications:
+            coverage_status = "missing_provider_data"
+            severity = "coverage_gap"
+        elif "available" in classifications:
+            coverage_status = "available"
+            severity = "ok"
+        else:
+            coverage_status = "unknown"
+            severity = "coverage_unknown"
+        coverage_rows.append(
+            {
+                "signal_group": requirement["signal_group"],
+                "label": requirement["label"],
+                "required_apis": requirement["apis"],
+                "legacy_role": requirement["legacy_role"],
+                "matched_provider_row_count": len(matched),
+                "coverage_status": coverage_status,
+                "severity": severity,
+                "source_keys": sorted({str(row.get("source_key") or "") for row in matched if row.get("source_key")}),
+                "matched_apis": sorted(
+                    {
+                        str(row.get("api") or row.get("interface") or row.get("section") or "")
+                        for row in matched
+                        if row.get("api") or row.get("interface") or row.get("section")
+                    }
+                ),
+                "reported_as_gap": coverage_status != "available",
+                "does_not_refresh_provider": True,
+                "does_not_call_external_sources": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_execute_trades": True,
+            }
+        )
+    return coverage_rows
+
+
+def _degraded_mode_rows(
+    *,
+    scan_mode: str,
+    provider_rows: list[dict[str, Any]],
+    freshness_state: Mapping[str, Any],
+    local_pool_audit: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = [
+        {
+            "mode": "local_cache_only",
+            "active": True,
+            "severity": "info",
+            "reason": "radar_scan_reads_local_snapshot_without_provider_refresh",
+            "user_visible": True,
+            "does_not_call_external_sources": True,
+        },
+        {
+            "mode": "full_pool_scan_pending",
+            "active": scan_mode != "full_pool_scan",
+            "severity": "future_task",
+            "reason": "full_pool_scan_requires_future_worker_task",
+            "user_visible": True,
+            "does_not_scan_full_market_on_render": True,
+        },
+    ]
+    status_counts = {
+        "provider_blocked": sum(1 for row in provider_rows if row.get("coverage_status") == "provider_blocked"),
+        "stale_input": sum(1 for row in provider_rows if row.get("coverage_status") == "stale_input"),
+        "missing_provider_data": sum(1 for row in provider_rows if row.get("coverage_status") == "missing_provider_data"),
+    }
+    for status, count in status_counts.items():
+        rows.append(
+            {
+                "mode": status,
+                "active": bool(count),
+                "severity": "coverage_gap" if status != "stale_input" else "freshness_gap",
+                "affected_group_count": count,
+                "reason": f"{status}_reported_without_refresh",
+                "user_visible": True,
+                "does_not_call_external_sources": True,
+            }
+        )
+    freshness = str(freshness_state.get("state") or "").lower()
+    rows.append(
+        {
+            "mode": "freshness_research_only",
+            "active": freshness_state.get("source") == "missing" or freshness in {"stale", "expired", "historical", "unknown"},
+            "severity": "freshness_gap",
+            "reason": "stale_or_missing_freshness_is_display_only",
+            "user_visible": True,
+            "does_not_modify_strategy_action": True,
+        }
+    )
+    if local_pool_audit:
+        rows.append(
+            {
+                "mode": "local_pool_partial",
+                "active": bool(
+                    local_pool_audit.get("duplicate_candidate_count")
+                    or local_pool_audit.get("invalid_candidate_count")
+                    or local_pool_audit.get("disabled_candidate_count")
+                    or local_pool_audit.get("truncated_candidate_count")
+                    or not candidate_rows
+                ),
+                "severity": "input_gap",
+                "reason": "local_pool_skips_are_visible_and_do_not_trigger_broad_scan",
+                "user_visible": True,
+                "does_not_scan_full_market_on_render": True,
+            }
+        )
+    return rows
+
+
 def _skipped_reason_rows(
     *,
     source_rows: list[dict[str, Any]],
     candidate_rows: list[dict[str, Any]],
     excluded_candidates: list[Any],
     freshness_state: Mapping[str, Any],
+    provider_coverage_rows: list[dict[str, Any]] | None = None,
     local_pool_audit: Mapping[str, Any] | None = None,
     local_pool_skipped_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
@@ -764,6 +1021,24 @@ def _skipped_reason_rows(
                 "group": row.get("group"),
                 "severity": "coverage_gap",
                 "action": "report_gap_do_not_silently_drop",
+            }
+        )
+    for row in provider_coverage_rows or []:
+        status = str(row.get("coverage_status") or "")
+        if status == "available":
+            continue
+        reason = {
+            "provider_blocked": "radar_provider_blocked",
+            "stale_input": "radar_provider_stale_input",
+            "missing_provider_data": "radar_provider_missing_data",
+        }.get(status, "radar_provider_unknown")
+        rows.append(
+            {
+                "reason": reason,
+                "group": row.get("signal_group"),
+                "severity": row.get("severity") or "coverage_gap",
+                "matched_provider_row_count": row.get("matched_provider_row_count"),
+                "action": "report_provider_gap_do_not_refresh_on_render",
             }
         )
     if not candidate_rows:
@@ -821,24 +1096,80 @@ def _scan_coverage(
     present = [row for row in source_rows if row["present"]]
     missing = [str(row["group"]) for row in source_rows if not row["present"]]
     freshness_state = _candidate_freshness_state(snapshot_map)
+    provider_rows = _provider_coverage_rows(snapshot_map)
     skipped_rows = _skipped_reason_rows(
         source_rows=source_rows,
         candidate_rows=candidate_rows,
         excluded_candidates=excluded_candidates,
         freshness_state=freshness_state,
+        provider_coverage_rows=provider_rows,
         local_pool_audit=local_pool_audit,
         local_pool_skipped_rows=local_pool_skipped_rows,
     )
     audit = local_pool_audit or {}
+    universe_mode = (
+        "local_watchlist"
+        if scan_mode == "watchlist_scan"
+        else "manual_input"
+        if scan_mode == "custom_pool_scan"
+        else "cache_snapshot"
+    )
+    universe_size = (
+        audit.get("input_candidate_count")
+        if audit.get("input_candidate_count") is not None
+        else len(candidate_rows) + len(excluded_candidates)
+    )
+    degraded_rows = _degraded_mode_rows(
+        scan_mode=scan_mode,
+        provider_rows=provider_rows,
+        freshness_state=freshness_state,
+        local_pool_audit=audit,
+        candidate_rows=candidate_rows,
+    )
+    provider_blocked_count = sum(1 for row in provider_rows if row.get("coverage_status") == "provider_blocked")
+    stale_input_count = sum(1 for row in provider_rows if row.get("coverage_status") == "stale_input")
+    missing_provider_count = sum(1 for row in provider_rows if row.get("coverage_status") == "missing_provider_data")
+    degraded_active_count = sum(1 for row in degraded_rows if row.get("active"))
+    coverage_detail_summary = {
+        "scan_mode": scan_mode,
+        "universe_mode": universe_mode,
+        "universe_size": int(universe_size or 0),
+        "candidate_count": len(candidate_rows),
+        "excluded_candidate_count": len(excluded_candidates),
+        "provider_signal_group_count": len(provider_rows),
+        "provider_blocked_group_count": provider_blocked_count,
+        "stale_input_group_count": stale_input_count,
+        "missing_provider_data_group_count": missing_provider_count,
+        "degraded_mode_count": len(degraded_rows),
+        "degraded_mode_active_count": degraded_active_count,
+        "degraded_mode_active": bool(degraded_active_count),
+        "quick_scan_is_research_only": True,
+        "full_pool_scan_done": False,
+        "full_pool_scan_requires_worker": True,
+        "missing_data_is_reported_not_dropped": True,
+        "does_not_call_external_sources": True,
+        "does_not_scan_full_market_on_render": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
     return {
         "scan_mode": scan_mode,
         "scan_scope": "local_snapshot_cache_only",
         "snapshot_available": snapshot_available,
+        "universe_mode": universe_mode,
+        "universe_size": int(universe_size or 0),
         "legacy_signal_group_count": len(source_rows),
         "mapped_signal_group_count": len(present),
         "missing_signal_group_count": len(missing),
         "missing_signal_groups": missing,
         "legacy_signal_group_rows": source_rows,
+        "provider_signal_group_count": len(provider_rows),
+        "provider_blocked_group_count": provider_blocked_count,
+        "stale_input_group_count": stale_input_count,
+        "missing_provider_data_group_count": missing_provider_count,
+        "provider_coverage_rows": provider_rows,
+        "degraded_mode_rows": degraded_rows,
+        "coverage_detail_summary": coverage_detail_summary,
         "candidate_count": len(candidate_rows),
         "local_pool_input_candidate_count": audit.get("input_candidate_count"),
         "local_pool_normalized_candidate_count": audit.get("normalized_candidate_count"),
@@ -903,6 +1234,11 @@ def _build_candidate_radar_packet(
         counts["local_pool_input_candidate_count"] = local_pool_audit.get("input_candidate_count")
         counts["local_pool_normalized_candidate_count"] = local_pool_audit.get("normalized_candidate_count")
         counts["local_pool_duplicate_candidate_count"] = local_pool_audit.get("duplicate_candidate_count")
+    counts["provider_blocked_group_count"] = coverage["coverage_detail_summary"]["provider_blocked_group_count"]
+    counts["stale_input_group_count"] = coverage["coverage_detail_summary"]["stale_input_group_count"]
+    counts["missing_provider_data_group_count"] = coverage["coverage_detail_summary"]["missing_provider_data_group_count"]
+    counts["degraded_mode_active_count"] = coverage["coverage_detail_summary"]["degraded_mode_active_count"]
+    counts["universe_size"] = coverage["coverage_detail_summary"]["universe_size"]
 
     if candidate_rows:
         status = "ready"
@@ -939,6 +1275,9 @@ def _build_candidate_radar_packet(
         or "下一票候选来自本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
         "counts": counts,
         "scan_coverage": coverage,
+        "coverage_detail_summary": coverage["coverage_detail_summary"],
+        "provider_coverage_rows": coverage["provider_coverage_rows"],
+        "degraded_mode_rows": coverage["degraded_mode_rows"],
         "local_candidate_pool_audit": dict(local_pool_audit or _as_dict(snapshot_map.get("local_candidate_pool_audit"))),
         "local_candidate_pool_skipped_rows": list(local_pool_skipped_rows or _as_list(snapshot_map.get("local_candidate_pool_skipped_rows"))),
         "legacy_signal_group_rows": coverage["legacy_signal_group_rows"],
@@ -978,6 +1317,11 @@ def _build_candidate_radar_packet(
             "custom_pool_scan_reads_local_input_only": scan_mode == "custom_pool_scan",
             "quick_scan_preserves_legacy_signal_groups": True,
             "missing_legacy_groups_are_reported": True,
+            "provider_gaps_are_reported": True,
+            "missing_provider_data_is_not_silently_dropped": True,
+            "stale_inputs_are_research_only": True,
+            "degraded_modes_are_visible": True,
+            "full_pool_scan_requires_future_worker": True,
             "does_not_run_backtest": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -1007,6 +1351,7 @@ def _build_candidate_radar_packet(
             "POST /api/candidate-radar/scan-quick 只扫描本地缓存并记录覆盖缺口；不会调用外部源。",
             "候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。",
             "本页不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。",
+            "provider 阻断、stale 输入、缺失 provider 数据和降级模式会作为 coverage gap 展示，不会在页面渲染时补数。",
         ],
     }
     if not candidate_rows:
