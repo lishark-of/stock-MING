@@ -6,6 +6,7 @@ import {
   getStorageDataset,
   getStorageOverview,
   postStorageArtifactCleanupDryRun,
+  postStorageSchemaValidationDryRun,
   type TaskCreationEnvelope
 } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
@@ -28,6 +29,8 @@ export default function StorageOverview() {
   const [datasetDetails, setDatasetDetails] = useState<Record<string, Record<string, unknown>>>({});
   const [dryRunTaskId, setDryRunTaskId] = useState("");
   const [dryRunReceipt, setDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [schemaValidationTaskId, setSchemaValidationTaskId] = useState("");
+  const [schemaValidationReceipt, setSchemaValidationReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -50,6 +53,11 @@ export default function StorageOverview() {
     void postStorageArtifactCleanupDryRun({ source: "storage_overview_button" }).then((res) => {
       setDryRunReceipt(res);
       if (res.ok) setDryRunTaskId(res.data.task_id);
+    });
+  const launchSchemaValidationDryRun = () =>
+    void postStorageSchemaValidationDryRun({ source: "storage_overview_button" }).then((res) => {
+      setSchemaValidationReceipt(res);
+      if (res.ok) setSchemaValidationTaskId(res.data.task_id);
     });
 
   useEffect(() => {
@@ -209,6 +217,11 @@ export default function StorageOverview() {
         <p>cache_get_writes_files / physical_validation_reads_payloads: {String(schemaMigration.cache_get_writes_files ?? false)} / {String(schemaMigration.physical_validation_reads_payloads ?? false)}</p>
         <p>manual_migration_task_required: {String(schemaMigration.manual_migration_task_required ?? true)}</p>
         <p>status_counts: {JSON.stringify(schemaMigrationStatusCounts)}</p>
+        <div className="actions">
+          <button onClick={launchSchemaValidationDryRun}>运行 schema validation dry-run</button>
+        </div>
+        <TaskLaunchReceipt receipt={schemaValidationReceipt} />
+        <TaskStatusPanel taskId={schemaValidationTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={schemaMigrationRows} />
       </PacketCard>
 

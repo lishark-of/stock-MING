@@ -35,6 +35,70 @@ def dataset_metadata(root: str | Path = ".stock_ming_3/parquet", name: str = "fa
     }
 
 
+def dataset_schema_metadata(root: str | Path = ".stock_ming_3/parquet", name: str = "factor_values") -> dict[str, Any]:
+    path = dataset_path(root=root, name=name)
+    status = dependency_status()
+    if not status["available"]:
+        return {
+            "status": "dependency_missing",
+            "path": str(path),
+            "exists": path.exists(),
+            "columns": [],
+            "column_count": 0,
+            "row_count_metadata": None,
+            "row_group_count": None,
+            "schema_read_done": False,
+            "reads_row_payloads": False,
+            "external_calls_triggered": False,
+            **status,
+        }
+    if not path.exists():
+        return {
+            "status": "missing",
+            "path": str(path),
+            "exists": False,
+            "columns": [],
+            "column_count": 0,
+            "row_count_metadata": None,
+            "row_group_count": None,
+            "schema_read_done": False,
+            "reads_row_payloads": False,
+            "external_calls_triggered": False,
+        }
+    try:
+        import pyarrow.parquet as pq
+
+        parquet_file = pq.ParquetFile(path)
+        columns = [str(name) for name in parquet_file.schema_arrow.names]
+        metadata = parquet_file.metadata
+    except Exception as exc:
+        return {
+            "status": "read_failed",
+            "path": str(path),
+            "exists": True,
+            "columns": [],
+            "column_count": 0,
+            "row_count_metadata": None,
+            "row_group_count": None,
+            "schema_read_done": False,
+            "reads_row_payloads": False,
+            "error_message_safe": str(exc).splitlines()[0][:240],
+            "external_calls_triggered": False,
+        }
+    return {
+        "status": "ready",
+        "path": str(path),
+        "exists": True,
+        "columns": columns,
+        "column_count": len(columns),
+        "row_count_metadata": int(metadata.num_rows) if metadata is not None else None,
+        "row_group_count": int(metadata.num_row_groups) if metadata is not None else None,
+        "schema_read_done": True,
+        "reads_row_payloads": False,
+        "external_calls_triggered": False,
+    }
+
+
 def partitioned_dataset_metadata(root: str | Path = ".stock_ming_3/parquet", name: str = "factor_values") -> dict[str, Any]:
     path = partitioned_dataset_path(root=root, name=name)
     status = dependency_status()

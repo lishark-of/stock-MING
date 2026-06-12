@@ -54,6 +54,12 @@ def run_storage_artifact_cleanup_dry_run(payload: dict[str, Any] | None = None) 
     return task_envelope(task)
 
 
+@router.post("/schema-validation/dry-run")
+def run_storage_schema_validation_dry_run(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_schema_validation_dry_run_task(payload)
+    return task_envelope(task)
+
+
 @router.get("/{dataset}")
 def get_parquet_dataset_status(
     dataset: str,

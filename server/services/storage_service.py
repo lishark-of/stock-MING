@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PARQUET_ROOT = PROJECT_ROOT / ".stock_ming_3" / "parquet"
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup_dry_run_packet"
+SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validation_dry_run_packet"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -377,6 +378,177 @@ def storage_schema_migration_preflight() -> dict[str, Any]:
     }
 
 
+def _schema_validation_row(dataset: str) -> dict[str, Any]:
+    contract = _schema_contract(dataset)
+    schema_metadata = parquet_store.dataset_schema_metadata(root=PARQUET_ROOT, name=dataset)
+    required_columns = [str(column) for column in (contract.get("required_columns") or [])]
+    physical_columns = [str(column) for column in (schema_metadata.get("columns") or [])]
+    missing_required_columns = [column for column in required_columns if column not in physical_columns]
+    unexpected_columns = [column for column in physical_columns if column not in required_columns]
+    metadata_status = str(schema_metadata.get("status") or "missing")
+    if metadata_status == "ready":
+        validation_status = "schema_validated" if not missing_required_columns else "schema_mismatch"
+        physical_validation_done = True
+        validation_passed = not missing_required_columns
+    elif metadata_status == "missing":
+        validation_status = "missing_dataset"
+        physical_validation_done = False
+        validation_passed = False
+    else:
+        validation_status = metadata_status
+        physical_validation_done = False
+        validation_passed = False
+    return {
+        "dataset": dataset,
+        "status": validation_status,
+        "validation_status": validation_status,
+        "schema_version": contract.get("schema_version"),
+        "target_schema_version": contract.get("schema_version"),
+        "parquet_status": metadata_status,
+        "path": _path_label(Path(str(schema_metadata.get("path") or parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)))),
+        "required_columns": required_columns,
+        "required_column_count": len(required_columns),
+        "physical_columns": physical_columns,
+        "physical_column_count": len(physical_columns),
+        "missing_required_columns": missing_required_columns,
+        "missing_required_column_count": len(missing_required_columns),
+        "unexpected_columns": unexpected_columns,
+        "unexpected_column_count": len(unexpected_columns),
+        "primary_key": contract.get("primary_key") or [],
+        "expected_partition_columns": contract.get("recommended_partition_columns") or [],
+        "row_count_metadata": schema_metadata.get("row_count_metadata"),
+        "row_group_count": schema_metadata.get("row_group_count"),
+        "schema_read_done": bool(schema_metadata.get("schema_read_done")),
+        "physical_validation_done": physical_validation_done,
+        "validation_passed": validation_passed,
+        "schema_migration_executed": False,
+        "schema_migration_ready_for_execution": bool(validation_passed),
+        "manual_migration_task_required": True,
+        "cache_get_writes_files": False,
+        "post_dry_run_writes_parquet": False,
+        "does_not_read_row_payloads": True,
+        "reads_file_payloads": False,
+        "physical_validation_reads_payloads": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def storage_schema_validation_dry_run_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    rows = [_schema_validation_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    status_counts = _count_values(row.get("validation_status") for row in rows)
+    passed_count = sum(1 for row in rows if row.get("validation_passed"))
+    physical_validation_done_count = sum(1 for row in rows if row.get("physical_validation_done"))
+    packet = {
+        "schema_version": "command_center_3_storage_schema_validation_dry_run.v1",
+        "packet_key": SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": "dry_run_completed",
+        "mode": "dry_run",
+        "scope": "physical_schema_validation_before_migration",
+        "dataset_count": len(rows),
+        "validation_passed_count": passed_count,
+        "validation_failed_count": len(rows) - passed_count,
+        "physical_validation_done_count": physical_validation_done_count,
+        "missing_dataset_count": status_counts.get("missing_dataset", 0),
+        "schema_mismatch_count": status_counts.get("schema_mismatch", 0),
+        "read_failed_count": status_counts.get("read_failed", 0),
+        "dependency_missing_count": status_counts.get("dependency_missing", 0),
+        "schema_migration_ready_count": sum(1 for row in rows if row.get("schema_migration_ready_for_execution")),
+        "schema_migration_executed_count": 0,
+        "status_counts": status_counts,
+        "rows": rows,
+        "request_params_safe": {
+            "source": (payload_safe or {}).get("source") or "storage_page_button",
+            "dry_run": True,
+            "external_sources_allowed": False,
+            "write_parquet_allowed": False,
+        },
+        "cache_get_writes_files": False,
+        "post_dry_run_writes_parquet": False,
+        "post_dry_run_reads_row_payloads": False,
+        "post_dry_run_reads_env_files": False,
+        "schema_migration_executed": False,
+        "manual_migration_task_required": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_schema_validation_dry_run",
+            endpoint="POST /api/storage/schema-validation/dry-run",
+            status="dry_run_completed",
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "POST /api/storage/schema-validation/dry-run 只读取本地 Parquet schema metadata；不会读取行 payload。",
+            "schema validation dry-run 不写 Parquet、不执行迁移、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+    return packet
+
+
+def run_storage_schema_validation_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "dry_run": True,
+        "external_sources_allowed": False,
+        "write_parquet_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_schema_validation_dry_run",
+        output_packet_key=SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_schema_validation_dry_run_queued",
+        warnings=[
+            "storage schema validation dry-run 只读取本地 Parquet schema metadata；不会读取行 payload、不会写 Parquet、不会调用外部源。",
+            "任何真实 schema migration 必须在 dry-run 审阅后另行手动确认；本任务不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_storage_schema_metadata",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_schema_validation_dry_run_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_schema_validation_dry_run_storage_write_failed",
+            error_message_safe="storage_schema_validation_dry_run_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_schema_validation_dry_run_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_schema_validation_dry_run_completed",
+        call_ledger=packet["call_ledger"],
+        warning="storage_schema_validation_dry_run_completed_no_write_no_external_call",
+    ) or task
+
+
 def _partition_plan(dataset: str) -> dict[str, Any]:
     contract = _schema_contract(dataset)
     partition_columns = list(contract.get("recommended_partition_columns") or [])
@@ -534,6 +706,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "status": "preflight_ready",
             "current_coverage": "canonical datasets expose metadata-only schema migration rows with target schema versions, required columns and manual migration boundaries.",
             "next_action": "run an explicit physical validation task before any schema migration or partition rewrite.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "schema_validation_dry_run",
+            "status": "button_gated_ready",
+            "current_coverage": "POST schema validation dry-run reads local Parquet schema metadata only and records missing/mismatch/validated rows before migration.",
+            "next_action": "review dry-run results before enabling any physical migration or partition rewrite task.",
             "external_calls_triggered": False,
         },
         {
@@ -859,6 +1038,10 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "schema_migration_dataset_count": schema_migration_preflight["dataset_count"],
         "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
         "physical_schema_validation_done_count": schema_migration_preflight["physical_validation_done_count"],
+        "schema_validation_dry_run_route": "POST /api/storage/schema-validation/dry-run",
+        "schema_validation_dry_run_button_gated": True,
+        "schema_validation_dry_run_writes_parquet": False,
+        "schema_validation_dry_run_reads_row_payloads": False,
         "cache_ttl_policy": "audit_only_no_auto_refresh",
         "compaction_policy": "audit_only_manual_task_required",
         "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",

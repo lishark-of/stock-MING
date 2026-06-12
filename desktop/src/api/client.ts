@@ -228,6 +228,13 @@ export function postStorageArtifactCleanupDryRun(payload: Record<string, unknown
   });
 }
 
+export function postStorageSchemaValidationDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/schema-validation/dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>(path, {
     method: "POST",
