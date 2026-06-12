@@ -30,7 +30,7 @@ export default function StorageOverview() {
     });
     void getFactorValuesStorage().then((res) => setFactorValues(res.data));
     void getSQLiteMetaStorage().then((res) => setSqliteMeta(res.data));
-    void Promise.all(["daily", "daily-basic", "moneyflow", "backtest-results"].map((dataset) => getStorageDataset(dataset).then((res) => [dataset, res.data] as const))).then((items) =>
+    void Promise.all(["daily", "daily-basic", "moneyflow", "trade-cal", "backtest-results"].map((dataset) => getStorageDataset(dataset).then((res) => [dataset, res.data] as const))).then((items) =>
       setDatasetDetails(Object.fromEntries(items))
     );
   }, []);
@@ -49,6 +49,7 @@ export default function StorageOverview() {
     { key: "daily", label: "daily", packet: datasetDetails.daily ?? {} },
     { key: "daily_basic", label: "daily_basic", packet: datasetDetails["daily-basic"] ?? {} },
     { key: "moneyflow", label: "moneyflow", packet: datasetDetails.moneyflow ?? {} },
+    { key: "trade_cal", label: "trade_cal", packet: datasetDetails["trade-cal"] ?? {} },
     { key: "backtest_results", label: "backtest_results", packet: datasetDetails["backtest-results"] ?? {} }
   ];
   const factorMetadata = factorValues.metadata as Record<string, unknown> | undefined;
@@ -112,6 +113,7 @@ export default function StorageOverview() {
           { label: "daily", value: String(datasetStatus?.daily ?? "missing") },
           { label: "daily_basic", value: String(datasetStatus?.daily_basic ?? "missing") },
           { label: "moneyflow", value: String(datasetStatus?.moneyflow ?? "missing") },
+          { label: "trade_cal", value: String(datasetStatus?.trade_cal ?? "missing") },
           { label: "backtest_results", value: String(datasetStatus?.backtest_results ?? "missing") },
           { label: "sqlite meta", value: String(overview.metadata_status ?? sqliteMeta.status ?? "missing") },
           { label: "packets", value: overview.packet_metadata_count ?? sqliteMeta.packet_count ?? 0 },
@@ -122,7 +124,7 @@ export default function StorageOverview() {
       <div className="grid">
         <PacketCard title="Parquet / DuckDB Storage" subtitle="只读查看本地数据集状态；不会触发刷新任务" status="cache_only">
           <p>本页只调用 FastAPI storage cache API，不调用 Tushare、DeepSeek 或 GitHub。</p>
-          <p>daily / daily_basic / moneyflow / factor_values / backtest_results 通过 DuckDB 查询本地 Parquet；无缓存时只显示 missing。</p>
+          <p>daily / daily_basic / moneyflow / trade_cal / factor_values / backtest_results 通过 DuckDB 查询本地 Parquet；无缓存时只显示 missing。</p>
           <p>does_not_execute_trades 与 does_not_modify_strategy_action 必须保持为 true。</p>
         </PacketCard>
 
@@ -195,7 +197,7 @@ export default function StorageOverview() {
         <DataLineageTable rows={cacheCallLedger} />
       </PacketCard>
 
-      <PacketCard title="数据集 call_ledger 汇总" subtitle="GET /api/storage/factor-values、daily、daily-basic、moneyflow、backtest-results、sqlite-meta 的本地读取血缘" status="lineage">
+      <PacketCard title="数据集 call_ledger 汇总" subtitle="GET /api/storage/factor-values、daily、daily-basic、moneyflow、trade-cal、backtest-results、sqlite-meta 的本地读取血缘" status="lineage">
         <DataLineageTable rows={datasetCallLedgerRows} />
       </PacketCard>
 
@@ -219,7 +221,7 @@ export default function StorageOverview() {
         <DataLineageTable rows={taskMetadataRows} />
       </PacketCard>
 
-      <PacketCard title="daily / daily_basic / moneyflow / backtest_results 样例" subtitle="只读本地 Parquet 样例；无缓存时为空表" status="preview">
+      <PacketCard title="daily / daily_basic / moneyflow / trade_cal / backtest_results 样例" subtitle="只读本地 Parquet 样例；无缓存时为空表" status="preview">
         <DataLineageTable rows={previewRows} />
       </PacketCard>
 
@@ -231,6 +233,7 @@ export default function StorageOverview() {
         <JsonDetails title="daily raw" data={datasetDetails.daily ?? {}} />
         <JsonDetails title="daily_basic raw" data={datasetDetails["daily-basic"] ?? {}} />
         <JsonDetails title="moneyflow raw" data={datasetDetails.moneyflow ?? {}} />
+        <JsonDetails title="trade_cal raw" data={datasetDetails["trade-cal"] ?? {}} />
         <JsonDetails title="backtest_results raw" data={datasetDetails["backtest-results"] ?? {}} />
       </PacketCard>
     </>

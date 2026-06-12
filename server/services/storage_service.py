@@ -18,10 +18,12 @@ SUPPORTED_PARQUET_DATASETS = {
     "daily_basic": "daily_basic",
     "daily-basic": "daily_basic",
     "moneyflow": "moneyflow",
+    "trade_cal": "trade_cal",
+    "trade-cal": "trade_cal",
     "backtest_results": "backtest_results",
     "backtest-results": "backtest_results",
 }
-CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflow", "backtest_results"]
+CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"]
 DATASET_CATALOG = [
     {
         "dataset": "factor_values",
@@ -67,6 +69,18 @@ DATASET_CATALOG = [
         "purpose": "资金流因子与市场证据底座",
         "write_policy": "future_button_gated_tushare_task",
         "writer": "future refresh_tushare_facts task",
+        "external_refresh_policy": "button_gated_tushare_capable",
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    },
+    {
+        "dataset": "trade_cal",
+        "aliases": ["trade-cal"],
+        "cache_endpoint": "GET /api/storage/trade-cal",
+        "source": "tushare.trade_cal parquet cache",
+        "purpose": "A 股交易日历 freshness gate、盘前/盘中/盘后 expected_data_date 推导",
+        "write_policy": "future_button_gated_tushare_task",
+        "writer": "POST /api/tasks/refresh-tushare-facts",
         "external_refresh_policy": "button_gated_tushare_capable",
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,

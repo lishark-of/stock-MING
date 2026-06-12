@@ -263,6 +263,7 @@ export default function CommandCenterHome() {
           { label: "daily parquet", value: String(storageStatus?.daily ?? "missing") },
           { label: "daily_basic parquet", value: String(storageStatus?.daily_basic ?? "missing") },
           { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
+          { label: "trade_cal parquet", value: String(storageStatus?.trade_cal ?? "missing") },
           { label: "backtest parquet", value: String(storageStatus?.backtest_results ?? "missing") },
           { label: "storage catalog", value: storageCatalogRows?.length ?? 0 },
           { label: "storage catalog ledger", value: storageCatalogLedger.length },
@@ -380,7 +381,7 @@ export default function CommandCenterHome() {
           <p>{String(chokepoint.summary ?? "等待缓存")}</p>
           <p>envelope ledger / warnings: {String(chokepointEnvelopeLedger.length)} / {String(chokepointEnvelopeWarnings.length)}</p>
         </PacketCard>
-        <PacketCard title="Parquet / DuckDB Storage" subtitle="daily / daily_basic / moneyflow / factor_values / backtest_results 只读状态，不触发刷新" status={String(storageOverview.store ?? "parquet_duckdb")}>
+        <PacketCard title="Parquet / DuckDB Storage" subtitle="daily / daily_basic / moneyflow / trade_cal / factor_values / backtest_results 只读状态，不触发刷新" status={String(storageOverview.store ?? "parquet_duckdb")}>
           <p>datasets: {String(storageDatasets?.length ?? 0)}</p>
           <p>dataset catalog: {String(storageCatalogRows?.length ?? storageOverview.dataset_count ?? 0)}</p>
           <p>catalog envelope ledger / warnings: {String(storageCatalogLedger.length)} / {String(storageCatalogWarnings.length)}</p>
@@ -388,6 +389,7 @@ export default function CommandCenterHome() {
           <p>daily: {String(storageStatus?.daily ?? "missing")}</p>
           <p>daily_basic: {String(storageStatus?.daily_basic ?? "missing")}</p>
           <p>moneyflow: {String(storageStatus?.moneyflow ?? "missing")}</p>
+          <p>trade_cal: {String(storageStatus?.trade_cal ?? "missing")}</p>
           <p>backtest_results: {String(storageStatus?.backtest_results ?? "missing")}</p>
           <DataLineageTable rows={storageCatalogRows ?? []} />
           <DataLineageTable rows={storageCatalogLedger} />

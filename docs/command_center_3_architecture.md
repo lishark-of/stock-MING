@@ -72,7 +72,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/storage`
 - `GET /api/storage/catalog`
 - `GET /api/storage/factor-values`
-- `GET /api/storage/{dataset}`，当前白名单为 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results`
+- `GET /api/storage/{dataset}`，当前白名单为 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results`
 - `GET /api/tasks/catalog`
 - `GET /api/tasks/{task_id}`
 
@@ -90,14 +90,14 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `POST /api/next-session/generate` 已从纯 stub 升级为本地 cache pipeline：读取已有 `command_center_next_session_projection_packet` cache，发现精确 packet 时写入 `.stock_ming_3/meta.sqlite`；没有精确 packet 时返回 `cache_missing` 任务结果且不写入假 packet。不调用 Tushare、DeepSeek、GitHub，不修改 `strategy action` 或 `operation_zones`。
 - `POST /api/factor-quant/run-light` 已接入本地 light-mode pipeline：读取 `.stock_ming_cache/command_center_latest.json`，调用现有 Factor Quant Hub builder，写入 `.stock_ming_3/meta.sqlite`，并把 `runtime.factor_values` 同步写入 `.stock_ming_3/parquet/factor_values.parquet`；不调用 Tushare、DeepSeek、GitHub，也不修改 `strategy action`。
 - Factor Quant Hub freshness gate 已支持 A 股交易日历语义：优先使用本地 `trade_cal` cache 推导 `expected_data_date`、`market_phase` 与 `trading_day_lag`；没有交易日历时退回工作日近似并标记 `calendar_validated=false`。过期、陈旧或盘中不可得数据只可审计展示，不进入 `composite_score`、强 support 或 `next_session_bridge.preview`。
-- `POST /api/tasks/refresh-tushare-facts` 已具备扩展接口验证矩阵：默认只刷新 `daily/daily_basic/moneyflow`，按钮 payload 可选择 `trade_cal`、两融、涨跌停、筹码、公告/预告、股东增减持、限售解禁、质押等接口；每个接口会进入 `api_validation_rows` 与 `call_ledger`。当前只有核心三接口启用 Parquet 落盘，扩展接口以 `parquet_status=not_enabled` 审计展示，不能被当成生产化数据集。
+- `POST /api/tasks/refresh-tushare-facts` 已具备扩展接口验证矩阵：默认只刷新 `daily/daily_basic/moneyflow`，按钮 payload 可选择 `trade_cal`、两融、涨跌停、筹码、公告/预告、股东增减持、限售解禁、质押等接口；每个接口会进入 `api_validation_rows` 与 `call_ledger`。当前 `daily/daily_basic/moneyflow/trade_cal` 启用 Parquet 落盘，其他扩展接口以 `parquet_status=not_enabled` 审计展示，不能被当成生产化数据集。
 - `GET /api/next-session/cache` 已输出 ECharts 成熟版只读合同：`chart_payload` 除历史 close、参考线、操作区和三情景路径外，还包含数据可信度、持仓冲突、DeepSeek 状态、latest close 锚定校验、参考线来源与操作区点击说明。React/ECharts 只渲染这些后端 cache 字段，不计算交易动作、不改价格/持仓、不改 `operation_zones`。
 - Factor Test Lab 已从空 schema 进入 light research metrics：`command_center_factor_test_packet` 可对本地小样本 observations 计算 IC、Rank IC、ICIR、Top-Bottom 分组收益、换手、成本后收益、最大回撤，并输出 `quality_summary`、必需指标缺口与样本窗口摘要。该能力仍是 research-only，不跑 full market，不进入 `strategy action`。
 - `POST /api/factor-quant/deepseek-explain` 已接入 guarded explanation pipeline：读取 Factor Quant Hub cache，准备未发送的安全 prompt 预览；如提供本地解释 payload，仅按六个白名单字段清洗并写回 SQLite cache，不真实调用 DeepSeek、不覆盖数值、不修改 `strategy action`。
 - 任务生命周期已同步写入 SQLite metadata store；内存状态丢失后，`/api/tasks/{task_id}` 仍可从本地 SQLite fallback 读回任务状态。
 - `/api/packets` 已暴露 SQLite packet/task metadata 摘要、packet source rows 和固定读取优先级，便于前端判断哪些 packet 来自持久化 cache。
 - `/api/model-strategy/cache` 已独立暴露 DeepSeek 模型策略：`default/explain/projection/factor_explain` 默认走解释级模型，`fast/healthcheck/feeder` 默认走 fast 模型；模型名统一从 `DEEPSEEK_EXPLAIN_MODEL`、`DEEPSEEK_FAST_MODEL`、`DEEPSEEK_DEFAULT_MODEL` 或集中默认值读取，调用点、任务目录和任务回执不得硬编码。
-- `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 只读状态和 dataset catalog；缺文件返回 `missing`，不触发 Tushare、回测或因子计算。
+- `GET /api/storage` 暴露 Parquet/DuckDB 的 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 只读状态和 dataset catalog；缺文件返回 `missing`，不触发 Tushare、回测或因子计算。
 - `GET /api/storage/catalog` 独立暴露 dataset catalog，供前端、worker 和后续任务读取数据集用途、别名、写入边界和未来任务归属；该接口只读、不写 Parquet、不外联。
 - `POST /api/factor-quant/refresh-data` 当前仍是安全 stub；真实 Tushare 刷新后续必须继续保持按钮门控和 call ledger。
 - 所有响应使用统一 envelope：`ok/data/error/call_ledger/warnings`。
@@ -162,8 +162,8 @@ scripts/run_scheduler.sh
 ### Storage
 
 - SQLite：packet 元数据、任务状态、用户配置。当前已落地 packet payload、packet metadata 和 task lifecycle metadata。
-- Parquet：daily、daily_basic、moneyflow、factor_values、backtest_results。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 文件状态接口和 dataset catalog，并由 light-mode 因子任务写入 `factor_values`。
-- DuckDB：直接查询 Parquet。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`backtest_results` 缺文件安全查询和只读状态 API。
+- Parquet：daily、daily_basic、moneyflow、trade_cal、factor_values、backtest_results。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 文件状态接口和 dataset catalog，并由 light-mode 因子任务写入 `factor_values`。
+- DuckDB：直接查询 Parquet。当前已提供 `factor_values`、`daily`、`daily_basic`、`moneyflow`、`trade_cal`、`backtest_results` 缺文件安全查询和只读状态 API。
 - Redis：Celery broker、任务状态、热点 packet cache；未安装时可使用 memory fallback。
 
 ## 边界

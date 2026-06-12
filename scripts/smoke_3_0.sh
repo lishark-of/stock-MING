@@ -130,6 +130,7 @@ api_cache_paths = [
     "/api/storage/daily",
     "/api/storage/daily-basic",
     "/api/storage/moneyflow",
+    "/api/storage/trade-cal",
     "/api/storage/backtest-results",
     "/api/storage/sqlite-meta",
     "/api/tasks",

@@ -33,6 +33,7 @@ PARQUET_DATASETS = {
     "daily": "daily",
     "daily_basic": "daily_basic",
     "moneyflow": "moneyflow",
+    "trade_cal": "trade_cal",
 }
 REFRESH_API_SPECS = {
     "daily": {"method": "get_daily", "params": ("ts_code", "start_date", "end_date")},
