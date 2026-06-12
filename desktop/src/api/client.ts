@@ -27,6 +27,7 @@ export type TaskRecord = {
   github_called?: boolean;
   does_not_execute_trades?: boolean;
   does_not_modify_strategy_action?: boolean;
+  retry_policy?: Record<string, unknown>;
   warnings: string[];
 };
 
@@ -222,6 +223,13 @@ export function postTask(path: string, payload: Record<string, unknown> = {}) {
 
 export function cancelTask(taskId: string, reason = "manual_cancel_from_task_catalog") {
   return request<TaskCreationData>(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
+  });
+}
+
+export function retryTask(taskId: string, reason = "manual_retry_from_task_catalog") {
+  return request<TaskCreationData>(`/api/tasks/${encodeURIComponent(taskId)}/retry`, {
     method: "POST",
     body: JSON.stringify({ reason })
   });

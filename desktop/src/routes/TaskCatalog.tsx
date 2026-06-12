@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { cancelTask, getTaskCatalog, getTasks, postTask, type TaskCreationEnvelope, type TaskRecord, type TaskStatusIndex } from "../api/client";
+import { cancelTask, getTaskCatalog, getTasks, postTask, retryTask, type TaskCreationEnvelope, type TaskRecord, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -261,6 +261,7 @@ export default function TaskCatalog() {
         <p>all_known_post_routes_button_gated: {String(routeCoverage?.all_known_post_routes_button_gated ?? false)}</p>
         <p>call_ledger_required_for_all_known_post_routes: {String(routeCoverage?.call_ledger_required_for_all_known_post_routes ?? false)}</p>
         <p>cancel_routes_external_calls: {String(routeCoverage?.cancel_routes_external_calls ?? false)}</p>
+        <p>retry_routes_external_calls: {String(routeCoverage?.retry_routes_external_calls ?? false)}</p>
         <DataLineageTable rows={routeCoverageRows} />
         <h3>已登记 POST 路由</h3>
         <DataLineageTable rows={knownPostRouteRows} />
@@ -313,6 +314,26 @@ export default function TaskCatalog() {
                 onClick={() => void cancelTask(task.task_id).then(() => refreshTasks())}
               >
                 取消 {task.task_type}
+              </button>
+            );
+          })}
+        </div>
+      </PacketCard>
+
+      <PacketCard title="手动重试任务" subtitle="POST /api/tasks/{task_id}/retry 只创建新的本地 pending 任务；不自动外联、不交易" status="local_retry">
+        <p>重试入口只面向 failed 且 retry_policy.manual_retry_eligible=true 的任务；点击后生成新的 task_id，原任务只追加本地审计日志。</p>
+        <p>不会调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action；新任务仍需后续按钮/worker 明确执行。</p>
+        <div className="button-row">
+          {taskRecords.map((task) => {
+            const retryPolicy = (task.retry_policy ?? {}) as Record<string, unknown>;
+            const retryable = task.status === "failed" && retryPolicy.manual_retry_eligible === true;
+            return (
+              <button
+                key={task.task_id}
+                disabled={!retryable}
+                onClick={() => void retryTask(task.task_id).then(() => refreshTasks())}
+              >
+                重试 {task.task_type}
               </button>
             );
           })}
