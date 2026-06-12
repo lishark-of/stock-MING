@@ -84,6 +84,16 @@ export default function StorageOverview() {
   const artifactHygiene = (overview.artifact_hygiene as Record<string, unknown> | undefined) ?? (storageCatalog.artifact_hygiene as Record<string, unknown> | undefined) ?? {};
   const artifactRows = (artifactHygiene.rows as Array<Record<string, unknown>> | undefined) ?? [];
   const artifactPatternRows = ((artifactHygiene.git_excluded_patterns as Array<string> | undefined) ?? []).map((pattern, index) => ({ index: index + 1, pattern }));
+  const schemaMigration =
+    (overview.schema_migration_preflight as Record<string, unknown> | undefined) ??
+    (storageCatalog.schema_migration_preflight as Record<string, unknown> | undefined) ??
+    {};
+  const schemaMigrationRows =
+    (overview.schema_migration_rows as Array<Record<string, unknown>> | undefined) ??
+    ((schemaMigration.rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const schemaMigrationStatusCounts =
+    (overview.schema_migration_status_counts as Record<string, unknown> | undefined) ??
+    ((schemaMigration.status_counts as Record<string, unknown> | undefined) ?? {});
   const implementationStateCounts = datasetImplementation.state_counts as Record<string, unknown> | undefined;
   const implementationParquetStatusCounts = datasetImplementation.parquet_status_counts as Record<string, unknown> | undefined;
   const implementationRows = (datasetImplementation.dataset_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -144,7 +154,11 @@ export default function StorageOverview() {
           { label: "tasks", value: overview.task_metadata_count ?? sqliteMeta.task_count ?? 0 },
           { label: "artifact hygiene", value: String(artifactHygiene.status ?? overview.artifact_hygiene_status ?? "audit_ready") },
           { label: "local artifacts", value: artifactHygiene.present_artifact_count ?? overview.artifact_hygiene_present_count ?? 0 },
-          { label: "artifact review", value: artifactHygiene.review_required_count ?? overview.artifact_hygiene_review_required_count ?? 0 }
+          { label: "artifact review", value: artifactHygiene.review_required_count ?? overview.artifact_hygiene_review_required_count ?? 0 },
+          { label: "schema migration", value: String(schemaMigration.status ?? overview.schema_migration_preflight_status ?? "preflight") },
+          { label: "migration rows", value: schemaMigrationRows.length },
+          { label: "migrations executed", value: schemaMigration.migration_executed_count ?? overview.schema_migration_executed_count ?? 0 },
+          { label: "physical schema checks", value: schemaMigration.physical_validation_done_count ?? overview.physical_schema_validation_done_count ?? 0 }
         ]}
       />
 
@@ -186,6 +200,16 @@ export default function StorageOverview() {
         <p>state_counts: {JSON.stringify(implementationStateCounts ?? {})}</p>
         <p>parquet_status_counts: {JSON.stringify(implementationParquetStatusCounts ?? {})}</p>
         <DataLineageTable rows={implementationRows} />
+      </PacketCard>
+
+      <PacketCard title="Schema migration preflight" subtitle="schema/version 迁移预检；只读、不写 Parquet、不读 payload、不外联" status={String(schemaMigration.status ?? "preflight_ready")}>
+        <p>mode: {String(schemaMigration.mode ?? "metadata_only_read_only_preflight")}</p>
+        <p>contract ready / datasets: {String(schemaMigration.contract_ready_count ?? 0)} / {String(schemaMigration.dataset_count ?? 0)}</p>
+        <p>physical validation done / migrations executed: {String(schemaMigration.physical_validation_done_count ?? 0)} / {String(schemaMigration.migration_executed_count ?? 0)}</p>
+        <p>cache_get_writes_files / physical_validation_reads_payloads: {String(schemaMigration.cache_get_writes_files ?? false)} / {String(schemaMigration.physical_validation_reads_payloads ?? false)}</p>
+        <p>manual_migration_task_required: {String(schemaMigration.manual_migration_task_required ?? true)}</p>
+        <p>status_counts: {JSON.stringify(schemaMigrationStatusCounts)}</p>
+        <DataLineageTable rows={schemaMigrationRows} />
       </PacketCard>
 
       <PacketCard title="Local artifact hygiene" subtitle="路径级预检；只展示本地生成物边界，不删除、不读 payload、不外联" status={String(artifactHygiene.status ?? "audit_ready")}>

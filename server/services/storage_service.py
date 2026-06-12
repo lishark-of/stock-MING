@@ -291,6 +291,92 @@ def _schema_contract(dataset: str) -> dict[str, Any]:
     return contract
 
 
+def _dataset_catalog_item(dataset: str) -> dict[str, Any]:
+    for item in DATASET_CATALOG:
+        if item.get("dataset") == dataset:
+            return dict(item)
+    return {"dataset": dataset}
+
+
+def _schema_migration_row(dataset: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    catalog_item = _dataset_catalog_item(dataset)
+    contract = _schema_contract(dataset)
+    path = parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)
+    metadata = dict(metadata or parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset))
+    if contract.get("status") == "contract_ready":
+        migration_status = "contract_ready_physical_validation_pending"
+    else:
+        migration_status = "missing_schema_contract"
+    required_columns = list(contract.get("required_columns") or [])
+    return {
+        "dataset": dataset,
+        "status": migration_status,
+        "migration_status": migration_status,
+        "current_schema_version": contract.get("schema_version"),
+        "target_schema_version": contract.get("schema_version"),
+        "schema_version_change_detected": False,
+        "physical_column_validation_status": "not_run_metadata_only",
+        "physical_validation_done": False,
+        "schema_migration_executed": False,
+        "schema_migration_ready_for_execution": False,
+        "physical_validation_required_before_migration": True,
+        "requires_manual_migration_task": True,
+        "manual_migration_task_required": True,
+        "reason": "physical_validation_not_run",
+        "parquet_status": metadata.get("status", "missing"),
+        "path": _path_label(Path(str(metadata.get("path") or path))),
+        "write_policy": catalog_item.get("write_policy"),
+        "writer": catalog_item.get("writer"),
+        "primary_key": contract.get("primary_key") or [],
+        "required_columns": required_columns,
+        "required_column_count": len(required_columns),
+        "missing_required_columns": [],
+        "missing_required_columns_status": "not_evaluated_metadata_only",
+        "expected_partition_columns": contract.get("recommended_partition_columns") or [],
+        "cache_get_writes_files": False,
+        "cache_get_reads_payloads": False,
+        "physical_validation_reads_payloads": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def storage_schema_migration_preflight() -> dict[str, Any]:
+    rows = [_schema_migration_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    return {
+        "schema_version": "command_center_3_storage_schema_migration_preflight.v1",
+        "status": "preflight_ready"
+        if all(row.get("migration_status") == "contract_ready_physical_validation_pending" for row in rows)
+        else "contract_gap",
+        "scope": "schema_version_migration_contract",
+        "mode": "metadata_only_read_only_preflight",
+        "dataset_count": len(rows),
+        "contract_ready_count": sum(1 for row in rows if row.get("migration_status") == "contract_ready_physical_validation_pending"),
+        "physical_validation_done_count": sum(1 for row in rows if row.get("physical_validation_done")),
+        "migration_executed_count": sum(1 for row in rows if row.get("schema_migration_executed")),
+        "schema_migration_ready_count": sum(1 for row in rows if row.get("schema_migration_ready_for_execution")),
+        "manual_migration_task_required": True,
+        "schema_migration_task_executed": False,
+        "cache_get_writes_files": False,
+        "cache_api_external_calls": False,
+        "physical_validation_reads_payloads": False,
+        "payload_reads_on_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "status_counts": _count_values(row.get("migration_status") for row in rows),
+        "rows": rows,
+        "note": "Schema migration preflight is contract-only; physical validation and migration remain explicit future tasks.",
+    }
+
+
 def _partition_plan(dataset: str) -> dict[str, Any]:
     contract = _schema_contract(dataset)
     partition_columns = list(contract.get("recommended_partition_columns") or [])
@@ -363,6 +449,7 @@ def dataset_implementation_status() -> dict[str, Any]:
         schema_contract = _schema_contract(dataset)
         partition_plan = _partition_plan(dataset)
         compaction_plan = _compaction_plan(dataset, parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset), metadata)
+        schema_migration = _schema_migration_row(dataset, metadata=metadata)
         write_policy = str(item.get("write_policy") or "")
         external_refresh_policy = str(item.get("external_refresh_policy") or "")
         if write_policy == "task_pipeline_write_allowed":
@@ -385,6 +472,10 @@ def dataset_implementation_status() -> dict[str, Any]:
                 "button_gated": "button_gated" in external_refresh_policy or write_policy == "task_pipeline_write_allowed",
                 "schema_contract_status": schema_contract.get("status"),
                 "schema_version": schema_contract.get("schema_version"),
+                "schema_migration_status": schema_migration.get("migration_status"),
+                "physical_schema_validation_status": schema_migration.get("physical_column_validation_status"),
+                "schema_migration_executed": bool(schema_migration.get("schema_migration_executed")),
+                "manual_migration_task_required": bool(schema_migration.get("manual_migration_task_required")),
                 "partition_plan_status": partition_plan.get("status"),
                 "recommended_partition_columns": partition_plan.get("recommended_partition_columns"),
                 "compaction_plan_status": compaction_plan.get("status"),
@@ -410,6 +501,12 @@ def dataset_implementation_status() -> dict[str, Any]:
         "tushare_capable_dataset_count": sum(1 for row in rows if row.get("tushare_capable")),
         "local_compute_capable_dataset_count": sum(1 for row in rows if row.get("local_compute_capable")),
         "schema_contract_ready_count": sum(1 for row in rows if row.get("schema_contract_status") == "contract_ready"),
+        "schema_migration_preflight": storage_schema_migration_preflight(),
+        "schema_migration_status_counts": _count_values(row.get("schema_migration_status") for row in rows),
+        "schema_migration_executed_count": sum(1 for row in rows if row.get("schema_migration_executed")),
+        "physical_schema_validation_done_count": sum(
+            1 for row in rows if row.get("physical_schema_validation_status") == "done"
+        ),
         "partition_contract_ready_count": sum(1 for row in rows if row.get("partition_plan_status") == "contract_ready"),
         "manual_compaction_recommended_count": sum(1 for row in rows if row.get("manual_compaction_recommended")),
         "all_external_refreshes_button_gated": all(
@@ -430,6 +527,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "status": "local_ready",
             "current_coverage": "all canonical Parquet datasets expose local schema contracts with schema_version, date column, primary key and required columns.",
             "next_action": "validate physical files against contracts before full-market research writes.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "schema_migration_preflight",
+            "status": "preflight_ready",
+            "current_coverage": "canonical datasets expose metadata-only schema migration rows with target schema versions, required columns and manual migration boundaries.",
+            "next_action": "run an explicit physical validation task before any schema migration or partition rewrite.",
             "external_calls_triggered": False,
         },
         {
@@ -686,6 +790,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     duckdb_dependency = duckdb_store.dependency_status()
     sqlite_status = str((sqlite_meta or {}).get("status") or ("ready" if SQLITE_META_PATH.exists() else "missing"))
     artifact_hygiene = storage_artifact_hygiene_status()
+    schema_migration_preflight = storage_schema_migration_preflight()
     rows = [
         {
             "component": "sqlite_meta",
@@ -694,6 +799,14 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "current_backend": "sqlite_file",
             "blocking_for_cache_read": False,
             "next_action": "keep payload-safe metadata views; do not expose payload_json in cache endpoints.",
+        },
+        {
+            "component": "schema_migration_preflight",
+            "status": schema_migration_preflight["status"],
+            "production_role": "schema version audit before any physical dataset migration",
+            "current_backend": "metadata_only_contract_rows",
+            "blocking_for_cache_read": False,
+            "next_action": "add explicit physical schema validation and migration tasks; never run them from GET cache.",
         },
         {
             "component": "parquet_store",
@@ -741,6 +854,11 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "blockers": blockers,
         "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
+        "schema_migration_policy": "preflight_only_no_physical_migration_on_get",
+        "schema_migration_preflight_status": schema_migration_preflight["status"],
+        "schema_migration_dataset_count": schema_migration_preflight["dataset_count"],
+        "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
+        "physical_schema_validation_done_count": schema_migration_preflight["physical_validation_done_count"],
         "cache_ttl_policy": "audit_only_no_auto_refresh",
         "compaction_policy": "audit_only_manual_task_required",
         "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",
@@ -836,6 +954,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     implementation_status = dataset_implementation_status()
     production_readiness = storage_production_readiness()
     artifact_hygiene = storage_artifact_hygiene_status()
+    schema_migration_preflight = storage_schema_migration_preflight()
     packet = {
         "schema_version": "command_center_3_storage_dataset_catalog.v1",
         "store": "parquet_duckdb",
@@ -845,6 +964,9 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "dataset_implementation_status": implementation_status,
         "production_readiness": production_readiness,
         "artifact_hygiene": artifact_hygiene,
+        "schema_migration_preflight": schema_migration_preflight,
+        "schema_migration_rows": schema_migration_preflight["rows"],
+        "schema_migration_status_counts": schema_migration_preflight["status_counts"],
         "supported_datasets": list(CANONICAL_PARQUET_DATASETS),
         "supported_aliases": sorted(key for key, value in SUPPORTED_PARQUET_DATASETS.items() if key != value),
         "dataset_count": len(catalog),
@@ -899,6 +1021,7 @@ def parquet_dataset_status(
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=selected)
     cache_ttl = _cache_ttl_status(selected, path, metadata)
     schema_contract = _schema_contract(selected)
+    schema_migration = _schema_migration_row(selected, metadata=metadata)
     partition_plan = _partition_plan(selected)
     compaction_plan = _compaction_plan(selected, path, metadata)
     query = duckdb_store.query_parquet_dataset(
@@ -919,6 +1042,7 @@ def parquet_dataset_status(
         "metadata": metadata,
         "cache_ttl": cache_ttl,
         "schema_contract": schema_contract,
+        "schema_migration": schema_migration,
         "partition_plan": partition_plan,
         "compaction_plan": compaction_plan,
         "query": query,
@@ -1081,6 +1205,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     implementation_status = dataset_implementation_status()
     artifact_hygiene = storage_artifact_hygiene_status()
     production_readiness = storage_production_readiness(sqlite_meta)
+    schema_migration_preflight = storage_schema_migration_preflight()
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
         "store": "parquet_duckdb",
@@ -1101,6 +1226,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "manual_compaction_recommended_count": sum(1 for item in datasets if item["compaction_plan"]["manual_compaction_recommended"]),
         "dataset_implementation_state_counts": implementation_status["state_counts"],
         "dataset_parquet_status_counts": implementation_status["parquet_status_counts"],
+        "schema_migration_preflight": schema_migration_preflight,
+        "schema_migration_rows": schema_migration_preflight["rows"],
+        "schema_migration_status_counts": schema_migration_preflight["status_counts"],
+        "schema_migration_preflight_status": schema_migration_preflight["status"],
+        "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
+        "physical_schema_validation_done_count": schema_migration_preflight["physical_validation_done_count"],
         "production_readiness": production_readiness,
         "artifact_hygiene": artifact_hygiene,
         "artifact_hygiene_status": artifact_hygiene["status"],

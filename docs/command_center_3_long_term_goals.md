@@ -262,11 +262,12 @@ Add factor universe research pipeline
 - Storage overview now exposes path-only local artifact hygiene for `.stock_ming_3`, legacy cache, frontend build output, Node dependencies, Tauri target output, and Python bytecode cache boundaries.
 - The artifact hygiene audit is `manual_only_no_delete_on_get`: it reports generated/data artifact boundaries but does not delete files, read payloads, scan secret values, refresh providers, or touch `strategy action`.
 - `POST /api/storage/artifact-hygiene/dry-run` now creates a local task and dry-run packet that lists cleanup candidates without deleting files, reading payloads, scanning secret values, or calling external providers.
+- Storage overview and catalog now expose a metadata-only schema migration preflight for all canonical datasets: target schema version, required columns, primary key, partition expectation, current parquet status, and manual migration boundaries are visible without reading payloads or writing Parquet.
 
 ### Gaps
 
-- Schema migration.
-- Dataset versioning.
+- Physical schema validation and schema migration execution.
+- Dataset versioning beyond the local schema migration preflight.
 - Partition strategy.
 - Compaction.
 - Cache TTL production policy.
@@ -287,12 +288,14 @@ Add factor universe research pipeline
 - UI does not directly read large DataFrames.
 - Queries go through DuckDB/service.
 - Data files do not enter git.
+- Schema migration preflight remains visibly `preflight_ready`, with `physical_validation_done_count=0` and `migration_executed_count=0` until explicit future tasks prove otherwise.
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
 - Write failure does not pollute packet or action.
 
 ### Forbidden
 
 - Do not write Parquet from GET cache.
+- Do not treat schema migration preflight as physical validation or production migration completion.
 - Do not commit `.parquet`, `.duckdb`, `.sqlite`, `.db`, cache, or generated data.
 - Do not hide schema mismatch.
 
