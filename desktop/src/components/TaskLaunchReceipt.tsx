@@ -1,6 +1,7 @@
 import type { TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "./DataLineageTable";
 import DeepSeekModelStrategyLedger from "./DeepSeekModelStrategyLedger";
+import StateClarityRail from "./StateClarityRail";
 import TaskBoundarySummary from "./TaskBoundarySummary";
 
 export default function TaskLaunchReceipt({ receipt }: { receipt: TaskCreationEnvelope | null }) {
@@ -13,11 +14,20 @@ export default function TaskLaunchReceipt({ receipt }: { receipt: TaskCreationEn
   const warnings = receipt.warnings.length ? receipt.warnings : task?.warnings ?? [];
 
   return (
-    <div className="task-panel task-panel--receipt motion-surface">
+    <div className="task-panel task-panel--receipt motion-surface" data-task-state={receipt.ok ? "accepted" : "failed"}>
       <div className="task-panel__head">
         <span>任务创建回执</span>
         <span>{receipt.ok ? "accepted" : String(receipt.error ?? "failed")}</span>
       </div>
+      <StateClarityRail
+        label="task receipt state"
+        state={receipt.ok ? "accepted" : "failed"}
+        steps={[
+          { label: "accepted", state: receipt.ok ? "done" : "blocked", detail: receipt.ok ? "ok" : "failed" },
+          { label: "ledger", state: callLedger.length ? "done" : "waiting", detail: String(callLedger.length) },
+          { label: "boundary", state: task?.external_calls_triggered ? "blocked" : "done", detail: "safe" }
+        ]}
+      />
       <p>task_id: {String(receipt.data?.task_id ?? "--")}</p>
       <TaskBoundarySummary task={task} />
       <p>top_level_call_ledger: {topLevelCallLedger.length}</p>

@@ -7,6 +7,7 @@
   --motion-duration-route: 340ms;
   --motion-duration-chart: 360ms;
   --motion-duration-state: 300ms;
+  --motion-duration-clarity: 420ms;
   --motion-delay-step: 24ms;
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
@@ -116,6 +117,82 @@ textarea:focus {
   transform-origin: 50% 0;
 }
 
+.state-clarity-rail {
+  contain: layout paint;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  margin: 10px 0;
+}
+
+.state-clarity-step {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  min-height: 38px;
+  overflow: hidden;
+  padding: 8px 9px;
+  position: relative;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.state-clarity-step::after {
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.16), transparent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-105%);
+}
+
+.state-clarity-step[data-step-state="active"]::after,
+.state-clarity-step[data-step-state="done"]::after,
+.state-clarity-step[data-step-state="blocked"]::after {
+  animation: cc-clarity-sweep var(--motion-duration-clarity) var(--motion-ease-emphasized) both;
+  animation-iteration-count: 1;
+}
+
+.state-clarity-step[data-step-state="done"] {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.state-clarity-step[data-step-state="active"] {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.08);
+}
+
+.state-clarity-step[data-step-state="blocked"] {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.state-clarity-step span,
+.state-clarity-step small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-clarity-step span {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.state-clarity-step small {
+  color: #64748b;
+  font-size: 11px;
+}
+
 .chart-refresh-frame {
   contain: layout paint;
   min-height: 380px;
@@ -194,6 +271,17 @@ textarea:focus {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes cc-clarity-sweep {
+  from {
+    opacity: 0;
+    transform: translateX(-105%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(105%);
   }
 }
 
@@ -699,6 +787,8 @@ pre {
   .page-head,
   .chart-refresh-frame,
   .radar-result-cluster,
+  .state-clarity-step,
+  .state-clarity-step::after,
   .packet-card:hover,
   .metric-card:hover,
   button:hover:not(:disabled) {

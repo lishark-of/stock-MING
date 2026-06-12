@@ -702,6 +702,7 @@ Productionize non-blocking next-ticket radar scans
 
 - Current React UI is functional and audit-oriented.
 - A first motion clarity layer exists for route staging, cards, metric tiles, task panels, progress state, focus rings, and reduced-motion fallback.
+- Cache/page state, task receipts, task status panels, and candidate-radar state now share a CSS-only `StateClarityRail` that makes accepted/running/blocked/done boundaries visible without timers, requestAnimationFrame, recomputation, or external calls.
 - Next-session ECharts now has a short update clarity layer and respects reduced-motion preferences by disabling chart update animation.
 - Candidate radar now tags its primary result cluster with cache/coverage/blocker/degraded state so result transitions are visually easier to follow without recomputing candidates.
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
@@ -709,7 +710,7 @@ Productionize non-blocking next-ticket radar scans
 
 ### Gaps
 
-- Need deeper transitions for panel expansion, cache refresh, and later candidate-radar result deltas beyond the primary cluster.
+- Need deeper transitions for panel expansion, cache refresh, and later candidate-radar result deltas beyond the primary cluster and clarity rail.
 - Need broader chart motion verification so updates help users understand state changes instead of adding decoration.
 - Need broader viewport verification so animation never overlaps, occludes, or resizes critical text.
 - Need performance guardrails so later animation never reintroduces UI stalls.
@@ -730,6 +731,7 @@ Productionize non-blocking next-ticket radar scans
 - Main pages remain responsive during chart and task updates.
 - Motion does not trigger external calls or recomputation.
 - No animation changes `strategy action`, price, position, or packet values.
+- Cache/task/radar clarity states are visible without using timers, requestAnimationFrame, provider refreshes, or frontend scoring.
 - Visual polish is additive and does not replace audit labels, warnings, or freshness state.
 
 ### Forbidden

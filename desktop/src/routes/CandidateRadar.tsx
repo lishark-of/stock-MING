@@ -4,6 +4,7 @@ import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
+import StateClarityRail from "../components/StateClarityRail";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -156,6 +157,16 @@ export default function CandidateRadar() {
           <p>{String(cache.summary ?? "候选雷达 cache 只读展示。")}</p>
           <p>{String(cache.manual_required_text ?? "页面打开不会自动全市场扫描。")}</p>
           <p>候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。</p>
+          <StateClarityRail
+            label="candidate radar visual state"
+            state={radarMotionState}
+            steps={[
+              { label: "cache", state: cache.status === "ready" ? "done" : "waiting", detail: String(cache.status ?? "missing") },
+              { label: "coverage", state: Number(scanCoverage.missing_signal_group_count ?? 0) ? "blocked" : "done", detail: String(scanCoverage.missing_signal_group_count ?? 0) },
+              { label: "deep plan", state: deepScanPlan.status === "deep_scan_plan_ready" ? "done" : "waiting", detail: String(deepScanPlan.status ?? "missing") },
+              { label: "trade guard", state: cache.does_not_execute_trades === false ? "blocked" : "done", detail: "safe" }
+            ]}
+          />
         </PacketCard>
 
         <PacketCard title="快速雷达扫描" subtitle="POST /api/candidate-radar/scan-quick 只读取本地 snapshot/cache" status={String(scanCoverage.coverage_status ?? "cache")}>

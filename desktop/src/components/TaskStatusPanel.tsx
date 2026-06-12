@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cancelTask, getTask, type ApiEnvelope, type TaskRecord } from "../api/client";
 import DataLineageTable from "./DataLineageTable";
 import DeepSeekModelStrategyLedger from "./DeepSeekModelStrategyLedger";
+import StateClarityRail from "./StateClarityRail";
 import StatusBadge from "./StatusBadge";
 import TaskBoundarySummary from "./TaskBoundarySummary";
 
@@ -40,6 +41,14 @@ function taskLookupError(res: ApiEnvelope<TaskRecord>): TaskLookupError | null {
     call_ledger: res.call_ledger ?? [],
     warnings: res.warnings ?? []
   };
+}
+
+function stateForTaskStep(status: TaskRecord["status"], step: "queued" | "running" | "finished") {
+  if (status === "failed" || status === "cancelled") return step === "finished" ? "blocked" : "done";
+  if (status === "success") return "done";
+  if (status === "pending") return step === "queued" ? "active" : "waiting";
+  if (status === "running") return step === "running" ? "active" : step === "queued" ? "done" : "waiting";
+  return "waiting";
 }
 
 export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
@@ -97,7 +106,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   if (!task) {
     if (lookupError) {
       return (
-        <div className="task-panel task-panel--failed motion-surface">
+        <div className="task-panel task-panel--failed motion-surface" data-task-state="lookup_failed">
           <div className="task-panel__head">
             <StatusBadge label={lookupError.error} tone="bad" />
             <span>{taskId}</span>
@@ -117,11 +126,20 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const cancellable = task.status === "pending" || task.status === "running";
 
   return (
-    <div className={`task-panel task-panel--${task.status} motion-surface`}>
+    <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status}>
       <div className="task-panel__head">
         <StatusBadge label={task.status} tone={toneForStatus(task.status)} />
         <span>{task.task_type}</span>
       </div>
+      <StateClarityRail
+        label="task execution state"
+        state={task.status}
+        steps={[
+          { label: "queued", state: stateForTaskStep(task.status, "queued"), detail: "task" },
+          { label: "running", state: stateForTaskStep(task.status, "running"), detail: `${Math.round((task.progress ?? 0) * 100)}%` },
+          { label: "finished", state: stateForTaskStep(task.status, "finished"), detail: task.status }
+        ]}
+      />
       <progress className="task-progress" value={task.progress ?? 0} max={1} />
       <p>{task.current_step}</p>
       <p>task_id: {task.task_id}</p>
