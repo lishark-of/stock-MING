@@ -33,6 +33,10 @@ EXTENDED_REFRESH_APIS = (
     "stk_surv",
 )
 CHIP_REFRESH_APIS = ("cyq_perf", "cyq_chips")
+MARGIN_REFRESH_APIS = ("margin_detail",)
+DRAGON_TIGER_REFRESH_APIS = ("top_list", "top_inst")
+LIMIT_EMOTION_REFRESH_APIS = ("stk_limit", "limit_list_d", "limit_cpt_list")
+FINANCIAL_DISCLOSURE_REFRESH_APIS = ("forecast", "fina_indicator")
 HARD_RISK_REFRESH_APIS = (
     "anns_d",
     "forecast",
@@ -266,6 +270,17 @@ def _api_validation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     selected_rows = [row for row in rows if row.get("selected")]
     chip_rows = [row for row in rows if row.get("chip_api")]
     hard_risk_rows = [row for row in rows if row.get("hard_risk_api")]
+
+    def _domain_rows(apis: Iterable[str]) -> list[dict[str, Any]]:
+        api_set = set(apis)
+        return [row for row in rows if row.get("api") in api_set]
+
+    def _selected_count(apis: Iterable[str]) -> int:
+        return len([row for row in _domain_rows(apis) if row.get("selected")])
+
+    def _validated_count(apis: Iterable[str]) -> int:
+        return len([row for row in _domain_rows(apis) if str(row.get("validation_status") or "").startswith("validated_")])
+
     return {
         "status": "ready",
         "api_count": len(rows),
@@ -290,6 +305,14 @@ def _api_validation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "selected_hard_risk_api_count": len([row for row in hard_risk_rows if row.get("selected")]),
         "validated_chip_api_count": len([row for row in chip_rows if str(row.get("validation_status") or "").startswith("validated_")]),
         "validated_hard_risk_api_count": len([row for row in hard_risk_rows if str(row.get("validation_status") or "").startswith("validated_")]),
+        "selected_margin_api_count": _selected_count(MARGIN_REFRESH_APIS),
+        "selected_dragon_tiger_api_count": _selected_count(DRAGON_TIGER_REFRESH_APIS),
+        "selected_limit_emotion_api_count": _selected_count(LIMIT_EMOTION_REFRESH_APIS),
+        "selected_financial_disclosure_api_count": _selected_count(FINANCIAL_DISCLOSURE_REFRESH_APIS),
+        "validated_margin_api_count": _validated_count(MARGIN_REFRESH_APIS),
+        "validated_dragon_tiger_api_count": _validated_count(DRAGON_TIGER_REFRESH_APIS),
+        "validated_limit_emotion_api_count": _validated_count(LIMIT_EMOTION_REFRESH_APIS),
+        "validated_financial_disclosure_api_count": _validated_count(FINANCIAL_DISCLOSURE_REFRESH_APIS),
         "cache_get_external_calls": False,
         "button_gated_external_calls_only": True,
         "does_not_execute_trades": True,
@@ -534,6 +557,10 @@ def run_tushare_refresh_task(
             "calendar": list(CALENDAR_REFRESH_APIS),
             "extended": list(EXTENDED_REFRESH_APIS),
             "chip": list(CHIP_REFRESH_APIS),
+            "margin": list(MARGIN_REFRESH_APIS),
+            "dragon_tiger": list(DRAGON_TIGER_REFRESH_APIS),
+            "limit_emotion": list(LIMIT_EMOTION_REFRESH_APIS),
+            "financial_disclosure": list(FINANCIAL_DISCLOSURE_REFRESH_APIS),
             "hard_risk": list(HARD_RISK_REFRESH_APIS),
             "all": list(REFRESH_API_SPECS.keys()),
             "parquet_enabled": list(PARQUET_DATASETS.keys()),

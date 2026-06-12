@@ -1987,6 +1987,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             def get_top_inst(self, **params):
                 return {"ok": True, "data": [], "error": ""}
 
+            def get_stk_limit(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "up_limit": 11.44}], "error": ""}
+
+            def get_limit_list_d(self, **params):
+                return {"ok": True, "data": [], "error": ""}
+
             def get_limit_cpt_list(self, **params):
                 return {"ok": False, "data": None, "error": "Traceback token=SHOULD_DROP"}
 
@@ -2001,7 +2007,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "ts_code": "002008.SZ",
                 "start_date": "20260601",
                 "end_date": "20260610",
-                "apis": ["trade_cal", "margin_detail", "top_list", "top_inst", "limit_cpt_list", "fina_indicator", "stk_surv"],
+                "apis": ["trade_cal", "margin_detail", "top_list", "top_inst", "stk_limit", "limit_list_d", "limit_cpt_list", "fina_indicator", "stk_surv"],
                 "api_key": "SHOULD_DROP",
             },
             adapter=ExtendedFakeTushareAdapter(),
@@ -2024,6 +2030,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ledger_by_api["top_list"]["call_status"], "success")
         self.assertEqual(ledger_by_api["top_list"]["parquet_status"], "not_enabled")
         self.assertEqual(ledger_by_api["top_inst"]["call_status"], "empty")
+        self.assertEqual(ledger_by_api["stk_limit"]["call_status"], "success")
+        self.assertEqual(ledger_by_api["limit_list_d"]["call_status"], "empty")
         self.assertEqual(ledger_by_api["fina_indicator"]["call_status"], "success")
         self.assertEqual(ledger_by_api["fina_indicator"]["data_date"], "20260430")
         self.assertEqual(ledger_by_api["stk_surv"]["call_status"], "success")
@@ -2035,12 +2043,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
         self.assertIsNotNone(persisted)
         self.assertEqual(persisted["status"], "success")
-        self.assertEqual(persisted["success_count"], 6)
+        self.assertEqual(persisted["success_count"], 8)
         self.assertEqual(persisted["failed_count"], 1)
-        self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], 7)
-        self.assertEqual(persisted["api_validation_summary"]["validated_success_count"], 4)
-        self.assertEqual(persisted["api_validation_summary"]["validated_empty_count"], 2)
+        self.assertEqual(persisted["api_validation_summary"]["selected_api_count"], 9)
+        self.assertEqual(persisted["api_validation_summary"]["validated_success_count"], 5)
+        self.assertEqual(persisted["api_validation_summary"]["validated_empty_count"], 3)
         self.assertEqual(persisted["api_validation_summary"]["validated_failed_count"], 1)
+        self.assertEqual(persisted["api_groups"]["margin"], ["margin_detail"])
+        self.assertEqual(persisted["api_groups"]["dragon_tiger"], ["top_list", "top_inst"])
+        self.assertEqual(persisted["api_groups"]["limit_emotion"], ["stk_limit", "limit_list_d", "limit_cpt_list"])
+        self.assertEqual(persisted["api_groups"]["financial_disclosure"], ["forecast", "fina_indicator"])
         validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
         self.assertEqual(validation_by_api["trade_cal"]["group"], "calendar")
         self.assertEqual(validation_by_api["trade_cal"]["validation_status"], "validated_success")
@@ -2053,13 +2065,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(validation_by_api["top_list"]["group"], "extended")
         self.assertEqual(validation_by_api["top_list"]["validation_status"], "validated_success")
         self.assertEqual(validation_by_api["top_inst"]["validation_status"], "validated_empty")
+        self.assertEqual(validation_by_api["stk_limit"]["domain"], "limit_emotion")
+        self.assertEqual(validation_by_api["stk_limit"]["validation_status"], "validated_success")
+        self.assertEqual(validation_by_api["limit_list_d"]["validation_status"], "validated_empty")
         self.assertEqual(validation_by_api["fina_indicator"]["validation_status"], "validated_success")
         self.assertEqual(validation_by_api["stk_surv"]["validation_status"], "validated_success")
         self.assertEqual(validation_by_api["limit_cpt_list"]["validation_status"], "validated_failed")
         self.assertEqual(validation_by_api["limit_cpt_list"]["validation_scope"], "task_call_result")
         self.assertEqual(validation_by_api["daily"]["validation_status"], "not_requested")
         self.assertEqual(validation_by_api["daily"]["validation_scope"], "capability_matrix_only")
-        self.assertEqual(persisted["api_validation_summary"]["task_call_result_count"], 7)
+        self.assertEqual(persisted["api_validation_summary"]["selected_margin_api_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["selected_dragon_tiger_api_count"], 2)
+        self.assertEqual(persisted["api_validation_summary"]["selected_limit_emotion_api_count"], 3)
+        self.assertEqual(persisted["api_validation_summary"]["selected_financial_disclosure_api_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["validated_margin_api_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["validated_dragon_tiger_api_count"], 2)
+        self.assertEqual(persisted["api_validation_summary"]["validated_limit_emotion_api_count"], 3)
+        self.assertEqual(persisted["api_validation_summary"]["validated_financial_disclosure_api_count"], 1)
+        self.assertEqual(persisted["api_validation_summary"]["task_call_result_count"], 9)
         self.assertIn("daily", persisted["api_validation_matrix_policy"]["matrix_only_apis"])
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
