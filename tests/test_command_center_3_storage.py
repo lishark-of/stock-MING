@@ -109,6 +109,57 @@ class CommandCenter3StorageTests(unittest.TestCase):
         self.assertFalse(result["skipped_filters"])
         self.assertFalse(result["external_calls_triggered"])
 
+    def test_parquet_store_writes_partitioned_dataset(self):
+        from storage import parquet_store
+
+        if not parquet_store.dependency_status()["available"]:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = parquet_store.write_partitioned_dataset(
+                pd.DataFrame(
+                    {
+                        "ts_code": ["002008.SZ", "600519.SH"],
+                        "trade_date": ["20260611", "20260612"],
+                        "factor_key": ["momentum_20d", "volatility_20d"],
+                        "raw_value": [0.12, 0.04],
+                    }
+                ),
+                root=tmp,
+                name="factor_values",
+                partition_columns=["trade_date"],
+            )
+            metadata = parquet_store.partitioned_dataset_metadata(root=tmp, name="factor_values")
+
+        self.assertEqual(result["status"], "written")
+        self.assertTrue(result["partitioned"])
+        self.assertEqual(result["partition_columns"], ["trade_date"])
+        self.assertEqual(result["row_count"], 2)
+        self.assertGreaterEqual(result["file_count"], 1)
+        self.assertEqual(metadata["status"], "ready")
+        self.assertGreaterEqual(metadata["file_count"], 1)
+        self.assertFalse(result["external_calls_triggered"])
+        self.assertFalse(metadata["external_calls_triggered"])
+
+    def test_parquet_store_rejects_missing_partition_columns(self):
+        from storage import parquet_store
+
+        if not parquet_store.dependency_status()["available"]:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = parquet_store.write_partitioned_dataset(
+                pd.DataFrame({"ts_code": ["002008.SZ"], "raw_value": [0.12]}),
+                root=tmp,
+                name="factor_values",
+                partition_columns=["trade_date"],
+            )
+            metadata = parquet_store.partitioned_dataset_metadata(root=tmp, name="factor_values")
+
+        self.assertEqual(result["status"], "partition_columns_missing")
+        self.assertEqual(result["missing_partition_columns"], ["trade_date"])
+        self.assertEqual(result["row_count"], 0)
+        self.assertEqual(metadata["status"], "missing")
+        self.assertFalse(result["external_calls_triggered"])
+
     def test_duckdb_store_handles_parallel_cache_reads(self):
         from storage import duckdb_store, parquet_store
 
