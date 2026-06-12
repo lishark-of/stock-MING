@@ -2105,6 +2105,119 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(validation_by_api["trade_cal"]["validation_scope"], "task_call_result")
         self.assertEqual(persisted["api_validation_matrix_policy"]["matrix_only_apis"], [])
 
+    def test_tushare_refresh_task_validates_chip_and_hard_risk_domains(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class ChipRiskFakeAdapter:
+            def get_cyq_perf(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "winner_rate": 0.62}], "error": ""}
+
+            def get_cyq_chips(self, **params):
+                return {"ok": True, "data": [], "error": ""}
+
+            def get_anns_d(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "ann_date": "20260609", "title": "safe"}], "error": ""}
+
+            def get_forecast(self, **params):
+                return {"ok": True, "data": [], "error": ""}
+
+            def get_stk_holdertrade(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "ann_date": "20260608", "holder_name": "holder"}], "error": ""}
+
+            def get_share_float(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "float_date": "20260607", "float_share": 1000}], "error": ""}
+
+            def get_pledge_stat(self, **params):
+                return {"ok": False, "data": None, "error": "Traceback token=SHOULD_DROP pledge failed"}
+
+            def get_pledge_detail(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "end_date": "20260606", "pledge_amount": 100}], "error": ""}
+
+        selected_apis = [
+            "cyq_perf",
+            "cyq_chips",
+            "anns_d",
+            "forecast",
+            "stk_holdertrade",
+            "share_float",
+            "pledge_stat",
+            "pledge_detail",
+        ]
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "ts_code": "002008.SZ",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "apis": selected_apis,
+                "authorization": "Bearer SHOULD_DROP",
+            },
+            adapter=ChipRiskFakeAdapter(),
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tushare_refresh_partial_safe")
+        self.assertTrue(task["external_calls_triggered"])
+        self.assertTrue(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertEqual([row["api"] for row in task["call_ledger"]], selected_apis)
+
+        ledger_by_api = {row["api"]: row for row in task["call_ledger"]}
+        self.assertEqual(ledger_by_api["cyq_perf"]["call_status"], "success")
+        self.assertEqual(ledger_by_api["cyq_perf"]["data_date"], "20260610")
+        self.assertEqual(ledger_by_api["cyq_chips"]["call_status"], "empty")
+        self.assertEqual(ledger_by_api["anns_d"]["data_date"], "20260609")
+        self.assertEqual(ledger_by_api["forecast"]["call_status"], "empty")
+        self.assertEqual(ledger_by_api["stk_holdertrade"]["data_date"], "20260608")
+        self.assertEqual(ledger_by_api["share_float"]["data_date"], "20260607")
+        self.assertEqual(ledger_by_api["pledge_detail"]["data_date"], "20260606")
+        self.assertEqual(ledger_by_api["pledge_stat"]["call_status"], "failed")
+        self.assertEqual(ledger_by_api["pledge_stat"]["error_message_safe"], "tushare_error_redacted_safe")
+        self.assertTrue(
+            all(
+                row["parquet_status"] == "not_enabled"
+                for row in task["call_ledger"]
+                if row["call_status"] != "failed"
+            )
+        )
+        self.assertEqual(ledger_by_api["pledge_stat"]["parquet_status"], "not_written_failed_call")
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["status"], "success")
+        self.assertEqual(persisted["success_count"], 7)
+        self.assertEqual(persisted["failed_count"], 1)
+        self.assertEqual(persisted["api_groups"]["chip"], ["cyq_perf", "cyq_chips"])
+        self.assertIn("pledge_detail", persisted["api_groups"]["hard_risk"])
+        summary = persisted["api_validation_summary"]
+        self.assertEqual(summary["selected_api_count"], len(selected_apis))
+        self.assertEqual(summary["selected_chip_api_count"], 2)
+        self.assertGreaterEqual(summary["selected_hard_risk_api_count"], 5)
+        self.assertEqual(summary["validated_chip_api_count"], 2)
+        self.assertGreaterEqual(summary["validated_hard_risk_api_count"], 5)
+        self.assertEqual(summary["domain_status_counts"]["chip_distribution"]["validated_success"], 1)
+        self.assertEqual(summary["domain_status_counts"]["chip_distribution"]["validated_empty"], 1)
+        self.assertGreaterEqual(summary["domain_status_counts"]["hard_risk"]["validated_success"], 4)
+        self.assertEqual(summary["domain_status_counts"]["hard_risk"]["validated_failed"], 1)
+
+        validation_by_api = {row["api"]: row for row in persisted["api_validation_rows"]}
+        self.assertTrue(validation_by_api["cyq_perf"]["chip_api"])
+        self.assertEqual(validation_by_api["cyq_perf"]["domain"], "chip_distribution")
+        self.assertEqual(validation_by_api["cyq_chips"]["validation_status"], "validated_empty")
+        self.assertTrue(validation_by_api["pledge_stat"]["hard_risk_api"])
+        self.assertEqual(validation_by_api["pledge_stat"]["domain"], "hard_risk")
+        self.assertEqual(validation_by_api["pledge_stat"]["validation_status"], "validated_failed")
+        self.assertEqual(validation_by_api["daily"]["validation_status"], "not_requested")
+        self.assertEqual(validation_by_api["daily"]["validation_scope"], "capability_matrix_only")
+        self.assertTrue(persisted["api_validation_summary"]["does_not_claim_unselected_apis_verified"])
+
     def test_tushare_refresh_task_failure_keeps_safe_error_and_action_boundary(self):
         self._with_meta_store()
         self._with_parquet_root()

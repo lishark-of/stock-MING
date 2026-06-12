@@ -32,6 +32,16 @@ EXTENDED_REFRESH_APIS = (
     "pledge_detail",
     "stk_surv",
 )
+CHIP_REFRESH_APIS = ("cyq_perf", "cyq_chips")
+HARD_RISK_REFRESH_APIS = (
+    "anns_d",
+    "forecast",
+    "stk_holdertrade",
+    "share_float",
+    "pledge_stat",
+    "pledge_detail",
+    "stk_surv",
+)
 ALL_REFRESH_APIS = CORE_REFRESH_APIS + CALENDAR_REFRESH_APIS + EXTENDED_REFRESH_APIS
 PARQUET_DATASETS = {
     "daily": "daily",
@@ -137,6 +147,26 @@ def _api_group(api: str) -> str:
     return "unknown"
 
 
+def _api_domain(api: str) -> str:
+    if api in CORE_REFRESH_APIS:
+        return "core_market_data"
+    if api in CALENDAR_REFRESH_APIS:
+        return "trade_calendar"
+    if api == "margin_detail":
+        return "margin_financing"
+    if api in {"top_list", "top_inst"}:
+        return "dragon_tiger"
+    if api in {"stk_limit", "limit_list_d", "limit_cpt_list"}:
+        return "limit_emotion"
+    if api in CHIP_REFRESH_APIS:
+        return "chip_distribution"
+    if api in {"fina_indicator", "forecast"}:
+        return "financial_disclosure"
+    if api in HARD_RISK_REFRESH_APIS:
+        return "hard_risk"
+    return "other_extended"
+
+
 def _api_capability_rows(selected_apis: Iterable[str] | None = None) -> list[dict[str, Any]]:
     selected = set(selected_apis or [])
     rows: list[dict[str, Any]] = []
@@ -147,10 +177,13 @@ def _api_capability_rows(selected_apis: Iterable[str] | None = None) -> list[dic
             {
                 "api": api,
                 "group": _api_group(api),
+                "domain": _api_domain(api),
                 "method": spec.get("method"),
                 "params": params,
                 "requires_ts_code": "ts_code" in params,
                 "selected": api in selected,
+                "chip_api": api in CHIP_REFRESH_APIS,
+                "hard_risk_api": api in HARD_RISK_REFRESH_APIS,
                 "parquet_enabled": bool(dataset),
                 "parquet_dataset": dataset,
                 "runtime_enabled": True,
@@ -220,13 +253,19 @@ def _api_validation_rows(selected_apis: Iterable[str], call_ledger: list[dict[st
 def _api_validation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_status: dict[str, int] = {}
     by_group: dict[str, dict[str, int]] = {}
+    by_domain: dict[str, dict[str, int]] = {}
     for row in rows:
         status = str(row.get("validation_status") or "unknown")
         group = str(row.get("group") or "unknown")
+        domain = str(row.get("domain") or "unknown")
         by_status[status] = by_status.get(status, 0) + 1
         group_counts = by_group.setdefault(group, {})
         group_counts[status] = group_counts.get(status, 0) + 1
+        domain_counts = by_domain.setdefault(domain, {})
+        domain_counts[status] = domain_counts.get(status, 0) + 1
     selected_rows = [row for row in rows if row.get("selected")]
+    chip_rows = [row for row in rows if row.get("chip_api")]
+    hard_risk_rows = [row for row in rows if row.get("hard_risk_api")]
     return {
         "status": "ready",
         "api_count": len(rows),
@@ -243,6 +282,14 @@ def _api_validation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "not_requested_count": len([row for row in rows if row.get("validation_status") == "not_requested"]),
         "status_counts": by_status,
         "group_status_counts": by_group,
+        "domain_status_counts": by_domain,
+        "domain_count": len(by_domain),
+        "chip_api_count": len(chip_rows),
+        "hard_risk_api_count": len(hard_risk_rows),
+        "selected_chip_api_count": len([row for row in chip_rows if row.get("selected")]),
+        "selected_hard_risk_api_count": len([row for row in hard_risk_rows if row.get("selected")]),
+        "validated_chip_api_count": len([row for row in chip_rows if str(row.get("validation_status") or "").startswith("validated_")]),
+        "validated_hard_risk_api_count": len([row for row in hard_risk_rows if str(row.get("validation_status") or "").startswith("validated_")]),
         "cache_get_external_calls": False,
         "button_gated_external_calls_only": True,
         "does_not_execute_trades": True,
@@ -486,6 +533,8 @@ def run_tushare_refresh_task(
             "core": list(CORE_REFRESH_APIS),
             "calendar": list(CALENDAR_REFRESH_APIS),
             "extended": list(EXTENDED_REFRESH_APIS),
+            "chip": list(CHIP_REFRESH_APIS),
+            "hard_risk": list(HARD_RISK_REFRESH_APIS),
             "all": list(REFRESH_API_SPECS.keys()),
             "parquet_enabled": list(PARQUET_DATASETS.keys()),
         },
