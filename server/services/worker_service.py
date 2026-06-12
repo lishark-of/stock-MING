@@ -164,6 +164,7 @@ def _production_readiness(
         "status": "desktop_mvp_ready_worker_production_pending" if blockers else "production_worker_preflight_ready",
         "scope": "worker_task_pipeline_productionization_preflight",
         "rows": rows,
+        "production_control_rows": _worker_production_control_rows(),
         "production_blockers": blockers,
         "local_fallback_available": True,
         "cache_api_starts_no_workers": True,
@@ -177,6 +178,46 @@ def _production_readiness(
         "does_not_modify_strategy_action": True,
         "note": "Worker production readiness is diagnostic; it does not start Celery, ping Redis, schedule Tushare, or run real jobs.",
     }
+
+
+def _worker_production_control_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "control": "retry_policy",
+            "status": "planned",
+            "current_coverage": "failed tasks keep safe error metadata; automatic retry/backoff is not enabled.",
+            "next_action": "add opt-in retry rules per task type after idempotency keys are enforced.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "task_cancel",
+            "status": "local_ready",
+            "current_coverage": "pending local tasks can be marked cancelled without external calls.",
+            "next_action": "extend cancellation to running Celery tasks when production worker is enabled.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "concurrency_lock",
+            "status": "planned",
+            "current_coverage": "task catalog is button-gated, but per-symbol/per-task locks are not enforced yet.",
+            "next_action": "add local lock keys before enabling overlapping Tushare/factor jobs.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "task_dedupe",
+            "status": "partial_ready",
+            "current_coverage": "task index deduplicates memory and SQLite status views; dispatch idempotency is not enforced.",
+            "next_action": "deduplicate by task_type + target + input_hash before queue submission.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "task_logs",
+            "status": "partial_ready",
+            "current_coverage": "task packets preserve call_ledger and error_message_safe; step-level append-only logs are not persisted.",
+            "next_action": "persist safe task step logs without stack traces, tokens, or raw provider payloads.",
+            "external_calls_triggered": False,
+        },
+    ]
 
 
 def read_worker_runtime_cache() -> dict[str, Any]:

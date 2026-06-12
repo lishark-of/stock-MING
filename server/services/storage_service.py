@@ -174,6 +174,46 @@ def dataset_implementation_status() -> dict[str, Any]:
     }
 
 
+def _storage_production_control_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "control": "schema_version",
+            "status": "partial_ready",
+            "current_coverage": "packet metadata and storage cache packets expose schema_version; dataset-level schema contracts are still incremental.",
+            "next_action": "pin schema contracts for daily/daily_basic/moneyflow/trade_cal/factor_values before full-market research.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "parquet_partitioning",
+            "status": "planned",
+            "current_coverage": "local Parquet datasets exist behind cache endpoints; full date/universe partition policy is not productionized.",
+            "next_action": "partition large datasets by dataset/trade_date and keep compaction explicit.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "duckdb_query_wrappers",
+            "status": "partial_ready",
+            "current_coverage": "DuckDB can query Parquet cache endpoints; common factor/date/universe research queries still need typed wrappers.",
+            "next_action": "add narrow query helpers before Factor Test Lab full/small research modes.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "cache_ttl",
+            "status": "planned",
+            "current_coverage": "cache reads are explicit and safe; freshness TTL is not yet a storage-level invalidation policy.",
+            "next_action": "store per-packet TTL and stale reason without auto-refreshing GET cache.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "parquet_compaction",
+            "status": "planned",
+            "current_coverage": "small local writes are allowed; compaction is not enabled for full-market factor datasets.",
+            "next_action": "add manual compaction task after partition policy is fixed.",
+            "external_calls_triggered": False,
+        },
+    ]
+
+
 def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
     parquet_dependency = parquet_store.dependency_status()
     duckdb_dependency = duckdb_store.dependency_status()
@@ -221,6 +261,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "status": "foundation_ready" if not blockers else "partial_dependency_missing",
         "scope": "storage_productionization_preflight",
         "rows": rows,
+        "production_control_rows": _storage_production_control_rows(),
         "blockers": blockers,
         "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
         "cache_ttl_policy": "not_enabled_yet",
