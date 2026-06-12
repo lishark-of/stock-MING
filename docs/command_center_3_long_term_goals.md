@@ -68,7 +68,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
-| LTG-13 | 下一票雷达快扫生产化 | legacy radar exists; React cache page exists; full scan path needs non-blocking migration | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
+| LTG-13 | 下一票雷达快扫生产化 | legacy radar exists; React cache page exists; quick/local scans plus full-pool/deep-scan readiness plans exist | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
 | LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer exists; chart/radar clarity is in progress | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
@@ -649,6 +649,7 @@ Keep real trading isolated from Command Center 3 automation
 - The 3.0 page now exposes legacy signal-group coverage, parity inventory, output contract rows, local candidate-pool audit, skipped reasons, scan mode status, freshness state, provider coverage rows, degraded mode rows, and universe-size coverage detail.
 - Candidate radar packets now include `scan_execution_summary` and `scan_acceptance_rows` so cache view, local scan, local pool scan, and full-pool plan-only outputs can be audited without treating them as production full-pool completion.
 - A button-gated local `run_candidate_radar_full_pool_plan` task now writes `full_pool_scan_plan`, stage rows, filter rows, required signal rows, and blocker rows; it is a plan-only readiness packet, not a full-pool scan.
+- A button-gated local `run_candidate_radar_deep_scan_plan` task now writes `deep_scan_plan`, stage rows, parity rows, required signal rows, and blocker rows so fast-scan migration can audit no-feature-loss readiness without executing deep scan, refreshing providers, or calling DeepSeek.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
 ### Gaps
@@ -656,14 +657,15 @@ Keep real trading isolated from Command Center 3 automation
 - Need actual full-pool scan execution beyond the current local quick/watchlist/custom scans and full-pool readiness plan.
 - Need worker-backed async execution for slower scans beyond the local fallback path.
 - Deeper local scan coverage accounting and scan acceptance rows now exist for universe size, provider-blocked groups, stale inputs, missing provider data, degraded modes, freshness, local pool, full-pool boundary, and trade isolation; they are still cache/local-only and do not prove full-pool or provider-backed scan acceptance.
-- Need clear distinction between quick scan, deep scan, and research-only candidates.
+- Need clear distinction between quick scan, deep-scan readiness plan, real deep scan, and research-only candidates.
+- The deep-scan readiness plan is not deep scan execution and does not prove legacy radar replacement.
 - Need parity acceptance before removing any Streamlit fallback.
 
 ### Implementation Phases
 
 1. Inventory legacy radar inputs, scoring fields, filters, exclusions, and output packet shape.
 2. Build a fast local scan task that reads existing cache/storage first and returns a task receipt immediately.
-3. Add progressive scan modes: `quick_cache_scan`, `watchlist_scan`, `custom_pool_scan`, `full_pool_plan`, and later real `full_pool_scan`.
+3. Add progressive scan modes: `quick_cache_scan`, `watchlist_scan`, `custom_pool_scan`, `full_pool_plan`, `deep_scan_plan`, and later real `full_pool_scan` / `deep_scan`.
 4. Add coverage metrics so the UI shows what was scanned, skipped, stale, or blocked.
 5. Preserve signal parity before removing any legacy fallback.
 6. Move slow provider refreshes behind explicit POST tasks instead of radar page render.
@@ -676,12 +678,14 @@ Keep real trading isolated from Command Center 3 automation
 - Existing legacy radar signal groups are mapped or explicitly marked as not yet migrated.
 - Missing provider data, provider-blocked groups, stale inputs, and degraded modes are reported as coverage gaps, not silently dropped.
 - Full-pool plan lists worker requirements, filters, required signal groups, and blockers without scanning or refreshing providers.
+- Deep-scan plan lists no-feature-loss parity rows, required signal rows, freshness, worker blockers, and trade/model boundaries without executing deep scan or calling DeepSeek.
 - Radar output does not become a buy instruction and does not modify `strategy action`.
 
 ### Forbidden
 
 - Do not scan the full market on page load.
 - Do not treat `full_pool_scan_plan` as full-pool scan completion.
+- Do not treat `deep_scan_plan` as deep scan completion or legacy radar replacement.
 - Do not reduce legacy radar signal coverage without marking the gap.
 - Do not call Tushare/DeepSeek/GitHub from GET cache or render.
 - Do not treat candidates as trade instructions.

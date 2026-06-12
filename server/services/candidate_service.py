@@ -178,6 +178,13 @@ SCAN_MODE_STATUS_ROWS = [
         "notes": "Full-pool plan can be generated locally; actual scan still requires future worker execution and explicit provider refresh tasks.",
     },
     {
+        "scan_mode": "deep_scan",
+        "status": "implemented_plan_only",
+        "scope": "legacy parity, provider, freshness, worker, and action-boundary readiness",
+        "external_calls": False,
+        "notes": "Deep-scan plan is a local readiness checklist; it does not scan, refresh providers, score candidates, or call DeepSeek.",
+    },
+    {
         "scan_mode": "manual_deep_research",
         "status": "planned_manual_only",
         "scope": "DeepSeek explanation for selected candidate",
@@ -1212,6 +1219,7 @@ def _scan_execution_summary(
     candidate_rows: list[dict[str, Any]],
     local_pool_audit: Mapping[str, Any],
     full_pool_scan_plan: Mapping[str, Any],
+    deep_scan_plan: Mapping[str, Any],
 ) -> dict[str, Any]:
     coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
     freshness_state = _as_dict(coverage.get("freshness_state"))
@@ -1221,6 +1229,8 @@ def _scan_execution_summary(
     scan_family = (
         "full_pool_plan"
         if scan_mode == "full_pool_plan"
+        else "deep_scan_plan"
+        if scan_mode == "deep_scan_plan"
         else "local_pool_scan"
         if scan_mode in LOCAL_POOL_SCAN_MODES
         else "quick_cache_scan"
@@ -1248,6 +1258,9 @@ def _scan_execution_summary(
         "full_pool_plan_ready": full_pool_scan_plan.get("status") == "full_pool_plan_ready",
         "full_pool_scan_done": bool(full_pool_scan_plan.get("full_pool_scan_done") is True),
         "full_pool_blocking_issue_count": full_pool_scan_plan.get("blocking_issue_count"),
+        "deep_scan_plan_ready": deep_scan_plan.get("status") == "deep_scan_plan_ready",
+        "deep_scan_done": bool(deep_scan_plan.get("deep_scan_done") is True),
+        "deep_scan_blocking_issue_count": deep_scan_plan.get("blocking_issue_count"),
         "writes_sqlite_packet": mode != "cache_only",
         "cache_view_only": mode == "cache_only",
         "result_is_research_only": True,
@@ -1268,6 +1281,7 @@ def _scan_acceptance_rows(
     candidate_rows: list[dict[str, Any]],
     local_pool_audit: Mapping[str, Any],
     full_pool_scan_plan: Mapping[str, Any],
+    deep_scan_plan: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
     freshness_state = _as_dict(coverage.get("freshness_state"))
@@ -1281,6 +1295,7 @@ def _scan_acceptance_rows(
         "historical",
         "unknown",
     }
+    deep_scan_plan_ready = deep_scan_plan.get("status") == "deep_scan_plan_ready"
     rows = [
         {
             "check_key": "page_render_does_not_scan",
@@ -1330,6 +1345,22 @@ def _scan_acceptance_rows(
             "check_key": "full_pool_boundary",
             "status": "plan_only" if full_pool_plan_ready else "not_executed",
             "observed": "full_pool_scan_done=false; plan does not score candidates or refresh providers.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "deep_scan_boundary",
+            "status": "plan_only" if deep_scan_plan_ready else "not_executed",
+            "observed": "deep_scan_done=false; plan records no-feature-loss readiness and does not call providers or DeepSeek.",
+            "user_visible": True,
+        },
+        {
+            "check_key": "feature_loss_boundary",
+            "status": "gap_reported"
+            if int(deep_scan_plan.get("legacy_feature_gap_count") or 0)
+            else "passed"
+            if deep_scan_plan_ready
+            else "not_executed",
+            "observed": f"{deep_scan_plan.get('legacy_feature_gap_count') or 0} legacy feature gaps visible.",
             "user_visible": True,
         },
         {
@@ -1582,6 +1613,297 @@ def _build_full_pool_scan_plan(
     }
 
 
+def _deep_scan_required_signal_rows(provider_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    by_group = {str(row.get("signal_group") or ""): row for row in provider_rows}
+    for requirement in RADAR_PROVIDER_SIGNAL_REQUIREMENTS:
+        coverage = by_group.get(str(requirement["signal_group"])) or {}
+        coverage_status = str(coverage.get("coverage_status") or "missing_provider_data")
+        rows.append(
+            {
+                "signal_group": requirement["signal_group"],
+                "label": requirement["label"],
+                "required_apis": requirement["apis"],
+                "legacy_role": requirement["legacy_role"],
+                "coverage_status": coverage_status,
+                "matched_provider_row_count": coverage.get("matched_provider_row_count") or 0,
+                "ready_for_deep_scan": coverage_status == "available",
+                "gap_visible": coverage_status != "available",
+                "requires_explicit_provider_task": coverage_status != "available",
+                "does_not_refresh_provider": True,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _deep_scan_parity_rows(
+    *,
+    parity_rows: list[dict[str, Any]],
+    output_contract_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in parity_rows:
+        status = str(row.get("migration_status") or "")
+        gap_visible = "missing" in status or "future" in status
+        rows.append(
+            {
+                "kind": "legacy_parity",
+                "key": row.get("key"),
+                "label": row.get("label"),
+                "migration_status": status,
+                "ready_for_deep_scan": not gap_visible,
+                "blocks_legacy_replacement": gap_visible,
+                "gap_visible": gap_visible,
+                "target_state": row.get("target_state"),
+                "does_not_silently_drop_feature": True,
+                "does_not_call_external_sources": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    for row in output_contract_rows:
+        present = bool(row.get("present"))
+        rows.append(
+            {
+                "kind": "output_contract",
+                "key": row.get("field"),
+                "label": row.get("field"),
+                "migration_status": "mapped" if present else "missing_reported",
+                "ready_for_deep_scan": present,
+                "blocks_legacy_replacement": not present,
+                "gap_visible": not present,
+                "target_state": row.get("required_for"),
+                "does_not_invent_value": True,
+                "does_not_call_external_sources": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _deep_scan_stage_rows(
+    *,
+    candidate_rows: list[dict[str, Any]],
+    provider_signal_rows: list[dict[str, Any]],
+    parity_rows: list[dict[str, Any]],
+    freshness_state: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    provider_gap_count = sum(1 for row in provider_signal_rows if not row.get("ready_for_deep_scan"))
+    parity_gap_count = sum(1 for row in parity_rows if row.get("gap_visible"))
+    freshness = str(freshness_state.get("state") or "").lower()
+    freshness_ready = freshness_state.get("source") != "missing" and freshness not in {
+        "stale",
+        "expired",
+        "historical",
+        "unknown",
+    }
+    rows = [
+        {
+            "stage": "load_local_candidate_universe",
+            "status": "ready" if candidate_rows else "blocked_missing_local_candidates",
+            "executed_now": False,
+            "row_count": len(candidate_rows),
+            "blocks_deep_scan": not bool(candidate_rows),
+            "external_calls_triggered": False,
+        },
+        {
+            "stage": "legacy_feature_parity",
+            "status": "ready" if not parity_gap_count else "gaps_visible_do_not_replace_legacy",
+            "executed_now": False,
+            "gap_count": parity_gap_count,
+            "blocks_deep_scan": bool(parity_gap_count),
+            "external_calls_triggered": False,
+        },
+        {
+            "stage": "provider_signal_inputs",
+            "status": "ready" if not provider_gap_count else "provider_gaps_visible_no_refresh",
+            "executed_now": False,
+            "gap_count": provider_gap_count,
+            "blocks_deep_scan": bool(provider_gap_count),
+            "external_calls_triggered": False,
+        },
+        {
+            "stage": "freshness_gate",
+            "status": "ready" if freshness_ready else "research_only_until_current_freshness",
+            "executed_now": False,
+            "freshness_state": freshness_state.get("state") or "unknown",
+            "blocks_deep_scan": not freshness_ready,
+            "external_calls_triggered": False,
+        },
+        {
+            "stage": "async_worker_execution",
+            "status": "future_worker_required",
+            "executed_now": False,
+            "blocks_deep_scan": True,
+            "external_calls_triggered": False,
+        },
+        {
+            "stage": "manual_deep_research_boundary",
+            "status": "manual_only_future_task",
+            "executed_now": False,
+            "blocks_deep_scan": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "stage": "write_deep_scan_packet",
+            "status": "not_executed_by_plan",
+            "executed_now": False,
+            "blocks_deep_scan": True,
+            "external_calls_triggered": False,
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+            }
+        )
+    return rows
+
+
+def _deep_scan_blocker_rows(
+    *,
+    stage_rows: list[dict[str, Any]],
+    provider_signal_rows: list[dict[str, Any]],
+    parity_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage in stage_rows:
+        if not stage.get("blocks_deep_scan"):
+            continue
+        rows.append(
+            {
+                "blocker_key": f"stage_{stage.get('stage')}",
+                "severity": "production_required" if stage.get("stage") in {"async_worker_execution", "write_deep_scan_packet"} else "readiness_gap",
+                "status": stage.get("status"),
+                "message": f"Deep scan stage {stage.get('stage')} is not ready for execution.",
+                "blocks_deep_scan": True,
+            }
+        )
+    for row in provider_signal_rows:
+        if row.get("ready_for_deep_scan"):
+            continue
+        rows.append(
+            {
+                "blocker_key": f"provider_{row.get('signal_group')}",
+                "severity": "coverage_gap",
+                "status": row.get("coverage_status") or "missing_provider_data",
+                "message": f"{row.get('label')} coverage is not ready for deep scan.",
+                "blocks_deep_scan": True,
+            }
+        )
+    parity_gap_count = sum(1 for row in parity_rows if row.get("gap_visible"))
+    if parity_gap_count:
+        rows.append(
+            {
+                "blocker_key": "legacy_feature_parity_gaps",
+                "severity": "parity_gap",
+                "status": "gaps_visible",
+                "message": "Legacy radar features are not all mapped; keep Streamlit fallback until gaps are closed.",
+                "gap_count": parity_gap_count,
+                "blocks_deep_scan": True,
+            }
+        )
+    for row in rows:
+        row.update(
+            {
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _build_deep_scan_plan(
+    snapshot_map: Mapping[str, Any],
+    payload_safe: Mapping[str, Any],
+    *,
+    now: str,
+) -> dict[str, Any]:
+    radar_packet = _as_dict(snapshot_map.get("radar_packet") or snapshot_map.get("command_center_radar_packet"))
+    candidates = _as_list(snapshot_map.get("next_ticket_candidates")) or _as_list(radar_packet.get("top_candidates"))
+    excluded_candidates = _as_list(radar_packet.get("excluded_candidates"))[:10]
+    evidence_recovery_actions = _as_list(snapshot_map.get("next_ticket_evidence_recovery_actions"))[:10]
+    candidate_rows = _candidate_rows(candidates)
+    provider_rows = _provider_coverage_rows(snapshot_map)
+    freshness_state = _candidate_freshness_state(snapshot_map)
+    parity_rows_raw = _legacy_parity_rows(
+        snapshot_map=snapshot_map,
+        radar_packet=radar_packet,
+        candidate_rows=candidate_rows,
+        excluded_candidates=excluded_candidates,
+        evidence_recovery_actions=evidence_recovery_actions,
+    )
+    output_contract_rows = _legacy_output_contract_rows(
+        radar_packet=radar_packet,
+        candidate_rows=candidate_rows,
+        excluded_candidates=excluded_candidates,
+    )
+    provider_signal_rows = _deep_scan_required_signal_rows(provider_rows)
+    parity_rows = _deep_scan_parity_rows(
+        parity_rows=parity_rows_raw,
+        output_contract_rows=output_contract_rows,
+    )
+    stage_rows = _deep_scan_stage_rows(
+        candidate_rows=candidate_rows,
+        provider_signal_rows=provider_signal_rows,
+        parity_rows=parity_rows,
+        freshness_state=freshness_state,
+    )
+    blocker_rows = _deep_scan_blocker_rows(
+        stage_rows=stage_rows,
+        provider_signal_rows=provider_signal_rows,
+        parity_rows=parity_rows,
+    )
+    gap_count = sum(1 for row in parity_rows if row.get("gap_visible"))
+    ready_signal_count = sum(1 for row in provider_signal_rows if row.get("ready_for_deep_scan"))
+    return {
+        "schema_version": "candidate_radar_deep_scan_plan.v1",
+        "status": "deep_scan_plan_ready",
+        "task_type": "run_candidate_radar_deep_scan_plan",
+        "created_at": now,
+        "requested_scan_mode": "deep_scan",
+        "requested_depth": _safe_text(payload_safe.get("scan_depth") or "legacy_parity_first", limit=40),
+        "deep_scan_done": False,
+        "deep_scan_validation_done": False,
+        "fast_path_ready": bool(candidate_rows),
+        "legacy_feature_loss_guard_ready": gap_count == 0,
+        "page_render_starts_deep_scan": False,
+        "cache_get_starts_deep_scan": False,
+        "provider_refresh_executed": False,
+        "candidate_scoring_executed": False,
+        "candidate_packet_written_by_plan": False,
+        "worker_task_required": True,
+        "worker_task_consumption_plan_ready": True,
+        "stage_rows": stage_rows,
+        "parity_rows": parity_rows,
+        "required_signal_rows": provider_signal_rows,
+        "blocker_rows": blocker_rows,
+        "candidate_row_count": len(candidate_rows),
+        "required_signal_group_count": len(provider_signal_rows),
+        "ready_signal_group_count": ready_signal_count,
+        "provider_gap_count": len(provider_signal_rows) - ready_signal_count,
+        "legacy_feature_gap_count": gap_count,
+        "blocking_issue_count": sum(1 for row in blocker_rows if row.get("blocks_deep_scan")),
+        "research_only": True,
+        "candidate_is_not_buy_instruction": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "warning": "Deep-scan plan records readiness and feature-loss gaps; it does not execute a deep scan, refresh providers, call DeepSeek, or produce trade instructions.",
+    }
+
+
 def _build_candidate_radar_packet(
     snapshot: Mapping[str, Any],
     *,
@@ -1592,6 +1914,7 @@ def _build_candidate_radar_packet(
     local_pool_audit: Mapping[str, Any] | None = None,
     local_pool_skipped_rows: list[dict[str, Any]] | None = None,
     full_pool_scan_plan: Mapping[str, Any] | None = None,
+    deep_scan_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
@@ -1630,7 +1953,9 @@ def _build_candidate_radar_packet(
     counts["degraded_mode_active_count"] = coverage["coverage_detail_summary"]["degraded_mode_active_count"]
     counts["universe_size"] = coverage["coverage_detail_summary"]["universe_size"]
     plan = dict(full_pool_scan_plan or _as_dict(snapshot_map.get("full_pool_scan_plan")))
+    deep_plan = dict(deep_scan_plan or _as_dict(snapshot_map.get("deep_scan_plan")))
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
+    deep_scan_blocker_rows = _as_list(deep_plan.get("blocker_rows"))
     scan_execution_summary = _scan_execution_summary(
         mode=mode,
         cache_source=cache_source,
@@ -1640,6 +1965,7 @@ def _build_candidate_radar_packet(
         candidate_rows=candidate_rows,
         local_pool_audit=local_pool_audit or {},
         full_pool_scan_plan=plan,
+        deep_scan_plan=deep_plan,
     )
     scan_acceptance_rows = _scan_acceptance_rows(
         scan_mode=scan_mode,
@@ -1647,11 +1973,17 @@ def _build_candidate_radar_packet(
         candidate_rows=candidate_rows,
         local_pool_audit=local_pool_audit or {},
         full_pool_scan_plan=plan,
+        deep_scan_plan=deep_plan,
     )
     if plan:
         counts["full_pool_plan_blocking_issue_count"] = plan.get("blocking_issue_count")
         counts["full_pool_plan_ready_signal_group_count"] = plan.get("ready_signal_group_count")
         counts["full_pool_plan_provider_gap_count"] = plan.get("provider_gap_count")
+    if deep_plan:
+        counts["deep_scan_plan_blocking_issue_count"] = deep_plan.get("blocking_issue_count")
+        counts["deep_scan_plan_ready_signal_group_count"] = deep_plan.get("ready_signal_group_count")
+        counts["deep_scan_plan_provider_gap_count"] = deep_plan.get("provider_gap_count")
+        counts["deep_scan_plan_legacy_feature_gap_count"] = deep_plan.get("legacy_feature_gap_count")
 
     if candidate_rows:
         status = "ready"
@@ -1715,6 +2047,11 @@ def _build_candidate_radar_packet(
         "full_pool_plan_filter_rows": _as_list(plan.get("filter_rows")),
         "full_pool_required_signal_rows": _as_list(plan.get("required_signal_rows")),
         "full_pool_blocker_rows": full_pool_blocker_rows,
+        "deep_scan_plan": deep_plan,
+        "deep_scan_stage_rows": _as_list(deep_plan.get("stage_rows")),
+        "deep_scan_parity_rows": _as_list(deep_plan.get("parity_rows")),
+        "deep_scan_required_signal_rows": _as_list(deep_plan.get("required_signal_rows")),
+        "deep_scan_blocker_rows": deep_scan_blocker_rows,
         "skipped_reason_rows": coverage["skipped_reason_rows"],
         "freshness_state": coverage["freshness_state"],
         "candidate_rows": candidate_rows,
@@ -1745,6 +2082,11 @@ def _build_candidate_radar_packet(
             "full_pool_plan_is_not_full_pool_scan": True,
             "full_pool_plan_writes_no_candidates": True,
             "full_pool_plan_provider_refresh_executed": False,
+            "deep_scan_plan_is_not_deep_scan": True,
+            "deep_scan_plan_writes_no_new_candidates": True,
+            "deep_scan_plan_provider_refresh_executed": False,
+            "deep_scan_plan_deepseek_called": False,
+            "deep_scan_feature_loss_gaps_visible": True,
             "does_not_run_backtest": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -2008,4 +2350,86 @@ def run_candidate_full_pool_plan_task(payload: Any = None) -> dict[str, Any]:
         current_step="candidate_radar_full_pool_plan_ready",
         call_ledger=[ledger],
         warning="candidate_radar_full_pool_plan_ready_no_external_call",
+    ) or task
+
+
+def run_candidate_deep_scan_plan_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_candidate_radar_deep_scan_plan",
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_deep_scan_plan_queued",
+        warnings=[
+            "下一票雷达 deep-scan plan 只生成本地功能覆盖和准备度清单；不会扫描全市场、不会调用 Tushare、DeepSeek 或 GitHub。",
+            "deep-scan plan 用来防止迁移降能；它不是 deep_scan 完成，不生成买入候选，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="reading_local_candidate_radar_deep_scan_inputs",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    snapshot = packet_service.load_snapshot_cache()
+    safe_snapshot = _safe_value(snapshot)
+    snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    now = _now_iso()
+    plan = _build_deep_scan_plan(snapshot_map, payload_safe, now=now)
+    request_params_safe = {
+        "scan_mode": "deep_scan",
+        "plan_only": True,
+        "scan_depth": plan.get("requested_depth"),
+        "required_signal_group_count": plan.get("required_signal_group_count"),
+        "legacy_feature_gap_count": plan.get("legacy_feature_gap_count"),
+        "blocking_issue_count": plan.get("blocking_issue_count"),
+        "external_sources_allowed": False,
+        "deep_scan_done": False,
+    }
+    packet = _build_candidate_radar_packet(
+        snapshot_map,
+        mode="deep_scan_plan",
+        cache_source="deep_scan_plan_task",
+        scan_mode="deep_scan_plan",
+        request_params_safe=request_params_safe,
+        deep_scan_plan=plan,
+    )
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_deep_scan_plan",
+        source_snapshot="command_center_latest.json",
+        row_count=len(plan.get("blocker_rows") or []),
+        call_status="deep_scan_plan_ready",
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["deep_scan_plan_completed_at"] = now
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "下一票雷达 deep-scan plan 只记录功能覆盖、provider、freshness、worker 和交易隔离准备度；不执行 deep_scan、不刷新 provider、不调用 DeepSeek、不生成买入候选。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "deep-scan plan" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "deep_scan_plan_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_deep_scan_plan_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_deep_scan_plan_storage_write_failed",
+            error_message_safe="candidate_radar_deep_scan_plan_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_deep_scan_plan_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_deep_scan_plan_ready",
+        call_ledger=[ledger],
+        warning="candidate_radar_deep_scan_plan_ready_no_external_call",
     ) or task

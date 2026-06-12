@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -55,6 +55,11 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchDeepScanPlan = () =>
+    void postCandidateRadarDeepScanPlan({ scan_mode: "deep_scan", plan_only: true, scan_depth: "legacy_parity_first" }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -67,6 +72,7 @@ export default function CandidateRadar() {
   const scanExecutionSummary = (cache.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
+  const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
   const localPoolAudit = (cache.local_candidate_pool_audit as Record<string, unknown> | undefined) ?? {};
   const overview = (cache.candidate_execution_evidence_overview as Record<string, unknown> | undefined) ?? {};
@@ -86,6 +92,10 @@ export default function CandidateRadar() {
   const fullPoolFilterRows = rows(cache.full_pool_plan_filter_rows);
   const fullPoolSignalRows = rows(cache.full_pool_required_signal_rows);
   const fullPoolBlockerRows = rows(cache.full_pool_blocker_rows);
+  const deepScanStageRows = rows(cache.deep_scan_stage_rows);
+  const deepScanParityRows = rows(cache.deep_scan_parity_rows);
+  const deepScanSignalRows = rows(cache.deep_scan_required_signal_rows);
+  const deepScanBlockerRows = rows(cache.deep_scan_blocker_rows);
   const radarMotionState = [
     String(cache.status ?? "cache_missing"),
     String(cache.scan_mode ?? "no_scan_mode"),
@@ -128,6 +138,10 @@ export default function CandidateRadar() {
           { label: "full-pool plan", value: String(fullPoolPlan.status ?? "missing"), tone: fullPoolPlan.status === "full_pool_plan_ready" ? "good" : "neutral" },
           { label: "full-pool done", value: fullPoolPlan.full_pool_scan_done === true ? "完成" : "未执行", tone: fullPoolPlan.full_pool_scan_done === true ? "bad" : "good" },
           { label: "full-pool blockers", value: fullPoolPlan.blocking_issue_count as number | undefined, tone: Number(fullPoolPlan.blocking_issue_count ?? 0) ? "warn" : "good" },
+          { label: "deep-scan plan", value: String(deepScanPlan.status ?? "missing"), tone: deepScanPlan.status === "deep_scan_plan_ready" ? "good" : "neutral" },
+          { label: "deep-scan done", value: deepScanPlan.deep_scan_done === true ? "完成" : "未执行", tone: deepScanPlan.deep_scan_done === true ? "bad" : "good" },
+          { label: "deep blockers", value: deepScanPlan.blocking_issue_count as number | undefined, tone: Number(deepScanPlan.blocking_issue_count ?? 0) ? "warn" : "good" },
+          { label: "feature gaps", value: deepScanPlan.legacy_feature_gap_count as number | undefined, tone: Number(deepScanPlan.legacy_feature_gap_count ?? 0) ? "warn" : "good" },
           { label: "local pool", value: localPoolAudit.normalized_candidate_count as number | undefined },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
@@ -159,6 +173,7 @@ export default function CandidateRadar() {
           <div className="actions">
             <button onClick={launchCustomScan}>运行 custom pool scan</button>
             <button onClick={launchFullPoolPlan}>生成 full-pool 计划</button>
+            <button onClick={launchDeepScanPlan}>生成 deep-scan 清单</button>
           </div>
           <TaskLaunchReceipt receipt={taskReceipt} />
           <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
@@ -194,6 +209,17 @@ export default function CandidateRadar() {
         <p>scan_acceptance_rows 把 provider gap、freshness、local pool、full-pool 和交易隔离逐项展示。</p>
         <DataLineageTable rows={objectRow(scanExecutionSummary)} />
         <DataLineageTable rows={scanAcceptanceRows} />
+      </PacketCard>
+
+      <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>
+        <p>deep_scan_plan 是 plan-only：不刷新 provider、不调用 DeepSeek、不执行 deep_scan、不生成买入候选、不修改 strategy action。</p>
+        <p>feature_loss_gaps_visible: {String(policy.deep_scan_feature_loss_gaps_visible === true)}</p>
+        <p>page_render_starts_deep_scan: {String(deepScanPlan.page_render_starts_deep_scan === true)}</p>
+        <DataLineageTable rows={objectRow(deepScanPlan)} />
+        <DataLineageTable rows={deepScanStageRows} />
+        <DataLineageTable rows={deepScanParityRows} />
+        <DataLineageTable rows={deepScanSignalRows} />
+        <DataLineageTable rows={deepScanBlockerRows} />
       </PacketCard>
 
       <div className="grid">
