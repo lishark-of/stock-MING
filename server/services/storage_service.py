@@ -32,6 +32,56 @@ DATASET_TTL_SECONDS = {
     "trade_cal": 14 * 24 * 60 * 60,
     "backtest_results": 30 * 24 * 60 * 60,
 }
+DATASET_SCHEMA_CONTRACTS = {
+    "factor_values": {
+        "schema_version": "storage.factor_values.v1",
+        "date_column": "trade_date",
+        "entity_columns": ["ts_code", "factor_key"],
+        "primary_key": ["ts_code", "trade_date", "factor_key"],
+        "required_columns": ["factor_key", "ts_code", "trade_date", "raw_value", "data_status", "calculated_at"],
+        "recommended_partition_columns": ["trade_date"],
+    },
+    "daily": {
+        "schema_version": "storage.daily.v1",
+        "date_column": "trade_date",
+        "entity_columns": ["ts_code"],
+        "primary_key": ["ts_code", "trade_date"],
+        "required_columns": ["ts_code", "trade_date", "open", "high", "low", "close", "vol", "amount"],
+        "recommended_partition_columns": ["trade_date"],
+    },
+    "daily_basic": {
+        "schema_version": "storage.daily_basic.v1",
+        "date_column": "trade_date",
+        "entity_columns": ["ts_code"],
+        "primary_key": ["ts_code", "trade_date"],
+        "required_columns": ["ts_code", "trade_date", "turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv"],
+        "recommended_partition_columns": ["trade_date"],
+    },
+    "moneyflow": {
+        "schema_version": "storage.moneyflow.v1",
+        "date_column": "trade_date",
+        "entity_columns": ["ts_code"],
+        "primary_key": ["ts_code", "trade_date"],
+        "required_columns": ["ts_code", "trade_date", "buy_sm_amount", "sell_sm_amount", "buy_lg_amount", "sell_lg_amount"],
+        "recommended_partition_columns": ["trade_date"],
+    },
+    "trade_cal": {
+        "schema_version": "storage.trade_cal.v1",
+        "date_column": "cal_date",
+        "entity_columns": ["exchange"],
+        "primary_key": ["exchange", "cal_date"],
+        "required_columns": ["exchange", "cal_date", "is_open"],
+        "recommended_partition_columns": ["exchange"],
+    },
+    "backtest_results": {
+        "schema_version": "storage.backtest_results.v1",
+        "date_column": "run_date",
+        "entity_columns": ["strategy_key", "universe"],
+        "primary_key": ["strategy_key", "universe", "run_date"],
+        "required_columns": ["strategy_key", "universe", "run_date", "status", "metrics"],
+        "recommended_partition_columns": ["run_date"],
+    },
+}
 DATASET_CATALOG = [
     {
         "dataset": "factor_values",
@@ -145,6 +195,43 @@ def _cache_ttl_status(dataset: str, path: Path, metadata: Mapping[str, Any]) -> 
     }
 
 
+def _schema_contract(dataset: str) -> dict[str, Any]:
+    contract = dict(DATASET_SCHEMA_CONTRACTS.get(dataset) or {})
+    if not contract:
+        return {
+            "dataset": dataset,
+            "status": "missing_contract",
+            "schema_version": None,
+            "external_calls_triggered": False,
+        }
+    contract["dataset"] = dataset
+    contract["status"] = "contract_ready"
+    contract["physical_migration_done"] = False
+    contract["external_calls_triggered"] = False
+    contract["tushare_called"] = False
+    contract["deepseek_called"] = False
+    contract["github_called"] = False
+    contract["does_not_modify_strategy_action"] = True
+    contract["does_not_execute_trades"] = True
+    return contract
+
+
+def _partition_plan(dataset: str) -> dict[str, Any]:
+    contract = _schema_contract(dataset)
+    partition_columns = list(contract.get("recommended_partition_columns") or [])
+    return {
+        "dataset": dataset,
+        "status": "contract_ready" if partition_columns else "planned",
+        "recommended_partition_columns": partition_columns,
+        "physical_partitioning_enabled": False,
+        "manual_compaction_required": True,
+        "auto_partition_on_get": False,
+        "external_calls_triggered": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
 def _canonical_dataset(dataset: str) -> str:
     key = str(dataset or "").strip().lower().replace(" ", "_")
     if key not in SUPPORTED_PARQUET_DATASETS:
@@ -161,6 +248,8 @@ def dataset_implementation_status() -> dict[str, Any]:
     for item in DATASET_CATALOG:
         dataset = str(item.get("dataset") or "")
         metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
+        schema_contract = _schema_contract(dataset)
+        partition_plan = _partition_plan(dataset)
         write_policy = str(item.get("write_policy") or "")
         external_refresh_policy = str(item.get("external_refresh_policy") or "")
         if write_policy == "task_pipeline_write_allowed":
@@ -181,6 +270,10 @@ def dataset_implementation_status() -> dict[str, Any]:
                 "tushare_capable": "tushare" in external_refresh_policy,
                 "local_compute_capable": "local_compute" in external_refresh_policy or "local_cache_pipeline" in external_refresh_policy,
                 "button_gated": "button_gated" in external_refresh_policy or write_policy == "task_pipeline_write_allowed",
+                "schema_contract_status": schema_contract.get("status"),
+                "schema_version": schema_contract.get("schema_version"),
+                "partition_plan_status": partition_plan.get("status"),
+                "recommended_partition_columns": partition_plan.get("recommended_partition_columns"),
                 "does_not_modify_strategy_action": item.get("does_not_modify_strategy_action") is not False,
                 "does_not_execute_trades": item.get("does_not_execute_trades") is not False,
                 "path": _path_label(Path(str(metadata.get("path") or parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)))),
@@ -201,6 +294,8 @@ def dataset_implementation_status() -> dict[str, Any]:
         "parquet_missing_dataset_count": sum(1 for row in rows if row.get("parquet_status") == "missing"),
         "tushare_capable_dataset_count": sum(1 for row in rows if row.get("tushare_capable")),
         "local_compute_capable_dataset_count": sum(1 for row in rows if row.get("local_compute_capable")),
+        "schema_contract_ready_count": sum(1 for row in rows if row.get("schema_contract_status") == "contract_ready"),
+        "partition_contract_ready_count": sum(1 for row in rows if row.get("partition_plan_status") == "contract_ready"),
         "all_external_refreshes_button_gated": all(
             bool(row.get("button_gated"))
             for row in rows
@@ -216,16 +311,16 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
     return [
         {
             "control": "schema_version",
-            "status": "partial_ready",
-            "current_coverage": "packet metadata and storage cache packets expose schema_version; dataset-level schema contracts are still incremental.",
-            "next_action": "pin schema contracts for daily/daily_basic/moneyflow/trade_cal/factor_values before full-market research.",
+            "status": "local_ready",
+            "current_coverage": "all canonical Parquet datasets expose local schema contracts with schema_version, date column, primary key and required columns.",
+            "next_action": "validate physical files against contracts before full-market research writes.",
             "external_calls_triggered": False,
         },
         {
             "control": "parquet_partitioning",
-            "status": "planned",
-            "current_coverage": "local Parquet datasets exist behind cache endpoints; full date/universe partition policy is not productionized.",
-            "next_action": "partition large datasets by dataset/trade_date and keep compaction explicit.",
+            "status": "contract_ready",
+            "current_coverage": "partition columns are declared per dataset; physical date/universe partition migration is still manual and not run by GET cache.",
+            "next_action": "implement explicit manual partition/compaction task after schema validation is stable.",
             "external_calls_triggered": False,
         },
         {
@@ -302,6 +397,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "production_control_rows": _storage_production_control_rows(),
         "blockers": blockers,
         "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
+        "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "cache_ttl_policy": "audit_only_no_auto_refresh",
         "compaction_policy": "planned_for_full_market_factor_research",
         "external_calls_triggered": False,
@@ -450,6 +546,8 @@ def parquet_dataset_status(
     path = parquet_store.dataset_path(root=PARQUET_ROOT, name=selected)
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=selected)
     cache_ttl = _cache_ttl_status(selected, path, metadata)
+    schema_contract = _schema_contract(selected)
+    partition_plan = _partition_plan(selected)
     query = duckdb_store.query_parquet_dataset(
         path,
         limit=limit,
@@ -467,6 +565,8 @@ def parquet_dataset_status(
         "dataset": selected,
         "metadata": metadata,
         "cache_ttl": cache_ttl,
+        "schema_contract": schema_contract,
+        "partition_plan": partition_plan,
         "query": query,
         "query_wrapper": query.get("query_wrapper"),
         "query_filters": query.get("query_filters") or {},
@@ -640,6 +740,8 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "dataset_status": {item["dataset"]: item["metadata"]["status"] for item in datasets},
         "dataset_ttl_status": {item["dataset"]: item["cache_ttl"]["ttl_state"] for item in datasets},
         "dataset_ttl_state_counts": _count_values(item["cache_ttl"]["ttl_state"] for item in datasets),
+        "dataset_schema_contract_status": {item["dataset"]: item["schema_contract"]["status"] for item in datasets},
+        "dataset_partition_plan_status": {item["dataset"]: item["partition_plan"]["status"] for item in datasets},
         "dataset_implementation_state_counts": implementation_status["state_counts"],
         "dataset_parquet_status_counts": implementation_status["parquet_status_counts"],
         "production_readiness": production_readiness,
