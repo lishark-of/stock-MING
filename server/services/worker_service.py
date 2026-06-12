@@ -115,6 +115,78 @@ def _backend_rows(*, celery_available: bool, redis_available: bool, apscheduler_
     ]
 
 
+def _manual_worker_preflight_steps(
+    *,
+    celery_available: bool,
+    redis_available: bool,
+    redis_configured: bool,
+    apscheduler_available: bool,
+    scheduled_refresh_enabled: bool,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "step_key": "verify_python_dependencies",
+            "label": "确认 Celery / Redis / APScheduler Python 依赖",
+            "status": "ready" if celery_available and redis_available and apscheduler_available else "dependency_missing",
+            "required_for_desktop_mvp": False,
+            "required_for_production_worker": True,
+            "cache_api_can_execute": False,
+            "operator_action_required": not (celery_available and redis_available and apscheduler_available),
+            "safe_note": "GET /api/worker/cache 只检查依赖可见性，不安装依赖、不启动 worker。",
+        },
+        {
+            "step_key": "configure_redis_broker",
+            "label": "配置 Redis broker URL",
+            "status": "configured_not_pinged" if redis_configured else "pending_manual_config",
+            "required_for_desktop_mvp": False,
+            "required_for_production_worker": True,
+            "cache_api_can_execute": False,
+            "operator_action_required": not redis_configured,
+            "safe_note": "仅记录是否配置，不暴露连接串，也不会 ping Redis。",
+        },
+        {
+            "step_key": "start_fastapi_server",
+            "label": "手动启动 FastAPI 服务",
+            "status": "manual_required",
+            "required_for_desktop_mvp": True,
+            "required_for_production_worker": True,
+            "cache_api_can_execute": False,
+            "operator_action_required": True,
+            "safe_note": "由开发者显式启动；cache API 不会拉起后端进程。",
+        },
+        {
+            "step_key": "start_celery_worker",
+            "label": "手动启动 Celery worker",
+            "status": "manual_required" if celery_available and redis_configured else "blocked_by_preflight",
+            "required_for_desktop_mvp": False,
+            "required_for_production_worker": True,
+            "cache_api_can_execute": False,
+            "operator_action_required": True,
+            "safe_note": "后续用脚本手动启动；本 cache API 不会启动 worker。",
+        },
+        {
+            "step_key": "run_task_smoke",
+            "label": "运行任务 smoke / cache smoke",
+            "status": "manual_required",
+            "required_for_desktop_mvp": True,
+            "required_for_production_worker": True,
+            "cache_api_can_execute": False,
+            "operator_action_required": True,
+            "safe_note": "由开发者手动执行；不会从 GET cache 触发 Tushare、DeepSeek 或 GitHub。",
+        },
+        {
+            "step_key": "enable_scheduler",
+            "label": "显式启用 APScheduler 定时刷新",
+            "status": "configured_enabled" if scheduled_refresh_enabled else "disabled_by_default",
+            "required_for_desktop_mvp": False,
+            "required_for_production_worker": False,
+            "cache_api_can_execute": False,
+            "operator_action_required": not scheduled_refresh_enabled,
+            "safe_note": "定时任务默认关闭；必须显式配置后才允许进入计划刷新。",
+        },
+    ]
+
+
 def _production_readiness(
     *,
     celery_available: bool,
@@ -165,6 +237,13 @@ def _production_readiness(
         "scope": "worker_task_pipeline_productionization_preflight",
         "rows": rows,
         "production_control_rows": _worker_production_control_rows(),
+        "manual_preflight_steps": _manual_worker_preflight_steps(
+            celery_available=celery_available,
+            redis_available=redis_available,
+            redis_configured=redis_configured,
+            apscheduler_available=apscheduler_available,
+            scheduled_refresh_enabled=scheduled_refresh_enabled,
+        ),
         "production_blockers": blockers,
         "local_fallback_available": True,
         "cache_api_starts_no_workers": True,
@@ -247,6 +326,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         scheduled_refresh_enabled=scheduled_refresh_enabled,
     )
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
+    manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
 
     packet = {
@@ -329,6 +409,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
             "deduplicated_task_count": task_persistence.get("deduplicated_task_count", task_index.get("task_count", 0)),
             "production_blocker_count": len(production_readiness.get("production_blockers") or []),
+            "manual_preflight_step_count": len(manual_preflight_steps),
+            "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
         },
         "policy": {
             "cache_api_external_calls": False,

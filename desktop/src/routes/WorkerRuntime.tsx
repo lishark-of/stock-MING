@@ -28,6 +28,7 @@ export default function WorkerRuntime() {
   const taskImplementation = (cache.task_implementation_status as Record<string, unknown> | undefined) ?? {};
   const taskStatus = (cache.task_status_summary as Record<string, unknown> | undefined) ?? {};
   const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? ((taskStatus.persistence as Record<string, unknown> | undefined) ?? {});
+  const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -62,6 +63,8 @@ export default function WorkerRuntime() {
           { label: "sqlite tasks", value: counts.sqlite_task_count as number | undefined },
           { label: "dedup tasks", value: counts.deduplicated_task_count as number | undefined },
           { label: "task call ledger", value: counts.task_status_call_ledger_count as number | undefined },
+          { label: "manual preflight", value: counts.manual_preflight_step_count as number | undefined },
+          { label: "operator actions", value: counts.manual_preflight_operator_action_count as number | undefined, tone: Number(counts.manual_preflight_operator_action_count ?? 0) > 0 ? "warn" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
           { label: "Redis package", value: runtime.redis_package_available, tone: runtime.redis_package_available === true ? "good" : "warn" },
@@ -125,6 +128,12 @@ export default function WorkerRuntime() {
 
       <PacketCard title="Backend 状态" subtitle="local fallback / Celery / Redis / APScheduler；cache API 不连接外部服务" status="backends">
         <DataLineageTable rows={rows(cache.backend_rows)} />
+      </PacketCard>
+
+      <PacketCard title="生产 worker 人工预检" subtitle="只读 checklist；不启动 Celery、不 ping Redis、不调度任务" status={String(productionReadiness.status ?? "preflight")}>
+        <p>这些步骤用于后续生产化验收；GET /api/worker/cache 只展示状态，不执行任何一步。</p>
+        <p>cache_api_can_execute 必须保持 false；operator_action_required 表示需要人工显式操作。</p>
+        <DataLineageTable rows={rows(productionReadiness.manual_preflight_steps)} />
       </PacketCard>
 
       <PacketCard title="Worker 模块" subtitle="worker.tasks_* 和 scheduler scaffold；只读文件/模块可见性" status="modules">

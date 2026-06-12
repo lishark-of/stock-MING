@@ -2700,6 +2700,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["production_readiness"]["cache_api_starts_no_workers"])
         self.assertTrue(packet["production_readiness"]["cache_api_pings_no_redis"])
         self.assertFalse(packet["production_readiness"]["external_calls_triggered"])
+        preflight_by_key = {row["step_key"]: row for row in packet["production_readiness"]["manual_preflight_steps"]}
+        self.assertIn("configure_redis_broker", preflight_by_key)
+        self.assertIn("start_celery_worker", preflight_by_key)
+        self.assertIn("enable_scheduler", preflight_by_key)
+        self.assertFalse(preflight_by_key["configure_redis_broker"]["cache_api_can_execute"])
+        self.assertFalse(preflight_by_key["start_celery_worker"]["cache_api_can_execute"])
+        self.assertEqual(preflight_by_key["enable_scheduler"]["status"], "disabled_by_default")
+        self.assertIn("不会 ping Redis", preflight_by_key["configure_redis_broker"]["safe_note"])
         readiness_by_component = {row["component"]: row for row in packet["production_readiness"]["rows"]}
         self.assertIn("local_fallback_runner", readiness_by_component)
         self.assertIn("celery_worker_process", readiness_by_component)
@@ -2724,6 +2732,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("sqlite_task_count", packet["counts"])
         self.assertIn("deduplicated_task_count", packet["counts"])
         self.assertIn("production_blocker_count", packet["counts"])
+        self.assertEqual(packet["counts"]["manual_preflight_step_count"], len(packet["production_readiness"]["manual_preflight_steps"]))
+        self.assertGreaterEqual(packet["counts"]["manual_preflight_operator_action_count"], 1)
         self.assertEqual(packet["task_persistence"], packet["task_status_summary"]["persistence"])
         self.assertEqual(packet["task_persistence_source_rows"], packet["task_status_summary"]["persistence_source_rows"])
         self.assertFalse(packet["task_status_summary"]["external_calls_triggered"])
