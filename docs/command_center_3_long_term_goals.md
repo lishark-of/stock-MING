@@ -82,6 +82,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Data Health now also exposes a local synthetic long-window sample validation that runs the actual freshness gate across premarket, intraday, closing auction, post-16:30, provider grace, holiday cluster, long-weekend, and missing-today scenarios.
 - Data Health now separately validates an existing local `trade_cal` Parquet artifact through the storage/DuckDB cache path: schema columns, date window, open/closed rows, current-date coverage, latest completed trading day, and freshness gate context are visible without refreshing providers.
 - Data Health now exposes `current_evidence_freshness_qa_contract`, a local cache-only QA contract that separates current evidence from historical/research samples and keeps stale / expired / historical / unknown / future-unavailable rows out of current decision surfaces.
+- Data Health now exposes `trade_cal_provider_acceptance_runbook`, a local execution checklist for future provider-backed `trade_cal` long-window acceptance. It fixes the explicit POST task route, safe payload, call-ledger evidence, schema/window/holiday coverage, failure modes, artifact promotion boundary, and current-evidence isolation, while keeping `provider_backed_long_window_acceptance_done=false`.
 
 ### Gaps
 
@@ -90,6 +91,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Needs holiday, weekend, post-close data availability, and most recent completed trading day acceptance.
 - Needs provider-backed acceptance that proves the local artifact was produced and refreshed through the explicit task/storage pipeline, not merely present on disk.
 - The acceptance matrix is a contract, the synthetic sample is a fixture, the local Parquet validation is a physical artifact check, and the current-evidence QA contract is a boundary contract; none of them call Tushare on page render.
+- The provider acceptance runbook is not provider execution; it only makes the real Tushare `trade_cal` acceptance pass reproducible and keeps local artifact validation separate from provider-backed evidence.
 
 ### Implementation Phases
 
@@ -109,6 +111,8 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Data Health shows synthetic long-window sample results separately from real `trade_cal` validation, with `trade_cal_long_window_validation_done=false` until provider-backed acceptance is complete.
 - Data Health shows local `trade_cal` Parquet validation separately from the synthetic fixture; when missing or too short, blockers remain visible and production acceptance stays pending.
 - Data Health shows `current_evidence_freshness_qa_contract` and rows: current evidence requires expected trade date, data date alignment, freshness state eligibility, historical sample separation, provider-backed acceptance pending state, and decision-surface isolation.
+- Data Health shows `trade_cal_provider_acceptance_runbook` and rows: explicit POST task requirement, safe payload, call ledger, long-window sample, schema, local artifact cross-check, freshness replay, failure modes, artifact promotion, current-evidence boundary, and secret/trade boundary.
+- Local `trade_cal` Parquet validation can pass without setting provider-backed acceptance to done.
 
 ### Forbidden
 
@@ -116,6 +120,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Do not let stale / expired / historical rows modify `strategy action`.
 - Do not hide fallback calendar state.
 - Do not treat synthetic samples, local matrix rows, or local artifact checks as provider-backed production acceptance.
+- Do not treat `trade_cal_provider_acceptance_runbook.local_runbook_ready=true` as evidence that Tushare was called or provider-backed acceptance passed.
 
 ### Recommended Commit Message
 

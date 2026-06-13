@@ -217,7 +217,9 @@ def _local_trade_cal_physical_validation() -> dict[str, Any]:
         "rows": validation_rows,
         "local_trade_cal_physical_validation_done": validation_done,
         "trade_cal_long_window_validation_done": validation_done,
-        "real_provider_validation_done": validation_done,
+        "real_provider_validation_done": False,
+        "provider_backed_long_window_acceptance_done": False,
+        "provider_acceptance_runbook_required": True,
         "provider_refresh_called_by_validation": False,
         "uses_actual_freshness_gate": bool(gate_context),
         "freshness_gate_context": gate_context,
@@ -231,7 +233,7 @@ def _local_trade_cal_physical_validation() -> dict[str, Any]:
         "github_called": False,
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
-        "note": "This validates an existing local trade_cal Parquet artifact only; it does not refresh providers and does not prove a provider call happened in this request.",
+        "note": "This validates an existing local trade_cal Parquet artifact only; it does not refresh providers and does not prove provider-backed acceptance.",
     }
 
 
@@ -568,6 +570,132 @@ def _current_evidence_freshness_qa_contract(
     return contract, rows
 
 
+def _trade_cal_provider_acceptance_row(
+    criterion: str,
+    status: str,
+    *,
+    evidence: str,
+    required_for_provider_acceptance: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "required_for_provider_acceptance": bool(required_for_provider_acceptance),
+        "runbook_criterion_ready": status in {"passed_static_policy", "execution_ready"},
+        "provider_acceptance_done": False,
+        "evidence": evidence,
+        "cache_only": True,
+        "runs_no_provider_call": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _trade_cal_provider_acceptance_runbook(
+    trade_cal_physical: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    local_artifact_done = bool(trade_cal_physical.get("local_trade_cal_physical_validation_done"))
+    local_window_days = int(trade_cal_physical.get("window_days") or 0)
+    rows = [
+        _trade_cal_provider_acceptance_row(
+            "explicit_post_task_required",
+            "passed_static_policy",
+            evidence="Only POST /api/tasks/refresh-tushare-facts with selected api trade_cal may refresh provider data.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "safe_payload_declared",
+            "execution_ready",
+            evidence="Payload must declare api=trade_cal, exchange, start_date, end_date, and acceptance_mode without token/key material.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "call_ledger_required",
+            "execution_ready",
+            evidence="Provider run must record api, row_count, data_date/window, local_fetched_at, call_status, and error_message_safe.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "long_window_sample_required",
+            "execution_pending",
+            evidence="Acceptance requires at least 730 calendar days, current-date coverage, open rows, closed rows, and holiday/weekend clusters.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "schema_required",
+            "execution_pending",
+            evidence="Provider result must contain exchange, cal_date, is_open, and safe optional pretrade_date fields before Parquet promotion.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "local_artifact_cross_check",
+            "passed_static_policy" if local_artifact_done else "execution_pending",
+            evidence=f"local_artifact_done={local_artifact_done}; local_window_days={local_window_days}",
+            required_for_provider_acceptance=False,
+        ),
+        _trade_cal_provider_acceptance_row(
+            "freshness_gate_replay_required",
+            "execution_pending",
+            evidence="Provider-backed rows must replay premarket, intraday, closing auction, post-16:30, weekend, holiday, missing-row, and delay-grace scenarios.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "failure_modes_required",
+            "execution_pending",
+            evidence="Permission denied, empty window, no records, parse failure, missing params, and provider errors must be distinguishable and redacted.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "artifact_promotion_boundary",
+            "execution_pending",
+            evidence="Fetched rows may be promoted to Parquet only after schema, window, freshness replay, and call-ledger checks pass.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "current_evidence_boundary",
+            "passed_static_policy",
+            evidence="Until provider acceptance is complete, current evidence remains gated and cannot enter score/support/evidence/action through this runbook.",
+        ),
+        _trade_cal_provider_acceptance_row(
+            "secret_and_trade_boundary",
+            "passed_static_policy",
+            evidence="Runbook stores no token/key and never touches trading or strategy action.",
+        ),
+    ]
+    pending = [row["criterion"] for row in rows if row["status"] == "execution_pending"]
+    contract = {
+        "schema_version": "data_health_trade_cal_provider_acceptance_runbook.v1",
+        "status": "trade_cal_provider_acceptance_runbook_ready_execution_pending",
+        "scope": "local_provider_acceptance_runbook_not_provider_execution",
+        "ltg": "LTG-01/LTG-02",
+        "local_runbook_ready": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "provider_refresh_called_by_runbook": False,
+        "production_freshness_gate_complete": False,
+        "post_task_route": "POST /api/tasks/refresh-tushare-facts",
+        "required_api": "trade_cal",
+        "required_payload_safe": {
+            "apis": ["trade_cal"],
+            "acceptance_mode": "provider_backed_trade_cal_long_window",
+            "exchange": ["SSE", "SZSE"],
+            "start_date": "YYYYMMDD",
+            "end_date": "YYYYMMDD",
+        },
+        "minimum_acceptance_window_days": 730,
+        "local_artifact_cross_check_done": local_artifact_done,
+        "local_artifact_window_days": local_window_days,
+        "row_count": len(rows),
+        "pending_execution_count": len(pending),
+        "pending_execution_items": pending,
+        "cache_only": True,
+        "runs_no_provider_call": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This runbook fixes provider-backed trade_cal acceptance requirements. It does not call Tushare or prove provider-backed acceptance.",
+    }
+    return contract, rows
+
+
 def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
@@ -698,6 +826,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     freshness_long_window_sample_rows = _as_list(freshness_long_window_sample_validation.get("rows"))
     trade_cal_physical_validation = _local_trade_cal_physical_validation()
     trade_cal_physical_validation_rows = _as_list(trade_cal_physical_validation.get("rows"))
+    trade_cal_provider_acceptance_runbook, trade_cal_provider_acceptance_runbook_rows = (
+        _trade_cal_provider_acceptance_runbook(trade_cal_physical_validation)
+    )
     current_evidence_freshness_qa_contract, current_evidence_freshness_qa_rows = (
         _current_evidence_freshness_qa_contract(
             data_freshness,
@@ -767,6 +898,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_acceptance_matrix",
             "freshness_long_window_sample_validation",
             "trade_cal_physical_validation",
+            "trade_cal_provider_acceptance_runbook",
             "current_evidence_freshness_qa_contract",
         ],
         "summary": visibility_summary.get("summary")
@@ -789,6 +921,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "freshness_long_window_sample_rows": freshness_long_window_sample_rows,
         "trade_cal_physical_validation": trade_cal_physical_validation,
         "trade_cal_physical_validation_rows": trade_cal_physical_validation_rows,
+        "trade_cal_provider_acceptance_runbook": trade_cal_provider_acceptance_runbook,
+        "trade_cal_provider_acceptance_runbook_rows": trade_cal_provider_acceptance_runbook_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "timeline_rows": timeline_rows,
@@ -810,6 +944,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_long_window_sample_failed_count": int(freshness_long_window_sample_validation.get("failed_count") or 0),
             "trade_cal_physical_validation_row_count": len(trade_cal_physical_validation_rows),
             "trade_cal_physical_validation_blocker_count": int(trade_cal_physical_validation.get("blocker_count") or 0),
+            "trade_cal_provider_acceptance_runbook_row_count": len(trade_cal_provider_acceptance_runbook_rows),
+            "trade_cal_provider_acceptance_pending_count": int(
+                trade_cal_provider_acceptance_runbook.get("pending_execution_count") or 0
+            ),
             "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
             "current_evidence_freshness_qa_blocker_count": int(
                 current_evidence_freshness_qa_contract.get("current_evidence_blocker_count") or 0
@@ -842,9 +980,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_physical_validation_calls_trade_cal_provider": False,
             "trade_cal_physical_validation_reads_local_rows": True,
             "trade_cal_physical_validation_writes_files": False,
-            "real_trade_cal_long_window_validation_done": bool(
-                trade_cal_physical_validation.get("trade_cal_long_window_validation_done")
+            "local_trade_cal_physical_validation_done": bool(
+                trade_cal_physical_validation.get("local_trade_cal_physical_validation_done")
             ),
+            "real_trade_cal_long_window_validation_done": False,
+            "trade_cal_provider_acceptance_runbook_is_local": True,
+            "trade_cal_provider_acceptance_runbook_calls_provider": False,
+            "trade_cal_provider_acceptance_still_pending": True,
             "current_evidence_freshness_qa_is_local_contract": True,
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
@@ -868,6 +1010,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 ),
                 "trade_cal_physical_validation_blocker_count": int(
                     trade_cal_physical_validation.get("blocker_count") or 0
+                ),
+                "trade_cal_provider_acceptance_runbook_status": trade_cal_provider_acceptance_runbook.get("status"),
+                "trade_cal_provider_acceptance_pending_count": int(
+                    trade_cal_provider_acceptance_runbook.get("pending_execution_count") or 0
                 ),
                 "current_evidence_freshness_qa_status": current_evidence_freshness_qa_contract.get("status"),
                 "current_evidence_candidate_status": current_evidence_freshness_qa_contract.get(
@@ -898,6 +1044,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "本页不调用 Tushare、AkShare、yfinance、Supabase、DeepSeek 或 GitHub。",
             "freshness 长窗口样本验收只使用本地 synthetic trade_cal fixture，不代表真实 Tushare trade_cal 长窗口验收完成。",
             "trade_cal 本地文件验收只读取已有 Parquet/DuckDB cache；不会刷新 provider，缺失或覆盖不足时仍保持待验收。",
+            "trade_cal provider-backed 长窗口验收必须通过显式 POST task 执行；runbook 只固定验收要求，不调用 Tushare。",
             "current evidence freshness QA 只固定当前证据/历史样本边界；provider-backed trade_cal 长窗口验收仍需后续按钮任务证明。",
         ],
     }

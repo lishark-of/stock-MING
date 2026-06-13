@@ -34,6 +34,7 @@ export default function DataHealthTimeline() {
   const freshnessAcceptance = (cache.freshness_acceptance_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessSample = (cache.freshness_long_window_sample_validation as Record<string, unknown> | undefined) ?? {};
   const tradeCalPhysical = (cache.trade_cal_physical_validation as Record<string, unknown> | undefined) ?? {};
+  const tradeCalProviderRunbook = (cache.trade_cal_provider_acceptance_runbook as Record<string, unknown> | undefined) ?? {};
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
@@ -61,6 +62,8 @@ export default function DataHealthTimeline() {
           { label: "本地 trade_cal", value: tradeCalPhysical.status as string | undefined, tone: tradeCalPhysical.local_trade_cal_physical_validation_done === true ? "good" : "warn" },
           { label: "物理验收", value: tradeCalPhysical.trade_cal_long_window_validation_done === true ? "通过" : "待验收", tone: tradeCalPhysical.trade_cal_long_window_validation_done === true ? "good" : "neutral" },
           { label: "trade_cal 行数", value: tradeCalPhysical.local_trade_cal_row_count as number | undefined },
+          { label: "provider runbook", value: tradeCalProviderRunbook.status as string | undefined, tone: tradeCalProviderRunbook.local_runbook_ready === true ? "good" : "warn" },
+          { label: "provider pending", value: counts.trade_cal_provider_acceptance_pending_count as number | undefined, tone: Number(counts.trade_cal_provider_acceptance_pending_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
           { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
@@ -118,9 +121,18 @@ export default function DataHealthTimeline() {
 
       <PacketCard title="Trade_cal 本地文件验收" subtitle="只读已有 Parquet/DuckDB cache；不是页面启动外联" status={String(tradeCalPhysical.status ?? "local_trade_cal_validation")}>
         <p>如果本地 trade_cal Parquet 已存在，这里只读取 schema、日期窗口、开闭市行和当前日期覆盖；不会调用 Tushare，也不会写文件。</p>
-        <p>通过只代表本地物理文件可用于 freshness 长窗口验收，不代表本次页面打开执行了 provider 刷新。</p>
+        <p>通过只代表本地物理文件可用于 freshness 长窗口验收，不代表本次页面打开执行了 provider 刷新，也不代表 provider-backed acceptance。</p>
         <DataLineageTable rows={objectRow(tradeCalPhysical)} />
         <DataLineageTable rows={rows(cache.trade_cal_physical_validation_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Trade_cal provider 验收 Runbook" subtitle="trade_cal_provider_acceptance_runbook；固定真实长窗口验收要求，不调用 Tushare" status={String(tradeCalProviderRunbook.status ?? "provider_acceptance_runbook")}>
+        <p>provider_backed_long_window_acceptance_done: {String(tradeCalProviderRunbook.provider_backed_long_window_acceptance_done ?? false)}</p>
+        <p>post_task_route: {String(tradeCalProviderRunbook.post_task_route ?? "POST /api/tasks/refresh-tushare-facts")}</p>
+        <p>minimum_acceptance_window_days: {String(tradeCalProviderRunbook.minimum_acceptance_window_days ?? 730)}</p>
+        <p>runbook 只固定 payload、call_ledger、schema、长窗口、失败模式、artifact promotion 和 current evidence 边界；真实 provider-backed 验收仍需后续显式按钮任务。</p>
+        <DataLineageTable rows={objectRow(tradeCalProviderRunbook)} />
+        <DataLineageTable rows={rows(cache.trade_cal_provider_acceptance_runbook_rows)} />
       </PacketCard>
 
       <PacketCard title="Freshness 长窗口样本验收" subtitle="local synthetic trade_cal fixture；使用实际 freshness gate，不调用 Tushare" status={String(freshnessSample.status ?? "sample_validation")}>

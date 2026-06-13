@@ -7554,9 +7554,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["freshness_acceptance_matrix_calls_trade_cal"])
         self.assertEqual(packet["trade_cal_physical_validation"]["status"], "local_trade_cal_dataset_missing")
         self.assertFalse(packet["trade_cal_physical_validation"]["trade_cal_long_window_validation_done"])
+        self.assertFalse(packet["trade_cal_physical_validation"]["real_provider_validation_done"])
+        self.assertFalse(packet["trade_cal_physical_validation"]["provider_backed_long_window_acceptance_done"])
         self.assertFalse(packet["trade_cal_physical_validation"]["external_calls_triggered"])
         self.assertFalse(packet["trade_cal_physical_validation"]["tushare_called"])
         self.assertFalse(packet["policy"]["real_trade_cal_long_window_validation_done"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_runbook_is_local"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_runbook_calls_provider"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_still_pending"])
+        runbook = packet["trade_cal_provider_acceptance_runbook"]
+        self.assertEqual(runbook["schema_version"], "data_health_trade_cal_provider_acceptance_runbook.v1")
+        self.assertEqual(runbook["status"], "trade_cal_provider_acceptance_runbook_ready_execution_pending")
+        self.assertEqual(runbook["scope"], "local_provider_acceptance_runbook_not_provider_execution")
+        self.assertTrue(runbook["local_runbook_ready"])
+        self.assertFalse(runbook["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(runbook["provider_refresh_called_by_runbook"])
+        self.assertFalse(runbook["external_calls_triggered"])
+        self.assertFalse(runbook["tushare_called"])
+        self.assertTrue(runbook["does_not_execute_trades"])
+        self.assertEqual(runbook["post_task_route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(runbook["required_api"], "trade_cal")
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_data_health_timeline_cache")
@@ -7586,6 +7603,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         sample = packet["freshness_long_window_sample_validation"]
         physical = packet["trade_cal_physical_validation"]
         current_evidence = packet["current_evidence_freshness_qa_contract"]
+        provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
+        provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
         current_evidence_rows = {
             row["criterion"]: row for row in packet["current_evidence_freshness_qa_rows"]
         }
@@ -7614,6 +7633,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["freshness_long_window_sample_failed_count"], 0)
         self.assertEqual(packet["counts"]["trade_cal_physical_validation_row_count"], 5)
         self.assertGreater(packet["counts"]["trade_cal_physical_validation_blocker_count"], 0)
+        self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_runbook_row_count"], 0)
+        self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_pending_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(sample["status"], "local_sample_validation_passed")
@@ -7628,6 +7649,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(physical["fixture_is_synthetic"])
         self.assertFalse(physical["trade_cal_long_window_validation_done"])
         self.assertFalse(physical["real_provider_validation_done"])
+        self.assertFalse(physical["provider_backed_long_window_acceptance_done"])
         self.assertIn("local_trade_cal_parquet_missing", physical["blockers"])
         self.assertFalse(physical["external_calls_triggered"])
         self.assertFalse(physical["tushare_called"])
@@ -7640,6 +7662,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["trade_cal_physical_validation_calls_trade_cal_provider"])
         self.assertTrue(packet["policy"]["trade_cal_physical_validation_reads_local_rows"])
         self.assertFalse(packet["policy"]["trade_cal_physical_validation_writes_files"])
+        self.assertFalse(packet["policy"]["real_trade_cal_long_window_validation_done"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_runbook_is_local"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_runbook_calls_provider"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_still_pending"])
         self.assertTrue(packet["policy"]["current_evidence_freshness_qa_is_local_contract"])
         self.assertTrue(packet["policy"]["current_evidence_requires_expected_trade_date"])
         self.assertTrue(packet["policy"]["historical_samples_are_research_only"])
@@ -7669,6 +7695,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(current_evidence["does_not_execute_trades"])
         self.assertTrue(current_evidence["does_not_modify_strategy_action"])
         self.assertFalse(current_evidence["external_calls_triggered"])
+        self.assertEqual(provider_runbook["schema_version"], "data_health_trade_cal_provider_acceptance_runbook.v1")
+        self.assertEqual(provider_runbook["status"], "trade_cal_provider_acceptance_runbook_ready_execution_pending")
+        self.assertEqual(provider_runbook["scope"], "local_provider_acceptance_runbook_not_provider_execution")
+        self.assertTrue(provider_runbook["local_runbook_ready"])
+        self.assertFalse(provider_runbook["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(provider_runbook["provider_refresh_called_by_runbook"])
+        self.assertFalse(provider_runbook["production_freshness_gate_complete"])
+        self.assertEqual(provider_runbook["required_payload_safe"]["apis"], ["trade_cal"])
+        self.assertEqual(provider_runbook["minimum_acceptance_window_days"], 730)
+        self.assertGreater(provider_runbook["pending_execution_count"], 0)
+        self.assertFalse(provider_runbook["external_calls_triggered"])
+        self.assertFalse(provider_runbook["tushare_called"])
+        self.assertFalse(provider_runbook["deepseek_called"])
+        self.assertFalse(provider_runbook["github_called"])
+        self.assertEqual(provider_runbook_rows["explicit_post_task_required"]["status"], "passed_static_policy")
+        self.assertEqual(provider_runbook_rows["call_ledger_required"]["status"], "execution_ready")
+        self.assertEqual(provider_runbook_rows["long_window_sample_required"]["status"], "execution_pending")
+        self.assertEqual(provider_runbook_rows["current_evidence_boundary"]["status"], "passed_static_policy")
         self.assertEqual(current_evidence_rows["expected_trade_date_required"]["status"], "passed")
         self.assertEqual(current_evidence_rows["current_data_date_matches_expected"]["status"], "research_only")
         self.assertEqual(current_evidence_rows["freshness_state_allows_current_evidence"]["status"], "research_only")
@@ -7681,6 +7725,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(response["call_ledger"][0]["freshness_long_window_sample_status"], "local_sample_validation_passed")
         self.assertEqual(response["call_ledger"][0]["trade_cal_physical_validation_status"], "local_trade_cal_dataset_missing")
         self.assertFalse(response["call_ledger"][0]["trade_cal_physical_validation_done"])
+        self.assertEqual(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_runbook_status"],
+            "trade_cal_provider_acceptance_runbook_ready_execution_pending",
+        )
+        self.assertGreater(response["call_ledger"][0]["trade_cal_provider_acceptance_pending_count"], 0)
         self.assertEqual(
             response["call_ledger"][0]["current_evidence_freshness_qa_status"],
             "current_evidence_qa_ready_provider_trade_cal_acceptance_pending",
@@ -7750,7 +7799,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(physical["scope"], "local_physical_trade_cal_parquet_validation")
         self.assertTrue(physical["local_trade_cal_physical_validation_done"])
         self.assertTrue(physical["trade_cal_long_window_validation_done"])
-        self.assertTrue(physical["real_provider_validation_done"])
+        self.assertFalse(physical["real_provider_validation_done"])
+        self.assertFalse(physical["provider_backed_long_window_acceptance_done"])
         self.assertTrue(physical["uses_actual_freshness_gate"])
         self.assertFalse(physical["fixture_is_synthetic"])
         self.assertFalse(physical["provider_refresh_called_by_validation"])
@@ -7766,7 +7816,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreater(physical["closed_day_count"], 0)
         self.assertTrue(physical["today_row_found"])
         self.assertIsNotNone(physical["latest_completed_trading_day"])
-        self.assertEqual(packet["policy"]["real_trade_cal_long_window_validation_done"], True)
+        self.assertTrue(packet["policy"]["local_trade_cal_physical_validation_done"])
+        self.assertEqual(packet["policy"]["real_trade_cal_long_window_validation_done"], False)
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_still_pending"])
+        provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
+        self.assertTrue(provider_runbook["local_artifact_cross_check_done"])
+        self.assertGreaterEqual(provider_runbook["local_artifact_window_days"], 180)
+        self.assertFalse(provider_runbook["provider_backed_long_window_acceptance_done"])
         self.assertEqual(packet["call_ledger"][0]["trade_cal_physical_validation_status"], "local_trade_cal_validation_passed")
         self.assertTrue(packet["call_ledger"][0]["trade_cal_physical_validation_done"])
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
