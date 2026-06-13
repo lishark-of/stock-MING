@@ -68,7 +68,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
-| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness audit exists; full-pool/deep-scan/provider acceptance pending | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
+| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness and no-feature-loss QA contracts exist; full-pool/deep-scan/provider acceptance pending | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
 | LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, navigation/status context cues, and static readiness audit exist; browser visual QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
@@ -732,6 +732,7 @@ Keep real trading isolated from Command Center 3 automation
 - A button-gated local `run_candidate_radar_deep_scan_plan` task now writes `deep_scan_plan`, stage rows, parity rows, required signal rows, and blocker rows so fast-scan migration can audit no-feature-loss readiness without executing deep scan, refreshing providers, or calling DeepSeek.
 - Candidate radar packets now expose `fast_scan_readiness_audit` and `fast_scan_readiness_rows`, proving the local quick/watchlist/custom scan contract is cache/task based, page render does not scan, legacy/provider/freshness gaps are visible, and full-pool/deep-scan remain pending rather than silently downgraded.
 - Candidate radar packets now expose `fast_scan_runtime_budget_contract` and `fast_scan_runtime_budget_rows`: local sync display is capped, local pool input normalization has a fixed budget, large universes must move to worker execution, and truncation is reported as a visible gap instead of being hidden.
+- Candidate radar packets now expose `no_feature_loss_acceptance_contract` and `no_feature_loss_acceptance_rows`: this aggregates page-render/cache boundaries, local scan modes, legacy signal groups, legacy output fields, provider/freshness gaps, runtime budget, browser performance trace status, full-pool/deep-scan execution status, provider-backed acceptance, and trade/action isolation. It makes the local no-feature-loss QA surface visible but keeps `production_radar_replacement_complete=false`.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
 ### Gaps
@@ -742,6 +743,7 @@ Keep real trading isolated from Command Center 3 automation
 - Need clear distinction between quick scan, deep-scan readiness plan, real deep scan, and research-only candidates.
 - The deep-scan readiness plan is not deep scan execution and does not prove legacy radar replacement.
 - Browser performance trace and packaged runtime UI responsiveness validation are still pending; the current runtime budget is a static/local contract.
+- The no-feature-loss acceptance contract is local QA; it does not prove browser performance, real full-pool/deep-scan execution, or provider-backed parity acceptance.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
 - Need parity acceptance before removing any Streamlit fallback.
 
@@ -765,6 +767,7 @@ Keep real trading isolated from Command Center 3 automation
 - Full-pool plan lists worker requirements, filters, required signal groups, and blockers without scanning or refreshing providers.
 - Deep-scan plan lists no-feature-loss parity rows, required signal rows, freshness, worker blockers, and trade/model boundaries without executing deep scan or calling DeepSeek.
 - `fast_scan_readiness_audit.local_fast_scan_ready=true` only when page-render, local task, legacy gap, provider gap, freshness, last-cache, full-pool, deep-scan and trade boundaries are all visible.
+- `no_feature_loss_acceptance_contract.local_no_feature_loss_contract_ready=true` only means the local QA surface is visible; `production_radar_replacement_complete` remains false until browser performance, real full-pool/deep-scan execution, and provider-backed parity acceptance are complete.
 - `production_radar_replacement_complete` remains false until real full-pool/deep-scan execution and provider-backed parity acceptance are complete.
 - Radar output does not become a buy instruction and does not modify `strategy action`.
 
@@ -775,6 +778,7 @@ Keep real trading isolated from Command Center 3 automation
 - Do not treat `deep_scan_plan` as deep scan completion or legacy radar replacement.
 - Do not reduce legacy radar signal coverage without marking the gap.
 - Do not hide candidate display truncation or local pool input truncation.
+- Do not treat `no_feature_loss_acceptance_contract` as proof of production radar replacement.
 - Do not call Tushare/DeepSeek/GitHub from GET cache or render.
 - Do not treat candidates as trade instructions.
 

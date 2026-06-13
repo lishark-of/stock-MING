@@ -1715,6 +1715,238 @@ def _fast_scan_readiness_audit(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _no_feature_loss_acceptance_row(
+    criterion: str,
+    status: str,
+    *,
+    local_contract_passed: bool,
+    production_ready: bool,
+    evidence: str,
+    next_action: str,
+    required_for_production_replacement: bool = True,
+    gap_visible: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "local_contract_passed": bool(local_contract_passed),
+        "production_ready": bool(production_ready),
+        "required_for_production_replacement": bool(required_for_production_replacement),
+        "blocks_production_replacement": bool(required_for_production_replacement and not production_ready),
+        "gap_visible": bool(gap_visible),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _no_feature_loss_acceptance_rows(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+    counts = _as_dict(packet.get("counts"))
+    policy = _as_dict(packet.get("policy"))
+    coverage = _as_dict(packet.get("scan_coverage"))
+    coverage_detail = _as_dict(packet.get("coverage_detail_summary"))
+    parity = _as_dict(packet.get("legacy_parity_inventory"))
+    runtime_budget = _as_dict(packet.get("fast_scan_runtime_budget_contract"))
+    readiness = _as_dict(packet.get("fast_scan_readiness_audit"))
+    freshness = _as_dict(packet.get("freshness_state"))
+    full_pool_plan = _as_dict(packet.get("full_pool_scan_plan"))
+    deep_scan_plan = _as_dict(packet.get("deep_scan_plan"))
+    output_total = int(parity.get("output_contract_field_count") or len(_as_list(packet.get("legacy_output_contract_rows"))))
+    output_mapped = int(parity.get("output_contract_mapped_count") or counts.get("legacy_output_mapped_count") or 0)
+    missing_signal_count = int(coverage.get("missing_signal_group_count") or 0)
+    parity_gap_count = int(parity.get("gap_or_future_count") or counts.get("legacy_parity_gap_count") or 0)
+    provider_gap_count = int(coverage_detail.get("provider_blocked_group_count") or 0) + int(
+        coverage_detail.get("stale_input_group_count") or 0
+    ) + int(coverage_detail.get("missing_provider_data_group_count") or 0)
+    freshness_state = str(freshness.get("state") or "unknown").lower()
+    freshness_ready = freshness.get("source") != "missing" and freshness_state not in {
+        "stale",
+        "expired",
+        "historical",
+        "unknown",
+    }
+    full_pool_done = bool(full_pool_plan.get("full_pool_scan_done") is True)
+    deep_scan_done = bool(deep_scan_plan.get("deep_scan_done") is True)
+    return [
+        _no_feature_loss_acceptance_row(
+            "page_render_zero_scan",
+            "passed" if policy.get("does_not_scan_market") is True else "blocked",
+            local_contract_passed=policy.get("does_not_scan_market") is True,
+            production_ready=policy.get("does_not_scan_market") is True,
+            evidence="React page render and GET cache display persisted/cache packet only.",
+            next_action="Keep broad scans behind explicit POST task buttons.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "cache_get_external_boundary",
+            "passed" if packet.get("external_calls_triggered") is False else "blocked",
+            local_contract_passed=packet.get("external_calls_triggered") is False,
+            production_ready=packet.get("external_calls_triggered") is False,
+            evidence="GET candidate cache does not call Tushare, DeepSeek, GitHub, or trading interfaces.",
+            next_action="Preserve cache-only reads and keep provider/model calls button gated.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "local_fast_scan_modes",
+            "passed" if readiness.get("local_fast_scan_ready") is True else "blocked",
+            local_contract_passed=readiness.get("local_fast_scan_ready") is True,
+            production_ready=readiness.get("local_fast_scan_ready") is True,
+            evidence=f"supported_local_scan_modes={packet.get('supported_local_scan_modes')}",
+            next_action="Keep quick/watchlist/custom scan modes local and task based.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "legacy_signal_groups_visible",
+            "gap_reported" if missing_signal_count else "passed",
+            local_contract_passed=True,
+            production_ready=missing_signal_count == 0,
+            evidence=f"mapped={coverage.get('mapped_signal_group_count')}; missing={missing_signal_count}",
+            next_action="Map each missing legacy signal group or keep the gap visible before retiring fallback.",
+            gap_visible=missing_signal_count > 0,
+        ),
+        _no_feature_loss_acceptance_row(
+            "legacy_parity_rows_visible",
+            "gap_reported" if parity_gap_count else "passed",
+            local_contract_passed=True,
+            production_ready=parity_gap_count == 0,
+            evidence=f"mapped_or_partial={parity.get('mapped_or_partial_count')}; gap_or_future={parity_gap_count}",
+            next_action="Close or explicitly accept legacy parity gaps before claiming production replacement.",
+            gap_visible=parity_gap_count > 0,
+        ),
+        _no_feature_loss_acceptance_row(
+            "legacy_output_contract_visible",
+            "gap_reported" if output_total and output_mapped < output_total else "passed",
+            local_contract_passed=True,
+            production_ready=bool(output_total and output_mapped >= output_total),
+            evidence=f"output_mapped={output_mapped}; output_total={output_total}",
+            next_action="Keep absent output fields as missing_reported; do not invent legacy output values.",
+            gap_visible=bool(output_total and output_mapped < output_total),
+        ),
+        _no_feature_loss_acceptance_row(
+            "provider_signal_gaps_visible",
+            "gap_reported" if provider_gap_count else "passed",
+            local_contract_passed=True,
+            production_ready=provider_gap_count == 0,
+            evidence=f"provider_gap_count={provider_gap_count}",
+            next_action="Validate missing provider signal groups through future explicit provider tasks.",
+            gap_visible=provider_gap_count > 0,
+        ),
+        _no_feature_loss_acceptance_row(
+            "freshness_research_only_boundary",
+            "passed" if freshness_ready else "research_only_reported",
+            local_contract_passed=True,
+            production_ready=freshness_ready,
+            evidence=f"freshness={freshness.get('source') or 'missing'}:{freshness.get('state') or 'unknown'}",
+            next_action="Require current trade-calendar freshness before using candidates as current evidence.",
+            gap_visible=not freshness_ready,
+        ),
+        _no_feature_loss_acceptance_row(
+            "runtime_budget_contract_visible",
+            "passed" if runtime_budget.get("status") == "fast_scan_runtime_budget_ready" else "blocked",
+            local_contract_passed=runtime_budget.get("status") == "fast_scan_runtime_budget_ready",
+            production_ready=runtime_budget.get("status") == "fast_scan_runtime_budget_ready",
+            evidence=f"display_limit={runtime_budget.get('display_candidate_limit')}; worker_threshold={runtime_budget.get('worker_required_universe_threshold')}",
+            next_action="Keep sync display capped and move large universes to worker execution.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "browser_performance_trace_pending",
+            "pending_visual_perf_trace",
+            local_contract_passed=True,
+            production_ready=False,
+            evidence="Browser performance trace is not executed by this local cache contract.",
+            next_action="Run desktop/mobile browser trace validation before claiming the scan is stall-free in production.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "full_pool_execution_pending",
+            "completed" if full_pool_done else "pending_worker_execution",
+            local_contract_passed=True,
+            production_ready=full_pool_done,
+            evidence=f"full_pool_scan_done={full_pool_done}",
+            next_action="Implement future worker-backed full-pool execution without page-load scanning.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "deep_scan_execution_pending",
+            "completed" if deep_scan_done else "pending_worker_execution",
+            local_contract_passed=True,
+            production_ready=deep_scan_done,
+            evidence=f"deep_scan_done={deep_scan_done}; deepseek_called={bool(deep_scan_plan.get('deepseek_called') is True)}",
+            next_action="Implement future deep scan as a guarded task and keep DeepSeek manual/button gated.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "provider_backed_acceptance_pending",
+            "pending_provider_acceptance",
+            local_contract_passed=True,
+            production_ready=False,
+            evidence="No provider-backed radar parity acceptance is executed by cache reads or local plan tasks.",
+            next_action="Run future provider-backed acceptance samples after Tushare interface validation is ready.",
+        ),
+        _no_feature_loss_acceptance_row(
+            "trade_action_isolation",
+            "passed" if packet.get("does_not_modify_strategy_action") is True else "blocked",
+            local_contract_passed=packet.get("does_not_modify_strategy_action") is True,
+            production_ready=packet.get("does_not_modify_strategy_action") is True,
+            evidence="Radar candidates remain research-only and do not mutate strategy action, holdings, or orders.",
+            next_action="Keep candidate selection separate from trading integration.",
+        ),
+    ]
+
+
+def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    rows = _no_feature_loss_acceptance_rows(view)
+    local_blockers = [row["criterion"] for row in rows if not row.get("local_contract_passed")]
+    production_blockers = [row["criterion"] for row in rows if row.get("blocks_production_replacement")]
+    visible_gaps = [row["criterion"] for row in rows if row.get("gap_visible")]
+    local_ready = not local_blockers
+    contract = {
+        "schema_version": "candidate_radar_no_feature_loss_acceptance.v1",
+        "status": "no_feature_loss_acceptance_local_ready_production_pending" if local_ready else "no_feature_loss_acceptance_blocked",
+        "scope": "local_fast_scan_no_feature_loss_contract_not_production_replacement",
+        "ltg": "LTG-13",
+        "local_no_feature_loss_contract_ready": local_ready,
+        "production_radar_replacement_complete": False,
+        "legacy_fallback_required": True,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "browser_performance_trace_done": False,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "visible_gap_count": len(visible_gaps),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "visible_gaps": visible_gaps,
+        "cache_only": True,
+        "post_task_required_for_scan": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This contract proves local no-feature-loss acceptance is visible. It does not prove production radar replacement, full-pool execution, deep-scan execution, provider-backed acceptance, or browser performance.",
+    }
+    counts = dict(_as_dict(view.get("counts")))
+    counts["no_feature_loss_acceptance_row_count"] = contract["row_count"]
+    counts["no_feature_loss_local_blocker_count"] = contract["local_blocker_count"]
+    counts["no_feature_loss_production_blocker_count"] = contract["production_blocker_count"]
+    counts["no_feature_loss_visible_gap_count"] = contract["visible_gap_count"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["no_feature_loss_acceptance_contract_is_local"] = True
+    policy["no_feature_loss_acceptance_is_not_production_replacement"] = True
+    policy["legacy_fallback_required_until_full_pool_deep_scan_acceptance"] = True
+    view["counts"] = counts
+    view["policy"] = policy
+    view["no_feature_loss_acceptance_contract"] = contract
+    view["no_feature_loss_acceptance_rows"] = rows
+    return view
+
+
 def _full_pool_filter_rows(payload_safe: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key, default in FULL_POOL_FILTER_DEFAULTS.items():
@@ -2496,6 +2728,7 @@ def _build_candidate_radar_packet(
     }
     if not candidate_rows:
         packet["warnings"].append("当前没有可展示候选；3.0 cache 页不会自动刷新或扫描。")
+    packet = _attach_no_feature_loss_acceptance_contract(packet)
     return _json_safe(packet)
 
 
@@ -2533,6 +2766,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["does_not_execute_trades"] = True
     view["does_not_modify_strategy_action"] = True
     view["contains_secret"] = False
+    view = _attach_no_feature_loss_acceptance_contract(view)
     return _json_safe(view)
 
 
