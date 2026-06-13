@@ -53,13 +53,15 @@ def build_contract() -> dict[str, Any]:
     styles = read_text(DESKTOP_SRC / "styles.css")
     app = read_text(DESKTOP_SRC / "App.tsx")
     page_state = read_text(DESKTOP_SRC / "components" / "PageStateBanner.tsx")
+    packet_card = read_text(DESKTOP_SRC / "components" / "PacketCard.tsx")
+    metric_grid = read_text(DESKTOP_SRC / "components" / "MetricGrid.tsx")
     task_panel = read_text(DESKTOP_SRC / "components" / "TaskStatusPanel.tsx")
     task_receipt = read_text(DESKTOP_SRC / "components" / "TaskLaunchReceipt.tsx")
     next_chart = read_text(DESKTOP_SRC / "components" / "NextSessionChart.tsx")
     candidate_radar = read_text(DESKTOP_SRC / "routes" / "CandidateRadar.tsx")
     package_json = read_text(ROOT / "desktop" / "package.json")
     runner_source = read_text(ROOT / "scripts" / "motion_browser_qa_runner.mjs")
-    audited_text = "\n".join([styles, app, page_state, task_panel, task_receipt, next_chart, candidate_radar])
+    audited_text = "\n".join([styles, app, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart, candidate_radar])
 
     static_rows = [
         row(
@@ -94,6 +96,16 @@ def build_contract() -> dict[str, Any]:
             "layout_containment_contract",
             "contain: layout paint" in styles,
             "motion surfaces include layout/paint containment markers",
+        ),
+        row(
+            "visual_hierarchy_clarity_cue",
+            'data-motion-purpose="visual_hierarchy_clarity"' in packet_card
+            and 'data-motion-purpose="visual_hierarchy_clarity"' in metric_grid
+            and "data-metric-tone" in metric_grid
+            and '.motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::before' in styles
+            and "@keyframes cc-hierarchy-focus" in styles
+            and "pointer-events: none" in styles,
+            "metric and packet surfaces expose a finite non-interactive hierarchy cue for dense-page scanability",
         ),
         row(
             "mobile_responsive_motion_layout",

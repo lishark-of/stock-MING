@@ -1294,6 +1294,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "--motion-duration-state",
         "--motion-duration-clarity",
         "--motion-duration-focus",
+        "--motion-duration-hierarchy",
         "--motion-ease-emphasized",
     )
     keyframe_markers = (
@@ -1303,6 +1304,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "@keyframes cc-chart-clarity",
         "@keyframes cc-clarity-sweep",
         "@keyframes cc-focus-settle",
+        "@keyframes cc-hierarchy-focus",
         "@keyframes cc-context-sweep",
         "@keyframes cc-status-settle",
         "@keyframes cc-phase-confirm",
@@ -1325,6 +1327,13 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and 'key={route}' in app
         and "motion-surface" in packet_card
         and "motion-surface" in metric_grid,
+        "visual_hierarchy_clarity_cue": 'data-motion-purpose="visual_hierarchy_clarity"' in packet_card
+        and 'data-motion-purpose="visual_hierarchy_clarity"' in metric_grid
+        and "data-metric-tone={item.tone ?? \"neutral\"}" in metric_grid
+        and '.motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::before' in styles
+        and "@keyframes cc-hierarchy-focus" in styles
+        and "pointer-events: none" in styles
+        and "isolation: isolate" in styles,
         "navigation_context_cue": 'aria-current={active === route.key ? "page" : undefined}' in layout
         and 'data-route-active={active === route.key ? "true" : "false"}' in layout
         and 'className="nav-label"' in layout
@@ -1397,6 +1406,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("reduced_motion_css", checks["reduced_motion_css"], evidence="prefers-reduced-motion disables transform and duration"),
         _motion_row("state_clarity_rail_present", checks["state_clarity_rail_present"], evidence="PageStateBanner / TaskStatusPanel / TaskLaunchReceipt use StateClarityRail"),
         _motion_row("route_and_surface_staging", checks["route_and_surface_staging"], evidence="route-stage + motion-surface"),
+        _motion_row("visual_hierarchy_clarity_cue", checks["visual_hierarchy_clarity_cue"], evidence="metric cards and packet cards expose visual_hierarchy_clarity with finite non-interactive cue"),
         _motion_row("navigation_context_cue", checks["navigation_context_cue"], evidence="aria-current + data-route-active + finite active-nav sweep"),
         _motion_row("status_badge_context_cue", checks["status_badge_context_cue"], evidence="status badges expose data-status-tone and visual dot cue"),
         _motion_row("task_progress_motion_present", checks["task_progress_motion_present"], evidence="task status classes + progress transition"),
@@ -1557,6 +1567,15 @@ def _motion_production_qa_contract(
             production_ready=_row_passed("chart_clarity_scope") and _row_passed("radar_clarity_scope"),
             evidence="Next-session chart and candidate radar expose state attributes for visual grouping.",
             next_action="Add visual delta review after real browser viewport QA is available.",
+        ),
+        _motion_production_qa_row(
+            "visual_hierarchy_clarity",
+            "static_passed_visual_pending" if _row_passed("visual_hierarchy_clarity_cue") else "blocked",
+            local_contract_passed=_row_passed("visual_hierarchy_clarity_cue"),
+            production_ready=False,
+            evidence="Metric cards and packet cards expose a finite, non-interactive hierarchy cue for scanability.",
+            next_action="Verify dense pages in browser QA so hierarchy cues never obscure warnings, freshness, or row text.",
+            visual_qa_required=True,
         ),
         _motion_production_qa_row(
             "reduced_motion_accessibility",
@@ -1761,6 +1780,17 @@ def _motion_keynote_roadmap_audit(
             browser_review_required=True,
             evidence="static containment exists, but dense tables/cards still require viewport checks for overlap, clipping, and warning visibility.",
             next_action="Run browser QA across data-heavy pages and block any motion that reduces scanability.",
+        ),
+        _motion_keynote_roadmap_row(
+            "visual_hierarchy_cues",
+            "local_cue_ready_browser_review_pending" if local_qa_ready else "blocked",
+            local_ready=local_qa_ready,
+            production_ready=False,
+            priority="P1",
+            visual_qa_required=True,
+            browser_review_required=True,
+            evidence="Packet and metric surfaces now expose visual_hierarchy_clarity cues so status, blockers, and key packet groups are easier to scan without changing data.",
+            next_action="Review dense pages in default and reduced-motion browser runs before promoting this as production polish.",
         ),
         _motion_keynote_roadmap_row(
             "reduced_motion_accessibility_promotion",

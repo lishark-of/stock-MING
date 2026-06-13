@@ -13,7 +13,7 @@ export default function PacketCard({
   children?: ReactNode;
 }) {
   return (
-    <section className="packet-card motion-surface">
+    <section className="packet-card motion-surface" data-motion-purpose="visual_hierarchy_clarity">
       <div className="packet-card-title">
         <div>
           <h3>{title}</h3>

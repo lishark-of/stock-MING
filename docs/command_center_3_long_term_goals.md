@@ -1021,6 +1021,7 @@ Productionize non-blocking next-ticket radar scans
 - Navigation now exposes `aria-current` / `data-route-active` plus a finite active-route context sweep, and status badges expose `data-status-tone` plus a small visual tone dot so users can see current context and state without reading every label.
 - Cache/page state, task receipts, task status panels, and candidate-radar state now share a CSS-only `StateClarityRail` that makes accepted/running/blocked/done boundaries visible without timers, requestAnimationFrame, recomputation, or external calls.
 - Cache loading/error/empty states, task phase panels, and task creation receipts now expose a shared `state_change_confirmation` motion scope with finite `cc-phase-confirm` cues, so refresh and task transitions are visible without adding timers, provider calls, or recomputation.
+- Metric tiles and packet cards now expose `visual_hierarchy_clarity` cues: finite, non-interactive CSS highlights make dense audit pages easier to scan without covering text, changing packet values, recomputing frontend state, or creating trade urgency.
 - `scripts/motion_viewport_qa_contract.py` now pins the LTG-14 browser QA route/viewport matrix and is run by `scripts/push_gate_3_0.sh`; it is a local static contract and still reports `visual_qa_complete=false`.
 - `scripts/motion_browser_qa_runbook.py` now pins the local browser QA runbook: manual FastAPI/Vite startup order, local-only URLs, route/viewport matrix, ignored artifact path, visual acceptance criteria, reduced-motion pass, and performance budgets. It is run by `scripts/push_gate_3_0.sh` but does not open a browser, write screenshots, or prove visual/performance acceptance.
 - Next-session ECharts now has a short update clarity layer and respects reduced-motion preferences by disabling chart update animation.
@@ -1049,6 +1050,7 @@ Productionize non-blocking next-ticket radar scans
 - The Motion browser QA review task is now button-gated and local-only, but it reviews ignored local artifacts rather than running browser QA in CI or proving production motion completion.
 - The explicit runner is available and has local pass reports, but runner availability and local ignored reports are still not the same as production motion completion.
 - Need visual hierarchy that makes status, freshness, blockers, and candidate changes obvious.
+- Visual hierarchy cues now exist statically, but they still need browser viewport review on dense pages before being treated as production polish.
 - Current navigation/status cue layer improves static context visibility but still needs browser viewport review for dense pages and mobile widths.
 - `motion_clarity_static_ready_visual_qa_pending` is not production motion completion; it only proves static source guardrails.
 - `motion_production_qa_local_ready_visual_perf_pending` is also local QA only; it does not prove browser visual quality or runtime performance.
@@ -1071,6 +1073,7 @@ Productionize non-blocking next-ticket radar scans
 - No animation changes `strategy action`, price, position, or packet values.
 - Cache/task/radar clarity states are visible without using timers, requestAnimationFrame, provider refreshes, or frontend scoring.
 - Cache/task phase confirmation cues are visible and audited as visual-only state changes.
+- Metric/card visual hierarchy cues are finite, pointer-safe, reduced-motion bounded, and audited as visual-only scanability aids.
 - The motion viewport QA contract is repeatable in the push gate, while browser execution remains explicit and pending.
 - The motion browser QA runbook is repeatable in the push gate and fixes local URLs, artifact policy, route/viewport matrix, visual criteria, reduced-motion pass, and performance budgets without opening a browser.
 - The explicit browser QA runner exists and is audited as explicit-only: it opens only local `127.0.0.1` routes after services are already running, writes ignored local artifacts, and is not run by GET cache or default push gate.
@@ -1086,6 +1089,7 @@ Productionize non-blocking next-ticket radar scans
 ### Forbidden
 
 - Do not add decorative motion that obscures evidence, warnings, or risk state.
+- Do not use hierarchy cues to imply urgency, certainty, or a buy/sell recommendation.
 - Do not animate by recomputing backend data.
 - Do not use motion to imply certainty, urgency, or trade recommendations.
 - Do not regress text readability or viewport layout.

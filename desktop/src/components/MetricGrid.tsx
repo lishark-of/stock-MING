@@ -27,6 +27,8 @@ export default function MetricGrid({ items }: { items: MetricItem[] }) {
       {items.map((item, index) => (
         <div
           className="metric-card motion-surface"
+          data-metric-tone={item.tone ?? "neutral"}
+          data-motion-purpose="visual_hierarchy_clarity"
           key={item.label}
           style={{ "--motion-delay": `${Math.min(index, 8) * 24}ms` } as CSSProperties}
         >

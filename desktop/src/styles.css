@@ -9,12 +9,17 @@
   --motion-duration-state: 300ms;
   --motion-duration-clarity: 420ms;
   --motion-duration-focus: 520ms;
+  --motion-duration-hierarchy: 620ms;
   --motion-delay-step: 24ms;
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-translate-y: 10px;
   --motion-shadow-rest: 0 1px 2px rgba(15, 23, 42, 0.06);
   --motion-shadow-focus: 0 10px 28px rgba(15, 23, 42, 0.11);
+  --motion-hierarchy-blue: rgba(37, 99, 235, 0.18);
+  --motion-hierarchy-warn: rgba(245, 158, 11, 0.18);
+  --motion-hierarchy-bad: rgba(220, 38, 38, 0.16);
+  --motion-hierarchy-good: rgba(22, 163, 74, 0.16);
 }
 
 body {
@@ -101,6 +106,39 @@ textarea:focus {
   animation: cc-surface-rise var(--motion-duration-panel) var(--motion-ease-emphasized) both;
   animation-delay: var(--motion-delay, 0ms);
   transform-origin: 50% 0;
+}
+
+.motion-surface[data-motion-purpose="visual_hierarchy_clarity"] {
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+}
+
+.motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::before {
+  animation: cc-hierarchy-focus var(--motion-duration-hierarchy) var(--motion-ease-emphasized) both;
+  background: linear-gradient(180deg, transparent, var(--motion-hierarchy-cue, var(--motion-hierarchy-blue)), transparent);
+  content: "";
+  inset: 10px auto 10px 0;
+  pointer-events: none;
+  position: absolute;
+  transform-origin: 50% 0;
+  width: 3px;
+  z-index: 0;
+}
+
+.metric-card[data-metric-tone="good"],
+.status-good {
+  --motion-hierarchy-cue: var(--motion-hierarchy-good);
+}
+
+.metric-card[data-metric-tone="warn"],
+.status-warn {
+  --motion-hierarchy-cue: var(--motion-hierarchy-warn);
+}
+
+.metric-card[data-metric-tone="bad"],
+.status-bad {
+  --motion-hierarchy-cue: var(--motion-hierarchy-bad);
 }
 
 .page-head {
@@ -250,6 +288,20 @@ textarea:focus {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes cc-hierarchy-focus {
+  from {
+    opacity: 0;
+    transform: scaleY(0.26);
+  }
+  44% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.72;
+    transform: scaleY(1);
   }
 }
 
@@ -1020,6 +1072,7 @@ pre {
   }
 
   .motion-surface,
+  .motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::before,
   .route-stage,
   .page-head,
   .chart-refresh-frame,
