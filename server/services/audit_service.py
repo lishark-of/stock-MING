@@ -887,6 +887,178 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
     return audit, rows
 
 
+def _motion_production_qa_row(
+    criterion: str,
+    status: str,
+    *,
+    local_contract_passed: bool,
+    production_ready: bool,
+    evidence: str,
+    next_action: str,
+    visual_qa_required: bool = False,
+    performance_trace_required: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "local_contract_passed": bool(local_contract_passed),
+        "production_ready": bool(production_ready),
+        "blocks_production_motion": not bool(production_ready),
+        "visual_qa_required": bool(visual_qa_required),
+        "performance_trace_required": bool(performance_trace_required),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_packets": True,
+    }
+
+
+def _motion_production_qa_contract(
+    motion_clarity_audit: Mapping[str, Any],
+    motion_clarity_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    rows_by_criterion = {str(row.get("criterion")): row for row in motion_clarity_rows}
+    static_ready = motion_clarity_audit.get("static_ready") is True
+
+    def _row_passed(criterion: str) -> bool:
+        return rows_by_criterion.get(criterion, {}).get("passed") is True
+
+    rows = [
+        _motion_production_qa_row(
+            "purposeful_motion_tokens",
+            "passed" if _row_passed("motion_tokens_present") and _row_passed("finite_keyframes_present") else "blocked",
+            local_contract_passed=_row_passed("motion_tokens_present") and _row_passed("finite_keyframes_present"),
+            production_ready=_row_passed("motion_tokens_present") and _row_passed("finite_keyframes_present"),
+            evidence="duration/easing tokens and finite keyframes define a restrained motion system.",
+            next_action="Keep any new motion tied to state clarity, not decoration.",
+        ),
+        _motion_production_qa_row(
+            "state_change_clarity",
+            "passed"
+            if _row_passed("state_clarity_rail_present")
+            and _row_passed("task_phase_confirmation_cue")
+            and _row_passed("task_receipt_confirmation_cue")
+            and _row_passed("cache_refresh_confirmation_cue")
+            else "blocked",
+            local_contract_passed=_row_passed("state_clarity_rail_present")
+            and _row_passed("task_phase_confirmation_cue")
+            and _row_passed("task_receipt_confirmation_cue")
+            and _row_passed("cache_refresh_confirmation_cue"),
+            production_ready=_row_passed("state_clarity_rail_present")
+            and _row_passed("task_phase_confirmation_cue")
+            and _row_passed("task_receipt_confirmation_cue")
+            and _row_passed("cache_refresh_confirmation_cue"),
+            evidence="cache, task, and receipt state transitions expose visible confirmation cues.",
+            next_action="Extend the same visual grammar to future heavy-task progress and radar result deltas.",
+        ),
+        _motion_production_qa_row(
+            "chart_and_radar_motion_scope",
+            "passed" if _row_passed("chart_clarity_scope") and _row_passed("radar_clarity_scope") else "blocked",
+            local_contract_passed=_row_passed("chart_clarity_scope") and _row_passed("radar_clarity_scope"),
+            production_ready=_row_passed("chart_clarity_scope") and _row_passed("radar_clarity_scope"),
+            evidence="Next-session chart and candidate radar expose state attributes for visual grouping.",
+            next_action="Add visual delta review after real browser viewport QA is available.",
+        ),
+        _motion_production_qa_row(
+            "reduced_motion_accessibility",
+            "passed" if _row_passed("reduced_motion_css") and _row_passed("chart_reduced_motion_runtime") else "blocked",
+            local_contract_passed=_row_passed("reduced_motion_css") and _row_passed("chart_reduced_motion_runtime"),
+            production_ready=_row_passed("reduced_motion_css") and _row_passed("chart_reduced_motion_runtime"),
+            evidence="CSS and ECharts runtime honor reduced-motion preferences.",
+            next_action="Keep all future motion behind the same reduced-motion boundary.",
+        ),
+        _motion_production_qa_row(
+            "layout_containment_and_readability",
+            "static_passed_visual_pending" if _row_passed("layout_containment_guard") else "blocked",
+            local_contract_passed=_row_passed("layout_containment_guard"),
+            production_ready=False,
+            evidence="static containment markers exist, but overlap/occlusion cannot be proven without viewport execution.",
+            next_action="Run desktop/tablet/mobile visual QA for text overlap, warning visibility, and dense-table readability.",
+            visual_qa_required=True,
+        ),
+        _motion_production_qa_row(
+            "no_timer_or_raf_motion_loop",
+            "passed" if _row_passed("no_timer_or_raf_motion_loop") else "blocked",
+            local_contract_passed=_row_passed("no_timer_or_raf_motion_loop"),
+            production_ready=_row_passed("no_timer_or_raf_motion_loop"),
+            evidence="motion audit allows only bounded task polling, not timer/RAF animation loops.",
+            next_action="Keep motion CSS/attribute driven unless a separately reviewed animation runtime is needed.",
+        ),
+        _motion_production_qa_row(
+            "visual_qa_execution_pending",
+            "pending_browser_visual_qa",
+            local_contract_passed=True,
+            production_ready=False,
+            evidence="motion viewport matrix is pinned, but a browser run has not marked visual_qa_complete=true.",
+            next_action="Execute the pinned route/viewport matrix before production motion completion.",
+            visual_qa_required=True,
+        ),
+        _motion_production_qa_row(
+            "performance_trace_pending",
+            "pending_browser_performance_trace",
+            local_contract_passed=True,
+            production_ready=False,
+            evidence="static source audit cannot prove frame stability, layout shift, or interaction smoothness under large packets.",
+            next_action="Capture browser performance traces for route transitions, chart updates, task polling, and candidate radar.",
+            performance_trace_required=True,
+        ),
+        _motion_production_qa_row(
+            "provider_and_trade_isolation",
+            "passed"
+            if _row_passed("no_provider_call_markers") and _row_passed("visual_only_boundary_visible")
+            else "blocked",
+            local_contract_passed=_row_passed("no_provider_call_markers") and _row_passed("visual_only_boundary_visible"),
+            production_ready=_row_passed("no_provider_call_markers") and _row_passed("visual_only_boundary_visible"),
+            evidence="motion files contain no provider markers and keep trade guardrails visible.",
+            next_action="Do not let visual emphasis imply certainty, urgency, or trade recommendation.",
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if not row.get("local_contract_passed")]
+    production_blockers = [row["criterion"] for row in rows if row.get("blocks_production_motion")]
+    visual_pending = [row["criterion"] for row in rows if row.get("visual_qa_required") and not row.get("production_ready")]
+    performance_pending = [
+        row["criterion"] for row in rows if row.get("performance_trace_required") and not row.get("production_ready")
+    ]
+    local_ready = static_ready and not local_blockers
+    contract = {
+        "schema_version": "command_center_3_motion_production_qa_contract.v1",
+        "status": "motion_production_qa_local_ready_visual_perf_pending" if local_ready else "motion_production_qa_blocked",
+        "scope": "local_motion_production_qa_contract_not_browser_visual_or_perf_proof",
+        "ltg": "LTG-14",
+        "design_intent": "state_clarity_first_restrained_keynote_motion",
+        "local_motion_qa_ready": local_ready,
+        "production_motion_complete": False,
+        "visual_qa_complete": False,
+        "browser_performance_verified": False,
+        "static_ready": static_ready,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "visual_pending_count": len(visual_pending),
+        "performance_pending_count": len(performance_pending),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "visual_pending": visual_pending,
+        "performance_pending": performance_pending,
+        "cache_only": True,
+        "runs_no_commands": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_packets": True,
+        "note": "This contract organizes LTG-14 production motion acceptance. It does not execute browser visual QA or performance tracing.",
+    }
+    return contract, rows
+
+
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
@@ -901,6 +1073,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     get_route_coverage = _get_route_coverage(endpoint_rows)
     release_gate_readiness_audit, release_gate_readiness_rows, release_gate_workflow_rows = _release_gate_readiness_audit()
     motion_clarity_audit, motion_clarity_rows = _motion_clarity_readiness_audit()
+    motion_production_qa_contract, motion_production_qa_rows = _motion_production_qa_contract(
+        motion_clarity_audit,
+        motion_clarity_rows,
+    )
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -935,6 +1111,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_workflow_rows": release_gate_workflow_rows,
         "motion_clarity_audit": motion_clarity_audit,
         "motion_clarity_rows": motion_clarity_rows,
+        "motion_production_qa_contract": motion_production_qa_contract,
+        "motion_production_qa_rows": motion_production_qa_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -970,6 +1148,11 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_clarity_static_ready": motion_clarity_audit.get("static_ready") is True,
             "motion_clarity_blocker_count": motion_clarity_audit.get("blocking_criterion_count", 0),
             "motion_clarity_soft_blocker_count": motion_clarity_audit.get("soft_blocker_count", 0),
+            "motion_production_qa_row_count": motion_production_qa_contract.get("row_count", 0),
+            "motion_production_qa_local_ready": motion_production_qa_contract.get("local_motion_qa_ready") is True,
+            "motion_production_blocker_count": motion_production_qa_contract.get("production_blocker_count", 0),
+            "motion_visual_pending_count": motion_production_qa_contract.get("visual_pending_count", 0),
+            "motion_performance_pending_count": motion_production_qa_contract.get("performance_pending_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -996,6 +1179,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_clarity_audit_is_static": True,
             "motion_clarity_audit_runs_no_commands": True,
             "motion_clarity_static_ready_is_not_visual_qa": True,
+            "motion_production_qa_contract_is_local": True,
+            "motion_production_qa_is_not_browser_visual_or_perf_proof": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -1012,6 +1197,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_clarity_status": motion_clarity_audit.get("status"),
                 "motion_clarity_static_ready": motion_clarity_audit.get("static_ready"),
                 "motion_clarity_visual_qa_complete": motion_clarity_audit.get("visual_qa_complete"),
+                "motion_production_qa_status": motion_production_qa_contract.get("status"),
+                "motion_production_qa_local_ready": motion_production_qa_contract.get("local_motion_qa_ready"),
+                "motion_production_complete": motion_production_qa_contract.get("production_motion_complete"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -1035,6 +1223,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "发现 missing_call_ledger 只代表该本地 cache 返回包没有附带调用血缘，不代表自动外联。",
             "release_gate_readiness_audit 只读解析本地脚本和 workflow；local_gate_ready 不是 CI 状态，也不是生产完成证明。",
             "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
+            "motion_production_qa_contract 是本地生产验收清单；不运行浏览器视觉 QA 或性能 trace。",
         ],
     }
     return _json_safe(packet)

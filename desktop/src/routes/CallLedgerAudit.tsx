@@ -33,6 +33,8 @@ export default function CallLedgerAudit() {
   const releaseGateWorkflowRows = rows(cache.release_gate_workflow_rows);
   const motionClarityAudit = (cache.motion_clarity_audit as Record<string, unknown> | undefined) ?? {};
   const motionClarityRows = rows(cache.motion_clarity_rows);
+  const motionProductionQa = (cache.motion_production_qa_contract as Record<string, unknown> | undefined) ?? {};
+  const motionProductionQaRows = rows(cache.motion_production_qa_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -83,6 +85,9 @@ export default function CallLedgerAudit() {
           { label: "motion clarity", value: motionClarityAudit.status as string | undefined, tone: motionClarityAudit.static_ready === true ? "good" : "warn" },
           { label: "motion blockers", value: counts.motion_clarity_blocker_count as number | undefined, tone: Number(counts.motion_clarity_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "motion visual QA", value: motionClarityAudit.visual_qa_complete === true ? "完成" : "待验收", tone: motionClarityAudit.visual_qa_complete === true ? "good" : "warn" },
+          { label: "motion prod QA", value: motionProductionQa.status as string | undefined, tone: motionProductionQa.local_motion_qa_ready === true ? "good" : "warn" },
+          { label: "motion prod blockers", value: counts.motion_production_blocker_count as number | undefined, tone: Number(counts.motion_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "motion perf pending", value: counts.motion_performance_pending_count as number | undefined, tone: Number(counts.motion_performance_pending_count ?? 0) > 0 ? "warn" : "good" },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -178,6 +183,17 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="Motion clarity checklist" subtitle="motion_clarity_rows：tokens、reduced-motion、finite animation、no timer loop、chart/radar clarity" status="motion_clarity_rows">
         <DataLineageTable rows={motionClarityRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion production QA" subtitle="motion_production_qa_contract：本地生产验收清单，不代表浏览器视觉或性能验收完成" status={String(motionProductionQa.status ?? "missing")}>
+        <p>design_intent: {String(motionProductionQa.design_intent ?? "state_clarity_first_restrained_keynote_motion")}</p>
+        <p>local_motion_qa_ready: {String(motionProductionQa.local_motion_qa_ready ?? false)}</p>
+        <p>production_motion_complete: {String(motionProductionQa.production_motion_complete ?? false)}</p>
+        <p>visual_qa_complete: {String(motionProductionQa.visual_qa_complete ?? false)}</p>
+        <p>browser_performance_verified: {String(motionProductionQa.browser_performance_verified ?? false)}</p>
+        <p>动效用于状态清晰度、图谱/雷达变化和任务反馈；视觉 QA 与性能 trace 未完成前不能标记为 production motion complete。</p>
+        <DataLineageTable rows={[motionProductionQa]} />
+        <DataLineageTable rows={motionProductionQaRows} />
       </PacketCard>
 
       <div className="grid">

@@ -69,7 +69,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
 | LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness and no-feature-loss QA contracts exist; full-pool/deep-scan/provider acceptance pending | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
-| LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, navigation/status context cues, and static readiness audit exist; browser visual QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
+| LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, static readiness audit, and production QA contract exist; browser visual/performance QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
 
@@ -802,6 +802,7 @@ Productionize non-blocking next-ticket radar scans
 - Candidate radar now tags its primary result cluster with cache/coverage/blocker/degraded state so result transitions are visually easier to follow without recomputing candidates.
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
 - Call Ledger Audit now exposes `motion_clarity_audit` and `motion_clarity_rows`, a local static source audit for motion tokens, finite keyframes, navigation/status context cues, reduced-motion CSS/runtime behavior, StateClarityRail usage, chart/radar clarity scopes, layout containment, no timer/RAF motion loops, and no provider invocation markers.
+- Call Ledger Audit now exposes `motion_production_qa_contract` and `motion_production_qa_rows`, a local production acceptance checklist for purposeful motion tokens, state-change clarity, chart/radar scopes, reduced-motion accessibility, layout readability, no timer/RAF loops, browser visual QA, performance trace, and provider/trade isolation. It keeps `production_motion_complete=false` until browser visual and performance checks are run.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
 ### Gaps
@@ -813,6 +814,7 @@ Productionize non-blocking next-ticket radar scans
 - Need visual hierarchy that makes status, freshness, blockers, and candidate changes obvious.
 - Current navigation/status cue layer improves static context visibility but still needs browser viewport review for dense pages and mobile widths.
 - `motion_clarity_static_ready_visual_qa_pending` is not production motion completion; it only proves static source guardrails.
+- `motion_production_qa_local_ready_visual_perf_pending` is also local QA only; it does not prove browser visual quality or runtime performance.
 
 ### Implementation Phases
 
@@ -833,6 +835,7 @@ Productionize non-blocking next-ticket radar scans
 - Cache/task phase confirmation cues are visible and audited as visual-only state changes.
 - The motion viewport QA contract is repeatable in the push gate, while browser execution remains explicit and pending.
 - Visual polish is additive and does not replace audit labels, warnings, or freshness state.
+- `motion_production_qa_contract.local_motion_qa_ready=true` only means the local production checklist is visible and source guardrails pass; visual QA and performance trace must remain pending until explicitly executed.
 - `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
 - `production_motion_complete` remains false until browser viewport and performance QA are complete.
 
