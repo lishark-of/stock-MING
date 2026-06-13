@@ -74,6 +74,7 @@ export default function CandidateRadar() {
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
+  const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
@@ -93,6 +94,7 @@ export default function CandidateRadar() {
   const fastScanRuntimeBudgetRows = rows(cache.fast_scan_runtime_budget_rows);
   const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
+  const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
@@ -108,6 +110,7 @@ export default function CandidateRadar() {
     String(cache.scan_mode ?? "no_scan_mode"),
     Number(scanCoverage.missing_signal_group_count ?? 0) ? "coverage_gap" : "coverage_ok",
     Number(counts.provider_blocked_group_count ?? 0) ? "provider_blocked" : "provider_clear",
+    Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "result_delta_gap" : "result_delta_clear",
     Number(counts.degraded_mode_active_count ?? 0) ? "degraded" : "steady"
   ].join(" ");
 
@@ -132,6 +135,9 @@ export default function CandidateRadar() {
           { label: "no-loss QA", value: String(noFeatureLossAcceptance.status ?? "missing"), tone: noFeatureLossAcceptance.local_no_feature_loss_contract_ready === true ? "good" : "warn" },
           { label: "no-loss gaps", value: counts.no_feature_loss_visible_gap_count as number | undefined, tone: Number(counts.no_feature_loss_visible_gap_count ?? 0) ? "warn" : "good" },
           { label: "radar prod blockers", value: counts.no_feature_loss_production_blocker_count as number | undefined, tone: Number(counts.no_feature_loss_production_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "delta clarity", value: String(resultDeltaClarity.status ?? "missing"), tone: resultDeltaClarity.local_result_delta_clarity_ready === true ? "good" : "warn" },
+          { label: "delta gaps", value: counts.result_delta_clarity_visible_gap_count as number | undefined, tone: Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "warn" : "good" },
+          { label: "delta pending", value: counts.result_delta_clarity_pending_count as number | undefined, tone: Number(counts.result_delta_clarity_pending_count ?? 0) ? "warn" : "good" },
           { label: "full replacement", value: fastScanReadinessAudit.production_radar_replacement_complete === true ? "完成" : "未完成", tone: fastScanReadinessAudit.production_radar_replacement_complete === true ? "bad" : "good" },
           { label: "universe", value: coverageDetail.universe_size as number | undefined },
           { label: "input rows", value: coverageDetail.candidate_input_count as number | undefined },
@@ -267,6 +273,16 @@ export default function CandidateRadar() {
         <p>此合同汇总旧信号组、输出字段、provider/freshness 缺口、运行预算、full-pool/deep-scan 边界和交易隔离；gap 可见不等于真实 full-pool/deep-scan/provider-backed 验收完成。</p>
         <DataLineageTable rows={objectRow(noFeatureLossAcceptance)} />
         <DataLineageTable rows={noFeatureLossAcceptanceRows} />
+      </PacketCard>
+
+      <PacketCard title="雷达结果变化清晰度" subtitle="result_delta_clarity_contract；只展示当前结果变化线索，不做 previous-cache diff 或浏览器视觉验收" status={String(resultDeltaClarity.status ?? "missing")}>
+        <p>local_result_delta_clarity_ready: {String(resultDeltaClarity.local_result_delta_clarity_ready ?? false)}</p>
+        <p>previous_cache_diff_done: {String(resultDeltaClarity.previous_cache_diff_done ?? false)}</p>
+        <p>browser_visual_delta_qa_done: {String(resultDeltaClarity.browser_visual_delta_qa_done ?? false)}</p>
+        <p>candidate_delta_signature: {String(resultDeltaClarity.candidate_delta_signature ?? "--")}</p>
+        <p>候选数量、截断、跳过原因、provider gap、freshness、scan mode 和 full/deep 边界必须可见；previous-cache diff 与浏览器视觉 QA 仍是 pending，不能当生产雷达替代完成。</p>
+        <DataLineageTable rows={objectRow(resultDeltaClarity)} />
+        <DataLineageTable rows={resultDeltaClarityRows} />
       </PacketCard>
 
       <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>

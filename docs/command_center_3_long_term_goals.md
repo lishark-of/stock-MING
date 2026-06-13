@@ -748,6 +748,7 @@ Keep real trading isolated from Command Center 3 automation
 - Candidate radar packets now expose `fast_scan_readiness_audit` and `fast_scan_readiness_rows`, proving the local quick/watchlist/custom scan contract is cache/task based, page render does not scan, legacy/provider/freshness gaps are visible, and full-pool/deep-scan remain pending rather than silently downgraded.
 - Candidate radar packets now expose `fast_scan_runtime_budget_contract` and `fast_scan_runtime_budget_rows`: local sync display is capped, local pool input normalization has a fixed budget, large universes must move to worker execution, and truncation is reported as a visible gap instead of being hidden.
 - Candidate radar packets now expose `no_feature_loss_acceptance_contract` and `no_feature_loss_acceptance_rows`: this aggregates page-render/cache boundaries, local scan modes, legacy signal groups, legacy output fields, provider/freshness gaps, runtime budget, browser performance trace status, full-pool/deep-scan execution status, provider-backed acceptance, and trade/action isolation. It makes the local no-feature-loss QA surface visible but keeps `production_radar_replacement_complete=false`.
+- Candidate radar packets now expose `result_delta_clarity_contract` and `result_delta_clarity_rows`: candidate counts, display truncation, skipped reasons, provider gaps, freshness state, scan mode transitions, local-pool skips, and full/deep boundaries are visible without rescoring, refreshing providers, timers, previous-cache diff execution, browser QA, or trade/action mutation.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
 ### Gaps
@@ -759,6 +760,7 @@ Keep real trading isolated from Command Center 3 automation
 - The deep-scan readiness plan is not deep scan execution and does not prove legacy radar replacement.
 - Browser performance trace and packaged runtime UI responsiveness validation are still pending; the current runtime budget is a static/local contract.
 - The no-feature-loss acceptance contract is local QA; it does not prove browser performance, real full-pool/deep-scan execution, or provider-backed parity acceptance.
+- The result-delta clarity contract is local QA; it does not prove previous-cache diff, browser visual QA, or production radar replacement.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
 - Need parity acceptance before removing any Streamlit fallback.
 
@@ -784,6 +786,7 @@ Keep real trading isolated from Command Center 3 automation
 - `fast_scan_readiness_audit.local_fast_scan_ready=true` only when page-render, local task, legacy gap, provider gap, freshness, last-cache, full-pool, deep-scan and trade boundaries are all visible.
 - `no_feature_loss_acceptance_contract.local_no_feature_loss_contract_ready=true` only means the local QA surface is visible; `production_radar_replacement_complete` remains false until browser performance, real full-pool/deep-scan execution, and provider-backed parity acceptance are complete.
 - `production_radar_replacement_complete` remains false until real full-pool/deep-scan execution and provider-backed parity acceptance are complete.
+- `result_delta_clarity_contract.local_result_delta_clarity_ready=true` only means current-packet result-change cues are visible; `previous_cache_diff_done=false` and `browser_visual_delta_qa_done=false` must remain explicit until those checks are run.
 - Radar output does not become a buy instruction and does not modify `strategy action`.
 
 ### Forbidden
@@ -794,6 +797,7 @@ Keep real trading isolated from Command Center 3 automation
 - Do not reduce legacy radar signal coverage without marking the gap.
 - Do not hide candidate display truncation or local pool input truncation.
 - Do not treat `no_feature_loss_acceptance_contract` as proof of production radar replacement.
+- Do not treat `result_delta_clarity_contract` as previous-cache diff, browser visual QA, or production radar replacement.
 - Do not call Tushare/DeepSeek/GitHub from GET cache or render.
 - Do not treat candidates as trade instructions.
 
@@ -815,6 +819,7 @@ Productionize non-blocking next-ticket radar scans
 - `scripts/motion_viewport_qa_contract.py` now pins the LTG-14 browser QA route/viewport matrix and is run by `scripts/push_gate_3_0.sh`; it is a local static contract and still reports `visual_qa_complete=false`.
 - Next-session ECharts now has a short update clarity layer and respects reduced-motion preferences by disabling chart update animation.
 - Candidate radar now tags its primary result cluster with cache/coverage/blocker/degraded state so result transitions are visually easier to follow without recomputing candidates.
+- Candidate radar now exposes `result_delta_clarity_contract` so candidate counts, skipped reasons, provider gaps, freshness, truncation, scan mode, and full/deep boundaries are visibly auditable before any previous-cache diff or browser visual QA is claimed.
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
 - Call Ledger Audit now exposes `motion_clarity_audit` and `motion_clarity_rows`, a local static source audit for motion tokens, finite keyframes, navigation/status context cues, reduced-motion CSS/runtime behavior, StateClarityRail usage, chart/radar clarity scopes, layout containment, no timer/RAF motion loops, and no provider invocation markers.
 - Call Ledger Audit now exposes `motion_production_qa_contract` and `motion_production_qa_rows`, a local production acceptance checklist for purposeful motion tokens, state-change clarity, chart/radar scopes, reduced-motion accessibility, layout readability, no timer/RAF loops, browser visual QA, performance trace, and provider/trade isolation. It keeps `production_motion_complete=false` until browser visual and performance checks are run.
@@ -822,7 +827,7 @@ Productionize non-blocking next-ticket radar scans
 
 ### Gaps
 
-- Need deeper transitions for panel expansion and later candidate-radar result deltas beyond the primary cluster, clarity rail, and static phase-confirm cue.
+- Need browser-verified transitions for panel expansion and candidate-radar result deltas beyond the current local `result_delta_clarity_contract`, primary cluster, clarity rail, and static phase-confirm cue.
 - Need broader chart motion verification so updates help users understand state changes instead of adding decoration.
 - Need browser viewport execution against the pinned route/viewport matrix so animation never overlaps, occludes, or resizes critical text.
 - Need runtime performance traces so later animation never reintroduces UI stalls.

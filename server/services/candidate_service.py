@@ -1947,6 +1947,205 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     return view
 
 
+def _result_delta_clarity_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    evidence: str,
+    user_visible: bool = True,
+    gap_visible: bool = False,
+    production_pending: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "user_visible": bool(user_visible),
+        "gap_visible": bool(gap_visible),
+        "production_pending": bool(production_pending),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _candidate_delta_signature(candidate_rows: list[dict[str, Any]]) -> str:
+    compact_rows = [
+        {
+            "rank": row.get("rank"),
+            "ticker": row.get("ticker"),
+            "score": row.get("score"),
+            "status_label": row.get("status_label"),
+            "action_state": row.get("action_state"),
+            "data_gaps": row.get("data_gaps"),
+        }
+        for row in candidate_rows[:FAST_SCAN_DISPLAY_CANDIDATE_LIMIT]
+    ]
+    serialized = json.dumps(compact_rows, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
+
+
+def _result_delta_clarity_contract(
+    *,
+    scan_mode: str,
+    candidate_rows: list[dict[str, Any]],
+    counts: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+    scan_execution_summary: Mapping[str, Any],
+    scan_acceptance_rows: list[dict[str, Any]],
+    runtime_budget_contract: Mapping[str, Any],
+    local_pool_audit: Mapping[str, Any],
+    full_pool_scan_plan: Mapping[str, Any],
+    deep_scan_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
+    freshness_state = _as_dict(coverage.get("freshness_state"))
+    acceptance_by_key = {str(row.get("check_key")): row for row in scan_acceptance_rows}
+    provider_gap_count = int(scan_execution_summary.get("provider_gap_count") or 0)
+    skipped_reason_count = int(coverage.get("skipped_reason_count") or 0)
+    truncated_count = int(runtime_budget_contract.get("candidate_display_truncated_count") or 0)
+    full_pool_plan_ready = full_pool_scan_plan.get("status") == "full_pool_plan_ready"
+    deep_scan_plan_ready = deep_scan_plan.get("status") == "deep_scan_plan_ready"
+    rows = [
+        _result_delta_clarity_row(
+            "candidate_count_and_mix_visible",
+            "passed",
+            passed=True,
+            evidence=(
+                f"candidate_count={counts.get('candidate_count')}; "
+                f"ready={counts.get('ready_count')}; observe={counts.get('observe_count')}; verify={counts.get('verify_count')}"
+            ),
+        ),
+        _result_delta_clarity_row(
+            "candidate_display_cap_visible",
+            "capped_visible" if truncated_count else "passed",
+            passed=True,
+            evidence=(
+                f"displayed={runtime_budget_contract.get('candidate_displayed_count')}; "
+                f"limit={runtime_budget_contract.get('display_candidate_limit')}; truncated={truncated_count}"
+            ),
+            gap_visible=bool(truncated_count),
+        ),
+        _result_delta_clarity_row(
+            "skipped_reason_visibility",
+            "gap_reported" if skipped_reason_count else "passed",
+            passed=True,
+            evidence=f"skipped_reason_count={skipped_reason_count}",
+            gap_visible=bool(skipped_reason_count),
+        ),
+        _result_delta_clarity_row(
+            "provider_gap_visibility",
+            "gap_reported" if provider_gap_count else "passed",
+            passed=True,
+            evidence=f"provider_gap_count={provider_gap_count}",
+            gap_visible=bool(provider_gap_count),
+        ),
+        _result_delta_clarity_row(
+            "freshness_state_visibility",
+            str(acceptance_by_key.get("freshness_boundary", {}).get("status") or "unknown"),
+            passed=True,
+            evidence=f"freshness={freshness_state.get('source') or 'missing'}:{freshness_state.get('state') or 'unknown'}",
+            gap_visible=str(acceptance_by_key.get("freshness_boundary", {}).get("status") or "") != "passed",
+        ),
+        _result_delta_clarity_row(
+            "scan_mode_transition_visibility",
+            "passed",
+            passed=True,
+            evidence=(
+                f"scan_mode={scan_mode}; family={scan_execution_summary.get('scan_family')}; "
+                f"fallback={scan_execution_summary.get('unsupported_scan_mode_fallback')}"
+            ),
+        ),
+        _result_delta_clarity_row(
+            "local_pool_delta_visibility",
+            "input_reported" if local_pool_audit else "not_applicable",
+            passed=True,
+            evidence=(
+                f"input={local_pool_audit.get('input_candidate_count')}; "
+                f"normalized={local_pool_audit.get('normalized_candidate_count')}; "
+                f"skipped={local_pool_audit.get('skipped_candidate_count')}"
+            )
+            if local_pool_audit
+            else "current scan did not consume local pool input.",
+            gap_visible=bool(local_pool_audit and local_pool_audit.get("skipped_candidate_count")),
+        ),
+        _result_delta_clarity_row(
+            "full_pool_deep_scan_boundary_visibility",
+            "plan_only" if full_pool_plan_ready or deep_scan_plan_ready else "pending",
+            passed=True,
+            evidence=(
+                f"full_pool_plan_ready={full_pool_plan_ready}; full_pool_scan_done={full_pool_scan_plan.get('full_pool_scan_done') is True}; "
+                f"deep_scan_plan_ready={deep_scan_plan_ready}; deep_scan_done={deep_scan_plan.get('deep_scan_done') is True}"
+            ),
+            gap_visible=not (full_pool_scan_plan.get("full_pool_scan_done") is True and deep_scan_plan.get("deep_scan_done") is True),
+        ),
+        _result_delta_clarity_row(
+            "previous_cache_diff_pending",
+            "pending_previous_cache_diff",
+            passed=False,
+            evidence="Current contract exposes result-change cues from the current packet only; previous persisted packet diff remains future work.",
+            production_pending=True,
+        ),
+        _result_delta_clarity_row(
+            "browser_visual_delta_qa_pending",
+            "pending_visual_qa",
+            passed=False,
+            evidence="Browser viewport/performance QA is not executed by the local cache contract.",
+            production_pending=True,
+        ),
+        _result_delta_clarity_row(
+            "trade_action_boundary",
+            "passed",
+            passed=True,
+            evidence="Result change cues never modify strategy action, holdings, or orders.",
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if not row.get("passed") and not row.get("production_pending")]
+    visible_gaps = [row["criterion"] for row in rows if row.get("gap_visible")]
+    production_pending = [row["criterion"] for row in rows if row.get("production_pending")]
+    local_ready = not local_blockers
+    return {
+        "schema_version": "candidate_radar_result_delta_clarity.v1",
+        "status": "result_delta_clarity_local_ready_previous_diff_pending" if local_ready else "result_delta_clarity_blocked",
+        "scope": "local_result_delta_visibility_contract_not_previous_cache_diff_or_browser_visual_qa",
+        "ltg": "LTG-13/LTG-14",
+        "scan_mode": scan_mode,
+        "candidate_delta_signature": _candidate_delta_signature(candidate_rows),
+        "local_result_delta_clarity_ready": local_ready,
+        "previous_cache_diff_done": False,
+        "browser_visual_delta_qa_done": False,
+        "production_radar_replacement_complete": False,
+        "candidate_count": len(candidate_rows),
+        "candidate_input_count": int(coverage_detail.get("candidate_input_count") or 0),
+        "candidate_display_truncated_count": truncated_count,
+        "skipped_reason_count": skipped_reason_count,
+        "provider_gap_count": provider_gap_count,
+        "visible_gap_count": len(visible_gaps),
+        "production_pending_count": len(production_pending),
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "local_blockers": local_blockers,
+        "visible_gaps": visible_gaps,
+        "production_pending_items": production_pending,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "rows": rows,
+        "note": "This contract makes candidate result-change cues visible without rescoring, provider refreshes, timers, previous-cache diff execution, browser QA, or trade/action mutation.",
+    }
+
+
 def _full_pool_filter_rows(payload_safe: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key, default in FULL_POOL_FILTER_DEFAULTS.items():
@@ -2570,6 +2769,18 @@ def _build_candidate_radar_packet(
         runtime_budget_contract=fast_scan_runtime_budget_contract,
     )
     fast_scan_readiness_audit = _fast_scan_readiness_audit(fast_scan_readiness_rows)
+    result_delta_clarity_contract = _result_delta_clarity_contract(
+        scan_mode=scan_mode,
+        candidate_rows=candidate_rows,
+        counts=counts,
+        coverage=coverage,
+        scan_execution_summary=scan_execution_summary,
+        scan_acceptance_rows=scan_acceptance_rows,
+        runtime_budget_contract=fast_scan_runtime_budget_contract,
+        local_pool_audit=local_pool_audit or {},
+        full_pool_scan_plan=plan,
+        deep_scan_plan=deep_plan,
+    )
     if plan:
         counts["full_pool_plan_blocking_issue_count"] = plan.get("blocking_issue_count")
         counts["full_pool_plan_ready_signal_group_count"] = plan.get("ready_signal_group_count")
@@ -2582,6 +2793,9 @@ def _build_candidate_radar_packet(
     counts["fast_scan_readiness_blocker_count"] = fast_scan_readiness_audit["blocking_criterion_count"]
     counts["fast_scan_readiness_soft_blocker_count"] = fast_scan_readiness_audit["soft_blocker_count"]
     counts["fast_scan_readiness_row_count"] = fast_scan_readiness_audit["row_count"]
+    counts["result_delta_clarity_visible_gap_count"] = result_delta_clarity_contract["visible_gap_count"]
+    counts["result_delta_clarity_pending_count"] = result_delta_clarity_contract["production_pending_count"]
+    counts["result_delta_clarity_row_count"] = result_delta_clarity_contract["row_count"]
 
     if candidate_rows:
         status = "ready"
@@ -2625,6 +2839,8 @@ def _build_candidate_radar_packet(
         "fast_scan_runtime_budget_rows": fast_scan_runtime_budget_contract["rows"],
         "fast_scan_readiness_audit": fast_scan_readiness_audit,
         "fast_scan_readiness_rows": fast_scan_readiness_rows,
+        "result_delta_clarity_contract": result_delta_clarity_contract,
+        "result_delta_clarity_rows": result_delta_clarity_contract["rows"],
         "provider_coverage_rows": coverage["provider_coverage_rows"],
         "degraded_mode_rows": coverage["degraded_mode_rows"],
         "local_candidate_pool_audit": dict(local_pool_audit or _as_dict(snapshot_map.get("local_candidate_pool_audit"))),
@@ -2700,6 +2916,9 @@ def _build_candidate_radar_packet(
             "large_universe_requires_worker": coverage["coverage_detail_summary"]["large_universe_requires_worker"],
             "fast_scan_readiness_audit_is_local": True,
             "fast_scan_readiness_is_not_full_replacement": True,
+            "result_delta_clarity_contract_is_local": True,
+            "result_delta_clarity_is_not_previous_cache_diff": True,
+            "result_delta_clarity_is_not_browser_visual_qa": True,
         },
         "call_ledger": [
             _candidate_call_ledger_row(
