@@ -4695,6 +4695,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/worker_contract.py", script)
         self.assertIn("Worker contract", script)
         self.assertIn("worker_contract: passed_local_contract_worker_activation_pending", script)
+        self.assertIn("scripts/tauri_desktop_contract.py", script)
+        self.assertIn("Tauri desktop contract", script)
+        self.assertIn("tauri_desktop_contract: passed_local_contract_package_validation_pending", script)
         self.assertIn("scripts/motion_viewport_qa_contract.py", script)
         self.assertIn("Motion viewport QA contract", script)
         self.assertIn("motion_viewport_qa_contract: passed_static_contract_visual_run_pending", script)
@@ -4740,6 +4743,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertLess(script.index('run_step "Storage contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Storage contract"'), script.index('run_step "Worker contract"'))
         self.assertLess(script.index('run_step "Worker contract"'), script.index('run_step "Motion viewport QA contract"'))
+        self.assertLess(script.index('run_step "Worker contract"'), script.index('run_step "Tauri desktop contract"'))
+        self.assertLess(script.index('run_step "Tauri desktop contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Motion viewport QA contract"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Motion browser QA runbook"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Secret scan"'), script.index('run_step "Secret keyword review contract"'))
@@ -5322,6 +5327,97 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_keeps_worker_blocked", criteria)
         self.assertIn("healthcheck_contract_is_execution_pending", criteria)
         self.assertIn("activation_review_keeps_manual_activation_pending", criteria)
+
+    def test_tauri_desktop_contract_script_is_local_push_gate_guard(self):
+        path = Path("scripts/tauri_desktop_contract.py")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(path.stat().st_mode & 0o111)
+        self.assertIn("command_center_3_tauri_desktop_contract.v1", script)
+        self.assertIn("local_tauri_desktop_contract_no_build_or_runtime_execution", script)
+        self.assertIn("production_package_complete", script)
+        self.assertIn("packaged_runtime_qa_done", script)
+        self.assertIn("tauri_build_executed", script)
+        self.assertIn("does_not_run_tauri", script)
+        self.assertIn("preflight_cache_is_read_only", script)
+        self.assertIn("production_runtime_contract_is_policy_only", script)
+        self.assertIn("backend_offline_ux_is_source_contract_only", script)
+        self.assertIn("packaged_runtime_qa_stays_pending", script)
+        self.assertIn("production_blocker_audit_blocks_completion", script)
+        self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", script)
+        self.assertIn("frontend_does_not_expose_secrets", script)
+        self.assertIn("push_gate_runs_tauri_contract_after_worker", script)
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx", script)
+        self.assertNotIn("api.github.com", script)
+        self.assertNotIn("tushare_adapter", script)
+        self.assertNotIn("deepseek_adapter", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema_version"], "command_center_3_tauri_desktop_contract.v1")
+        self.assertEqual(payload["scope"], "local_tauri_desktop_contract_no_build_or_runtime_execution")
+        self.assertEqual(payload["status"], "tauri_desktop_contract_passed")
+        self.assertTrue(payload["preflight_cache_ready"])
+        self.assertTrue(payload["runtime_contract_visible"])
+        self.assertTrue(payload["backend_offline_ux_contract_visible"])
+        self.assertTrue(payload["packaged_runtime_qa_visible"])
+        self.assertTrue(payload["cache_only"])
+        self.assertTrue(payload["does_not_run_tauri"])
+        self.assertTrue(payload["does_not_run_npm"])
+        self.assertTrue(payload["does_not_run_cargo"])
+        self.assertTrue(payload["does_not_read_config_values"])
+        self.assertTrue(payload["does_not_write_logs"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertFalse(payload["production_package_complete"])
+        self.assertFalse(payload["tauri_build_executed"])
+        self.assertFalse(payload["packaged_runtime_qa_done"])
+        self.assertFalse(payload["signing_notarization_done"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertFalse(payload["contains_secret"])
+        self.assertEqual(payload["blocking_criterion_count"], 0)
+        self.assertIn(
+            payload["observed"]["preflight_status"],
+            {"tauri_preflight_ready", "vite_ready_tauri_toolchain_pending", "desktop_scaffold_partial"},
+        )
+        self.assertEqual(payload["observed"]["production_blocker_status"], "production_package_blocked")
+        self.assertEqual(
+            payload["observed"]["packaged_runtime_qa_status"],
+            "packaged_runtime_qa_contract_ready_validation_pending",
+        )
+        self.assertEqual(
+            payload["observed"]["backend_offline_ux_status"],
+            "frontend_offline_notice_ready_packaged_runtime_validation_pending",
+        )
+        self.assertEqual(
+            payload["observed"]["production_runtime_status"],
+            "runtime_contract_ready_packaged_validation_pending",
+        )
+        self.assertFalse(payload["observed"]["tauri_package_build_attempted"])
+        self.assertFalse(payload["observed"]["backend_offline_ui_packaged_runtime_verified"])
+        self.assertFalse(payload["observed"]["macos_signing_notarization_ready"])
+        criteria = {row["criterion"] for row in payload["rows"]}
+        self.assertIn("preflight_cache_is_read_only", criteria)
+        self.assertIn("production_runtime_contract_is_policy_only", criteria)
+        self.assertIn("backend_offline_ux_is_source_contract_only", criteria)
+        self.assertIn("packaged_runtime_qa_stays_pending", criteria)
+        self.assertIn("production_blocker_audit_blocks_completion", criteria)
+        self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", criteria)
+        self.assertIn("frontend_does_not_expose_secrets", criteria)
+        self.assertIn("push_gate_runs_tauri_contract_after_worker", criteria)
+        self.assertIn("script_is_local_no_build_or_provider_execution", criteria)
 
     def test_secret_keyword_review_contract_is_structured_and_local(self):
         path = Path("scripts/secret_keyword_review_contract.py")
@@ -9105,6 +9201,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["worker_contract_exists"])
         self.assertTrue(release_gate["worker_contract_step"])
         self.assertTrue(release_gate["worker_contract_is_local"])
+        self.assertTrue(release_gate["tauri_desktop_contract_exists"])
+        self.assertTrue(release_gate["tauri_desktop_contract_step"])
+        self.assertTrue(release_gate["tauri_desktop_contract_is_local"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_exists"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_step"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_is_local_static"])
@@ -9156,6 +9255,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("worker_contract_exists", release_gate_criteria)
         self.assertIn("worker_contract_step", release_gate_criteria)
         self.assertIn("worker_contract_is_local", release_gate_criteria)
+        self.assertIn("tauri_desktop_contract_exists", release_gate_criteria)
+        self.assertIn("tauri_desktop_contract_step", release_gate_criteria)
+        self.assertIn("tauri_desktop_contract_is_local", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_exists", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_step", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_is_local_static", release_gate_criteria)

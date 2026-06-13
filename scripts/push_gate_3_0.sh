@@ -116,6 +116,7 @@ write_release_readiness_report() {
 - candidate_radar_contract: passed_local_contract_replacement_pending
 - storage_contract: passed_local_contract_physical_migration_pending
 - worker_contract: passed_local_contract_worker_activation_pending
+- tauri_desktop_contract: passed_local_contract_package_validation_pending
 - motion_viewport_qa_contract: passed_static_contract_visual_run_pending
 - motion_browser_qa_runbook: passed_runbook_execution_pending
 - diff_whitespace_check: passed
@@ -153,6 +154,7 @@ run_step "Next-session map contract" "$PYTHON_BIN" scripts/next_session_map_cont
 run_step "Candidate Radar contract" "$PYTHON_BIN" scripts/candidate_radar_contract.py
 run_step "Storage contract" "$PYTHON_BIN" scripts/storage_contract.py
 run_step "Worker contract" "$PYTHON_BIN" scripts/worker_contract.py
+run_step "Tauri desktop contract" "$PYTHON_BIN" scripts/tauri_desktop_contract.py
 run_step "Motion viewport QA contract" "$PYTHON_BIN" scripts/motion_viewport_qa_contract.py
 run_step "Motion browser QA runbook" "$PYTHON_BIN" scripts/motion_browser_qa_runbook.py
 run_step "Diff whitespace check" git diff --check

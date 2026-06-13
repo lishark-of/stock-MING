@@ -49,6 +49,7 @@ NEXT_SESSION_MAP_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "next_session_map_co
 CANDIDATE_RADAR_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_contract.py"
 STORAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "storage_contract.py"
 WORKER_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "worker_contract.py"
+TAURI_DESKTOP_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tauri_desktop_contract.py"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
@@ -442,6 +443,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     candidate_radar_script = _read_local_text(CANDIDATE_RADAR_CONTRACT_PATH)
     storage_script = _read_local_text(STORAGE_CONTRACT_PATH)
     worker_script = _read_local_text(WORKER_CONTRACT_PATH)
+    tauri_desktop_script = _read_local_text(TAURI_DESKTOP_CONTRACT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
@@ -490,6 +492,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(candidate_radar_script),
         "storage_contract_exists": STORAGE_CONTRACT_PATH.exists() and bool(storage_script),
         "worker_contract_exists": WORKER_CONTRACT_PATH.exists() and bool(worker_script),
+        "tauri_desktop_contract_exists": TAURI_DESKTOP_CONTRACT_PATH.exists() and bool(tauri_desktop_script),
         "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
         "motion_browser_qa_runbook_exists": MOTION_BROWSER_QA_RUNBOOK_PATH.exists() and bool(motion_browser_qa_runbook),
         "secret_keyword_review_contract_exists": SECRET_KEYWORD_REVIEW_CONTRACT_PATH.exists() and bool(secret_keyword_review_script),
@@ -513,6 +516,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Candidate Radar contract" in script,
         "storage_contract_step": "scripts/storage_contract.py" in script and "Storage contract" in script,
         "worker_contract_step": "scripts/worker_contract.py" in script and "Worker contract" in script,
+        "tauri_desktop_contract_step": "scripts/tauri_desktop_contract.py" in script
+        and "Tauri desktop contract" in script,
         "secret_keyword_review_contract_step": "scripts/secret_keyword_review_contract.py" in script
         and "Secret keyword review contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
@@ -598,6 +603,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "does_not_execute_trades" in worker_script
         and "tushare_adapter" not in worker_script
         and "api.github.com" not in worker_script,
+        "tauri_desktop_contract_is_local": "command_center_3_tauri_desktop_contract.v1" in tauri_desktop_script
+        and "local_tauri_desktop_contract_no_build_or_runtime_execution" in tauri_desktop_script
+        and "production_package_complete" in tauri_desktop_script
+        and "packaged_runtime_qa_done" in tauri_desktop_script
+        and "tauri_build_executed" in tauri_desktop_script
+        and "does_not_run_tauri" in tauri_desktop_script
+        and "does_not_execute_trades" in tauri_desktop_script
+        and "tushare_adapter" not in tauri_desktop_script
+        and "deepseek_adapter" not in tauri_desktop_script
+        and "api.github.com" not in tauri_desktop_script,
         "generated_artifact_scan_step": "artifact_scan" in script and "git ls-files" in script,
         "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
         "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
@@ -656,6 +671,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "worker_contract_exists",
             "worker_contract_step",
             "worker_contract_is_local",
+            "tauri_desktop_contract_exists",
+            "tauri_desktop_contract_step",
+            "tauri_desktop_contract_is_local",
             "motion_viewport_qa_contract_exists",
             "motion_viewport_qa_contract_step",
             "motion_viewport_qa_contract_is_local_static",
@@ -828,6 +846,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "worker_contract_is_local",
             checks["worker_contract_is_local"],
             evidence="contract keeps LTG-06 dispatch plans, blocker audits, healthcheck QA, and activation review separate from process start and production worker completion",
+        ),
+        _release_gate_row(
+            "tauri_desktop_contract_exists",
+            checks["tauri_desktop_contract_exists"],
+            evidence=_relative_path(TAURI_DESKTOP_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "tauri_desktop_contract_step",
+            checks["tauri_desktop_contract_step"],
+            evidence="push gate runs scripts/tauri_desktop_contract.py after Worker and before motion QA",
+        ),
+        _release_gate_row(
+            "tauri_desktop_contract_is_local",
+            checks["tauri_desktop_contract_is_local"],
+            evidence="contract keeps LTG-09 Tauri preflight/runtime/offline/package QA separate from build execution, packaged runtime validation, signing/notarization, and production desktop completion",
         ),
         _release_gate_row(
             "motion_viewport_qa_contract_exists",
