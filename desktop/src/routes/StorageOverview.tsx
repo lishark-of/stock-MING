@@ -187,6 +187,14 @@ export default function StorageOverview() {
   const artifactHygiene = (overview.artifact_hygiene as Record<string, unknown> | undefined) ?? (storageCatalog.artifact_hygiene as Record<string, unknown> | undefined) ?? {};
   const artifactRows = (artifactHygiene.rows as Array<Record<string, unknown>> | undefined) ?? [];
   const artifactPatternRows = ((artifactHygiene.git_excluded_patterns as Array<string> | undefined) ?? []).map((pattern, index) => ({ index: index + 1, pattern }));
+  const artifactCleanupReview =
+    (overview.artifact_cleanup_review_contract as Record<string, unknown> | undefined) ??
+    ((artifactHygiene.artifact_cleanup_review_contract as Record<string, unknown> | undefined) ??
+      ((storageCatalog.artifact_cleanup_review_contract as Record<string, unknown> | undefined) ?? {}));
+  const artifactCleanupReviewRows =
+    (overview.artifact_cleanup_review_rows as Array<Record<string, unknown>> | undefined) ??
+    ((artifactHygiene.artifact_cleanup_review_rows as Array<Record<string, unknown>> | undefined) ??
+      ((artifactCleanupReview.rows as Array<Record<string, unknown>> | undefined) ?? []));
   const schemaMigration =
     (overview.schema_migration_preflight as Record<string, unknown> | undefined) ??
     (storageCatalog.schema_migration_preflight as Record<string, unknown> | undefined) ??
@@ -339,6 +347,9 @@ export default function StorageOverview() {
           { label: "artifact hygiene", value: String(artifactHygiene.status ?? overview.artifact_hygiene_status ?? "audit_ready") },
           { label: "local artifacts", value: artifactHygiene.present_artifact_count ?? overview.artifact_hygiene_present_count ?? 0 },
           { label: "artifact review", value: artifactHygiene.review_required_count ?? overview.artifact_hygiene_review_required_count ?? 0 },
+          { label: "cleanup review", value: String(artifactCleanupReview.status ?? overview.artifact_cleanup_review_status ?? "manual_review_ready_no_candidates") },
+          { label: "delete executed", value: overview.artifact_cleanup_delete_executed_count ?? artifactCleanupReview.delete_executed_count ?? 0, tone: Number(overview.artifact_cleanup_delete_executed_count ?? artifactCleanupReview.delete_executed_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "delete command", value: artifactCleanupReview.safe_delete_command_generated === true ? "generated" : "not generated", tone: artifactCleanupReview.safe_delete_command_generated === true ? "bad" : "good" },
           { label: "schema migration", value: String(schemaMigration.status ?? overview.schema_migration_preflight_status ?? "preflight") },
           { label: "dataset version", value: String(datasetVersionPolicy.status ?? "policy_ready") },
           { label: "DuckDB query service", value: String(duckdbQueryService.status ?? overview.duckdb_query_service_status ?? "service_ready") },
@@ -545,6 +556,7 @@ export default function StorageOverview() {
         <p>cleanup_policy: {String(artifactHygiene.cleanup_policy ?? "manual_only_no_delete_on_get")}</p>
         <p>cleanup_task_status: {String(artifactHygiene.cleanup_task_status ?? "dry_run_button_gated")}</p>
         <p>cleanup_dry_run_route: {String(artifactHygiene.cleanup_dry_run_route ?? "POST /api/storage/artifact-hygiene/dry-run")}</p>
+        <p>artifact_cleanup_review_status: {String(artifactHygiene.artifact_cleanup_review_status ?? artifactCleanupReview.status ?? "manual_review_ready_no_candidates")}</p>
         <p>delete_files_on_get / auto_cleanup_on_get: {String(artifactHygiene.delete_files_on_get ?? false)} / {String(artifactHygiene.auto_cleanup_on_get ?? false)}</p>
         <p>does_not_read_file_payloads / does_not_scan_secret_values: {String(artifactHygiene.does_not_read_file_payloads ?? true)} / {String(artifactHygiene.does_not_scan_secret_values ?? true)}</p>
         <div className="actions">
@@ -553,6 +565,17 @@ export default function StorageOverview() {
         <TaskLaunchReceipt receipt={dryRunReceipt} />
         <TaskStatusPanel taskId={dryRunTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={artifactRows} />
+      </PacketCard>
+
+      <PacketCard title="Artifact cleanup manual review" subtitle="dry-run 之后的人工作业合同；不删除、不生成删除命令、不读 payload" status={String(artifactCleanupReview.status ?? "manual_review_ready_no_candidates")}>
+        <p>schema_version: {String(artifactCleanupReview.schema_version ?? "command_center_3_storage_artifact_cleanup_review_contract.v1")}</p>
+        <p>review_policy: {String(artifactCleanupReview.review_policy ?? "manual_review_required_after_dry_run_before_any_delete")}</p>
+        <p>candidate_count / required_review_step_count: {String(artifactCleanupReview.candidate_count ?? 0)} / {String(artifactCleanupReview.required_review_step_count ?? 0)}</p>
+        <p>manual_approval_required / delete_executed: {String(artifactCleanupReview.manual_approval_required ?? true)} / {String(artifactCleanupReview.delete_executed ?? false)}</p>
+        <p>safe_delete_command_generated / cleanup_review_is_not_delete_execution: {String(artifactCleanupReview.safe_delete_command_generated ?? false)} / {String(artifactCleanupReview.cleanup_review_is_not_delete_execution ?? true)}</p>
+        <p>reads_payloads / post_dry_run_external_calls: {String(artifactCleanupReview.reads_payloads ?? false)} / {String(artifactCleanupReview.post_dry_run_external_calls ?? false)}</p>
+        <p>production_cleanup_complete: {String(artifactCleanupReview.production_cleanup_complete ?? false)}</p>
+        <DataLineageTable rows={artifactCleanupReviewRows} />
       </PacketCard>
 
       <PacketCard title="Generated artifact git guard" subtitle="push gate 使用这些边界阻止生成物、数据文件和本地缓存进入 git" status="artifact_guard">
@@ -629,6 +652,7 @@ export default function StorageOverview() {
         <JsonDetails title="storage overview raw" data={overview} />
         <JsonDetails title="storage catalog raw" data={storageCatalog} />
         <JsonDetails title="artifact hygiene raw" data={artifactHygiene} />
+        <JsonDetails title="artifact cleanup review raw" data={artifactCleanupReview} />
         <JsonDetails title="factor values raw" data={factorValues} />
         <JsonDetails title="sqlite meta raw" data={sqliteMeta} />
         <JsonDetails title="daily raw" data={datasetDetails.daily ?? {}} />

@@ -19,6 +19,7 @@ PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_mig
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
+ARTIFACT_CLEANUP_REVIEW_SCHEMA_VERSION = "command_center_3_storage_artifact_cleanup_review_contract.v1"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -1473,6 +1474,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "next_action": "keep any real cleanup/delete operation separate, explicit and manually approved after dry-run review.",
             "external_calls_triggered": False,
         },
+        {
+            "control": "artifact_cleanup_manual_review",
+            "status": "manual_review_contract_ready",
+            "current_coverage": "cleanup dry-run results now expose a manual review contract with required review steps, no-delete boundaries and no generated delete command.",
+            "next_action": "review the dry-run rows before adding any separately approved cleanup/delete execution task.",
+            "external_calls_triggered": False,
+        },
     ]
 
 
@@ -1522,10 +1530,147 @@ def _artifact_hygiene_row(target: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _artifact_cleanup_review_rows(hygiene_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidate_rows = [row for row in hygiene_rows if row.get("exists")]
+    path_category_count = len({str(row.get("artifact_type") or "") for row in candidate_rows})
+    return [
+        {
+            "review_step": "review_dry_run_only",
+            "status": "required",
+            "evidence": "cleanup candidates come from local path metadata only; no delete task has run.",
+            "candidate_count": len(candidate_rows),
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_path_category",
+            "status": "required" if candidate_rows else "no_candidate",
+            "evidence": "operator must confirm each path is generated/cache/build/dependency output before any future cleanup.",
+            "candidate_count": len(candidate_rows),
+            "path_category_count": path_category_count,
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_git_ignore_boundary",
+            "status": "required",
+            "evidence": "push gate and git exclusions remain the source of truth for keeping generated/data artifacts out of git.",
+            "tracked_artifact_gate": "scripts/push_gate_3_0.sh generated artifact scan",
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_data_artifact_boundary",
+            "status": "required",
+            "evidence": ".stock_ming_3, parquet/sqlite/db/log/cache artifacts stay local; review does not read payloads or data values.",
+            "reads_payloads": False,
+            "reads_env_files": False,
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_build_artifact_boundary",
+            "status": "required",
+            "evidence": "desktop/dist and Tauri target output are generated build artifacts; cleanup remains manual/tool-owned.",
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_node_dependency_boundary",
+            "status": "required",
+            "evidence": "desktop/node_modules is package-manager-owned and must not be treated as a generic delete candidate.",
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_manual_approval_required",
+            "status": "required",
+            "evidence": "any future real cleanup/delete operation needs a separate explicit approval after dry-run review.",
+            "manual_approval_required": True,
+            "safe_delete_command_generated": False,
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_no_payload_read",
+            "status": "passed",
+            "evidence": "review contract uses path existence and metadata only; it does not read file payloads or secret values.",
+            "reads_payloads": False,
+            "reads_file_payloads": False,
+            "reads_env_files": False,
+            "scans_secret_values": False,
+            "delete_executed": False,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_no_delete_execution",
+            "status": "passed",
+            "evidence": "dry-run/review packet does not delete files and does not generate a delete command.",
+            "delete_executed": False,
+            "safe_delete_command_generated": False,
+            "cleanup_review_is_not_delete_execution": True,
+            "external_calls_triggered": False,
+        },
+        {
+            "review_step": "review_no_external_or_trade",
+            "status": "passed",
+            "evidence": "artifact cleanup review is local-only and does not call providers or touch strategy action.",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
+
+
+def artifact_cleanup_review_contract(hygiene_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    candidate_rows = [row for row in hygiene_rows if row.get("exists")]
+    review_rows = _artifact_cleanup_review_rows(hygiene_rows)
+    required_rows = [row for row in review_rows if row.get("status") == "required"]
+    return {
+        "schema_version": ARTIFACT_CLEANUP_REVIEW_SCHEMA_VERSION,
+        "status": "manual_review_ready_delete_pending" if candidate_rows else "manual_review_ready_no_candidates",
+        "mode": "local_path_only_review_contract",
+        "scope": "post_cleanup_dry_run_manual_review_before_delete",
+        "review_policy": "manual_review_required_after_dry_run_before_any_delete",
+        "candidate_count": len(candidate_rows),
+        "present_artifact_count": len(candidate_rows),
+        "required_review_step_count": len(required_rows),
+        "review_step_count": len(review_rows),
+        "manual_approval_required": True,
+        "dry_run_required_before_delete": True,
+        "delete_execution_task_available": False,
+        "delete_executed": False,
+        "delete_executed_count": 0,
+        "safe_delete_command_generated": False,
+        "delete_command_not_generated": True,
+        "cleanup_review_is_not_delete_execution": True,
+        "production_cleanup_complete": False,
+        "cache_get_external_calls": False,
+        "post_dry_run_external_calls": False,
+        "reads_payloads": False,
+        "reads_file_payloads": False,
+        "reads_env_files": False,
+        "scans_secret_values": False,
+        "does_not_scan_secret_values": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "rows": review_rows,
+        "note": "Artifact cleanup review is a human approval contract after dry-run. It does not delete files, generate delete commands, read payloads, scan secret values, call providers, execute trades or modify strategy action.",
+    }
+
+
 def storage_artifact_hygiene_status() -> dict[str, Any]:
     rows = [_artifact_hygiene_row(target) for target in LOCAL_ARTIFACT_HYGIENE_TARGETS]
     review_required = [row for row in rows if row.get("status") == "review_required_type_mismatch"]
     present_rows = [row for row in rows if row.get("exists")]
+    review_contract = artifact_cleanup_review_contract(rows)
     return {
         "schema_version": "command_center_3_storage_artifact_hygiene.v1",
         "status": "review_required" if review_required else "audit_ready",
@@ -1538,6 +1683,13 @@ def storage_artifact_hygiene_status() -> dict[str, Any]:
         "cleanup_policy": "manual_only_no_delete_on_get",
         "cleanup_task_status": "dry_run_button_gated",
         "cleanup_dry_run_route": "POST /api/storage/artifact-hygiene/dry-run",
+        "artifact_cleanup_review_contract": review_contract,
+        "artifact_cleanup_review_rows": review_contract["rows"],
+        "artifact_cleanup_review_status": review_contract["status"],
+        "artifact_cleanup_review_required_step_count": review_contract["required_review_step_count"],
+        "artifact_cleanup_delete_executed_count": 0,
+        "artifact_cleanup_manual_approval_required": True,
+        "artifact_cleanup_delete_command_generated": False,
         "dry_run_required_before_delete": True,
         "data_files_allowed_in_git": False,
         "delete_files_on_get": False,
@@ -1557,6 +1709,7 @@ def storage_artifact_hygiene_status() -> dict[str, Any]:
 
 def storage_artifact_cleanup_dry_run_packet(*, task_id: str | None = None, payload_safe: Mapping[str, Any] | None = None) -> dict[str, Any]:
     hygiene = storage_artifact_hygiene_status()
+    review_contract = dict(hygiene.get("artifact_cleanup_review_contract") or artifact_cleanup_review_contract(hygiene["rows"]))
     rows: list[dict[str, Any]] = []
     for row in hygiene["rows"]:
         exists = bool(row.get("exists"))
@@ -1607,6 +1760,16 @@ def storage_artifact_cleanup_dry_run_packet(*, task_id: str | None = None, paylo
         "candidate_count": len(candidate_rows),
         "present_artifact_count": hygiene["present_artifact_count"],
         "review_required_count": hygiene["review_required_count"],
+        "artifact_cleanup_review_contract": review_contract,
+        "artifact_cleanup_review_rows": review_contract["rows"],
+        "artifact_cleanup_review_status": review_contract["status"],
+        "artifact_cleanup_review_required_step_count": review_contract["required_review_step_count"],
+        "manual_approval_required_before_delete": True,
+        "delete_execution_task_available": False,
+        "delete_executed_count": 0,
+        "safe_delete_command_generated": False,
+        "cleanup_review_is_not_delete_execution": True,
+        "production_cleanup_complete": False,
         "git_excluded_patterns": list(hygiene["git_excluded_patterns"]),
         "tracked_artifact_gate": hygiene["tracked_artifact_gate"],
         "request_params_safe": {
@@ -1637,6 +1800,7 @@ def storage_artifact_cleanup_dry_run_packet(*, task_id: str | None = None, paylo
         ),
         "warnings": [
             "POST /api/storage/artifact-hygiene/dry-run 只生成本地清理预检清单；不会删除文件。",
+            "cleanup review contract 只定义人工复核步骤；不会生成删除命令或执行真实 cleanup。",
             "dry-run 不读取 payload、不扫描 secret 值、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
         ],
     }
@@ -1691,6 +1855,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     parquet_dependency = parquet_store.dependency_status()
     sqlite_status = str((sqlite_meta or {}).get("status") or ("ready" if SQLITE_META_PATH.exists() else "missing"))
     artifact_hygiene = storage_artifact_hygiene_status()
+    artifact_cleanup_review = dict(artifact_hygiene.get("artifact_cleanup_review_contract") or {})
     schema_migration_preflight = storage_schema_migration_preflight()
     dataset_version_policy = storage_dataset_version_policy()
     duckdb_query_service = duckdb_query_service_policy()
@@ -1757,7 +1922,20 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "production_role": "path-only audit for generated data/build/cache artifacts before any manual cleanup",
             "current_backend": "local_path_preflight_no_payload_reads",
             "blocking_for_cache_read": False,
-            "next_action": "add explicit dry-run cleanup task; keep GET storage read-only.",
+            "next_action": "review cleanup dry-run rows before any separate delete operation; keep GET storage read-only.",
+        },
+        {
+            "component": "artifact_cleanup_review",
+            "status": artifact_cleanup_review.get("status") or "manual_review_ready_no_candidates",
+            "production_role": "manual review contract after cleanup dry-run and before any future delete execution",
+            "current_backend": "local_path_only_review_contract_no_delete_no_payload_read",
+            "blocking_for_cache_read": False,
+            "manual_approval_required": True,
+            "delete_executed": False,
+            "safe_delete_command_generated": False,
+            "cleanup_review_is_not_delete_execution": True,
+            "production_cleanup_complete": False,
+            "next_action": "perform human review of dry-run candidates before designing any separately approved cleanup executor.",
         },
     ]
     blockers = [
@@ -1826,6 +2004,13 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "artifact_cleanup_dry_run_route": "POST /api/storage/artifact-hygiene/dry-run",
         "artifact_cleanup_dry_run_button_gated": True,
         "artifact_cleanup_dry_run_deletes_files": False,
+        "artifact_cleanup_review_status": artifact_cleanup_review.get("status") or "manual_review_ready_no_candidates",
+        "artifact_cleanup_review_required_step_count": artifact_cleanup_review.get("required_review_step_count", 0),
+        "artifact_cleanup_manual_review_required": True,
+        "artifact_cleanup_delete_executed_count": 0,
+        "artifact_cleanup_delete_command_generated": False,
+        "artifact_cleanup_review_is_not_delete_execution": True,
+        "artifact_cleanup_production_complete": False,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -1868,6 +2053,7 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
     manifest_present = int(readiness.get("dataset_version_manifest_present_count") or 0)
     compaction_executed = int(readiness.get("compaction_executed_count") or 0)
     ttl_refresh_executed = int(readiness.get("cache_ttl_refresh_executed_count") or 0)
+    cleanup_review_ready = str(readiness.get("artifact_cleanup_review_status") or "").startswith("manual_review_ready")
     dependency_ready = str(readiness.get("status")) == "foundation_ready"
     duckdb_ready = str(readiness.get("duckdb_query_service_status")) == "service_ready"
     rows = [
@@ -1934,6 +2120,18 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
             evidence="artifact hygiene is path-only and push gate blocks generated/data files from git; cleanup remains manual.",
             next_action="Continue using push gate artifact scan and keep any real cleanup/delete operation separately approved.",
             classification="guardrail_ready",
+            production_blocker=False,
+        ),
+        _storage_production_blocker_row(
+            "artifact_cleanup_manual_review_visible",
+            cleanup_review_ready
+            and readiness.get("artifact_cleanup_manual_review_required") is True
+            and int(readiness.get("artifact_cleanup_delete_executed_count") or 0) == 0
+            and readiness.get("artifact_cleanup_delete_command_generated") is False,
+            current_status=readiness.get("artifact_cleanup_review_status"),
+            evidence="artifact cleanup review contract is visible after dry-run and remains no-delete/no-generated-command.",
+            next_action="Review dry-run candidate rows before any separately approved cleanup/delete executor is designed.",
+            classification="manual_review_contract_not_cleanup_execution",
             production_blocker=False,
         ),
         _storage_production_blocker_row(
@@ -2071,6 +2269,8 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "storage_production_blocker_audit": production_blocker_audit,
         "storage_production_blocker_rows": production_blocker_audit["rows"],
         "artifact_hygiene": artifact_hygiene,
+        "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
+        "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
         "dataset_version_policy": dataset_version_policy,
         "dataset_version_rows": dataset_version_policy["rows"],
         "dataset_version_status_counts": dataset_version_policy["status_counts"],
@@ -2377,6 +2577,11 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "storage_production_blocker_rows": production_blocker_audit["rows"],
         "storage_production_blocker_count": production_blocker_audit["blocking_criterion_count"],
         "artifact_hygiene": artifact_hygiene,
+        "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
+        "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
+        "artifact_cleanup_review_status": artifact_hygiene["artifact_cleanup_review_status"],
+        "artifact_cleanup_review_required_step_count": artifact_hygiene["artifact_cleanup_review_required_step_count"],
+        "artifact_cleanup_delete_executed_count": artifact_hygiene["artifact_cleanup_delete_executed_count"],
         "artifact_hygiene_status": artifact_hygiene["status"],
         "artifact_hygiene_present_count": artifact_hygiene["present_artifact_count"],
         "artifact_hygiene_review_required_count": artifact_hygiene["review_required_count"],

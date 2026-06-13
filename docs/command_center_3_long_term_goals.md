@@ -307,6 +307,7 @@ Add factor universe research pipeline
 - Storage overview now exposes path-only local artifact hygiene for `.stock_ming_3`, legacy cache, frontend build output, Node dependencies, Tauri target output, and Python bytecode cache boundaries.
 - The artifact hygiene audit is `manual_only_no_delete_on_get`: it reports generated/data artifact boundaries but does not delete files, read payloads, scan secret values, refresh providers, or touch `strategy action`.
 - `POST /api/storage/artifact-hygiene/dry-run` now creates a local task and dry-run packet that lists cleanup candidates without deleting files, reading payloads, scanning secret values, or calling external providers.
+- Storage overview/catalog and the cleanup dry-run packet now expose `command_center_3_storage_artifact_cleanup_review_contract.v1`: a path-only manual review contract with required review steps, no delete execution, no generated delete command, no payload reads, no secret-value scan, no external calls, no trades, and no `strategy action` mutation.
 - Storage overview and catalog now expose a metadata-only schema migration preflight for all canonical datasets: target schema version, required columns, primary key, partition expectation, current parquet status, and manual migration boundaries are visible without reading payloads or writing Parquet.
 - Storage overview and catalog now expose a cache-only dataset version policy matrix: declared dataset version, manifest path, physical validation boundary, and no-write-on-GET guarantees are visible before any production manifest writer exists.
 - `POST /api/storage/schema-validation/dry-run` now creates a local task and packet that reads Parquet schema metadata only, compares physical columns with canonical schema contracts, and reports `schema_validated` / `schema_mismatch` / `missing_dataset` before any migration.
@@ -329,7 +330,7 @@ Add factor universe research pipeline
 - Physical refresh scheduling/execution beyond the button-gated cache TTL dry-run.
 - Real large-universe research execution beyond the local Factor Universe read plan.
 - Full-pool research consumption, richer query result contract hardening beyond the current local DuckDB read path, and production-grade query ergonomics beyond the current basic UI filters.
-- Reviewed manual cleanup workflow after dry-run.
+- Physical cleanup/delete execution after manual review remains unimplemented and must stay separately approved.
 
 ### Implementation Phases
 
@@ -356,6 +357,7 @@ Add factor universe research pipeline
 - React cursor controls use only GET storage API cursor parameters, can reset to the first page, and preserve the no-provider-refresh / no-Parquet-write / no-trade-action boundary.
 - React dataset filters use only GET storage API query parameters, keep cursor pagination local and read-only, and preserve the no-provider-refresh / no-Parquet-write / no-trade-action boundary.
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
+- Artifact cleanup manual review is visible as a contract after dry-run, with `delete_executed=false`, `safe_delete_command_generated=false`, and `production_cleanup_complete=false`.
 - Storage overview/catalog now expose `storage_production_blocker_audit` and `storage_production_blocker_rows`, explicitly separating local contracts/dry-runs/preflights from physical production completion.
 - Write failure does not pollute packet or action.
 
@@ -368,6 +370,7 @@ Add factor universe research pipeline
 - Do not treat partition migration dry-run as physical partition migration completion.
 - Do not treat compaction dry-run as physical Parquet compaction completion.
 - Do not treat cache TTL dry-run as data refresh completion or provider acceptance.
+- Do not treat artifact cleanup review as delete execution or production cleanup completion.
 - Do not let frontend bypass the FastAPI + DuckDB query service or run direct Parquet/DataFrame reads.
 - Do not treat cursor pagination or typed projection as full-market research execution.
 - Do not treat `storage_production_blocked` as a failure of cache safety; it is the expected state until physical schema validation, schema migration, version manifest validation, partition migration, compaction, and TTL refresh execution are separately implemented and verified.
