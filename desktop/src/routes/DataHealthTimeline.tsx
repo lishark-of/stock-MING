@@ -38,6 +38,7 @@ export default function DataHealthTimeline() {
   const tradeCalPromotionAudit = (cache.trade_cal_provider_acceptance_promotion_audit as Record<string, unknown> | undefined) ?? {};
   const freshnessProductionBlockerAudit = (cache.freshness_production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const freshnessProviderReadinessReceipt = (cache.freshness_provider_acceptance_readiness_receipt as Record<string, unknown> | undefined) ?? {};
+  const freshnessProviderActivationReceipt = (cache.freshness_provider_acceptance_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
   const producerCoverageAudit = (cache.current_evidence_producer_coverage_audit as Record<string, unknown> | undefined) ?? {};
@@ -75,6 +76,8 @@ export default function DataHealthTimeline() {
           { label: "生产 blockers", value: counts.freshness_production_blocker_count as number | undefined, tone: Number(counts.freshness_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "provider 准入", value: freshnessProviderReadinessReceipt.status as string | undefined, tone: freshnessProviderReadinessReceipt.ready_for_explicit_provider_task === true ? "good" : "warn" },
           { label: "准入 blockers", value: counts.freshness_provider_acceptance_readiness_blocker_count as number | undefined, tone: Number(counts.freshness_provider_acceptance_readiness_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "provider 启用", value: freshnessProviderActivationReceipt.status as string | undefined, tone: freshnessProviderActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "启用 blockers", value: counts.freshness_provider_acceptance_activation_blocker_count as number | undefined, tone: Number(counts.freshness_provider_acceptance_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
           { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
@@ -191,6 +194,21 @@ export default function DataHealthTimeline() {
         <p>回执只汇总 runbook、promotion audit、生产 blocker、current evidence、decision surface 和 producer 覆盖的本地状态；不会调用 Tushare，不会把 fixture、Parquet 或 runbook 提升为真实验收。</p>
         <DataLineageTable rows={objectRow(freshnessProviderReadinessReceipt)} />
         <DataLineageTable rows={rows(cache.freshness_provider_acceptance_readiness_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Freshness provider 启用回执" subtitle="freshness_provider_acceptance_activation_receipt；显式 provider 验收前的本地清单，不调用 Tushare" status={String(freshnessProviderActivationReceipt.status ?? "provider_acceptance_activation")}>
+        <p>local_activation_receipt_ready: {String(freshnessProviderActivationReceipt.local_activation_receipt_ready === true)}</p>
+        <p>ready_for_explicit_provider_task: {String(freshnessProviderActivationReceipt.ready_for_explicit_provider_task === true)}</p>
+        <p>allowed_next_step: {String(freshnessProviderActivationReceipt.allowed_next_step ?? "explicit_post_task_trade_cal_provider_acceptance")}</p>
+        <p>provider_acceptance_task_executed_by_receipt: {String(freshnessProviderActivationReceipt.provider_acceptance_task_executed_by_receipt ?? false)}</p>
+        <p>provider_refresh_called_by_receipt / cache_get_external_calls / react_render_external_calls: {String(freshnessProviderActivationReceipt.provider_refresh_called_by_receipt ?? false)} / {String(freshnessProviderActivationReceipt.cache_get_external_calls ?? false)} / {String(freshnessProviderActivationReceipt.react_render_external_calls ?? false)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(freshnessProviderActivationReceipt.tushare_called ?? false)} / {String(freshnessProviderActivationReceipt.deepseek_called ?? false)} / {String(freshnessProviderActivationReceipt.github_called ?? false)}</p>
+        <p>provider_backed_long_window_acceptance_done / production_freshness_gate_complete: {String(freshnessProviderActivationReceipt.provider_backed_long_window_acceptance_done ?? false)} / {String(freshnessProviderActivationReceipt.production_freshness_gate_complete ?? false)}</p>
+        <p>missing_evidence_items: {Array.isArray(freshnessProviderActivationReceipt.missing_evidence_items) ? freshnessProviderActivationReceipt.missing_evidence_items.join(" / ") : "provider-backed trade_cal task execution / provider call ledger with safe fields / explicit production promotion marker"}</p>
+        <p>not_allowed_next_steps: {Array.isArray(freshnessProviderActivationReceipt.not_allowed_next_steps) ? freshnessProviderActivationReceipt.not_allowed_next_steps.join(" / ") : "GET /api/data-health/cache provider refresh / React render provider refresh / activation receipt as production freshness completion"}</p>
+        <DataLineageTable rows={objectRow(freshnessProviderActivationReceipt)} />
+        <DataLineageTable rows={rows(cache.freshness_provider_acceptance_activation_rows)} />
+        <DataLineageTable rows={rows(freshnessProviderActivationReceipt.call_ledger)} />
       </PacketCard>
 
       <PacketCard title="Freshness 长窗口样本验收" subtitle="local synthetic trade_cal fixture；使用实际 freshness gate，不调用 Tushare" status={String(freshnessSample.status ?? "sample_validation")}>

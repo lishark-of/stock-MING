@@ -31,6 +31,7 @@ CONTRACT_KEYS = [
     "trade_cal_provider_acceptance_promotion_audit",
     "freshness_production_blocker_audit",
     "freshness_provider_acceptance_readiness_receipt",
+    "freshness_provider_acceptance_activation_receipt",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
@@ -64,6 +65,7 @@ def build_contract() -> dict[str, Any]:
     promotion = _get(packet, "trade_cal_provider_acceptance_promotion_audit")
     blockers_audit = _get(packet, "freshness_production_blocker_audit")
     readiness_receipt = _get(packet, "freshness_provider_acceptance_readiness_receipt")
+    activation_receipt = _get(packet, "freshness_provider_acceptance_activation_receipt")
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
@@ -171,6 +173,40 @@ def build_contract() -> dict[str, Any]:
             "Provider acceptance readiness receipt must summarize the next safe step without calling providers or claiming production completion.",
         ),
         _row(
+            "provider_acceptance_activation_receipt_is_local_pending",
+            activation_receipt.get("schema_version")
+            == "data_health_freshness_provider_acceptance_activation_receipt.v1"
+            and activation_receipt.get("scope") == "local_activation_receipt_no_provider_execution"
+            and activation_receipt.get("status")
+            in {
+                "provider_acceptance_activation_ready_execution_pending",
+                "provider_acceptance_activation_blocked_local_readiness",
+                "provider_acceptance_activation_blocked_local_contract",
+            }
+            and activation_receipt.get("local_activation_receipt_ready") is True
+            and activation_receipt.get("allowed_next_step")
+            in {
+                "explicit_post_task_trade_cal_provider_acceptance",
+                "resolve_local_freshness_acceptance_blockers",
+            }
+            and "GET /api/data-health/cache provider refresh"
+            in activation_receipt.get("not_allowed_next_steps", [])
+            and "activation receipt as production freshness completion"
+            in activation_receipt.get("not_allowed_next_steps", [])
+            and "provider-backed trade_cal task execution" in activation_receipt.get("missing_evidence_items", [])
+            and "provider call ledger with safe fields" in activation_receipt.get("missing_evidence_items", [])
+            and activation_receipt.get("provider_acceptance_task_executed_by_receipt") is False
+            and activation_receipt.get("provider_refresh_called_by_receipt") is False
+            and activation_receipt.get("cache_get_external_calls") is False
+            and activation_receipt.get("react_render_external_calls") is False
+            and activation_receipt.get("production_freshness_gate_complete") is False
+            and _flag_false(activation_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and activation_receipt.get("does_not_execute_trades") is True
+            and activation_receipt.get("does_not_modify_strategy_action") is True
+            and activation_receipt.get("contains_secret") is False,
+            "Provider acceptance activation receipt must stay a local checklist: either explicit POST is the next step or local blockers remain visible, provider evidence remains missing, and cache/render paths must not call providers or claim production completion.",
+        ),
+        _row(
             "current_evidence_boundary_contract",
             current.get("schema_version") == "data_health_current_evidence_freshness_qa.v1"
             and current.get("current_evidence_requires_expected_trade_date") is True
@@ -215,6 +251,7 @@ def build_contract() -> dict[str, Any]:
             and int(counts.get("trade_cal_provider_acceptance_promotion_row_count") or 0) >= 10
             and int(counts.get("freshness_production_blocker_row_count") or 0) >= 8
             and int(counts.get("freshness_provider_acceptance_readiness_row_count") or 0) >= 7
+            and int(counts.get("freshness_provider_acceptance_activation_row_count") or 0) >= 11
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6,
@@ -256,6 +293,9 @@ def build_contract() -> dict[str, Any]:
             "freshness_production_blocker_count": counts.get("freshness_production_blocker_count"),
             "freshness_provider_acceptance_readiness_blocker_count": counts.get(
                 "freshness_provider_acceptance_readiness_blocker_count"
+            ),
+            "freshness_provider_acceptance_activation_blocker_count": counts.get(
+                "freshness_provider_acceptance_activation_blocker_count"
             ),
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",

@@ -1732,6 +1732,217 @@ def _freshness_provider_acceptance_readiness_receipt(
     return contract, rows
 
 
+def _freshness_provider_acceptance_activation_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    required_before_activation: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_before_activation": bool(required_before_activation),
+        "evidence": evidence,
+        "cache_only": True,
+        "read_only_receipt": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _freshness_provider_acceptance_activation_receipt(
+    *,
+    provider_runbook: Mapping[str, Any],
+    provider_promotion: Mapping[str, Any],
+    freshness_blockers: Mapping[str, Any],
+    readiness_receipt: Mapping[str, Any],
+    current_evidence: Mapping[str, Any],
+    decision_surface: Mapping[str, Any],
+    producer_coverage: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    runbook_ready = bool(provider_runbook.get("local_runbook_ready"))
+    ready_for_explicit_task = bool(readiness_receipt.get("ready_for_explicit_provider_task"))
+    promotion_ready = bool(provider_promotion.get("promotion_ready"))
+    current_boundary_ready = bool(
+        current_evidence.get("current_evidence_requires_expected_trade_date") is True
+        and current_evidence.get("blocks_composite_score") is True
+        and current_evidence.get("blocks_support_factors") is True
+        and current_evidence.get("blocks_evidence_preview") is True
+        and current_evidence.get("blocks_next_session_bridge_preview") is True
+        and current_evidence.get("does_not_modify_strategy_action") is True
+    )
+    decision_surface_clear = int(decision_surface.get("blocked_surface_count") or 0) == 0
+    producer_coverage_clear = int(producer_coverage.get("blocked_producer_count") or 0) == 0
+    local_activation_receipt_ready = bool(
+        runbook_ready
+        and readiness_receipt.get("schema_version")
+        == "data_health_freshness_provider_acceptance_readiness_receipt.v1"
+        and readiness_receipt.get("provider_refresh_called_by_receipt") is False
+        and current_boundary_ready
+    )
+    rows = [
+        _freshness_provider_acceptance_activation_row(
+            "readiness_receipt_visible",
+            "passed_local_receipt" if local_activation_receipt_ready else "blocked_readiness_receipt",
+            local_activation_receipt_ready,
+            evidence=(
+                f"readiness_status={readiness_receipt.get('status')}; "
+                f"ready_for_explicit_task={ready_for_explicit_task}"
+            ),
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "explicit_post_task_required",
+            "passed_static_policy" if ready_for_explicit_task else "blocked_local_readiness",
+            ready_for_explicit_task,
+            evidence="Only a future explicit POST task may call Tushare trade_cal provider acceptance.",
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "provider_execution_evidence_required",
+            "pending_provider_execution_evidence",
+            False,
+            evidence=(
+                f"provider_evidence_row_count={provider_promotion.get('evidence_row_count')}; "
+                f"provider_call_evidence={provider_promotion.get('provider_evidence_from_prior_task')}"
+            ),
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "promotion_review_required",
+            "ready_for_promotion_review" if promotion_ready else "pending_promotion_review",
+            promotion_ready,
+            evidence=(
+                f"promotion_status={provider_promotion.get('status')}; "
+                f"promotion_blockers={provider_promotion.get('blocking_criterion_count')}"
+            ),
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "current_evidence_boundary_preserved",
+            "passed_boundary_contract" if current_boundary_ready else "blocked_current_boundary",
+            current_boundary_ready,
+            evidence=f"current_evidence_status={current_evidence.get('current_evidence_candidate_status')}",
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "decision_surface_isolation_preserved",
+            "passed_no_visible_surface_leak" if decision_surface_clear else "blocked_surface_leak",
+            decision_surface_clear,
+            evidence=f"blocked_surface_count={decision_surface.get('blocked_surface_count')}",
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "producer_expected_date_coverage_preserved",
+            "passed_no_observed_producer_blockers" if producer_coverage_clear else "blocked_producer_fields",
+            producer_coverage_clear,
+            evidence=f"blocked_producer_count={producer_coverage.get('blocked_producer_count')}",
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "fixture_and_local_artifact_not_acceptance",
+            "enforced_not_provider_acceptance",
+            True,
+            evidence="Synthetic fixtures, local Parquet checks, runbooks, and this activation receipt are not provider-backed acceptance.",
+            required_before_activation=False,
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "cache_render_provider_boundary",
+            "passed_no_provider_call",
+            True,
+            evidence="GET cache and React render do not call Tushare, DeepSeek, or GitHub and do not create provider tasks.",
+            required_before_activation=False,
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "production_completion_boundary",
+            "enforced_not_complete",
+            True,
+            evidence="Provider acceptance activation receipt cannot mark production_freshness_gate_complete=true.",
+            required_before_activation=False,
+        ),
+        _freshness_provider_acceptance_activation_row(
+            "no_trade_or_action_boundary",
+            "passed",
+            True,
+            evidence="Freshness activation receipt does not execute trades and does not mutate strategy action.",
+            required_before_activation=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["required_before_activation"] and not row["passed"]]
+    missing_evidence_items = sorted(
+        {
+            *[str(item) for item in provider_promotion.get("blockers", []) if item],
+            *[str(item) for item in freshness_blockers.get("production_blockers", []) if item],
+            *[str(item) for item in readiness_receipt.get("missing_evidence_items", []) if item],
+            "provider-backed trade_cal task execution",
+            "provider call ledger with safe fields",
+            "explicit production promotion marker",
+        }
+    )
+    contract = {
+        "schema_version": "data_health_freshness_provider_acceptance_activation_receipt.v1",
+        "status": "provider_acceptance_activation_ready_execution_pending"
+        if local_activation_receipt_ready and ready_for_explicit_task
+        else "provider_acceptance_activation_blocked_local_readiness"
+        if local_activation_receipt_ready
+        else "provider_acceptance_activation_blocked_local_contract",
+        "scope": "local_activation_receipt_no_provider_execution",
+        "ltg": "LTG-01/LTG-02/LTG-11",
+        "local_activation_receipt_ready": local_activation_receipt_ready,
+        "ready_for_explicit_provider_task": ready_for_explicit_task,
+        "allowed_next_step": "explicit_post_task_trade_cal_provider_acceptance"
+        if ready_for_explicit_task
+        else "resolve_local_freshness_acceptance_blockers",
+        "not_allowed_next_steps": [
+            "GET /api/data-health/cache provider refresh",
+            "React render provider refresh",
+            "direct Tushare call from page render",
+            "synthetic fixture promotion",
+            "local Parquet-only provider acceptance",
+            "activation receipt as production freshness completion",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "missing_evidence_items": missing_evidence_items,
+        "provider_backed_long_window_acceptance_done": promotion_ready,
+        "provider_acceptance_task_executed_by_receipt": False,
+        "provider_refresh_called_by_receipt": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "production_freshness_gate_complete": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "provider_evidence_row_count": int(provider_promotion.get("evidence_row_count") or 0),
+        "provider_promotion_ready": promotion_ready,
+        "production_blocker_count": int(freshness_blockers.get("production_blocker_count") or 0),
+        "blocking_criterion_count": len(blocking_rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_freshness_provider_acceptance_activation_receipt",
+                "source": "data health local provider acceptance contracts",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_activation_receipt_provider_execution_pending",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This receipt is a local activation checklist for future explicit trade_cal provider acceptance. It does not call Tushare, create tasks, promote fixtures/artifacts/runbooks, execute trades, mutate action, or prove production completion.",
+    }
+    return contract, rows
+
+
 def read_data_health_timeline_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -1812,6 +2023,17 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             producer_coverage=current_evidence_producer_coverage_audit,
         )
     )
+    freshness_provider_acceptance_activation_receipt, freshness_provider_acceptance_activation_rows = (
+        _freshness_provider_acceptance_activation_receipt(
+            provider_runbook=trade_cal_provider_acceptance_runbook,
+            provider_promotion=trade_cal_provider_acceptance_promotion_audit,
+            freshness_blockers=freshness_production_blocker_audit,
+            readiness_receipt=freshness_provider_acceptance_readiness_receipt,
+            current_evidence=current_evidence_freshness_qa_contract,
+            decision_surface=current_evidence_decision_surface_audit,
+            producer_coverage=current_evidence_producer_coverage_audit,
+        )
+    )
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -1878,6 +2100,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_promotion_audit",
             "freshness_production_blocker_audit",
             "freshness_provider_acceptance_readiness_receipt",
+            "freshness_provider_acceptance_activation_receipt",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
@@ -1910,6 +2133,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "freshness_production_blocker_rows": freshness_production_blocker_rows,
         "freshness_provider_acceptance_readiness_receipt": freshness_provider_acceptance_readiness_receipt,
         "freshness_provider_acceptance_readiness_rows": freshness_provider_acceptance_readiness_rows,
+        "freshness_provider_acceptance_activation_receipt": freshness_provider_acceptance_activation_receipt,
+        "freshness_provider_acceptance_activation_rows": freshness_provider_acceptance_activation_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
@@ -1957,6 +2182,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "freshness_provider_acceptance_readiness_blocker_count": int(
                 freshness_provider_acceptance_readiness_receipt.get("blocked_readiness_count") or 0
+            ),
+            "freshness_provider_acceptance_activation_row_count": len(
+                freshness_provider_acceptance_activation_rows
+            ),
+            "freshness_provider_acceptance_activation_blocker_count": int(
+                freshness_provider_acceptance_activation_receipt.get("blocking_criterion_count") or 0
             ),
             "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
             "current_evidence_freshness_qa_blocker_count": int(
@@ -2021,6 +2252,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_provider_acceptance_ready_for_explicit_task": bool(
                 freshness_provider_acceptance_readiness_receipt.get("ready_for_explicit_provider_task")
             ),
+            "freshness_provider_acceptance_activation_receipt_is_local": True,
+            "freshness_provider_acceptance_activation_receipt_calls_provider": False,
+            "freshness_provider_acceptance_activation_receipt_is_not_completion": True,
             "current_evidence_freshness_qa_is_local_contract": True,
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
@@ -2080,6 +2314,15 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "freshness_provider_acceptance_readiness_blocker_count": int(
                     freshness_provider_acceptance_readiness_receipt.get("blocked_readiness_count") or 0
                 ),
+                "freshness_provider_acceptance_activation_receipt_status": (
+                    freshness_provider_acceptance_activation_receipt.get("status")
+                ),
+                "freshness_provider_acceptance_activation_blocker_count": int(
+                    freshness_provider_acceptance_activation_receipt.get("blocking_criterion_count") or 0
+                ),
+                "freshness_provider_acceptance_activation_ready_for_explicit_task": bool(
+                    freshness_provider_acceptance_activation_receipt.get("ready_for_explicit_provider_task")
+                ),
                 "current_evidence_freshness_qa_status": current_evidence_freshness_qa_contract.get("status"),
                 "current_evidence_candidate_status": current_evidence_freshness_qa_contract.get(
                     "current_evidence_candidate_status"
@@ -2124,6 +2367,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "decision-surface audit 只检查本地 snapshot 可见字段，不重新评分、不过滤 packet、不修改 action；缺失字段不等于生产验收完成。",
             "producer coverage audit 只检查本地 snapshot 可见 producer 是否带 expected_trade_date、data_date 和 freshness_state；不构建缺失 packet。",
             "freshness production blocker audit 只汇总本地阻断项；不会调用 provider、不会重算分数、不会宣称生产完成。",
+            "freshness provider acceptance activation receipt 只是显式 provider 验收前的本地清单；不会调用 Tushare、不会创建任务、不会宣称生产完成。",
         ],
     }
     if status == "cache_missing":
