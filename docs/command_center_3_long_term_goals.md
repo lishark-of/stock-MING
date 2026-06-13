@@ -52,6 +52,22 @@ The local branch may contain roadmap or LTG implementation commits that are not 
 
 Current local LTG work must not be treated as shared baseline until tests, build, smoke, safety scans, and user confirmation pass. Do not push without confirmation.
 
+## Remaining Goals Snapshot
+
+Current snapshot date: 2026-06-13.
+
+Strict completion status: none of the 14 long-term goals should be closed as fully complete yet. LTG-11 and LTG-12 are the closest to stable operating policy, but they still remain ongoing release boundaries rather than one-time completed features.
+
+| bucket | count | goals | current meaning |
+|---|---:|---|---|
+| Mostly stable guardrails | 2 | LTG-11, LTG-12 | Local gate and real-trading isolation are working release boundaries, but must keep running on every push candidate. |
+| Real validation still required | 5 | LTG-01, LTG-02, LTG-03, LTG-04, LTG-13 | The codebase has local contracts, scaffolds, or light paths, but production acceptance still needs real provider data, real pools, or browser/performance proof. |
+| Productionization still required | 5 | LTG-05, LTG-06, LTG-07, LTG-08, LTG-09 | Storage, worker, model explanation, chart parity, and desktop package have useful preflight/contracts, but are not production complete. |
+| Dependent retirement goal | 1 | LTG-10 | Streamlit can only exit ordinary workflow after React/Tauri parity and fallback safety are proven. |
+| Later polish goal | 1 | LTG-14 | Motion clarity should continue after core data, worker, desktop, and radar validation are stable. |
+
+Quota guidance while weekly budget is low: do not start broad new development when the remaining weekly quota is around 20%. Prefer final push-gate review, user-confirmed push, and short documentation handoff. Resume P1/P2/P3 validation work after quota resets or when a narrow acceptance run is explicitly requested.
+
 ## Long-Term Goals Table
 
 | id | long_term_goal | current_status | target_state | priority | success_criteria |
