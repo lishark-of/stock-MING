@@ -3225,6 +3225,178 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
     }
 
 
+def storage_production_readiness_receipt(
+    production_readiness: Mapping[str, Any] | None = None,
+    production_blocker_audit: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    readiness = dict(production_readiness or storage_production_readiness())
+    blocker_audit = dict(production_blocker_audit or storage_production_blocker_audit(readiness))
+    blocker_rows = [row for row in blocker_audit.get("rows") or [] if isinstance(row, Mapping)]
+    production_blockers = [str(row.get("criterion") or "") for row in blocker_rows if row.get("production_blocker")]
+    local_contracts_ready = bool(blocker_audit.get("local_contracts_ready"))
+    explicit_post_boundaries_ready = all(
+        bool(readiness.get(key))
+        for key in (
+            "schema_validation_dry_run_button_gated",
+            "schema_validation_acceptance_button_gated",
+            "dataset_version_manifest_dry_run_button_gated",
+            "dataset_version_manifest_review_button_gated",
+            "dataset_version_manifest_write_button_gated",
+            "dataset_version_manifest_validate_button_gated",
+            "partition_migration_dry_run_button_gated",
+            "compaction_dry_run_button_gated",
+            "cache_ttl_dry_run_button_gated",
+            "artifact_cleanup_dry_run_button_gated",
+        )
+    )
+    cache_read_only = (
+        readiness.get("external_calls_triggered") is False
+        and readiness.get("schema_validation_dry_run_writes_parquet") is False
+        and readiness.get("dataset_version_manifest_dry_run_writes_manifest") is False
+        and readiness.get("dataset_version_manifest_review_writes_manifest") is False
+        and readiness.get("dataset_version_manifest_validate_writes_manifest") is False
+        and readiness.get("partition_migration_dry_run_writes_parquet") is False
+        and readiness.get("compaction_dry_run_writes_parquet") is False
+        and readiness.get("cache_ttl_dry_run_writes_parquet") is False
+        and readiness.get("artifact_cleanup_dry_run_deletes_files") is False
+    )
+    manifest_write_guarded = (
+        readiness.get("dataset_version_manifest_write_button_gated") is True
+        and readiness.get("dataset_version_manifest_write_requires_confirm") is True
+        and readiness.get("dataset_version_manifest_write_writes_manifest") is True
+        and readiness.get("dataset_version_manifest_write_writes_parquet") is False
+        and readiness.get("dataset_version_manifest_write_external_calls") is False
+        and int(readiness.get("dataset_version_manifest_write_executed_count") or 0) == 0
+    )
+    production_complete = bool(blocker_audit.get("production_storage_complete"))
+    receipt_ready = bool(local_contracts_ready and explicit_post_boundaries_ready and cache_read_only and manifest_write_guarded)
+    if not receipt_ready:
+        status = "storage_production_receipt_blocked_local_contract"
+        allowed_next_step = "fix_storage_local_contract_before_any_storage_task"
+    elif production_complete:
+        status = "storage_production_receipt_ready_for_promotion_review"
+        allowed_next_step = "explicit_post_task_storage_production_promotion_review"
+    else:
+        status = "storage_readiness_receipt_ready_physical_migration_pending"
+        allowed_next_step = "explicit_post_task_storage_schema_acceptance_manifest_review"
+
+    rows = [
+        {
+            "criterion": "local_contracts_visible",
+            "status": "passed" if local_contracts_ready else "blocked",
+            "passed": local_contracts_ready,
+            "evidence": "production_readiness and storage_production_blocker_audit are present in the GET storage cache.",
+            "next_step": "continue to explicit POST storage review tasks",
+        },
+        {
+            "criterion": "explicit_post_task_boundaries",
+            "status": "passed" if explicit_post_boundaries_ready else "blocked",
+            "passed": explicit_post_boundaries_ready,
+            "evidence": "schema, manifest, partition, compaction, TTL, and cleanup tasks are button-gated POST tasks.",
+            "next_step": "preserve button gating before adding any physical writer",
+        },
+        {
+            "criterion": "cache_get_read_only_boundary",
+            "status": "passed" if cache_read_only else "blocked",
+            "passed": cache_read_only,
+            "evidence": "GET storage cache does not refresh providers, write Parquet, write manifest, delete files, or trade.",
+            "next_step": "keep GET /api/storage as evidence-only",
+        },
+        {
+            "criterion": "manifest_write_is_guarded",
+            "status": "passed" if manifest_write_guarded else "blocked",
+            "passed": manifest_write_guarded,
+            "evidence": "manifest write is explicit, confirm-gated, local manifest only, no Parquet, no provider, and not executed by receipt.",
+            "next_step": "run dry-run/review before any separately approved manifest write",
+        },
+        {
+            "criterion": "physical_schema_validation_pending",
+            "status": "blocked" if "schema_physical_validation_complete" in production_blockers else "passed",
+            "passed": "schema_physical_validation_complete" not in production_blockers,
+            "evidence": "physical schema validation remains a production blocker until all canonical datasets pass.",
+            "next_step": "explicit POST schema validation acceptance review",
+        },
+        {
+            "criterion": "physical_migration_and_versioning_pending",
+            "status": "blocked"
+            if any(
+                blocker in production_blockers
+                for blocker in ("schema_migration_executed", "dataset_version_manifest_validated", "partition_migration_executed")
+            )
+            else "passed",
+            "passed": not any(
+                blocker in production_blockers
+                for blocker in ("schema_migration_executed", "dataset_version_manifest_validated", "partition_migration_executed")
+            ),
+            "evidence": "schema migration, dataset version validation, and partition migration are not production-complete.",
+            "next_step": "separate manual writer/migration tasks after review evidence is stable",
+        },
+        {
+            "criterion": "maintenance_execution_pending",
+            "status": "blocked"
+            if any(blocker in production_blockers for blocker in ("physical_compaction_executed", "cache_ttl_refresh_pipeline_executed"))
+            else "passed",
+            "passed": not any(
+                blocker in production_blockers for blocker in ("physical_compaction_executed", "cache_ttl_refresh_pipeline_executed")
+            ),
+            "evidence": "compaction and TTL refresh are still dry-run/recommendation paths, not execution paths.",
+            "next_step": "keep compaction and refresh execution separate from cache rendering",
+        },
+        {
+            "criterion": "production_completion_evidence_ticket",
+            "status": "passed" if production_complete else "blocked",
+            "passed": production_complete,
+            "evidence": "production storage completion requires all blocker rows to pass and separate promotion evidence.",
+            "next_step": "do not claim production storage complete from receipt, preflight, dry-run, or manifest policy alone",
+        },
+    ]
+    blocked_rows = [row["criterion"] for row in rows if not row.get("passed")]
+    return {
+        "schema_version": "command_center_3_storage_production_readiness_receipt.v1",
+        "scope": "local_storage_production_readiness_receipt_no_physical_migration",
+        "status": status,
+        "local_receipt_ready": receipt_ready,
+        "ready_for_explicit_storage_review_tasks": receipt_ready,
+        "allowed_next_step": allowed_next_step,
+        "not_allowed_next_steps": [
+            "GET /api/storage physical migration",
+            "GET /api/storage provider refresh",
+            "automatic Parquet compaction",
+            "automatic cache TTL provider refresh",
+            "artifact cleanup delete execution from dry-run",
+            "dry-run/preflight/receipt as production storage completion",
+        ],
+        "production_storage_complete": production_complete,
+        "physical_schema_validation_done": False,
+        "schema_migration_executed": False,
+        "dataset_version_manifest_validated": bool(readiness.get("dataset_version_manifest_evidence_validated")),
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "artifact_cleanup_delete_executed": False,
+        "provider_refresh_called_by_receipt": False,
+        "cache_get_external_calls": False,
+        "receipt_external_calls_triggered": False,
+        "tushare_called_by_receipt": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "blocked_readiness_count": len(blocked_rows),
+        "blocked_readiness": blocked_rows,
+        "production_blocker_count": int(blocker_audit.get("blocking_criterion_count") or 0),
+        "production_blockers": list(blocker_audit.get("blockers") or []),
+        "rows": rows,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_production_readiness_receipt",
+            endpoint="GET /api/storage",
+            status=status,
+            row_count=len(rows),
+        ),
+        "note": "This receipt only summarizes local LTG-05 readiness. It does not write manifests, write Parquet, compact files, refresh providers, delete artifacts, or trade.",
+    }
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -3302,6 +3474,10 @@ def storage_dataset_catalog() -> dict[str, Any]:
     implementation_status = dataset_implementation_status()
     production_readiness = storage_production_readiness()
     production_blocker_audit = storage_production_blocker_audit(production_readiness)
+    production_readiness_receipt = storage_production_readiness_receipt(
+        production_readiness,
+        production_blocker_audit,
+    )
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
@@ -3317,6 +3493,8 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "production_readiness": production_readiness,
         "storage_production_blocker_audit": production_blocker_audit,
         "storage_production_blocker_rows": production_blocker_audit["rows"],
+        "storage_production_readiness_receipt": production_readiness_receipt,
+        "storage_production_readiness_receipt_rows": production_readiness_receipt["rows"],
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
@@ -3583,6 +3761,10 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     artifact_hygiene = storage_artifact_hygiene_status()
     production_readiness = storage_production_readiness(sqlite_meta)
     production_blocker_audit = storage_production_blocker_audit(production_readiness)
+    production_readiness_receipt = storage_production_readiness_receipt(
+        production_readiness,
+        production_blocker_audit,
+    )
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     schema_migration_preflight = storage_schema_migration_preflight()
@@ -3635,6 +3817,10 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "storage_production_blocker_audit": production_blocker_audit,
         "storage_production_blocker_rows": production_blocker_audit["rows"],
         "storage_production_blocker_count": production_blocker_audit["blocking_criterion_count"],
+        "storage_production_readiness_receipt": production_readiness_receipt,
+        "storage_production_readiness_receipt_rows": production_readiness_receipt["rows"],
+        "storage_production_readiness_receipt_status": production_readiness_receipt["status"],
+        "storage_production_readiness_receipt_ready": production_readiness_receipt["local_receipt_ready"],
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],

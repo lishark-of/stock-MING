@@ -410,6 +410,7 @@ Add factor universe research pipeline
 - React Storage now exposes read-only dataset filters for `limit`, `ts_code`, `trade_date`, `start_date`, and `end_date`; applying filters resets to the first page and still routes only through GET storage APIs.
 - Factor Universe now has a button-gated local read-plan task that consumes storage query contracts and records dataset-level projection/page metadata for future worker consumption.
 - Storage overview/catalog now expose `storage_production_blocker_audit`: production remains `storage_production_blocked` until physical schema validation, schema migration, dataset version manifest validation, partition migration, physical compaction, and TTL refresh execution are separately implemented.
+- Storage overview/catalog now expose `storage_production_readiness_receipt`: a local next-step receipt that says LTG-05 is ready for explicit POST schema/manifest review tasks while keeping GET migration, provider refresh, automatic compaction, TTL refresh execution, cleanup delete execution, and production-completion claims forbidden.
 - `scripts/storage_contract.py` is now part of the local push gate. It reads only local storage cache and dry-run packet builders, then verifies schema migration preflight, dataset version policy, schema validation dry-run, partition migration dry-run, compaction dry-run, cache TTL dry-run, artifact cleanup review, DuckDB query service, and storage dry-run task gating remain local/no-write/no-provider/no-trade while `production_storage_complete=false`.
 
 ### Gaps
@@ -424,6 +425,7 @@ Add factor universe research pipeline
 - Real large-universe research execution beyond the local Factor Universe read plan.
 - Full-pool research consumption, richer query result contract hardening beyond the current local DuckDB read path, and production-grade query ergonomics beyond the current basic UI filters.
 - Physical cleanup/delete execution after manual review remains unimplemented and must stay separately approved.
+- `storage_production_readiness_receipt.status=storage_readiness_receipt_ready_physical_migration_pending` is expected while production blockers remain; it is a next-step receipt, not production storage completion.
 - The local Storage push-gate contract is not a physical migration or production data-layer proof; it only blocks regressions where preflights, dry-runs, query policy, or cleanup review could be mistaken for production completion.
 
 ### Implementation Phases
@@ -459,6 +461,7 @@ Add factor universe research pipeline
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
 - Artifact cleanup manual review is visible as a contract after dry-run, with `delete_executed=false`, `safe_delete_command_generated=false`, and `production_cleanup_complete=false`.
 - Storage overview/catalog now expose `storage_production_blocker_audit` and `storage_production_blocker_rows`, explicitly separating local contracts/dry-runs/preflights from physical production completion.
+- Storage overview/catalog expose `storage_production_readiness_receipt` and receipt rows showing `local_receipt_ready=true`, `allowed_next_step=explicit_post_task_storage_schema_acceptance_manifest_review`, forbidden shortcuts, no provider refresh, no cache GET external calls, no Parquet writes from the receipt, no cleanup deletes, no trades, no `strategy action` mutation, and `production_storage_complete=false`.
 - `scripts/storage_contract.py` passes in the push gate while still reporting `production_storage_complete=false`, `physical_schema_validation_done=false`, `schema_migration_executed=false`, `dataset_version_manifest_validated=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, `cache_ttl_refresh_executed=false`, and `artifact_cleanup_delete_executed=false`; it also verifies manifest evidence remains read-only and no-writer/no-payload.
 - Write failure does not pollute packet or action.
 
@@ -477,6 +480,7 @@ Add factor universe research pipeline
 - Do not treat compaction dry-run as physical Parquet compaction completion.
 - Do not treat cache TTL dry-run as data refresh completion or provider acceptance.
 - Do not treat artifact cleanup review as delete execution or production cleanup completion.
+- Do not treat `storage_production_readiness_receipt` as physical migration, provider refresh, automatic compaction, cleanup execution, or production storage completion; it only permits the next explicit POST review task.
 - Do not treat `scripts/storage_contract.py` passing as physical schema validation, schema migration, dataset version manifest validation, partition migration, physical compaction, TTL refresh execution, cleanup delete execution, or production storage completion.
 - Do not let frontend bypass the FastAPI + DuckDB query service or run direct Parquet/DataFrame reads.
 - Do not treat cursor pagination or typed projection as full-market research execution.

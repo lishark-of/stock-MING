@@ -356,6 +356,12 @@ export default function StorageOverview() {
   const storageProductionBlockerRows =
     (overview.storage_production_blocker_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.storage_production_blocker_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const storageProductionReadinessReceipt =
+    (overview.storage_production_readiness_receipt as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_production_readiness_receipt as Record<string, unknown> | undefined) ?? {});
+  const storageProductionReadinessReceiptRows =
+    (overview.storage_production_readiness_receipt_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.storage_production_readiness_receipt_rows as Array<Record<string, unknown>> | undefined) ?? []);
 
   return (
     <>
@@ -406,6 +412,8 @@ export default function StorageOverview() {
           { label: "DuckDB max limit", value: duckdbQueryService.max_limit ?? overview.duckdb_query_max_limit ?? 0 },
           { label: "storage production", value: storageProductionBlockerAudit.status as string | undefined, tone: storageProductionBlockerAudit.production_storage_complete === true ? "good" : "warn" },
           { label: "storage blockers", value: overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0, tone: Number(overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "storage receipt", value: String(storageProductionReadinessReceipt.status ?? overview.storage_production_readiness_receipt_status ?? "missing"), tone: storageProductionReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
+          { label: "receipt blocked", value: storageProductionReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(storageProductionReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" },
           { label: "declared versions", value: datasetVersionPolicy.target_version_declared_count ?? overview.dataset_version_declared_count ?? 0 },
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
           { label: "manifest evidence", value: String(datasetVersionManifestEvidence.status ?? overview.dataset_version_manifest_evidence_status ?? "manifest_missing_validation_pending") },
@@ -477,6 +485,18 @@ export default function StorageOverview() {
 
       <PacketCard title="Storage production blocker rows" subtitle="schema、version、partition、compaction、TTL refresh 与 query service 的生产缺口" status="storage_production_blocker_rows">
         <DataLineageTable rows={storageProductionBlockerRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage production readiness receipt" subtitle="LTG-05 下一步收据；允许显式 POST 审阅任务，不允许 GET 迁移、自动刷新或把收据当生产完成" status={String(storageProductionReadinessReceipt.status ?? "missing")}>
+        <p>schema_version: {String(storageProductionReadinessReceipt.schema_version ?? "command_center_3_storage_production_readiness_receipt.v1")}</p>
+        <p>scope: {String(storageProductionReadinessReceipt.scope ?? "local_storage_production_readiness_receipt_no_physical_migration")}</p>
+        <p>local_receipt_ready: {String(storageProductionReadinessReceipt.local_receipt_ready ?? false)}</p>
+        <p>allowed_next_step: {String(storageProductionReadinessReceipt.allowed_next_step ?? "explicit_post_task_storage_schema_acceptance_manifest_review")}</p>
+        <p>production_storage_complete: {String(storageProductionReadinessReceipt.production_storage_complete ?? false)}</p>
+        <p>provider_refresh_called_by_receipt / cache_get_external_calls: {String(storageProductionReadinessReceipt.provider_refresh_called_by_receipt ?? false)} / {String(storageProductionReadinessReceipt.cache_get_external_calls ?? false)}</p>
+        <p>tushare / deepseek / github: {String(storageProductionReadinessReceipt.tushare_called_by_receipt ?? false)} / {String(storageProductionReadinessReceipt.deepseek_called ?? false)} / {String(storageProductionReadinessReceipt.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {JSON.stringify(storageProductionReadinessReceipt.not_allowed_next_steps ?? ["GET /api/storage physical migration", "GET /api/storage provider refresh", "dry-run/preflight/receipt as production storage completion"])}</p>
+        <DataLineageTable rows={storageProductionReadinessReceiptRows} />
       </PacketCard>
 
       <PacketCard title="DuckDB query result contracts" subtitle="每个本地查询返回投影列、分页和安全边界；不触发刷新" status="query_contract">

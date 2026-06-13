@@ -115,6 +115,12 @@ def build_contract() -> dict[str, Any]:
     )
     production_readiness = _dict(overview.get("production_readiness"))
     blocker_audit = _dict(overview.get("storage_production_blocker_audit"))
+    readiness_receipt = _dict(overview.get("storage_production_readiness_receipt"))
+    receipt_criteria = {
+        str(row.get("criterion") or "")
+        for row in _list(overview.get("storage_production_readiness_receipt_rows"))
+        if isinstance(row, dict)
+    }
     blocker_criteria = {
         str(row.get("criterion") or "")
         for row in _list(overview.get("storage_production_blocker_rows"))
@@ -172,6 +178,45 @@ def build_contract() -> dict[str, Any]:
             and int(blocker_audit.get("blocking_criterion_count") or 0) > 0
             and _flag_false(blocker_audit, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
             "Storage production blocker audit must keep physical migration, manifest validation, partitioning, compaction, TTL refresh, and cleanup pending.",
+        ),
+        _row(
+            "production_readiness_receipt_allows_only_explicit_next_step",
+            readiness_receipt.get("schema_version") == "command_center_3_storage_production_readiness_receipt.v1"
+            and readiness_receipt.get("scope") == "local_storage_production_readiness_receipt_no_physical_migration"
+            and readiness_receipt.get("status") == "storage_readiness_receipt_ready_physical_migration_pending"
+            and readiness_receipt.get("local_receipt_ready") is True
+            and readiness_receipt.get("ready_for_explicit_storage_review_tasks") is True
+            and readiness_receipt.get("allowed_next_step") == "explicit_post_task_storage_schema_acceptance_manifest_review"
+            and "GET /api/storage physical migration" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and "GET /api/storage provider refresh" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and "dry-run/preflight/receipt as production storage completion"
+            in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and readiness_receipt.get("production_storage_complete") is False
+            and readiness_receipt.get("physical_schema_validation_done") is False
+            and readiness_receipt.get("schema_migration_executed") is False
+            and readiness_receipt.get("partition_migration_executed") is False
+            and readiness_receipt.get("physical_compaction_executed") is False
+            and readiness_receipt.get("cache_ttl_refresh_executed") is False
+            and readiness_receipt.get("artifact_cleanup_delete_executed") is False
+            and readiness_receipt.get("provider_refresh_called_by_receipt") is False
+            and readiness_receipt.get("cache_get_external_calls") is False
+            and readiness_receipt.get("receipt_external_calls_triggered") is False
+            and readiness_receipt.get("tushare_called_by_receipt") is False
+            and _flag_false(readiness_receipt, "deepseek_called", "github_called")
+            and readiness_receipt.get("does_not_execute_trades") is True
+            and readiness_receipt.get("does_not_modify_strategy_action") is True
+            and readiness_receipt.get("production_blocker_count") == blocker_audit.get("blocking_criterion_count")
+            and {
+                "local_contracts_visible",
+                "explicit_post_task_boundaries",
+                "cache_get_read_only_boundary",
+                "manifest_write_is_guarded",
+                "physical_schema_validation_pending",
+                "physical_migration_and_versioning_pending",
+                "maintenance_execution_pending",
+                "production_completion_evidence_ticket",
+            }.issubset(receipt_criteria),
+            "Storage readiness receipt must permit only explicit POST review tasks and must keep GET migration, provider refresh, cleanup deletion, and production completion blocked.",
         ),
         _row(
             "schema_migration_preflight_is_not_physical_migration",
@@ -476,6 +521,8 @@ def build_contract() -> dict[str, Any]:
         "dataset_version_manifest_review_writes_manifest": False,
         "dataset_version_manifest_write_task_available": True,
         "dataset_version_manifest_validate_writes_manifest": False,
+        "storage_production_readiness_receipt_ready": bool(readiness_receipt.get("local_receipt_ready")),
+        "storage_production_readiness_receipt_status": readiness_receipt.get("status"),
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
@@ -498,6 +545,8 @@ def build_contract() -> dict[str, Any]:
             "production_readiness_status": production_readiness.get("status"),
             "storage_production_blocker_status": blocker_audit.get("status"),
             "storage_production_blocker_count": blocker_audit.get("blocking_criterion_count"),
+            "storage_production_readiness_receipt_status": readiness_receipt.get("status"),
+            "storage_production_readiness_receipt_ready": readiness_receipt.get("local_receipt_ready"),
             "schema_migration_preflight_status": schema_preflight.get("status"),
             "dataset_version_policy_status": dataset_version_policy.get("status"),
             "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence.get("status"),

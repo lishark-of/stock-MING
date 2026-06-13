@@ -1396,6 +1396,54 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("cache_ttl_refresh_pipeline_executed", blocker_criteria)
         self.assertIn("artifact_cleanup_manual_review_visible", blocker_criteria)
         self.assertIn("cache_get_remains_read_only", blocker_criteria)
+        self.assertIn("storage_production_readiness_receipt", overview)
+        storage_receipt = overview["storage_production_readiness_receipt"]
+        self.assertEqual(
+            storage_receipt["schema_version"],
+            "command_center_3_storage_production_readiness_receipt.v1",
+        )
+        self.assertEqual(
+            storage_receipt["scope"],
+            "local_storage_production_readiness_receipt_no_physical_migration",
+        )
+        self.assertEqual(storage_receipt["status"], "storage_readiness_receipt_ready_physical_migration_pending")
+        self.assertTrue(storage_receipt["local_receipt_ready"])
+        self.assertTrue(storage_receipt["ready_for_explicit_storage_review_tasks"])
+        self.assertEqual(
+            storage_receipt["allowed_next_step"],
+            "explicit_post_task_storage_schema_acceptance_manifest_review",
+        )
+        self.assertIn("GET /api/storage physical migration", storage_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/storage provider refresh", storage_receipt["not_allowed_next_steps"])
+        self.assertIn("dry-run/preflight/receipt as production storage completion", storage_receipt["not_allowed_next_steps"])
+        self.assertFalse(storage_receipt["production_storage_complete"])
+        self.assertFalse(storage_receipt["physical_schema_validation_done"])
+        self.assertFalse(storage_receipt["schema_migration_executed"])
+        self.assertFalse(storage_receipt["partition_migration_executed"])
+        self.assertFalse(storage_receipt["physical_compaction_executed"])
+        self.assertFalse(storage_receipt["cache_ttl_refresh_executed"])
+        self.assertFalse(storage_receipt["artifact_cleanup_delete_executed"])
+        self.assertFalse(storage_receipt["provider_refresh_called_by_receipt"])
+        self.assertFalse(storage_receipt["cache_get_external_calls"])
+        self.assertFalse(storage_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(storage_receipt["tushare_called_by_receipt"])
+        self.assertFalse(storage_receipt["deepseek_called"])
+        self.assertFalse(storage_receipt["github_called"])
+        self.assertTrue(storage_receipt["does_not_execute_trades"])
+        self.assertTrue(storage_receipt["does_not_modify_strategy_action"])
+        self.assertGreater(storage_receipt["blocked_readiness_count"], 0)
+        self.assertEqual(storage_receipt["production_blocker_count"], storage_blocker["blocking_criterion_count"])
+        receipt_rows = {row["criterion"]: row for row in overview["storage_production_readiness_receipt_rows"]}
+        self.assertEqual(receipt_rows["local_contracts_visible"]["status"], "passed")
+        self.assertEqual(receipt_rows["explicit_post_task_boundaries"]["status"], "passed")
+        self.assertEqual(receipt_rows["cache_get_read_only_boundary"]["status"], "passed")
+        self.assertEqual(receipt_rows["manifest_write_is_guarded"]["status"], "passed")
+        self.assertEqual(receipt_rows["physical_schema_validation_pending"]["status"], "blocked")
+        self.assertEqual(receipt_rows["physical_migration_and_versioning_pending"]["status"], "blocked")
+        self.assertEqual(receipt_rows["maintenance_execution_pending"]["status"], "blocked")
+        self.assertEqual(receipt_rows["production_completion_evidence_ticket"]["status"], "blocked")
+        self.assertEqual(storage_receipt["call_ledger"][0]["api"], "local_storage_production_readiness_receipt")
+        self.assert_local_ledger_boundary(storage_receipt["call_ledger"][0])
         readiness_by_component = {row["component"]: row for row in overview["production_readiness"]["rows"]}
         self.assertIn("sqlite_meta", readiness_by_component)
         self.assertIn("schema_migration_preflight", readiness_by_component)
