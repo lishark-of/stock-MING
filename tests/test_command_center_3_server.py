@@ -4677,6 +4677,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/factor_test_lab_contract.py", script)
         self.assertIn("Factor Test Lab contract", script)
         self.assertIn("factor_test_lab_contract: passed_local_contract_provider_execution_pending", script)
+        self.assertIn("scripts/candidate_radar_contract.py", script)
+        self.assertIn("Candidate Radar contract", script)
+        self.assertIn("candidate_radar_contract: passed_local_contract_replacement_pending", script)
         self.assertIn("scripts/motion_viewport_qa_contract.py", script)
         self.assertIn("Motion viewport QA contract", script)
         self.assertIn("motion_viewport_qa_contract: passed_static_contract_visual_run_pending", script)
@@ -4711,6 +4714,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertLess(script.index('run_step "Tushare acceptance contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Tushare acceptance contract"'), script.index('run_step "Factor Test Lab contract"'))
         self.assertLess(script.index('run_step "Factor Test Lab contract"'), script.index('run_step "Motion viewport QA contract"'))
+        self.assertLess(script.index('run_step "Factor Test Lab contract"'), script.index('run_step "Candidate Radar contract"'))
+        self.assertLess(script.index('run_step "Candidate Radar contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Motion viewport QA contract"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Motion browser QA runbook"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Secret scan"'), script.index('run_step "Secret keyword review contract"'))
@@ -4871,6 +4876,73 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("storage_query_consumption_is_not_metric_source", criteria)
         self.assertIn("production_validation_qa_stays_pending", criteria)
         self.assertIn("cache_get_factor_boundary", criteria)
+
+    def test_candidate_radar_contract_script_is_local_push_gate_guard(self):
+        path = Path("scripts/candidate_radar_contract.py")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(path.stat().st_mode & 0o111)
+        self.assertIn("command_center_3_candidate_radar_contract.v1", script)
+        self.assertIn("local_candidate_radar_contract_no_provider_execution", script)
+        self.assertIn("production_radar_replacement_complete", script)
+        self.assertIn("legacy_retirement_ready", script)
+        self.assertIn("candidate_is_not_buy_instruction", script)
+        self.assertIn("no_feature_loss_is_local_not_replacement", script)
+        self.assertIn("replacement_gap_triage_blocks_legacy_retirement", script)
+        self.assertIn("full_pool_plan_is_plan_only", script)
+        self.assertIn("deep_scan_plan_is_plan_only", script)
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx", script)
+        self.assertNotIn("api.github.com", script)
+        self.assertNotIn("tushare_adapter", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema_version"], "command_center_3_candidate_radar_contract.v1")
+        self.assertEqual(payload["scope"], "local_candidate_radar_contract_no_provider_execution")
+        self.assertEqual(payload["status"], "candidate_radar_contract_passed")
+        self.assertFalse(payload["production_radar_replacement_complete"])
+        self.assertFalse(payload["legacy_retirement_ready"])
+        self.assertTrue(payload["legacy_fallback_required"])
+        self.assertFalse(payload["full_pool_scan_done"])
+        self.assertFalse(payload["deep_scan_done"])
+        self.assertFalse(payload["provider_backed_acceptance_done"])
+        self.assertFalse(payload["browser_performance_trace_done"])
+        self.assertFalse(payload["browser_visual_delta_qa_done"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertTrue(payload["candidate_is_not_buy_instruction"])
+        self.assertEqual(payload["blocking_criterion_count"], 0)
+        self.assertEqual(payload["observed"]["fast_scan_readiness_status"], "fast_scan_local_ready_full_pool_pending")
+        self.assertEqual(
+            payload["observed"]["no_feature_loss_status"],
+            "no_feature_loss_acceptance_local_ready_production_pending",
+        )
+        self.assertEqual(
+            payload["observed"]["replacement_gap_status"],
+            "replacement_gap_triage_local_ready_legacy_retirement_blocked",
+        )
+        self.assertIsNotNone(payload["observed"]["full_pool_plan_blocker_count"])
+        self.assertIsNotNone(payload["observed"]["deep_scan_plan_blocker_count"])
+        criteria = {row["criterion"] for row in payload["rows"]}
+        self.assertIn("cache_get_is_read_only_no_scan", criteria)
+        self.assertIn("no_feature_loss_is_local_not_replacement", criteria)
+        self.assertIn("replacement_gap_triage_blocks_legacy_retirement", criteria)
+        self.assertIn("result_delta_clarity_is_local_not_visual_qa", criteria)
+        self.assertIn("full_pool_plan_is_plan_only", criteria)
+        self.assertIn("deep_scan_plan_is_plan_only", criteria)
 
     def test_secret_keyword_review_contract_is_structured_and_local(self):
         path = Path("scripts/secret_keyword_review_contract.py")
@@ -8636,6 +8708,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["factor_test_lab_contract_exists"])
         self.assertTrue(release_gate["factor_test_lab_contract_step"])
         self.assertTrue(release_gate["factor_test_lab_contract_is_local"])
+        self.assertTrue(release_gate["candidate_radar_contract_exists"])
+        self.assertTrue(release_gate["candidate_radar_contract_step"])
+        self.assertTrue(release_gate["candidate_radar_contract_is_local"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_exists"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_step"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_is_local_static"])
@@ -8669,6 +8744,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("factor_test_lab_contract_exists", release_gate_criteria)
         self.assertIn("factor_test_lab_contract_step", release_gate_criteria)
         self.assertIn("factor_test_lab_contract_is_local", release_gate_criteria)
+        self.assertIn("candidate_radar_contract_exists", release_gate_criteria)
+        self.assertIn("candidate_radar_contract_step", release_gate_criteria)
+        self.assertIn("candidate_radar_contract_is_local", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_exists", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_step", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_is_local_static", release_gate_criteria)

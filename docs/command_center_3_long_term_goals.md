@@ -66,9 +66,9 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local release artifact detection; packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
-| LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
+| LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests, smoke, and local contract guards exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, artifact scan, and local LTG contracts are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
-| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness and no-feature-loss QA contracts exist; full-pool/deep-scan/provider acceptance pending | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
+| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness, no-feature-loss QA, and push-gate contract exist; full-pool/deep-scan/provider acceptance pending | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
 | LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, static readiness audit, and production QA contract exist; browser visual/performance QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
@@ -683,6 +683,7 @@ Retire Streamlit from primary user workflow
 - `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness contracts remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
+- `scripts/candidate_radar_contract.py` is now part of the local push gate. It validates LTG-13 Candidate Radar cache reads, local quick-scan task gating, full-pool/deep-scan plan-only boundaries, no-feature-loss QA, replacement-gap triage, result-delta clarity, and no-trade/no-action boundaries while production radar replacement remains pending.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
@@ -696,6 +697,7 @@ Retire Streamlit from primary user workflow
 - Structured keyword review is present, but it is still a local classification contract; periodic human allowlist review and remote CI evidence remain separate.
 - Tushare acceptance contract is present, but it is still a local matrix/readiness guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
 - Factor Test Lab contract is present, but it is still a local research-boundary guard; real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
+- Candidate Radar contract is present, but it is still a local replacement-boundary guard; real full-pool/deep-scan execution, provider-backed parity acceptance, browser performance trace, and visual QA remain later LTG-13 acceptance phases.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -705,7 +707,8 @@ Retire Streamlit from primary user workflow
 3. Add repeatable secret and generated-artifact scan commands.
 4. Keep ordinary keyword review structured and count-only so logs do not expose raw matched source lines.
 5. Keep optional local release-readiness reports explicit and outside tracked artifacts unless intentionally reviewed.
-6. Add CI coverage where safe and affordable.
+6. Add local LTG contracts as each migration surface becomes risky enough to need regression guards.
+7. Add CI coverage where safe and affordable.
 
 ### Acceptance Criteria
 
@@ -719,6 +722,7 @@ Retire Streamlit from primary user workflow
 - Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
 - Tushare acceptance contract runs after Data Health and before static UI QA, and keeps `provider_backed_acceptance_done=false` / `production_tushare_pipeline_complete=false` visible.
 - Factor Test Lab contract runs after Tushare acceptance and before static UI QA, and keeps `provider_backed_small_pool_validation_done=false` / `production_factor_test_validation_complete=false` visible.
+- Candidate Radar contract runs after Factor Test Lab and before static motion QA, and keeps `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, and `deep_scan_done=false` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
@@ -789,6 +793,7 @@ Keep real trading isolated from Command Center 3 automation
 - Candidate radar packets now expose `no_feature_loss_acceptance_contract` and `no_feature_loss_acceptance_rows`: this aggregates page-render/cache boundaries, local scan modes, legacy signal groups, legacy output fields, provider/freshness gaps, runtime budget, browser performance trace status, full-pool/deep-scan execution status, provider-backed acceptance, and trade/action isolation. It makes the local no-feature-loss QA surface visible but keeps `production_radar_replacement_complete=false`.
 - Candidate radar packets now expose `replacement_gap_triage_contract` and `replacement_gap_triage_rows`: this locally classifies legacy-radar retirement gaps into critical, pending, blocking, and passed rows across legacy signal groups, output fields, provider coverage, freshness, previous-cache delta clarity, browser visual QA, performance trace, full/deep worker execution, provider-backed acceptance, and trade/action isolation. It keeps `legacy_retirement_ready=false` while any blocking gap remains.
 - Candidate radar packets now expose `result_delta_clarity_contract`, `result_delta_clarity_rows`, and `previous_cache_diff_rows`: candidate counts, display truncation, skipped reasons, provider gaps, freshness state, scan mode transitions, local-pool skips, and full/deep boundaries are visible without rescoring, refreshing providers, timers, browser QA, or trade/action mutation. When a previous SQLite radar packet exists, local scan tasks compute added/removed/rank/score/status deltas; when no previous packet exists, the missing baseline remains explicit.
+- `scripts/candidate_radar_contract.py` is now part of the local push gate. It reads only local cache/service contracts and keeps cache GET, quick-scan task gating, full-pool plan, deep-scan plan, no-feature-loss QA, replacement-gap triage, result-delta clarity, no-provider, no-model, no-trade, and no-action boundaries auditable while `production_radar_replacement_complete=false` and `legacy_retirement_ready=false`.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
 ### Gaps
@@ -802,6 +807,7 @@ Keep real trading isolated from Command Center 3 automation
 - The no-feature-loss acceptance contract is local QA; it does not prove browser performance, real full-pool/deep-scan execution, or provider-backed parity acceptance.
 - The replacement gap triage contract is local blocker classification; it does not execute full-pool/deep-scan, provider-backed acceptance, browser visual QA, or performance traces.
 - The result-delta clarity contract is local QA; previous-cache diff is only complete when a prior persisted radar packet exists, and it still does not prove browser visual QA or production radar replacement.
+- The local Candidate Radar push-gate contract is not a production radar run; it only blocks regressions where local quick scans, plan-only rows, no-feature-loss QA, or result-delta clarity could be mistaken for full replacement.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
 - Need parity acceptance before removing any Streamlit fallback.
 
@@ -829,6 +835,7 @@ Keep real trading isolated from Command Center 3 automation
 - `replacement_gap_triage_contract.local_triage_ready=true` only means blockers to retiring the legacy radar are classified and visible; `legacy_retirement_ready` must remain false while critical/provider/freshness/browser/performance/full-pool/deep-scan/provider-backed gaps remain.
 - `production_radar_replacement_complete` remains false until real full-pool/deep-scan execution and provider-backed parity acceptance are complete.
 - `result_delta_clarity_contract.local_result_delta_clarity_ready=true` means result-change cues are visible; `previous_cache_diff_done=true` is allowed only after comparing against a previous persisted radar packet, while `browser_visual_delta_qa_done=false` must remain explicit until browser visual QA is run.
+- `scripts/candidate_radar_contract.py` passes in the push gate while still reporting `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, `deep_scan_done=false`, `provider_backed_acceptance_done=false`, `browser_performance_trace_done=false`, and `browser_visual_delta_qa_done=false`.
 - Radar output does not become a buy instruction and does not modify `strategy action`.
 
 ### Forbidden
@@ -841,6 +848,7 @@ Keep real trading isolated from Command Center 3 automation
 - Do not treat `no_feature_loss_acceptance_contract` as proof of production radar replacement.
 - Do not treat `replacement_gap_triage_contract` as proof of legacy radar retirement readiness unless `legacy_retirement_ready=true` and every blocking gap is resolved by direct evidence.
 - Do not treat `result_delta_clarity_contract` as browser visual QA or production radar replacement. Do not treat previous-cache diff as complete unless `previous_cache_diff_done=true` and `previous_cache_diff_rows` are present.
+- Do not treat `scripts/candidate_radar_contract.py` passing as full-pool scan, deep scan, provider-backed parity acceptance, browser performance proof, visual QA, legacy retirement readiness, or production radar replacement.
 - Do not call Tushare/DeepSeek/GitHub from GET cache or render.
 - Do not treat candidates as trade instructions.
 
