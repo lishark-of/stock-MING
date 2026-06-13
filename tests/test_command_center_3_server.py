@@ -3875,6 +3875,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(failure_rows["provider_error_safe"]["status"], "observed")
         self.assertEqual(failure_rows["permission_denied"]["status"], "ready_not_observed")
         self.assertEqual(failure_rows["parse_failed_or_invalid_result"]["status"], "ready_not_observed")
+        request_param_qa = persisted["request_parameter_qa_contract"]
+        request_rows = {row["api"]: row for row in persisted["request_parameter_qa_rows"]}
+        self.assertEqual(request_param_qa["schema_version"], "tushare_request_parameter_qa_contract.v1")
+        self.assertEqual(request_param_qa["status"], "request_parameter_qa_ready_provider_acceptance_pending")
+        self.assertEqual(request_param_qa["scope"], "local_request_parameter_contract_not_provider_call")
+        self.assertEqual(request_param_qa["selected_api_count"], 9)
+        self.assertEqual(request_param_qa["missing_required_preflight_api_count"], 0)
+        self.assertEqual(request_param_qa["unsafe_request_param_api_count"], 0)
+        self.assertTrue(request_param_qa["raw_payload_sensitive_keys_dropped"])
+        self.assertFalse(request_param_qa["provider_backed_acceptance_done"])
+        self.assertFalse(request_param_qa["production_tushare_pipeline_complete"])
+        self.assertFalse(request_param_qa["qa_external_calls_triggered"])
+        self.assertEqual(request_rows["trade_cal"]["status"], "request_params_safe")
+        self.assertEqual(request_rows["trade_cal"]["required_preflight_params"], [])
+        self.assertIn("start_date", request_rows["trade_cal"]["provided_date_context_params"])
+        self.assertEqual(request_rows["top_list"]["required_preflight_params"], ["ts_code"])
+        self.assertEqual(request_rows["top_list"]["missing_required_preflight_params"], [])
+        self.assertEqual(request_rows["daily"]["status"], "matrix_only")
+        self.assertFalse(request_rows["daily"]["request_params_safe_has_secret_key"])
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -3968,6 +3987,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(failure_rows["missing_required_parameter"]["status"], "observed")
         self.assertFalse(failure_rows["missing_required_parameter"]["qa_external_calls_triggered"])
         self.assertEqual(failure_rows["matrix_only_not_requested"]["status"], "ready_not_observed")
+        request_param_qa = persisted["request_parameter_qa_contract"]
+        request_rows = {row["api"]: row for row in persisted["request_parameter_qa_rows"]}
+        self.assertEqual(request_param_qa["status"], "request_parameter_qa_ready_provider_acceptance_pending")
+        self.assertGreater(request_param_qa["missing_required_preflight_api_count"], 0)
+        self.assertEqual(request_param_qa["unsafe_request_param_api_count"], 0)
+        self.assertFalse(request_param_qa["raw_payload_sensitive_keys_dropped"])
+        self.assertEqual(request_rows["daily"]["status"], "preflight_blocked_missing_required_param")
+        self.assertEqual(request_rows["daily"]["missing_required_preflight_params"], ["ts_code"])
+        self.assertFalse(request_rows["daily"]["qa_external_calls_triggered"])
+        self.assertEqual(request_rows["trade_cal"]["status"], "request_params_safe")
+        self.assertIn("start_date", request_rows["trade_cal"]["provided_date_context_params"])
 
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
@@ -4072,6 +4102,51 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(failure_rows["provider_error_safe"]["status"], "ready_not_observed")
         self.assertTrue(all(row["distinguishable"] for row in persisted["failure_mode_qa_rows"]))
         self.assertNotIn("api_key", json.dumps(persisted, ensure_ascii=False))
+        self.assertNotIn("SHOULD_DROP", json.dumps(persisted, ensure_ascii=False))
+
+    def test_tushare_request_parameter_qa_tracks_alias_and_date_context_without_provider_acceptance(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class AliasParamFakeAdapter:
+            def get_daily(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": "20260610", "close": 10.4}], "error": ""}
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "ticker": "002008.SZ",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "apis": ["daily"],
+                "authorization": "Bearer SHOULD_DROP",
+            },
+            adapter=AliasParamFakeAdapter(),
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertTrue(task["tushare_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        request_param_qa = persisted["request_parameter_qa_contract"]
+        request_rows = {row["api"]: row for row in persisted["request_parameter_qa_rows"]}
+        self.assertEqual(request_param_qa["status"], "request_parameter_qa_ready_provider_acceptance_pending")
+        self.assertEqual(request_param_qa["selected_api_count"], 1)
+        self.assertEqual(request_param_qa["missing_required_preflight_api_count"], 0)
+        self.assertEqual(request_param_qa["unsafe_request_param_api_count"], 0)
+        self.assertTrue(request_param_qa["raw_payload_sensitive_keys_dropped"])
+        self.assertFalse(request_param_qa["provider_backed_acceptance_done"])
+        self.assertFalse(request_param_qa["tushare_called_by_qa"])
+        self.assertEqual(request_rows["daily"]["status"], "request_params_safe")
+        self.assertTrue(request_rows["daily"]["ts_code_alias_supported"])
+        self.assertEqual(request_rows["daily"]["provided_param_keys"], ["end_date", "start_date", "ts_code"])
+        self.assertEqual(request_rows["daily"]["provided_date_context_params"], ["start_date", "end_date"])
+        self.assertEqual(request_rows["trade_cal"]["status"], "matrix_only")
+        self.assertNotIn("authorization", json.dumps(persisted, ensure_ascii=False).lower())
         self.assertNotIn("SHOULD_DROP", json.dumps(persisted, ensure_ascii=False))
 
     def test_tushare_refresh_task_validates_chip_and_hard_risk_domains(self):
@@ -4670,6 +4745,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("permission_denied", by_type["refresh_tushare_facts"]["failure_mode_qa_contract"])
         self.assertIn("missing_required_parameter", by_type["refresh_tushare_facts"]["failure_mode_qa_contract"])
         self.assertFalse(by_type["refresh_tushare_facts"]["failure_mode_qa_is_provider_acceptance"])
+        self.assertIn("ts_code preflight", by_type["refresh_tushare_facts"]["request_parameter_qa_contract"])
+        self.assertIn("date context params", by_type["refresh_tushare_facts"]["request_parameter_qa_contract"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["request_parameter_qa_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
@@ -4681,6 +4759,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("call_ledger semantic audit", by_type["refresh_factor_data"]["api_acceptance_audit_contract"])
         self.assertIn("failure_mode_qa_contract", by_type["refresh_factor_data"]["failure_mode_qa_contract"])
         self.assertFalse(by_type["refresh_factor_data"]["failure_mode_qa_is_provider_acceptance"])
+        self.assertIn("request_parameter_qa_contract", by_type["refresh_factor_data"]["request_parameter_qa_contract"])
+        self.assertFalse(by_type["refresh_factor_data"]["request_parameter_qa_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_factor_data"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])

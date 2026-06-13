@@ -86,6 +86,8 @@ REFRESH_API_SPECS = {
 }
 SECRET_MARKERS = ("token", "api_key", "apikey", "authorization", "bearer", "secret", "password")
 STACK_MARKERS = ("traceback", 'file "', " line ", "exception")
+DATE_CONTEXT_PARAMS = ("trade_date", "start_date", "end_date", "ann_date", "period", "float_date")
+PAYLOAD_CONTROL_KEYS = ("apis", "include_extended", "include_calendar", "ticker", "symbol")
 CALL_LEDGER_REQUIRED_FIELDS = (
     "api",
     "request_params_safe",
@@ -877,6 +879,107 @@ def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     return params
 
 
+def _required_preflight_params(api: str) -> list[str]:
+    params = list(REFRESH_API_SPECS[api].get("params") or [])
+    return ["ts_code"] if "ts_code" in params else []
+
+
+def _request_parameter_qa_contract(selected_apis: Iterable[str], payload: Any) -> dict[str, Any]:
+    selected_set = set(selected_apis)
+    safe_payload = _safe_payload(payload)
+    raw_payload_has_sensitive_key = _has_sensitive_key(payload)
+    rows: list[dict[str, Any]] = []
+    for api, spec in REFRESH_API_SPECS.items():
+        declared_params = list(spec.get("params") or [])
+        params = _request_params_for_api(api, payload)
+        selected = api in selected_set
+        required_preflight = _required_preflight_params(api)
+        missing_required = [key for key in required_preflight if not params.get(key)]
+        provided_param_keys = sorted(params)
+        date_context_params = [key for key in declared_params if key in DATE_CONTEXT_PARAMS]
+        provided_date_context = [key for key in date_context_params if key in params]
+        alias_used = bool(
+            "ts_code" in params
+            and (
+                ("ticker" in safe_payload and safe_payload.get("ticker") == params.get("ts_code"))
+                or ("symbol" in safe_payload and safe_payload.get("symbol") == params.get("ts_code"))
+            )
+        )
+        unsafe_request_params = _has_sensitive_key(params)
+        if not selected:
+            status = "matrix_only"
+        elif missing_required:
+            status = "preflight_blocked_missing_required_param"
+        elif unsafe_request_params:
+            status = "blocked_unsafe_request_params"
+        else:
+            status = "request_params_safe"
+        rows.append(
+            {
+                "api": api,
+                "domain": _api_domain(api),
+                "method": spec.get("method"),
+                "selected": selected,
+                "status": status,
+                "declared_param_keys": declared_params,
+                "provided_param_keys": provided_param_keys,
+                "required_preflight_params": required_preflight,
+                "missing_required_preflight_params": missing_required,
+                "date_context_params": date_context_params,
+                "provided_date_context_params": provided_date_context,
+                "date_context_present": bool(provided_date_context),
+                "ts_code_alias_supported": alias_used,
+                "request_params_safe_has_secret_key": unsafe_request_params,
+                "raw_payload_sensitive_keys_dropped": raw_payload_has_sensitive_key,
+                "payload_control_keys": [key for key in PAYLOAD_CONTROL_KEYS if key in safe_payload],
+                "provider_acceptance_requirement": (
+                    "provider-backed acceptance must verify the exact interface-specific ts_code/date/period window and row_count semantics; this local contract does not call Tushare."
+                ),
+                "cache_get_external_calls": False,
+                "qa_external_calls_triggered": False,
+                "tushare_called_by_qa": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    selected_rows = [row for row in rows if row.get("selected")]
+    missing_required_rows = [row for row in selected_rows if row.get("missing_required_preflight_params")]
+    unsafe_param_rows = [row for row in selected_rows if row.get("request_params_safe_has_secret_key")]
+    selected_with_date_context = [row for row in selected_rows if row.get("date_context_present")]
+    matrix_only_rows = [row for row in rows if row.get("status") == "matrix_only"]
+    return {
+        "schema_version": "tushare_request_parameter_qa_contract.v1",
+        "status": "request_parameter_qa_ready_provider_acceptance_pending"
+        if not unsafe_param_rows
+        else "request_parameter_qa_blocked",
+        "scope": "local_request_parameter_contract_not_provider_call",
+        "api_count": len(rows),
+        "selected_api_count": len(selected_rows),
+        "matrix_only_api_count": len(matrix_only_rows),
+        "missing_required_preflight_api_count": len(missing_required_rows),
+        "unsafe_request_param_api_count": len(unsafe_param_rows),
+        "selected_with_date_context_count": len(selected_with_date_context),
+        "raw_payload_sensitive_keys_dropped": raw_payload_has_sensitive_key,
+        "safe_payload_key_count": len(safe_payload),
+        "preflight_required_param_policy": "current local preflight blocks missing ts_code only; date windows are contract-visible and required for provider-backed production acceptance.",
+        "date_context_params": list(DATE_CONTEXT_PARAMS),
+        "provider_backed_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "qa_external_calls_triggered": False,
+        "tushare_called_by_qa": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "Request parameter QA validates local safe parameter contracts only. It does not call Tushare and does not prove provider-backed production acceptance.",
+    }
+
+
 def _rows_from_data(data: Any) -> list[dict[str, Any]]:
     if data is None:
         return []
@@ -1102,6 +1205,7 @@ def run_tushare_refresh_task(
     validation_target_summary = _validation_target_summary(validation_target_rows)
     api_acceptance_audit = _api_acceptance_audit(api_validation_rows, call_ledger)
     failure_mode_qa_contract = _failure_mode_qa_contract(api_validation_rows, call_ledger)
+    request_parameter_qa_contract = _request_parameter_qa_contract(selected_apis, payload)
     provider_acceptance_readiness_audit = _provider_acceptance_readiness_audit(
         api_validation_rows=api_validation_rows,
         validation_target_rows=validation_target_rows,
@@ -1137,6 +1241,9 @@ def run_tushare_refresh_task(
         "failure_mode_qa_contract": failure_mode_qa_contract,
         "failure_mode_qa_rows": failure_mode_qa_contract["rows"],
         "failure_mode_qa_status": failure_mode_qa_contract["status"],
+        "request_parameter_qa_contract": request_parameter_qa_contract,
+        "request_parameter_qa_rows": request_parameter_qa_contract["rows"],
+        "request_parameter_qa_status": request_parameter_qa_contract["status"],
         "provider_acceptance_readiness_audit": provider_acceptance_readiness_audit,
         "provider_acceptance_readiness_rows": provider_acceptance_readiness_audit["rows"],
         "provider_acceptance_readiness_status": provider_acceptance_readiness_audit["status"],
@@ -1148,6 +1255,7 @@ def run_tushare_refresh_task(
             "acceptance_audit_scope": "api_acceptance_audit 只审计 call_ledger 语义和安全边界，不发起 provider 调用。",
             "provider_acceptance_readiness_scope": "provider_acceptance_readiness_audit 只汇总生产验收阻断项；不把 fake/local/matrix 证据当 provider-backed acceptance。",
             "failure_mode_qa_scope": "failure_mode_qa_contract 只分类现有 call_ledger 的 empty/permission/parse/missing-param/provider-error 状态；不发起 provider 调用。",
+            "request_parameter_qa_scope": "request_parameter_qa_contract 只审计安全参数、ts_code 预检和日期上下文字段；不发起 provider 调用。",
             "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
             "cache_get_external_calls": False,
             "button_gated_external_calls_only": True,
@@ -1170,6 +1278,8 @@ def run_tushare_refresh_task(
         "api_acceptance_audit_passed": api_acceptance_audit["status"] == "acceptance_audit_passed",
         "failure_mode_qa_observed_mode_count": failure_mode_qa_contract["observed_mode_count"],
         "failure_mode_qa_unsafe_row_count": failure_mode_qa_contract["unsafe_row_count"],
+        "request_parameter_qa_missing_required_count": request_parameter_qa_contract["missing_required_preflight_api_count"],
+        "request_parameter_qa_unsafe_param_count": request_parameter_qa_contract["unsafe_request_param_api_count"],
         "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
         "provider_acceptance_production_blocker_count": provider_acceptance_readiness_audit["production_blocker_count"],
         "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],

@@ -73,6 +73,7 @@ export default function FactorQuantHub() {
   const factorTestSmallPool = factorTests.small_pool_acceptance ?? {};
   const factorTestProductionValidation = factorTests.production_validation_qa_contract ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
+  const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -109,6 +110,8 @@ export default function FactorQuantHub() {
   const factorTestProductionValidationCriterionRows = toRows(factorTests.production_validation_qa_rows);
   const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
   const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
+  const tushareRequestParameterQaRows = objectRows(tushareRequestParameterQa as Record<string, unknown>, "request_parameter_contract");
+  const tushareRequestParameterCriterionRows = toRows(packet.request_parameter_qa_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -242,7 +245,10 @@ export default function FactorQuantHub() {
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" },
           { label: "Tushare failure QA", value: tushareFailureModeQa.status ?? "missing", tone: tushareFailureModeQa.status === "failure_mode_qa_blocked" ? "bad" : "warn" },
           { label: "failure modes", value: tushareFailureModeQa.observed_mode_count ?? 0 },
-          { label: "failure unsafe rows", value: tushareFailureModeQa.unsafe_row_count ?? 0, tone: Number(tushareFailureModeQa.unsafe_row_count ?? 0) > 0 ? "bad" : "good" }
+          { label: "failure unsafe rows", value: tushareFailureModeQa.unsafe_row_count ?? 0, tone: Number(tushareFailureModeQa.unsafe_row_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "Tushare param QA", value: tushareRequestParameterQa.status ?? "missing", tone: tushareRequestParameterQa.status === "request_parameter_qa_blocked" ? "bad" : "warn" },
+          { label: "missing params", value: tushareRequestParameterQa.missing_required_preflight_api_count ?? 0, tone: Number(tushareRequestParameterQa.missing_required_preflight_api_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "param unsafe rows", value: tushareRequestParameterQa.unsafe_request_param_api_count ?? 0, tone: Number(tushareRequestParameterQa.unsafe_request_param_api_count ?? 0) > 0 ? "bad" : "good" }
         ]}
       />
       <EChartPanel option={option} />
@@ -359,6 +365,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">failure_mode_qa_contract 只分类按钮任务已有 call_ledger：empty / no record / empty window、permission denied、parse failure / invalid result、missing required parameter、provider error 和 matrix-only；它不调用 Tushare，不证明 provider-backed 全接口生产验收。</p>
       <DataLineageTable rows={tushareFailureModeCriterionRows} />
       <DataLineageTable rows={tushareFailureModeQaRows} />
+      <h3>Tushare 请求参数 QA</h3>
+      <p className="risk-note">request_parameter_qa_contract 只审计按钮任务的安全参数、ts_code 预检阻断、日期上下文字段和 matrix-only 边界；date context 可见不等于 provider-backed 接口验收完成。</p>
+      <DataLineageTable rows={tushareRequestParameterCriterionRows} />
+      <DataLineageTable rows={tushareRequestParameterQaRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>
