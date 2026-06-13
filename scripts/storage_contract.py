@@ -36,6 +36,7 @@ REQUIRED_BLOCKER_CRITERIA = {
 REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_artifact_cleanup_dry_run",
     "run_storage_schema_validation_dry_run",
+    "run_storage_schema_validation_acceptance",
     "run_storage_dataset_version_manifest_dry_run",
     "run_storage_dataset_version_manifest_write",
     "run_storage_partition_migration_dry_run",
@@ -84,6 +85,9 @@ def build_contract() -> dict[str, Any]:
     overview = storage_service.storage_overview()
     catalog = storage_service.storage_dataset_catalog()
     schema_packet = storage_service.storage_schema_validation_dry_run_packet(
+        payload_safe={"source": "storage_contract", "external_sources_allowed": False}
+    )
+    schema_acceptance_packet = storage_service.storage_schema_validation_acceptance_packet(
         payload_safe={"source": "storage_contract", "external_sources_allowed": False}
     )
     manifest_packet = storage_service.storage_dataset_version_manifest_dry_run_packet(
@@ -242,6 +246,23 @@ def build_contract() -> dict[str, Any]:
             "Schema validation dry-run must read schema metadata only and must not write Parquet or execute migration.",
         ),
         _row(
+            "schema_validation_acceptance_writes_no_parquet",
+            schema_acceptance_packet.get("schema_version") == "command_center_3_storage_schema_validation_acceptance.v1"
+            and schema_acceptance_packet.get("status")
+            in {"schema_acceptance_passed_all_local_datasets", "schema_acceptance_partial_or_blocked"}
+            and schema_acceptance_packet.get("dataset_count") == len(canonical_datasets)
+            and len(_list(schema_acceptance_packet.get("rows"))) == len(canonical_datasets)
+            and schema_acceptance_packet.get("post_acceptance_writes_parquet") is False
+            and schema_acceptance_packet.get("post_acceptance_reads_row_payloads") is False
+            and schema_acceptance_packet.get("post_acceptance_reads_env_files") is False
+            and schema_acceptance_packet.get("schema_migration_executed") is False
+            and schema_acceptance_packet.get("production_storage_complete") is False
+            and _flag_false(schema_acceptance_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and schema_acceptance_packet.get("does_not_execute_trades") is True
+            and schema_acceptance_packet.get("does_not_modify_strategy_action") is True,
+            "Schema validation acceptance may record physical schema metadata acceptance rows, but it must not read payloads, write Parquet, execute migration, call providers, trade, or complete production storage.",
+        ),
+        _row(
             "partition_migration_dry_run_writes_no_parquet",
             partition_packet.get("schema_version") == "command_center_3_storage_partition_migration_dry_run.v1"
             and partition_packet.get("status") == "dry_run_completed"
@@ -332,6 +353,10 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_execute_trades") is True for row in task_rows.values())
             and all(row.get("does_not_modify_strategy_action") is True for row in task_rows.values())
             and task_rows["run_storage_schema_validation_dry_run"].get("writes_parquet_on_post") is False
+            and task_rows["run_storage_schema_validation_acceptance"].get("writes_parquet_on_post") is False
+            and task_rows["run_storage_schema_validation_acceptance"].get("reads_row_payloads") is False
+            and task_rows["run_storage_schema_validation_acceptance"].get("schema_migration_executed") is False
+            and task_rows["run_storage_schema_validation_acceptance"].get("production_storage_complete") is False
             and task_rows["run_storage_dataset_version_manifest_dry_run"].get("writes_manifest_on_post") is False
             and task_rows["run_storage_dataset_version_manifest_dry_run"].get("manifest_write_executed") is False
             and task_rows["run_storage_dataset_version_manifest_write"].get("writes_manifest_on_post") is True
@@ -414,6 +439,7 @@ def build_contract() -> dict[str, Any]:
             "dataset_version_manifest_dry_run_would_change_count": manifest_packet.get("would_change_count"),
             "duckdb_query_service_status": duckdb_policy.get("status"),
             "schema_validation_status": schema_packet.get("status"),
+            "schema_validation_acceptance_status": schema_acceptance_packet.get("status"),
             "partition_migration_status": partition_packet.get("status"),
             "compaction_status": compaction_packet.get("status"),
             "cache_ttl_status": ttl_packet.get("status"),

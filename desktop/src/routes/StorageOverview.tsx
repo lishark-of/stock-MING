@@ -11,6 +11,7 @@ import {
   postStorageDatasetVersionManifestDryRun,
   postStorageDatasetVersionManifestWrite,
   postStoragePartitionMigrationDryRun,
+  postStorageSchemaValidationAcceptance,
   postStorageSchemaValidationDryRun,
   type StorageQueryParams,
   type TaskCreationEnvelope
@@ -81,6 +82,8 @@ export default function StorageOverview() {
   const [dryRunReceipt, setDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [schemaValidationTaskId, setSchemaValidationTaskId] = useState("");
   const [schemaValidationReceipt, setSchemaValidationReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [schemaAcceptanceTaskId, setSchemaAcceptanceTaskId] = useState("");
+  const [schemaAcceptanceReceipt, setSchemaAcceptanceReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [manifestDryRunTaskId, setManifestDryRunTaskId] = useState("");
   const [manifestDryRunReceipt, setManifestDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [manifestWriteTaskId, setManifestWriteTaskId] = useState("");
@@ -144,6 +147,11 @@ export default function StorageOverview() {
     void postStorageSchemaValidationDryRun({ source: "storage_overview_button" }).then((res) => {
       setSchemaValidationReceipt(res);
       if (res.ok) setSchemaValidationTaskId(res.data.task_id);
+    });
+  const launchSchemaValidationAcceptance = () =>
+    void postStorageSchemaValidationAcceptance({ source: "storage_overview_button" }).then((res) => {
+      setSchemaAcceptanceReceipt(res);
+      if (res.ok) setSchemaAcceptanceTaskId(res.data.task_id);
     });
   const launchManifestDryRun = () =>
     void postStorageDatasetVersionManifestDryRun({ source: "storage_overview_button" }).then((res) => {
@@ -591,13 +599,18 @@ export default function StorageOverview() {
         <p>physical validation done / migrations executed: {String(schemaMigration.physical_validation_done_count ?? 0)} / {String(schemaMigration.migration_executed_count ?? 0)}</p>
         <p>cache_get_writes_files / physical_validation_reads_payloads: {String(schemaMigration.cache_get_writes_files ?? false)} / {String(schemaMigration.physical_validation_reads_payloads ?? false)}</p>
         <p>manual_migration_task_required: {String(schemaMigration.manual_migration_task_required ?? true)}</p>
+        <p>schema_validation_acceptance_route: {String(productionReadiness.schema_validation_acceptance_route ?? "POST /api/storage/schema-validation/acceptance")}</p>
+        <p>acceptance writes_parquet / reads_row_payloads: {String(productionReadiness.schema_validation_acceptance_writes_parquet ?? false)} / {String(productionReadiness.schema_validation_acceptance_reads_row_payloads ?? false)}</p>
         <p>status_counts: {JSON.stringify(schemaMigrationStatusCounts)}</p>
         <div className="actions">
           <button onClick={launchSchemaValidationDryRun}>运行 schema validation dry-run</button>
+          <button onClick={launchSchemaValidationAcceptance}>验收 schema metadata</button>
           <button onClick={launchPartitionMigrationDryRun}>生成 partition migration dry-run</button>
         </div>
         <TaskLaunchReceipt receipt={schemaValidationReceipt} />
         <TaskStatusPanel taskId={schemaValidationTaskId} onSuccess={refreshStorage} />
+        <TaskLaunchReceipt receipt={schemaAcceptanceReceipt} />
+        <TaskStatusPanel taskId={schemaAcceptanceTaskId} onSuccess={refreshStorage} />
         <TaskLaunchReceipt receipt={partitionDryRunReceipt} />
         <TaskStatusPanel taskId={partitionDryRunTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={schemaMigrationRows} />

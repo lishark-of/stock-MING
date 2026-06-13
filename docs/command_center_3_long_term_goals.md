@@ -371,6 +371,7 @@ Add factor universe research pipeline
 - `POST /api/storage/dataset-version-manifest/dry-run` now creates a button-gated local task and packet that proposes `_dataset_versions.json` entries from canonical schema contracts without writing the manifest, reading Parquet row payloads, writing Parquet, calling providers, or claiming production storage completion.
 - `POST /api/storage/dataset-version-manifest/write` now creates or updates the local ignored `_dataset_versions.json` only after explicit confirmation, then reuses the read-only evidence audit to verify manifest rows. It does not write Parquet, read Parquet row payloads, call providers, execute trades, or mark production storage complete.
 - `POST /api/storage/schema-validation/dry-run` now creates a local task and packet that reads Parquet schema metadata only, compares physical columns with canonical schema contracts, and reports `schema_validated` / `schema_mismatch` / `missing_dataset` before any migration.
+- `POST /api/storage/schema-validation/acceptance` now records button-gated physical schema metadata acceptance rows for local Parquet datasets. It can mark individual datasets as accepted for later manifest promotion / partition migration, but still does not write Parquet, read row payloads, execute migration, call providers, or mark production storage complete.
 - `POST /api/storage/partition-migration/dry-run` now creates a local task and packet that builds per-dataset partition migration plans from schema validation and partition contracts, without reading row payloads or writing partitioned Parquet.
 - `POST /api/storage/compaction/dry-run` now creates a local task and packet that lists Parquet compaction ready/not-needed/missing rows without reading row payloads or rewriting Parquet.
 - `POST /api/storage/cache-ttl/dry-run` now creates a local task and packet that lists fresh/stale/missing TTL states and refresh recommendations without refreshing providers or writing Parquet.
@@ -386,7 +387,7 @@ Add factor universe research pipeline
 
 - Production schema migration execution.
 - Physical dataset version manifest writing and validation beyond the read-only version policy matrix and read-only manifest evidence audit.
-- Manifest writer is button-gated and local-only, but reviewer approval workflow, physical schema validation dependency, and production promotion rules remain pending.
+- Manifest writer is button-gated and local-only, but reviewer approval workflow, schema acceptance promotion rules, and production promotion rules remain pending.
 - Manifest validation currently proves local schema contract version rows, not physical Parquet schema compatibility or production dataset migration completion.
 - Physical partition migration execution.
 - Physical compaction execution beyond the button-gated dry-run.
@@ -416,6 +417,7 @@ Add factor universe research pipeline
 - Dataset version manifest dry-run is button-gated, creates only a local task/packet, proposes manifest rows, keeps `manifest_write_executed=false`, `post_dry_run_writes_manifest=false`, `post_dry_run_writes_parquet=false`, `post_dry_run_reads_parquet_payloads=false`, and requires a separate approved writer before any `_dataset_versions.json` change.
 - Dataset version manifest write is button-gated, requires `confirm_manifest_write=true`, writes only `_dataset_versions.json`, keeps `writes_parquet=false`, `reads_parquet_payloads=false`, `external_calls_triggered=false`, and still keeps `production_storage_complete=false`.
 - Schema validation dry-run is button-gated, reads no row payload, writes no Parquet, and records missing/mismatch/validated rows before any migration.
+- Schema validation acceptance is button-gated, reads only Parquet schema metadata, writes only a local SQLite packet, keeps `post_acceptance_writes_parquet=false`, `post_acceptance_reads_row_payloads=false`, `schema_migration_executed=false`, and still keeps `production_storage_complete=false`.
 - Partition migration dry-run is button-gated, writes no partitioned Parquet, and records ready/blocked/missing rows before any partition writer task.
 - Compaction dry-run is button-gated, writes no Parquet, reads no row payload, and records ready/not-needed/missing rows before any physical compaction task.
 - Cache TTL dry-run is button-gated, calls no providers, writes no Parquet, and records fresh/stale/missing refresh recommendations before any refresh task.

@@ -16,6 +16,7 @@ PARQUET_ROOT = PROJECT_ROOT / ".stock_ming_3" / "parquet"
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup_dry_run_packet"
 SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validation_dry_run_packet"
+SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY = "command_center_3_storage_schema_validation_acceptance_packet"
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
@@ -1292,6 +1293,133 @@ def run_storage_schema_validation_dry_run_task(payload: Any = None) -> dict[str,
     ) or task
 
 
+def storage_schema_validation_acceptance_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    dry_run = storage_schema_validation_dry_run_packet(task_id=task_id, payload_safe=payload_safe)
+    rows = []
+    for row in dry_run["rows"]:
+        accepted = row.get("validation_status") == "schema_validated" and row.get("validation_passed") is True
+        rows.append(
+            {
+                **row,
+                "acceptance_status": "accepted_physical_schema" if accepted else "acceptance_blocked",
+                "physical_schema_acceptance_done": bool(row.get("physical_validation_done")),
+                "physical_schema_acceptance_passed": bool(accepted),
+                "accepted_for_manifest_promotion": bool(accepted),
+                "accepted_for_partition_migration": bool(accepted),
+                "acceptance_reads_row_payloads": False,
+                "acceptance_writes_parquet": False,
+                "schema_migration_executed": False,
+                "production_storage_complete": False,
+            }
+        )
+    accepted_count = sum(1 for row in rows if row.get("physical_schema_acceptance_passed"))
+    blocked_count = len(rows) - accepted_count
+    status = "schema_acceptance_passed_all_local_datasets" if accepted_count == len(rows) else "schema_acceptance_partial_or_blocked"
+    return {
+        "schema_version": "command_center_3_storage_schema_validation_acceptance.v1",
+        "packet_key": SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_schema_metadata_acceptance",
+        "scope": "physical_schema_metadata_acceptance_before_migration",
+        "dataset_count": len(rows),
+        "accepted_dataset_count": accepted_count,
+        "blocked_dataset_count": blocked_count,
+        "missing_dataset_count": int(dry_run.get("missing_dataset_count") or 0),
+        "schema_mismatch_count": int(dry_run.get("schema_mismatch_count") or 0),
+        "read_failed_count": int(dry_run.get("read_failed_count") or 0),
+        "dependency_missing_count": int(dry_run.get("dependency_missing_count") or 0),
+        "physical_validation_done_count": int(dry_run.get("physical_validation_done_count") or 0),
+        "status_counts": _count_values(row.get("acceptance_status") for row in rows),
+        "rows": rows,
+        "source_dry_run_packet_key": SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY,
+        "source_dry_run_status": dry_run.get("status"),
+        "request_params_safe": {
+            "source": (payload_safe or {}).get("source") or "storage_page_button",
+            "acceptance": True,
+            "external_sources_allowed": False,
+            "write_parquet_allowed": False,
+        },
+        "cache_get_writes_files": False,
+        "post_acceptance_writes_parquet": False,
+        "post_acceptance_reads_row_payloads": False,
+        "post_acceptance_reads_env_files": False,
+        "schema_migration_executed": False,
+        "production_storage_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_schema_validation_acceptance",
+            endpoint="POST /api/storage/schema-validation/acceptance",
+            status=status,
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "POST /api/storage/schema-validation/acceptance 只验收本地 Parquet schema metadata；不会读取行 payload。",
+            "schema validation acceptance 不写 Parquet、不执行 migration、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+
+
+def run_storage_schema_validation_acceptance_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "acceptance": True,
+        "external_sources_allowed": False,
+        "write_parquet_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_schema_validation_acceptance",
+        output_packet_key=SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_schema_validation_acceptance_queued",
+        warnings=[
+            "storage schema validation acceptance 只读取本地 Parquet schema metadata；不会读取行 payload、不会写 Parquet、不会调用外部源。",
+            "本任务只确认本地物理 schema metadata 验收结果；不执行 schema migration、不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="accepting_storage_schema_metadata",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_schema_validation_acceptance_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_schema_validation_acceptance_storage_write_failed",
+            error_message_safe="storage_schema_validation_acceptance_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_schema_validation_acceptance_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_schema_validation_acceptance_completed",
+        call_ledger=packet["call_ledger"],
+        warning="storage_schema_validation_acceptance_completed_no_write_no_external_call",
+    ) or task
+
+
 def _partition_migration_dry_run_row(dataset: str) -> dict[str, Any]:
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
     partition_plan = _partition_plan(dataset)
@@ -1927,6 +2055,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "external_calls_triggered": False,
         },
         {
+            "control": "schema_validation_acceptance",
+            "status": "button_gated_ready",
+            "current_coverage": "POST schema validation acceptance records physical schema metadata acceptance rows without reading payloads or writing Parquet.",
+            "next_action": "use acceptance rows as a dependency for later manifest promotion, partition migration, and schema migration execution.",
+            "external_calls_triggered": False,
+        },
+        {
             "control": "partition_migration_dry_run",
             "status": "button_gated_ready",
             "current_coverage": "POST partition migration dry-run builds per-dataset partition plans from schema validation and partition contracts without writing partitioned Parquet.",
@@ -2496,6 +2631,12 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "schema_validation_dry_run_button_gated": True,
         "schema_validation_dry_run_writes_parquet": False,
         "schema_validation_dry_run_reads_row_payloads": False,
+        "schema_validation_acceptance_route": "POST /api/storage/schema-validation/acceptance",
+        "schema_validation_acceptance_button_gated": True,
+        "schema_validation_acceptance_writes_parquet": False,
+        "schema_validation_acceptance_reads_row_payloads": False,
+        "schema_validation_acceptance_executes_migration": False,
+        "schema_validation_acceptance_external_calls": False,
         "duckdb_query_service_policy": "read_only_service_wrappers_local_parquet_only",
         "duckdb_query_service_status": duckdb_query_service["status"],
         "duckdb_query_service_dataset_count": duckdb_query_service["dataset_count"],

@@ -62,6 +62,12 @@ def run_storage_schema_validation_dry_run(payload: dict[str, Any] | None = None)
     return task_envelope(task)
 
 
+@router.post("/schema-validation/acceptance")
+def run_storage_schema_validation_acceptance(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_schema_validation_acceptance_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/dataset-version-manifest/dry-run")
 def run_storage_dataset_version_manifest_dry_run(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_dataset_version_manifest_dry_run_task(payload)

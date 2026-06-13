@@ -40,6 +40,11 @@ def _local_ledger_boundary() -> dict[str, Any]:
 def read_factor_quant_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_factor_quant_cache())
     now = _now_iso()
+    if packet.get("mode") == "cache_only":
+        packet["cache_mode"] = "cache_only"
+        packet["mode"] = "light"
+    packet["cache_only"] = True
+    packet["read_only"] = True
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
     packet, universe_rank_ledger = _attach_factor_universe_local_rank_zscore_dry_run(packet, now)
