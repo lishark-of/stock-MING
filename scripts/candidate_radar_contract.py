@@ -130,6 +130,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("candidate_radar_promotion_blocker_rows"))
         if isinstance(row, dict)
     }
+    quick_receipt = _dict(cache_packet.get("quick_scan_execution_receipt"))
+    quick_receipt_rows = {
+        str(row.get("receipt_key") or ""): row
+        for row in _list(cache_packet.get("quick_scan_execution_receipt_rows"))
+        if isinstance(row, dict)
+    }
     result_delta = _dict(cache_packet.get("result_delta_clarity_contract"))
     priority_explanation = _dict(cache_packet.get("candidate_priority_explanation_contract"))
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
@@ -258,6 +264,46 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_promotion_blocker_audit" in candidate_frontend
             and "candidate_radar_promotion_blocker_rows" in candidate_frontend,
             "Promotion blocker audit must keep Candidate Radar production replacement blocked until provider, worker, browser QA, freshness, and legacy retirement evidence are real.",
+        ),
+        _row(
+            "quick_scan_receipt_is_local_visible_not_replacement",
+            quick_receipt.get("schema_version") == "candidate_radar_quick_scan_receipt.v1"
+            and quick_receipt.get("status") == "quick_scan_receipt_ready_local_only"
+            and quick_receipt.get("scope") == "local_candidate_radar_quick_scan_receipt_not_production_replacement"
+            and quick_receipt.get("local_quick_scan_receipt_ready") is True
+            and quick_receipt.get("production_radar_replacement_complete") is False
+            and quick_receipt.get("legacy_retirement_ready") is False
+            and quick_receipt.get("legacy_fallback_required") is True
+            and quick_receipt.get("full_pool_scan_done") is False
+            and quick_receipt.get("deep_scan_done") is False
+            and quick_receipt.get("provider_backed_acceptance_done") is False
+            and quick_receipt.get("browser_performance_trace_done") is False
+            and quick_receipt.get("browser_visual_delta_qa_done") is False
+            and int(quick_receipt.get("row_count") or 0) >= 10
+            and int(quick_receipt.get("production_blocker_count") or 0) > 0
+            and all(
+                _dict(quick_receipt_rows.get(key)).get("local_contract_passed") is True
+                for key in {
+                    "scan_mode_visible",
+                    "candidate_count_visible",
+                    "runtime_budget_visible",
+                    "provider_gap_visible",
+                    "full_deep_provider_blockers_visible",
+                    "trade_action_isolation",
+                }
+            )
+            and _dict(quick_receipt_rows.get("full_deep_provider_blockers_visible")).get("production_blocker") is True
+            and policy.get("quick_scan_receipt_contract_is_local") is True
+            and policy.get("quick_scan_receipt_is_not_production_replacement") is True
+            and policy.get("quick_scan_receipt_requires_full_deep_provider_browser_evidence") is True
+            and _flag_false(quick_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and quick_receipt.get("does_not_execute_trades") is True
+            and quick_receipt.get("does_not_modify_strategy_action") is True
+            and quick_receipt.get("candidate_is_not_buy_instruction") is True
+            and "quick_scan_execution_receipt" in candidate_frontend
+            and "quick_scan_execution_receipt_rows" in candidate_frontend
+            and "快扫执行回执" in candidate_frontend,
+            "Quick-scan receipt must make local scan coverage, limits, gaps, and production blockers visible without becoming production replacement evidence.",
         ),
         _row(
             "result_delta_clarity_is_local_not_visual_qa",
@@ -427,6 +473,7 @@ def build_contract() -> dict[str, Any]:
             and "local_candidate_radar_contract_no_provider_execution" in this_script
             and "production_radar_replacement_complete" in this_script
             and "legacy_retirement_ready" in this_script
+            and "candidate_radar_quick_scan_receipt.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -475,6 +522,8 @@ def build_contract() -> dict[str, Any]:
             "replacement_gap_blocking_count": triage.get("blocking_gap_count"),
             "promotion_audit_status": promotion_audit.get("status"),
             "promotion_blocking_count": promotion_audit.get("blocking_promotion_count"),
+            "quick_scan_receipt_status": quick_receipt.get("status"),
+            "quick_scan_receipt_production_blocker_count": quick_receipt.get("production_blocker_count"),
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),
             "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),

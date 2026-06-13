@@ -1669,6 +1669,238 @@ def _fast_scan_runtime_budget_contract(
     }
 
 
+def _quick_scan_receipt_row(
+    receipt_key: str,
+    status: str,
+    *,
+    local_contract_passed: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "receipt_key": receipt_key,
+        "status": status,
+        "local_contract_passed": bool(local_contract_passed),
+        "production_blocker": bool(production_blocker),
+        "user_visible": True,
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _quick_scan_receipt_rows(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+    scan_summary = _as_dict(packet.get("scan_execution_summary"))
+    coverage = _as_dict(packet.get("scan_coverage"))
+    coverage_detail = _as_dict(packet.get("coverage_detail_summary"))
+    runtime_budget = _as_dict(packet.get("fast_scan_runtime_budget_contract"))
+    parity = _as_dict(packet.get("legacy_parity_inventory"))
+    result_delta = _as_dict(packet.get("result_delta_clarity_contract"))
+    local_pool = _as_dict(packet.get("local_candidate_pool_audit"))
+    freshness = _as_dict(packet.get("freshness_state"))
+    full_pool_plan = _as_dict(packet.get("full_pool_scan_plan"))
+    deep_scan_plan = _as_dict(packet.get("deep_scan_plan"))
+    call_ledger = _as_list(packet.get("call_ledger"))
+    candidate_rows = _as_list(packet.get("candidate_rows"))
+    scan_mode = str(packet.get("scan_mode") or scan_summary.get("scan_mode") or "cache_only")
+    freshness_state = str(freshness.get("state") or scan_summary.get("freshness_state") or "unknown").lower()
+    freshness_ready = freshness.get("source") != "missing" and freshness_state not in {
+        "stale",
+        "expired",
+        "historical",
+        "unknown",
+    }
+    provider_gap_count = int(scan_summary.get("provider_gap_count") or 0)
+    if not provider_gap_count:
+        provider_gap_count = int(coverage_detail.get("provider_blocked_group_count") or 0) + int(
+            coverage_detail.get("stale_input_group_count") or 0
+        ) + int(coverage_detail.get("missing_provider_data_group_count") or 0)
+    legacy_gap_count = int(coverage.get("missing_signal_group_count") or parity.get("gap_or_future_count") or 0)
+    full_pool_done = bool(full_pool_plan.get("full_pool_scan_done") is True or scan_summary.get("full_pool_scan_done") is True)
+    deep_scan_done = bool(deep_scan_plan.get("deep_scan_done") is True or scan_summary.get("deep_scan_done") is True)
+    local_pool_input_count = local_pool.get("input_candidate_count")
+    local_pool_truncated_count = int(local_pool.get("truncated_candidate_count") or 0)
+    return [
+        _quick_scan_receipt_row(
+            "scan_mode_visible",
+            "passed" if scan_mode else "missing",
+            local_contract_passed=bool(scan_mode),
+            production_blocker=False,
+            evidence=f"scan_mode={scan_mode}; scan_family={scan_summary.get('scan_family') or 'missing'}",
+            next_action="Keep scan mode and scan family visible before interpreting candidate rows.",
+        ),
+        _quick_scan_receipt_row(
+            "task_or_cache_receipt_visible",
+            "passed" if scan_summary and call_ledger else "missing_receipt",
+            local_contract_passed=bool(scan_summary and call_ledger),
+            production_blocker=False,
+            evidence=f"call_ledger_count={len(call_ledger)}; writes_sqlite_packet={scan_summary.get('writes_sqlite_packet')}",
+            next_action="Use the visible call ledger and scan summary as the local receipt for cache reads or button-gated scans.",
+        ),
+        _quick_scan_receipt_row(
+            "candidate_count_visible",
+            "passed",
+            local_contract_passed=True,
+            production_blocker=False,
+            evidence=f"candidate_rows={len(candidate_rows)}; input={scan_summary.get('candidate_input_count')}; display_limit={scan_summary.get('candidate_display_limit')}; truncated={scan_summary.get('candidate_display_truncated_count')}",
+            next_action="Keep displayed count, input count, display limit, and truncation visible to avoid hiding scan shrinkage.",
+        ),
+        _quick_scan_receipt_row(
+            "runtime_budget_visible",
+            "passed" if runtime_budget.get("schema_version") == "candidate_radar_fast_scan_runtime_budget.v1" else "missing",
+            local_contract_passed=runtime_budget.get("schema_version") == "candidate_radar_fast_scan_runtime_budget.v1",
+            production_blocker=False,
+            evidence=f"large_universe_worker_required={runtime_budget.get('large_universe_worker_required')}; browser_performance_trace_done={runtime_budget.get('browser_performance_trace_done')}",
+            next_action="Keep sync display caps and worker boundary visible; run browser traces before production replacement.",
+        ),
+        _quick_scan_receipt_row(
+            "legacy_signal_coverage_visible",
+            "gap_reported" if legacy_gap_count else "passed",
+            local_contract_passed=True,
+            production_blocker=legacy_gap_count > 0,
+            evidence=f"mapped={coverage.get('mapped_signal_group_count')}; missing_or_future={legacy_gap_count}",
+            next_action="Map remaining legacy signal groups or keep fallback visible before claiming no feature loss.",
+        ),
+        _quick_scan_receipt_row(
+            "provider_gap_visible",
+            "gap_reported" if provider_gap_count else "passed",
+            local_contract_passed=True,
+            production_blocker=provider_gap_count > 0,
+            evidence=f"provider_gap_count={provider_gap_count}",
+            next_action="Validate provider-backed parity through explicit future tasks; do not refresh providers on render.",
+        ),
+        _quick_scan_receipt_row(
+            "freshness_boundary_visible",
+            "passed" if freshness_ready else "research_only_reported",
+            local_contract_passed=True,
+            production_blocker=not freshness_ready,
+            evidence=f"freshness={freshness.get('source') or 'missing'}:{freshness_state}",
+            next_action="Require trading-calendar freshness before treating radar rows as current evidence.",
+        ),
+        _quick_scan_receipt_row(
+            "local_pool_limit_visible",
+            "capped_visible" if local_pool_truncated_count else "passed" if local_pool else "not_applicable",
+            local_contract_passed=True,
+            production_blocker=False,
+            evidence=f"local_pool_input={local_pool_input_count}; truncated={local_pool_truncated_count}; input_limit={FAST_SCAN_LOCAL_POOL_INPUT_LIMIT}",
+            next_action="Keep watchlist/custom-pool normalization and truncation visible for non-blocking local scans.",
+        ),
+        _quick_scan_receipt_row(
+            "result_delta_visible",
+            "passed" if result_delta.get("schema_version") == "candidate_radar_result_delta_clarity.v1" else "missing",
+            local_contract_passed=result_delta.get("schema_version") == "candidate_radar_result_delta_clarity.v1",
+            production_blocker=False,
+            evidence=f"previous_cache_diff_done={result_delta.get('previous_cache_diff_done')}; browser_visual_delta_qa_done={result_delta.get('browser_visual_delta_qa_done')}",
+            next_action="Keep previous-cache diff visible when available; browser visual QA remains a separate acceptance step.",
+        ),
+        _quick_scan_receipt_row(
+            "full_deep_provider_blockers_visible",
+            "pending_production_acceptance" if not (full_pool_done and deep_scan_done and provider_gap_count == 0) else "passed",
+            local_contract_passed=True,
+            production_blocker=not (full_pool_done and deep_scan_done and provider_gap_count == 0),
+            evidence=f"full_pool_scan_done={full_pool_done}; deep_scan_done={deep_scan_done}; provider_gap_count={provider_gap_count}",
+            next_action="Complete worker-backed full-pool/deep-scan and provider-backed acceptance before retiring legacy radar.",
+        ),
+        _quick_scan_receipt_row(
+            "trade_action_isolation",
+            "passed"
+            if packet.get("does_not_execute_trades") is True and packet.get("does_not_modify_strategy_action") is True
+            else "blocked",
+            local_contract_passed=packet.get("does_not_execute_trades") is True
+            and packet.get("does_not_modify_strategy_action") is True,
+            production_blocker=False,
+            evidence="Candidate radar remains research-only and does not mutate action, holdings, or orders.",
+            next_action="Keep radar candidates separate from strategy action and real-trading paths.",
+        ),
+    ]
+
+
+def _attach_quick_scan_receipt_contract(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    rows = _quick_scan_receipt_rows(view)
+    local_blockers = [row["receipt_key"] for row in rows if not row.get("local_contract_passed")]
+    production_blockers = [row["receipt_key"] for row in rows if row.get("production_blocker")]
+    scan_summary = _as_dict(view.get("scan_execution_summary"))
+    coverage_detail = _as_dict(view.get("coverage_detail_summary"))
+    local_pool = _as_dict(view.get("local_candidate_pool_audit"))
+    freshness = _as_dict(view.get("freshness_state"))
+    contract = {
+        "schema_version": "candidate_radar_quick_scan_receipt.v1",
+        "status": "quick_scan_receipt_ready_local_only" if not local_blockers else "quick_scan_receipt_blocked",
+        "scope": "local_candidate_radar_quick_scan_receipt_not_production_replacement",
+        "ltg": "LTG-13",
+        "scan_mode": view.get("scan_mode") or scan_summary.get("scan_mode"),
+        "scan_family": scan_summary.get("scan_family"),
+        "cache_source": view.get("cache_source") or scan_summary.get("cache_source"),
+        "requested_scan_mode": scan_summary.get("requested_scan_mode"),
+        "unsupported_scan_mode_fallback": bool(scan_summary.get("unsupported_scan_mode_fallback")),
+        "candidate_input_count": int(scan_summary.get("candidate_input_count") or coverage_detail.get("candidate_input_count") or 0),
+        "candidate_row_count": len(_as_list(view.get("candidate_rows"))),
+        "candidate_display_limit": int(
+            scan_summary.get("candidate_display_limit") or coverage_detail.get("candidate_display_limit") or FAST_SCAN_DISPLAY_CANDIDATE_LIMIT
+        ),
+        "candidate_display_truncated_count": int(
+            scan_summary.get("candidate_display_truncated_count")
+            or coverage_detail.get("candidate_display_truncated_count")
+            or 0
+        ),
+        "local_pool_input_candidate_count": local_pool.get("input_candidate_count"),
+        "local_pool_truncated_candidate_count": int(local_pool.get("truncated_candidate_count") or 0),
+        "mapped_signal_group_count": int(_as_dict(view.get("scan_coverage")).get("mapped_signal_group_count") or 0),
+        "missing_signal_group_count": int(_as_dict(view.get("scan_coverage")).get("missing_signal_group_count") or 0),
+        "provider_gap_count": int(scan_summary.get("provider_gap_count") or 0),
+        "degraded_mode_active_count": int(scan_summary.get("degraded_mode_active_count") or 0),
+        "freshness_state": freshness.get("state") or scan_summary.get("freshness_state") or "unknown",
+        "freshness_source": freshness.get("source") or scan_summary.get("freshness_source") or "missing",
+        "writes_sqlite_packet": bool(scan_summary.get("writes_sqlite_packet") is True),
+        "cache_view_only": bool(scan_summary.get("cache_view_only") is True),
+        "local_quick_scan_receipt_ready": not local_blockers,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "browser_performance_trace_done": False,
+        "browser_visual_delta_qa_done": False,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This receipt is local/cache-only. It makes fast-scan coverage, limits, gaps, and blockers visible; it is not full-pool, deep-scan, provider-backed, browser-performance, or production replacement evidence.",
+    }
+    counts = dict(_as_dict(view.get("counts")))
+    counts["quick_scan_receipt_row_count"] = contract["row_count"]
+    counts["quick_scan_receipt_local_blocker_count"] = contract["local_blocker_count"]
+    counts["quick_scan_receipt_production_blocker_count"] = contract["production_blocker_count"]
+    counts["quick_scan_receipt_provider_gap_count"] = contract["provider_gap_count"]
+    counts["quick_scan_receipt_missing_signal_group_count"] = contract["missing_signal_group_count"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["quick_scan_receipt_contract_is_local"] = True
+    policy["quick_scan_receipt_is_not_production_replacement"] = True
+    policy["quick_scan_receipt_requires_full_deep_provider_browser_evidence"] = True
+    view["counts"] = counts
+    view["policy"] = policy
+    view["quick_scan_execution_receipt"] = contract
+    view["quick_scan_execution_receipt_rows"] = rows
+    return view
+
+
 def _candidate_browser_qa_runbook_row(
     phase: str,
     status: str,
@@ -4307,6 +4539,7 @@ def _build_candidate_radar_packet(
     }
     if not candidate_rows:
         packet["warnings"].append("当前没有可展示候选；3.0 cache 页不会自动刷新或扫描。")
+    packet = _attach_quick_scan_receipt_contract(packet)
     packet = _attach_no_feature_loss_acceptance_contract(packet)
     return _json_safe(packet)
 
@@ -4386,6 +4619,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["does_not_execute_trades"] = True
     view["does_not_modify_strategy_action"] = True
     view["contains_secret"] = False
+    view = _attach_quick_scan_receipt_contract(view)
     view = _attach_no_feature_loss_acceptance_contract(view)
     return _json_safe(view)
 

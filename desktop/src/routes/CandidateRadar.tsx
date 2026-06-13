@@ -76,6 +76,7 @@ export default function CandidateRadar() {
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
   const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
   const scanExecutionSummary = (cache.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
+  const quickScanReceipt = (cache.quick_scan_execution_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
@@ -102,6 +103,7 @@ export default function CandidateRadar() {
   const legacyOutputRows = rows(cache.legacy_output_contract_rows);
   const scanModeRows = rows(cache.scan_mode_status_rows);
   const scanAcceptanceRows = rows(cache.scan_acceptance_rows);
+  const quickScanReceiptRows = rows(cache.quick_scan_execution_receipt_rows);
   const fastScanRuntimeBudgetRows = rows(cache.fast_scan_runtime_budget_rows);
   const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
@@ -149,6 +151,10 @@ export default function CandidateRadar() {
           { label: "待验证", value: counts.verify_count as number | undefined },
           { label: "scan mode", value: String(cache.scan_mode ?? "--") },
           { label: "scan family", value: String(scanExecutionSummary.scan_family ?? "--") },
+          { label: "quick receipt", value: String(quickScanReceipt.status ?? "missing"), tone: quickScanReceipt.local_quick_scan_receipt_ready === true ? "good" : "warn" },
+          { label: "receipt blockers", value: counts.quick_scan_receipt_production_blocker_count as number | undefined, tone: Number(counts.quick_scan_receipt_production_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "receipt provider", value: counts.quick_scan_receipt_provider_gap_count as number | undefined, tone: Number(counts.quick_scan_receipt_provider_gap_count ?? 0) ? "warn" : "good" },
+          { label: "receipt rows", value: counts.quick_scan_receipt_row_count as number | undefined },
           { label: "fast readiness", value: String(fastScanReadinessAudit.status ?? "missing"), tone: fastScanReadinessAudit.local_fast_scan_ready === true ? "good" : "warn" },
           { label: "fast blockers", value: counts.fast_scan_readiness_blocker_count as number | undefined, tone: Number(counts.fast_scan_readiness_blocker_count ?? 0) ? "bad" : "good" },
           { label: "no-loss QA", value: String(noFeatureLossAcceptance.status ?? "missing"), tone: noFeatureLossAcceptance.local_no_feature_loss_contract_ready === true ? "good" : "warn" },
@@ -283,6 +289,17 @@ export default function CandidateRadar() {
         <p>scan_acceptance_rows 把 provider gap、freshness、local pool、full-pool 和交易隔离逐项展示。</p>
         <DataLineageTable rows={objectRow(scanExecutionSummary)} />
         <DataLineageTable rows={scanAcceptanceRows} />
+      </PacketCard>
+
+      <PacketCard title="快扫执行回执" subtitle="quick_scan_execution_receipt；把本次 cache/quick/watchlist/custom scan 的覆盖、截断和阻断项集中展示" status={String(quickScanReceipt.status ?? "missing")}>
+        <p>local_quick_scan_receipt_ready: {String(quickScanReceipt.local_quick_scan_receipt_ready === true)}</p>
+        <p>scan_mode: {String(quickScanReceipt.scan_mode ?? "--")}；scan_family: {String(quickScanReceipt.scan_family ?? "--")}；writes_sqlite_packet: {String(quickScanReceipt.writes_sqlite_packet === true)}</p>
+        <p>candidate_input_count: {String(quickScanReceipt.candidate_input_count ?? 0)}；candidate_row_count: {String(quickScanReceipt.candidate_row_count ?? 0)}；truncated: {String(quickScanReceipt.candidate_display_truncated_count ?? 0)}</p>
+        <p>provider_gap_count: {String(quickScanReceipt.provider_gap_count ?? 0)}；missing_signal_group_count: {String(quickScanReceipt.missing_signal_group_count ?? 0)}；freshness: {String(quickScanReceipt.freshness_source ?? "missing")}:{String(quickScanReceipt.freshness_state ?? "unknown")}</p>
+        <p>production_radar_replacement_complete: {String(quickScanReceipt.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(quickScanReceipt.legacy_retirement_ready === true)}；provider_backed_acceptance_done: {String(quickScanReceipt.provider_backed_acceptance_done === true)}</p>
+        <p>这个回执是本地可见性证明：它说明快扫没有静默降能、没有外联、没有改 action；它不等于 full-pool、deep-scan、provider-backed 或浏览器性能验收完成。</p>
+        <DataLineageTable rows={objectRow(quickScanReceipt)} />
+        <DataLineageTable rows={quickScanReceiptRows} />
       </PacketCard>
 
       <PacketCard title="快扫运行预算" subtitle="fast_scan_runtime_budget_contract；控制同步展示规模，超限必须可见并转 worker" status={String(fastScanRuntimeBudget.status ?? "missing")}>
