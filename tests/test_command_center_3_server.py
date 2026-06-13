@@ -12346,6 +12346,43 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(readiness_rows["full_pool_validation_pending"]["status"], "blocked")
         self.assertEqual(readiness_rows["frontend_read_only_boundary"]["status"], "passed")
         self.assertEqual(readiness_rows["research_trade_boundary"]["status"], "passed")
+        receipt = packet["universe_execution_readiness_receipt"]
+        self.assertEqual(receipt["schema_version"], "factor_universe_execution_readiness_receipt.v1")
+        self.assertEqual(
+            receipt["scope"],
+            "local_factor_universe_execution_readiness_receipt_no_batch_or_provider_execution",
+        )
+        self.assertTrue(receipt["local_receipt_ready"])
+        self.assertEqual(receipt["status"], "universe_execution_receipt_ready_worker_batch_pending")
+        self.assertTrue(receipt["ready_for_explicit_worker_batch_task"])
+        self.assertEqual(receipt["allowed_next_step"], "explicit_post_task_factor_universe_worker_batch_research")
+        self.assertIn("GET /api/factor-quant/cache full-pool execution", receipt["not_allowed_next_steps"])
+        self.assertIn("frontend rank/zscore calculation", receipt["not_allowed_next_steps"])
+        self.assertIn("read-plan as production completion", receipt["not_allowed_next_steps"])
+        self.assertFalse(receipt["large_universe_pipeline_done"])
+        self.assertFalse(receipt["cross_sectional_rank_zscore_done"])
+        self.assertFalse(receipt["neutralization_done"])
+        self.assertFalse(receipt["full_pool_validation_done"])
+        self.assertFalse(receipt["production_factor_universe_complete"])
+        self.assertFalse(receipt["provider_refresh_called_by_receipt"])
+        self.assertFalse(receipt["worker_batch_executed_by_receipt"])
+        self.assertFalse(receipt["cache_get_external_calls"])
+        self.assertFalse(receipt["receipt_external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called_by_receipt"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        receipt_rows = {row["criterion"]: row for row in packet["universe_execution_readiness_receipt_rows"]}
+        self.assertIn("button_gated_worker_batch_boundary", receipt_rows)
+        self.assertEqual(receipt_rows["read_plan_ready"]["status"], "passed_read_plan_ready")
+        self.assertEqual(receipt_rows["worker_task_plan_ready"]["status"], "passed_worker_plan_ready")
+        self.assertEqual(
+            receipt_rows["production_completion_evidence_ticket"]["status"],
+            "pending_worker_rank_neutralization_full_pool_evidence",
+        )
+        self.assertEqual(receipt["call_ledger"][0]["api"], "local_factor_universe_execution_readiness_receipt")
+        self.assert_local_ledger_boundary(receipt["call_ledger"][0])
         rank_zscore = packet["universe_local_rank_zscore_dry_run"]
         self.assertEqual(rank_zscore["schema_version"], "factor_universe_local_rank_zscore_dry_run.v1")
         self.assertEqual(rank_zscore["scope"], "local_factor_values_rank_zscore_dry_run_not_full_pool_validation")
@@ -12374,6 +12411,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("frontend_does_not_compute_rank_zscore", rank_rows)
         self.assertIn("trade_action_isolation", rank_rows)
         self.assertIn("local_factor_universe_rank_zscore_dry_run", {item.get("api") for item in packet["call_ledger"]})
+        self.assertIn("local_factor_universe_execution_readiness_receipt", {item.get("api") for item in packet["call_ledger"]})
         self.assertIn("local_factor_universe_research_read_plan", {item.get("api") for item in packet["call_ledger"]})
         self.assertNotIn("DROP", json.dumps(factor, ensure_ascii=False))
 

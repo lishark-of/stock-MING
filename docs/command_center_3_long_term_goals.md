@@ -329,6 +329,7 @@ Promote Factor Test Lab to research-grade metrics
 - The read-plan task is a worker/task consumption plan, not full-pool research validation.
 - Factor Quant Hub now exposes `universe_execution_readiness_audit` and `universe_execution_readiness_rows`, summarizing read-plan readiness, storage query contract consumption, worker batch execution, cross-sectional rank/zscore, neutralization, full-pool validation, frontend read-only boundaries, partial-pool boundaries, and trade isolation.
 - Factor Quant Hub now exposes `universe_local_rank_zscore_dry_run`, a local `factor_values` cross-section sufficiency and optional preview audit. It may preview rank/zscore only when enough local tickers exist per trade-date/factor group, keeps the preview research-only, and never marks full-pool/provider-backed production research complete.
+- Factor Quant Hub now exposes `universe_execution_readiness_receipt`: a local read-only receipt that says whether LTG-04 is blocked on read-plan/storage contracts, ready for a future explicit worker-batch research task, or ready for promotion evidence review. It never runs full-pool research, production rank/zscore, neutralization, provider validation, or trades.
 - `scripts/factor_universe_contract.py` is now part of the local push gate. It validates LTG-04 universe modes, local storage read-plan consumption, task catalog button gating, React read-only display, partial-pool-not-full-market-proof visibility, no batch execution, no provider/model/GitHub calls, no trades, and no action mutation while `production_factor_universe_complete=false`.
 
 ### Gaps
@@ -340,6 +341,7 @@ Promote Factor Test Lab to research-grade metrics
 - Cross-sectional rank, zscore, neutralization, result summaries, and worker-backed large-universe execution are still incomplete.
 - Local rank/zscore dry-run may remain blocked when local `factor_values` lacks enough usable tickers per trade-date/factor group; this is a sufficiency audit, not production execution.
 - `universe_execution_readiness_audit.status=read_plan_ready_execution_pending` only proves the local read-plan contract after the button task; it is not provider-backed full-market research and keeps production blockers visible.
+- `universe_execution_readiness_receipt.status=universe_execution_receipt_ready_worker_batch_pending` only means the read-plan/storage/worker-consumption boundary is ready for a future explicit worker-batch task. It does not execute that task and does not clear rank/zscore, neutralization, full-pool validation, or production completion blockers.
 - The Factor universe push-gate contract is local only; it does not run worker-backed batch research, rank/zscore, neutralization, provider-backed validation, factor combination research, or full-pool production research.
 
 ### Implementation Phases
@@ -359,6 +361,7 @@ Promote Factor Test Lab to research-grade metrics
 - Storage query read plans remain local metadata contracts until real research execution and full-pool validation are complete.
 - `universe_local_rank_zscore_dry_run` remains cache-only/read-only, keeps `metrics_are_research_only=true`, `frontend_computes_rank_zscore=false`, `cross_sectional_rank_zscore_done=false`, and `production_factor_universe_complete=false`.
 - `universe_execution_readiness_audit.production_factor_universe_complete=false` until worker-backed batch execution, rank/zscore, neutralization, result summaries, and full-pool/provider-backed validation are implemented and verified.
+- `universe_execution_readiness_receipt.ready_for_explicit_worker_batch_task=true` only after a button-gated read-plan exists, storage query contracts are consumed, worker consumption plan is visible, frontend remains read-only, and trade/action isolation holds.
 - `scripts/factor_universe_contract.py` passes in the local push gate while reporting `large_universe_pipeline_done=false`, `full_pool_validation_done=false`, `cross_sectional_rank_zscore_done=false`, `neutralization_done=false`, `factor_combination_research_done=false`, and `production_factor_universe_complete=false`.
 
 ### Forbidden
@@ -368,6 +371,7 @@ Promote Factor Test Lab to research-grade metrics
 - Do not treat partial universe samples as full-market proof.
 - Do not treat `universe_local_rank_zscore_dry_run` as real full-pool research, provider-backed validation, or trading evidence.
 - Do not treat `universe_execution_readiness_audit` as production factor-universe completion while it reports execution pending.
+- Do not treat `universe_execution_readiness_receipt.ready_for_explicit_worker_batch_task=true` as worker-backed batch execution or full-pool research completion; it only identifies the next explicit task gate.
 - Do not treat `scripts/factor_universe_contract.py` passing as worker-backed batch execution, rank/zscore, neutralization, provider-backed validation, factor combination research, full-pool research, or production Factor universe completion.
 
 ### Recommended Commit Message

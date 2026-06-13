@@ -106,6 +106,14 @@ def build_contract() -> dict[str, Any]:
         mode_rows=mode_rows,
         task_plan=read_plan,
     )
+    receipt_packet = {
+        "universe_research_contract": plan_contract,
+        "universe_research_task_plan": read_plan,
+        "universe_execution_readiness_audit": readiness,
+        "universe_execution_readiness_rows": list(readiness.get("rows") or []),
+        "universe_local_rank_zscore_dry_run": rank_zscore_dry_run,
+    }
+    execution_receipt = factor_service._factor_universe_execution_readiness_receipt(receipt_packet, now)
     readiness_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(readiness.get("rows"))
@@ -196,6 +204,31 @@ def build_contract() -> dict[str, Any]:
             "Readiness may be local-ready, but worker batch, rank/zscore, neutralization, and full-pool validation must remain production blockers.",
         ),
         _row(
+            "execution_readiness_receipt_is_local",
+            execution_receipt.get("schema_version") == "factor_universe_execution_readiness_receipt.v1"
+            and execution_receipt.get("scope") == "local_factor_universe_execution_readiness_receipt_no_batch_or_provider_execution"
+            and execution_receipt.get("local_receipt_ready") is True
+            and execution_receipt.get("ready_for_explicit_worker_batch_task") is True
+            and execution_receipt.get("allowed_next_step") == "explicit_post_task_factor_universe_worker_batch_research"
+            and execution_receipt.get("large_universe_pipeline_done") is False
+            and execution_receipt.get("cross_sectional_rank_zscore_done") is False
+            and execution_receipt.get("neutralization_done") is False
+            and execution_receipt.get("full_pool_validation_done") is False
+            and execution_receipt.get("production_factor_universe_complete") is False
+            and execution_receipt.get("provider_refresh_called_by_receipt") is False
+            and execution_receipt.get("worker_batch_executed_by_receipt") is False
+            and execution_receipt.get("receipt_external_calls_triggered") is False
+            and execution_receipt.get("tushare_called_by_receipt") is False
+            and execution_receipt.get("deepseek_called") is False
+            and execution_receipt.get("github_called") is False
+            and execution_receipt.get("does_not_execute_trades") is True
+            and execution_receipt.get("does_not_modify_strategy_action") is True
+            and "GET /api/factor-quant/cache full-pool execution" in execution_receipt.get("not_allowed_next_steps", [])
+            and "frontend rank/zscore calculation" in execution_receipt.get("not_allowed_next_steps", [])
+            and "read-plan as production completion" in execution_receipt.get("not_allowed_next_steps", []),
+            "Universe execution readiness receipt may allow the next explicit worker-batch task, but it must stay local and cannot execute batch research or promote production flags.",
+        ),
+        _row(
             "local_rank_zscore_dry_run_is_research_only",
             rank_zscore_dry_run.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
             and rank_zscore_dry_run.get("scope") == "local_factor_values_rank_zscore_dry_run_not_full_pool_validation"
@@ -242,9 +275,12 @@ def build_contract() -> dict[str, Any]:
             and "import { getFactorQuantCache, postTask" in factor_page
             and "launchTask(\"/api/factor-quant/universe-research-plan\"" in factor_page
             and "universe_execution_readiness_audit" in factor_page
+            and "universe_execution_readiness_receipt" in factor_page
             and "universe_local_rank_zscore_dry_run" in factor_page
+            and "Factor Universe 执行准入回执" in factor_page
             and "Factor Universe 本地 Rank/Zscore Dry-run" in factor_page
             and "前端不计算 rank/zscore" in factor_page
+            and "显式 worker batch" in factor_page
             and "universe_research_task_plan" in factor_page
             and "frontend_computes_rank_zscore" in factor_page
             and "page_render_starts_full_pool" in factor_page
@@ -284,6 +320,7 @@ def build_contract() -> dict[str, Any]:
             and "full_pool_validation_done" in this_script
             and "cross_sectional_rank_zscore_done" in this_script
             and "local_rank_zscore_dry_run_is_research_only" in this_script
+            and "execution_readiness_receipt_is_local" in this_script
             and "does_not_execute_trades" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -308,6 +345,7 @@ def build_contract() -> dict[str, Any]:
         "custom_pool_pipeline_done": False,
         "full_pool_validation_done": False,
         "cross_sectional_rank_zscore_done": False,
+        "ready_for_explicit_worker_batch_task": bool(execution_receipt.get("ready_for_explicit_worker_batch_task")),
         "local_rank_zscore_dry_run_executed": bool(rank_zscore_dry_run.get("rank_zscore_dry_run_executed")),
         "neutralization_done": False,
         "factor_combination_research_done": False,
@@ -335,6 +373,8 @@ def build_contract() -> dict[str, Any]:
             "rank_zscore_eligible_group_count": rank_zscore_dry_run.get("eligible_group_count"),
             "readiness_status": readiness.get("status"),
             "readiness_production_blocker_count": readiness.get("production_blocker_count"),
+            "execution_receipt_status": execution_receipt.get("status"),
+            "execution_receipt_allowed_next_step": execution_receipt.get("allowed_next_step"),
             "task_backend": universe_task.get("current_backend"),
         },
         "rows": rows,
