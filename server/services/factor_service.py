@@ -59,17 +59,27 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
     packet, local_dataset_ledger = _attach_factor_test_local_dataset_sample_evidence(packet, now)
     packet, production_validation_ledger = _attach_factor_test_production_validation_qa_contract(packet, now)
+    packet, provider_validation_blocker_ledger = _attach_factor_test_provider_validation_blocker_audit(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
-    packet["call_ledger"] = cache_ledger + universe_rank_ledger + storage_query_ledger + local_dataset_ledger + production_validation_ledger + list(existing_ledger)
+    packet["call_ledger"] = (
+        cache_ledger
+        + universe_rank_ledger
+        + storage_query_ledger
+        + local_dataset_ledger
+        + production_validation_ledger
+        + provider_validation_blocker_ledger
+        + list(existing_ledger)
+    )
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
     universe_rank_warning = "Factor Universe rank/zscore dry-run 只读本地 factor_values 样本；样本不足时保持 blocked，不代表 full-pool 生产研究完成。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
+    provider_blocker_warning = "Factor Test provider validation blocker audit 只汇总真实小股票池/全市场验收缺口；不会调用 provider、不会计算交易信号。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
-    owned_warnings = {cache_warning, universe_rank_warning, storage_query_warning, local_dataset_warning}
-    packet["warnings"] = [cache_warning, universe_rank_warning, storage_query_warning, local_dataset_warning] + [
+    owned_warnings = {cache_warning, universe_rank_warning, storage_query_warning, local_dataset_warning, provider_blocker_warning}
+    packet["warnings"] = [cache_warning, universe_rank_warning, storage_query_warning, local_dataset_warning, provider_blocker_warning] + [
         item
         for item in existing_warnings
         if item not in owned_warnings
@@ -1065,6 +1075,211 @@ def _attach_factor_test_production_validation_qa_contract(packet: dict[str, Any]
         factor_tests["acceptance_contract"] = acceptance
     packet["factor_tests"] = factor_tests
     return packet, list(contract.get("call_ledger") or [])
+
+
+def _factor_test_provider_validation_blocker_row(
+    phase: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    blockers: list[str] | None = None,
+    production_blocker: bool | None = None,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool((not passed) if production_blocker is None else production_blocker),
+        "blockers": blockers or [],
+        "blocker_count": len(blockers or []),
+        "evidence": evidence,
+        "next_action": next_action,
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+    }
+
+
+def _factor_test_provider_validation_blocker_audit(factor_tests: dict[str, Any], now: str) -> dict[str, Any]:
+    storage_query = factor_tests.get("storage_query_consumption") if isinstance(factor_tests.get("storage_query_consumption"), dict) else {}
+    local_dataset = factor_tests.get("local_dataset_sample_evidence") if isinstance(factor_tests.get("local_dataset_sample_evidence"), dict) else {}
+    small_pool = factor_tests.get("small_pool_acceptance") if isinstance(factor_tests.get("small_pool_acceptance"), dict) else {}
+    production_qa = factor_tests.get("production_validation_qa_contract") if isinstance(factor_tests.get("production_validation_qa_contract"), dict) else {}
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+
+    storage_query_safe = bool(
+        storage_query.get("schema_version") == "factor_test_storage_query_consumption.v1"
+        and storage_query.get("metrics_computed_from_storage_query") is False
+        and storage_query.get("storage_query_enters_strategy_action") is False
+        and storage_query.get("writes_parquet_on_get") is False
+        and storage_query.get("auto_refresh_on_get") is False
+    )
+    local_dataset_sufficient = bool(local_dataset.get("local_dataset_sample_sufficiency_done"))
+    local_light_ready = bool(small_pool.get("local_light_observation_acceptance_done"))
+    production_rows = production_qa.get("rows") if isinstance(production_qa.get("rows"), list) else []
+    production_blocking_criteria = [str(row.get("criterion")) for row in production_rows if isinstance(row, dict) and row.get("blocks_production_validation")]
+    provider_sample_done = bool(production_qa.get("provider_backed_small_pool_validation_done"))
+    full_market_done = bool(production_qa.get("full_market_validation_done"))
+    trade_isolated = bool(
+        production_qa.get("does_not_execute_trades") is True
+        and production_qa.get("does_not_modify_strategy_action") is True
+        and production_qa.get("does_not_modify_core_action") is True
+        and production_qa.get("does_not_enter_evidence_effects") is True
+        and production_qa.get("does_not_enter_next_session_projection") is True
+        and acceptance.get("research_pass_is_not_trade_signal", True) is True
+    )
+    rows = [
+        _factor_test_provider_validation_blocker_row(
+            "storage_query_contract",
+            "passed_local_read_contract" if storage_query_safe else "blocked_storage_query_boundary",
+            storage_query_safe,
+            f"storage_query_status={storage_query.get('status')}; metrics_from_storage={storage_query.get('metrics_computed_from_storage_query')}",
+            "Keep storage rows as read-only sample metadata until an explicit research task constructs metric samples.",
+            blockers=[] if storage_query_safe else ["storage_query_boundary_not_safe"],
+        ),
+        _factor_test_provider_validation_blocker_row(
+            "local_dataset_sample_sufficiency",
+            "passed_local_sufficiency" if local_dataset_sufficient else "blocked_or_missing_local_sample",
+            local_dataset_sufficient,
+            (
+                f"status={local_dataset.get('status')}; "
+                f"tickers={local_dataset.get('unique_factor_ticker_count')}; "
+                f"dates={local_dataset.get('unique_factor_trade_date_count')}; "
+                f"usable={local_dataset.get('usable_factor_value_count')}; "
+                f"forward_returns={local_dataset.get('forward_return_sample_count')}"
+            ),
+            "Populate sufficient local factor_values and forward-return labels before real small-pool validation.",
+            blockers=list(local_dataset.get("blocking_criteria") or []),
+        ),
+        _factor_test_provider_validation_blocker_row(
+            "local_light_metrics_acceptance",
+            "passed_local_light_metrics" if local_light_ready else "blocked_local_light_metrics",
+            local_light_ready,
+            f"small_pool_status={small_pool.get('status')}; local_light_observation_acceptance_done={local_light_ready}",
+            "Keep IC / Rank IC / ICIR / group / cost / drawdown / neutral metrics passing on local light observations.",
+            blockers=[] if local_light_ready else ["local_light_observation_acceptance"],
+        ),
+        _factor_test_provider_validation_blocker_row(
+            "provider_backed_small_pool_sample",
+            "passed_provider_sample" if provider_sample_done else "pending_provider_backed_sample",
+            provider_sample_done,
+            "provider-backed target sample validation is not executed by GET factor cache.",
+            "Run a future explicit POST task with call_ledger, non-empty samples, and safe failure states.",
+            blockers=[] if provider_sample_done else ["provider_backed_small_pool_sample"],
+        ),
+        _factor_test_provider_validation_blocker_row(
+            "multi_window_research_validation",
+            "passed_multi_window_validation" if not any(key in production_blocking_criteria for key in ("multi_horizon_forward_returns", "rolling_window_ic_icir", "out_of_sample_decay")) else "pending_multi_window_validation",
+            not any(key in production_blocking_criteria for key in ("multi_horizon_forward_returns", "rolling_window_ic_icir", "out_of_sample_decay")),
+            f"production_blocking_criteria={production_blocking_criteria}",
+            "Validate multi-horizon returns, rolling IC/ICIR, sample split, and recent decay before promotion.",
+            blockers=[key for key in production_blocking_criteria if key in {"multi_horizon_forward_returns", "rolling_window_ic_icir", "out_of_sample_decay"}],
+        ),
+        _factor_test_provider_validation_blocker_row(
+            "cost_neutralization_bias_controls",
+            "passed_cost_neutral_bias" if not any(key in production_blocking_criteria for key in ("transaction_cost_assumptions", "neutralization_stability", "pit_lookahead_survivorship_controls")) else "pending_cost_neutral_bias",
+            not any(key in production_blocking_criteria for key in ("transaction_cost_assumptions", "neutralization_stability", "pit_lookahead_survivorship_controls")),
+            f"production_blocking_criteria={production_blocking_criteria}",
+            "Validate costs, neutralization stability, PIT/lookahead, and survivorship controls on target samples.",
+            blockers=[key for key in production_blocking_criteria if key in {"transaction_cost_assumptions", "neutralization_stability", "pit_lookahead_survivorship_controls"}],
+        ),
+        _factor_test_provider_validation_blocker_row(
+            "full_market_validation",
+            "passed_full_market_validation" if full_market_done else "pending_full_market_validation",
+            full_market_done,
+            f"full_market_validation_done={full_market_done}",
+            "Keep full-market validation pending until a separate worker-backed universe run proves it.",
+            blockers=[] if full_market_done else ["full_market_validation"],
+        ),
+        _factor_test_provider_validation_blocker_row(
+            "trade_action_isolation",
+            "passed_trade_action_isolation" if trade_isolated else "blocked_trade_action_isolation",
+            trade_isolated,
+            "Factor Test rows remain research-only and do not enter action, evidence effects, or next-session projection.",
+            "Preserve research-only isolation for every future validation stage.",
+            blockers=[] if trade_isolated else ["trade_action_isolation"],
+            production_blocker=not trade_isolated,
+        ),
+    ]
+    production_blockers = [row for row in rows if row.get("production_blocker")]
+    provider_validation_ready = not production_blockers
+    return {
+        "schema_version": "factor_test_provider_validation_blocker_audit.v1",
+        "status": "provider_validation_blockers_visible" if production_blockers else "provider_validation_ready_for_promotion_review",
+        "scope": "local_factor_test_provider_validation_blocker_audit_no_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-11",
+        "provider_validation_ready": provider_validation_ready,
+        "provider_backed_small_pool_validation_done": provider_sample_done,
+        "full_market_validation_done": full_market_done,
+        "production_factor_test_validation_complete": False,
+        "production_blocker_count": len(production_blockers),
+        "production_blockers": [row["phase"] for row in production_blockers],
+        "row_count": len(rows),
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "metrics_computed_from_local_dataset": False,
+        "storage_query_rows_used_as_metrics": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_test_provider_validation_blocker_audit",
+                "request_params_safe": {
+                    "scope": "local_factor_test_provider_validation_blocker_audit_no_provider_execution",
+                    "provider_backed_small_pool_validation_done": provider_sample_done,
+                    "full_market_validation_done": full_market_done,
+                    "production_factor_test_validation_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": local_dataset.get("latest_factor_trade_date"),
+                "local_fetched_at": now,
+                "call_status": "provider_validation_blockers_visible" if production_blockers else "provider_validation_ready_for_promotion_review",
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This audit centralizes remaining Factor Test Lab provider-backed validation blockers. It does not call providers, compute production metrics, or promote trading actions.",
+    }
+
+
+def _attach_factor_test_provider_validation_blocker_audit(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    audit = _factor_test_provider_validation_blocker_audit(factor_tests, now)
+    factor_tests["provider_validation_blocker_audit"] = audit
+    factor_tests["provider_validation_blocker_rows"] = list(audit.get("rows") or [])
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(existing_test_ledger) + list(audit.get("call_ledger") or [])
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    if acceptance:
+        acceptance = dict(acceptance)
+        acceptance["provider_validation_blocker_audit_ready"] = True
+        acceptance["provider_validation_ready"] = bool(audit.get("provider_validation_ready"))
+        acceptance["production_factor_test_validation_complete"] = False
+        acceptance["provider_backed_small_pool_validation_done"] = bool(audit.get("provider_backed_small_pool_validation_done"))
+        acceptance["full_market_validation_done"] = bool(audit.get("full_market_validation_done"))
+        factor_tests["acceptance_contract"] = acceptance
+    packet["factor_tests"] = factor_tests
+    return packet, list(audit.get("call_ledger") or [])
 
 
 def _factor_universe_mode_from_payload(payload: Any) -> str:

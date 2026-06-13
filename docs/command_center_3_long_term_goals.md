@@ -249,6 +249,7 @@ Validate extended Tushare refresh task pipeline
 - GET factor cache now exposes `local_dataset_sample_evidence`: a local Parquet/DuckDB sufficiency audit for `factor_values`, `daily`, `daily_basic`, `moneyflow`, and `trade_cal`. It counts ticker/date/factor/usable-row readiness and forward-return label presence, but does not compute IC metrics, call providers, or prove real small-pool validation.
 - Factor Test Lab packets now expose `small_pool_acceptance`: a local light-observation readiness audit for IC / Rank IC / ICIR, group return, cost, drawdown, neutral IC, sample split/decay, and PIT/lookahead/survivorship checks. This audit does not treat storage query rows as metric samples and does not prove real small-pool or full-market production validation.
 - Factor Test Lab packets now expose `production_validation_qa_contract`: a local QA contract for future provider-backed small-pool validation, multi-horizon forward returns, rolling IC/ICIR, out-of-sample decay, production cost assumptions, neutralization stability, PIT/lookahead/survivorship controls, storage-query boundaries, research-only state transitions, and trade/action isolation. It does not run provider-backed samples, full-market research, external calls, or trade actions.
+- Factor Test Lab packets now expose `provider_validation_blocker_audit`: a local read-only blocker summary for storage-query boundaries, local dataset sufficiency, local light metrics, provider-backed small-pool samples, multi-window validation, cost/neutralization/bias controls, full-market validation, and trade/action isolation.
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It uses synthetic local light observations and cache-only service contracts to keep Factor Test Lab metrics, small-pool readiness, storage-query consumption, and production QA clearly separated from provider-backed / full-market validation.
 
 ### Gaps
@@ -261,6 +262,7 @@ Validate extended Tushare refresh task pipeline
 - The local dataset sample evidence is only a sufficiency audit. It can report local Parquet availability or insufficiency, but it does not create forward-return labels, compute production metrics, or validate provider-backed samples.
 - The small-pool acceptance audit is a local readiness contract; provider-backed small-pool samples are still pending.
 - The production validation QA contract is visible, but all provider-backed / full-market production validation remains pending.
+- The provider validation blocker audit is not provider execution; it only centralizes the remaining small-pool/full-market blockers and keeps production validation incomplete.
 - The local Factor Test Lab push-gate contract is not a provider run; it only blocks regressions where local light metrics, storage query rows, or QA checklist rows are mistaken for production validation.
 
 ### Implementation Phases
@@ -283,6 +285,7 @@ Validate extended Tushare refresh task pipeline
 - `local_dataset_sample_evidence` remains cache-only/read-only, reports ticker/date/usable-row/forward-return sufficiency, keeps `metrics_computed_from_local_dataset=false`, and keeps `provider_backed_small_pool_validation_done=false`.
 - `small_pool_acceptance.status=local_small_pool_acceptance_ready` only means local light observations satisfy the readiness checklist; `real_small_pool_validation_done` and `full_market_validation_done` must remain false until provider-backed samples are validated.
 - `production_validation_qa_contract.production_factor_test_validation_complete=false` until provider-backed small-pool samples, multi-horizon/rolling-window validation, cost assumptions, neutralization stability, bias controls, and trade/action isolation are all verified.
+- `provider_validation_blocker_audit.status=provider_validation_blockers_visible` keeps provider-backed sample, full-market, multi-window, cost/neutralization/bias, and sample-sufficiency blockers visible without calling providers or computing production metrics.
 - `scripts/factor_test_lab_contract.py` passes in the push gate while still reporting `provider_backed_small_pool_validation_done=false`, `full_market_validation_done=false`, and `production_factor_test_validation_complete=false`.
 
 ### Forbidden
@@ -294,6 +297,7 @@ Validate extended Tushare refresh task pipeline
 - Do not treat `local_dataset_sample_evidence` as real Factor Test validation; it is a local sample sufficiency audit and may remain blocked when rows, tickers, forward returns, or provider-backed samples are insufficient.
 - Do not treat local small-pool readiness as real provider-backed production validation.
 - Do not treat `production_validation_qa_contract` as execution evidence; it is a QA checklist until future button/task validation proves the rows.
+- Do not treat `provider_validation_blocker_audit.provider_validation_ready=true` as production completion; it only means local blocker rows are clear enough for promotion review.
 - Do not treat `scripts/factor_test_lab_contract.py` passing as real Factor Test Lab production validation; it is only a local research-boundary regression guard.
 
 ### Recommended Commit Message
@@ -777,7 +781,7 @@ Retire Streamlit from primary user workflow
 - `scripts/push_gate_3_0.sh` now codifies the local push gate: Python tests, desktop build, smoke, diff check, high-risk secret scan, generated artifact scan, and final clean-worktree check.
 - `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts and the freshness production blocker audit remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness/contracts and provider evidence gap ledger remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
-- `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
+- `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, production QA, and provider validation blocker audit stay local/research-only while provider-backed small-pool and full-market validation remain pending.
 - `scripts/factor_universe_contract.py` is now part of the local push gate. It validates LTG-04 universe modes, local read-plan storage-query consumption, button-gated task catalog, React read-only display, partial-pool-not-full-market-proof visibility, no-provider/no-model/no-trade/no-action boundaries, and keeps worker batch execution, rank/zscore, neutralization, full-pool validation, and production universe research pending.
 - `scripts/deepseek_governance_contract.py` is now part of the local push gate. It validates LTG-07 manual/default-off governance, sanitizer whitelist, parse-failed discard, JSON stability blockers, response-format review blockers, button gating, model strategy, no-model-call, no-secret, no-trade, and no-action boundaries while provider-backed benchmark and production automatic explanation remain pending.
 - `scripts/next_session_map_contract.py` is now part of the local push gate. It validates LTG-08 exact ECharts payload, interaction readiness, reference/zone/position/DeepSeek visibility, current GET cache envelope, button-gated local task, React API-client/read-only display, no-browser, no-provider, no-trade, and no-action boundaries while browser visual QA, performance trace, Streamlit parity, and production replacement remain pending.
@@ -801,7 +805,7 @@ Retire Streamlit from primary user workflow
 - Push gate still needs periodic review of false-positive allowlists; current audit keeps `false_positive_allowlist_review_pending` visible.
 - Structured keyword review is present, but it is still a local classification contract; periodic human allowlist review and remote CI evidence remain separate.
 - Tushare acceptance contract is present, but it is still a local matrix/readiness/evidence-gap guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
-- Factor Test Lab contract is present, but it is still a local research-boundary guard; real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
+- Factor Test Lab contract is present, but it is still a local research-boundary guard; provider validation blocker audit only centralizes remaining blockers, while real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
 - Factor universe contract is present, but it is still a local read-plan/read-only guard; worker-backed batch execution, rank/zscore, neutralization, provider-backed validation, factor combination research, and full-pool production research remain later LTG-04 acceptance phases.
 - DeepSeek governance contract is present, but it is still a local sanitizer/response-format/no-model-call guard; real provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, and production auto-after-task readiness remain later LTG-07 acceptance phases.
 - Next-session map contract is present, but it is still a local no-browser/no-provider guard; browser visual QA, performance trace, Streamlit parity, and production ECharts replacement remain later LTG-08 acceptance phases.

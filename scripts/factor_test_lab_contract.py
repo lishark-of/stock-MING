@@ -133,6 +133,8 @@ def build_contract() -> dict[str, Any]:
     factor_tests["storage_query_consumption"] = storage_query
     factor_tests["local_dataset_sample_evidence"] = local_dataset_sample
     production_qa = factor_service._factor_test_production_validation_qa_contract(factor_tests, now)
+    factor_tests["production_validation_qa_contract"] = production_qa
+    provider_blocker_audit = factor_service._factor_test_provider_validation_blocker_audit(factor_tests, now)
     production_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(production_qa.get("rows"))
@@ -142,6 +144,7 @@ def build_contract() -> dict[str, Any]:
     cache_factor_tests = _dict(cache_packet.get("factor_tests"))
     cache_local_dataset_sample = _dict(cache_factor_tests.get("local_dataset_sample_evidence"))
     cache_production_qa = _dict(cache_factor_tests.get("production_validation_qa_contract"))
+    cache_provider_blocker_audit = _dict(cache_factor_tests.get("provider_validation_blocker_audit"))
     cache_call_ledger = _list(cache_packet.get("call_ledger"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/factor_test_lab_contract.py")
@@ -250,12 +253,34 @@ def build_contract() -> dict[str, Any]:
             "Production QA is a local checklist; provider-backed small-pool, full-market, multi-horizon, rolling, cost, neutralization, and bias validation must remain pending.",
         ),
         _row(
+            "provider_validation_blocker_audit_stays_pending",
+            provider_blocker_audit.get("schema_version") == "factor_test_provider_validation_blocker_audit.v1"
+            and provider_blocker_audit.get("scope") == "local_factor_test_provider_validation_blocker_audit_no_provider_execution"
+            and provider_blocker_audit.get("status") == "provider_validation_blockers_visible"
+            and provider_blocker_audit.get("provider_validation_ready") is False
+            and provider_blocker_audit.get("provider_backed_small_pool_validation_done") is False
+            and provider_blocker_audit.get("full_market_validation_done") is False
+            and provider_blocker_audit.get("production_factor_test_validation_complete") is False
+            and int(provider_blocker_audit.get("production_blocker_count") or 0) > 0
+            and "provider_backed_small_pool_sample" in provider_blocker_audit.get("production_blockers", [])
+            and "full_market_validation" in provider_blocker_audit.get("production_blockers", [])
+            and provider_blocker_audit.get("metrics_computed_from_local_dataset") is False
+            and provider_blocker_audit.get("storage_query_rows_used_as_metrics") is False
+            and _flag_false(provider_blocker_audit, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and provider_blocker_audit.get("does_not_execute_trades") is True
+            and provider_blocker_audit.get("does_not_modify_strategy_action") is True,
+            "Provider validation blocker audit must centralize remaining real small-pool/full-market blockers without provider calls or metric promotion.",
+        ),
+        _row(
             "cache_get_factor_boundary",
             cache_packet.get("mode") == "light"
             and cache_production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
             and cache_production_qa.get("production_factor_test_validation_complete") is False
             and cache_production_qa.get("provider_backed_small_pool_validation_done") is False
             and cache_production_qa.get("full_market_validation_done") is False
+            and cache_provider_blocker_audit.get("schema_version") == "factor_test_provider_validation_blocker_audit.v1"
+            and cache_provider_blocker_audit.get("provider_validation_ready") is False
+            and cache_provider_blocker_audit.get("production_factor_test_validation_complete") is False
             and _flag_false(cache_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and cache_packet.get("does_not_execute_trades") is True
             and cache_packet.get("does_not_modify_strategy_action") is True
@@ -286,6 +311,7 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_factor_test_lab_contract.v1" in this_script
             and "local_factor_test_lab_contract_no_provider_execution" in this_script
             and "provider_backed_small_pool_validation_done" in this_script
+            and "provider_validation_blocker_audit_stays_pending" in this_script
             and "local_dataset_sample_evidence_is_not_validation" in this_script
             and "production_factor_test_validation_complete" in this_script
             and "does_not_execute_trades" in this_script
@@ -323,7 +349,10 @@ def build_contract() -> dict[str, Any]:
             "small_pool_status": small_pool.get("status"),
             "production_qa_status": production_qa.get("status"),
             "production_qa_pending_count": production_qa.get("pending_criterion_count"),
+            "provider_blocker_status": provider_blocker_audit.get("status"),
+            "provider_blocker_count": provider_blocker_audit.get("production_blocker_count"),
             "cache_production_qa_status": cache_production_qa.get("status"),
+            "cache_provider_blocker_status": cache_provider_blocker_audit.get("status"),
             "storage_query_status": storage_query.get("status"),
             "local_dataset_sample_status": local_dataset_sample.get("status"),
             "cache_local_dataset_sample_status": cache_local_dataset_sample.get("status"),
