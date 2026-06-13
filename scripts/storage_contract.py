@@ -36,6 +36,7 @@ REQUIRED_BLOCKER_CRITERIA = {
 REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_artifact_cleanup_dry_run",
     "run_storage_schema_validation_dry_run",
+    "run_storage_dataset_version_manifest_dry_run",
     "run_storage_partition_migration_dry_run",
     "run_storage_compaction_dry_run",
     "run_storage_cache_ttl_dry_run",
@@ -82,6 +83,9 @@ def build_contract() -> dict[str, Any]:
     overview = storage_service.storage_overview()
     catalog = storage_service.storage_dataset_catalog()
     schema_packet = storage_service.storage_schema_validation_dry_run_packet(
+        payload_safe={"source": "storage_contract", "external_sources_allowed": False}
+    )
+    manifest_packet = storage_service.storage_dataset_version_manifest_dry_run_packet(
         payload_safe={"source": "storage_contract", "external_sources_allowed": False}
     )
     partition_packet = storage_service.storage_partition_migration_dry_run_packet(
@@ -203,6 +207,26 @@ def build_contract() -> dict[str, Any]:
             "Dataset version manifest evidence may read local _dataset_versions.json metadata only; it must not write a manifest, read Parquet payloads, call providers, or mark production storage complete.",
         ),
         _row(
+            "dataset_version_manifest_dry_run_writes_no_manifest",
+            manifest_packet.get("schema_version") == "command_center_3_storage_dataset_version_manifest_dry_run.v1"
+            and manifest_packet.get("status")
+            in {"dry_run_completed", "dry_run_blocked_existing_manifest_unreadable"}
+            and manifest_packet.get("dataset_count") == len(canonical_datasets)
+            and len(_list(manifest_packet.get("rows"))) == len(canonical_datasets)
+            and manifest_packet.get("manifest_write_executed") is False
+            and manifest_packet.get("manifest_written_on_post") is False
+            and manifest_packet.get("post_dry_run_writes_manifest") is False
+            and manifest_packet.get("post_dry_run_writes_parquet") is False
+            and manifest_packet.get("post_dry_run_reads_parquet_payloads") is False
+            and manifest_packet.get("manual_approval_required_before_write") is True
+            and manifest_packet.get("separate_write_task_required") is True
+            and manifest_packet.get("production_storage_complete") is False
+            and _flag_false(manifest_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and manifest_packet.get("does_not_execute_trades") is True
+            and manifest_packet.get("does_not_modify_strategy_action") is True,
+            "Dataset version manifest dry-run may propose _dataset_versions.json content, but it must not write the manifest, write Parquet, read payloads, call providers, or complete production storage.",
+        ),
+        _row(
             "schema_validation_dry_run_writes_no_parquet",
             schema_packet.get("schema_version") == "command_center_3_storage_schema_validation_dry_run.v1"
             and schema_packet.get("status") == "dry_run_completed"
@@ -307,6 +331,8 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_execute_trades") is True for row in task_rows.values())
             and all(row.get("does_not_modify_strategy_action") is True for row in task_rows.values())
             and task_rows["run_storage_schema_validation_dry_run"].get("writes_parquet_on_post") is False
+            and task_rows["run_storage_dataset_version_manifest_dry_run"].get("writes_manifest_on_post") is False
+            and task_rows["run_storage_dataset_version_manifest_dry_run"].get("manifest_write_executed") is False
             and task_rows["run_storage_partition_migration_dry_run"].get("partition_migration_executed") is False
             and task_rows["run_storage_compaction_dry_run"].get("physical_compaction_executed") is False
             and task_rows["run_storage_cache_ttl_dry_run"].get("refresh_executed") is False
@@ -350,6 +376,7 @@ def build_contract() -> dict[str, Any]:
         "dataset_version_manifest_evidence_validated": bool(
             dataset_version_manifest_evidence.get("dataset_version_manifest_validated")
         ),
+        "dataset_version_manifest_dry_run_writes_manifest": False,
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
@@ -376,6 +403,8 @@ def build_contract() -> dict[str, Any]:
             "dataset_version_policy_status": dataset_version_policy.get("status"),
             "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence.get("status"),
             "dataset_version_manifest_evidence_validated_count": dataset_version_manifest_evidence.get("validated_dataset_count"),
+            "dataset_version_manifest_dry_run_status": manifest_packet.get("status"),
+            "dataset_version_manifest_dry_run_would_change_count": manifest_packet.get("would_change_count"),
             "duckdb_query_service_status": duckdb_policy.get("status"),
             "schema_validation_status": schema_packet.get("status"),
             "partition_migration_status": partition_packet.get("status"),

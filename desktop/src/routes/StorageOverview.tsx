@@ -8,6 +8,7 @@ import {
   postStorageArtifactCleanupDryRun,
   postStorageCacheTtlDryRun,
   postStorageCompactionDryRun,
+  postStorageDatasetVersionManifestDryRun,
   postStoragePartitionMigrationDryRun,
   postStorageSchemaValidationDryRun,
   type StorageQueryParams,
@@ -79,6 +80,8 @@ export default function StorageOverview() {
   const [dryRunReceipt, setDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [schemaValidationTaskId, setSchemaValidationTaskId] = useState("");
   const [schemaValidationReceipt, setSchemaValidationReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [manifestDryRunTaskId, setManifestDryRunTaskId] = useState("");
+  const [manifestDryRunReceipt, setManifestDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [partitionDryRunTaskId, setPartitionDryRunTaskId] = useState("");
   const [partitionDryRunReceipt, setPartitionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [compactionDryRunTaskId, setCompactionDryRunTaskId] = useState("");
@@ -138,6 +141,11 @@ export default function StorageOverview() {
     void postStorageSchemaValidationDryRun({ source: "storage_overview_button" }).then((res) => {
       setSchemaValidationReceipt(res);
       if (res.ok) setSchemaValidationTaskId(res.data.task_id);
+    });
+  const launchManifestDryRun = () =>
+    void postStorageDatasetVersionManifestDryRun({ source: "storage_overview_button" }).then((res) => {
+      setManifestDryRunReceipt(res);
+      if (res.ok) setManifestDryRunTaskId(res.data.task_id);
     });
   const launchPartitionMigrationDryRun = () =>
     void postStoragePartitionMigrationDryRun({ source: "storage_overview_button" }).then((res) => {
@@ -529,7 +537,14 @@ export default function StorageOverview() {
         <p>manifest_exists / validated: {String(datasetVersionManifestEvidence.manifest_exists ?? false)} / {String(datasetVersionManifestEvidence.dataset_version_manifest_validated ?? false)}</p>
         <p>validated / missing / mismatch: {String(datasetVersionManifestEvidence.validated_dataset_count ?? 0)} / {String(datasetVersionManifestEvidence.missing_dataset_count ?? 0)} / {String(datasetVersionManifestEvidence.schema_version_mismatch_count ?? 0)}</p>
         <p>manifest_written_on_get / cache_get_writes_files / reads_parquet_payloads: {String(datasetVersionManifestEvidence.manifest_written_on_get ?? false)} / {String(datasetVersionManifestEvidence.cache_get_writes_files ?? false)} / {String(datasetVersionManifestEvidence.cache_get_reads_parquet_payloads ?? false)}</p>
+        <p>dataset_version_manifest_dry_run_route: {String(productionReadiness.dataset_version_manifest_dry_run_route ?? "POST /api/storage/dataset-version-manifest/dry-run")}</p>
+        <p>dry_run writes_manifest / writes_parquet: {String(productionReadiness.dataset_version_manifest_dry_run_writes_manifest ?? false)} / {String(productionReadiness.dataset_version_manifest_dry_run_writes_parquet ?? false)}</p>
         <p>status_counts: {JSON.stringify(datasetVersionManifestEvidenceStatusCounts)}</p>
+        <div className="actions">
+          <button onClick={launchManifestDryRun}>生成 dataset version manifest dry-run</button>
+        </div>
+        <TaskLaunchReceipt receipt={manifestDryRunReceipt} />
+        <TaskStatusPanel taskId={manifestDryRunTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={datasetVersionManifestEvidenceRows} />
       </PacketCard>
 

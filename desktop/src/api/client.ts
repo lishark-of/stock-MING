@@ -330,6 +330,13 @@ export function postStorageSchemaValidationDryRun(payload: Record<string, unknow
   });
 }
 
+export function postStorageDatasetVersionManifestDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/dataset-version-manifest/dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postStoragePartitionMigrationDryRun(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/storage/partition-migration/dry-run", {
     method: "POST",
