@@ -664,6 +664,28 @@ textarea:focus {
   margin: 6px 0 0;
 }
 
+.backend-offline-notice {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  color: #7c2d12;
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px;
+}
+
+.backend-offline-notice p,
+.backend-offline-notice ul {
+  margin: 0;
+}
+
+.backend-offline-notice ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+}
+
 .page-state-loading {
   border-color: #bfdbfe;
 }

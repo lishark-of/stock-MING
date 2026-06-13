@@ -73,6 +73,24 @@ export type StorageQueryParams = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710";
+export const API_BASE_URL = API_BASE;
+export const BACKEND_OFFLINE_ERROR = "backend_offline_or_unreachable";
+const RESPONSE_PARSE_ERROR = "response_parse_failed";
+
+function safeApiBaseDisplay(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return value.split(/[?#]/)[0].slice(0, 180);
+  }
+}
+
+export const API_BASE_DISPLAY_URL = safeApiBaseDisplay(API_BASE);
 
 function errorToMessage(error: unknown): string | null {
   if (!error) return null;
@@ -86,25 +104,69 @@ function errorToMessage(error: unknown): string | null {
   return String(error);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    }
-  });
-  if (!res.ok) {
-    return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
+function safeExceptionMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return [error.name, error.message].filter(Boolean).join(": ").slice(0, 180);
   }
-  const payload = await res.json();
+  return String(error ?? "request failed").slice(0, 180);
+}
+
+function failedRequestEnvelope<T>(path: string, callStatus: string, error: unknown): ApiEnvelope<T> {
+  const safeMessage = safeExceptionMessage(error);
   return {
-    ...payload,
-    data: payload.data === null ? ({} as T) : payload.data,
-    error: errorToMessage(payload.error),
-    call_ledger: payload.call_ledger ?? [],
-    warnings: payload.warnings ?? [],
-  } as ApiEnvelope<T>;
+    ok: false,
+    data: {} as T,
+    error: `${callStatus}: ${safeMessage}`,
+    call_ledger: [
+      {
+        api: "frontend_fastapi_request",
+        endpoint: path,
+        api_base: API_BASE_DISPLAY_URL,
+        call_status: callStatus,
+        error_message_safe: safeMessage,
+        external: false,
+        external_calls_triggered: false,
+        tushare_called: false,
+        deepseek_called: false,
+        github_called: false,
+        does_not_execute_trades: true,
+        does_not_modify_strategy_action: true,
+      }
+    ],
+    warnings: [
+      "本地 FastAPI 后端暂未连接；请启动本地后端服务后刷新页面。",
+      "此离线提示不会调用 Tushare、DeepSeek、GitHub，也不会执行真实交易。",
+    ],
+  };
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {})
+      }
+    });
+    if (!res.ok) {
+      return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
+    }
+    try {
+      const payload = await res.json();
+      return {
+        ...payload,
+        data: payload.data === null ? ({} as T) : payload.data,
+        error: errorToMessage(payload.error),
+        call_ledger: payload.call_ledger ?? [],
+        warnings: payload.warnings ?? [],
+      } as ApiEnvelope<T>;
+    } catch (error) {
+      return failedRequestEnvelope<T>(path, RESPONSE_PARSE_ERROR, error);
+    }
+  } catch (error) {
+    return failedRequestEnvelope<T>(path, BACKEND_OFFLINE_ERROR, error);
+  }
 }
 
 function queryString(params: Record<string, string | number | undefined | null> = {}): string {

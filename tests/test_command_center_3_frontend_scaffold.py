@@ -20,6 +20,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "components" / "MetricGrid.tsx",
             ROOT / "src" / "components" / "NextSessionChart.tsx",
             ROOT / "src" / "components" / "PageStateBanner.tsx",
+            ROOT / "src" / "components" / "BackendOfflineNotice.tsx",
             ROOT / "src" / "components" / "DeepSeekModelStrategyLedger.tsx",
             ROOT / "src" / "components" / "TaskLaunchReceipt.tsx",
             ROOT / "src" / "components" / "TaskBoundarySummary.tsx",
@@ -204,8 +205,17 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         client_source = client_path.read_text(encoding="utf-8")
 
         self.assertIn('const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710"', client_source)
+        self.assertIn("export const API_BASE_URL = API_BASE", client_source)
+        self.assertIn("export const API_BASE_DISPLAY_URL = safeApiBaseDisplay(API_BASE)", client_source)
+        self.assertIn('export const BACKEND_OFFLINE_ERROR = "backend_offline_or_unreachable"', client_source)
         self.assertIn("async function request", client_source)
         self.assertIn("fetch(`${API_BASE}${path}`", client_source)
+        self.assertIn("failedRequestEnvelope", client_source)
+        self.assertIn("catch (error)", client_source)
+        self.assertIn("frontend_fastapi_request", client_source)
+        self.assertIn("external_calls_triggered: false", client_source)
+        self.assertIn("does_not_execute_trades: true", client_source)
+        self.assertIn("does_not_modify_strategy_action: true", client_source)
         self.assertNotIn("DEEPSEEK_API_KEY", client_source)
         self.assertNotIn("GITHUB_TOKEN", client_source)
         self.assertNotIn("TUSHARE_TOKEN", client_source)
@@ -231,6 +241,41 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             for needle in forbidden_outside_client:
                 with self.subTest(path=str(path), needle=needle):
                     self.assertNotIn(needle, source)
+
+    def test_backend_offline_notice_is_centralized_and_safe(self):
+        client = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        page_state = (ROOT / "src" / "components" / "PageStateBanner.tsx").read_text(encoding="utf-8")
+        notice = (ROOT / "src" / "components" / "BackendOfflineNotice.tsx").read_text(encoding="utf-8")
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
+        desktop_preflight = (ROOT / "src" / "routes" / "DesktopShellPreflight.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("backend_offline_or_unreachable", client)
+        self.assertIn("failedRequestEnvelope", client)
+        self.assertIn("safeApiBaseDisplay", client)
+        self.assertIn("API_BASE_DISPLAY_URL", client)
+        self.assertIn('parsed.search = ""', client)
+        self.assertIn('parsed.hash = ""', client)
+        self.assertIn("catch (error)", client)
+        self.assertIn("frontend_fastapi_request", client)
+        self.assertIn("tushare_called: false", client)
+        self.assertIn("deepseek_called: false", client)
+        self.assertIn("github_called: false", client)
+        self.assertIn('import BackendOfflineNotice from "./BackendOfflineNotice";', page_state)
+        self.assertIn("<BackendOfflineNotice error={error}", page_state)
+        self.assertIn("BACKEND_OFFLINE_ERROR", notice)
+        self.assertIn("API_BASE_DISPLAY_URL", notice)
+        self.assertIn('data-backend-offline="true"', notice)
+        self.assertIn("本地后端未连接", notice)
+        self.assertIn("不会调用 Tushare", notice)
+        self.assertIn("不会执行真实交易", notice)
+        self.assertIn(".backend-offline-notice", styles)
+        self.assertIn("backendOfflineUxContract", desktop_preflight)
+        self.assertIn("api_base_display_sanitized", desktop_preflight)
+        self.assertIn("backend_offline_ux_rows", desktop_preflight)
+        self.assertNotIn("fetch(", page_state + notice)
+        self.assertNotIn("DEEPSEEK_API_KEY", notice)
+        self.assertNotIn("TUSHARE_TOKEN", notice)
+        self.assertNotIn("GITHUB_TOKEN", notice)
 
     def test_frontend_uses_api_client_and_button_gated_tasks(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")

@@ -30,10 +30,12 @@ export default function DesktopShellPreflight() {
   const tauriBuildArtifact = (cache.tauri_build_artifact as Record<string, unknown> | undefined) ?? {};
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
   const productionRuntimeContract = (cache.production_runtime_contract as Record<string, unknown> | undefined) ?? {};
+  const backendOfflineUxContract = (cache.backend_offline_ux_contract as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (cache.production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const productionLaunchPlan = rows(cache.production_launch_plan);
   const productionRuntimeRows = rows(cache.production_runtime_contract_rows);
+  const backendOfflineUxRows = rows(cache.backend_offline_ux_rows);
   const productionBlockerRows = rows(cache.production_blocker_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
@@ -61,6 +63,7 @@ export default function DesktopShellPreflight() {
           { label: "backend autostart", value: runtime.backend_autostart_configured === true ? "enabled" : "manual", tone: runtime.backend_autostart_configured === true ? "warn" : "good" },
           { label: "package audit", value: productionBlockerAudit.status as string | undefined, tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
           { label: "runtime contract", value: productionRuntimeContract.status as string | undefined, tone: productionRuntimeContract.config_paths_declared === true ? "good" : "warn" },
+          { label: "offline UX contract", value: backendOfflineUxContract.frontend_contract_ready === true ? "source ready" : "review", tone: backendOfflineUxContract.frontend_contract_ready === true ? "good" : "warn" },
           { label: "package ready", value: productionBlockerAudit.package_ready === true ? "ready" : "blocked", tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
           { label: "tauri build", value: productionBlockerAudit.tauri_build_verified === true ? "verified" : "not verified", tone: productionBlockerAudit.tauri_build_verified === true ? "good" : "warn" },
           { label: "config/log paths", value: productionBlockerAudit.config_log_paths_declared === true ? "declared" : "pending", tone: productionBlockerAudit.config_log_paths_declared === true ? "good" : "warn" },
@@ -111,6 +114,17 @@ export default function DesktopShellPreflight() {
         <DataLineageTable rows={productionRuntimeRows} />
       </PacketCard>
 
+      <PacketCard title="Tauri backend offline UX contract" subtitle="源码合同已可审计；packaged runtime 仍需真实打开验证" status={String(backendOfflineUxContract.status ?? "frontend_offline_notice_contract_incomplete")}>
+        <p>backend_offline_error_code: {String(backendOfflineUxContract.backend_offline_error_code ?? "backend_offline_or_unreachable")}</p>
+        <p>frontend_contract_ready: {String(backendOfflineUxContract.frontend_contract_ready ?? false)}</p>
+        <p>api_client_fetch_error_fallback_ready: {String(backendOfflineUxContract.api_client_fetch_error_fallback_ready ?? false)}</p>
+        <p>api_base_display_sanitized: {String(backendOfflineUxContract.api_base_display_sanitized ?? false)}</p>
+        <p>offline_notice_component_ready: {String(backendOfflineUxContract.offline_notice_component_ready ?? false)}</p>
+        <p>page_state_banner_integration_ready: {String(backendOfflineUxContract.page_state_banner_integration_ready ?? false)}</p>
+        <p>backend_offline_ui_packaged_runtime_verified: {String(backendOfflineUxContract.backend_offline_ui_packaged_runtime_verified ?? false)}</p>
+        <DataLineageTable rows={backendOfflineUxRows} />
+      </PacketCard>
+
       <PacketCard title="Tauri 生产包阻断审计" subtitle="preflight 不是 production package complete" status={String(productionBlockerAudit.status ?? "production_package_blocked")}>
         <p>scope: {String(productionBlockerAudit.scope ?? "local_preflight_optional_build_artifact_detection_not_packaged_runtime_qa")}</p>
         <p>package_ready: {String(productionBlockerAudit.package_ready ?? false)}</p>
@@ -120,6 +134,8 @@ export default function DesktopShellPreflight() {
         <p>tauri_build_artifact_size_bytes: {String(productionBlockerAudit.tauri_build_artifact_size_bytes ?? tauriBuildArtifact.binary_size_bytes ?? 0)}</p>
         <p>manual_backend_launch_required: {String(productionBlockerAudit.manual_backend_launch_required ?? true)}</p>
         <p>backend_offline_ui_packaged_runtime_verified: {String(productionBlockerAudit.backend_offline_ui_packaged_runtime_verified ?? false)}</p>
+        <p>backend_offline_ux_contract_status: {String(productionBlockerAudit.backend_offline_ux_contract_status ?? backendOfflineUxContract.status ?? "frontend_offline_notice_contract_incomplete")}</p>
+        <p>backend_offline_ux_frontend_contract_ready: {String(productionBlockerAudit.backend_offline_ux_frontend_contract_ready ?? false)}</p>
         <p>config_log_paths_declared: {String(productionBlockerAudit.config_log_paths_declared ?? false)}</p>
         <p>production_runtime_contract_status: {String(productionBlockerAudit.production_runtime_contract_status ?? "runtime_contract_ready_packaged_validation_pending")}</p>
         <p>macos_signing_notarization_ready: {String(productionBlockerAudit.macos_signing_notarization_ready ?? false)}</p>

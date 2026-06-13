@@ -1,3 +1,4 @@
+import BackendOfflineNotice from "./BackendOfflineNotice";
 import StateClarityRail from "./StateClarityRail";
 
 export default function PageStateBanner({
@@ -35,6 +36,7 @@ export default function PageStateBanner({
     return (
       <div className="page-state page-state-error motion-surface" data-page-state="error">
         <strong>缓存读取失败</strong>
+        <BackendOfflineNotice error={error} />
         <p>{error}</p>
         <StateClarityRail
           label="cache error state"

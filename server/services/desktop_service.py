@@ -13,6 +13,10 @@ SCHEMA_VERSION = "desktop_shell_preflight_cache.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DESKTOP_ROOT = PROJECT_ROOT / "desktop"
 TAURI_RELEASE_BINARY = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "stock_ming_command_center"
+FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
+FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
+FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
+FRONTEND_STYLES = DESKTOP_ROOT / "src" / "styles.css"
 
 
 def _now_iso() -> str:
@@ -31,6 +35,13 @@ def _path_label(path: Path) -> str:
         return str(path.relative_to(PROJECT_ROOT))
     except ValueError:
         return str(path)
+
+
+def _read_source_safe(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
 
 
 def _file_row(path: Path, label: str, role: str) -> dict[str, Any]:
@@ -337,6 +348,157 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
     }
 
 
+def _backend_offline_ux_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "loads_token_or_key": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _backend_offline_ux_contract(api_base_info: dict[str, Any]) -> dict[str, Any]:
+    client_source = _read_source_safe(FRONTEND_API_CLIENT)
+    banner_source = _read_source_safe(FRONTEND_PAGE_STATE_BANNER)
+    notice_source = _read_source_safe(FRONTEND_BACKEND_OFFLINE_NOTICE)
+    style_source = _read_source_safe(FRONTEND_STYLES)
+    api_client_fallback_ready = all(
+        marker in client_source
+        for marker in (
+            "BACKEND_OFFLINE_ERROR",
+            "backend_offline_or_unreachable",
+            "failedRequestEnvelope",
+            "catch (error)",
+            "frontend_fastapi_request",
+            "external_calls_triggered: false",
+            "does_not_execute_trades: true",
+            "does_not_modify_strategy_action: true",
+        )
+    )
+    api_base_display_sanitized = all(
+        marker in client_source
+        for marker in (
+            "API_BASE_DISPLAY_URL",
+            "safeApiBaseDisplay",
+            'parsed.search = ""',
+            'parsed.hash = ""',
+            "parsed.username",
+            "parsed.password",
+        )
+    ) and "API_BASE_DISPLAY_URL" in notice_source
+    notice_component_ready = all(
+        marker in notice_source
+        for marker in (
+            "BackendOfflineNotice",
+            "data-backend-offline",
+            "BACKEND_OFFLINE_ERROR",
+            "不会调用 Tushare",
+            "不会执行真实交易",
+        )
+    )
+    banner_integration_ready = "BackendOfflineNotice" in banner_source and "<BackendOfflineNotice error={error}" in banner_source
+    style_ready = ".backend-offline-notice" in style_source and "data-backend-offline" in notice_source
+    frontend_contract_ready = all(
+        (
+            api_client_fallback_ready,
+            api_base_display_sanitized,
+            notice_component_ready,
+            banner_integration_ready,
+            style_ready,
+        )
+    )
+    rows = [
+        _backend_offline_ux_row(
+            "api_client_fetch_error_fallback",
+            "passed" if api_client_fallback_ready else "blocked",
+            api_client_fallback_ready,
+            evidence=f"{_path_label(FRONTEND_API_CLIENT)} catches fetch failures and returns a safe local envelope",
+            production_blocker=not api_client_fallback_ready,
+        ),
+        _backend_offline_ux_row(
+            "api_base_display_sanitized",
+            "passed" if api_base_display_sanitized else "blocked",
+            api_base_display_sanitized,
+            evidence="offline notice uses a display-safe API base without query string, hash, username, or password",
+            production_blocker=not api_base_display_sanitized,
+        ),
+        _backend_offline_ux_row(
+            "offline_notice_component",
+            "passed" if notice_component_ready else "blocked",
+            notice_component_ready,
+            evidence=f"{_path_label(FRONTEND_BACKEND_OFFLINE_NOTICE)} displays offline state and safety boundaries",
+            production_blocker=not notice_component_ready,
+        ),
+        _backend_offline_ux_row(
+            "page_state_banner_integration",
+            "passed" if banner_integration_ready else "blocked",
+            banner_integration_ready,
+            evidence=f"{_path_label(FRONTEND_PAGE_STATE_BANNER)} renders BackendOfflineNotice for backend offline errors",
+            production_blocker=not banner_integration_ready,
+        ),
+        _backend_offline_ux_row(
+            "offline_notice_style",
+            "passed" if style_ready else "blocked",
+            style_ready,
+            evidence=f"{_path_label(FRONTEND_STYLES)} includes backend offline notice styling",
+            production_blocker=not style_ready,
+        ),
+        _backend_offline_ux_row(
+            "packaged_runtime_offline_qa_pending",
+            "pending",
+            False,
+            evidence="source contract is static-audited only; offline UI has not been opened and validated inside packaged Tauri runtime",
+            production_blocker=True,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    return {
+        "schema_version": "tauri_backend_offline_ux_contract.v1",
+        "status": "frontend_offline_notice_ready_packaged_runtime_validation_pending" if frontend_contract_ready else "frontend_offline_notice_contract_incomplete",
+        "scope": "static_frontend_source_contract_not_packaged_runtime_qa",
+        "api_base": api_base_info.get("api_base"),
+        "api_base_is_localhost": bool(api_base_info.get("is_localhost")),
+        "backend_offline_error_code": "backend_offline_or_unreachable",
+        "frontend_contract_ready": frontend_contract_ready,
+        "api_client_fetch_error_fallback_ready": api_client_fallback_ready,
+        "api_base_display_sanitized": api_base_display_sanitized,
+        "offline_notice_component_ready": notice_component_ready,
+        "page_state_banner_integration_ready": banner_integration_ready,
+        "offline_notice_style_ready": style_ready,
+        "frontend_notice_component": _path_label(FRONTEND_BACKEND_OFFLINE_NOTICE),
+        "api_client_path": _path_label(FRONTEND_API_CLIENT),
+        "page_state_banner_path": _path_label(FRONTEND_PAGE_STATE_BANNER),
+        "packaged_runtime_validated": False,
+        "backend_offline_ui_packaged_runtime_verified": False,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_blocker_count": len(blockers),
+        "blockers": blockers,
+        "rows": rows,
+        "note": "This contract statically verifies the frontend offline UX source path only; it does not start FastAPI, run Tauri, call providers/models/GitHub, execute trades, or validate packaged runtime UX.",
+    }
+
+
 def _production_package_blocker_audit(
     *,
     package_summary: dict[str, Any],
@@ -348,10 +510,12 @@ def _production_package_blocker_audit(
     api_base_info: dict[str, Any],
     runtime_contract: dict[str, Any],
     tauri_build_artifact: dict[str, Any],
+    backend_offline_ux_contract: dict[str, Any],
 ) -> dict[str, Any]:
     frontend_dist = str(tauri_config.get("frontend_dist") or "")
     config_log_paths_declared = bool(runtime_contract.get("config_paths_declared") and runtime_contract.get("log_paths_declared"))
     tauri_build_verified = bool(tauri_build_artifact.get("binary_exists"))
+    backend_offline_frontend_ready = bool(backend_offline_ux_contract.get("frontend_contract_ready"))
     rows = [
         {
             "criterion": "react_vite_scaffold_ready",
@@ -406,7 +570,7 @@ def _production_package_blocker_audit(
             "criterion": "backend_offline_ui_runtime_verified",
             "status": "blocked",
             "passed": False,
-            "evidence": "offline UX exists in React error states but has not been validated inside packaged Tauri runtime",
+            "evidence": f"frontend_contract_ready={backend_offline_frontend_ready}; packaged_runtime_verified=false",
             "production_blocker": True,
         },
         {
@@ -461,6 +625,8 @@ def _production_package_blocker_audit(
         "backend_sidecar_autostart_enabled": False,
         "manual_backend_launch_required": True,
         "backend_offline_ui_packaged_runtime_verified": False,
+        "backend_offline_ux_contract_status": backend_offline_ux_contract.get("status"),
+        "backend_offline_ux_frontend_contract_ready": backend_offline_frontend_ready,
         "config_log_paths_declared": config_log_paths_declared,
         "production_runtime_contract_status": runtime_contract.get("status"),
         "macos_signing_notarization_ready": False,
@@ -513,6 +679,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     api_base_info = _api_base_summary(api_base)
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
+    backend_offline_ux_contract = _backend_offline_ux_contract(api_base_info)
     production_readiness = {
         "status": "tauri_preflight_ready" if tauri_dev_ready else ("vite_ready_tauri_toolchain_pending" if vite_dev_ready else "desktop_scaffold_partial"),
         "scope": "tauri_desktop_production_preflight",
@@ -527,6 +694,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "backend_sidecar_autostart_planned": True,
         "frontend_stores_tokens": False,
         "production_runtime_contract_status": production_runtime_contract["status"],
+        "backend_offline_ux_contract_status": backend_offline_ux_contract["status"],
+        "backend_offline_ux_frontend_contract_ready": backend_offline_ux_contract["frontend_contract_ready"],
         "config_log_paths_declared": production_runtime_contract["config_paths_declared"] and production_runtime_contract["log_paths_declared"],
         "api_base_is_localhost": api_base_info["is_localhost"],
         "external_calls_triggered": False,
@@ -548,6 +717,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         api_base_info=api_base_info,
         runtime_contract=production_runtime_contract,
         tauri_build_artifact=tauri_build_artifact,
+        backend_offline_ux_contract=backend_offline_ux_contract,
     )
 
     packet = {
@@ -568,6 +738,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "production_readiness": production_readiness,
         "production_runtime_contract": production_runtime_contract,
         "production_runtime_contract_rows": production_runtime_contract["rows"],
+        "backend_offline_ux_contract": backend_offline_ux_contract,
+        "backend_offline_ux_rows": backend_offline_ux_contract["rows"],
         "production_blocker_audit": production_blocker_audit,
         "production_blocker_rows": production_blocker_audit["rows"],
         "file_rows": file_rows,
@@ -601,6 +773,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "production_blocker_count": production_blocker_audit["blocker_count"],
             "tauri_build_verified": production_blocker_audit["tauri_build_verified"],
             "backend_offline_ui_packaged_runtime_verified": production_blocker_audit["backend_offline_ui_packaged_runtime_verified"],
+            "backend_offline_ux_frontend_contract_ready": production_blocker_audit["backend_offline_ux_frontend_contract_ready"],
+            "backend_offline_ux_contract_status": production_blocker_audit["backend_offline_ux_contract_status"],
             "config_log_paths_declared": production_blocker_audit["config_log_paths_declared"],
             "production_runtime_contract_status": production_runtime_contract["status"],
             "production_runtime_contract_declared": True,

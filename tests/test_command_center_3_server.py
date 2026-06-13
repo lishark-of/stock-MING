@@ -244,6 +244,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             desktop["production_readiness"]["production_runtime_contract_status"],
             "runtime_contract_ready_packaged_validation_pending",
         )
+        self.assertEqual(
+            desktop["production_readiness"]["backend_offline_ux_contract_status"],
+            "frontend_offline_notice_ready_packaged_runtime_validation_pending",
+        )
+        self.assertTrue(desktop["production_readiness"]["backend_offline_ux_frontend_contract_ready"])
         self.assertTrue(desktop["production_readiness"]["config_log_paths_declared"])
         runtime_contract = desktop["production_runtime_contract"]
         runtime_contract_rows = {row["criterion"]: row for row in desktop["production_runtime_contract_rows"]}
@@ -272,6 +277,37 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(runtime_contract_rows["log_path_policy_declared"]["passed"])
         self.assertFalse(runtime_contract_rows["sidecar_autostart_validation_pending"]["passed"])
         self.assertFalse(runtime_contract_rows["packaged_backend_offline_ux_pending"]["passed"])
+        self.assertIn("backend_offline_ux_contract", desktop)
+        backend_offline_contract = desktop["backend_offline_ux_contract"]
+        backend_offline_rows = {row["criterion"]: row for row in desktop["backend_offline_ux_rows"]}
+        self.assertEqual(backend_offline_contract["schema_version"], "tauri_backend_offline_ux_contract.v1")
+        self.assertEqual(
+            backend_offline_contract["status"],
+            "frontend_offline_notice_ready_packaged_runtime_validation_pending",
+        )
+        self.assertEqual(backend_offline_contract["scope"], "static_frontend_source_contract_not_packaged_runtime_qa")
+        self.assertEqual(backend_offline_contract["backend_offline_error_code"], "backend_offline_or_unreachable")
+        self.assertTrue(backend_offline_contract["frontend_contract_ready"])
+        self.assertTrue(backend_offline_contract["api_client_fetch_error_fallback_ready"])
+        self.assertTrue(backend_offline_contract["api_base_display_sanitized"])
+        self.assertTrue(backend_offline_contract["offline_notice_component_ready"])
+        self.assertTrue(backend_offline_contract["page_state_banner_integration_ready"])
+        self.assertTrue(backend_offline_contract["offline_notice_style_ready"])
+        self.assertFalse(backend_offline_contract["packaged_runtime_validated"])
+        self.assertFalse(backend_offline_contract["backend_offline_ui_packaged_runtime_verified"])
+        self.assertFalse(backend_offline_contract["external_calls_triggered"])
+        self.assertFalse(backend_offline_contract["tushare_called"])
+        self.assertFalse(backend_offline_contract["deepseek_called"])
+        self.assertFalse(backend_offline_contract["github_called"])
+        self.assertTrue(backend_offline_contract["does_not_execute_trades"])
+        self.assertTrue(backend_offline_contract["does_not_modify_strategy_action"])
+        self.assertTrue(backend_offline_rows["api_client_fetch_error_fallback"]["passed"])
+        self.assertTrue(backend_offline_rows["api_base_display_sanitized"]["passed"])
+        self.assertTrue(backend_offline_rows["offline_notice_component"]["passed"])
+        self.assertTrue(backend_offline_rows["page_state_banner_integration"]["passed"])
+        self.assertTrue(backend_offline_rows["offline_notice_style"]["passed"])
+        self.assertFalse(backend_offline_rows["packaged_runtime_offline_qa_pending"]["passed"])
+        self.assertIn("packaged_runtime_offline_qa_pending", backend_offline_contract["blockers"])
         self.assertIn("production_blocker_audit", desktop)
         blocker_audit = desktop["production_blocker_audit"]
         blocker_rows = {row["criterion"]: row for row in desktop["production_blocker_rows"]}
@@ -287,6 +323,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(blocker_audit["manual_backend_launch_required"])
         self.assertFalse(blocker_audit["backend_sidecar_autostart_enabled"])
         self.assertFalse(blocker_audit["backend_offline_ui_packaged_runtime_verified"])
+        self.assertEqual(
+            blocker_audit["backend_offline_ux_contract_status"],
+            "frontend_offline_notice_ready_packaged_runtime_validation_pending",
+        )
+        self.assertTrue(blocker_audit["backend_offline_ux_frontend_contract_ready"])
         self.assertTrue(blocker_audit["config_log_paths_declared"])
         self.assertEqual(
             blocker_audit["production_runtime_contract_status"],
@@ -309,6 +350,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("macos_signing_notarization_ready", blocker_audit["blockers"])
         self.assertEqual(blocker_rows["tauri_package_build_verified"]["passed"], build_artifact["binary_exists"])
         self.assertFalse(blocker_rows["backend_startup_strategy"]["passed"])
+        self.assertFalse(blocker_rows["backend_offline_ui_runtime_verified"]["passed"])
+        self.assertIn("frontend_contract_ready=True", blocker_rows["backend_offline_ui_runtime_verified"]["evidence"])
         self.assertTrue(blocker_rows["config_and_log_paths_declared"]["passed"])
         self.assertTrue(blocker_rows["frontend_secret_boundary"]["passed"])
         self.assertTrue(blocker_rows["startup_external_call_boundary"]["passed"])
@@ -318,6 +361,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(desktop["runtime"]["tauri_release_binary_present"], build_artifact["binary_exists"])
         self.assertEqual(desktop["runtime"]["tauri_release_binary_size_bytes"], build_artifact["binary_size_bytes"])
         self.assertEqual(desktop["runtime"]["production_package_build_artifact_detected"], build_artifact["binary_exists"])
+        self.assertTrue(desktop["runtime"]["backend_offline_ux_frontend_contract_ready"])
+        self.assertEqual(
+            desktop["runtime"]["backend_offline_ux_contract_status"],
+            "frontend_offline_notice_ready_packaged_runtime_validation_pending",
+        )
         self.assertTrue(desktop["runtime"]["production_runtime_contract_declared"])
         self.assertTrue(desktop["runtime"]["production_runtime_config_paths_declared"])
         self.assertTrue(desktop["runtime"]["production_runtime_log_paths_declared"])
