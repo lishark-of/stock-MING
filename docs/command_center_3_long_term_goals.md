@@ -84,6 +84,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Data Health now exposes `current_evidence_freshness_qa_contract`, a local cache-only QA contract that separates current evidence from historical/research samples and keeps stale / expired / historical / unknown / future-unavailable rows out of current decision surfaces.
 - Data Health now exposes `current_evidence_decision_surface_audit`, a local snapshot-only audit of visible `composite_score`, `support_factors`, `evidence_preview`, `next_session_bridge.preview`, and `strategy_action` fields. It shows blockers when research-only current evidence still has visible score/support/preview values, but it does not rescore, filter packets, mutate action, or prove provider-backed acceptance.
 - Data Health now exposes `current_evidence_producer_coverage_audit`, a local snapshot-only audit that checks visible current-evidence producers for `expected_trade_date`, `data_date`, and `freshness_state` coverage. Missing producers remain `not_observed`, not production proof.
+- `scripts/data_health_freshness_contract.py` now runs in `scripts/push_gate_3_0.sh` to guard LTG-01 contracts against unsafe regressions: local-only boundaries must remain visible, provider-backed acceptance must remain pending until explicit provider validation, and no Data Health contract may imply external calls, real trades, or strategy action mutation.
 - Data Health now exposes `trade_cal_provider_acceptance_runbook`, a local execution checklist for future provider-backed `trade_cal` long-window acceptance. It fixes the explicit POST task route, safe payload, call-ledger evidence, schema/window/holiday coverage, failure modes, artifact promotion boundary, and current-evidence isolation, while keeping `provider_backed_long_window_acceptance_done=false`.
 
 ### Gaps
@@ -115,6 +116,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Data Health shows `current_evidence_freshness_qa_contract` and rows: current evidence requires expected trade date, data date alignment, freshness state eligibility, historical sample separation, provider-backed acceptance pending state, and decision-surface isolation.
 - Data Health shows `current_evidence_decision_surface_audit` and rows: visible score/support/preview surfaces are marked `not_observed`, `passed_read_only_audit`, or blocker states; missing visible fields are not treated as production proof.
 - Data Health shows `current_evidence_producer_coverage_audit` and rows: visible producers must carry expected trade date, data date, and freshness state; absent producers are `not_observed` and cannot be used as proof that every producer is production-ready.
+- Push gate runs `scripts/data_health_freshness_contract.py` and fails if Data Health contracts lose local-only/no-provider/no-trade/no-action boundaries or falsely claim provider-backed freshness completion.
 - Data Health shows `trade_cal_provider_acceptance_runbook` and rows: explicit POST task requirement, safe payload, call ledger, long-window sample, schema, local artifact cross-check, freshness replay, failure modes, artifact promotion, current-evidence boundary, and secret/trade boundary.
 - Local `trade_cal` Parquet validation can pass without setting provider-backed acceptance to done.
 
@@ -127,6 +129,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Do not treat `trade_cal_provider_acceptance_runbook.local_runbook_ready=true` as evidence that Tushare was called or provider-backed acceptance passed.
 - Do not treat `current_evidence_decision_surface_audit` as runtime rescore, packet filtering, or provider-backed freshness proof.
 - Do not treat `current_evidence_producer_coverage_audit` as building missing packets, refreshing providers, or proving full producer coverage when rows are `not_observed`.
+- Do not treat `scripts/data_health_freshness_contract.py` passing as real `trade_cal` provider acceptance; it only blocks local contract regressions.
 
 ### Recommended Commit Message
 
@@ -669,6 +672,7 @@ Retire Streamlit from primary user workflow
 
 - Local test, frontend build, smoke, and diff checks are available.
 - `scripts/push_gate_3_0.sh` now codifies the local push gate: Python tests, desktop build, smoke, diff check, high-risk secret scan, generated artifact scan, and final clean-worktree check.
+- `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.

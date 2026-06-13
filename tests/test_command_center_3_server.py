@@ -4668,6 +4668,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("-m unittest discover -s tests", script)
         self.assertIn("cd desktop && npm run build", script)
         self.assertIn("scripts/smoke_3_0.sh", script)
+        self.assertIn("scripts/data_health_freshness_contract.py", script)
+        self.assertIn("Data Health freshness contract", script)
+        self.assertIn("data_health_freshness_contract: passed_local_contract_provider_execution_pending", script)
         self.assertIn("scripts/motion_viewport_qa_contract.py", script)
         self.assertIn("Motion viewport QA contract", script)
         self.assertIn("motion_viewport_qa_contract: passed_static_contract_visual_run_pending", script)
@@ -4697,6 +4700,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("did_not_call_external_providers: true", script)
         self.assertIn("did_not_execute_trades: true", script)
         self.assertIn("Scaffold, preflight, matrix, mock, and sanitizer checks are not production completion evidence.", script)
+        self.assertLess(script.index('run_step "Data Health freshness contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Motion viewport QA contract"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Motion browser QA runbook"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Secret scan"'), script.index('run_step "Secret keyword review contract"'))
@@ -4709,6 +4713,49 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("git push", script)
         self.assertNotIn("git add .", script)
         self.assertNotIn("tushare_adapter", script)
+
+    def test_data_health_freshness_contract_script_is_local_push_gate_guard(self):
+        path = Path("scripts/data_health_freshness_contract.py")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(path.stat().st_mode & 0o111)
+        self.assertIn("data_health_freshness_push_gate_contract.v1", script)
+        self.assertIn("local_cache_contract_no_provider_execution", script)
+        self.assertIn("provider_backed_trade_cal_acceptance_done", script)
+        self.assertIn("production_freshness_gate_complete", script)
+        self.assertIn("trade_cal_provider_acceptance_runbook", script)
+        self.assertIn("current_evidence_producer_coverage_audit", script)
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx", script)
+        self.assertNotIn("api.github.com", script)
+        self.assertNotIn("tushare_adapter", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema_version"], "data_health_freshness_push_gate_contract.v1")
+        self.assertEqual(payload["scope"], "local_cache_contract_no_provider_execution")
+        self.assertEqual(payload["status"], "data_health_freshness_contract_passed")
+        self.assertFalse(payload["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(payload["production_freshness_gate_complete"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertEqual(payload["blocking_criterion_count"], 0)
+        criteria = {row["criterion"] for row in payload["rows"]}
+        self.assertIn("acceptance_matrix_is_not_provider_acceptance", criteria)
+        self.assertIn("provider_runbook_execution_pending", criteria)
+        self.assertIn("producer_coverage_audit_is_read_only", criteria)
 
     def test_secret_keyword_review_contract_is_structured_and_local(self):
         path = Path("scripts/secret_keyword_review_contract.py")
@@ -8465,6 +8512,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["python_unittest_step"])
         self.assertTrue(release_gate["desktop_build_step"])
         self.assertTrue(release_gate["smoke_step"])
+        self.assertTrue(release_gate["data_health_freshness_contract_exists"])
+        self.assertTrue(release_gate["data_health_freshness_contract_step"])
+        self.assertTrue(release_gate["data_health_freshness_contract_is_local"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_exists"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_step"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_is_local_static"])
@@ -8489,6 +8539,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("python_unittest", release_gate_criteria)
         self.assertIn("desktop_build", release_gate_criteria)
         self.assertIn("command_center_3_smoke", release_gate_criteria)
+        self.assertIn("data_health_freshness_contract_exists", release_gate_criteria)
+        self.assertIn("data_health_freshness_contract_step", release_gate_criteria)
+        self.assertIn("data_health_freshness_contract_is_local", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_exists", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_step", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_is_local_static", release_gate_criteria)

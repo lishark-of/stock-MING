@@ -40,6 +40,7 @@ MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
+DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_freshness_contract.py"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
@@ -424,6 +425,7 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
 def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
     smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
+    data_health_freshness_script = _read_local_text(DATA_HEALTH_FRESHNESS_CONTRACT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
@@ -456,6 +458,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "push_gate_script_executable": PUSH_GATE_SCRIPT_PATH.exists()
         and bool(PUSH_GATE_SCRIPT_PATH.stat().st_mode & 0o111),
         "smoke_script_exists": SMOKE_SCRIPT_PATH.exists() and bool(smoke_script),
+        "data_health_freshness_contract_exists": DATA_HEALTH_FRESHNESS_CONTRACT_PATH.exists()
+        and bool(data_health_freshness_script),
         "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
         "motion_browser_qa_runbook_exists": MOTION_BROWSER_QA_RUNBOOK_PATH.exists() and bool(motion_browser_qa_runbook),
         "secret_keyword_review_contract_exists": SECRET_KEYWORD_REVIEW_CONTRACT_PATH.exists() and bool(secret_keyword_review_script),
@@ -463,6 +467,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Motion viewport QA contract" in script,
         "motion_browser_qa_runbook_step": "scripts/motion_browser_qa_runbook.py" in script
         and "Motion browser QA runbook" in script,
+        "data_health_freshness_contract_step": "scripts/data_health_freshness_contract.py" in script
+        and "Data Health freshness contract" in script,
         "secret_keyword_review_contract_step": "scripts/secret_keyword_review_contract.py" in script
         and "Secret keyword review contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
@@ -478,6 +484,10 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "raw_keyword_lines_emitted" in secret_keyword_review_script
         and "outputs_source_line_text" in secret_keyword_review_script
         and "category_rows" in secret_keyword_review_script,
+        "data_health_freshness_contract_is_local": "data_health_freshness_push_gate_contract.v1" in data_health_freshness_script
+        and "local_cache_contract_no_provider_execution" in data_health_freshness_script
+        and "provider_backed_trade_cal_acceptance_done" in data_health_freshness_script
+        and "does_not_execute_trades" in data_health_freshness_script,
         "generated_artifact_scan_step": "artifact_scan" in script and "git ls-files" in script,
         "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
         "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
@@ -509,6 +519,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "push_gate_script_exists",
             "push_gate_script_executable",
             "smoke_script_exists",
+            "data_health_freshness_contract_exists",
+            "data_health_freshness_contract_step",
+            "data_health_freshness_contract_is_local",
             "motion_viewport_qa_contract_exists",
             "motion_viewport_qa_contract_step",
             "motion_viewport_qa_contract_is_local_static",
@@ -547,6 +560,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             evidence="script has executable bit",
         ),
         _release_gate_row("smoke_script_exists", checks["smoke_script_exists"], evidence=_relative_path(SMOKE_SCRIPT_PATH)),
+        _release_gate_row(
+            "data_health_freshness_contract_exists",
+            checks["data_health_freshness_contract_exists"],
+            evidence=_relative_path(DATA_HEALTH_FRESHNESS_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "data_health_freshness_contract_step",
+            checks["data_health_freshness_contract_step"],
+            evidence="push gate runs scripts/data_health_freshness_contract.py after smoke and before motion QA",
+        ),
+        _release_gate_row(
+            "data_health_freshness_contract_is_local",
+            checks["data_health_freshness_contract_is_local"],
+            evidence="contract keeps LTG-01 provider-backed acceptance pending and validates local no-provider boundaries",
+        ),
         _release_gate_row(
             "motion_viewport_qa_contract_exists",
             checks["motion_viewport_qa_contract_exists"],
