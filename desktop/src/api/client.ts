@@ -422,3 +422,10 @@ export function getTaskCatalog() {
 export function getWorkerRuntimeCache() {
   return request<Record<string, unknown>>("/api/worker/cache");
 }
+
+export function runWorkerSyntheticHealthcheck(payload: Record<string, unknown> = {}) {
+  return request<Record<string, unknown>>("/api/worker/synthetic-healthcheck", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}

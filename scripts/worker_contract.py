@@ -115,6 +115,7 @@ def build_contract() -> dict[str, Any]:
     task_log_audit = _dict(packet.get("worker_task_log_persistence_audit"))
     task_log_rows = [row for row in _list(packet.get("worker_task_log_persistence_rows")) if isinstance(row, dict)]
     task_log_criteria = {str(row.get("criterion") or "") for row in task_log_rows}
+    synthetic_healthcheck = _dict(packet.get("worker_synthetic_healthcheck"))
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -268,6 +269,26 @@ def build_contract() -> dict[str, Any]:
             "Worker task-log persistence audit must prove only local safe log visibility and keep append-only/cross-process worker log proof pending.",
         ),
         _row(
+            "synthetic_healthcheck_is_explicit_post_only",
+            "POST /api/worker/synthetic-healthcheck" in _dict(catalog.get("route_coverage")).get("known_post_routes", [])
+            and _dict(catalog.get("policy")).get("all_known_post_routes_button_gated") is True
+            and synthetic_healthcheck.get("schema_version") == "worker_synthetic_healthcheck.v1"
+            and synthetic_healthcheck.get("scope") == "explicit_post_worker_synthetic_healthcheck_no_process_start"
+            and synthetic_healthcheck.get("cache_get_external_calls") is False
+            and synthetic_healthcheck.get("celery_worker_started") is False
+            and synthetic_healthcheck.get("redis_pinged") is False
+            and synthetic_healthcheck.get("scheduler_started") is False
+            and synthetic_healthcheck.get("production_worker_complete") is False
+            and synthetic_healthcheck.get("activation_ready") is False
+            and _flag_false(synthetic_healthcheck, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and synthetic_healthcheck.get("does_not_execute_trades") is True
+            and synthetic_healthcheck.get("does_not_modify_strategy_action") is True
+            and policy.get("worker_synthetic_healthcheck_requires_explicit_post") is True
+            and policy.get("cache_get_executes_synthetic_healthcheck") is False
+            and policy.get("worker_synthetic_healthcheck_is_not_production_complete") is True,
+            "Worker synthetic healthcheck must be a button-gated POST route; GET cache may read the last result but must not execute it or claim production completion.",
+        ),
+        _row(
             "push_gate_runs_worker_contract_after_storage",
             "scripts/worker_contract.py" in push_gate_script
             and "Worker contract" in push_gate_script
@@ -331,13 +352,15 @@ def build_contract() -> dict[str, Any]:
             "healthcheck_pending_count": healthcheck.get("pending_criterion_count"),
             "task_log_persistence_status": task_log_audit.get("status"),
             "task_log_persistence_blocker_count": task_log_audit.get("production_blocker_count"),
+            "synthetic_healthcheck_status": synthetic_healthcheck.get("status"),
+            "synthetic_healthcheck_executed": synthetic_healthcheck.get("synthetic_healthcheck_executed"),
             "activation_review_status": activation.get("status"),
             "activation_blocker_count": activation.get("activation_blocker_count"),
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },
         "rows": rows,
-        "note": "This is a local push-gate contract. Celery worker startup, Redis broker reachability, cross-process task controls, scheduler production config, synthetic healthcheck execution, and production worker activation remain pending.",
+        "note": "This is a local push-gate contract. It does not run the synthetic healthcheck. Celery worker startup, Redis broker reachability, cross-process task controls, scheduler production config, and production worker activation remain pending.",
     }
 
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getWorkerRuntimeCache } from "../api/client";
+import { getWorkerRuntimeCache, runWorkerSyntheticHealthcheck } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -14,14 +14,33 @@ export default function WorkerRuntime() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [healthcheckResult, setHealthcheckResult] = useState<Record<string, unknown>>({});
+  const [healthcheckRunning, setHealthcheckRunning] = useState(false);
+  const [healthcheckError, setHealthcheckError] = useState("");
 
-  useEffect(() => {
-    void getWorkerRuntimeCache().then((res) => {
+  const refreshCache = () => {
+    return getWorkerRuntimeCache().then((res) => {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
     });
+  };
+
+  useEffect(() => {
+    void refreshCache();
   }, []);
+
+  const launchSyntheticHealthcheck = () => {
+    setHealthcheckRunning(true);
+    setHealthcheckError("");
+    void runWorkerSyntheticHealthcheck({ requested_from: "worker_runtime_page" })
+      .then((res) => {
+        setHealthcheckResult(res.data);
+        return refreshCache();
+      })
+      .catch((err: unknown) => setHealthcheckError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setHealthcheckRunning(false));
+  };
 
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
   const summary = (cache.task_catalog_summary as Record<string, unknown> | undefined) ?? {};
@@ -37,6 +56,10 @@ export default function WorkerRuntime() {
   const workerActivationReview =
     (productionReadiness.worker_activation_review_contract as Record<string, unknown> | undefined) ??
     ((cache.worker_activation_review_contract as Record<string, unknown> | undefined) ?? {});
+  const workerSyntheticHealthcheck =
+    (productionReadiness.worker_synthetic_healthcheck as Record<string, unknown> | undefined) ??
+    ((cache.worker_synthetic_healthcheck as Record<string, unknown> | undefined) ?? {});
+  const visibleHealthcheck = Object.keys(healthcheckResult).length ? healthcheckResult : workerSyntheticHealthcheck;
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -80,6 +103,7 @@ export default function WorkerRuntime() {
           { label: "dispatch queues", value: counts.dispatch_plan_queue_count as number | undefined },
           { label: "worker blockers", value: productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count, tone: Number(productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count ?? 0) > 0 ? "warn" : "good" },
           { label: "healthcheck pending", value: workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count, tone: Number(workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "synthetic check", value: visibleHealthcheck.synthetic_healthcheck_executed === true ? "已显式运行" : "未运行", tone: visibleHealthcheck.synthetic_healthcheck_executed === true ? "good" : "warn" },
           { label: "log blockers", value: workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count, tone: Number(workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation blockers", value: workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count, tone: Number(workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation ready", value: workerActivationReview.activation_ready === true ? "是" : "否", tone: workerActivationReview.activation_ready === true ? "bad" : "good" },
@@ -189,6 +213,23 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(productionReadiness.worker_healthcheck_qa_rows ?? cache.worker_healthcheck_qa_rows)} />
       </PacketCard>
 
+      <PacketCard title="Worker synthetic healthcheck" subtitle="显式按钮触发本地 task/status/log 往返；不是 Celery/Redis 生产证明" status={String(visibleHealthcheck.status ?? "synthetic_healthcheck_missing")}>
+        <div className="actions">
+          <button onClick={launchSyntheticHealthcheck} disabled={healthcheckRunning}>
+            {healthcheckRunning ? "运行中" : "运行本地 healthcheck"}
+          </button>
+          <button onClick={() => void refreshCache()} disabled={healthcheckRunning}>刷新缓存</button>
+        </div>
+        {healthcheckError ? <p className="risk-note">healthcheck_error: {healthcheckError}</p> : null}
+        <p>route: POST /api/worker/synthetic-healthcheck</p>
+        <p>synthetic_healthcheck_executed / healthcheck_task_dispatched: {String(visibleHealthcheck.synthetic_healthcheck_executed ?? false)} / {String(visibleHealthcheck.healthcheck_task_dispatched ?? false)}</p>
+        <p>local_task_round_trip_verified / task_log_round_trip_verified: {String(visibleHealthcheck.local_task_round_trip_verified ?? false)} / {String(visibleHealthcheck.task_log_round_trip_verified ?? false)}</p>
+        <p>celery_worker_started / redis_pinged / scheduler_started: {String(visibleHealthcheck.celery_worker_started ?? false)} / {String(visibleHealthcheck.redis_pinged ?? false)} / {String(visibleHealthcheck.scheduler_started ?? false)}</p>
+        <p>production_worker_complete / activation_ready: {String(visibleHealthcheck.production_worker_complete ?? false)} / {String(visibleHealthcheck.activation_ready ?? false)}</p>
+        <p>不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action；GET cache 不会自动执行 healthcheck。</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_synthetic_healthcheck_rows ?? cache.worker_synthetic_healthcheck_rows ?? visibleHealthcheck.rows)} />
+      </PacketCard>
+
       <PacketCard title="Worker activation review" subtitle="生产 worker 启用前的人工作业合同；不启动 Celery、不 ping Redis、不派发任务" status={String(workerActivationReview.status ?? "worker_activation_review_ready_activation_pending")}>
         <p>schema_version: {String(workerActivationReview.schema_version ?? "worker_activation_review_contract.v1")}</p>
         <p>review_policy: {String(workerActivationReview.review_policy ?? "manual_activation_required_after_blocker_and_healthcheck_review")}</p>
@@ -226,6 +267,7 @@ export default function WorkerRuntime() {
       <PacketCard title="原始 worker runtime cache payload" subtitle="调试用 JSON；不含 token/key/Redis URL" status="safe">
         <JsonDetails title="worker runtime cache raw" data={cache} />
         <JsonDetails title="worker task log persistence raw" data={workerTaskLogPersistence} />
+        <JsonDetails title="worker synthetic healthcheck raw" data={visibleHealthcheck} />
         <JsonDetails title="worker activation review raw" data={workerActivationReview} />
       </PacketCard>
     </>

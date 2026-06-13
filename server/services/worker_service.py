@@ -8,11 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from server.services import task_service
+from storage.sqlite_meta import SQLiteMetaStore
 
 
 PACKET_KEY = "command_center_3_worker_runtime_cache"
 SCHEMA_VERSION = "worker_runtime_cache.v1"
+SYNTHETIC_HEALTHCHECK_PACKET_KEY = "command_center_3_worker_synthetic_healthcheck_packet"
+SYNTHETIC_HEALTHCHECK_SCHEMA_VERSION = "worker_synthetic_healthcheck.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 
 
 def _now_iso() -> str:
@@ -847,6 +851,288 @@ def _worker_task_log_persistence_audit(
     }
 
 
+def _missing_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
+    return {
+        "packet_key": SYNTHETIC_HEALTHCHECK_PACKET_KEY,
+        "schema_version": SYNTHETIC_HEALTHCHECK_SCHEMA_VERSION,
+        "status": "synthetic_healthcheck_missing",
+        "scope": "explicit_post_worker_synthetic_healthcheck_no_process_start",
+        "mode": "button_gated_local_synthetic_healthcheck",
+        "cache_only_placeholder": True,
+        "synthetic_healthcheck_executed": False,
+        "healthcheck_task_dispatched": False,
+        "local_task_round_trip_verified": False,
+        "task_log_round_trip_verified": False,
+        "task_status_readback_verified": False,
+        "sqlite_task_metadata_visible": False,
+        "celery_worker_started": False,
+        "celery_process_visible": False,
+        "redis_pinged": False,
+        "redis_broker_reachable": False,
+        "scheduler_started": False,
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "cross_process_controls_verified": False,
+        "cross_process_log_round_trip_verified": False,
+        "append_only_worker_log_verified": False,
+        "provider_model_task_validation_in_scope": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": [],
+        "call_ledger": [
+            {
+                "api": "local_worker_synthetic_healthcheck_cache",
+                "source": "sqlite_meta_packet_absence",
+                "row_count": 0,
+                "local_fetched_at": _now_iso(),
+                "call_status": "cache_read_missing_no_task_dispatched",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "warnings": [
+            "尚未通过 POST /api/worker/synthetic-healthcheck 显式执行本地 synthetic healthcheck；GET cache 不会自动创建任务。"
+        ],
+    }
+
+
+def _read_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(SYNTHETIC_HEALTHCHECK_PACKET_KEY)
+    except Exception:
+        packet = None
+    if not isinstance(packet, dict):
+        return _missing_worker_synthetic_healthcheck_packet()
+    return _json_safe(packet)
+
+
+def _synthetic_healthcheck_rows(task: dict[str, Any], readback: dict[str, Any] | None) -> list[dict[str, Any]]:
+    task_log = task.get("task_log") if isinstance(task.get("task_log"), list) else []
+    readback_log = readback.get("task_log") if isinstance(readback, dict) and isinstance(readback.get("task_log"), list) else []
+
+    def _row(
+        criterion: str,
+        component: str,
+        status: str,
+        evidence: str,
+        *,
+        production_blocker: bool = False,
+    ) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "component": component,
+            "status": status,
+            "passed": status == "passed",
+            "evidence": evidence,
+            "production_blocker": bool(production_blocker and status != "passed"),
+            "cache_api_can_execute": False,
+            "explicit_post_executed": True,
+            "worker_started": False,
+            "redis_pinged": False,
+            "scheduler_started": False,
+            "task_dispatched": criterion == "local_task_record_created",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    return [
+        _row(
+            "local_task_record_created",
+            "task_runtime",
+            "passed" if task.get("task_id") else "blocked",
+            f"task_id={task.get('task_id') or '--'}; status={task.get('status') or '--'}",
+        ),
+        _row(
+            "local_task_status_round_trip",
+            "task_runtime",
+            "passed" if isinstance(readback, dict) and readback.get("status") == "success" else "blocked",
+            f"readback_status={readback.get('status') if isinstance(readback, dict) else '--'}",
+        ),
+        _row(
+            "local_task_log_round_trip",
+            "task_logs",
+            "passed" if len(task_log) > 0 and len(readback_log) > 0 else "blocked",
+            f"task_log_count={len(task_log)}; readback_task_log_count={len(readback_log)}",
+        ),
+        _row(
+            "celery_process_visible",
+            "celery_worker",
+            "pending_manual_worker_start",
+            "Synthetic healthcheck does not inspect or start a live Celery worker process.",
+            production_blocker=True,
+        ),
+        _row(
+            "redis_broker_reachable",
+            "redis_broker",
+            "pending_manual_worker_start",
+            "Synthetic healthcheck does not ping Redis and never exposes a Redis URL.",
+            production_blocker=True,
+        ),
+        _row(
+            "cross_process_controls_verified",
+            "task_controls",
+            "pending_manual_worker_start",
+            "Retry/cancel/lock/dedupe across Celery process boundaries are not proven by local fallback.",
+            production_blocker=True,
+        ),
+        _row(
+            "append_only_worker_log_verified",
+            "worker_log_storage",
+            "pending_manual_worker_start",
+            "Local task log readback is visible, but append-only Celery worker logs are not proven.",
+            production_blocker=True,
+        ),
+        _row(
+            "provider_model_boundary",
+            "safety",
+            "passed",
+            "This healthcheck is synthetic/local only and cannot call Tushare, DeepSeek, GitHub, or trading code.",
+        ),
+        _row(
+            "no_trade_no_action_mutation",
+            "safety",
+            "passed",
+            "The synthetic task does not execute trades and does not modify strategy action.",
+        ),
+    ]
+
+
+def run_worker_synthetic_healthcheck(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_worker_synthetic_healthcheck",
+        output_packet_key=SYNTHETIC_HEALTHCHECK_PACKET_KEY,
+        payload=payload,
+        current_step="synthetic_healthcheck_queued_no_external_call",
+        warnings=[
+            "Worker synthetic healthcheck 只验证本地 task/status/log 往返；不会启动 Celery、ping Redis、启动 scheduler、调用 provider/model/probe 或执行交易。"
+        ],
+    )
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="running",
+        progress=0.5,
+        current_step="synthetic_healthcheck_running_local_task_store_only",
+    ) or task
+    ledger = [
+        {
+            "api": "local_worker_synthetic_healthcheck",
+            "source": "local_task_store",
+            "row_count": 1,
+            "task_id": task.get("task_id"),
+            "local_fetched_at": _now_iso(),
+            "call_status": "synthetic_healthcheck_completed_no_external_call",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "error_message_safe": "",
+        }
+    ]
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="success",
+        progress=1.0,
+        current_step="synthetic_healthcheck_completed_local_task_store_only",
+        call_ledger=ledger,
+        warning="worker_synthetic_healthcheck_completed_no_external_call",
+    ) or task
+    readback = task_service.read_task_status(str(task.get("task_id") or ""))
+    rows = _synthetic_healthcheck_rows(task, readback)
+    blocker_rows = [row for row in rows if row.get("production_blocker")]
+    task_log = task.get("task_log") if isinstance(task.get("task_log"), list) else []
+    readback_log = readback.get("task_log") if isinstance(readback, dict) and isinstance(readback.get("task_log"), list) else []
+    packet = {
+        "packet_key": SYNTHETIC_HEALTHCHECK_PACKET_KEY,
+        "schema_version": SYNTHETIC_HEALTHCHECK_SCHEMA_VERSION,
+        "status": "synthetic_healthcheck_passed_local_task_store_only"
+        if not any(row["status"] == "blocked" for row in rows)
+        else "synthetic_healthcheck_local_blocked",
+        "scope": "explicit_post_worker_synthetic_healthcheck_no_process_start",
+        "mode": "button_gated_local_synthetic_healthcheck",
+        "executed_at": _now_iso(),
+        "task_id": task.get("task_id"),
+        "task_status": task.get("status"),
+        "task_type": task.get("task_type"),
+        "output_packet_key": SYNTHETIC_HEALTHCHECK_PACKET_KEY,
+        "synthetic_healthcheck_executed": True,
+        "healthcheck_task_dispatched": True,
+        "local_task_round_trip_verified": isinstance(readback, dict) and readback.get("status") == "success",
+        "task_log_round_trip_verified": len(task_log) > 0 and len(readback_log) > 0,
+        "task_status_readback_verified": isinstance(readback, dict),
+        "sqlite_task_metadata_visible": bool(readback and readback.get("storage_source") in {"memory_and_sqlite", "sqlite_meta"}),
+        "task_log_count": len(task_log),
+        "readback_task_log_count": len(readback_log),
+        "call_ledger_count": len(ledger),
+        "production_blocker_count": len(blocker_rows),
+        "production_blockers": [str(row["criterion"]) for row in blocker_rows],
+        "celery_worker_started": False,
+        "celery_process_visible": False,
+        "redis_pinged": False,
+        "redis_broker_reachable": False,
+        "scheduler_started": False,
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "cross_process_controls_verified": False,
+        "cross_process_log_round_trip_verified": False,
+        "append_only_worker_log_verified": False,
+        "provider_model_task_validation_in_scope": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "task_summary": {
+            "task_id": task.get("task_id"),
+            "task_type": task.get("task_type"),
+            "status": task.get("status"),
+            "progress": task.get("progress"),
+            "current_step": task.get("current_step"),
+            "storage_source": readback.get("storage_source") if isinstance(readback, dict) else None,
+            "task_log_count": len(task_log),
+            "call_ledger_count": len(task.get("call_ledger") or []),
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        "call_ledger": ledger,
+        "warnings": [
+            "这是显式 POST 的本地 synthetic healthcheck，只证明本地 task/status/log 往返。",
+            "它不启动 Celery、不 ping Redis、不启动 scheduler、不调用 Tushare/DeepSeek/GitHub、不执行真实交易，也不代表 production worker 完成。",
+        ],
+    }
+    packet = _json_safe(packet)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(SYNTHETIC_HEALTHCHECK_PACKET_KEY, packet)
+    except Exception:
+        packet.setdefault("warnings", []).append("worker_synthetic_healthcheck_packet_persist_failed_safe")
+    return packet
+
+
 def _worker_activation_review_contract(
     *,
     redis_configured: bool,
@@ -1011,6 +1297,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         task_persistence=task_persistence,
         task_persistence_source_rows=task_persistence_source_rows,
     )
+    synthetic_healthcheck = _read_worker_synthetic_healthcheck_packet()
     worker_module_rows = _worker_module_rows()
     backend_rows = _backend_rows(
         celery_available=celery_available,
@@ -1057,6 +1344,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     production_readiness["worker_healthcheck_qa_rows"] = healthcheck_qa_contract["rows"]
     production_readiness["worker_task_log_persistence_audit"] = task_log_persistence_audit
     production_readiness["worker_task_log_persistence_rows"] = task_log_persistence_audit["rows"]
+    production_readiness["worker_synthetic_healthcheck"] = synthetic_healthcheck
+    production_readiness["worker_synthetic_healthcheck_rows"] = synthetic_healthcheck.get("rows") or []
     activation_review_contract = _worker_activation_review_contract(
         redis_configured=redis_configured,
         scheduled_refresh_enabled=scheduled_refresh_enabled,
@@ -1139,6 +1428,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_healthcheck_qa_rows": healthcheck_qa_contract["rows"],
         "worker_task_log_persistence_audit": task_log_persistence_audit,
         "worker_task_log_persistence_rows": task_log_persistence_audit["rows"],
+        "worker_synthetic_healthcheck": synthetic_healthcheck,
+        "worker_synthetic_healthcheck_rows": synthetic_healthcheck.get("rows") or [],
         "worker_activation_review_contract": activation_review_contract,
         "worker_activation_review_rows": activation_review_contract["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
@@ -1182,6 +1473,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_task_log_persistence_criterion_count": task_log_persistence_audit["criterion_count"],
             "worker_task_log_persistence_blocker_count": task_log_persistence_audit["production_blocker_count"],
             "worker_task_log_count": task_log_persistence_audit["task_log_count"],
+            "worker_synthetic_healthcheck_executed": 1 if synthetic_healthcheck.get("synthetic_healthcheck_executed") is True else 0,
+            "worker_synthetic_healthcheck_blocker_count": synthetic_healthcheck.get("production_blocker_count", 0),
             "worker_activation_review_step_count": activation_review_contract["review_step_count"],
             "worker_activation_blocker_count": activation_review_contract["activation_blocker_count"],
             "worker_activation_operator_action_count": activation_review_contract["operator_action_required_count"],
@@ -1206,6 +1499,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_task_log_persistence_audit_is_read_only": True,
             "worker_task_log_persistence_is_not_worker_healthcheck": True,
             "worker_task_log_persistence_is_not_production_complete": True,
+            "worker_synthetic_healthcheck_requires_explicit_post": True,
+            "cache_get_executes_synthetic_healthcheck": False,
+            "worker_synthetic_healthcheck_is_not_production_complete": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
