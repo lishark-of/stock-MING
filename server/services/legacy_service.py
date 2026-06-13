@@ -342,6 +342,81 @@ def _primary_workflow_exit_audit(
     }
 
 
+def _streamlit_fallback_dependency_contract(route_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    def _dependency_row(row: Mapping[str, Any]) -> dict[str, Any]:
+        workflow = str(row.get("workflow") or "unknown_workflow")
+        ordinary_flow_supported = bool(row.get("ordinary_flow_supported"))
+        fallback_required = bool(row.get("still_needs_streamlit_fallback"))
+        if fallback_required and ordinary_flow_supported:
+            dependency_class = "ordinary_flow_partial_fallback_required"
+            removal_criteria = "Prove Command Center 3 route parity, data freshness, task pipeline execution, and legacy feature coverage without opening Streamlit."
+        elif fallback_required:
+            dependency_class = "legacy_admin_debug_retained"
+            removal_criteria = "Keep as legacy/admin/debug until replacement admin/debug workflows are proven or explicitly retired."
+        else:
+            dependency_class = "command_center_3_primary_ready"
+            removal_criteria = "Keep route coverage and safety boundaries under regression test."
+        return {
+            "workflow": workflow,
+            "react_route": row.get("react_route"),
+            "api": row.get("api"),
+            "coverage_status": row.get("coverage_status"),
+            "ordinary_flow_supported": ordinary_flow_supported,
+            "still_needs_streamlit_fallback": fallback_required,
+            "dependency_class": dependency_class,
+            "blocks_ordinary_primary_exit": bool(fallback_required and ordinary_flow_supported),
+            "blocks_full_streamlit_removal": fallback_required,
+            "fallback_reason": row.get("fallback_reason") or "",
+            "removal_criteria": removal_criteria,
+            "replacement_must_preserve_features": True,
+            "cache_api_can_resolve": False,
+            "operator_action_required": fallback_required,
+            "external_calls_triggered": False,
+            "does_not_open_streamlit": True,
+            "does_not_run_legacy_tools": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [_dependency_row(row) for row in route_rows]
+    ordinary_fallback_rows = [row for row in rows if row["blocks_ordinary_primary_exit"]]
+    full_removal_blockers = [row for row in rows if row["blocks_full_streamlit_removal"]]
+    retained_admin_rows = [row for row in rows if row["dependency_class"] == "legacy_admin_debug_retained"]
+    primary_ready_rows = [row for row in rows if row["dependency_class"] == "command_center_3_primary_ready"]
+    return {
+        "schema_version": "streamlit_fallback_dependency_contract.v1",
+        "status": "streamlit_fallback_dependencies_visible_retirement_pending"
+        if full_removal_blockers
+        else "streamlit_fallback_dependencies_clear",
+        "scope": "local_route_dependency_contract_not_streamlit_execution",
+        "route_count": len(rows),
+        "command_center_primary_ready_count": len(primary_ready_rows),
+        "ordinary_fallback_dependency_count": len(ordinary_fallback_rows),
+        "admin_debug_fallback_retained_count": len(retained_admin_rows),
+        "full_streamlit_removal_blocker_count": len(full_removal_blockers),
+        "ordinary_primary_exit_ready": len(ordinary_fallback_rows) == 0,
+        "full_streamlit_removal_ready": len(full_removal_blockers) == 0,
+        "streamlit_fallback_retained": bool(full_removal_blockers),
+        "ordinary_blocking_workflows": [str(row["workflow"]) for row in ordinary_fallback_rows],
+        "full_removal_blocking_workflows": [str(row["workflow"]) for row in full_removal_blockers],
+        "feature_parity_required_before_removal": True,
+        "no_feature_cut_allowed": True,
+        "cache_api_can_resolve": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_create_tasks": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "note": "This contract makes remaining Streamlit fallback dependencies explicit. It is not a fallback removal, does not open Streamlit, and does not execute legacy tools.",
+    }
+
+
 def read_legacy_bridge_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -414,6 +489,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         status=status,
         snapshot_available=bool(snapshot),
     )
+    fallback_dependency_contract = _streamlit_fallback_dependency_contract(primary_workflow_exit_audit["route_rows"])
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -454,6 +530,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "primary_workflow_exit_audit": primary_workflow_exit_audit,
         "primary_workflow_exit_rows": primary_workflow_exit_audit["rows"],
         "primary_workflow_route_rows": primary_workflow_exit_audit["route_rows"],
+        "streamlit_fallback_dependency_contract": fallback_dependency_contract,
+        "streamlit_fallback_dependency_rows": fallback_dependency_contract["rows"],
         "counts": {
             **checklist_counts,
             "migration_item_count": len(migration_items),
@@ -470,6 +548,9 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "primary_workflow_route_count": primary_workflow_exit_audit["ordinary_workflow_route_count"],
             "primary_workflow_fallback_count": primary_workflow_exit_audit["ordinary_workflow_still_needs_fallback_count"],
             "primary_workflow_exit_blocker_count": primary_workflow_exit_audit["blocker_count"],
+            "streamlit_fallback_dependency_count": fallback_dependency_contract["full_streamlit_removal_blocker_count"],
+            "ordinary_fallback_dependency_count": fallback_dependency_contract["ordinary_fallback_dependency_count"],
+            "admin_debug_fallback_retained_count": fallback_dependency_contract["admin_debug_fallback_retained_count"],
         },
         "policy": policy,
         "call_ledger": [

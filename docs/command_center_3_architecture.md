@@ -14,7 +14,7 @@ Tauri desktop shell
 → existing Python quant and packet modules
 ```
 
-Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为正式主入口；页面顶部已显示 Command Center 3.0 正式入口和 legacy/admin/debug 边界提示，并声明旧入口启动不创建任务、不自动外联、不改写 `strategy action`。`GET /api/legacy/cache` 现在输出 `primary_workflow_exit_audit`、`primary_workflow_exit_rows` 和 `primary_workflow_route_rows`，用本地 route inventory 审计普通主流程迁移覆盖；当前正确状态是 `ordinary_workflow_exit_partial_fallback_required`，不能把它误称为 Streamlit 已完全退场。
+Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为正式主入口；页面顶部已显示 Command Center 3.0 正式入口和 legacy/admin/debug 边界提示，并声明旧入口启动不创建任务、不自动外联、不改写 `strategy action`。`GET /api/legacy/cache` 现在输出 `primary_workflow_exit_audit`、`primary_workflow_exit_rows` 和 `primary_workflow_route_rows`，用本地 route inventory 审计普通主流程迁移覆盖；它还输出 `streamlit_fallback_dependency_contract` 和 `streamlit_fallback_dependency_rows`，把 Command Center 3 primary-ready route、ordinary-flow partial fallback dependency、legacy/admin/debug retained dependency、移除条件和 no feature cut 边界分开展示。当前正确状态是 `ordinary_workflow_exit_partial_fallback_required` / `streamlit_fallback_dependencies_visible_retirement_pending`，不能把它误称为 Streamlit 已完全退场。
 
 ## 迁移进度基线
 

@@ -59,6 +59,8 @@ export default function LegacyTools() {
   const primaryExitAudit = (cache.primary_workflow_exit_audit as Record<string, unknown> | undefined) ?? {};
   const primaryExitRows = rows(cache.primary_workflow_exit_rows);
   const primaryWorkflowRouteRows = rows(cache.primary_workflow_route_rows);
+  const fallbackDependencyContract = (cache.streamlit_fallback_dependency_contract as Record<string, unknown> | undefined) ?? {};
+  const fallbackDependencyRows = rows(cache.streamlit_fallback_dependency_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const empty = !loading && !error && !Object.keys(cache).length;
@@ -88,6 +90,8 @@ export default function LegacyTools() {
             { label: "exit complete", value: primaryExitAudit.ordinary_workflow_exit_complete === true ? "完成" : "未完成", tone: primaryExitAudit.ordinary_workflow_exit_complete === true ? "good" : "warn" },
             { label: "fallback rows", value: primaryExitAudit.ordinary_workflow_still_needs_fallback_count as number | undefined, tone: Number(primaryExitAudit.ordinary_workflow_still_needs_fallback_count ?? 0) > 0 ? "warn" : "good" },
             { label: "exit blockers", value: primaryExitAudit.blocker_count as number | undefined, tone: Number(primaryExitAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
+            { label: "fallback deps", value: fallbackDependencyContract.full_streamlit_removal_blocker_count ?? counts.streamlit_fallback_dependency_count, tone: Number(fallbackDependencyContract.full_streamlit_removal_blocker_count ?? counts.streamlit_fallback_dependency_count ?? 0) > 0 ? "warn" : "good" },
+            { label: "ordinary deps", value: fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count, tone: Number(fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count ?? 0) > 0 ? "warn" : "good" },
             { label: "普通主流程", value: "迁往 React/Tauri", tone: "good" },
             { label: "自动外联", value: "禁止", tone: "good" },
             { label: "真实交易", value: "禁止", tone: "good" },
@@ -131,6 +135,15 @@ export default function LegacyTools() {
 
       <PacketCard title="普通主流程迁移覆盖" subtitle="Command Center 3 route coverage；partial/fallback 必须明示" status="route_inventory">
         <DataLineageTable rows={primaryWorkflowRouteRows} />
+      </PacketCard>
+
+      <PacketCard title="Streamlit fallback 依赖契约" subtitle="逐项说明哪些普通工作流仍依赖旧入口；不打开 Streamlit、不执行旧工具" status={String(fallbackDependencyContract.status ?? "streamlit_fallback_dependencies_visible_retirement_pending")}>
+        <p>scope: {String(fallbackDependencyContract.scope ?? "local_route_dependency_contract_not_streamlit_execution")}</p>
+        <p>ordinary_primary_exit_ready: {String(fallbackDependencyContract.ordinary_primary_exit_ready ?? false)}</p>
+        <p>full_streamlit_removal_ready: {String(fallbackDependencyContract.full_streamlit_removal_ready ?? false)}</p>
+        <p>ordinary_fallback_dependency_count: {String(fallbackDependencyContract.ordinary_fallback_dependency_count ?? 0)}</p>
+        <p>full_streamlit_removal_blocker_count: {String(fallbackDependencyContract.full_streamlit_removal_blocker_count ?? 0)}</p>
+        <DataLineageTable rows={fallbackDependencyRows} />
       </PacketCard>
 
       <PacketCard title="允许用途" subtitle="回退和调试可保留，普通主流程逐步迁出" status="guarded">
