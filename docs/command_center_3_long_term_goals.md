@@ -712,6 +712,7 @@ Keep real trading isolated from Command Center 3 automation
 - A button-gated local `run_candidate_radar_full_pool_plan` task now writes `full_pool_scan_plan`, stage rows, filter rows, required signal rows, and blocker rows; it is a plan-only readiness packet, not a full-pool scan.
 - A button-gated local `run_candidate_radar_deep_scan_plan` task now writes `deep_scan_plan`, stage rows, parity rows, required signal rows, and blocker rows so fast-scan migration can audit no-feature-loss readiness without executing deep scan, refreshing providers, or calling DeepSeek.
 - Candidate radar packets now expose `fast_scan_readiness_audit` and `fast_scan_readiness_rows`, proving the local quick/watchlist/custom scan contract is cache/task based, page render does not scan, legacy/provider/freshness gaps are visible, and full-pool/deep-scan remain pending rather than silently downgraded.
+- Candidate radar packets now expose `fast_scan_runtime_budget_contract` and `fast_scan_runtime_budget_rows`: local sync display is capped, local pool input normalization has a fixed budget, large universes must move to worker execution, and truncation is reported as a visible gap instead of being hidden.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
 ### Gaps
@@ -721,6 +722,7 @@ Keep real trading isolated from Command Center 3 automation
 - Deeper local scan coverage accounting and scan acceptance rows now exist for universe size, provider-blocked groups, stale inputs, missing provider data, degraded modes, freshness, local pool, full-pool boundary, and trade isolation; they are still cache/local-only and do not prove full-pool or provider-backed scan acceptance.
 - Need clear distinction between quick scan, deep-scan readiness plan, real deep scan, and research-only candidates.
 - The deep-scan readiness plan is not deep scan execution and does not prove legacy radar replacement.
+- Browser performance trace and packaged runtime UI responsiveness validation are still pending; the current runtime budget is a static/local contract.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
 - Need parity acceptance before removing any Streamlit fallback.
 
@@ -740,6 +742,7 @@ Keep real trading isolated from Command Center 3 automation
 - React shows progress, last successful packet, coverage, skipped reasons, and freshness state.
 - Existing legacy radar signal groups are mapped or explicitly marked as not yet migrated.
 - Missing provider data, provider-blocked groups, stale inputs, and degraded modes are reported as coverage gaps, not silently dropped.
+- Local quick scan enforces and displays sync runtime budgets, including candidate display caps and local pool input caps.
 - Full-pool plan lists worker requirements, filters, required signal groups, and blockers without scanning or refreshing providers.
 - Deep-scan plan lists no-feature-loss parity rows, required signal rows, freshness, worker blockers, and trade/model boundaries without executing deep scan or calling DeepSeek.
 - `fast_scan_readiness_audit.local_fast_scan_ready=true` only when page-render, local task, legacy gap, provider gap, freshness, last-cache, full-pool, deep-scan and trade boundaries are all visible.
@@ -752,6 +755,7 @@ Keep real trading isolated from Command Center 3 automation
 - Do not treat `full_pool_scan_plan` as full-pool scan completion.
 - Do not treat `deep_scan_plan` as deep scan completion or legacy radar replacement.
 - Do not reduce legacy radar signal coverage without marking the gap.
+- Do not hide candidate display truncation or local pool input truncation.
 - Do not call Tushare/DeepSeek/GitHub from GET cache or render.
 - Do not treat candidates as trade instructions.
 

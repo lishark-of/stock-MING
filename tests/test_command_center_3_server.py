@@ -2606,6 +2606,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["freshness_state"]["expected_trade_date"], "2026-06-12")
         self.assertGreaterEqual(packet["scan_coverage"]["skipped_reason_count"], 1)
         self.assertEqual(packet["coverage_detail_summary"]["universe_size"], 1)
+        self.assertEqual(packet["coverage_detail_summary"]["candidate_input_count"], 1)
+        self.assertEqual(packet["coverage_detail_summary"]["candidate_display_limit"], 120)
+        self.assertEqual(packet["coverage_detail_summary"]["candidate_display_truncated_count"], 0)
+        self.assertFalse(packet["coverage_detail_summary"]["candidate_rows_capped_for_ui"])
+        self.assertFalse(packet["coverage_detail_summary"]["large_universe_requires_worker"])
+        self.assertEqual(packet["fast_scan_runtime_budget_contract"]["schema_version"], "candidate_radar_fast_scan_runtime_budget.v1")
+        self.assertEqual(packet["fast_scan_runtime_budget_contract"]["status"], "fast_scan_runtime_budget_ready")
+        self.assertEqual(packet["fast_scan_runtime_budget_contract"]["candidate_input_count"], 1)
+        self.assertEqual(packet["fast_scan_runtime_budget_contract"]["candidate_displayed_count"], 1)
+        self.assertEqual(packet["fast_scan_runtime_budget_contract"]["candidate_display_truncated_count"], 0)
+        self.assertFalse(packet["fast_scan_runtime_budget_contract"]["large_universe_worker_required"])
+        self.assertFalse(packet["fast_scan_runtime_budget_contract"]["browser_performance_trace_done"])
+        runtime_budget_rows = {row["criterion"]: row for row in packet["fast_scan_runtime_budget_rows"]}
+        self.assertEqual(runtime_budget_rows["sync_candidate_display_budget"]["status"], "passed")
+        self.assertEqual(runtime_budget_rows["local_pool_sync_input_budget"]["status"], "passed")
+        self.assertEqual(runtime_budget_rows["large_universe_worker_boundary"]["status"], "not_required")
         self.assertEqual(packet["coverage_detail_summary"]["provider_signal_group_count"], 5)
         self.assertEqual(packet["coverage_detail_summary"]["provider_blocked_group_count"], 1)
         self.assertEqual(packet["coverage_detail_summary"]["stale_input_group_count"], 1)
@@ -2615,7 +2631,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["coverage_detail_summary"]["missing_data_is_reported_not_dropped"])
         self.assertEqual(packet["scan_execution_summary"]["schema_version"], "candidate_radar_scan_execution_summary.v1")
         self.assertEqual(packet["scan_execution_summary"]["scan_family"], "cache_view")
+        self.assertEqual(packet["scan_execution_summary"]["candidate_input_count"], 1)
         self.assertEqual(packet["scan_execution_summary"]["candidate_row_count"], 1)
+        self.assertEqual(packet["scan_execution_summary"]["candidate_display_truncated_count"], 0)
         self.assertEqual(packet["scan_execution_summary"]["provider_gap_count"], 4)
         self.assertTrue(packet["scan_execution_summary"]["cache_view_only"])
         self.assertFalse(packet["scan_execution_summary"]["external_calls_triggered"])
@@ -2661,6 +2679,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["policy"]["stale_inputs_are_research_only"])
         self.assertTrue(packet["policy"]["degraded_modes_are_visible"])
         self.assertTrue(packet["policy"]["full_pool_scan_requires_future_worker"])
+        self.assertTrue(packet["policy"]["fast_scan_runtime_budget_contract_visible"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -2669,6 +2688,60 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_candidate_radar_cache")
         json.dumps(packet, ensure_ascii=False)
+
+    def test_candidate_radar_large_cache_scan_reports_runtime_budget_without_hiding_gaps(self):
+        large_candidates = [
+            {
+                "rank": index,
+                "ticker": f"60{index:04d}.SH",
+                "name": f"候选{index}",
+                "score": index,
+                "action_state": "只观察",
+            }
+            for index in range(1, 136)
+        ]
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "大候选缓存"},
+                "next_ticket_candidates": large_candidates,
+                "a_share_capability_matrix": [
+                    {"provider": "Tushare", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                ],
+            }
+        )
+
+        packet = candidate_service.read_candidate_radar_cache()
+
+        self.assertEqual(packet["coverage_detail_summary"]["candidate_input_count"], 135)
+        self.assertEqual(packet["coverage_detail_summary"]["candidate_display_limit"], 120)
+        self.assertEqual(packet["coverage_detail_summary"]["candidate_display_truncated_count"], 15)
+        self.assertTrue(packet["coverage_detail_summary"]["candidate_rows_capped_for_ui"])
+        self.assertEqual(len(packet["candidate_rows"]), 120)
+        self.assertEqual(packet["scan_execution_summary"]["candidate_input_count"], 135)
+        self.assertEqual(packet["scan_execution_summary"]["candidate_row_count"], 120)
+        self.assertEqual(packet["scan_execution_summary"]["candidate_display_truncated_count"], 15)
+        self.assertTrue(packet["scan_execution_summary"]["candidate_rows_capped_for_ui"])
+        self.assertEqual(packet["counts"]["candidate_input_count"], 135)
+        self.assertEqual(packet["counts"]["candidate_display_truncated_count"], 15)
+        budget = packet["fast_scan_runtime_budget_contract"]
+        self.assertEqual(budget["status"], "fast_scan_runtime_budget_ready")
+        self.assertEqual(budget["candidate_input_count"], 135)
+        self.assertEqual(budget["candidate_displayed_count"], 120)
+        self.assertEqual(budget["candidate_display_truncated_count"], 15)
+        self.assertFalse(budget["large_universe_worker_required"])
+        budget_rows = {row["criterion"]: row for row in packet["fast_scan_runtime_budget_rows"]}
+        self.assertEqual(budget_rows["sync_candidate_display_budget"]["status"], "capped_visible")
+        self.assertEqual(budget_rows["feature_gap_visibility_budget"]["status"], "passed")
+        skipped_reasons = {row["reason"] for row in packet["skipped_reason_rows"]}
+        self.assertIn("candidate_rows_display_capped", skipped_reasons)
+        self.assertTrue(packet["policy"]["candidate_rows_capped_for_ui"])
+        self.assertFalse(packet["policy"]["large_universe_requires_worker"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_candidate_radar_quick_scan_task_persists_local_coverage_without_external_work(self):
         from storage.sqlite_meta import SQLiteMetaStore
@@ -4143,6 +4216,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("git add .", script)
         self.assertNotIn("tushare_adapter", script)
 
+    def test_dev_server_script_prefers_project_python(self):
+        path = Path("scripts/dev_server.sh")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertIn('PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"', script)
+        self.assertIn('if [[ ! -x "$PYTHON_BIN" ]]', script)
+        self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --reload --port 8710', script)
+
     def test_next_session_generate_task_writes_exact_cache_packet_without_external_work(self):
         db_path = self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -4440,6 +4522,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             by_type["run_candidate_radar_quick_scan"]["scan_modes"],
             ["quick_cache_scan", "watchlist_scan", "custom_pool_scan"],
         )
+        self.assertTrue(by_type["run_candidate_radar_quick_scan"]["runtime_budget_contract_visible"])
+        self.assertEqual(by_type["run_candidate_radar_quick_scan"]["sync_candidate_display_limit"], 120)
+        self.assertEqual(by_type["run_candidate_radar_quick_scan"]["local_pool_input_limit"], 50)
+        self.assertTrue(by_type["run_candidate_radar_quick_scan"]["large_universe_requires_worker"])
         self.assertIn("full_pool_scan", by_type["run_candidate_radar_quick_scan"]["future_scan_modes"])
         self.assertEqual(by_type["run_candidate_radar_full_pool_plan"]["route"], "POST /api/candidate-radar/full-pool-plan")
         self.assertEqual(by_type["run_candidate_radar_full_pool_plan"]["current_backend"], "local_cache_pipeline")

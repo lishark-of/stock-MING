@@ -17,6 +17,10 @@ SCHEMA_VERSION = "candidate_radar_cache.v1"
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
 SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan"}
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan"}
+FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
+FAST_SCAN_LOCAL_POOL_INPUT_LIMIT = 50
+FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD = 500
+SAFE_LIST_LIMIT = 200
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 FULL_POOL_FILTER_DEFAULTS = {
@@ -280,9 +284,9 @@ def _safe_value(value: Any, *, depth: int = 0) -> Any:
             if not _is_sensitive_key(key)
         }
     if isinstance(value, list):
-        return [_safe_value(item, depth=depth + 1) for item in value[:40]]
+        return [_safe_value(item, depth=depth + 1) for item in value[:SAFE_LIST_LIMIT]]
     if isinstance(value, tuple):
-        return [_safe_value(item, depth=depth + 1) for item in value[:40]]
+        return [_safe_value(item, depth=depth + 1) for item in value[:SAFE_LIST_LIMIT]]
     return _safe_text(value)
 
 
@@ -379,7 +383,7 @@ def _normalize_local_pool_candidates(
     *,
     scan_mode: str,
     input_source: str,
-    max_items: int = 50,
+    max_items: int = FAST_SCAN_LOCAL_POOL_INPUT_LIMIT,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -473,7 +477,10 @@ def _normalize_local_pool_candidates(
         "invalid_candidate_count": invalid_count,
         "duplicate_candidate_count": duplicate_count,
         "truncated_candidate_count": truncated_count,
+        "skipped_candidate_count": disabled_count + invalid_count + duplicate_count + truncated_count,
         "max_local_candidates": max_items,
+        "sync_input_limit": FAST_SCAN_LOCAL_POOL_INPUT_LIMIT,
+        "requires_worker_when_over_limit": truncated_count > 0,
         "cache_only": True,
         "external_calls_triggered": False,
         "does_not_call_tushare": True,
@@ -553,9 +560,9 @@ def _source_group_rows(snapshot_map: Mapping[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def _candidate_rows(candidates: Any) -> list[dict[str, Any]]:
+def _candidate_rows(candidates: Any, *, max_rows: int = FAST_SCAN_DISPLAY_CANDIDATE_LIMIT) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for idx, raw in enumerate(_as_list(candidates), start=1):
+    for idx, raw in enumerate(_as_list(candidates)[:max_rows], start=1):
         item = _as_dict(raw)
         if not item:
             continue
@@ -577,6 +584,12 @@ def _candidate_rows(candidates: Any) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _raw_candidate_input_count(snapshot: Mapping[str, Any]) -> int:
+    raw_radar = _as_dict(snapshot.get("radar_packet") or snapshot.get("command_center_radar_packet"))
+    raw_candidates = _as_list(snapshot.get("next_ticket_candidates")) or _as_list(raw_radar.get("top_candidates"))
+    return len(raw_candidates)
 
 
 def _candidate_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1015,6 +1028,9 @@ def _skipped_reason_rows(
     provider_coverage_rows: list[dict[str, Any]] | None = None,
     local_pool_audit: Mapping[str, Any] | None = None,
     local_pool_skipped_rows: list[dict[str, Any]] | None = None,
+    candidate_input_count: int = 0,
+    candidate_display_limit: int = FAST_SCAN_DISPLAY_CANDIDATE_LIMIT,
+    candidate_display_truncated_count: int = 0,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = list(local_pool_skipped_rows or [])
     audit = local_pool_audit or {}
@@ -1076,6 +1092,18 @@ def _skipped_reason_rows(
                 "row_count": len(excluded_candidates),
             }
         )
+    if candidate_display_truncated_count:
+        rows.append(
+            {
+                "reason": "candidate_rows_display_capped",
+                "group": "next_ticket_candidates",
+                "severity": "ui_runtime_budget",
+                "input_candidate_count": candidate_input_count,
+                "display_limit": candidate_display_limit,
+                "truncated_candidate_count": candidate_display_truncated_count,
+                "action": "show_runtime_budget_contract_and_require_worker_for_large_universe",
+            }
+        )
     if freshness_state.get("source") == "missing":
         rows.append(
             {
@@ -1107,6 +1135,8 @@ def _scan_coverage(
     scan_mode: str,
     local_pool_audit: Mapping[str, Any] | None = None,
     local_pool_skipped_rows: list[dict[str, Any]] | None = None,
+    candidate_input_count: int = 0,
+    candidate_display_truncated_count: int = 0,
 ) -> dict[str, Any]:
     source_rows = _source_group_rows(snapshot_map)
     present = [row for row in source_rows if row["present"]]
@@ -1121,6 +1151,9 @@ def _scan_coverage(
         provider_coverage_rows=provider_rows,
         local_pool_audit=local_pool_audit,
         local_pool_skipped_rows=local_pool_skipped_rows,
+        candidate_input_count=candidate_input_count,
+        candidate_display_limit=FAST_SCAN_DISPLAY_CANDIDATE_LIMIT,
+        candidate_display_truncated_count=candidate_display_truncated_count,
     )
     audit = local_pool_audit or {}
     universe_mode = (
@@ -1133,7 +1166,7 @@ def _scan_coverage(
     universe_size = (
         audit.get("input_candidate_count")
         if audit.get("input_candidate_count") is not None
-        else len(candidate_rows) + len(excluded_candidates)
+        else candidate_input_count + len(excluded_candidates)
     )
     degraded_rows = _degraded_mode_rows(
         scan_mode=scan_mode,
@@ -1150,7 +1183,11 @@ def _scan_coverage(
         "scan_mode": scan_mode,
         "universe_mode": universe_mode,
         "universe_size": int(universe_size or 0),
+        "candidate_input_count": int(candidate_input_count or 0),
         "candidate_count": len(candidate_rows),
+        "candidate_display_limit": FAST_SCAN_DISPLAY_CANDIDATE_LIMIT,
+        "candidate_display_truncated_count": int(candidate_display_truncated_count or 0),
+        "candidate_rows_capped_for_ui": bool(candidate_display_truncated_count),
         "excluded_candidate_count": len(excluded_candidates),
         "provider_signal_group_count": len(provider_rows),
         "provider_blocked_group_count": provider_blocked_count,
@@ -1163,6 +1200,8 @@ def _scan_coverage(
         "full_pool_scan_done": False,
         "full_pool_scan_requires_worker": True,
         "missing_data_is_reported_not_dropped": True,
+        "large_universe_requires_worker": int(universe_size or 0) > FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD,
+        "worker_required_universe_threshold": FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD,
         "does_not_call_external_sources": True,
         "does_not_scan_full_market_on_render": True,
         "does_not_modify_strategy_action": True,
@@ -1174,6 +1213,10 @@ def _scan_coverage(
         "snapshot_available": snapshot_available,
         "universe_mode": universe_mode,
         "universe_size": int(universe_size or 0),
+        "candidate_input_count": int(candidate_input_count or 0),
+        "candidate_display_limit": FAST_SCAN_DISPLAY_CANDIDATE_LIMIT,
+        "candidate_display_truncated_count": int(candidate_display_truncated_count or 0),
+        "candidate_rows_capped_for_ui": bool(candidate_display_truncated_count),
         "legacy_signal_group_count": len(source_rows),
         "mapped_signal_group_count": len(present),
         "missing_signal_group_count": len(missing),
@@ -1200,6 +1243,8 @@ def _scan_coverage(
         "coverage_status": "ready" if candidate_rows else ("partial_no_candidates" if present else "cache_missing"),
         "feature_loss_guard": "Missing legacy radar groups are reported as coverage gaps; they are not silently dropped.",
         "quick_scan_reads_cache_only": True,
+        "large_universe_requires_worker": int(universe_size or 0) > FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD,
+        "worker_required_universe_threshold": FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD,
         "watchlist_scan_reads_local_input_only": scan_mode == "watchlist_scan",
         "custom_pool_scan_reads_local_input_only": scan_mode == "custom_pool_scan",
         "does_not_scan_full_market_on_render": True,
@@ -1247,7 +1292,11 @@ def _scan_execution_summary(
         "unsupported_scan_mode_fallback": bool(request_params_safe.get("unsupported_scan_mode_fallback")),
         "universe_mode": coverage_detail.get("universe_mode") or request_params_safe.get("universe_mode") or coverage.get("universe_mode"),
         "universe_size": int(coverage_detail.get("universe_size") or coverage.get("universe_size") or 0),
+        "candidate_input_count": int(coverage_detail.get("candidate_input_count") or 0),
         "candidate_row_count": len(candidate_rows),
+        "candidate_display_limit": int(coverage_detail.get("candidate_display_limit") or FAST_SCAN_DISPLAY_CANDIDATE_LIMIT),
+        "candidate_display_truncated_count": int(coverage_detail.get("candidate_display_truncated_count") or 0),
+        "candidate_rows_capped_for_ui": bool(coverage_detail.get("candidate_rows_capped_for_ui")),
         "skipped_reason_count": int(coverage.get("skipped_reason_count") or 0),
         "provider_gap_count": provider_gap_count,
         "degraded_mode_active_count": int(coverage_detail.get("degraded_mode_active_count") or 0),
@@ -1382,6 +1431,110 @@ def _scan_acceptance_rows(
     return rows
 
 
+def _runtime_budget_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    evidence: str,
+    user_visible: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "evidence": evidence,
+        "user_visible": user_visible,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _fast_scan_runtime_budget_contract(
+    *,
+    scan_mode: str,
+    coverage: Mapping[str, Any],
+    local_pool_audit: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
+    universe_size = int(coverage_detail.get("universe_size") or 0)
+    input_count = int(coverage_detail.get("candidate_input_count") or 0)
+    truncated_count = int(coverage_detail.get("candidate_display_truncated_count") or 0)
+    local_pool_input_count = local_pool_audit.get("input_candidate_count")
+    local_pool_truncated_count = int(local_pool_audit.get("truncated_candidate_count") or 0)
+    worker_required = universe_size > FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD or local_pool_truncated_count > 0
+    rows = [
+        _runtime_budget_row(
+            "page_render_zero_scan_budget",
+            "passed",
+            passed=True,
+            evidence="React render and GET cache do not start candidate scans or provider refresh.",
+        ),
+        _runtime_budget_row(
+            "sync_candidate_display_budget",
+            "capped_visible" if truncated_count else "passed",
+            passed=True,
+            evidence=f"input={input_count}; displayed={len(candidate_rows)}; limit={FAST_SCAN_DISPLAY_CANDIDATE_LIMIT}; truncated={truncated_count}",
+        ),
+        _runtime_budget_row(
+            "local_pool_sync_input_budget",
+            "capped_visible" if local_pool_truncated_count else "passed",
+            passed=True,
+            evidence=f"input={local_pool_input_count}; limit={FAST_SCAN_LOCAL_POOL_INPUT_LIMIT}; truncated={local_pool_truncated_count}",
+        ),
+        _runtime_budget_row(
+            "large_universe_worker_boundary",
+            "worker_required" if worker_required else "not_required",
+            passed=True,
+            evidence=f"universe_size={universe_size}; threshold={FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD}",
+        ),
+        _runtime_budget_row(
+            "feature_gap_visibility_budget",
+            "passed",
+            passed=True,
+            evidence="Candidate display caps, provider gaps, stale inputs, and missing legacy groups are reported as rows instead of being hidden.",
+        ),
+    ]
+    return {
+        "schema_version": "candidate_radar_fast_scan_runtime_budget.v1",
+        "status": "fast_scan_runtime_budget_ready",
+        "scope": "local_sync_budget_contract_not_browser_performance_trace",
+        "scan_mode": scan_mode,
+        "display_candidate_limit": FAST_SCAN_DISPLAY_CANDIDATE_LIMIT,
+        "local_pool_input_limit": FAST_SCAN_LOCAL_POOL_INPUT_LIMIT,
+        "worker_required_universe_threshold": FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD,
+        "candidate_input_count": input_count,
+        "candidate_displayed_count": len(candidate_rows),
+        "candidate_display_truncated_count": truncated_count,
+        "candidate_rows_capped_for_ui": bool(truncated_count),
+        "local_pool_input_candidate_count": local_pool_input_count,
+        "local_pool_truncated_candidate_count": local_pool_truncated_count,
+        "large_universe_worker_required": worker_required,
+        "browser_performance_trace_done": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "feature_gaps_visible": True,
+        "cache_get_starts_scan": False,
+        "page_render_starts_scan": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "This is a static runtime-budget contract for local quick/watchlist/custom scans; browser performance traces and real full-pool worker execution remain future validation.",
+    }
+
+
 def _fast_scan_readiness_row(
     criterion: str,
     status: str,
@@ -1421,6 +1574,7 @@ def _fast_scan_readiness_rows(
     deep_scan_plan: Mapping[str, Any],
     local_pool_audit: Mapping[str, Any],
     candidate_rows: list[dict[str, Any]],
+    runtime_budget_contract: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
     acceptance_by_key = {str(row.get("check_key")): row for row in scan_acceptance_rows}
@@ -1491,6 +1645,13 @@ def _fast_scan_readiness_rows(
             "passed" if not local_pool_audit or local_pool_audit.get("skipped_candidate_count") is not None else "input_reported",
             passed=True,
             evidence=f"input={local_pool_audit.get('input_candidate_count')}; normalized={local_pool_audit.get('normalized_candidate_count')}",
+        ),
+        _fast_scan_readiness_row(
+            "runtime_budget_contract_visible",
+            "passed" if runtime_budget_contract.get("status") == "fast_scan_runtime_budget_ready" else "blocked",
+            passed=runtime_budget_contract.get("status") == "fast_scan_runtime_budget_ready",
+            evidence=f"display_limit={runtime_budget_contract.get('display_candidate_limit')}; worker_threshold={runtime_budget_contract.get('worker_required_universe_threshold')}",
+            production_blocker=True,
         ),
         _fast_scan_readiness_row(
             "full_pool_boundary_plan_only",
@@ -2088,13 +2249,16 @@ def _build_candidate_radar_packet(
     full_pool_scan_plan: Mapping[str, Any] | None = None,
     deep_scan_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    raw_snapshot = snapshot if isinstance(snapshot, Mapping) else {}
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
     radar_packet = _as_dict(snapshot_map.get("radar_packet") or snapshot_map.get("command_center_radar_packet"))
     candidates = _as_list(snapshot_map.get("next_ticket_candidates")) or _as_list(radar_packet.get("top_candidates"))
+    candidate_input_count = max(_raw_candidate_input_count(raw_snapshot), len(candidates))
     excluded_candidates = _as_list(radar_packet.get("excluded_candidates"))[:10]
     evidence_recovery_actions = _as_list(snapshot_map.get("next_ticket_evidence_recovery_actions"))[:10]
     candidate_rows = _candidate_rows(candidates)
+    candidate_display_truncated_count = max(0, candidate_input_count - len(candidate_rows))
     counts = _candidate_counts(candidate_rows)
     parity_inventory = _legacy_parity_inventory(
         snapshot_map=snapshot_map,
@@ -2111,6 +2275,8 @@ def _build_candidate_radar_packet(
         scan_mode=scan_mode,
         local_pool_audit=local_pool_audit,
         local_pool_skipped_rows=local_pool_skipped_rows,
+        candidate_input_count=candidate_input_count,
+        candidate_display_truncated_count=candidate_display_truncated_count,
     )
     counts["legacy_parity_gap_count"] = parity_inventory["gap_or_future_count"]
     counts["legacy_parity_mapped_count"] = parity_inventory["mapped_or_partial_count"]
@@ -2124,6 +2290,9 @@ def _build_candidate_radar_packet(
     counts["missing_provider_data_group_count"] = coverage["coverage_detail_summary"]["missing_provider_data_group_count"]
     counts["degraded_mode_active_count"] = coverage["coverage_detail_summary"]["degraded_mode_active_count"]
     counts["universe_size"] = coverage["coverage_detail_summary"]["universe_size"]
+    counts["candidate_input_count"] = candidate_input_count
+    counts["candidate_display_limit"] = FAST_SCAN_DISPLAY_CANDIDATE_LIMIT
+    counts["candidate_display_truncated_count"] = candidate_display_truncated_count
     plan = dict(full_pool_scan_plan or _as_dict(snapshot_map.get("full_pool_scan_plan")))
     deep_plan = dict(deep_scan_plan or _as_dict(snapshot_map.get("deep_scan_plan")))
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
@@ -2147,6 +2316,13 @@ def _build_candidate_radar_packet(
         full_pool_scan_plan=plan,
         deep_scan_plan=deep_plan,
     )
+    fast_scan_runtime_budget_contract = _fast_scan_runtime_budget_contract(
+        scan_mode=scan_mode,
+        coverage=coverage,
+        local_pool_audit=local_pool_audit or {},
+        candidate_rows=candidate_rows,
+    )
+    counts["fast_scan_runtime_budget_row_count"] = fast_scan_runtime_budget_contract["row_count"]
     fast_scan_readiness_rows = _fast_scan_readiness_rows(
         mode=mode,
         scan_mode=scan_mode,
@@ -2159,6 +2335,7 @@ def _build_candidate_radar_packet(
         deep_scan_plan=deep_plan,
         local_pool_audit=local_pool_audit or {},
         candidate_rows=candidate_rows,
+        runtime_budget_contract=fast_scan_runtime_budget_contract,
     )
     fast_scan_readiness_audit = _fast_scan_readiness_audit(fast_scan_readiness_rows)
     if plan:
@@ -2212,6 +2389,8 @@ def _build_candidate_radar_packet(
         "coverage_detail_summary": coverage["coverage_detail_summary"],
         "scan_execution_summary": scan_execution_summary,
         "scan_acceptance_rows": scan_acceptance_rows,
+        "fast_scan_runtime_budget_contract": fast_scan_runtime_budget_contract,
+        "fast_scan_runtime_budget_rows": fast_scan_runtime_budget_contract["rows"],
         "fast_scan_readiness_audit": fast_scan_readiness_audit,
         "fast_scan_readiness_rows": fast_scan_readiness_rows,
         "provider_coverage_rows": coverage["provider_coverage_rows"],
@@ -2284,6 +2463,9 @@ def _build_candidate_radar_packet(
             "does_not_modify_holdings": True,
             "candidate_is_not_buy_instruction": True,
             "post_task_required_for_scan": True,
+            "fast_scan_runtime_budget_contract_visible": True,
+            "candidate_rows_capped_for_ui": bool(candidate_display_truncated_count),
+            "large_universe_requires_worker": coverage["coverage_detail_summary"]["large_universe_requires_worker"],
             "fast_scan_readiness_audit_is_local": True,
             "fast_scan_readiness_is_not_full_replacement": True,
         },
