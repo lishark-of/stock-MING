@@ -63,7 +63,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold and factor_values write path | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback and preflight | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, and local JSON stability audit; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
-| LTG-08 | ECharts 次日操作图谱成熟版 | initial/maturing chart contract | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
+| LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
@@ -463,13 +463,14 @@ Stabilize DeepSeek pro explanation benchmark
 
 - ECharts initial and maturing chart contracts exist.
 - Current display includes latest close, reference lines, operation zones, data credibility, and DeepSeek status.
+- The cache payload now exposes `interaction_readiness_audit` and `interaction_readiness_rows` so hover/click evidence, reference-line source display, operation-zone guardrails, position-conflict visibility, DeepSeek status visibility, read-only frontend boundaries, and Streamlit parity gaps are auditable.
 
 ### Gaps
 
-- Interaction can be improved.
-- Evidence hover/click is incomplete.
-- Operation zone details need more maturity.
-- Position conflict visualization can be clearer.
+- Interaction can still be improved after the current readiness audit.
+- Evidence hover/click contracts are visible, but legacy parity review remains pending.
+- Operation zone details are visible through guardrail rows, but full legacy interaction comparison is incomplete.
+- Position conflict visualization is present, but clarity can still be improved.
 - Full parity with legacy Streamlit chart is incomplete.
 
 ### Implementation Phases
@@ -483,8 +484,10 @@ Stabilize DeepSeek pro explanation benchmark
 
 - Missing cache state is clear.
 - Available cache renders a complete chart.
+- `interaction_readiness_audit` distinguishes ready contracts, blockers, and parity-pending items.
 - Frontend does not compute action.
 - Frontend does not mutate price, position, or `operation_zones`.
+- `production_replacement_complete` remains false until legacy parity is actually complete.
 
 ### Forbidden
 

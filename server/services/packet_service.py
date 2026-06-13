@@ -281,6 +281,10 @@ def _reference_line_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _zone_interaction_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for zone in payload.get("operation_zones") or []:
@@ -299,6 +303,172 @@ def _zone_interaction_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _interaction_readiness_row(
+    key: str,
+    label: str,
+    status: str,
+    *,
+    source: str,
+    note: str,
+    blocker: bool = False,
+    frontend_mutable: bool = False,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "source": source,
+        "note": note,
+        "blocker": blocker,
+        "frontend_mutable": frontend_mutable,
+    }
+
+
+def _next_session_interaction_readiness_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    contract = payload.get("chart_contract") if isinstance(payload.get("chart_contract"), dict) else {}
+    interaction = contract.get("interaction_contract") if isinstance(contract.get("interaction_contract"), dict) else {}
+    hover_fields = _list_or_empty(interaction.get("hover_displays"))
+    required_hover = {"price", "source", "trigger_condition", "risk_note"}
+    historical_points = _list_or_empty(payload.get("historical_points"))
+    scenario_series = _list_or_empty(payload.get("scenario_series"))
+    reference_lines = _list_or_empty(payload.get("reference_lines"))
+    operation_zones = _list_or_empty(payload.get("operation_zones"))
+    reference_line_rows = _list_or_empty(payload.get("reference_line_rows"))
+    zone_interaction_rows = _list_or_empty(payload.get("zone_interaction_rows"))
+    position_conflict = payload.get("position_conflict")
+    deepseek_status = payload.get("deepseek_status")
+    has_drawable_data = bool(historical_points or scenario_series)
+    safe_boundaries = (
+        contract.get("cache_only") is not False
+        and bool(contract.get("external_calls_triggered")) is False
+        and bool(contract.get("tushare_called")) is False
+        and bool(contract.get("deepseek_called")) is False
+        and bool(contract.get("github_called")) is False
+        and contract.get("does_not_execute_trades") is not False
+        and bool(contract.get("frontend_computes_trade_action")) is False
+        and contract.get("does_not_modify_action") is not False
+        and contract.get("does_not_modify_operation_zones") is not False
+    )
+    hover_ready = required_hover.issubset({str(field) for field in hover_fields})
+    reference_ready = bool(reference_lines) and bool(reference_line_rows) and all(
+        isinstance(row, dict) and row.get("frontend_mutable") is False for row in reference_line_rows
+    )
+    zone_ready = bool(operation_zones) and bool(zone_interaction_rows) and all(
+        isinstance(row, dict) and row.get("frontend_mutable") is False for row in zone_interaction_rows
+    )
+    rows = [
+        _interaction_readiness_row(
+            "chart_payload_available",
+            "ECharts payload",
+            "ready" if payload.get("status") != "missing" else "blocked",
+            source=str(payload.get("source_packet") or "GET /api/next-session/cache"),
+            note="缓存图谱可用于展示。" if payload.get("status") != "missing" else "没有可绘制的本地图谱 cache。",
+            blocker=payload.get("status") == "missing",
+        ),
+        _interaction_readiness_row(
+            "drawable_series",
+            "可绘制序列",
+            "ready" if has_drawable_data else "blocked",
+            source="chart_payload.historical_points/scenario_series",
+            note=f"historical={len(historical_points)}, scenario={len(scenario_series)}",
+            blocker=not has_drawable_data,
+        ),
+        _interaction_readiness_row(
+            "hover_evidence_contract",
+            "hover 证据说明",
+            "ready" if hover_ready else "blocked",
+            source="chart_contract.interaction_contract.hover_displays",
+            note="hover 显示 price/source/trigger_condition/risk_note。" if hover_ready else "hover 字段合同不完整。",
+            blocker=not hover_ready,
+        ),
+        _interaction_readiness_row(
+            "scenario_click_drilldown",
+            "情景路径点击",
+            "ready" if scenario_series and interaction.get("click_path_displays") == "trigger_condition" else "pending",
+            source="chart_payload.scenario_series",
+            note="点击只展示触发条件，不生成交易动作。" if scenario_series else "暂无情景路径可点选。",
+        ),
+        _interaction_readiness_row(
+            "reference_click_source",
+            "参考线来源",
+            "ready" if reference_ready and interaction.get("click_reference_displays") == "line_source" else "pending",
+            source="chart_payload.reference_line_rows",
+            note="参考线来源可展示且前端不可改写。" if reference_ready else "暂无完整参考线来源行。",
+            frontend_mutable=not reference_ready,
+        ),
+        _interaction_readiness_row(
+            "zone_click_guardrail",
+            "操作区点击边界",
+            "ready" if zone_ready and interaction.get("click_zone_displays") == "guardrail" else "pending",
+            source="chart_payload.zone_interaction_rows",
+            note="点击操作区只显示 guardrail，不改 operation_zones。" if zone_ready else "暂无完整操作区点击说明。",
+            frontend_mutable=not zone_ready,
+        ),
+        _interaction_readiness_row(
+            "position_conflict_visibility",
+            "持仓冲突可视化",
+            "ready" if isinstance(position_conflict, dict) else "pending",
+            source="chart_payload.position_conflict",
+            note="持仓冲突字段已进入图谱 payload。" if isinstance(position_conflict, dict) else "当前 payload 未携带持仓冲突字段。",
+        ),
+        _interaction_readiness_row(
+            "deepseek_status_visibility",
+            "DeepSeek 状态可见",
+            "ready" if deepseek_status else "pending",
+            source="chart_payload.deepseek_status",
+            note=f"DeepSeek 状态为 {deepseek_status or 'missing'}；展示状态不触发模型调用。",
+        ),
+        _interaction_readiness_row(
+            "frontend_read_only_boundary",
+            "前端只读边界",
+            "ready" if safe_boundaries else "blocked",
+            source="chart_contract",
+            note="React/ECharts 只渲染 cache，不计算 action、不改价格/持仓/operation_zones。" if safe_boundaries else "图表合同存在外联或改写风险。",
+            blocker=not safe_boundaries,
+            frontend_mutable=not safe_boundaries,
+        ),
+        _interaction_readiness_row(
+            "legacy_streamlit_parity",
+            "Streamlit parity",
+            "pending",
+            source="docs/command_center_3_long_term_goals.md#LTG-08",
+            note="legacy 次日图谱完整交互对齐仍未完成；当前审计不能称为生产替代完成。",
+        ),
+    ]
+    return rows
+
+
+def _next_session_interaction_readiness_audit(payload: dict[str, Any]) -> dict[str, Any]:
+    rows = _list_or_empty(payload.get("interaction_readiness_rows"))
+    blocking_count = len([row for row in rows if isinstance(row, dict) and row.get("blocker") is True and row.get("status") != "ready"])
+    pending_count = len([row for row in rows if isinstance(row, dict) and row.get("status") == "pending"])
+    ready_count = len([row for row in rows if isinstance(row, dict) and row.get("status") == "ready"])
+    if blocking_count:
+        status = "interaction_blocked"
+    elif pending_count:
+        status = "interaction_contract_ready_parity_pending"
+    else:
+        status = "interaction_ready"
+    return {
+        "schema_version": "next_session_interaction_readiness.v1",
+        "status": status,
+        "ready_count": ready_count,
+        "pending_count": pending_count,
+        "blocking_count": blocking_count,
+        "streamlit_parity_complete": False,
+        "production_replacement_complete": False,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_action": True,
+        "does_not_modify_operation_zones": True,
+        "next_action": "complete legacy Streamlit parity review before calling the ECharts map a full replacement.",
+    }
 
 
 def _chart_maturity_status(payload: dict[str, Any]) -> dict[str, Any]:
@@ -373,6 +543,7 @@ def _next_session_echarts_contract(payload: dict[str, Any]) -> dict[str, Any]:
 def _next_session_chart_summary(payload: dict[str, Any]) -> dict[str, Any]:
     contract = payload.get("chart_contract") if isinstance(payload.get("chart_contract"), dict) else {}
     counts = contract.get("series_counts") if isinstance(contract.get("series_counts"), dict) else {}
+    interaction_audit = payload.get("interaction_readiness_audit") if isinstance(payload.get("interaction_readiness_audit"), dict) else {}
     has_drawable_data = bool((payload.get("historical_points") or []) or (payload.get("scenario_series") or []))
     return {
         "status": payload.get("status") or ("ready" if has_drawable_data else "missing"),
@@ -398,6 +569,10 @@ def _next_session_chart_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "scenario_anchored_count": (payload.get("chart_maturity") or {}).get("scenario_anchored_count") if isinstance(payload.get("chart_maturity"), dict) else 0,
         "position_conflict": bool((payload.get("position_conflict") or {}).get("has_conflict") or (payload.get("position_conflict") or {}).get("conflict_flags")) if isinstance(payload.get("position_conflict"), dict) else False,
         "deepseek_status": payload.get("deepseek_status") or "not_called",
+        "interaction_readiness_status": interaction_audit.get("status") or "missing",
+        "interaction_blocking_count": interaction_audit.get("blocking_count", 0),
+        "streamlit_parity_complete": interaction_audit.get("streamlit_parity_complete") is True,
+        "production_replacement_complete": interaction_audit.get("production_replacement_complete") is True,
     }
 
 
@@ -417,6 +592,8 @@ def _attach_next_session_chart_contract(payload: dict[str, Any], source_packet: 
     payload["zone_interaction_rows"] = _zone_interaction_rows(payload)
     payload["chart_maturity"] = _chart_maturity_status(payload)
     payload["chart_contract"] = _next_session_echarts_contract(payload)
+    payload["interaction_readiness_rows"] = _next_session_interaction_readiness_rows(payload)
+    payload["interaction_readiness_audit"] = _next_session_interaction_readiness_audit(payload)
     payload["chart_summary"] = _next_session_chart_summary(payload)
     return payload
 

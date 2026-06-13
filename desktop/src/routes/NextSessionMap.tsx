@@ -69,6 +69,7 @@ export default function NextSessionMap() {
   const chartContract = chartPayload?.chart_contract as Record<string, unknown> | undefined;
   const chartContractCounts = chartContract?.series_counts as Record<string, unknown> | undefined;
   const chartMaturity = (chartPayload?.chart_maturity as Record<string, unknown> | undefined) ?? {};
+  const interactionReadinessAudit = (chartPayload?.interaction_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const latestCloseAnchor = (chartPayload?.latest_close_anchor as Record<string, unknown> | undefined) ?? {};
   const dataTrustSummary = (chartPayload?.data_trust_summary as Record<string, unknown> | undefined) ?? {};
   const positionConflict = (chartPayload?.position_conflict as Record<string, unknown> | undefined) ?? {};
@@ -77,6 +78,7 @@ export default function NextSessionMap() {
   const operationRows = rowsFromArray(chartPayload?.operation_zones);
   const referenceLineRows = rowsFromArray(chartPayload?.reference_line_rows);
   const zoneInteractionRows = rowsFromArray(chartPayload?.zone_interaction_rows);
+  const interactionReadinessRows = rowsFromArray(chartPayload?.interaction_readiness_rows);
   const scenarioAnchorRows = rowsFromArray(chartPayload?.scenario_anchor_rows);
   const dataTrustRows = rowsFromArray(dataTrustSummary.facts);
   const humanTrustRows = rowsFromArray(dataTrustSummary.human_summary, "summary");
@@ -152,6 +154,9 @@ export default function NextSessionMap() {
           { label: "操作区", value: chartSummary.operation_zone_count as number | undefined },
           { label: "历史点", value: chartSummary.historical_point_count as number | undefined },
           { label: "成熟度", value: String(chartMaturity.status ?? chartSummary.maturity_status ?? "partial"), tone: chartMaturity.status === "ready" ? "good" : "warn" },
+          { label: "交互审计", value: String(interactionReadinessAudit.status ?? chartSummary.interaction_readiness_status ?? "missing"), tone: interactionReadinessAudit.status === "interaction_blocked" ? "bad" : "warn" },
+          { label: "交互阻断", value: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0), tone: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0) ? "bad" : "good" },
+          { label: "Streamlit parity", value: interactionReadinessAudit.streamlit_parity_complete === true ? "完成" : "待验收", tone: interactionReadinessAudit.streamlit_parity_complete === true ? "good" : "warn" },
           { label: "路径锚定", value: `${String(chartMaturity.scenario_anchored_count ?? chartSummary.scenario_anchored_count ?? 0)}/${String(chartMaturity.scenario_anchor_count ?? 0)}` },
           { label: "最新 close", value: String(latestCloseAnchor.price ?? "--") },
           { label: "持仓冲突", value: positionConflict.has_conflict === true ? "有" : "无", tone: positionConflict.has_conflict === true ? "bad" : "good" },
@@ -166,6 +171,9 @@ export default function NextSessionMap() {
       <NextSessionChart payload={chartPayload} />
       <h3>ECharts 图表摘要</h3>
       <DataLineageTable rows={[chartSummary]} />
+      <h3>ECharts 交互成熟度审计</h3>
+      <DataLineageTable rows={[interactionReadinessAudit]} />
+      <DataLineageTable rows={interactionReadinessRows} />
       <h3>ECharts 图表数据合同</h3>
       <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>
