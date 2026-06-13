@@ -128,6 +128,7 @@ Harden A-share trading-calendar freshness production gate
 - Other interfaces are mostly `matrix`, `button-gated`, `mock`, or capability-state only.
 - GET cache APIs do not call Tushare.
 - Button-gated Tushare refresh packets now expose `api_acceptance_audit`: a local call-ledger semantic audit that checks required fields, safe terminal states, redacted errors, unselected APIs not being marked verified, and non-Parquet interfaces not claiming physical writes.
+- Tushare refresh packets now also expose `provider_acceptance_readiness_audit` and `provider_acceptance_readiness_rows`: a production-readiness blocker audit that keeps full-interface provider acceptance pending until all declared APIs have real non-empty provider samples and all target groups are validated by an explicit production acceptance run.
 
 ### Gaps
 
@@ -139,6 +140,7 @@ Harden A-share trading-calendar freshness production gate
 - `anns_d / forecast / pledge / holdertrade / share_float / stk_surv`.
 - `fina_indicator`.
 - Provider-backed all-interface acceptance is still incomplete; `api_acceptance_audit` proves packet semantics, not real provider coverage.
+- `provider_acceptance_readiness_audit.status=provider_acceptance_pending` is expected while matrix-only targets, blocked/failed calls, empty samples, missing full selection, or missing provider-backed acceptance evidence remain.
 
 ### Implementation Phases
 
@@ -154,6 +156,7 @@ Harden A-share trading-calendar freshness production gate
 - Permission denied, no record, empty window, parse failure, missing parameter, and blocked state are distinguishable.
 - Unselected APIs never display as `verified`.
 - `api_acceptance_audit.status=acceptance_audit_passed` only means call-ledger semantics are safe; `full_interface_acceptance_done` must remain false until all declared APIs are selected and provider-validated.
+- `provider_acceptance_readiness_audit.provider_backed_acceptance_done=false` and `production_tushare_pipeline_complete=false` until real provider-backed full-interface acceptance is explicitly proven.
 - Tokens are never printed, stored in packets, or exposed to frontend.
 
 ### Forbidden
@@ -161,6 +164,7 @@ Harden A-share trading-calendar freshness production gate
 - Do not call Tushare from GET cache or page render.
 - Do not mark matrix-only rows as real validation.
 - Do not treat `api_acceptance_audit` as proof that provider coverage or production refresh is complete.
+- Do not treat `provider_acceptance_readiness_audit` as production completion while it reports `provider_acceptance_pending`.
 - Do not commit fetched data artifacts.
 
 ### Recommended Commit Message

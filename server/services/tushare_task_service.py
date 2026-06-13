@@ -585,6 +585,150 @@ def _api_acceptance_audit(api_validation_rows: list[dict[str, Any]], call_ledger
     }
 
 
+def _provider_acceptance_readiness_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "audit_external_calls_triggered": False,
+        "cache_get_external_calls": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _provider_acceptance_readiness_audit(
+    *,
+    api_validation_rows: list[dict[str, Any]],
+    validation_target_rows: list[dict[str, Any]],
+    api_acceptance_audit: dict[str, Any],
+) -> dict[str, Any]:
+    api_count = len(api_validation_rows)
+    selected_count = int(api_acceptance_audit.get("selected_api_count") or 0)
+    matrix_only_count = int(api_acceptance_audit.get("matrix_only_api_count") or 0)
+    successful_selected_count = int(api_acceptance_audit.get("successful_selected_api_count") or 0)
+    acceptance_issue_count = int(api_acceptance_audit.get("acceptance_issue_count") or 0)
+    validated_targets = [row for row in validation_target_rows if row.get("readiness") == "validated"]
+    partial_or_blocked_targets = [
+        row
+        for row in validation_target_rows
+        if row.get("readiness") in {"partial", "partial_failed", "failed", "blocked", "selected_not_called"}
+    ]
+    matrix_only_targets = [row for row in validation_target_rows if row.get("readiness") == "matrix_only"]
+    all_apis_selected = bool(api_count and selected_count == api_count)
+    all_selected_success_non_empty = bool(
+        all_apis_selected
+        and successful_selected_count == selected_count
+        and selected_count > 0
+    )
+    all_targets_validated = bool(validation_target_rows and len(validated_targets) == len(validation_target_rows))
+    semantic_audit_passed = api_acceptance_audit.get("status") == "acceptance_audit_passed" and acceptance_issue_count == 0
+    no_secret_or_parquet_issues = bool(
+        api_acceptance_audit.get("safe_errors_redacted")
+        and api_acceptance_audit.get("safe_request_params")
+        and api_acceptance_audit.get("non_parquet_interfaces_do_not_claim_writes")
+    )
+    provider_backed_acceptance_done = False
+    rows = [
+        _provider_acceptance_readiness_row(
+            "post_task_button_gate",
+            "passed",
+            True,
+            evidence="refresh pipeline is entered only from POST task; GET cache remains read-only.",
+        ),
+        _provider_acceptance_readiness_row(
+            "call_ledger_semantic_audit",
+            "passed" if semantic_audit_passed else "blocked",
+            semantic_audit_passed,
+            evidence=f"api_acceptance_audit={api_acceptance_audit.get('status')}; issues={acceptance_issue_count}",
+            production_blocker=not semantic_audit_passed,
+        ),
+        _provider_acceptance_readiness_row(
+            "all_declared_apis_selected",
+            "passed" if all_apis_selected else "blocked",
+            all_apis_selected,
+            evidence=f"selected={selected_count}; declared={api_count}; matrix_only={matrix_only_count}",
+            production_blocker=not all_apis_selected,
+        ),
+        _provider_acceptance_readiness_row(
+            "all_selected_success_non_empty",
+            "passed" if all_selected_success_non_empty else "blocked",
+            all_selected_success_non_empty,
+            evidence=f"successful_non_empty={successful_selected_count}; selected={selected_count}",
+            production_blocker=not all_selected_success_non_empty,
+        ),
+        _provider_acceptance_readiness_row(
+            "all_target_groups_validated",
+            "passed" if all_targets_validated else "blocked",
+            all_targets_validated,
+            evidence=f"validated_targets={len(validated_targets)}; target_count={len(validation_target_rows)}; matrix_only_targets={len(matrix_only_targets)}; partial_or_blocked_targets={len(partial_or_blocked_targets)}",
+            production_blocker=not all_targets_validated,
+        ),
+        _provider_acceptance_readiness_row(
+            "provider_backed_acceptance_evidence",
+            "blocked",
+            provider_backed_acceptance_done,
+            evidence="provider_backed_acceptance_done=false; local/fake adapter and semantic audit evidence are not production provider acceptance.",
+            production_blocker=True,
+        ),
+        _provider_acceptance_readiness_row(
+            "safe_params_errors_and_parquet_scope",
+            "passed" if no_secret_or_parquet_issues else "blocked",
+            no_secret_or_parquet_issues,
+            evidence=(
+                f"safe_request_params={api_acceptance_audit.get('safe_request_params')}; "
+                f"safe_errors_redacted={api_acceptance_audit.get('safe_errors_redacted')}; "
+                f"non_parquet_interfaces_do_not_claim_writes={api_acceptance_audit.get('non_parquet_interfaces_do_not_claim_writes')}"
+            ),
+            production_blocker=not no_secret_or_parquet_issues,
+        ),
+        _provider_acceptance_readiness_row(
+            "trade_and_action_boundary",
+            "passed",
+            True,
+            evidence="refresh packet remains no-trade and does_not_modify_strategy_action=true.",
+        ),
+    ]
+    blocker_count = sum(1 for row in rows if row.get("production_blocker"))
+    return {
+        "schema_version": "tushare_provider_acceptance_readiness_audit.v1",
+        "status": "provider_acceptance_pending" if blocker_count else "provider_acceptance_ready",
+        "scope": "local_readiness_not_provider_backed_full_interface_acceptance",
+        "api_count": api_count,
+        "selected_api_count": selected_count,
+        "matrix_only_api_count": matrix_only_count,
+        "successful_selected_api_count": successful_selected_count,
+        "target_count": len(validation_target_rows),
+        "validated_target_count": len(validated_targets),
+        "matrix_only_target_count": len(matrix_only_targets),
+        "partial_or_blocked_target_count": len(partial_or_blocked_targets),
+        "semantic_acceptance_audit_passed": semantic_audit_passed,
+        "full_interface_acceptance_done": bool(api_acceptance_audit.get("full_interface_acceptance_done")),
+        "provider_backed_acceptance_done": provider_backed_acceptance_done,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "audit_external_calls_triggered": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_blocker_count": blocker_count,
+        "rows": rows,
+        "note": "This readiness audit keeps provider acceptance pending until all declared APIs have real non-empty provider samples and target groups are validated by an explicit production acceptance run.",
+    }
+
+
 def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     safe = _safe_payload(payload)
     if "ticker" in safe and "ts_code" not in safe:
@@ -812,6 +956,11 @@ def run_tushare_refresh_task(
     validation_target_rows = _validation_target_rows(api_validation_rows)
     validation_target_summary = _validation_target_summary(validation_target_rows)
     api_acceptance_audit = _api_acceptance_audit(api_validation_rows, call_ledger)
+    provider_acceptance_readiness_audit = _provider_acceptance_readiness_audit(
+        api_validation_rows=api_validation_rows,
+        validation_target_rows=validation_target_rows,
+        api_acceptance_audit=api_acceptance_audit,
+    )
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -839,17 +988,23 @@ def run_tushare_refresh_task(
         "api_acceptance_audit": api_acceptance_audit,
         "api_acceptance_audit_rows": api_acceptance_audit["rows"],
         "api_acceptance_audit_status": api_acceptance_audit["status"],
+        "provider_acceptance_readiness_audit": provider_acceptance_readiness_audit,
+        "provider_acceptance_readiness_rows": provider_acceptance_readiness_audit["rows"],
+        "provider_acceptance_readiness_status": provider_acceptance_readiness_audit["status"],
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
             "matrix_only_apis": [row["api"] for row in api_validation_rows if row.get("validation_scope") == "capability_matrix_only"],
             "target_readiness_scope": "目标领域 readiness 只汇总本次按钮任务的 call_ledger；matrix_only 不代表真实验证。",
             "acceptance_audit_scope": "api_acceptance_audit 只审计 call_ledger 语义和安全边界，不发起 provider 调用。",
+            "provider_acceptance_readiness_scope": "provider_acceptance_readiness_audit 只汇总生产验收阻断项；不把 fake/local/matrix 证据当 provider-backed acceptance。",
             "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
             "cache_get_external_calls": False,
             "button_gated_external_calls_only": True,
             "does_not_claim_unselected_apis_verified": True,
             "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
+            "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
+            "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
         },
@@ -864,6 +1019,9 @@ def run_tushare_refresh_task(
         "api_acceptance_issue_count": api_acceptance_audit["acceptance_issue_count"],
         "api_acceptance_audit_passed": api_acceptance_audit["status"] == "acceptance_audit_passed",
         "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
+        "provider_acceptance_production_blocker_count": provider_acceptance_readiness_audit["production_blocker_count"],
+        "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
+        "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
         "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in call_ledger),
         "tushare_called": any(row.get("tushare_called") is True for row in call_ledger),
         "deepseek_called": False,

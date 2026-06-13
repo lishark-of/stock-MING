@@ -3665,6 +3665,34 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(validation_by_api["daily"]["validation_scope"], "preflight_blocked")
         self.assertEqual(validation_by_api["trade_cal"]["validation_scope"], "task_call_result")
         self.assertEqual(persisted["api_validation_matrix_policy"]["matrix_only_apis"], [])
+        provider_readiness = persisted["provider_acceptance_readiness_audit"]
+        self.assertEqual(provider_readiness["schema_version"], "tushare_provider_acceptance_readiness_audit.v1")
+        self.assertEqual(provider_readiness["status"], "provider_acceptance_pending")
+        self.assertEqual(provider_readiness["selected_api_count"], len(tushare_task_service.ALL_REFRESH_APIS))
+        self.assertEqual(provider_readiness["matrix_only_api_count"], 0)
+        self.assertFalse(provider_readiness["full_interface_acceptance_done"])
+        self.assertFalse(provider_readiness["provider_backed_acceptance_done"])
+        self.assertFalse(provider_readiness["production_tushare_pipeline_complete"])
+        self.assertFalse(provider_readiness["cache_get_external_calls"])
+        self.assertFalse(provider_readiness["audit_external_calls_triggered"])
+        self.assertTrue(provider_readiness["does_not_execute_trades"])
+        self.assertTrue(provider_readiness["does_not_modify_strategy_action"])
+        self.assertGreater(provider_readiness["production_blocker_count"], 0)
+        readiness_rows = {row["criterion"]: row for row in persisted["provider_acceptance_readiness_rows"]}
+        self.assertEqual(readiness_rows["post_task_button_gate"]["status"], "passed")
+        self.assertEqual(readiness_rows["call_ledger_semantic_audit"]["status"], "passed")
+        self.assertEqual(readiness_rows["all_declared_apis_selected"]["status"], "passed")
+        self.assertEqual(readiness_rows["all_selected_success_non_empty"]["status"], "blocked")
+        self.assertEqual(readiness_rows["all_target_groups_validated"]["status"], "blocked")
+        self.assertEqual(readiness_rows["provider_backed_acceptance_evidence"]["status"], "blocked")
+        self.assertEqual(readiness_rows["safe_params_errors_and_parquet_scope"]["status"], "passed")
+        self.assertEqual(readiness_rows["trade_and_action_boundary"]["status"], "passed")
+        self.assertEqual(
+            persisted["api_validation_matrix_policy"]["provider_acceptance_readiness_scope"],
+            "provider_acceptance_readiness_audit 只汇总生产验收阻断项；不把 fake/local/matrix 证据当 provider-backed acceptance。",
+        )
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_backed_acceptance_done"])
+        self.assertFalse(persisted["api_validation_matrix_policy"]["production_tushare_pipeline_complete"])
         audit = persisted["api_acceptance_audit"]
         self.assertEqual(audit["status"], "acceptance_audit_passed")
         self.assertEqual(audit["selected_api_count"], len(tushare_task_service.ALL_REFRESH_APIS))
@@ -3828,6 +3856,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(target_by_key["hard_risk"]["readiness"], "partial_failed")
         self.assertEqual(target_by_key["limit_emotion"]["readiness"], "matrix_only")
         self.assertEqual(target_by_key["hard_risk"]["failed_api_count"], 1)
+        provider_readiness = persisted["provider_acceptance_readiness_audit"]
+        self.assertEqual(provider_readiness["status"], "provider_acceptance_pending")
+        self.assertFalse(provider_readiness["provider_backed_acceptance_done"])
+        self.assertFalse(provider_readiness["production_tushare_pipeline_complete"])
+        self.assertGreater(provider_readiness["matrix_only_api_count"], 0)
+        self.assertGreater(provider_readiness["matrix_only_target_count"], 0)
+        self.assertGreater(provider_readiness["partial_or_blocked_target_count"], 0)
+        readiness_rows = {row["criterion"]: row for row in persisted["provider_acceptance_readiness_rows"]}
+        self.assertEqual(readiness_rows["all_declared_apis_selected"]["status"], "blocked")
+        self.assertEqual(readiness_rows["all_target_groups_validated"]["status"], "blocked")
+        self.assertEqual(readiness_rows["provider_backed_acceptance_evidence"]["status"], "blocked")
 
     def test_tushare_refresh_task_failure_keeps_safe_error_and_action_boundary(self):
         self._with_meta_store()
