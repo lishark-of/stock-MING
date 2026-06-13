@@ -963,6 +963,8 @@ Productionize non-blocking next-ticket radar scans
 - Call Ledger Audit now exposes `motion_production_qa_contract` and `motion_production_qa_rows`, a local production acceptance checklist for purposeful motion tokens, state-change clarity, chart/radar scopes, reduced-motion accessibility, layout readability, no timer/RAF loops, browser visual QA, performance trace, and provider/trade isolation. It keeps `production_motion_complete=false` until browser visual and performance checks are run.
 - Call Ledger Audit now exposes `motion_browser_qa_runbook_contract`, `motion_browser_qa_runbook_rows`, and `motion_browser_qa_matrix_rows`, so the future browser pass has stable local routes, viewport rows, performance-budget rows, artifact policy, and safety boundaries before any visual QA is claimed.
 - `scripts/motion_browser_qa_runner.mjs` now provides an explicit local browser QA runner for the pinned route/viewport matrix. It must be run manually after local FastAPI and Vite are started; it writes ignored artifacts under `.stock_ming_3/motion_qa`, starts no services, calls no providers/models/GitHub, and does not execute trades.
+- Call Ledger Audit now exposes `motion_browser_qa_evidence_contract` and rows. It summarizes ignored local runner reports under `.stock_ming_3/motion_qa`, including default-motion and reduced-motion pass state, matrix counts, console errors, and performance verification flags, without committing screenshots or report artifacts.
+- On 2026-06-13, the explicit local browser runner completed two local passes after manual FastAPI/Vite startup: default motion passed 20/20 route-viewport rows with zero console errors, and reduced-motion passed 20/20 route-viewport rows with zero console errors. These reports are local ignored artifacts and still require review/promotion before production completion claims.
 - Mobile layout now has a responsive breakpoint so navigation no longer squeezes Command Center content or state clarity rails on narrow screens. Local default-motion and reduced-motion browser runner reports can prove a specific run, but ignored local artifacts are not durable CI or production motion completion.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
@@ -972,8 +974,9 @@ Productionize non-blocking next-ticket radar scans
 - Need broader chart motion verification so updates help users understand state changes instead of adding decoration.
 - Need browser viewport execution against the pinned route/viewport matrix so animation never overlaps, occludes, or resizes critical text.
 - Need runtime performance traces so later animation never reintroduces UI stalls.
-- The browser QA runbook is executable planning evidence only; `visual_qa_complete=false` and `browser_performance_verified=false` remain the correct state until a real browser pass records artifacts and trace results.
-- The explicit runner is now available, but runner availability is not the same as an executed browser pass. A checked report is still required before claiming visual QA or performance verification.
+- The browser QA runbook is executable planning evidence only; it is not itself a browser pass.
+- Local browser reports now exist on the current workstation, but they are ignored artifacts rather than durable CI evidence. They can move `motion_browser_qa_evidence_contract` to evidence-available status locally, while `production_motion_complete=false` remains correct until evidence is reviewed and promoted.
+- The explicit runner is available and has local pass reports, but runner availability and local ignored reports are still not the same as production motion completion.
 - Need visual hierarchy that makes status, freshness, blockers, and candidate changes obvious.
 - Current navigation/status cue layer improves static context visibility but still needs browser viewport review for dense pages and mobile widths.
 - `motion_clarity_static_ready_visual_qa_pending` is not production motion completion; it only proves static source guardrails.
@@ -999,6 +1002,7 @@ Productionize non-blocking next-ticket radar scans
 - The motion viewport QA contract is repeatable in the push gate, while browser execution remains explicit and pending.
 - The motion browser QA runbook is repeatable in the push gate and fixes local URLs, artifact policy, route/viewport matrix, visual criteria, reduced-motion pass, and performance budgets without opening a browser.
 - The explicit browser QA runner exists and is audited as explicit-only: it opens only local `127.0.0.1` routes after services are already running, writes ignored local artifacts, and is not run by GET cache or default push gate.
+- `motion_browser_qa_evidence_contract` can summarize default and reduced-motion reports when local ignored artifacts exist; it must keep `production_motion_complete=false` until those reports are reviewed and intentionally promoted.
 - Visual polish is additive and does not replace audit labels, warnings, or freshness state.
 - `motion_production_qa_contract.local_motion_qa_ready=true` only means the local production checklist is visible and source guardrails pass; visual QA and performance trace must remain pending until explicitly executed.
 - `motion_browser_qa_runbook_contract.local_runbook_ready=true` only means the execution checklist is ready; it is not screenshot evidence, performance trace evidence, or production motion completion.
@@ -1013,6 +1017,8 @@ Productionize non-blocking next-ticket radar scans
 - Do not regress text readability or viewport layout.
 - Do not treat the browser QA runbook as an executed browser pass.
 - Do not treat runner availability as visual QA completion; only a reviewed runner report can move browser visual/performance evidence forward.
+- Do not commit `.stock_ming_3/motion_qa` reports, screenshots, or videos as production proof.
+- Do not treat local ignored QA reports as CI evidence or production motion completion without explicit review and promotion.
 
 ### Recommended Commit Message
 

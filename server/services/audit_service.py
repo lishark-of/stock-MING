@@ -56,6 +56,7 @@ TRADE_ISOLATION_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "trade_isolation_cont
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
+MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
 GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 DESKTOP_SRC_DIR = PROJECT_ROOT / "desktop" / "src"
@@ -1712,6 +1713,102 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
     return contract, rows, qa_matrix_rows + performance_budget_rows
 
 
+def _read_motion_browser_qa_report(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    safe_payload = _safe_value(payload)
+    if not isinstance(safe_payload, dict):
+        return {}
+    return safe_payload
+
+
+def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    report_paths = sorted(MOTION_QA_ARTIFACT_ROOT.glob("*/motion_browser_qa_report.json")) if MOTION_QA_ARTIFACT_ROOT.exists() else []
+    rows: list[dict[str, Any]] = []
+    for path in report_paths[-20:]:
+        report = _read_motion_browser_qa_report(path)
+        if not report:
+            continue
+        status = str(report.get("status") or "unknown")
+        row = {
+            "run_id": report.get("run_id") or path.parent.name,
+            "generated_at": report.get("generated_at"),
+            "reduced_motion": report.get("reduced_motion") is True,
+            "status": status,
+            "visual_qa_complete": report.get("visual_qa_complete") is True,
+            "browser_performance_verified": report.get("browser_performance_verified") is True,
+            "qa_matrix_count": int(report.get("qa_matrix_count") or 0),
+            "passed_count": int(report.get("passed_count") or 0),
+            "review_required_count": int(report.get("review_required_count") or 0),
+            "console_error_count": int(report.get("console_error_count") or 0),
+            "route_count": int(report.get("route_count") or 0),
+            "viewport_count": int(report.get("viewport_count") or 0),
+            "artifact_report_path": str(path.relative_to(PROJECT_ROOT)) if path.is_relative_to(PROJECT_ROOT) else str(path),
+            "artifact_root_should_stay_ignored": True,
+            "production_motion_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        rows.append(row)
+    passed_rows = [
+        row
+        for row in rows
+        if row["status"] == "motion_browser_qa_passed"
+        and row["visual_qa_complete"] is True
+        and row["browser_performance_verified"] is True
+        and row["qa_matrix_count"] >= 20
+        and row["passed_count"] >= 20
+        and row["review_required_count"] == 0
+        and row["console_error_count"] == 0
+    ]
+    default_rows = [row for row in passed_rows if row["reduced_motion"] is False]
+    reduced_rows = [row for row in passed_rows if row["reduced_motion"] is True]
+    default_passed = bool(default_rows)
+    reduced_passed = bool(reduced_rows)
+    evidence_ready = default_passed and reduced_passed
+    latest_default = default_rows[-1] if default_rows else {}
+    latest_reduced = reduced_rows[-1] if reduced_rows else {}
+    contract = {
+        "schema_version": "command_center_3_motion_browser_qa_evidence.v1",
+        "status": "motion_browser_qa_evidence_available_review_pending"
+        if evidence_ready
+        else "motion_browser_qa_evidence_pending",
+        "scope": "local_ignored_browser_qa_reports_summary_not_tracked_artifact",
+        "ltg": "LTG-14",
+        "artifact_root": ".stock_ming_3/motion_qa",
+        "report_count": len(rows),
+        "passing_report_count": len(passed_rows),
+        "default_motion_passed": default_passed,
+        "reduced_motion_passed": reduced_passed,
+        "visual_qa_complete": evidence_ready,
+        "browser_performance_verified": evidence_ready,
+        "production_motion_complete": False,
+        "latest_default_run_id": latest_default.get("run_id"),
+        "latest_reduced_motion_run_id": latest_reduced.get("run_id"),
+        "latest_default_report_path": latest_default.get("artifact_report_path"),
+        "latest_reduced_motion_report_path": latest_reduced.get("artifact_report_path"),
+        "row_count": len(rows),
+        "cache_only": True,
+        "reads_ignored_local_reports_only": True,
+        "screenshots_are_not_tracked": True,
+        "report_artifacts_are_not_tracked": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This is a summary of explicit local browser QA reports under an ignored artifact directory. It does not commit screenshots/reports and does not mark production motion complete.",
+    }
+    return contract, rows
+
+
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
@@ -1733,6 +1830,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     motion_browser_qa_runbook_contract, motion_browser_qa_runbook_rows, motion_browser_qa_matrix_rows = (
         _motion_browser_qa_runbook_contract()
     )
+    motion_browser_qa_evidence_contract, motion_browser_qa_evidence_rows = _motion_browser_qa_evidence_contract()
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -1772,6 +1870,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "motion_browser_qa_runbook_contract": motion_browser_qa_runbook_contract,
         "motion_browser_qa_runbook_rows": motion_browser_qa_runbook_rows,
         "motion_browser_qa_matrix_rows": motion_browser_qa_matrix_rows,
+        "motion_browser_qa_evidence_contract": motion_browser_qa_evidence_contract,
+        "motion_browser_qa_evidence_rows": motion_browser_qa_evidence_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -1815,6 +1915,12 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_browser_qa_runbook_ready": motion_browser_qa_runbook_contract.get("local_runbook_ready") is True,
             "motion_browser_qa_matrix_count": motion_browser_qa_runbook_contract.get("qa_matrix_count", 0),
             "motion_browser_qa_performance_budget_count": motion_browser_qa_runbook_contract.get("performance_budget_count", 0),
+            "motion_browser_qa_evidence_report_count": motion_browser_qa_evidence_contract.get("report_count", 0),
+            "motion_browser_qa_evidence_passing_report_count": motion_browser_qa_evidence_contract.get("passing_report_count", 0),
+            "motion_browser_qa_default_passed": motion_browser_qa_evidence_contract.get("default_motion_passed") is True,
+            "motion_browser_qa_reduced_motion_passed": motion_browser_qa_evidence_contract.get("reduced_motion_passed") is True,
+            "motion_browser_qa_evidence_visual_complete": motion_browser_qa_evidence_contract.get("visual_qa_complete") is True,
+            "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified") is True,
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -1845,6 +1951,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_production_qa_is_not_browser_visual_or_perf_proof": True,
             "motion_browser_qa_runbook_is_local": True,
             "motion_browser_qa_runbook_is_not_browser_execution": True,
+            "motion_browser_qa_evidence_is_local_ignored_artifact_summary": True,
+            "motion_browser_qa_evidence_is_not_production_completion": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -1866,6 +1974,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_production_complete": motion_production_qa_contract.get("production_motion_complete"),
                 "motion_browser_qa_runbook_status": motion_browser_qa_runbook_contract.get("status"),
                 "motion_browser_qa_runbook_ready": motion_browser_qa_runbook_contract.get("local_runbook_ready"),
+                "motion_browser_qa_evidence_status": motion_browser_qa_evidence_contract.get("status"),
+                "motion_browser_qa_evidence_visual_complete": motion_browser_qa_evidence_contract.get("visual_qa_complete"),
+                "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),

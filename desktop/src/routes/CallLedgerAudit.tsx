@@ -38,6 +38,8 @@ export default function CallLedgerAudit() {
   const motionBrowserQaRunbook = (cache.motion_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
   const motionBrowserQaRunbookRows = rows(cache.motion_browser_qa_runbook_rows);
   const motionBrowserQaMatrixRows = rows(cache.motion_browser_qa_matrix_rows);
+  const motionBrowserQaEvidence = (cache.motion_browser_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
+  const motionBrowserQaEvidenceRows = rows(cache.motion_browser_qa_evidence_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -94,6 +96,9 @@ export default function CallLedgerAudit() {
           { label: "motion runbook", value: motionBrowserQaRunbook.status as string | undefined, tone: motionBrowserQaRunbook.local_runbook_ready === true ? "good" : "warn" },
           { label: "motion QA matrix", value: counts.motion_browser_qa_matrix_count as number | undefined },
           { label: "motion budgets", value: counts.motion_browser_qa_performance_budget_count as number | undefined },
+          { label: "motion evidence", value: motionBrowserQaEvidence.status as string | undefined, tone: motionBrowserQaEvidence.visual_qa_complete === true ? "good" : "warn" },
+          { label: "browser reports", value: counts.motion_browser_qa_evidence_report_count as number | undefined },
+          { label: "reduced pass", value: counts.motion_browser_qa_reduced_motion_passed === true ? "yes" : "pending", tone: counts.motion_browser_qa_reduced_motion_passed === true ? "good" : "warn" },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -213,6 +218,18 @@ export default function CallLedgerAudit() {
         <DataLineageTable rows={[motionBrowserQaRunbook]} />
         <DataLineageTable rows={motionBrowserQaRunbookRows} />
         <DataLineageTable rows={motionBrowserQaMatrixRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion browser QA evidence" subtitle="motion_browser_qa_evidence_contract：读取本地 ignored 报告摘要，不提交截图/报告" status={String(motionBrowserQaEvidence.status ?? "missing")}>
+        <p>scope: {String(motionBrowserQaEvidence.scope ?? "local_ignored_browser_qa_reports_summary_not_tracked_artifact")}</p>
+        <p>report_count: {String(motionBrowserQaEvidence.report_count ?? 0)}；passing_report_count: {String(motionBrowserQaEvidence.passing_report_count ?? 0)}</p>
+        <p>default_motion_passed: {String(motionBrowserQaEvidence.default_motion_passed === true)}；reduced_motion_passed: {String(motionBrowserQaEvidence.reduced_motion_passed === true)}</p>
+        <p>visual_qa_complete: {String(motionBrowserQaEvidence.visual_qa_complete === true)}；browser_performance_verified: {String(motionBrowserQaEvidence.browser_performance_verified === true)}</p>
+        <p>production_motion_complete: {String(motionBrowserQaEvidence.production_motion_complete === true)}</p>
+        <p>artifact_root: {String(motionBrowserQaEvidence.artifact_root ?? ".stock_ming_3/motion_qa")}</p>
+        <p>该证据来自显式本地浏览器 QA；报告和截图必须保持 ignored，不等于 CI 状态或生产动效完成。</p>
+        <DataLineageTable rows={[motionBrowserQaEvidence]} />
+        <DataLineageTable rows={motionBrowserQaEvidenceRows} />
       </PacketCard>
 
       <div className="grid">

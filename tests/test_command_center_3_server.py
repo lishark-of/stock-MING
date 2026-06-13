@@ -9975,6 +9975,38 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreaterEqual(packet["counts"]["motion_browser_qa_performance_budget_count"], 4)
         self.assertTrue(packet["policy"]["motion_browser_qa_runbook_is_local"])
         self.assertTrue(packet["policy"]["motion_browser_qa_runbook_is_not_browser_execution"])
+        evidence = packet["motion_browser_qa_evidence_contract"]
+        self.assertEqual(evidence["schema_version"], "command_center_3_motion_browser_qa_evidence.v1")
+        self.assertEqual(evidence["scope"], "local_ignored_browser_qa_reports_summary_not_tracked_artifact")
+        self.assertIn(
+            evidence["status"],
+            {"motion_browser_qa_evidence_available_review_pending", "motion_browser_qa_evidence_pending"},
+        )
+        self.assertTrue(evidence["reads_ignored_local_reports_only"])
+        self.assertTrue(evidence["screenshots_are_not_tracked"])
+        self.assertTrue(evidence["report_artifacts_are_not_tracked"])
+        self.assertFalse(evidence["production_motion_complete"])
+        self.assertFalse(evidence["external_calls_triggered"])
+        self.assertFalse(evidence["tushare_called"])
+        self.assertFalse(evidence["deepseek_called"])
+        self.assertFalse(evidence["github_called"])
+        self.assertTrue(evidence["does_not_execute_trades"])
+        self.assertTrue(evidence["does_not_modify_strategy_action"])
+        self.assertEqual(len(packet["motion_browser_qa_evidence_rows"]), evidence["row_count"])
+        self.assertEqual(packet["counts"]["motion_browser_qa_evidence_report_count"], evidence["report_count"])
+        self.assertEqual(
+            packet["counts"]["motion_browser_qa_evidence_passing_report_count"],
+            evidence["passing_report_count"],
+        )
+        self.assertEqual(packet["counts"]["motion_browser_qa_default_passed"], evidence["default_motion_passed"])
+        self.assertEqual(packet["counts"]["motion_browser_qa_reduced_motion_passed"], evidence["reduced_motion_passed"])
+        if evidence["visual_qa_complete"]:
+            self.assertTrue(evidence["default_motion_passed"])
+            self.assertTrue(evidence["reduced_motion_passed"])
+            self.assertTrue(evidence["browser_performance_verified"])
+            self.assertGreaterEqual(evidence["passing_report_count"], 2)
+        self.assertTrue(packet["policy"]["motion_browser_qa_evidence_is_local_ignored_artifact_summary"])
+        self.assertTrue(packet["policy"]["motion_browser_qa_evidence_is_not_production_completion"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
 
