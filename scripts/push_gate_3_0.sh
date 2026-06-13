@@ -114,6 +114,7 @@ write_release_readiness_report() {
 - deepseek_governance_contract: passed_local_contract_provider_benchmark_pending
 - next_session_map_contract: passed_local_contract_streamlit_parity_pending
 - candidate_radar_contract: passed_local_contract_replacement_pending
+- candidate_radar_browser_qa_runbook: passed_runbook_execution_pending
 - storage_contract: passed_local_contract_physical_migration_pending
 - worker_contract: passed_local_contract_worker_activation_pending
 - tauri_desktop_contract: passed_local_contract_package_validation_pending
@@ -154,6 +155,7 @@ run_step "Factor universe contract" "$PYTHON_BIN" scripts/factor_universe_contra
 run_step "DeepSeek governance contract" "$PYTHON_BIN" scripts/deepseek_governance_contract.py
 run_step "Next-session map contract" "$PYTHON_BIN" scripts/next_session_map_contract.py
 run_step "Candidate Radar contract" "$PYTHON_BIN" scripts/candidate_radar_contract.py
+run_step "Candidate Radar browser QA runbook" "$PYTHON_BIN" scripts/candidate_radar_browser_qa_runbook.py
 run_step "Storage contract" "$PYTHON_BIN" scripts/storage_contract.py
 run_step "Worker contract" "$PYTHON_BIN" scripts/worker_contract.py
 run_step "Tauri desktop contract" "$PYTHON_BIN" scripts/tauri_desktop_contract.py

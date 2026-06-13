@@ -47,6 +47,7 @@ FACTOR_UNIVERSE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_universe_cont
 DEEPSEEK_GOVERNANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "deepseek_governance_contract.py"
 NEXT_SESSION_MAP_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "next_session_map_contract.py"
 CANDIDATE_RADAR_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_contract.py"
+CANDIDATE_RADAR_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_browser_qa_runbook.py"
 STORAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "storage_contract.py"
 WORKER_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "worker_contract.py"
 TAURI_DESKTOP_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tauri_desktop_contract.py"
@@ -444,6 +445,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     deepseek_governance_script = _read_local_text(DEEPSEEK_GOVERNANCE_CONTRACT_PATH)
     next_session_map_script = _read_local_text(NEXT_SESSION_MAP_CONTRACT_PATH)
     candidate_radar_script = _read_local_text(CANDIDATE_RADAR_CONTRACT_PATH)
+    candidate_radar_browser_qa_runbook_script = _read_local_text(CANDIDATE_RADAR_BROWSER_QA_RUNBOOK_PATH)
     storage_script = _read_local_text(STORAGE_CONTRACT_PATH)
     worker_script = _read_local_text(WORKER_CONTRACT_PATH)
     tauri_desktop_script = _read_local_text(TAURI_DESKTOP_CONTRACT_PATH)
@@ -496,6 +498,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(next_session_map_script),
         "candidate_radar_contract_exists": CANDIDATE_RADAR_CONTRACT_PATH.exists()
         and bool(candidate_radar_script),
+        "candidate_radar_browser_qa_runbook_exists": CANDIDATE_RADAR_BROWSER_QA_RUNBOOK_PATH.exists()
+        and bool(candidate_radar_browser_qa_runbook_script),
         "storage_contract_exists": STORAGE_CONTRACT_PATH.exists() and bool(storage_script),
         "worker_contract_exists": WORKER_CONTRACT_PATH.exists() and bool(worker_script),
         "tauri_desktop_contract_exists": TAURI_DESKTOP_CONTRACT_PATH.exists() and bool(tauri_desktop_script),
@@ -522,6 +526,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Next-session map contract" in script,
         "candidate_radar_contract_step": "scripts/candidate_radar_contract.py" in script
         and "Candidate Radar contract" in script,
+        "candidate_radar_browser_qa_runbook_step": "scripts/candidate_radar_browser_qa_runbook.py" in script
+        and "Candidate Radar browser QA runbook" in script,
         "storage_contract_step": "scripts/storage_contract.py" in script and "Storage contract" in script,
         "worker_contract_step": "scripts/worker_contract.py" in script and "Worker contract" in script,
         "tauri_desktop_contract_step": "scripts/tauri_desktop_contract.py" in script
@@ -599,6 +605,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "does_not_execute_trades" in candidate_radar_script
         and "tushare_adapter" not in candidate_radar_script
         and "api.github.com" not in candidate_radar_script,
+        "candidate_radar_browser_qa_runbook_is_local": "candidate_radar_browser_qa_runbook.v1" in candidate_radar_browser_qa_runbook_script
+        and "local_candidate_radar_browser_qa_runbook_not_browser_execution" in candidate_radar_browser_qa_runbook_script
+        and "visual_qa_complete" in candidate_radar_browser_qa_runbook_script
+        and "browser_performance_trace_done" in candidate_radar_browser_qa_runbook_script
+        and "production_radar_replacement_complete" in candidate_radar_browser_qa_runbook_script
+        and "opens_no_browser" in candidate_radar_browser_qa_runbook_script
+        and "writes_no_artifacts" in candidate_radar_browser_qa_runbook_script
+        and "tushare_adapter" not in candidate_radar_browser_qa_runbook_script
+        and "deepseek_adapter" not in candidate_radar_browser_qa_runbook_script
+        and "api.github.com" not in candidate_radar_browser_qa_runbook_script,
         "storage_contract_is_local": "command_center_3_storage_contract.v1" in storage_script
         and "local_storage_contract_no_physical_migration" in storage_script
         and "production_storage_complete" in storage_script
@@ -709,6 +725,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "candidate_radar_contract_exists",
             "candidate_radar_contract_step",
             "candidate_radar_contract_is_local",
+            "candidate_radar_browser_qa_runbook_exists",
+            "candidate_radar_browser_qa_runbook_step",
+            "candidate_radar_browser_qa_runbook_is_local",
             "storage_contract_exists",
             "storage_contract_step",
             "storage_contract_is_local",
@@ -866,6 +885,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "candidate_radar_contract_is_local",
             checks["candidate_radar_contract_is_local"],
             evidence="contract keeps LTG-13 quick scan, full/deep plans, no-feature-loss QA, and legacy-retirement blockers separate from production radar replacement",
+        ),
+        _release_gate_row(
+            "candidate_radar_browser_qa_runbook_exists",
+            checks["candidate_radar_browser_qa_runbook_exists"],
+            evidence=_relative_path(CANDIDATE_RADAR_BROWSER_QA_RUNBOOK_PATH),
+        ),
+        _release_gate_row(
+            "candidate_radar_browser_qa_runbook_step",
+            checks["candidate_radar_browser_qa_runbook_step"],
+            evidence="push gate runs scripts/candidate_radar_browser_qa_runbook.py after Candidate Radar contract and before motion QA",
+        ),
+        _release_gate_row(
+            "candidate_radar_browser_qa_runbook_is_local",
+            checks["candidate_radar_browser_qa_runbook_is_local"],
+            evidence="runbook pins #candidates browser QA route/viewports while keeping visual/performance execution pending",
         ),
         _release_gate_row(
             "storage_contract_exists",

@@ -76,6 +76,7 @@ export default function CandidateRadar() {
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
   const replacementGapTriage = (cache.replacement_gap_triage_contract as Record<string, unknown> | undefined) ?? {};
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
+  const browserQaRunbook = (cache.candidate_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
@@ -98,6 +99,8 @@ export default function CandidateRadar() {
   const replacementGapTriageRows = rows(cache.replacement_gap_triage_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
   const previousCacheDiffRows = rows(cache.previous_cache_diff_rows);
+  const browserQaRunbookRows = rows(cache.candidate_browser_qa_runbook_rows);
+  const browserQaMatrixRows = rows(cache.candidate_browser_qa_matrix_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
@@ -145,6 +148,9 @@ export default function CandidateRadar() {
           { label: "delta gaps", value: counts.result_delta_clarity_visible_gap_count as number | undefined, tone: Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "warn" : "good" },
           { label: "delta pending", value: counts.result_delta_clarity_pending_count as number | undefined, tone: Number(counts.result_delta_clarity_pending_count ?? 0) ? "warn" : "good" },
           { label: "prev diff", value: resultDeltaClarity.previous_cache_diff_done === true ? "done" : "pending", tone: resultDeltaClarity.previous_cache_diff_done === true ? "good" : "warn" },
+          { label: "browser QA", value: String(browserQaRunbook.status ?? "missing"), tone: browserQaRunbook.local_runbook_ready === true ? "good" : "warn" },
+          { label: "QA matrix", value: browserQaRunbook.qa_matrix_count as number | undefined },
+          { label: "visual QA done", value: browserQaRunbook.visual_qa_complete === true ? "done" : "pending", tone: browserQaRunbook.visual_qa_complete === true ? "bad" : "good" },
           { label: "added", value: counts.result_delta_added_count as number | undefined },
           { label: "removed", value: counts.result_delta_removed_count as number | undefined },
           { label: "rank delta", value: counts.result_delta_rank_changed_count as number | undefined },
@@ -303,6 +309,17 @@ export default function CandidateRadar() {
         <DataLineageTable rows={objectRow(resultDeltaClarity)} />
         <DataLineageTable rows={resultDeltaClarityRows} />
         <DataLineageTable rows={previousCacheDiffRows} />
+      </PacketCard>
+
+      <PacketCard title="候选雷达浏览器 QA 手册" subtitle="candidate_browser_qa_runbook_contract；复用本地 runner，不打开浏览器、不写 artifact" status={String(browserQaRunbook.status ?? "missing")}>
+        <p>route: {String(browserQaRunbook.candidate_route ?? "#candidates")}</p>
+        <p>runner: {String(browserQaRunbook.shared_runner_script ?? "scripts/motion_browser_qa_runner.mjs")}</p>
+        <p>visual_qa_complete: {String(browserQaRunbook.visual_qa_complete === true)}</p>
+        <p>browser_performance_trace_done: {String(browserQaRunbook.browser_performance_trace_done === true)}</p>
+        <p>production_radar_replacement_complete: {String(browserQaRunbook.production_radar_replacement_complete === true)}</p>
+        <DataLineageTable rows={objectRow(browserQaRunbook)} />
+        <DataLineageTable rows={browserQaRunbookRows} />
+        <DataLineageTable rows={browserQaMatrixRows} />
       </PacketCard>
 
       <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>

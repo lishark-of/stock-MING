@@ -41,6 +41,7 @@ REQUIRED_REPLACEMENT_GAPS = {
     "deep_scan_execution",
     "provider_backed_acceptance",
 }
+CANDIDATE_BROWSER_QA_RUNBOOK_PATH = "scripts/candidate_radar_browser_qa_runbook.py"
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -119,6 +120,9 @@ def build_contract() -> dict[str, Any]:
     task_rows = _task_catalog_rows()
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/candidate_radar_contract.py")
+    browser_qa_runbook = _read_script(CANDIDATE_BROWSER_QA_RUNBOOK_PATH)
+    motion_runner = _read_script("scripts/motion_browser_qa_runner.mjs")
+    candidate_frontend = _read_script("desktop/src/routes/CandidateRadar.tsx")
 
     rows = [
         _row(
@@ -246,6 +250,32 @@ def build_contract() -> dict[str, Any]:
             "Deep-scan plan must remain plan-only: no deep scan execution, provider refresh, DeepSeek call, scoring, or trade instruction.",
         ),
         _row(
+            "candidate_browser_qa_runbook_is_local_execution_pending",
+            _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("schema_version")
+            == "candidate_radar_browser_qa_runbook.v1"
+            and _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("status")
+            == "candidate_radar_browser_qa_runbook_ready_execution_pending"
+            and _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("local_runbook_ready") is True
+            and _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("visual_qa_complete") is False
+            and _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("browser_performance_trace_done") is False
+            and _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("production_radar_replacement_complete") is False
+            and _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("legacy_retirement_ready") is False
+            and len(_list(cache_packet.get("candidate_browser_qa_matrix_rows"))) == 4
+            and "candidate_radar_browser_qa_runbook.v1" in browser_qa_runbook
+            and "local_candidate_radar_browser_qa_runbook_not_browser_execution" in browser_qa_runbook
+            and "#candidates" in browser_qa_runbook
+            and "opens_no_browser" in browser_qa_runbook
+            and "writes_no_artifacts" in browser_qa_runbook
+            and "command_center_3_motion_browser_qa_result.v1" in motion_runner
+            and "#candidates" in motion_runner
+            and "radar-result-cluster" in candidate_frontend
+            and "candidate_browser_qa_runbook_contract" in candidate_frontend
+            and ("request" + "s") not in browser_qa_runbook
+            and ("ht" + "tpx") not in browser_qa_runbook
+            and ("api.github" + ".com") not in browser_qa_runbook,
+            "Candidate Radar browser QA runbook must stay local/static and keep visual/performance QA pending until an explicit browser pass.",
+        ),
+        _row(
             "plan_packet_preserves_pending_boundaries",
             _dict(plan_packet.get("full_pool_scan_plan")).get("full_pool_scan_done") is False
             and _dict(plan_packet.get("deep_scan_plan")).get("deep_scan_done") is False
@@ -260,11 +290,14 @@ def build_contract() -> dict[str, Any]:
         _row(
             "push_gate_runs_contract_after_factor",
             "scripts/candidate_radar_contract.py" in push_gate_script
+            and CANDIDATE_BROWSER_QA_RUNBOOK_PATH in push_gate_script
             and "Candidate Radar contract" in push_gate_script
+            and "Candidate Radar browser QA runbook" in push_gate_script
             and "candidate_radar_contract: passed_local_contract_replacement_pending" in push_gate_script
             and push_gate_script.find('run_step "Factor Test Lab contract"') < push_gate_script.find('run_step "Candidate Radar contract"')
-            and push_gate_script.find('run_step "Candidate Radar contract"') < push_gate_script.find('run_step "Motion viewport QA contract"'),
-            "Push gate must run the LTG-13 local contract after Factor Test Lab and before motion/static QA.",
+            and push_gate_script.find('run_step "Candidate Radar contract"') < push_gate_script.find('run_step "Candidate Radar browser QA runbook"')
+            and push_gate_script.find('run_step "Candidate Radar browser QA runbook"') < push_gate_script.find('run_step "Motion viewport QA contract"'),
+            "Push gate must run the LTG-13 local contract and browser QA runbook before motion/static QA.",
         ),
         _row(
             "script_is_local_no_provider_execution",
@@ -295,6 +328,7 @@ def build_contract() -> dict[str, Any]:
         "provider_backed_acceptance_done": False,
         "browser_performance_trace_done": False,
         "browser_visual_delta_qa_done": False,
+        "candidate_browser_qa_runbook_ready": _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("local_runbook_ready") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,

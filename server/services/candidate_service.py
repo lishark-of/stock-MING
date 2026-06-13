@@ -15,6 +15,9 @@ from server.services import packet_service, task_service
 PACKET_KEY = "command_center_3_candidate_radar_cache"
 SCHEMA_VERSION = "candidate_radar_cache.v1"
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
+CANDIDATE_BROWSER_QA_RUNBOOK_PATH = Path(__file__).resolve().parents[2] / "scripts" / "candidate_radar_browser_qa_runbook.py"
+MOTION_BROWSER_QA_RUNNER_PATH = Path(__file__).resolve().parents[2] / "scripts" / "motion_browser_qa_runner.mjs"
+CANDIDATE_ROUTE_SOURCE_PATH = Path(__file__).resolve().parents[2] / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
 SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan"}
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan"}
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
@@ -295,6 +298,13 @@ def _json_safe(value: Any) -> Any:
         return json.loads(json.dumps(value, ensure_ascii=False, default=str))
     except Exception:
         return {"serialization_error_safe": "candidate_radar_cache_not_json_serializable"}
+
+
+def _read_local_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -1533,6 +1543,195 @@ def _fast_scan_runtime_budget_contract(
         "rows": rows,
         "note": "This is a static runtime-budget contract for local quick/watchlist/custom scans; browser performance traces and real full-pool worker execution remain future validation.",
     }
+
+
+def _candidate_browser_qa_runbook_row(
+    phase: str,
+    status: str,
+    *,
+    passed: bool,
+    evidence: str,
+    required_before_completion: bool = True,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "evidence": evidence,
+        "required_before_completion": bool(required_before_completion),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _candidate_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    runbook_source = _read_local_text(CANDIDATE_BROWSER_QA_RUNBOOK_PATH)
+    runner_source = _read_local_text(MOTION_BROWSER_QA_RUNNER_PATH)
+    candidate_source = _read_local_text(CANDIDATE_ROUTE_SOURCE_PATH)
+    viewports = [
+        {"name": "desktop", "width": 1440, "height": 900},
+        {"name": "laptop", "width": 1280, "height": 800},
+        {"name": "tablet", "width": 834, "height": 1112},
+        {"name": "mobile", "width": 390, "height": 844},
+    ]
+    runner_available = (
+        MOTION_BROWSER_QA_RUNNER_PATH.exists()
+        and "command_center_3_motion_browser_qa_result.v1" in runner_source
+        and "explicit_local_browser_visual_performance_run" in runner_source
+        and "chromium.launch" in runner_source
+        and "page.goto" in runner_source
+        and "#candidates" in runner_source
+        and "Candidate Radar" in runner_source
+        and ".stock_ming_3/motion_qa" in runner_source
+        and "starts_no_servers" in runner_source
+        and "local_urls_only" in runner_source
+        and "tushare_adapter" not in runner_source
+        and "deepseek_adapter" not in runner_source
+        and "api.github.com" not in runner_source
+        and "place_order" not in runner_source
+    )
+    runbook_ready = (
+        CANDIDATE_BROWSER_QA_RUNBOOK_PATH.exists()
+        and "candidate_radar_browser_qa_runbook.v1" in runbook_source
+        and "local_candidate_radar_browser_qa_runbook_not_browser_execution" in runbook_source
+        and "#candidates" in runbook_source
+        and ".stock_ming_3/motion_qa" in runbook_source
+        and "opens_no_browser" in runbook_source
+        and "writes_no_artifacts" in runbook_source
+        and "visual_qa_complete" in runbook_source
+        and "browser_performance_trace_done" in runbook_source
+    )
+    route_source_ready = (
+        CANDIDATE_ROUTE_SOURCE_PATH.exists()
+        and "radar-result-cluster" in candidate_source
+        and "StateClarityRail" in candidate_source
+        and "resultDeltaClarity" in candidate_source
+        and "previousCacheDiffRows" in candidate_source
+        and "postCandidateRadarQuickScan" in candidate_source
+        and "postCandidateRadarFullPoolPlan" in candidate_source
+        and "postCandidateRadarDeepScanPlan" in candidate_source
+        and "候选不是买入指令" in candidate_source
+        and "不调用 Tushare、DeepSeek 或 GitHub" in candidate_source
+    )
+    rows = [
+        _candidate_browser_qa_runbook_row(
+            "candidate_browser_qa_runbook_ready",
+            "passed_static_policy" if runbook_ready else "blocked",
+            passed=runbook_ready,
+            evidence="scripts/candidate_radar_browser_qa_runbook.py pins route, viewports, criteria, artifact policy, and pending browser execution state",
+        ),
+        _candidate_browser_qa_runbook_row(
+            "shared_motion_runner_covers_candidate_route",
+            "passed_static_policy" if runner_available else "blocked",
+            passed=runner_available,
+            evidence="scripts/motion_browser_qa_runner.mjs includes #candidates, local-only URL policy, ignored artifact path, and no-provider/no-trade flags",
+        ),
+        _candidate_browser_qa_runbook_row(
+            "candidate_route_source_ready",
+            "passed_static_policy" if route_source_ready else "blocked",
+            passed=route_source_ready,
+            evidence="CandidateRadar.tsx exposes result cluster, clarity rail, delta rows, and button-gated local scan controls",
+        ),
+        _candidate_browser_qa_runbook_row(
+            "default_motion_browser_run_pending",
+            "execution_pending",
+            passed=False,
+            evidence="Default-motion browser pass is explicit and not run by GET cache or push-gate static checks.",
+            required_before_completion=False,
+        ),
+        _candidate_browser_qa_runbook_row(
+            "reduced_motion_browser_run_pending",
+            "execution_pending",
+            passed=False,
+            evidence="Reduced-motion browser pass is explicit and not run by GET cache or push-gate static checks.",
+            required_before_completion=False,
+        ),
+        _candidate_browser_qa_runbook_row(
+            "candidate_radar_performance_trace_pending",
+            "execution_pending",
+            passed=False,
+            evidence="Browser first-stable, long-task, layout-shift, and route-transition evidence remains an explicit run artifact.",
+            required_before_completion=False,
+        ),
+    ]
+    blockers = [row["phase"] for row in rows if row["status"] == "blocked"]
+    matrix_rows = [
+        {
+            "route": "#candidates",
+            "label": "Candidate Radar",
+            "viewport": viewport["name"],
+            "width": viewport["width"],
+            "height": viewport["height"],
+            "risk_focus": "candidate result cluster, local scan controls, result-delta visibility, and no-trade boundaries",
+            "required_checks": [
+                "candidate result cluster is visible and readable",
+                "local scan buttons are visible and do not auto-run",
+                "delta/freshness/provider/degraded gaps remain visible",
+                "no clipped primary labels or state clarity rail text",
+                "no long task above the local budget",
+            ],
+            "visual_qa_complete": False,
+            "browser_performance_trace_done": False,
+        }
+        for viewport in viewports
+    ]
+    local_ready = not blockers
+    contract = {
+        "schema_version": "candidate_radar_browser_qa_runbook.v1",
+        "status": "candidate_radar_browser_qa_runbook_ready_execution_pending" if local_ready else "candidate_radar_browser_qa_runbook_blocked",
+        "scope": "local_candidate_radar_browser_qa_runbook_not_browser_execution",
+        "ltg": "LTG-13/LTG-14",
+        "local_runbook_ready": local_ready,
+        "runner_available": runner_available,
+        "candidate_route_source_ready": route_source_ready,
+        "shared_runner_script": "scripts/motion_browser_qa_runner.mjs",
+        "candidate_route": "#candidates",
+        "artifact_root": ".stock_ming_3/motion_qa",
+        "route_count": 1,
+        "viewport_count": len(viewports),
+        "qa_matrix_count": len(matrix_rows),
+        "performance_budgets": {
+            "candidate_radar_first_stable_ms": 1200,
+            "route_transition_observed_ms": 500,
+            "largest_motion_layout_shift": 0.1,
+            "long_task_over_50ms_count": 0,
+        },
+        "visual_acceptance_criteria": [
+            "candidate result cluster remains readable without opening raw JSON",
+            "quick/watchlist/custom/full-pool/deep-scan controls remain visibly button-gated",
+            "result-delta and previous-cache rows do not imply a trade recommendation",
+            "provider/freshness/degraded gaps remain visible and are not hidden by motion",
+            "mobile layout does not clip primary labels, state clarity rails, or action buttons",
+            "reduced-motion mode preserves readable state boundaries",
+        ],
+        "row_count": len(rows),
+        "blocking_phase_count": len(blockers),
+        "blockers": blockers,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "visual_qa_complete": False,
+        "browser_performance_trace_done": False,
+        "browser_visual_delta_qa_done": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "cache_only": True,
+        "local_urls_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "Runbook availability prepares targeted Candidate Radar browser QA; it is not browser evidence, provider-backed parity, or production radar replacement.",
+    }
+    return contract, rows, matrix_rows
 
 
 def _fast_scan_readiness_row(
@@ -3164,7 +3363,15 @@ def _build_candidate_radar_packet(
         local_pool_audit=local_pool_audit or {},
         candidate_rows=candidate_rows,
     )
+    (
+        candidate_browser_qa_runbook_contract,
+        candidate_browser_qa_runbook_rows,
+        candidate_browser_qa_matrix_rows,
+    ) = _candidate_browser_qa_runbook_contract()
     counts["fast_scan_runtime_budget_row_count"] = fast_scan_runtime_budget_contract["row_count"]
+    counts["candidate_browser_qa_runbook_row_count"] = candidate_browser_qa_runbook_contract["row_count"]
+    counts["candidate_browser_qa_matrix_count"] = candidate_browser_qa_runbook_contract["qa_matrix_count"]
+    counts["candidate_browser_qa_blocking_phase_count"] = candidate_browser_qa_runbook_contract["blocking_phase_count"]
     fast_scan_readiness_rows = _fast_scan_readiness_rows(
         mode=mode,
         scan_mode=scan_mode,
@@ -3254,6 +3461,9 @@ def _build_candidate_radar_packet(
         "scan_acceptance_rows": scan_acceptance_rows,
         "fast_scan_runtime_budget_contract": fast_scan_runtime_budget_contract,
         "fast_scan_runtime_budget_rows": fast_scan_runtime_budget_contract["rows"],
+        "candidate_browser_qa_runbook_contract": candidate_browser_qa_runbook_contract,
+        "candidate_browser_qa_runbook_rows": candidate_browser_qa_runbook_rows,
+        "candidate_browser_qa_matrix_rows": candidate_browser_qa_matrix_rows,
         "fast_scan_readiness_audit": fast_scan_readiness_audit,
         "fast_scan_readiness_rows": fast_scan_readiness_rows,
         "result_delta_clarity_contract": result_delta_clarity_contract,
@@ -3330,6 +3540,10 @@ def _build_candidate_radar_packet(
             "candidate_is_not_buy_instruction": True,
             "post_task_required_for_scan": True,
             "fast_scan_runtime_budget_contract_visible": True,
+            "candidate_browser_qa_runbook_contract_is_local": True,
+            "candidate_browser_qa_runbook_ready": candidate_browser_qa_runbook_contract["local_runbook_ready"],
+            "candidate_browser_qa_is_not_visual_qa": True,
+            "candidate_browser_qa_is_not_production_replacement": True,
             "candidate_rows_capped_for_ui": bool(candidate_display_truncated_count),
             "large_universe_requires_worker": coverage["coverage_detail_summary"]["large_universe_requires_worker"],
             "fast_scan_readiness_audit_is_local": True,
