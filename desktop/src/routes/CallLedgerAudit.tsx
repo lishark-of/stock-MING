@@ -40,6 +40,8 @@ export default function CallLedgerAudit() {
   const motionClarityRows = rows(cache.motion_clarity_rows);
   const motionProductionQa = (cache.motion_production_qa_contract as Record<string, unknown> | undefined) ?? {};
   const motionProductionQaRows = rows(cache.motion_production_qa_rows);
+  const motionKeynoteRoadmap = (cache.motion_keynote_roadmap_audit as Record<string, unknown> | undefined) ?? {};
+  const motionKeynoteRoadmapRows = rows(cache.motion_keynote_roadmap_rows);
   const motionBrowserQaRunbook = (cache.motion_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
   const motionBrowserQaRunbookRows = rows(cache.motion_browser_qa_runbook_rows);
   const motionBrowserQaMatrixRows = rows(cache.motion_browser_qa_matrix_rows);
@@ -114,6 +116,10 @@ export default function CallLedgerAudit() {
           { label: "motion prod QA", value: motionProductionQa.status as string | undefined, tone: motionProductionQa.local_motion_qa_ready === true ? "good" : "warn" },
           { label: "motion prod blockers", value: counts.motion_production_blocker_count as number | undefined, tone: Number(counts.motion_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "motion perf pending", value: counts.motion_performance_pending_count as number | undefined, tone: Number(counts.motion_performance_pending_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "keynote roadmap", value: motionKeynoteRoadmap.status as string | undefined, tone: motionKeynoteRoadmap.roadmap_ready === true ? "good" : "warn" },
+          { label: "keynote blockers", value: counts.motion_keynote_promotion_blocker_count as number | undefined, tone: Number(counts.motion_keynote_promotion_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "keynote visual", value: counts.motion_keynote_visual_required_count as number | undefined, tone: Number(counts.motion_keynote_visual_required_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "keynote perf", value: counts.motion_keynote_performance_required_count as number | undefined, tone: Number(counts.motion_keynote_performance_required_count ?? 0) > 0 ? "warn" : "good" },
           { label: "motion runbook", value: motionBrowserQaRunbook.status as string | undefined, tone: motionBrowserQaRunbook.local_runbook_ready === true ? "good" : "warn" },
           { label: "motion QA matrix", value: counts.motion_browser_qa_matrix_count as number | undefined },
           { label: "motion budgets", value: counts.motion_browser_qa_performance_budget_count as number | undefined },
@@ -241,6 +247,18 @@ export default function CallLedgerAudit() {
         <p>动效用于状态清晰度、图谱/雷达变化和任务反馈；视觉 QA 与性能 trace 未完成前不能标记为 production motion complete。</p>
         <DataLineageTable rows={[motionProductionQa]} />
         <DataLineageTable rows={motionProductionQaRows} />
+      </PacketCard>
+
+      <PacketCard title="Keynote motion roadmap" subtitle="motion_keynote_roadmap_audit：把发布会级动效目标拆成可验收路线，不运行浏览器、不推广本地 artifact" status={String(motionKeynoteRoadmap.status ?? "missing")}>
+        <p>scope: {String(motionKeynoteRoadmap.scope ?? "local_keynote_motion_roadmap_not_browser_execution")}</p>
+        <p>design_target: {String(motionKeynoteRoadmap.design_target ?? "apple_keynote_grade_clarity_restrained_motion")}</p>
+        <p>roadmap_ready: {String(motionKeynoteRoadmap.roadmap_ready ?? false)}</p>
+        <p>production_motion_complete: {String(motionKeynoteRoadmap.production_motion_complete ?? false)}</p>
+        <p>promotion_blocker_count: {String(motionKeynoteRoadmap.promotion_blocker_count ?? 0)}</p>
+        <p>visual_qa_required_count: {String(motionKeynoteRoadmap.visual_qa_required_count ?? 0)}；performance_trace_required_count: {String(motionKeynoteRoadmap.performance_trace_required_count ?? 0)}；browser_review_required_count: {String(motionKeynoteRoadmap.browser_review_required_count ?? 0)}</p>
+        <p>路线图覆盖状态清晰基础、route staging、图表/雷达 delta choreography、任务反馈微交互、dense data readability、reduced-motion、performance trace、视觉证据推广和禁止交易紧迫感边界。</p>
+        <DataLineageTable rows={[motionKeynoteRoadmap]} />
+        <DataLineageTable rows={motionKeynoteRoadmapRows} />
       </PacketCard>
 
       <PacketCard title="Motion browser QA runbook" subtitle="motion_browser_qa_runbook_contract：本地浏览器 QA 执行手册，不打开浏览器、不写截图、不代表完成" status={String(motionBrowserQaRunbook.status ?? "missing")}>

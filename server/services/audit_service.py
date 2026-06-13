@@ -1661,6 +1661,193 @@ def _motion_production_qa_contract(
     return contract, rows
 
 
+def _motion_keynote_roadmap_row(
+    phase: str,
+    status: str,
+    *,
+    local_ready: bool,
+    production_ready: bool,
+    evidence: str,
+    next_action: str,
+    priority: str,
+    visual_qa_required: bool = False,
+    performance_trace_required: bool = False,
+    browser_review_required: bool = False,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "priority": priority,
+        "local_ready": bool(local_ready),
+        "production_ready": bool(production_ready),
+        "blocks_keynote_motion_promotion": not bool(production_ready),
+        "visual_qa_required": bool(visual_qa_required),
+        "performance_trace_required": bool(performance_trace_required),
+        "browser_review_required": bool(browser_review_required),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_packets": True,
+    }
+
+
+def _motion_keynote_roadmap_audit(
+    motion_clarity_audit: Mapping[str, Any],
+    motion_production_qa_contract: Mapping[str, Any],
+    motion_browser_qa_evidence_contract: Mapping[str, Any],
+    motion_browser_qa_review_contract: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    static_ready = motion_clarity_audit.get("static_ready") is True
+    local_qa_ready = motion_production_qa_contract.get("local_motion_qa_ready") is True
+    browser_evidence_available = int(motion_browser_qa_evidence_contract.get("passing_report_count") or 0) >= 2
+    browser_review_ready = motion_browser_qa_review_contract.get("local_browser_qa_review_ready") is True
+    visual_promoted = motion_browser_qa_review_contract.get("browser_visual_qa_promoted") is True
+    performance_promoted = motion_browser_qa_review_contract.get("browser_performance_promoted") is True
+    rows = [
+        _motion_keynote_roadmap_row(
+            "state_clarity_foundation",
+            "passed" if static_ready else "blocked",
+            local_ready=static_ready,
+            production_ready=static_ready,
+            priority="P0",
+            evidence="motion_clarity_audit.static_ready covers finite tokens, state rails, route context, status cues, reduced motion, and no timer/RAF loops.",
+            next_action="Keep new motion anchored to explicit state changes instead of decoration.",
+        ),
+        _motion_keynote_roadmap_row(
+            "keynote_route_staging",
+            "local_ready_browser_review_pending" if local_qa_ready else "blocked",
+            local_ready=local_qa_ready,
+            production_ready=False,
+            priority="P1",
+            visual_qa_required=True,
+            browser_review_required=True,
+            evidence="route-stage, motion-surface, navigation context, and status tone cues exist, but perceived staging quality still needs browser review.",
+            next_action="Use the pinned desktop/tablet/mobile route matrix to verify the staging feels clear and never hides warnings.",
+        ),
+        _motion_keynote_roadmap_row(
+            "chart_and_radar_delta_choreography",
+            "local_scope_ready_browser_review_pending" if local_qa_ready else "blocked",
+            local_ready=local_qa_ready,
+            production_ready=False,
+            priority="P1",
+            visual_qa_required=True,
+            browser_review_required=True,
+            evidence="Next-session chart and Candidate Radar expose visual state scopes; local reports cannot yet promote chart/radar delta choreography.",
+            next_action="Review chart updates and radar result deltas in default and reduced-motion runs before promotion.",
+        ),
+        _motion_keynote_roadmap_row(
+            "task_feedback_microinteractions",
+            "local_ready_browser_review_pending" if local_qa_ready else "blocked",
+            local_ready=local_qa_ready,
+            production_ready=False,
+            priority="P2",
+            visual_qa_required=True,
+            browser_review_required=True,
+            evidence="task panels, task receipts, and cache refresh cues use state_change_confirmation; browser review must confirm they clarify rather than distract.",
+            next_action="Verify task accepted/running/success/failure cues with dense audit pages and reduced-motion mode.",
+        ),
+        _motion_keynote_roadmap_row(
+            "dense_data_readability",
+            "pending_browser_visual_qa",
+            local_ready=local_qa_ready,
+            production_ready=False,
+            priority="P1",
+            visual_qa_required=True,
+            browser_review_required=True,
+            evidence="static containment exists, but dense tables/cards still require viewport checks for overlap, clipping, and warning visibility.",
+            next_action="Run browser QA across data-heavy pages and block any motion that reduces scanability.",
+        ),
+        _motion_keynote_roadmap_row(
+            "reduced_motion_accessibility_promotion",
+            "local_artifact_review_pending" if browser_evidence_available else "pending_browser_artifact",
+            local_ready=browser_evidence_available,
+            production_ready=False,
+            priority="P0",
+            visual_qa_required=True,
+            browser_review_required=True,
+            evidence=f"default/reduced local passing reports={motion_browser_qa_evidence_contract.get('passing_report_count')}; review_ready={browser_review_ready}",
+            next_action="Review ignored local artifacts, then require durable evidence before any production accessibility claim.",
+        ),
+        _motion_keynote_roadmap_row(
+            "performance_trace_promotion",
+            "pending_performance_trace_promotion",
+            local_ready=browser_evidence_available,
+            production_ready=False,
+            priority="P0",
+            performance_trace_required=True,
+            browser_review_required=True,
+            evidence=f"browser_performance_verified={motion_browser_qa_evidence_contract.get('browser_performance_verified')}; promoted={performance_promoted}",
+            next_action="Promote performance only after reviewed trace evidence shows no layout shift or route/update stalls.",
+        ),
+        _motion_keynote_roadmap_row(
+            "visual_evidence_promotion",
+            "pending_visual_promotion",
+            local_ready=browser_review_ready,
+            production_ready=False,
+            priority="P0",
+            visual_qa_required=True,
+            browser_review_required=True,
+            evidence=f"local_browser_qa_review_ready={browser_review_ready}; browser_visual_qa_promoted={visual_promoted}",
+            next_action="Keep production_motion_complete=false until visual QA promotion is explicit and durable.",
+        ),
+        _motion_keynote_roadmap_row(
+            "no_trade_urgency_boundary",
+            "passed",
+            local_ready=True,
+            production_ready=True,
+            priority="P0",
+            evidence="Motion contracts remain visual-only and keep provider/model/trade/action boundaries false.",
+            next_action="Do not use motion to imply certainty, urgency, buy/sell pressure, or hidden priority.",
+        ),
+    ]
+    blockers = [str(row.get("phase")) for row in rows if row.get("blocks_keynote_motion_promotion")]
+    visual_required = [str(row.get("phase")) for row in rows if row.get("visual_qa_required")]
+    performance_required = [str(row.get("phase")) for row in rows if row.get("performance_trace_required")]
+    review_required = [str(row.get("phase")) for row in rows if row.get("browser_review_required")]
+    roadmap_ready = static_ready and local_qa_ready
+    contract = {
+        "schema_version": "command_center_3_motion_keynote_roadmap_audit.v1",
+        "status": "motion_keynote_roadmap_local_ready_promotion_pending" if roadmap_ready else "motion_keynote_roadmap_blocked",
+        "scope": "local_keynote_motion_roadmap_not_browser_execution",
+        "ltg": "LTG-14",
+        "design_target": "apple_keynote_grade_clarity_restrained_motion",
+        "roadmap_ready": roadmap_ready,
+        "production_motion_complete": False,
+        "visual_qa_complete": False,
+        "browser_performance_verified": False,
+        "browser_visual_qa_promoted": False,
+        "browser_performance_promoted": False,
+        "durable_ci_evidence_complete": False,
+        "row_count": len(rows),
+        "promotion_blocker_count": len(blockers),
+        "visual_qa_required_count": len(visual_required),
+        "performance_trace_required_count": len(performance_required),
+        "browser_review_required_count": len(review_required),
+        "promotion_blockers": blockers,
+        "visual_qa_required_phases": visual_required,
+        "performance_trace_required_phases": performance_required,
+        "browser_review_required_phases": review_required,
+        "cache_only": True,
+        "runs_no_commands": True,
+        "opens_no_browser": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_packets": True,
+        "note": "This roadmap turns the Apple-keynote-style polish goal into auditable phases. It does not run browser QA, promote local artifacts, or complete production motion.",
+    }
+    return contract, rows
+
+
 def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     script = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     runner_script = _read_local_text(MOTION_BROWSER_QA_RUNNER_PATH)
@@ -2096,6 +2283,12 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         reviewed_at=str(persisted_review.get("reviewed_at") or "") or None,
     )
     motion_browser_qa_review_rows = _as_list(motion_browser_qa_review_contract.get("rows"))
+    motion_keynote_roadmap_audit, motion_keynote_roadmap_rows = _motion_keynote_roadmap_audit(
+        motion_clarity_audit,
+        motion_production_qa_contract,
+        motion_browser_qa_evidence_contract,
+        motion_browser_qa_review_contract,
+    )
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -2141,6 +2334,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "motion_browser_qa_evidence_rows": motion_browser_qa_evidence_rows,
         "motion_browser_qa_review_contract": motion_browser_qa_review_contract,
         "motion_browser_qa_review_rows": motion_browser_qa_review_rows,
+        "motion_keynote_roadmap_audit": motion_keynote_roadmap_audit,
+        "motion_keynote_roadmap_rows": motion_keynote_roadmap_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -2200,6 +2395,11 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified") is True,
             "motion_browser_qa_review_ready": motion_browser_qa_review_contract.get("local_browser_qa_review_ready") is True,
             "motion_browser_qa_review_blocking_count": motion_browser_qa_review_contract.get("blocking_review_count", 0),
+            "motion_keynote_roadmap_ready": motion_keynote_roadmap_audit.get("roadmap_ready") is True,
+            "motion_keynote_promotion_blocker_count": motion_keynote_roadmap_audit.get("promotion_blocker_count", 0),
+            "motion_keynote_visual_required_count": motion_keynote_roadmap_audit.get("visual_qa_required_count", 0),
+            "motion_keynote_performance_required_count": motion_keynote_roadmap_audit.get("performance_trace_required_count", 0),
+            "motion_keynote_browser_review_required_count": motion_keynote_roadmap_audit.get("browser_review_required_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -2239,6 +2439,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_browser_qa_review_is_button_gated": True,
             "motion_browser_qa_review_does_not_open_browser": True,
             "motion_browser_qa_review_is_not_production_completion": True,
+            "motion_keynote_roadmap_audit_is_local": True,
+            "motion_keynote_roadmap_is_not_browser_execution": True,
+            "motion_keynote_roadmap_is_not_production_completion": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -2272,6 +2475,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified"),
                 "motion_browser_qa_review_status": motion_browser_qa_review_contract.get("status"),
                 "motion_browser_qa_review_ready": motion_browser_qa_review_contract.get("local_browser_qa_review_ready"),
+                "motion_keynote_roadmap_status": motion_keynote_roadmap_audit.get("status"),
+                "motion_keynote_promotion_blocker_count": motion_keynote_roadmap_audit.get("promotion_blocker_count"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -2297,6 +2502,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "ci_notification_triage_contract 只解释失败邮件需要的远端日志证据；不调用 GitHub API，也不证明远端 run 已变绿。",
             "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
             "motion_production_qa_contract 是本地生产验收清单；不运行浏览器视觉 QA 或性能 trace。",
+            "motion_keynote_roadmap_audit 只是高级动效路线图审计；不运行浏览器、不推广本地 artifact、不完成 production motion。",
             "motion_browser_qa_review_contract 只记录显式本地 artifact 审查；不运行浏览器、不创建 CI 证据、不完成生产动效。",
         ],
     }

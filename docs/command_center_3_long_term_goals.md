@@ -1012,6 +1012,7 @@ Productionize non-blocking next-ticket radar scans
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
 - Call Ledger Audit now exposes `motion_clarity_audit` and `motion_clarity_rows`, a local static source audit for motion tokens, finite keyframes, navigation/status context cues, reduced-motion CSS/runtime behavior, StateClarityRail usage, chart/radar clarity scopes, layout containment, no timer/RAF motion loops, and no provider invocation markers.
 - Call Ledger Audit now exposes `motion_production_qa_contract` and `motion_production_qa_rows`, a local production acceptance checklist for purposeful motion tokens, state-change clarity, chart/radar scopes, reduced-motion accessibility, layout readability, no timer/RAF loops, browser visual QA, performance trace, and provider/trade isolation. It keeps `production_motion_complete=false` until browser visual and performance checks are run.
+- Call Ledger Audit now exposes `motion_keynote_roadmap_audit` and `motion_keynote_roadmap_rows`, a local route map for Apple-keynote-grade but restrained motion. It breaks the polish goal into state-clarity foundation, route staging, chart/radar delta choreography, task feedback microinteractions, dense-data readability, reduced-motion accessibility, performance trace promotion, visual-evidence promotion, and no-trade-urgency boundaries while keeping `production_motion_complete=false`.
 - Call Ledger Audit now exposes `motion_browser_qa_runbook_contract`, `motion_browser_qa_runbook_rows`, and `motion_browser_qa_matrix_rows`, so the future browser pass has stable local routes, viewport rows, performance-budget rows, artifact policy, and safety boundaries before any visual QA is claimed.
 - `scripts/motion_browser_qa_runner.mjs` now provides an explicit local browser QA runner for the pinned route/viewport matrix. It must be run manually after local FastAPI and Vite are started; it writes ignored artifacts under `.stock_ming_3/motion_qa`, starts no services, calls no providers/models/GitHub, and does not execute trades.
 - Call Ledger Audit now exposes `motion_browser_qa_evidence_contract` and rows. It summarizes ignored local runner reports under `.stock_ming_3/motion_qa`, including default-motion and reduced-motion pass state, matrix counts, console errors, and performance verification flags, without committing screenshots or report artifacts.
@@ -1034,6 +1035,7 @@ Productionize non-blocking next-ticket radar scans
 - Current navigation/status cue layer improves static context visibility but still needs browser viewport review for dense pages and mobile widths.
 - `motion_clarity_static_ready_visual_qa_pending` is not production motion completion; it only proves static source guardrails.
 - `motion_production_qa_local_ready_visual_perf_pending` is also local QA only; it does not prove browser visual quality or runtime performance.
+- `motion_keynote_roadmap_local_ready_promotion_pending` means the high-polish motion roadmap is visible and auditable; it does not run browser QA, promote ignored local artifacts, prove performance, or complete production motion.
 
 ### Implementation Phases
 
@@ -1059,6 +1061,7 @@ Productionize non-blocking next-ticket radar scans
 - `motion_browser_qa_review_contract.local_browser_qa_review_ready=true` is allowed only after explicit POST review and complete local default/reduced-motion evidence, and still must keep `production_motion_complete=false`, `browser_visual_qa_promoted=false`, `browser_performance_promoted=false`, and `ci_evidence_complete=false`.
 - Visual polish is additive and does not replace audit labels, warnings, or freshness state.
 - `motion_production_qa_contract.local_motion_qa_ready=true` only means the local production checklist is visible and source guardrails pass; visual QA and performance trace must remain pending until explicitly executed.
+- `motion_keynote_roadmap_audit.roadmap_ready=true` only means the Apple-keynote-grade polish roadmap is locally organized. `production_motion_complete`, `browser_visual_qa_promoted`, `browser_performance_promoted`, and `durable_ci_evidence_complete` remain false until explicit promotion evidence exists.
 - `motion_browser_qa_runbook_contract.local_runbook_ready=true` only means the execution checklist is ready; it is not screenshot evidence, performance trace evidence, or production motion completion.
 - `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
 - `production_motion_complete` remains false until browser viewport and performance QA are complete.
