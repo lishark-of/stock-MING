@@ -56,6 +56,9 @@ export default function LegacyTools() {
   const capability = (cache.old_workspace_capability_overview as Record<string, unknown> | undefined) ?? {};
   const absence = (cache.old_workspace_data_absence_ledger as Record<string, unknown> | undefined) ?? {};
   const bridge = (cache.old_workspace_packet_bridge as Record<string, unknown> | undefined) ?? {};
+  const primaryExitAudit = (cache.primary_workflow_exit_audit as Record<string, unknown> | undefined) ?? {};
+  const primaryExitRows = rows(cache.primary_workflow_exit_rows);
+  const primaryWorkflowRouteRows = rows(cache.primary_workflow_route_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const empty = !loading && !error && !Object.keys(cache).length;
@@ -81,6 +84,10 @@ export default function LegacyTools() {
             { label: "checklist", value: `${String(counts.checklist_done_count ?? 0)} / ${String(counts.checklist_pending_count ?? 0)}` },
             { label: "bridge items", value: counts.bridge_item_count as number | undefined },
             { label: "absence items", value: counts.absence_item_count as number | undefined },
+            { label: "exit audit", value: primaryExitAudit.status as string | undefined, tone: primaryExitAudit.ordinary_workflow_exit_complete === true ? "good" : "warn" },
+            { label: "exit complete", value: primaryExitAudit.ordinary_workflow_exit_complete === true ? "完成" : "未完成", tone: primaryExitAudit.ordinary_workflow_exit_complete === true ? "good" : "warn" },
+            { label: "fallback rows", value: primaryExitAudit.ordinary_workflow_still_needs_fallback_count as number | undefined, tone: Number(primaryExitAudit.ordinary_workflow_still_needs_fallback_count ?? 0) > 0 ? "warn" : "good" },
+            { label: "exit blockers", value: primaryExitAudit.blocker_count as number | undefined, tone: Number(primaryExitAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
             { label: "普通主流程", value: "迁往 React/Tauri", tone: "good" },
             { label: "自动外联", value: "禁止", tone: "good" },
             { label: "真实交易", value: "禁止", tone: "good" },
@@ -107,6 +114,23 @@ export default function LegacyTools() {
 
       <PacketCard title="Legacy Policy" subtitle="Streamlit 退出普通主流程；React/Tauri 为正式入口" status="policy">
         <DataLineageTable rows={objectRow(policy)} />
+      </PacketCard>
+
+      <PacketCard title="Streamlit 主流程退出审计" subtitle="本地 route inventory；不打开 Streamlit" status={String(primaryExitAudit.status ?? "ordinary_workflow_exit_partial_fallback_required")}>
+        <p>scope: {String(primaryExitAudit.scope ?? "local_legacy_policy_and_route_inventory_not_streamlit_execution")}</p>
+        <p>ordinary_workflow_exit_complete: {String(primaryExitAudit.ordinary_workflow_exit_complete ?? false)}</p>
+        <p>streamlit_fallback_retained: {String(primaryExitAudit.streamlit_fallback_retained ?? true)}</p>
+        <p>streamlit_fallback_removal_ready: {String(primaryExitAudit.streamlit_fallback_removal_ready ?? false)}</p>
+        <p>ordinary_workflow_still_needs_fallback_count: {String(primaryExitAudit.ordinary_workflow_still_needs_fallback_count ?? 0)}</p>
+        <p>blocker_count: {String(primaryExitAudit.blocker_count ?? 0)}</p>
+      </PacketCard>
+
+      <PacketCard title="Streamlit 退出审计明细" subtitle="安全边界通过项与仍需保留 fallback 的阻断项" status="exit_audit">
+        <DataLineageTable rows={primaryExitRows} />
+      </PacketCard>
+
+      <PacketCard title="普通主流程迁移覆盖" subtitle="Command Center 3 route coverage；partial/fallback 必须明示" status="route_inventory">
+        <DataLineageTable rows={primaryWorkflowRouteRows} />
       </PacketCard>
 
       <PacketCard title="允许用途" subtitle="回退和调试可保留，普通主流程逐步迁出" status="guarded">

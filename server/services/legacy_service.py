@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from server.services import packet_service
@@ -10,6 +11,8 @@ from server.services import packet_service
 
 PACKET_KEY = "command_center_3_legacy_bridge_cache"
 SCHEMA_VERSION = "legacy_bridge_cache.v1"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+APP_PY_PATH = PROJECT_ROOT / "app.py"
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 
@@ -102,6 +105,243 @@ def _checklist_counts(checklist: Mapping[str, Any], capability: Mapping[str, Any
     }
 
 
+def _streamlit_source_summary() -> dict[str, Any]:
+    if not APP_PY_PATH.exists():
+        return {
+            "path": "app.py",
+            "available": False,
+            "legacy_mode_marker_present": False,
+            "legacy_admin_notice_present": False,
+            "primary_legacy_tabs_present": False,
+            "ordinary_workflow_caption_present": False,
+            "legacy_action_guard_present": False,
+            "contains_secret": False,
+        }
+    try:
+        source = APP_PY_PATH.read_text(encoding="utf-8")
+    except Exception as exc:
+        return {
+            "path": "app.py",
+            "available": False,
+            "error_message_safe": _safe_text(exc, limit=240),
+            "legacy_mode_marker_present": False,
+            "legacy_admin_notice_present": False,
+            "primary_legacy_tabs_present": False,
+            "ordinary_workflow_caption_present": False,
+            "legacy_action_guard_present": False,
+            "contains_secret": False,
+        }
+    return {
+        "path": "app.py",
+        "available": True,
+        "legacy_mode_marker_present": "STREAMLIT_LEGACY_MODE_STATUS" in source and "legacy/admin/debug" in source,
+        "legacy_admin_notice_present": "render_streamlit_legacy_admin_notice" in source,
+        "primary_legacy_tabs_present": "primary_legacy_tabs" in source,
+        "ordinary_workflow_caption_present": "普通主流程" in source,
+        "legacy_action_guard_present": "guard_legacy_projection_action" in source,
+        "contains_secret": False,
+    }
+
+
+def _primary_workflow_route_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "workflow": "home_status",
+            "react_route": "CommandCenterHome.tsx",
+            "api": "GET /health + GET /api/packets",
+            "coverage_status": "migrated_cache",
+            "ordinary_flow_supported": True,
+            "still_needs_streamlit_fallback": False,
+        },
+        {
+            "workflow": "next_session_map",
+            "react_route": "NextSessionMap.tsx",
+            "api": "GET /api/next-session/cache + POST /api/next-session/generate",
+            "coverage_status": "migrated_cache_task",
+            "ordinary_flow_supported": True,
+            "still_needs_streamlit_fallback": False,
+        },
+        {
+            "workflow": "factor_quant_hub",
+            "react_route": "FactorQuantHub.tsx",
+            "api": "GET /api/factor-quant/cache + guarded POST tasks",
+            "coverage_status": "migrated_research_only",
+            "ordinary_flow_supported": True,
+            "still_needs_streamlit_fallback": False,
+        },
+        {
+            "workflow": "candidate_radar_quick_scan",
+            "react_route": "CandidateRadar.tsx",
+            "api": "GET /api/candidate-radar/cache + local scan/plan POST tasks",
+            "coverage_status": "partial_migrated",
+            "ordinary_flow_supported": True,
+            "still_needs_streamlit_fallback": True,
+            "fallback_reason": "full-pool/deep-scan execution and legacy parity are still readiness plans",
+        },
+        {
+            "workflow": "market_and_evidence",
+            "react_route": "MarketContext.tsx + AShareEvidenceRadar.tsx",
+            "api": "GET /api/market/cache + GET /api/evidence/cache",
+            "coverage_status": "migrated_cache",
+            "ordinary_flow_supported": True,
+            "still_needs_streamlit_fallback": False,
+        },
+        {
+            "workflow": "risk_and_strategy_trace",
+            "react_route": "RiskGuardrails.tsx + StrategyTrace.tsx + PositionContext.tsx",
+            "api": "GET /api/risk/cache + GET /api/strategy/cache + GET /api/position/cache",
+            "coverage_status": "migrated_cache",
+            "ordinary_flow_supported": True,
+            "still_needs_streamlit_fallback": False,
+        },
+        {
+            "workflow": "data_health_recovery",
+            "react_route": "DataHealthTimeline.tsx + RecoveryCenter.tsx + DataCapabilityConsole.tsx",
+            "api": "GET cache APIs",
+            "coverage_status": "migrated_cache",
+            "ordinary_flow_supported": True,
+            "still_needs_streamlit_fallback": False,
+        },
+        {
+            "workflow": "legacy_admin_debug_tools",
+            "react_route": "LegacyTools.tsx",
+            "api": "GET /api/legacy/cache",
+            "coverage_status": "fallback_retained",
+            "ordinary_flow_supported": False,
+            "still_needs_streamlit_fallback": True,
+            "fallback_reason": "old debug/admin/fallback tools are intentionally retained until replacement workflows are proven",
+        },
+    ]
+
+
+def _primary_workflow_exit_audit(
+    *,
+    policy: Mapping[str, Any],
+    checklist_counts: Mapping[str, int],
+    status: str,
+    snapshot_available: bool,
+) -> dict[str, Any]:
+    source_summary = _streamlit_source_summary()
+    route_rows = _primary_workflow_route_rows()
+    migrated_count = sum(1 for row in route_rows if row.get("ordinary_flow_supported") and not row.get("still_needs_streamlit_fallback"))
+    fallback_rows = [row for row in route_rows if row.get("still_needs_streamlit_fallback")]
+    safety_rows = [
+        {
+            "criterion": "streamlit_marked_legacy_admin_debug",
+            "status": "passed" if source_summary.get("legacy_mode_marker_present") and source_summary.get("legacy_admin_notice_present") else "blocked",
+            "passed": bool(source_summary.get("legacy_mode_marker_present") and source_summary.get("legacy_admin_notice_present")),
+            "evidence": "app.py contains legacy/admin/debug marker and notice renderer",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "react_tauri_is_primary_entry",
+            "status": "passed" if policy.get("react_tauri_is_primary_entry") and not policy.get("streamlit_is_official_primary_entry") else "blocked",
+            "passed": bool(policy.get("react_tauri_is_primary_entry") and not policy.get("streamlit_is_official_primary_entry")),
+            "evidence": str(policy.get("official_primary_entry") or ""),
+            "production_blocker": False,
+        },
+        {
+            "criterion": "legacy_cache_get_read_only",
+            "status": "passed",
+            "passed": True,
+            "evidence": "GET /api/legacy/cache reads sanitized local snapshot only",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "legacy_startup_does_not_create_tasks",
+            "status": "passed" if policy.get("legacy_startup_task_creation") is False else "blocked",
+            "passed": policy.get("legacy_startup_task_creation") is False,
+            "evidence": "legacy_startup_task_creation=false",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "legacy_startup_does_not_call_external_sources",
+            "status": "passed" if policy.get("legacy_startup_external_calls") is False else "blocked",
+            "passed": policy.get("legacy_startup_external_calls") is False,
+            "evidence": "startup does not call Tushare, DeepSeek, GitHub, or trade APIs",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "legacy_cannot_bypass_guardrails",
+            "status": "passed" if policy.get("legacy_can_bypass_guardrails") is False and source_summary.get("legacy_action_guard_present") else "blocked",
+            "passed": bool(policy.get("legacy_can_bypass_guardrails") is False and source_summary.get("legacy_action_guard_present")),
+            "evidence": "legacy action guard marker is present in app.py",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "ordinary_workflow_route_inventory_visible",
+            "status": "passed" if route_rows else "blocked",
+            "passed": bool(route_rows),
+            "evidence": f"route_count={len(route_rows)}; migrated_without_fallback={migrated_count}",
+            "production_blocker": False,
+        },
+    ]
+    blocker_rows = [
+        {
+            "criterion": "ordinary_workflows_fully_migrated",
+            "status": "blocked" if fallback_rows else "passed",
+            "passed": not fallback_rows,
+            "evidence": f"fallback_workflow_count={len(fallback_rows)}",
+            "production_blocker": bool(fallback_rows),
+        },
+        {
+            "criterion": "legacy_fallback_removal_ready",
+            "status": "blocked",
+            "passed": False,
+            "evidence": "Streamlit fallback must remain until all ordinary workflows and admin/debug replacements are proven",
+            "production_blocker": True,
+        },
+        {
+            "criterion": "snapshot_migration_cache_available",
+            "status": "passed" if snapshot_available else "blocked",
+            "passed": bool(snapshot_available),
+            "evidence": f"legacy_cache_status={status}",
+            "production_blocker": not snapshot_available,
+        },
+        {
+            "criterion": "legacy_migration_checklist_clear",
+            "status": "passed" if int(checklist_counts.get("checklist_pending_count") or 0) == 0 else "blocked",
+            "passed": int(checklist_counts.get("checklist_pending_count") or 0) == 0,
+            "evidence": f"pending={int(checklist_counts.get('checklist_pending_count') or 0)}; done={int(checklist_counts.get('checklist_done_count') or 0)}",
+            "production_blocker": int(checklist_counts.get("checklist_pending_count") or 0) > 0,
+        },
+    ]
+    rows = safety_rows + blocker_rows
+    safety_passed = all(bool(row.get("passed")) for row in safety_rows)
+    blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    exit_complete = safety_passed and not blockers
+    return {
+        "schema_version": "streamlit_primary_workflow_exit_audit.v1",
+        "status": "ordinary_workflow_exit_complete" if exit_complete else "ordinary_workflow_exit_partial_fallback_required",
+        "scope": "local_legacy_policy_and_route_inventory_not_streamlit_execution",
+        "ordinary_workflow_exit_complete": exit_complete,
+        "streamlit_fallback_retained": True,
+        "streamlit_fallback_removal_ready": exit_complete,
+        "react_tauri_primary_entry": bool(policy.get("react_tauri_is_primary_entry")),
+        "streamlit_is_official_primary_entry": bool(policy.get("streamlit_is_official_primary_entry")),
+        "ordinary_workflow_route_count": len(route_rows),
+        "ordinary_workflow_migrated_without_fallback_count": migrated_count,
+        "ordinary_workflow_still_needs_fallback_count": len(fallback_rows),
+        "checklist_pending_count": int(checklist_counts.get("checklist_pending_count") or 0),
+        "checklist_done_count": int(checklist_counts.get("checklist_done_count") or 0),
+        "source_summary": source_summary,
+        "blockers": blockers,
+        "blocker_count": len(blockers),
+        "rows": rows,
+        "route_rows": route_rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "note": "This audit inventories retirement readiness only; it does not open Streamlit, run legacy tools, call providers/models/GitHub, or remove fallbacks.",
+    }
+
+
 def read_legacy_bridge_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -147,6 +387,33 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         or migration_map.get("summary")
         or "旧工作台桥接 cache 只读展示；Streamlit 保留为 legacy/admin/debug。"
     )
+    policy = {
+        "cache_api_external_calls": False,
+        "does_not_call_tushare": True,
+        "does_not_call_deepseek": True,
+        "does_not_call_github": True,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_run_backtest": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "streamlit_role": "legacy/admin/debug",
+        "official_primary_entry": "React/Vite/Tauri + FastAPI",
+        "streamlit_is_official_primary_entry": False,
+        "react_tauri_is_primary_entry": True,
+        "legacy_startup_external_calls": False,
+        "legacy_startup_task_creation": False,
+        "legacy_can_bypass_guardrails": False,
+        "legacy_bridge_is_not_trade_instruction": True,
+        "post_task_required_for_migration_work": True,
+    }
+    primary_workflow_exit_audit = _primary_workflow_exit_audit(
+        policy=policy,
+        checklist_counts=checklist_counts,
+        status=status,
+        snapshot_available=bool(snapshot),
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -184,6 +451,9 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "decision_chain_items": decision_chain_items,
         "gap_items": gap_items,
         "fact_recovery_action_rows": fact_recovery_actions,
+        "primary_workflow_exit_audit": primary_workflow_exit_audit,
+        "primary_workflow_exit_rows": primary_workflow_exit_audit["rows"],
+        "primary_workflow_route_rows": primary_workflow_exit_audit["route_rows"],
         "counts": {
             **checklist_counts,
             "migration_item_count": len(migration_items),
@@ -197,28 +467,11 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "decision_ready_count": decision_chain.get("ready_count", 0),
             "decision_waiting_count": decision_chain.get("waiting_count", 0),
             "decision_blocked_count": decision_chain.get("blocked_count", 0),
+            "primary_workflow_route_count": primary_workflow_exit_audit["ordinary_workflow_route_count"],
+            "primary_workflow_fallback_count": primary_workflow_exit_audit["ordinary_workflow_still_needs_fallback_count"],
+            "primary_workflow_exit_blocker_count": primary_workflow_exit_audit["blocker_count"],
         },
-        "policy": {
-            "cache_api_external_calls": False,
-            "does_not_call_tushare": True,
-            "does_not_call_deepseek": True,
-            "does_not_call_github": True,
-            "does_not_open_streamlit": True,
-            "does_not_run_legacy_tools": True,
-            "does_not_run_backtest": True,
-            "does_not_execute_trades": True,
-            "does_not_modify_strategy_action": True,
-            "does_not_modify_holdings": True,
-            "streamlit_role": "legacy/admin/debug",
-            "official_primary_entry": "React/Vite/Tauri + FastAPI",
-            "streamlit_is_official_primary_entry": False,
-            "react_tauri_is_primary_entry": True,
-            "legacy_startup_external_calls": False,
-            "legacy_startup_task_creation": False,
-            "legacy_can_bypass_guardrails": False,
-            "legacy_bridge_is_not_trade_instruction": True,
-            "post_task_required_for_migration_work": True,
-        },
+        "policy": policy,
         "call_ledger": [
             {
                 "api": "local_legacy_bridge_cache",

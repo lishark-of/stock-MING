@@ -548,12 +548,14 @@ Package Command Center 3 Tauri desktop shell
 ### Current Status
 
 - Streamlit is marked `legacy/admin/debug`.
+- Legacy cache now exposes `primary_workflow_exit_audit`, `primary_workflow_exit_rows`, and `primary_workflow_route_rows`, making the ordinary-workflow exit status visible without opening Streamlit or running legacy tools.
 - It has not fully exited ordinary usage paths.
 
 ### Gaps
 
 - React/Tauri does not yet cover every ordinary operation.
 - Some old tools still need Streamlit fallback.
+- `primary_workflow_exit_audit.status=ordinary_workflow_exit_partial_fallback_required` is expected until all ordinary workflows are proven in Command Center 3 and fallback removal is safe.
 
 ### Implementation Phases
 
@@ -561,6 +563,7 @@ Package Command Center 3 Tauri desktop shell
 2. Migrate those workflows to React/Tauri + FastAPI.
 3. Keep Streamlit for debug/admin/fallback only.
 4. Preserve old-module guards.
+5. Promote `primary_workflow_exit_audit` to complete only after route coverage has no fallback blockers and legacy removal is safe.
 
 ### Acceptance Criteria
 
@@ -568,12 +571,14 @@ Package Command Center 3 Tauri desktop shell
 - Streamlit does not auto-create tasks.
 - Streamlit does not bypass guards.
 - Legacy strong-action protection remains.
+- `primary_workflow_exit_audit.ordinary_workflow_exit_complete=true` only when route coverage has no remaining Streamlit fallback dependencies and the migration checklist is clear.
 
 ### Forbidden
 
 - Do not delete Streamlit fallback before replacement workflows are usable.
 - Do not let legacy pages bypass freshness, model, or action guardrails.
 - Do not present Streamlit as the primary 3.0 surface.
+- Do not treat local exit audit as complete while status remains `ordinary_workflow_exit_partial_fallback_required`.
 
 ### Recommended Commit Message
 
