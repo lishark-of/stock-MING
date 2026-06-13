@@ -706,6 +706,147 @@ def _worker_healthcheck_qa_contract(
     }
 
 
+def _worker_task_log_persistence_audit(
+    *,
+    task_index: dict[str, Any],
+    task_persistence: dict[str, Any],
+    task_persistence_source_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    task_count = int(task_index.get("task_count") or 0)
+    task_log_count = int(task_index.get("task_log_count") or 0)
+    call_ledger_count = int(task_index.get("call_ledger_count") or 0)
+    memory_task_count = int(task_persistence.get("memory_task_count") or 0)
+    sqlite_task_count = int(task_persistence.get("sqlite_task_count") or 0)
+    deduplicated_task_count = int(task_persistence.get("deduplicated_task_count") or task_count)
+
+    def _row(
+        criterion: str,
+        component: str,
+        status: str,
+        evidence: str,
+        next_action: str,
+        *,
+        production_blocker: bool = False,
+    ) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "component": component,
+            "status": status,
+            "evidence": evidence,
+            "next_action": next_action,
+            "production_blocker": bool(production_blocker and status != "passed"),
+            "cache_api_can_execute": False,
+            "cache_get_reads_raw_payload": False,
+            "cache_get_writes_logs": False,
+            "append_only_worker_log_verified": False,
+            "healthcheck_executed": False,
+            "worker_started": False,
+            "redis_pinged": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "local_task_status_index_visible",
+            "task_status_index",
+            "passed",
+            f"GET /api/tasks exposes {task_count} deduplicated task row(s), {call_ledger_count} call_ledger row(s), and {task_log_count} task_log event(s).",
+            "Keep Worker runtime cache consuming task status summaries instead of raw task payloads.",
+        ),
+        _row(
+            "memory_sqlite_fallback_visible",
+            "task_persistence",
+            "passed" if task_persistence.get("sqlite_fallback_enabled") is not False else "blocked",
+            f"memory={memory_task_count}; sqlite={sqlite_task_count}; deduplicated={deduplicated_task_count}; storage_backend={task_persistence.get('storage_backend') or 'unknown'}.",
+            "Preserve SQLite fallback for local task state until production worker storage is explicitly enabled.",
+        ),
+        _row(
+            "safe_task_log_fields_visible",
+            "task_logs",
+            "passed" if task_persistence.get("task_rows_include_task_log") is not False else "blocked",
+            "Task status rows expose safe task_log metadata and the task status index reports task_log_count.",
+            "Keep task logs redacted and structured when worker routing is added.",
+        ),
+        _row(
+            "task_log_payload_redaction_boundary",
+            "safety",
+            "passed" if (task_index.get("policy") or {}).get("task_logs_include_no_raw_payload") is True else "blocked",
+            "GET /api/tasks policy reports task_logs_include_no_raw_payload=true and contains_secret=false.",
+            "Do not copy request payloads, provider responses, stack traces, token, key, or password values into worker logs.",
+        ),
+        _row(
+            "task_log_external_boundary",
+            "safety",
+            "passed" if task_index.get("external_calls_triggered") is False else "blocked",
+            "Task status index cache read does not call Redis, Tushare, DeepSeek, GitHub, or trading routes.",
+            "Keep task log inspection cache-only; external work must stay behind explicit POST tasks.",
+        ),
+        _row(
+            "append_only_worker_log_storage_verified",
+            "worker_log_storage",
+            "pending_worker_healthcheck",
+            "Local safe task logs exist, but append-only worker log storage has not been verified across a live worker process.",
+            "Verify append-only, redacted worker logs only after Celery/Redis is manually started and a synthetic healthcheck is explicitly run.",
+            production_blocker=True,
+        ),
+        _row(
+            "cross_process_task_log_round_trip_verified",
+            "worker_log_storage",
+            "pending_worker_healthcheck",
+            "No live worker process round trip has been executed by this cache read.",
+            "Use a future synthetic/local healthcheck to prove enqueue, execution, log persistence, and readback without provider/model/trading calls.",
+            production_blocker=True,
+        ),
+    ]
+    blocker_rows = [row for row in rows if row["production_blocker"]]
+    return {
+        "schema_version": "worker_task_log_persistence_audit.v1",
+        "status": "local_task_log_persistence_ready_worker_append_only_pending",
+        "scope": "local_task_log_persistence_audit_no_process_start",
+        "mode": "cache_only_read_only_task_log_audit",
+        "task_count": task_count,
+        "task_log_count": task_log_count,
+        "call_ledger_count": call_ledger_count,
+        "memory_task_count": memory_task_count,
+        "sqlite_task_count": sqlite_task_count,
+        "deduplicated_task_count": deduplicated_task_count,
+        "persistence_source_count": len(task_persistence_source_rows),
+        "criterion_count": len(rows),
+        "production_blocker_count": len(blocker_rows),
+        "blocking_criteria": [str(row["criterion"]) for row in blocker_rows],
+        "local_task_log_persistence_ready": True,
+        "task_log_persistence_verified": False,
+        "append_only_worker_log_verified": False,
+        "cross_process_log_round_trip_verified": False,
+        "healthcheck_executed": False,
+        "production_worker_complete": False,
+        "cache_get_reads_raw_payload": False,
+        "cache_get_writes_logs": False,
+        "cache_api_started_workers": False,
+        "cache_api_pinged_redis": False,
+        "cache_api_started_scheduler": False,
+        "task_dispatched_by_cache_api": False,
+        "cache_get_external_calls": False,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "source_rows": task_persistence_source_rows,
+        "note": "This audit proves local safe task-log visibility only. It does not prove append-only Celery worker logs, Redis broker reachability, synthetic healthcheck execution, or production worker completion.",
+    }
+
+
 def _worker_activation_review_contract(
     *,
     redis_configured: bool,
@@ -865,6 +1006,11 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     task_index = task_service.build_task_status_index()
     task_persistence = task_index.get("persistence") or {}
     task_persistence_source_rows = task_index.get("persistence_source_rows") or []
+    task_log_persistence_audit = _worker_task_log_persistence_audit(
+        task_index=task_index,
+        task_persistence=task_persistence,
+        task_persistence_source_rows=task_persistence_source_rows,
+    )
     worker_module_rows = _worker_module_rows()
     backend_rows = _backend_rows(
         celery_available=celery_available,
@@ -909,6 +1055,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     )
     production_readiness["worker_healthcheck_qa_contract"] = healthcheck_qa_contract
     production_readiness["worker_healthcheck_qa_rows"] = healthcheck_qa_contract["rows"]
+    production_readiness["worker_task_log_persistence_audit"] = task_log_persistence_audit
+    production_readiness["worker_task_log_persistence_rows"] = task_log_persistence_audit["rows"]
     activation_review_contract = _worker_activation_review_contract(
         redis_configured=redis_configured,
         scheduled_refresh_enabled=scheduled_refresh_enabled,
@@ -989,6 +1137,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_production_blocker_rows": production_blocker_audit["rows"],
         "worker_healthcheck_qa_contract": healthcheck_qa_contract,
         "worker_healthcheck_qa_rows": healthcheck_qa_contract["rows"],
+        "worker_task_log_persistence_audit": task_log_persistence_audit,
+        "worker_task_log_persistence_rows": task_log_persistence_audit["rows"],
         "worker_activation_review_contract": activation_review_contract,
         "worker_activation_review_rows": activation_review_contract["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
@@ -1029,6 +1179,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "production_blocker_audit_count": production_blocker_audit["blocking_criterion_count"],
             "worker_healthcheck_qa_pending_count": healthcheck_qa_contract["pending_criterion_count"],
             "worker_healthcheck_qa_blocking_count": healthcheck_qa_contract["blocking_criterion_count"],
+            "worker_task_log_persistence_criterion_count": task_log_persistence_audit["criterion_count"],
+            "worker_task_log_persistence_blocker_count": task_log_persistence_audit["production_blocker_count"],
+            "worker_task_log_count": task_log_persistence_audit["task_log_count"],
             "worker_activation_review_step_count": activation_review_contract["review_step_count"],
             "worker_activation_blocker_count": activation_review_contract["activation_blocker_count"],
             "worker_activation_operator_action_count": activation_review_contract["operator_action_required_count"],
@@ -1050,6 +1203,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
             "post_task_required_for_work": True,
             "worker_runtime_is_diagnostic_only": True,
+            "worker_task_log_persistence_audit_is_read_only": True,
+            "worker_task_log_persistence_is_not_worker_healthcheck": True,
+            "worker_task_log_persistence_is_not_production_complete": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,

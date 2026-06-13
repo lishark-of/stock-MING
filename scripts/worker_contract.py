@@ -56,6 +56,15 @@ REQUIRED_ACTIVATION_STEPS = {
     "review_local_fallback_rollback",
     "review_secret_redaction",
 }
+REQUIRED_TASK_LOG_CRITERIA = {
+    "local_task_status_index_visible",
+    "memory_sqlite_fallback_visible",
+    "safe_task_log_fields_visible",
+    "task_log_payload_redaction_boundary",
+    "task_log_external_boundary",
+    "append_only_worker_log_storage_verified",
+    "cross_process_task_log_round_trip_verified",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -103,6 +112,9 @@ def build_contract() -> dict[str, Any]:
     activation = _dict(packet.get("worker_activation_review_contract"))
     activation_rows = [row for row in _list(packet.get("worker_activation_review_rows")) if isinstance(row, dict)]
     activation_steps = {str(row.get("review_step") or "") for row in activation_rows}
+    task_log_audit = _dict(packet.get("worker_task_log_persistence_audit"))
+    task_log_rows = [row for row in _list(packet.get("worker_task_log_persistence_rows")) if isinstance(row, dict)]
+    task_log_criteria = {str(row.get("criterion") or "") for row in task_log_rows}
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -232,6 +244,30 @@ def build_contract() -> dict[str, Any]:
             "Task persistence can support local fallback, lock, dedupe, retry, cancel, and logs, but it is not cross-process worker proof.",
         ),
         _row(
+            "task_log_persistence_audit_is_local_and_pending",
+            task_log_audit.get("schema_version") == "worker_task_log_persistence_audit.v1"
+            and task_log_audit.get("status") == "local_task_log_persistence_ready_worker_append_only_pending"
+            and task_log_audit.get("scope") == "local_task_log_persistence_audit_no_process_start"
+            and task_log_audit.get("mode") == "cache_only_read_only_task_log_audit"
+            and REQUIRED_TASK_LOG_CRITERIA.issubset(task_log_criteria)
+            and task_log_audit.get("local_task_log_persistence_ready") is True
+            and task_log_audit.get("task_log_persistence_verified") is False
+            and task_log_audit.get("append_only_worker_log_verified") is False
+            and task_log_audit.get("cross_process_log_round_trip_verified") is False
+            and task_log_audit.get("healthcheck_executed") is False
+            and task_log_audit.get("production_worker_complete") is False
+            and task_log_audit.get("cache_get_reads_raw_payload") is False
+            and task_log_audit.get("cache_get_writes_logs") is False
+            and task_log_audit.get("cache_api_started_workers") is False
+            and task_log_audit.get("cache_api_pinged_redis") is False
+            and task_log_audit.get("task_dispatched_by_cache_api") is False
+            and task_log_audit.get("contains_secret") is False
+            and _flag_false(task_log_audit, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and task_log_audit.get("does_not_execute_trades") is True
+            and task_log_audit.get("does_not_modify_strategy_action") is True,
+            "Worker task-log persistence audit must prove only local safe log visibility and keep append-only/cross-process worker log proof pending.",
+        ),
+        _row(
             "push_gate_runs_worker_contract_after_storage",
             "scripts/worker_contract.py" in push_gate_script
             and "Worker contract" in push_gate_script
@@ -270,6 +306,8 @@ def build_contract() -> dict[str, Any]:
         "healthcheck_task_dispatched": False,
         "activation_ready": False,
         "manual_activation_required": True,
+        "task_log_persistence_verified": False,
+        "append_only_worker_log_verified": False,
         "local_fallback_available": True,
         "cache_only": True,
         "external_calls_triggered": False,
@@ -291,6 +329,8 @@ def build_contract() -> dict[str, Any]:
             "production_blocker_count": blocker_audit.get("blocking_criterion_count"),
             "healthcheck_status": healthcheck.get("status"),
             "healthcheck_pending_count": healthcheck.get("pending_criterion_count"),
+            "task_log_persistence_status": task_log_audit.get("status"),
+            "task_log_persistence_blocker_count": task_log_audit.get("production_blocker_count"),
             "activation_review_status": activation.get("status"),
             "activation_blocker_count": activation.get("activation_blocker_count"),
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),

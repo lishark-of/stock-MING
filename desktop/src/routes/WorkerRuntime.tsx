@@ -31,6 +31,9 @@ export default function WorkerRuntime() {
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (productionReadiness.production_blocker_audit as Record<string, unknown> | undefined) ?? ((cache.worker_production_blocker_audit as Record<string, unknown> | undefined) ?? {});
   const workerHealthcheckQa = (productionReadiness.worker_healthcheck_qa_contract as Record<string, unknown> | undefined) ?? ((cache.worker_healthcheck_qa_contract as Record<string, unknown> | undefined) ?? {});
+  const workerTaskLogPersistence =
+    (productionReadiness.worker_task_log_persistence_audit as Record<string, unknown> | undefined) ??
+    ((cache.worker_task_log_persistence_audit as Record<string, unknown> | undefined) ?? {});
   const workerActivationReview =
     (productionReadiness.worker_activation_review_contract as Record<string, unknown> | undefined) ??
     ((cache.worker_activation_review_contract as Record<string, unknown> | undefined) ?? {});
@@ -70,12 +73,14 @@ export default function WorkerRuntime() {
           { label: "sqlite tasks", value: counts.sqlite_task_count as number | undefined },
           { label: "dedup tasks", value: counts.deduplicated_task_count as number | undefined },
           { label: "task call ledger", value: counts.task_status_call_ledger_count as number | undefined },
+          { label: "task logs", value: counts.worker_task_log_count ?? taskStatus.task_log_count ?? 0 },
           { label: "manual preflight", value: counts.manual_preflight_step_count as number | undefined },
           { label: "operator actions", value: counts.manual_preflight_operator_action_count as number | undefined, tone: Number(counts.manual_preflight_operator_action_count ?? 0) > 0 ? "warn" : "good" },
           { label: "dispatch tasks", value: counts.dispatch_plan_task_count as number | undefined },
           { label: "dispatch queues", value: counts.dispatch_plan_queue_count as number | undefined },
           { label: "worker blockers", value: productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count, tone: Number(productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count ?? 0) > 0 ? "warn" : "good" },
           { label: "healthcheck pending", value: workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count, tone: Number(workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "log blockers", value: workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count, tone: Number(workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation blockers", value: workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count, tone: Number(workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation ready", value: workerActivationReview.activation_ready === true ? "是" : "否", tone: workerActivationReview.activation_ready === true ? "bad" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
@@ -138,6 +143,16 @@ export default function WorkerRuntime() {
         <p>deduplicated_task_count: {String(taskPersistence.deduplicated_task_count ?? taskStatus.task_count ?? 0)}</p>
         <p>task_rows_include_storage_source: {String(taskPersistence.task_rows_include_storage_source ?? true)}</p>
         <DataLineageTable rows={rows(cache.task_persistence_source_rows ?? taskStatus.persistence_source_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Task log persistence audit" subtitle="本地 safe task_log 可见性；不是 Celery/Redis append-only worker log 证明" status={String(workerTaskLogPersistence.status ?? "local_task_log_persistence_ready_worker_append_only_pending")}>
+        <p>schema_version: {String(workerTaskLogPersistence.schema_version ?? "worker_task_log_persistence_audit.v1")}</p>
+        <p>task_log_count / call_ledger_count: {String(workerTaskLogPersistence.task_log_count ?? taskStatus.task_log_count ?? 0)} / {String(workerTaskLogPersistence.call_ledger_count ?? taskStatus.call_ledger_count ?? 0)}</p>
+        <p>local_task_log_persistence_ready: {String(workerTaskLogPersistence.local_task_log_persistence_ready ?? true)}</p>
+        <p>task_log_persistence_verified / append_only_worker_log_verified: {String(workerTaskLogPersistence.task_log_persistence_verified ?? false)} / {String(workerTaskLogPersistence.append_only_worker_log_verified ?? false)}</p>
+        <p>cross_process_log_round_trip_verified / production_worker_complete: {String(workerTaskLogPersistence.cross_process_log_round_trip_verified ?? false)} / {String(workerTaskLogPersistence.production_worker_complete ?? false)}</p>
+        <p>cache_get_reads_raw_payload / cache_get_writes_logs: {String(workerTaskLogPersistence.cache_get_reads_raw_payload ?? false)} / {String(workerTaskLogPersistence.cache_get_writes_logs ?? false)}</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_task_log_persistence_rows ?? cache.worker_task_log_persistence_rows)} />
       </PacketCard>
 
       <PacketCard title="Backend 状态" subtitle="local fallback / Celery / Redis / APScheduler；cache API 不连接外部服务" status="backends">
@@ -210,6 +225,7 @@ export default function WorkerRuntime() {
 
       <PacketCard title="原始 worker runtime cache payload" subtitle="调试用 JSON；不含 token/key/Redis URL" status="safe">
         <JsonDetails title="worker runtime cache raw" data={cache} />
+        <JsonDetails title="worker task log persistence raw" data={workerTaskLogPersistence} />
         <JsonDetails title="worker activation review raw" data={workerActivationReview} />
       </PacketCard>
     </>

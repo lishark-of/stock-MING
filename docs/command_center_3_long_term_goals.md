@@ -472,8 +472,9 @@ Productionize Command Center 3 storage datasets
 - Worker runtime now exposes a read-only dispatch plan matrix: every task has a future queue, local fallback state, Redis/Celery preconditions, retry/cancel/lock/dedupe/log requirements, and scheduler/external-call boundaries.
 - Worker runtime now exposes `worker_production_blocker_audit`: a read-only blocker audit for Redis package/config, Celery package/worker start, stub task migration, queue contracts, button gating, call ledger requirements, scheduler default-off, cache GET no-dispatch, and local-only retry/cancel/lock/dedupe/log controls. It does not start Celery, ping Redis, start APScheduler, or dispatch tasks.
 - Worker runtime now exposes `worker_healthcheck_qa_contract`: a static QA matrix for the future explicit production worker healthcheck. It lists Celery process visibility, Redis broker reachability, synthetic task round trip, cross-process retry/cancel, scheduler default-off, provider/model no-autoschedule, task log persistence, external-call boundary, and secret redaction. It does not execute the healthcheck, start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
+- Worker runtime now exposes `worker_task_log_persistence_audit`: a cache-only local audit that proves safe `task_log` metadata is visible through the task status index and memory/SQLite fallback summary. It keeps `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `cross_process_log_round_trip_verified=false`, `healthcheck_executed=false`, and `production_worker_complete=false`; it does not read raw task payloads, write logs, start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
 - Worker runtime now exposes `worker_activation_review_contract`: a manual activation review contract for production worker enablement. It lists production blocker review, Redis broker configuration, Celery manual start, synthetic healthcheck, cross-process controls, task log persistence, scheduler default-off, provider/model isolation, local fallback rollback, and secret redaction. It keeps `activation_ready=false` and `production_worker_complete=false`; it does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
-- `scripts/worker_contract.py` is now part of the local push gate. It validates worker cache, dispatch plan, production blocker audit, healthcheck QA, activation review, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while `production_worker_complete=false`.
+- `scripts/worker_contract.py` is now part of the local push gate. It validates worker cache, dispatch plan, production blocker audit, healthcheck QA, task-log persistence audit, activation review, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while `production_worker_complete=false`.
 - Celery/Redis are not production enabled.
 
 ### Gaps
@@ -483,7 +484,7 @@ Productionize Command Center 3 storage datasets
 - Task retry execution.
 - Task cancellation semantics across worker process.
 - Concurrency locks.
-- Task log persistence.
+- Append-only worker log persistence and cross-process log round-trip proof.
 - Scheduler production config.
 - The Worker push-gate contract is still a local guard only; real Celery/Redis process startup, broker reachability, cross-process controls, synthetic healthcheck execution, and scheduler production enablement remain pending.
 
@@ -492,10 +493,11 @@ Productionize Command Center 3 storage datasets
 1. Keep local fallback stable.
 2. Keep the dispatch plan matrix current as tasks are added, so future Celery/Redis routing has an auditable contract before execution is enabled.
 3. Keep `worker_healthcheck_qa_contract` current so the future worker healthcheck has an explicit acceptance checklist before execution is enabled.
-4. Add Celery worker execution behind explicit configuration.
-5. Add Redis broker configuration and health reporting without cache API pinging Redis.
-6. Add retry/cancel/lock behavior for real worker tasks.
-7. Keep scheduler default off.
+4. Keep `worker_task_log_persistence_audit` current so local safe task-log visibility is traceable while append-only/cross-process worker log proof remains pending.
+5. Add Celery worker execution behind explicit configuration.
+6. Add Redis broker configuration and health reporting without cache API pinging Redis.
+7. Add retry/cancel/lock behavior for real worker tasks.
+8. Keep scheduler default off.
 
 ### Acceptance Criteria
 
@@ -506,8 +508,9 @@ Productionize Command Center 3 storage datasets
 - Worker not started state is visible in UI.
 - Production blocker rows are visible in UI, and `production_worker_complete` remains false until a future explicit worker health check proves Celery/Redis startup outside GET cache.
 - Worker healthcheck QA rows are visible in UI, and `healthcheck_executed` remains false until a future synthetic/local worker healthcheck is explicitly run.
+- Worker task-log persistence rows are visible in UI, and `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `cross_process_log_round_trip_verified=false`, and `production_worker_complete=false` until a future explicit live worker healthcheck proves append-only/cross-process log persistence.
 - Worker activation review rows are visible in UI, and `activation_ready=false` until production blockers are resolved and an explicit synthetic/local worker healthcheck proves readiness.
-- `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, and `scheduler_started=false`.
+- `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, and `scheduler_started=false`.
 - Real Tushare/DeepSeek scheduling is never automatic.
 - Failures include `error_message_safe`.
 
@@ -517,6 +520,7 @@ Productionize Command Center 3 storage datasets
 - Do not auto-schedule real provider/model tasks.
 - Do not report preflight as production worker completion.
 - Do not report blocker audit as production worker completion.
+- Do not report local task-log persistence audit as append-only Celery/Redis worker log proof, cross-process worker round-trip proof, or production worker completion.
 - Do not report activation review as worker startup, healthcheck execution, or production worker completion.
 - Do not report `scripts/worker_contract.py` passing as Celery/Redis worker startup, broker health, synthetic healthcheck execution, cross-process task controls, scheduler production config, or production worker completion.
 
