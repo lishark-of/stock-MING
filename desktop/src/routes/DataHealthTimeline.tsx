@@ -36,6 +36,7 @@ export default function DataHealthTimeline() {
   const tradeCalPhysical = (cache.trade_cal_physical_validation as Record<string, unknown> | undefined) ?? {};
   const tradeCalProviderRunbook = (cache.trade_cal_provider_acceptance_runbook as Record<string, unknown> | undefined) ?? {};
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
+  const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -67,6 +68,8 @@ export default function DataHealthTimeline() {
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
           { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
+          { label: "可见面审计", value: decisionSurfaceAudit.status as string | undefined, tone: Number(counts.current_evidence_decision_surface_blocker_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "可见面 blockers", value: counts.current_evidence_decision_surface_blocker_count as number | undefined, tone: Number(counts.current_evidence_decision_surface_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "样本类型", value: freshnessSample.fixture_is_synthetic === true ? "fixture" : "unknown", tone: freshnessSample.fixture_is_synthetic === true ? "warn" : "neutral" },
           { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -117,6 +120,13 @@ export default function DataHealthTimeline() {
         <p>synthetic sample、历史样本、本地 trade_cal 文件验收都不能替代 provider-backed trade_cal 长窗口验收，也不能把数据送入 composite score、support factors、evidence preview、next-session bridge preview 或 strategy action。</p>
         <DataLineageTable rows={objectRow(currentEvidenceFreshness)} />
         <DataLineageTable rows={rows(cache.current_evidence_freshness_qa_rows)} />
+      </PacketCard>
+
+      <PacketCard title="当前证据可见面审计" subtitle="current_evidence_decision_surface_audit；只读 snapshot，不重新评分、不改 action" status={String(decisionSurfaceAudit.status ?? "decision_surface_audit")}>
+        <p>审计 composite_score、support_factors、evidence_preview、next_session_bridge.preview 和 strategy_action 的本地可见字段；看不见的字段只标记 not_observed，不当作生产验收完成。</p>
+        <p>如果当前证据是 research-only，但可见面仍有 score/support/preview 值，会列为 blocker；本页不会过滤 packet、不会重算分数、不会修改 strategy action。</p>
+        <DataLineageTable rows={objectRow(decisionSurfaceAudit)} />
+        <DataLineageTable rows={rows(cache.current_evidence_decision_surface_rows)} />
       </PacketCard>
 
       <PacketCard title="Trade_cal 本地文件验收" subtitle="只读已有 Parquet/DuckDB cache；不是页面启动外联" status={String(tradeCalPhysical.status ?? "local_trade_cal_validation")}>

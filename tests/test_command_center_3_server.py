@@ -7603,10 +7603,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         sample = packet["freshness_long_window_sample_validation"]
         physical = packet["trade_cal_physical_validation"]
         current_evidence = packet["current_evidence_freshness_qa_contract"]
+        decision_surface = packet["current_evidence_decision_surface_audit"]
         provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
         provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
         current_evidence_rows = {
             row["criterion"]: row for row in packet["current_evidence_freshness_qa_rows"]
+        }
+        decision_surface_rows = {
+            row["surface"]: row for row in packet["current_evidence_decision_surface_rows"]
         }
         sample_rows = {row["scenario_id"]: row for row in packet["freshness_long_window_sample_rows"]}
         rows_by_id = {row["scenario_id"]: row for row in matrix}
@@ -7637,6 +7641,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_pending_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
+        self.assertEqual(packet["counts"]["current_evidence_decision_surface_row_count"], 5)
+        self.assertEqual(packet["counts"]["current_evidence_decision_surface_blocker_count"], 0)
         self.assertEqual(sample["status"], "local_sample_validation_passed")
         self.assertEqual(sample["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
         self.assertTrue(sample["local_sample_validation_done"])
@@ -7670,6 +7676,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["current_evidence_requires_expected_trade_date"])
         self.assertTrue(packet["policy"]["historical_samples_are_research_only"])
         self.assertTrue(packet["policy"]["provider_backed_trade_cal_acceptance_still_pending"])
+        self.assertTrue(packet["policy"]["current_evidence_decision_surface_audit_is_local"])
+        self.assertFalse(packet["policy"]["current_evidence_decision_surface_audit_rescores"])
+        self.assertFalse(packet["policy"]["current_evidence_decision_surface_audit_mutates_action"])
         self.assertEqual(current_evidence["schema_version"], "data_health_current_evidence_freshness_qa.v1")
         self.assertEqual(
             current_evidence["status"],
@@ -7695,6 +7704,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(current_evidence["does_not_execute_trades"])
         self.assertTrue(current_evidence["does_not_modify_strategy_action"])
         self.assertFalse(current_evidence["external_calls_triggered"])
+        self.assertEqual(decision_surface["schema_version"], "data_health_current_evidence_decision_surface_audit.v1")
+        self.assertEqual(decision_surface["status"], "decision_surface_audit_ready_no_observed_blockers")
+        self.assertEqual(decision_surface["scope"], "local_snapshot_only_no_rescore_no_action_mutation")
+        self.assertEqual(decision_surface["current_evidence_candidate_status"], "research_only")
+        self.assertEqual(decision_surface["row_count"], 5)
+        self.assertEqual(decision_surface["observed_surface_count"], 0)
+        self.assertEqual(decision_surface["blocked_surface_count"], 0)
+        self.assertTrue(decision_surface["read_only_snapshot_audit"])
+        self.assertTrue(decision_surface["does_not_rescore"])
+        self.assertTrue(decision_surface["does_not_filter_packet"])
+        self.assertTrue(decision_surface["does_not_mutate_decision_surfaces"])
+        self.assertFalse(decision_surface["external_calls_triggered"])
+        self.assertTrue(decision_surface["does_not_modify_strategy_action"])
+        self.assertEqual(decision_surface_rows["composite_score"]["status"], "not_observed")
+        self.assertEqual(decision_surface_rows["support_factors"]["status"], "not_observed")
+        self.assertEqual(decision_surface_rows["next_session_bridge.preview"]["status"], "not_observed")
+        self.assertEqual(decision_surface_rows["strategy_action"]["status"], "not_observed")
         self.assertEqual(provider_runbook["schema_version"], "data_health_trade_cal_provider_acceptance_runbook.v1")
         self.assertEqual(provider_runbook["status"], "trade_cal_provider_acceptance_runbook_ready_execution_pending")
         self.assertEqual(provider_runbook["scope"], "local_provider_acceptance_runbook_not_provider_execution")
@@ -7736,6 +7762,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(response["call_ledger"][0]["current_evidence_candidate_status"], "research_only")
         self.assertEqual(response["call_ledger"][0]["current_evidence_freshness_qa_blocker_count"], 3)
+        self.assertEqual(
+            response["call_ledger"][0]["current_evidence_decision_surface_audit_status"],
+            "decision_surface_audit_ready_no_observed_blockers",
+        )
+        self.assertEqual(response["call_ledger"][0]["current_evidence_decision_surface_blocker_count"], 0)
         self.assertEqual(sample_rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
         self.assertTrue(sample_rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
         self.assertEqual(sample_rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")
@@ -7762,6 +7793,84 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertFalse(row["tushare_called"])
             self.assertFalse(row["deepseek_called"])
             self.assertFalse(row["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+    def test_data_health_decision_surface_audit_exposes_research_only_surface_blockers(self):
+        self._with_parquet_root()
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "stale",
+                    "expected_trade_date": "2026-06-12",
+                    "data_date": "2026-06-11",
+                },
+                "command_center_factor_quant_hub_packet": {
+                    "score": {
+                        "composite_score": 68.5,
+                        "support_factors": [
+                            {
+                                "factor_key": "moneyflow",
+                                "freshness_state": "stale",
+                                "enters_composite_score": True,
+                            }
+                        ],
+                    },
+                    "evidence_preview": [
+                        {
+                            "factor_key": "preview_moneyflow",
+                            "data_status": "stale_data",
+                        }
+                    ],
+                    "next_session_bridge": {
+                        "preview": [
+                            {
+                                "factor_key": "bridge_moneyflow",
+                                "freshness_state": "expired",
+                            }
+                        ]
+                    },
+                },
+                "strategy_execution_packet": {"action": "观察", "token": "SHOULD_DROP"},
+            }
+        )
+
+        response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        audit = packet["current_evidence_decision_surface_audit"]
+        rows = {row["surface"]: row for row in packet["current_evidence_decision_surface_rows"]}
+        self.assertEqual(audit["schema_version"], "data_health_current_evidence_decision_surface_audit.v1")
+        self.assertEqual(audit["status"], "decision_surface_audit_ready_blockers_visible")
+        self.assertEqual(audit["current_evidence_candidate_status"], "research_only")
+        self.assertEqual(audit["observed_surface_count"], 5)
+        self.assertEqual(audit["blocked_surface_count"], 4)
+        self.assertEqual(
+            audit["blocked_surface_keys"],
+            ["composite_score", "support_factors", "evidence_preview", "next_session_bridge.preview"],
+        )
+        self.assertEqual(packet["counts"]["current_evidence_decision_surface_blocker_count"], 4)
+        self.assertEqual(rows["composite_score"]["status"], "blocked_current_evidence_not_ready")
+        self.assertEqual(rows["support_factors"]["status"], "blocked_bad_freshness_state_observed")
+        self.assertEqual(rows["support_factors"]["bad_freshness_state_count"], 1)
+        self.assertEqual(rows["evidence_preview"]["status"], "blocked_bad_freshness_state_observed")
+        self.assertEqual(rows["next_session_bridge.preview"]["status"], "blocked_bad_freshness_state_observed")
+        self.assertEqual(rows["strategy_action"]["status"], "observed_read_only")
+        self.assertTrue(rows["strategy_action"]["does_not_modify_strategy_action"])
+        self.assertTrue(audit["does_not_rescore"])
+        self.assertTrue(audit["does_not_filter_packet"])
+        self.assertTrue(audit["does_not_mutate_decision_surfaces"])
+        self.assertFalse(audit["external_calls_triggered"])
+        self.assertFalse(audit["tushare_called"])
+        self.assertFalse(audit["deepseek_called"])
+        self.assertFalse(audit["github_called"])
+        self.assertTrue(audit["does_not_execute_trades"])
+        self.assertTrue(audit["does_not_modify_strategy_action"])
+        self.assertEqual(
+            response["call_ledger"][0]["current_evidence_decision_surface_audit_status"],
+            "decision_surface_audit_ready_blockers_visible",
+        )
+        self.assertEqual(response["call_ledger"][0]["current_evidence_decision_surface_blocker_count"], 4)
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_data_health_cache_validates_local_trade_cal_parquet_without_provider_call(self):

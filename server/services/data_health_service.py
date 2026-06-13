@@ -570,6 +570,184 @@ def _current_evidence_freshness_qa_contract(
     return contract, rows
 
 
+BAD_CURRENT_EVIDENCE_STATES = {"stale", "expired", "historical", "unknown", "missing", "future_unavailable", "stale_data"}
+
+
+def _mapping_list(value: Any) -> list[dict[str, Any]]:
+    return [dict(item) for item in _as_list(value) if isinstance(item, Mapping)]
+
+
+def _surface_state(row: Mapping[str, Any]) -> str:
+    for key in ("freshness_state", "data_freshness_state", "freshness_status", "data_status", "state"):
+        text = _safe_text(row.get(key), limit=80).lower()
+        if text:
+            return text
+    return ""
+
+
+def _decision_surface_row(
+    *,
+    surface: str,
+    source_packet: str,
+    entries: list[dict[str, Any]],
+    scalar_observed: bool,
+    current_evidence_status: str,
+    requires_current_evidence_ready: bool,
+    detail: str,
+) -> dict[str, Any]:
+    observed_count = len(entries) + (1 if scalar_observed else 0)
+    entry_states = [_surface_state(row) for row in entries]
+    bad_state_count = len([state for state in entry_states if state in BAD_CURRENT_EVIDENCE_STATES])
+    blocked_by_current_status = bool(
+        requires_current_evidence_ready
+        and observed_count
+        and current_evidence_status != "current_evidence_ready"
+    )
+    if observed_count == 0:
+        status = "not_observed"
+    elif bad_state_count:
+        status = "blocked_bad_freshness_state_observed"
+    elif blocked_by_current_status:
+        status = "blocked_current_evidence_not_ready"
+    elif requires_current_evidence_ready:
+        status = "passed_read_only_audit"
+    else:
+        status = "observed_read_only"
+    return {
+        "surface": surface,
+        "source_packet": source_packet,
+        "status": status,
+        "detail": detail,
+        "observed_value_count": observed_count,
+        "requires_current_evidence_ready": bool(requires_current_evidence_ready),
+        "current_evidence_candidate_status": current_evidence_status,
+        "blocked_by_current_freshness": status.startswith("blocked_"),
+        "bad_freshness_state_count": bad_state_count,
+        "observed_entry_states": [state for state in entry_states if state][:8],
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "does_not_rescore": True,
+        "does_not_filter_packet": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _current_evidence_decision_surface_audit(
+    snapshot: Mapping[str, Any],
+    current_evidence_contract: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    current_status = _safe_text(
+        current_evidence_contract.get("current_evidence_candidate_status") or "research_only",
+        limit=80,
+    )
+    factor_packet = _first_mapping(
+        snapshot,
+        "command_center_factor_quant_hub_packet",
+        "factor_quant_hub_packet",
+    )
+    score_packet = _as_dict(factor_packet.get("score")) or _first_mapping(
+        snapshot,
+        "command_center_factor_score_packet",
+        "factor_score_packet",
+    )
+    bridge_packet = _as_dict(factor_packet.get("next_session_bridge"))
+    strategy_packet = _first_mapping(
+        snapshot,
+        "strategy_execution_packet",
+        "command_center_strategy_execution_packet",
+        "strategy_packet",
+    )
+    evidence_preview_entries = _mapping_list(
+        factor_packet.get("evidence_preview") or score_packet.get("evidence_preview")
+    )
+    bridge_preview_entries = _mapping_list(bridge_packet.get("preview"))
+    rows = [
+        _decision_surface_row(
+            surface="composite_score",
+            source_packet="command_center_factor_quant_hub_packet.score",
+            entries=[],
+            scalar_observed=score_packet.get("composite_score") not in (None, ""),
+            current_evidence_status=current_status,
+            requires_current_evidence_ready=True,
+            detail="composite_score must stay empty or blocked when current evidence is research-only.",
+        ),
+        _decision_surface_row(
+            surface="support_factors",
+            source_packet="command_center_factor_quant_hub_packet.score",
+            entries=_mapping_list(score_packet.get("support_factors")),
+            scalar_observed=False,
+            current_evidence_status=current_status,
+            requires_current_evidence_ready=True,
+            detail="support_factors must not contain stale/expired/historical/unknown current evidence.",
+        ),
+        _decision_surface_row(
+            surface="evidence_preview",
+            source_packet="command_center_factor_quant_hub_packet",
+            entries=evidence_preview_entries,
+            scalar_observed=False,
+            current_evidence_status=current_status,
+            requires_current_evidence_ready=True,
+            detail="factor evidence preview must remain separate from research-only or blocked current evidence.",
+        ),
+        _decision_surface_row(
+            surface="next_session_bridge.preview",
+            source_packet="command_center_factor_quant_hub_packet.next_session_bridge",
+            entries=bridge_preview_entries,
+            scalar_observed=False,
+            current_evidence_status=current_status,
+            requires_current_evidence_ready=True,
+            detail="next_session_bridge.preview cannot carry stale/expired/historical/unknown evidence into next-session display.",
+        ),
+        _decision_surface_row(
+            surface="strategy_action",
+            source_packet="strategy_execution_packet",
+            entries=[],
+            scalar_observed=bool(strategy_packet.get("action") or strategy_packet.get("overall_action")),
+            current_evidence_status=current_status,
+            requires_current_evidence_ready=False,
+            detail="strategy action is read-only here; Data Health does not compute, overwrite, or execute it.",
+        ),
+    ]
+    blocked_rows = [row for row in rows if str(row.get("status", "")).startswith("blocked_")]
+    observed_rows = [row for row in rows if int(row.get("observed_value_count") or 0) > 0]
+    contract = {
+        "schema_version": "data_health_current_evidence_decision_surface_audit.v1",
+        "status": "decision_surface_audit_ready_blockers_visible"
+        if blocked_rows
+        else "decision_surface_audit_ready_no_observed_blockers",
+        "scope": "local_snapshot_only_no_rescore_no_action_mutation",
+        "current_evidence_candidate_status": current_status,
+        "expected_trade_date": current_evidence_contract.get("expected_trade_date"),
+        "data_date": current_evidence_contract.get("data_date"),
+        "date_matches_expected_trade_date": bool(current_evidence_contract.get("date_matches_expected_trade_date")),
+        "row_count": len(rows),
+        "observed_surface_count": len(observed_rows),
+        "blocked_surface_count": len(blocked_rows),
+        "blocked_surface_keys": [row["surface"] for row in blocked_rows],
+        "snapshot_packet_observed": bool(factor_packet or score_packet or strategy_packet),
+        "read_only_snapshot_audit": True,
+        "does_not_rescore": True,
+        "does_not_filter_packet": True,
+        "does_not_mutate_decision_surfaces": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This audits only decision surfaces visible in the local snapshot. Missing packets are reported as not_observed, not as production proof.",
+    }
+    return contract, rows
+
+
 def _trade_cal_provider_acceptance_row(
     criterion: str,
     status: str,
@@ -836,6 +1014,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             trade_cal_physical_validation,
         )
     )
+    current_evidence_decision_surface_audit, current_evidence_decision_surface_rows = (
+        _current_evidence_decision_surface_audit(
+            snapshot_map,
+            current_evidence_freshness_qa_contract,
+        )
+    )
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -900,6 +1084,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_physical_validation",
             "trade_cal_provider_acceptance_runbook",
             "current_evidence_freshness_qa_contract",
+            "current_evidence_decision_surface_audit",
         ],
         "summary": visibility_summary.get("summary")
         or visibility_summary.get("headline")
@@ -925,6 +1110,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "trade_cal_provider_acceptance_runbook_rows": trade_cal_provider_acceptance_runbook_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
+        "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
+        "current_evidence_decision_surface_rows": current_evidence_decision_surface_rows,
         "timeline_rows": timeline_rows,
         "recovery_action_rows": recovery_action_rows,
         "provider_rows": provider_rows,
@@ -951,6 +1138,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
             "current_evidence_freshness_qa_blocker_count": int(
                 current_evidence_freshness_qa_contract.get("current_evidence_blocker_count") or 0
+            ),
+            "current_evidence_decision_surface_row_count": len(current_evidence_decision_surface_rows),
+            "current_evidence_decision_surface_blocker_count": int(
+                current_evidence_decision_surface_audit.get("blocked_surface_count") or 0
             ),
         },
         "policy": {
@@ -991,6 +1182,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
             "provider_backed_trade_cal_acceptance_still_pending": True,
+            "current_evidence_decision_surface_audit_is_local": True,
+            "current_evidence_decision_surface_audit_rescores": False,
+            "current_evidence_decision_surface_audit_mutates_action": False,
         },
         "call_ledger": [
             {
@@ -1022,6 +1216,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "current_evidence_freshness_qa_blocker_count": int(
                     current_evidence_freshness_qa_contract.get("current_evidence_blocker_count") or 0
                 ),
+                "current_evidence_decision_surface_audit_status": current_evidence_decision_surface_audit.get("status"),
+                "current_evidence_decision_surface_blocker_count": int(
+                    current_evidence_decision_surface_audit.get("blocked_surface_count") or 0
+                ),
                 "call_status": "cache_read" if snapshot else "cache_missing",
                 "local_fetched_at": _now_iso(),
                 "external": False,
@@ -1046,6 +1244,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal 本地文件验收只读取已有 Parquet/DuckDB cache；不会刷新 provider，缺失或覆盖不足时仍保持待验收。",
             "trade_cal provider-backed 长窗口验收必须通过显式 POST task 执行；runbook 只固定验收要求，不调用 Tushare。",
             "current evidence freshness QA 只固定当前证据/历史样本边界；provider-backed trade_cal 长窗口验收仍需后续按钮任务证明。",
+            "decision-surface audit 只检查本地 snapshot 可见字段，不重新评分、不过滤 packet、不修改 action；缺失字段不等于生产验收完成。",
         ],
     }
     if status == "cache_missing":
