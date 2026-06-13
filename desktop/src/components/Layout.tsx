@@ -101,10 +101,12 @@ export default function Layout({
               {group.routes.map((route) => (
                 <button
                   key={route.key}
+                  aria-current={active === route.key ? "page" : undefined}
                   className={active === route.key ? "nav-active" : ""}
+                  data-route-active={active === route.key ? "true" : "false"}
                   onClick={() => onNavigate(route.key)}
                 >
-                  {route.label}
+                  <span className="nav-label">{route.label}</span>
                 </button>
               ))}
             </section>

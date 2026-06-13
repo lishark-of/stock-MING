@@ -623,8 +623,10 @@ def _motion_row(
 def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]]]:
     styles = _motion_source("styles.css")
     app = _motion_source("App.tsx")
+    layout = _motion_source("components/Layout.tsx")
     packet_card = _motion_source("components/PacketCard.tsx")
     metric_grid = _motion_source("components/MetricGrid.tsx")
+    status_badge = _motion_source("components/StatusBadge.tsx")
     state_rail = _motion_source("components/StateClarityRail.tsx")
     page_state = _motion_source("components/PageStateBanner.tsx")
     task_panel = _motion_source("components/TaskStatusPanel.tsx")
@@ -635,8 +637,10 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         [
             styles,
             app,
+            layout,
             packet_card,
             metric_grid,
+            status_badge,
             state_rail,
             page_state,
             task_panel,
@@ -652,6 +656,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "--motion-duration-chart",
         "--motion-duration-state",
         "--motion-duration-clarity",
+        "--motion-duration-focus",
         "--motion-ease-emphasized",
     )
     keyframe_markers = (
@@ -660,6 +665,9 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "@keyframes cc-state-clarity",
         "@keyframes cc-chart-clarity",
         "@keyframes cc-clarity-sweep",
+        "@keyframes cc-focus-settle",
+        "@keyframes cc-context-sweep",
+        "@keyframes cc-status-settle",
     )
     task_polling_interval_is_bounded = "window.setInterval" in task_panel and "getTask(taskId)" in task_panel and "window.clearInterval" in task_panel
     checks = {
@@ -679,6 +687,14 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and 'key={route}' in app
         and "motion-surface" in packet_card
         and "motion-surface" in metric_grid,
+        "navigation_context_cue": 'aria-current={active === route.key ? "page" : undefined}' in layout
+        and 'data-route-active={active === route.key ? "true" : "false"}' in layout
+        and 'className="nav-label"' in layout
+        and ".sidebar button.nav-active::after" in styles
+        and "@keyframes cc-context-sweep" in styles,
+        "status_badge_context_cue": "data-status-tone={tone}" in status_badge
+        and ".status-badge::before" in styles
+        and "@keyframes cc-status-settle" in styles,
         "task_progress_motion_present": "task-panel--${task.status}" in task_panel
         and "data-task-state={task.status}" in task_panel
         and "task-progress" in task_panel
@@ -715,6 +731,8 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("reduced_motion_css", checks["reduced_motion_css"], evidence="prefers-reduced-motion disables transform and duration"),
         _motion_row("state_clarity_rail_present", checks["state_clarity_rail_present"], evidence="PageStateBanner / TaskStatusPanel / TaskLaunchReceipt use StateClarityRail"),
         _motion_row("route_and_surface_staging", checks["route_and_surface_staging"], evidence="route-stage + motion-surface"),
+        _motion_row("navigation_context_cue", checks["navigation_context_cue"], evidence="aria-current + data-route-active + finite active-nav sweep"),
+        _motion_row("status_badge_context_cue", checks["status_badge_context_cue"], evidence="status badges expose data-status-tone and visual dot cue"),
         _motion_row("task_progress_motion_present", checks["task_progress_motion_present"], evidence="task status classes + progress transition"),
         _motion_row("chart_reduced_motion_runtime", checks["chart_reduced_motion_runtime"], evidence="NextSessionChart runtime reduced-motion check"),
         _motion_row("chart_clarity_scope", checks["chart_clarity_scope"], evidence="chart-refresh-frame and chartMotionState"),
@@ -759,8 +777,10 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "audited_files": [
             "desktop/src/styles.css",
             "desktop/src/App.tsx",
+            "desktop/src/components/Layout.tsx",
             "desktop/src/components/PacketCard.tsx",
             "desktop/src/components/MetricGrid.tsx",
+            "desktop/src/components/StatusBadge.tsx",
             "desktop/src/components/StateClarityRail.tsx",
             "desktop/src/components/PageStateBanner.tsx",
             "desktop/src/components/TaskStatusPanel.tsx",

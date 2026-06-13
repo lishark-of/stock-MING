@@ -8,6 +8,7 @@
   --motion-duration-chart: 360ms;
   --motion-duration-state: 300ms;
   --motion-duration-clarity: 420ms;
+  --motion-duration-focus: 520ms;
   --motion-delay-step: 24ms;
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
@@ -285,6 +286,42 @@ textarea:focus {
   }
 }
 
+@keyframes cc-focus-settle {
+  from {
+    filter: brightness(0.96);
+    transform: translateX(-2px);
+  }
+  to {
+    filter: brightness(1);
+    transform: translateX(0);
+  }
+}
+
+@keyframes cc-context-sweep {
+  from {
+    opacity: 0;
+    transform: translateX(-115%);
+  }
+  38% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(115%);
+  }
+}
+
+@keyframes cc-status-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.54);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -325,14 +362,61 @@ textarea:focus {
   background: transparent;
   color: #cbd5e1;
   border-color: #334155;
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
   text-align: left;
 }
 
+.sidebar button::before {
+  background: currentColor;
+  border-radius: 999px;
+  content: "";
+  inset: 8px auto 8px 0;
+  opacity: 0;
+  position: absolute;
+  transform: scaleY(0.42);
+  transform-origin: 50% 50%;
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-panel) var(--motion-ease-emphasized);
+  width: 3px;
+  z-index: 1;
+}
+
+.sidebar button::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
+  content: "";
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-115%);
+  z-index: 0;
+}
+
+.sidebar .nav-label {
+  position: relative;
+  z-index: 1;
+}
+
 .sidebar button.nav-active {
+  animation: cc-focus-settle var(--motion-duration-focus) var(--motion-ease-emphasized) both;
+  animation-iteration-count: 1;
   background: #2563eb;
   border-color: #2563eb;
   color: #fff;
   box-shadow: inset 3px 0 0 rgba(255, 255, 255, 0.7);
+}
+
+.sidebar button.nav-active::before {
+  opacity: 0.95;
+  transform: scaleY(1);
+}
+
+.sidebar button.nav-active::after {
+  animation: cc-context-sweep var(--motion-duration-focus) var(--motion-ease-emphasized) both;
+  animation-iteration-count: 1;
 }
 
 .sidebar-note {
@@ -391,13 +475,33 @@ textarea:focus {
 }
 
 .status-badge {
+  align-items: center;
   border-radius: 999px;
+  display: inline-flex;
   font-size: 12px;
+  gap: 6px;
+  min-height: 22px;
   padding: 4px 8px;
   transition:
     background var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),
     transform var(--motion-duration-fast) var(--motion-ease-standard);
+  white-space: nowrap;
+}
+
+.status-badge::before {
+  animation-name: cc-status-settle;
+  animation-duration: var(--motion-duration-state);
+  animation-timing-function: var(--motion-ease-emphasized);
+  animation-delay: 0ms;
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+  background: currentColor;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.62);
+  content: "";
+  height: 6px;
+  width: 6px;
 }
 
 .status-good {
@@ -789,6 +893,10 @@ pre {
   .radar-result-cluster,
   .state-clarity-step,
   .state-clarity-step::after,
+  .sidebar button.nav-active,
+  .sidebar button.nav-active::before,
+  .sidebar button.nav-active::after,
+  .status-badge::before,
   .packet-card:hover,
   .metric-card:hover,
   button:hover:not(:disabled) {
