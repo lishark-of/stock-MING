@@ -162,7 +162,7 @@ npm run tauri dev
 `scripts/check_tauri_env.sh` 只做本地环境预检，不安装依赖、不启动 Tauri、不调用 Tushare/DeepSeek/GitHub、不读取 token/key。
 如果本机未安装 Rust/Cargo，只运行 Vite 前端即可；Tauri dev mode 需要安装 Rust 后再执行 `npm run tauri dev`。
 Tauri dev mode 还要求 `desktop/src-tauri/Cargo.lock` 与 `desktop/src-tauri/icons/icon.png` 存在；`desktop/src-tauri/target/` 与 `desktop/src-tauri/gen/` 为本地生成物，不提交。
-当前 Tauri 开发模式不自动拉起 FastAPI：先运行 `scripts/dev_server.sh`，再运行 `cd desktop && npm run dev` 或 `cd desktop && npm run tauri dev`。`GET /api/desktop/preflight-cache` 会展示 `api_base_info` 与 `dev_launch_plan`，但不会执行这些命令、不会读取 token/key、不会调用 Tushare/DeepSeek/GitHub。
+当前 Tauri 开发模式不自动拉起 FastAPI：先运行 `scripts/dev_server.sh`，再运行 `cd desktop && npm run dev` 或 `cd desktop && npm run tauri dev`。`GET /api/desktop/preflight-cache` 会展示 `api_base_info`、`dev_launch_plan`、`production_launch_plan` 和 `production_blocker_audit`，但不会执行这些命令、不会读取 token/key、不会调用 Tushare/DeepSeek/GitHub。`production_blocker_audit.status=production_package_blocked` 是当前正确状态：它要求未来显式验证 `npm run tauri build`、后端启动/sidecar 策略、packaged-runtime 离线提示、配置/日志路径以及 macOS 签名/公证流程后，才可声称 production desktop package 完成。
 
 ### Worker / Scheduler
 

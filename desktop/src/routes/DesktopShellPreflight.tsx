@@ -27,7 +27,11 @@ export default function DesktopShellPreflight() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const apiBaseInfo = (cache.api_base_info as Record<string, unknown> | undefined) ?? {};
+  const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
+  const productionBlockerAudit = (cache.production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const devLaunchPlan = rows(cache.dev_launch_plan);
+  const productionLaunchPlan = rows(cache.production_launch_plan);
+  const productionBlockerRows = rows(cache.production_blocker_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -51,6 +55,10 @@ export default function DesktopShellPreflight() {
           { label: "node_modules", value: runtime.node_modules_present === true ? "present" : "missing", tone: runtime.node_modules_present === true ? "good" : "warn" },
           { label: "dist", value: runtime.dist_present === true ? "present" : "missing" },
           { label: "backend autostart", value: runtime.backend_autostart_configured === true ? "enabled" : "manual", tone: runtime.backend_autostart_configured === true ? "warn" : "good" },
+          { label: "package audit", value: productionBlockerAudit.status as string | undefined, tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
+          { label: "package ready", value: productionBlockerAudit.package_ready === true ? "ready" : "blocked", tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
+          { label: "tauri build", value: productionBlockerAudit.tauri_build_verified === true ? "verified" : "not verified", tone: productionBlockerAudit.tauri_build_verified === true ? "good" : "warn" },
+          { label: "package blockers", value: productionBlockerAudit.blocker_count as number | undefined, tone: Number(productionBlockerAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
           { label: "cache warnings", value: cacheWarnings.length }
@@ -78,6 +86,25 @@ export default function DesktopShellPreflight() {
 
       <PacketCard title="开发启动顺序" subtitle="手动启动 FastAPI、Vite、Tauri；预检页不执行命令" status="manual">
         <DataLineageTable rows={devLaunchPlan} />
+      </PacketCard>
+
+      <PacketCard title="生产打包路线" subtitle="只展示命令顺序；本页不运行 build 或 Tauri" status="manual">
+        <DataLineageTable rows={productionLaunchPlan} />
+      </PacketCard>
+
+      <PacketCard title="Tauri 生产包阻断审计" subtitle="preflight 不是 production package complete" status={String(productionBlockerAudit.status ?? "production_package_blocked")}>
+        <p>scope: {String(productionBlockerAudit.scope ?? "local_preflight_not_tauri_build")}</p>
+        <p>package_ready: {String(productionBlockerAudit.package_ready ?? false)}</p>
+        <p>tauri_build_verified: {String(productionBlockerAudit.tauri_build_verified ?? false)}</p>
+        <p>manual_backend_launch_required: {String(productionBlockerAudit.manual_backend_launch_required ?? true)}</p>
+        <p>backend_offline_ui_packaged_runtime_verified: {String(productionBlockerAudit.backend_offline_ui_packaged_runtime_verified ?? false)}</p>
+        <p>config_log_paths_declared: {String(productionBlockerAudit.config_log_paths_declared ?? false)}</p>
+        <p>macos_signing_notarization_ready: {String(productionBlockerAudit.macos_signing_notarization_ready ?? false)}</p>
+        <p>production_readiness_status: {String(productionReadiness.status ?? "desktop_scaffold_partial")}</p>
+      </PacketCard>
+
+      <PacketCard title="Tauri 生产包阻断项" subtitle="逐项说明 dev/preflight 与 production package 的缺口" status="blockers">
+        <DataLineageTable rows={productionBlockerRows} />
       </PacketCard>
 
       <PacketCard title="FastAPI 地址合同" subtitle="前端只连接本地 FastAPI，不保存 token/key" status={String(apiBaseInfo.is_localhost === true ? "localhost" : "review")}>

@@ -198,6 +198,140 @@ def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     ]
 
 
+def _production_package_blocker_audit(
+    *,
+    package_summary: dict[str, Any],
+    tauri_config: dict[str, Any],
+    production_readiness: dict[str, Any],
+    node_ready: bool,
+    rust_ready: bool,
+    scaffold_ready: bool,
+    api_base_info: dict[str, Any],
+) -> dict[str, Any]:
+    frontend_dist = str(tauri_config.get("frontend_dist") or "")
+    rows = [
+        {
+            "criterion": "react_vite_scaffold_ready",
+            "status": "passed" if scaffold_ready and node_ready else "blocked",
+            "passed": scaffold_ready and node_ready,
+            "evidence": f"build_script={bool(package_summary.get('has_build_script'))}; node_ready={node_ready}",
+            "production_blocker": not (scaffold_ready and node_ready),
+        },
+        {
+            "criterion": "tauri_cli_declared",
+            "status": "passed" if package_summary.get("has_tauri_cli") else "blocked",
+            "passed": bool(package_summary.get("has_tauri_cli")),
+            "evidence": "@tauri-apps/cli in devDependencies",
+            "production_blocker": not bool(package_summary.get("has_tauri_cli")),
+        },
+        {
+            "criterion": "rust_cargo_toolchain_visible",
+            "status": "passed" if rust_ready else "blocked",
+            "passed": rust_ready,
+            "evidence": "rustc and cargo are checked by path availability only",
+            "production_blocker": not rust_ready,
+        },
+        {
+            "criterion": "tauri_config_frontend_dist",
+            "status": "passed" if frontend_dist == "../dist" else "blocked",
+            "passed": frontend_dist == "../dist",
+            "evidence": f"frontendDist={frontend_dist or 'missing'}",
+            "production_blocker": frontend_dist != "../dist",
+        },
+        {
+            "criterion": "tauri_config_local_dev_url",
+            "status": "passed" if tauri_config.get("dev_url_is_localhost") else "blocked",
+            "passed": bool(tauri_config.get("dev_url_is_localhost")),
+            "evidence": f"devUrl={tauri_config.get('dev_url') or 'missing'}",
+            "production_blocker": not bool(tauri_config.get("dev_url_is_localhost")),
+        },
+        {
+            "criterion": "tauri_package_build_verified",
+            "status": "blocked",
+            "passed": False,
+            "evidence": "npm run tauri build has not been executed in this preflight",
+            "production_blocker": True,
+        },
+        {
+            "criterion": "backend_startup_strategy",
+            "status": "blocked",
+            "passed": False,
+            "evidence": "current package expects manual FastAPI launch; sidecar autostart is not enabled",
+            "production_blocker": True,
+        },
+        {
+            "criterion": "backend_offline_ui_runtime_verified",
+            "status": "blocked",
+            "passed": False,
+            "evidence": "offline UX exists in React error states but has not been validated inside packaged Tauri runtime",
+            "production_blocker": True,
+        },
+        {
+            "criterion": "config_and_log_paths_declared",
+            "status": "blocked",
+            "passed": False,
+            "evidence": "production config/log locations are not yet declared for ordinary users",
+            "production_blocker": True,
+        },
+        {
+            "criterion": "macos_signing_notarization_ready",
+            "status": "blocked",
+            "passed": False,
+            "evidence": "signing, notarization, and distribution checks are not part of current preflight",
+            "production_blocker": True,
+        },
+        {
+            "criterion": "frontend_secret_boundary",
+            "status": "passed",
+            "passed": True,
+            "evidence": "frontend connects to local FastAPI and preflight reports contains_secret=false",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "startup_external_call_boundary",
+            "status": "passed",
+            "passed": True,
+            "evidence": "desktop cache does not start providers, models, GitHub probes, or trades",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "api_base_localhost",
+            "status": "passed" if api_base_info.get("is_localhost") else "blocked",
+            "passed": bool(api_base_info.get("is_localhost")),
+            "evidence": f"api_base={api_base_info.get('api_base') or 'missing'}",
+            "production_blocker": not bool(api_base_info.get("is_localhost")),
+        },
+    ]
+    blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    package_ready = not blockers
+    return {
+        "schema_version": "tauri_production_package_blocker_audit.v1",
+        "status": "production_package_ready" if package_ready else "production_package_blocked",
+        "scope": "local_preflight_not_tauri_build",
+        "package_ready": package_ready,
+        "tauri_dev_ready": bool(production_readiness.get("tauri_dev_ready")),
+        "tauri_build_verified": False,
+        "tauri_package_build_attempted": False,
+        "backend_sidecar_autostart_enabled": False,
+        "manual_backend_launch_required": True,
+        "backend_offline_ui_packaged_runtime_verified": False,
+        "config_log_paths_declared": False,
+        "macos_signing_notarization_ready": False,
+        "frontend_stores_tokens": False,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "blockers": blockers,
+        "blocker_count": len(blockers),
+        "rows": rows,
+        "note": "This audit separates desktop dev/preflight readiness from production packaged readiness; it never runs npm, cargo, Tauri, providers, models, GitHub, or trades.",
+    }
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -251,6 +385,15 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "blockers": [] if tauri_dev_ready else (["rust_cargo_missing"] if vite_dev_ready else ["desktop_scaffold_incomplete"]),
         "note": "当前阶段验证 React/Vite 与 Tauri scaffold；生产 package build 和 FastAPI sidecar 自动拉起仍需后续阶段。",
     }
+    production_blocker_audit = _production_package_blocker_audit(
+        package_summary=package_summary,
+        tauri_config=tauri_config,
+        production_readiness=production_readiness,
+        node_ready=node_ready,
+        rust_ready=rust_ready,
+        scaffold_ready=scaffold_ready,
+        api_base_info=api_base_info,
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -267,6 +410,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "package_json": package_summary,
         "tauri_config": tauri_config,
         "production_readiness": production_readiness,
+        "production_blocker_audit": production_blocker_audit,
+        "production_blocker_rows": production_blocker_audit["rows"],
         "file_rows": file_rows,
         "command_rows": command_rows,
         "counts": {
@@ -291,6 +436,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "backend_autostart_configured": False,
             "production_package_build_attempted": False,
             "backend_sidecar_autostart_enabled": False,
+            "production_package_ready": production_blocker_audit["package_ready"],
+            "production_blocker_count": production_blocker_audit["blocker_count"],
+            "tauri_build_verified": production_blocker_audit["tauri_build_verified"],
+            "backend_offline_ui_packaged_runtime_verified": production_blocker_audit["backend_offline_ui_packaged_runtime_verified"],
+            "config_log_paths_declared": production_blocker_audit["config_log_paths_declared"],
+            "macos_signing_notarization_ready": production_blocker_audit["macos_signing_notarization_ready"],
         },
         "policy": {
             "cache_api_external_calls": False,

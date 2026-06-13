@@ -500,6 +500,7 @@ Mature ECharts next-session operation map interactions
 ### Current Status
 
 - Tauri preflight/dev checks exist.
+- Desktop preflight now exposes `production_blocker_audit` and `production_blocker_rows`, separating dev/preflight readiness from production package readiness.
 - Production package is incomplete.
 
 ### Gaps
@@ -511,6 +512,7 @@ Mature ECharts next-session operation map interactions
 - Log path.
 - macOS package flow.
 - Friendly failure prompts.
+- `production_blocker_audit.status=production_package_blocked` is expected until `tauri build`, backend startup strategy, packaged offline UX, config/log paths, and macOS signing/notarization are validated.
 
 ### Implementation Phases
 
@@ -518,6 +520,7 @@ Mature ECharts next-session operation map interactions
 2. Define FastAPI startup strategy: sidecar or explicit manual process.
 3. Add production package build and artifact checks.
 4. Add config/log location documentation.
+5. Validate packaged-runtime backend-offline UI and macOS signing/notarization flow.
 
 ### Acceptance Criteria
 
@@ -525,11 +528,13 @@ Mature ECharts next-session operation map interactions
 - `tauri build` passes.
 - Backend-offline UI is friendly.
 - Local config and token/key are not exposed to frontend.
+- `production_blocker_audit.package_ready=true` only after `tauri build` is verified, backend startup strategy is settled, config/log paths are declared, and packaged-runtime offline UX is validated.
 
 ### Forbidden
 
 - Do not bundle secrets into frontend or app package.
 - Do not claim production desktop completion from preflight only.
+- Do not claim `production_blocker_audit` as production package completion while status remains `production_package_blocked`.
 - Do not auto-call providers/models during app startup.
 
 ### Recommended Commit Message
