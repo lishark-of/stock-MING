@@ -28,6 +28,7 @@ CONTRACT_KEYS = [
     "freshness_long_window_sample_validation",
     "trade_cal_physical_validation",
     "trade_cal_provider_acceptance_runbook",
+    "trade_cal_provider_acceptance_promotion_audit",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
@@ -58,6 +59,7 @@ def build_contract() -> dict[str, Any]:
     sample = _get(packet, "freshness_long_window_sample_validation")
     physical = _get(packet, "trade_cal_physical_validation")
     runbook = _get(packet, "trade_cal_provider_acceptance_runbook")
+    promotion = _get(packet, "trade_cal_provider_acceptance_promotion_audit")
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
@@ -116,6 +118,20 @@ def build_contract() -> dict[str, Any]:
             "Provider runbook may be ready, but execution and provider-backed acceptance must remain pending.",
         ),
         _row(
+            "provider_promotion_audit_is_read_only_pending",
+            promotion.get("schema_version") == "data_health_trade_cal_provider_acceptance_promotion_audit.v1"
+            and promotion.get("scope") == "local_snapshot_evidence_promotion_audit_no_provider_execution"
+            and promotion.get("status")
+            in {
+                "trade_cal_provider_acceptance_promotion_pending",
+                "trade_cal_provider_acceptance_promotion_ready",
+            }
+            and promotion.get("provider_refresh_called_by_audit") is False
+            and promotion.get("production_freshness_gate_complete") is False
+            and _flag_false(promotion, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
+            "Provider acceptance promotion audit must read local prior evidence only and never run trade_cal refresh itself.",
+        ),
+        _row(
             "current_evidence_boundary_contract",
             current.get("schema_version") == "data_health_current_evidence_freshness_qa.v1"
             and current.get("current_evidence_requires_expected_trade_date") is True
@@ -157,6 +173,7 @@ def build_contract() -> dict[str, Any]:
             "contract_rows_are_present",
             all(key in packet for key in CONTRACT_KEYS)
             and int(counts.get("freshness_acceptance_scenario_count") or 0) >= 8
+            and int(counts.get("trade_cal_provider_acceptance_promotion_row_count") or 0) >= 10
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6,
@@ -189,6 +206,12 @@ def build_contract() -> dict[str, Any]:
             "current_evidence_decision_surface_row_count": counts.get("current_evidence_decision_surface_row_count"),
             "current_evidence_producer_coverage_row_count": counts.get("current_evidence_producer_coverage_row_count"),
             "trade_cal_provider_acceptance_pending_count": counts.get("trade_cal_provider_acceptance_pending_count"),
+            "trade_cal_provider_acceptance_promotion_blocker_count": counts.get(
+                "trade_cal_provider_acceptance_promotion_blocker_count"
+            ),
+            "trade_cal_provider_acceptance_evidence_row_count": counts.get(
+                "trade_cal_provider_acceptance_evidence_row_count"
+            ),
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",
     }

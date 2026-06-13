@@ -4783,6 +4783,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_backed_trade_cal_acceptance_done", script)
         self.assertIn("production_freshness_gate_complete", script)
         self.assertIn("trade_cal_provider_acceptance_runbook", script)
+        self.assertIn("trade_cal_provider_acceptance_promotion_audit", script)
         self.assertIn("current_evidence_producer_coverage_audit", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
@@ -4813,6 +4814,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("acceptance_matrix_is_not_provider_acceptance", criteria)
         self.assertIn("provider_runbook_execution_pending", criteria)
+        self.assertIn("provider_promotion_audit_is_read_only_pending", criteria)
         self.assertIn("producer_coverage_audit_is_read_only", criteria)
 
     def test_tushare_acceptance_contract_script_is_local_push_gate_guard(self):
@@ -8552,6 +8554,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_runbook_is_local"])
         self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_runbook_calls_provider"])
         self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_still_pending"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_promotion_audit_is_local"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_promotion_audit_calls_provider"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_promotion_ready"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_promotion_still_pending"])
         runbook = packet["trade_cal_provider_acceptance_runbook"]
         self.assertEqual(runbook["schema_version"], "data_health_trade_cal_provider_acceptance_runbook.v1")
         self.assertEqual(runbook["status"], "trade_cal_provider_acceptance_runbook_ready_execution_pending")
@@ -8564,6 +8570,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(runbook["does_not_execute_trades"])
         self.assertEqual(runbook["post_task_route"], "POST /api/tasks/refresh-tushare-facts")
         self.assertEqual(runbook["required_api"], "trade_cal")
+        promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
+        self.assertEqual(promotion["schema_version"], "data_health_trade_cal_provider_acceptance_promotion_audit.v1")
+        self.assertEqual(promotion["status"], "trade_cal_provider_acceptance_promotion_pending")
+        self.assertEqual(promotion["scope"], "local_snapshot_evidence_promotion_audit_no_provider_execution")
+        self.assertFalse(promotion["promotion_ready"])
+        self.assertFalse(promotion["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(promotion["provider_refresh_called_by_audit"])
+        self.assertFalse(promotion["external_calls_triggered"])
+        self.assertFalse(promotion["tushare_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_data_health_timeline_cache")
@@ -8596,7 +8611,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         decision_surface = packet["current_evidence_decision_surface_audit"]
         producer_coverage = packet["current_evidence_producer_coverage_audit"]
         provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
+        provider_promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
         provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
+        provider_promotion_rows = {
+            row["criterion"]: row for row in packet["trade_cal_provider_acceptance_promotion_rows"]
+        }
         current_evidence_rows = {
             row["criterion"]: row for row in packet["current_evidence_freshness_qa_rows"]
         }
@@ -8633,6 +8652,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreater(packet["counts"]["trade_cal_physical_validation_blocker_count"], 0)
         self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_runbook_row_count"], 0)
         self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_pending_count"], 0)
+        self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_promotion_row_count"], 10)
+        self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_promotion_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_evidence_row_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_row_count"], 5)
@@ -8668,6 +8690,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_runbook_is_local"])
         self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_runbook_calls_provider"])
         self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_still_pending"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_promotion_audit_is_local"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_promotion_audit_calls_provider"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_promotion_ready"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_promotion_still_pending"])
         self.assertTrue(packet["policy"]["current_evidence_freshness_qa_is_local_contract"])
         self.assertTrue(packet["policy"]["current_evidence_requires_expected_trade_date"])
         self.assertTrue(packet["policy"]["historical_samples_are_research_only"])
@@ -8752,6 +8778,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(provider_runbook_rows["call_ledger_required"]["status"], "execution_ready")
         self.assertEqual(provider_runbook_rows["long_window_sample_required"]["status"], "execution_pending")
         self.assertEqual(provider_runbook_rows["current_evidence_boundary"]["status"], "passed_static_policy")
+        self.assertEqual(
+            provider_promotion["schema_version"],
+            "data_health_trade_cal_provider_acceptance_promotion_audit.v1",
+        )
+        self.assertEqual(provider_promotion["status"], "trade_cal_provider_acceptance_promotion_pending")
+        self.assertEqual(provider_promotion["scope"], "local_snapshot_evidence_promotion_audit_no_provider_execution")
+        self.assertFalse(provider_promotion["promotion_ready"])
+        self.assertFalse(provider_promotion["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(provider_promotion["production_freshness_gate_complete"])
+        self.assertFalse(provider_promotion["provider_refresh_called_by_audit"])
+        self.assertFalse(provider_promotion["provider_evidence_from_prior_task"])
+        self.assertFalse(provider_promotion["explicit_promotion_marker_found"])
+        self.assertFalse(provider_promotion["external_calls_triggered"])
+        self.assertFalse(provider_promotion["tushare_called"])
+        self.assertTrue(provider_promotion["does_not_execute_trades"])
+        self.assertEqual(provider_promotion_rows["explicit_provider_call_ledger"]["status"], "blocked")
+        self.assertEqual(provider_promotion_rows["safe_call_ledger_fields"]["status"], "blocked")
+        self.assertEqual(provider_promotion_rows["minimum_long_window"]["status"], "blocked")
+        self.assertEqual(provider_promotion_rows["current_evidence_boundary_rechecked"]["status"], "passed")
+        self.assertEqual(provider_promotion_rows["audit_is_read_only_no_provider_call"]["status"], "passed")
         self.assertEqual(current_evidence_rows["expected_trade_date_required"]["status"], "passed")
         self.assertEqual(current_evidence_rows["current_data_date_matches_expected"]["status"], "research_only")
         self.assertEqual(current_evidence_rows["freshness_state_allows_current_evidence"]["status"], "research_only")
@@ -8769,6 +8815,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "trade_cal_provider_acceptance_runbook_ready_execution_pending",
         )
         self.assertGreater(response["call_ledger"][0]["trade_cal_provider_acceptance_pending_count"], 0)
+        self.assertEqual(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_promotion_audit_status"],
+            "trade_cal_provider_acceptance_promotion_pending",
+        )
+        self.assertGreater(response["call_ledger"][0]["trade_cal_provider_acceptance_promotion_blocker_count"], 0)
+        self.assertEqual(response["call_ledger"][0]["trade_cal_provider_acceptance_evidence_row_count"], 0)
+        self.assertFalse(response["call_ledger"][0]["trade_cal_provider_acceptance_promotion_ready"])
         self.assertEqual(
             response["call_ledger"][0]["current_evidence_freshness_qa_status"],
             "current_evidence_qa_ready_provider_trade_cal_acceptance_pending",
@@ -9014,9 +9067,102 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(provider_runbook["local_artifact_cross_check_done"])
         self.assertGreaterEqual(provider_runbook["local_artifact_window_days"], 180)
         self.assertFalse(provider_runbook["provider_backed_long_window_acceptance_done"])
+        promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
+        promotion_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_promotion_rows"]}
+        self.assertEqual(promotion["status"], "trade_cal_provider_acceptance_promotion_pending")
+        self.assertFalse(promotion["promotion_ready"])
+        self.assertTrue(promotion["local_artifact_cross_check_done"])
+        self.assertFalse(promotion["provider_evidence_from_prior_task"])
+        self.assertEqual(promotion_rows["schema_and_local_artifact_cross_check"]["status"], "passed")
+        self.assertEqual(promotion_rows["explicit_provider_call_ledger"]["status"], "blocked")
         self.assertEqual(packet["call_ledger"][0]["trade_cal_physical_validation_status"], "local_trade_cal_validation_passed")
         self.assertTrue(packet["call_ledger"][0]["trade_cal_physical_validation_done"])
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+
+    def test_data_health_trade_cal_provider_promotion_audit_accepts_prior_evidence_without_calling_provider(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        import pandas as pd
+
+        root = self._with_parquet_root()
+        today = _dt.date.today()
+        start = today - _dt.timedelta(days=820)
+        end = today + _dt.timedelta(days=20)
+        rows = []
+        cursor = start
+        previous_open = ""
+        while cursor <= end:
+            is_open = cursor.weekday() < 5
+            rows.append(
+                {
+                    "exchange": "SSE",
+                    "cal_date": cursor.strftime("%Y%m%d"),
+                    "is_open": 1 if is_open else 0,
+                    "pretrade_date": previous_open,
+                }
+            )
+            if is_open:
+                previous_open = cursor.strftime("%Y%m%d")
+            cursor += _dt.timedelta(days=1)
+        storage_service.parquet_store.write_dataset(pd.DataFrame(rows), root=root, name="trade_cal")
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "fresh",
+                    "expected_trade_date": today.strftime("%Y-%m-%d"),
+                    "data_date": today.strftime("%Y-%m-%d"),
+                },
+                "data_health_ledger": {
+                    "rows": [
+                        {
+                            "api": "trade_cal",
+                            "call_status": "success",
+                            "external": True,
+                            "provider_called": True,
+                            "row_count": 841,
+                            "window_days": 841,
+                            "open_day_count": 600,
+                            "data_date": today.strftime("%Y-%m-%d"),
+                            "window_end": today.strftime("%Y-%m-%d"),
+                            "local_fetched_at": "2026-06-13T10:00:00",
+                            "acceptance_mode": "provider_backed_trade_cal_long_window",
+                            "provider_backed_long_window_acceptance_done": True,
+                            "freshness_replay_passed": True,
+                            "freshness_replay_scenario_count": 8,
+                            "failure_modes_validated": True,
+                            "failure_mode_validated_count": 6,
+                            "error_message_safe": "",
+                        }
+                    ]
+                },
+            }
+        )
+
+        packet = data_health_service.read_data_health_timeline_cache()
+        promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
+        promotion_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_promotion_rows"]}
+
+        self.assertEqual(promotion["schema_version"], "data_health_trade_cal_provider_acceptance_promotion_audit.v1")
+        self.assertEqual(promotion["status"], "trade_cal_provider_acceptance_promotion_ready")
+        self.assertTrue(promotion["promotion_ready"])
+        self.assertTrue(promotion["provider_backed_long_window_acceptance_done"])
+        self.assertTrue(promotion["provider_evidence_from_prior_task"])
+        self.assertTrue(promotion["explicit_promotion_marker_found"])
+        self.assertEqual(promotion["blocking_criterion_count"], 0)
+        self.assertFalse(promotion["provider_refresh_called_by_audit"])
+        self.assertFalse(promotion["external_calls_triggered"])
+        self.assertFalse(promotion["tushare_called"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_promotion_ready"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_promotion_still_pending"])
+        self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_evidence_row_count"], 1)
+        self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_promotion_blocker_count"], 0)
+        self.assertEqual(promotion_rows["explicit_provider_call_ledger"]["status"], "passed")
+        self.assertEqual(promotion_rows["minimum_long_window"]["status"], "passed")
+        self.assertEqual(promotion_rows["freshness_gate_replay_evidence"]["status"], "passed")
+        self.assertEqual(promotion_rows["failure_mode_evidence"]["status"], "passed")
+        self.assertEqual(promotion_rows["explicit_promotion_marker"]["status"], "passed")
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
 
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(

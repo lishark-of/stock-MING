@@ -102,6 +102,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Data Health now exposes `current_evidence_producer_coverage_audit`, a local snapshot-only audit that checks visible current-evidence producers for `expected_trade_date`, `data_date`, and `freshness_state` coverage. Missing producers remain `not_observed`, not production proof.
 - `scripts/data_health_freshness_contract.py` now runs in `scripts/push_gate_3_0.sh` to guard LTG-01 contracts against unsafe regressions: local-only boundaries must remain visible, provider-backed acceptance must remain pending until explicit provider validation, and no Data Health contract may imply external calls, real trades, or strategy action mutation.
 - Data Health now exposes `trade_cal_provider_acceptance_runbook`, a local execution checklist for future provider-backed `trade_cal` long-window acceptance. It fixes the explicit POST task route, safe payload, call-ledger evidence, schema/window/holiday coverage, failure modes, artifact promotion boundary, and current-evidence isolation, while keeping `provider_backed_long_window_acceptance_done=false`.
+- Data Health now exposes `trade_cal_provider_acceptance_promotion_audit`, a local snapshot-only evidence promotion audit. It requires prior provider call ledger evidence, safe ledger fields, a 730-day window, schema/local artifact cross-check, open/closed/current coverage, freshness replay, failure-mode evidence, current-evidence boundary recheck, and an explicit promotion marker before `trade_cal` acceptance can move out of pending; the audit itself never calls Tushare.
 
 ### Gaps
 
@@ -111,6 +112,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Needs provider-backed acceptance that proves the local artifact was produced and refreshed through the explicit task/storage pipeline, not merely present on disk.
 - The acceptance matrix is a contract, the synthetic sample is a fixture, the local Parquet validation is a physical artifact check, the current-evidence QA contract is a boundary contract, and the decision-surface / producer-coverage audits are snapshot-only visibility checks; none of them call Tushare on page render.
 - The provider acceptance runbook is not provider execution; it only makes the real Tushare `trade_cal` acceptance pass reproducible and keeps local artifact validation separate from provider-backed evidence.
+- The provider acceptance promotion audit is not provider execution; it only decides whether prior local evidence is strong enough to promote acceptance, and defaults to pending when evidence is missing or incomplete.
 
 ### Implementation Phases
 
@@ -134,6 +136,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Data Health shows `current_evidence_producer_coverage_audit` and rows: visible producers must carry expected trade date, data date, and freshness state; absent producers are `not_observed` and cannot be used as proof that every producer is production-ready.
 - Push gate runs `scripts/data_health_freshness_contract.py` and fails if Data Health contracts lose local-only/no-provider/no-trade/no-action boundaries or falsely claim provider-backed freshness completion.
 - Data Health shows `trade_cal_provider_acceptance_runbook` and rows: explicit POST task requirement, safe payload, call ledger, long-window sample, schema, local artifact cross-check, freshness replay, failure modes, artifact promotion, current-evidence boundary, and secret/trade boundary.
+- Data Health shows `trade_cal_provider_acceptance_promotion_audit` and rows: explicit prior provider call ledger, safe call-ledger fields, minimum long-window evidence, schema/local artifact cross-check, open/closed/current coverage, freshness replay evidence, failure-mode evidence, current-evidence boundary recheck, explicit promotion marker, and read-only no-provider-call boundary.
 - Local `trade_cal` Parquet validation can pass without setting provider-backed acceptance to done.
 
 ### Forbidden
@@ -143,6 +146,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Do not hide fallback calendar state.
 - Do not treat synthetic samples, local matrix rows, or local artifact checks as provider-backed production acceptance.
 - Do not treat `trade_cal_provider_acceptance_runbook.local_runbook_ready=true` as evidence that Tushare was called or provider-backed acceptance passed.
+- Do not treat `trade_cal_provider_acceptance_promotion_audit.promotion_ready=false` as a failure of the cache API; it means prior provider-backed evidence is still missing or incomplete.
 - Do not treat `current_evidence_decision_surface_audit` as runtime rescore, packet filtering, or provider-backed freshness proof.
 - Do not treat `current_evidence_producer_coverage_audit` as building missing packets, refreshing providers, or proving full producer coverage when rows are `not_observed`.
 - Do not treat `scripts/data_health_freshness_contract.py` passing as real `trade_cal` provider acceptance; it only blocks local contract regressions.

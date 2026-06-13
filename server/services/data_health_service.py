@@ -1181,6 +1181,213 @@ def _combined_rows(*values: tuple[Any, str, str]) -> list[dict[str, Any]]:
     return rows[:180]
 
 
+def _trade_cal_provider_acceptance_promotion_row(
+    criterion: str,
+    passed: bool,
+    *,
+    evidence: str,
+    required_for_promotion: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": "passed" if passed else "blocked",
+        "passed": bool(passed),
+        "required_for_promotion": bool(required_for_promotion),
+        "evidence": evidence,
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "provider_refresh_called_by_audit": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _trade_cal_provider_acceptance_evidence_rows(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows = _combined_rows(
+        (_first_value(snapshot, "data_health_ledger", "command_center_data_health_ledger"), "data_health_ledger", "ledger"),
+        (_first_value(snapshot, "tushare_refresh_facts_packet", "command_center_tushare_refresh_facts_packet"), "tushare_refresh_facts_packet", "ledger"),
+        (_first_value(snapshot, "tushare_refresh_packet", "command_center_tushare_refresh_packet"), "tushare_refresh_packet", "ledger"),
+        (_first_value(snapshot, "trade_cal_provider_acceptance_result", "trade_cal_acceptance_packet"), "trade_cal_provider_acceptance_result", "ledger"),
+    )
+    evidence_rows: list[dict[str, Any]] = []
+    for row in rows:
+        row_text = json.dumps(_json_safe(row), ensure_ascii=False, sort_keys=True).lower()
+        if "trade_cal" in row_text:
+            evidence_rows.append(row)
+    return evidence_rows[:40]
+
+
+def _row_truthy(row: Mapping[str, Any], *keys: str) -> bool:
+    return any(row.get(key) is True for key in keys)
+
+
+def _max_int(rows: list[dict[str, Any]], *keys: str) -> int:
+    best = 0
+    for row in rows:
+        for key in keys:
+            try:
+                best = max(best, int(row.get(key) or 0))
+            except (TypeError, ValueError):
+                continue
+    return best
+
+
+def _trade_cal_provider_acceptance_promotion_audit(
+    snapshot: Mapping[str, Any],
+    trade_cal_physical: Mapping[str, Any],
+    provider_runbook: Mapping[str, Any],
+    current_evidence_contract: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    evidence_rows = _trade_cal_provider_acceptance_evidence_rows(snapshot)
+    min_window_days = int(provider_runbook.get("minimum_acceptance_window_days") or 730)
+    max_window_days = _max_int(evidence_rows, "window_days", "acceptance_window_days", "calendar_window_days")
+    max_row_count = _max_int(evidence_rows, "row_count", "rows", "fetched_row_count", "trade_cal_row_count")
+    max_open_days = _max_int(evidence_rows, "open_day_count", "open_days")
+    max_failure_mode_count = _max_int(evidence_rows, "failure_mode_count", "failure_mode_validated_count")
+    max_replay_scenarios = _max_int(evidence_rows, "freshness_replay_scenario_count", "replay_scenario_count")
+    success_statuses = {"success", "succeeded", "validated", "passed", "ready", "provider_backed_acceptance_passed"}
+    provider_call_evidence = any(
+        str(row.get("api") or row.get("required_api") or "").lower() == "trade_cal"
+        and (
+            str(row.get("call_status") or row.get("status") or "").lower() in success_statuses
+            or row.get("success") is True
+        )
+        and _row_truthy(row, "external", "provider_called", "tushare_called", "provider_refresh_called")
+        for row in evidence_rows
+    )
+    explicit_promotion_marker = any(
+        _row_truthy(
+            row,
+            "provider_backed_long_window_acceptance_done",
+            "provider_backed_trade_cal_acceptance_done",
+            "trade_cal_provider_acceptance_done",
+        )
+        or str(row.get("acceptance_mode") or "") == "provider_backed_trade_cal_long_window"
+        for row in evidence_rows
+    )
+    safe_call_ledger_fields = any(
+        str(row.get("api") or row.get("required_api") or "").lower() == "trade_cal"
+        and any(row.get(key) not in (None, "", [], {}) for key in ("row_count", "fetched_row_count", "trade_cal_row_count"))
+        and any(row.get(key) not in (None, "", [], {}) for key in ("data_date", "window_end", "end_date"))
+        and row.get("local_fetched_at") not in (None, "")
+        and row.get("call_status") not in (None, "")
+        and "token" not in json.dumps(_json_safe(row), ensure_ascii=False).lower()
+        for row in evidence_rows
+    )
+    freshness_replay_done = any(_row_truthy(row, "freshness_replay_passed", "freshness_gate_replay_passed") for row in evidence_rows) and max_replay_scenarios >= 8
+    failure_modes_done = any(_row_truthy(row, "failure_modes_validated", "failure_mode_qa_passed") for row in evidence_rows) and max_failure_mode_count >= 4
+    local_artifact_ready = bool(trade_cal_physical.get("local_trade_cal_physical_validation_done")) and not trade_cal_physical.get("blockers")
+    current_boundary_ready = (
+        current_evidence_contract.get("schema_version") == "data_health_current_evidence_freshness_qa.v1"
+        and current_evidence_contract.get("current_evidence_requires_expected_trade_date") is True
+        and current_evidence_contract.get("blocks_composite_score") is True
+        and current_evidence_contract.get("blocks_support_factors") is True
+        and current_evidence_contract.get("blocks_evidence_preview") is True
+        and current_evidence_contract.get("blocks_next_session_bridge_preview") is True
+        and current_evidence_contract.get("does_not_modify_strategy_action") is True
+    )
+    rows = [
+        _trade_cal_provider_acceptance_promotion_row(
+            "explicit_provider_call_ledger",
+            provider_call_evidence,
+            evidence=f"trade_cal provider call evidence rows={len(evidence_rows)}",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "safe_call_ledger_fields",
+            safe_call_ledger_fields,
+            evidence="Provider-backed acceptance needs api, row_count, data/window date, local_fetched_at, call_status, and redacted error fields.",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "minimum_long_window",
+            max_window_days >= min_window_days or max_row_count >= min_window_days,
+            evidence=f"observed_window_days={max_window_days}; observed_row_count={max_row_count}; required_days={min_window_days}",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "schema_and_local_artifact_cross_check",
+            local_artifact_ready
+            and int(trade_cal_physical.get("window_days") or 0) >= REAL_TRADE_CAL_MIN_WINDOW_DAYS
+            and int(trade_cal_physical.get("open_day_count") or 0) >= REAL_TRADE_CAL_MIN_OPEN_DAYS,
+            evidence=f"local_artifact_ready={local_artifact_ready}; physical_status={trade_cal_physical.get('status')}",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "open_closed_current_coverage",
+            max_open_days >= REAL_TRADE_CAL_MIN_OPEN_DAYS
+            and trade_cal_physical.get("today_row_found") is True
+            and bool(trade_cal_physical.get("latest_completed_trading_day")),
+            evidence=f"observed_open_days={max_open_days}; today_row_found={trade_cal_physical.get('today_row_found')}",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "freshness_gate_replay_evidence",
+            freshness_replay_done,
+            evidence=f"freshness_replay_scenario_count={max_replay_scenarios}",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "failure_mode_evidence",
+            failure_modes_done,
+            evidence=f"failure_mode_validated_count={max_failure_mode_count}",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "current_evidence_boundary_rechecked",
+            current_boundary_ready,
+            evidence=f"current_evidence_status={current_evidence_contract.get('status')}",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "explicit_promotion_marker",
+            explicit_promotion_marker,
+            evidence="A prior provider-backed acceptance task must explicitly mark the long-window trade_cal acceptance as done.",
+        ),
+        _trade_cal_provider_acceptance_promotion_row(
+            "audit_is_read_only_no_provider_call",
+            True,
+            evidence="GET /api/data-health/cache only audits local evidence and never refreshes trade_cal.",
+            required_for_promotion=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["required_for_promotion"] and not row["passed"]]
+    promotion_ready = not blockers
+    contract = {
+        "schema_version": "data_health_trade_cal_provider_acceptance_promotion_audit.v1",
+        "status": "trade_cal_provider_acceptance_promotion_ready"
+        if promotion_ready
+        else "trade_cal_provider_acceptance_promotion_pending",
+        "scope": "local_snapshot_evidence_promotion_audit_no_provider_execution",
+        "ltg": "LTG-01/LTG-02",
+        "promotion_ready": promotion_ready,
+        "provider_backed_long_window_acceptance_done": promotion_ready,
+        "production_freshness_gate_complete": False,
+        "provider_refresh_called_by_audit": False,
+        "provider_evidence_from_prior_task": provider_call_evidence,
+        "explicit_promotion_marker_found": explicit_promotion_marker,
+        "safe_call_ledger_fields_present": safe_call_ledger_fields,
+        "evidence_row_count": len(evidence_rows),
+        "observed_window_days": max_window_days,
+        "observed_row_count": max_row_count,
+        "observed_open_day_count": max_open_days,
+        "minimum_acceptance_window_days": min_window_days,
+        "freshness_replay_scenario_count": max_replay_scenarios,
+        "failure_mode_validated_count": max_failure_mode_count,
+        "local_artifact_cross_check_done": local_artifact_ready,
+        "current_evidence_boundary_ready": current_boundary_ready,
+        "row_count": len(rows),
+        "blocking_criterion_count": len(blockers),
+        "blockers": blockers,
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This audit decides whether prior provider-backed trade_cal evidence is sufficient to promote acceptance. It does not call Tushare and keeps production freshness incomplete until evidence is explicit.",
+    }
+    return contract, rows
+
+
 def read_data_health_timeline_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -1230,6 +1437,14 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     )
     current_evidence_producer_coverage_audit, current_evidence_producer_coverage_rows = (
         _current_evidence_producer_coverage_audit(snapshot_map)
+    )
+    trade_cal_provider_acceptance_promotion_audit, trade_cal_provider_acceptance_promotion_rows = (
+        _trade_cal_provider_acceptance_promotion_audit(
+            snapshot_map,
+            trade_cal_physical_validation,
+            trade_cal_provider_acceptance_runbook,
+            current_evidence_freshness_qa_contract,
+        )
     )
 
     timeline_rows = _combined_rows(
@@ -1294,6 +1509,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_long_window_sample_validation",
             "trade_cal_physical_validation",
             "trade_cal_provider_acceptance_runbook",
+            "trade_cal_provider_acceptance_promotion_audit",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
@@ -1320,6 +1536,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "trade_cal_physical_validation_rows": trade_cal_physical_validation_rows,
         "trade_cal_provider_acceptance_runbook": trade_cal_provider_acceptance_runbook,
         "trade_cal_provider_acceptance_runbook_rows": trade_cal_provider_acceptance_runbook_rows,
+        "trade_cal_provider_acceptance_promotion_audit": trade_cal_provider_acceptance_promotion_audit,
+        "trade_cal_provider_acceptance_promotion_rows": trade_cal_provider_acceptance_promotion_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
@@ -1348,6 +1566,15 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_runbook_row_count": len(trade_cal_provider_acceptance_runbook_rows),
             "trade_cal_provider_acceptance_pending_count": int(
                 trade_cal_provider_acceptance_runbook.get("pending_execution_count") or 0
+            ),
+            "trade_cal_provider_acceptance_promotion_row_count": len(
+                trade_cal_provider_acceptance_promotion_rows
+            ),
+            "trade_cal_provider_acceptance_promotion_blocker_count": int(
+                trade_cal_provider_acceptance_promotion_audit.get("blocking_criterion_count") or 0
+            ),
+            "trade_cal_provider_acceptance_evidence_row_count": int(
+                trade_cal_provider_acceptance_promotion_audit.get("evidence_row_count") or 0
             ),
             "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
             "current_evidence_freshness_qa_blocker_count": int(
@@ -1396,6 +1623,14 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_runbook_is_local": True,
             "trade_cal_provider_acceptance_runbook_calls_provider": False,
             "trade_cal_provider_acceptance_still_pending": True,
+            "trade_cal_provider_acceptance_promotion_audit_is_local": True,
+            "trade_cal_provider_acceptance_promotion_audit_calls_provider": False,
+            "trade_cal_provider_acceptance_promotion_ready": bool(
+                trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
+            ),
+            "trade_cal_provider_acceptance_promotion_still_pending": not bool(
+                trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
+            ),
             "current_evidence_freshness_qa_is_local_contract": True,
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
@@ -1429,6 +1664,18 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "trade_cal_provider_acceptance_runbook_status": trade_cal_provider_acceptance_runbook.get("status"),
                 "trade_cal_provider_acceptance_pending_count": int(
                     trade_cal_provider_acceptance_runbook.get("pending_execution_count") or 0
+                ),
+                "trade_cal_provider_acceptance_promotion_audit_status": (
+                    trade_cal_provider_acceptance_promotion_audit.get("status")
+                ),
+                "trade_cal_provider_acceptance_promotion_blocker_count": int(
+                    trade_cal_provider_acceptance_promotion_audit.get("blocking_criterion_count") or 0
+                ),
+                "trade_cal_provider_acceptance_evidence_row_count": int(
+                    trade_cal_provider_acceptance_promotion_audit.get("evidence_row_count") or 0
+                ),
+                "trade_cal_provider_acceptance_promotion_ready": bool(
+                    trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
                 ),
                 "current_evidence_freshness_qa_status": current_evidence_freshness_qa_contract.get("status"),
                 "current_evidence_candidate_status": current_evidence_freshness_qa_contract.get(
