@@ -32,6 +32,17 @@ SERVER_BOUNDARY_PATHS = (
     "server/services/risk_service.py",
     "server/services/task_service.py",
 )
+REQUIRED_RELEASE_RECEIPT_CRITERIA = {
+    "risk_cache_policy_visible",
+    "trade_isolation_audit_clear",
+    "task_catalog_no_order_routes",
+    "task_catalog_no_trade_no_action_mutation",
+    "frontend_no_trade_boundaries_visible",
+    "model_factor_cache_not_order_source",
+    "separate_project_required_for_real_trading",
+    "release_receipt_not_trade_approval",
+    "cache_render_no_external_no_trade",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -104,6 +115,11 @@ def build_contract() -> dict[str, Any]:
     trade_audit = _dict(packet.get("trade_isolation_audit"))
     trade_rows = [row for row in _list(packet.get("trade_isolation_rows")) if isinstance(row, dict)]
     trade_criteria = {str(row.get("criterion") or "") for row in trade_rows}
+    release_receipt = _dict(packet.get("trade_isolation_release_receipt"))
+    release_receipt_rows = [
+        row for row in _list(packet.get("trade_isolation_release_receipt_rows")) if isinstance(row, dict)
+    ]
+    release_receipt_criteria = {str(row.get("criterion") or "") for row in release_receipt_rows}
     catalog = task_service.build_task_catalog()
     route_coverage = _dict(catalog.get("route_coverage"))
     boundary_rows = _task_boundary_rows(catalog)
@@ -207,6 +223,49 @@ def build_contract() -> dict[str, Any]:
             "Task catalog and lifecycle rows declare no trade execution, no strategy action mutation, and no order/broker endpoint route.",
         ),
         _row(
+            "trade_isolation_release_receipt_is_research_only",
+            release_receipt.get("schema_version") == "command_center_3_trade_isolation_release_receipt.v1"
+            and release_receipt.get("status") == "trade_isolation_release_receipt_ready_research_release_only"
+            and release_receipt.get("scope")
+            == "local_trade_isolation_release_receipt_no_broker_or_order_execution"
+            and release_receipt.get("local_receipt_ready") is True
+            and release_receipt.get("research_client_release_safe") is True
+            and release_receipt.get("ready_for_real_trading_integration") is False
+            and release_receipt.get("future_real_trading_requires_separate_project") is True
+            and release_receipt.get("allowed_next_step")
+            == "continue_research_client_release_or_create_separate_real_trading_project_design"
+            and REQUIRED_RELEASE_RECEIPT_CRITERIA.issubset(release_receipt_criteria)
+            and int(release_receipt.get("trade_isolation_blocker_count") or 0) == 0
+            and int(release_receipt.get("release_receipt_blocker_count") or 0) == 0
+            and release_receipt.get("order_like_routes") == []
+            and release_receipt.get("boundary_blockers") == []
+            and "connect broker adapter inside Command Center 3 migration"
+            in _list(release_receipt.get("not_allowed_next_steps"))
+            and "add order endpoint to cache/task API" in _list(release_receipt.get("not_allowed_next_steps"))
+            and "let model or factor output become orders" in _list(release_receipt.get("not_allowed_next_steps"))
+            and "let frontend compute or submit trades" in _list(release_receipt.get("not_allowed_next_steps"))
+            and "treat release receipt as real-trading approval"
+            in _list(release_receipt.get("not_allowed_next_steps"))
+            and "execute real trades from push gate, cache GET, task catalog, or page render"
+            in _list(release_receipt.get("not_allowed_next_steps"))
+            and release_receipt.get("real_trading_connected") is False
+            and release_receipt.get("broker_adapter_connected") is False
+            and release_receipt.get("order_endpoint_present") is False
+            and release_receipt.get("trade_execution_api_enabled") is False
+            and _flag_false(release_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and release_receipt.get("does_not_execute_trades") is True
+            and release_receipt.get("does_not_modify_strategy_action") is True
+            and release_receipt.get("does_not_modify_holdings") is True
+            and release_receipt.get("contains_secret") is False
+            and _list(release_receipt.get("call_ledger"))
+            and _dict(_list(release_receipt.get("call_ledger"))[0]).get("api")
+            == "local_trade_isolation_release_receipt"
+            and _dict(_list(release_receipt.get("call_ledger"))[0]).get("external") is False
+            and packet.get("trade_isolation_release_receipt_ready") is True
+            and packet.get("trade_isolation_release_receipt_status") == release_receipt.get("status"),
+            "Trade isolation release receipt may support research-client release only; it must not approve real trading, broker adapters, order endpoints, provider/model calls, action mutation, or trade execution.",
+        ),
+        _row(
             "task_lifecycle_records_no_trade_no_action",
             task_routes_button_gated and task_routes_call_ledger_required,
             "All known POST task/lifecycle routes remain button-gated and require call_ledger.",
@@ -253,6 +312,8 @@ def build_contract() -> dict[str, Any]:
         "risk_cache_ready": packet.get("schema_version") == "risk_guardrails_cache.v1" and packet.get("cache_only") is True,
         "trade_isolation_audit_visible": trade_audit.get("schema_version") == "command_center_3_trade_isolation_audit.v1",
         "trade_isolation_status": trade_audit.get("status"),
+        "trade_isolation_release_receipt_ready": release_receipt.get("local_receipt_ready") is True,
+        "trade_isolation_release_receipt_status": release_receipt.get("status"),
         "task_catalog_boundary_visible": bool(boundary_rows) and task_routes_no_trade and task_routes_no_action,
         "frontend_boundary_visible": frontend_boundary_visible,
         "push_gate_step_ready": push_gate_step_ready,
@@ -281,6 +342,9 @@ def build_contract() -> dict[str, Any]:
             "trade_isolation_blocker_count": trade_audit.get("blocking_criterion_count"),
             "frontend_surface_count": trade_audit.get("frontend_surface_count"),
             "task_boundary_row_count": trade_audit.get("task_boundary_row_count"),
+            "release_receipt_status": release_receipt.get("status"),
+            "release_receipt_allowed_next_step": release_receipt.get("allowed_next_step"),
+            "release_receipt_blocker_count": release_receipt.get("blocking_criterion_count"),
             "task_routes_button_gated": task_routes_button_gated,
             "task_routes_call_ledger_required": task_routes_call_ledger_required,
         },

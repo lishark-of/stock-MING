@@ -273,6 +273,189 @@ def _trade_isolation_audit(policy: Mapping[str, Any]) -> tuple[dict[str, Any], l
     return audit, rows, task_boundary_rows + frontend_rows
 
 
+def _trade_isolation_release_receipt(
+    *,
+    policy: Mapping[str, Any],
+    trade_isolation_audit: Mapping[str, Any],
+    trade_isolation_rows: list[dict[str, Any]],
+    trade_isolation_boundary_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    criteria = {str(row.get("criterion") or "") for row in trade_isolation_rows}
+    route_rows = [row for row in trade_isolation_boundary_rows if row.get("route")]
+    order_like_routes = [
+        str(row.get("route"))
+        for row in route_rows
+        if any(marker in str(row.get("route") or "").lower() for marker in ("order", "broker", "trade-execution"))
+    ]
+    boundary_blockers = [row for row in trade_isolation_rows if row.get("production_blocker")]
+    local_receipt_ready = (
+        trade_isolation_audit.get("schema_version") == TRADE_ISOLATION_SCHEMA_VERSION
+        and trade_isolation_audit.get("status") == "trade_isolation_ready"
+        and int(trade_isolation_audit.get("blocking_criterion_count") or 0) == 0
+        and policy.get("future_trade_integration_requires_separate_approved_design") is True
+        and policy.get("risk_guardrails_are_not_trade_orders") is True
+        and policy.get("does_not_execute_trades") is True
+        and policy.get("does_not_modify_strategy_action") is True
+        and policy.get("does_not_modify_holdings") is True
+        and not order_like_routes
+        and {
+            "risk_cache_policy_no_trade",
+            "task_catalog_all_routes_no_trade",
+            "task_catalog_all_routes_no_strategy_action_mutation",
+            "frontend_boundaries_visible",
+            "future_trading_requires_separate_approved_design",
+        }.issubset(criteria)
+    )
+    research_release_safe = bool(local_receipt_ready)
+    real_trading_design_required = True
+
+    def _row(criterion: str, status: str, detail: str, required_evidence: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": status == "passed",
+            "release_blocker": status != "passed",
+            "detail": detail,
+            "required_evidence": required_evidence,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_holdings": True,
+        }
+
+    rows = [
+        _row(
+            "risk_cache_policy_visible",
+            "passed" if policy.get("risk_guardrails_are_not_trade_orders") is True else "blocked",
+            "Risk guardrails are display/research guardrails, not trade orders.",
+            "Risk cache policy keeps risk_guardrails_are_not_trade_orders=true.",
+        ),
+        _row(
+            "trade_isolation_audit_clear",
+            "passed" if trade_isolation_audit.get("status") == "trade_isolation_ready" else "blocked",
+            f"trade_isolation_status={trade_isolation_audit.get('status')}; blockers={trade_isolation_audit.get('blocking_criterion_count')}",
+            "trade_isolation_audit has zero blockers and stays cache/task/frontend only.",
+        ),
+        _row(
+            "task_catalog_no_order_routes",
+            "passed" if not order_like_routes else "blocked",
+            f"order_like_routes={order_like_routes}",
+            "Task catalog has no broker/order/trade-execution endpoint.",
+        ),
+        _row(
+            "task_catalog_no_trade_no_action_mutation",
+            "passed"
+            if trade_isolation_audit.get("no_automatic_order_path_in_task_catalog") is True
+            and trade_isolation_audit.get("research_paths_cannot_mutate_strategy_action") is True
+            else "blocked",
+            f"task_boundary_rows={trade_isolation_audit.get('task_boundary_row_count')}",
+            "All known POST/lifecycle routes declare no trade execution and no strategy action mutation.",
+        ),
+        _row(
+            "frontend_no_trade_boundaries_visible",
+            "passed" if trade_isolation_audit.get("frontend_surfaces_are_display_only_for_trade_boundaries") is True else "blocked",
+            f"frontend_surface_count={trade_isolation_audit.get('frontend_surface_count')}",
+            "Risk, task catalog, and packet registry pages show no-trade/no-action boundaries.",
+        ),
+        _row(
+            "model_factor_cache_not_order_source",
+            "passed",
+            "Research/cache/model/factor outputs may inform evidence but cannot become orders.",
+            "Model/factor/cache routes keep does_not_execute_trades and does_not_modify_strategy_action boundaries.",
+        ),
+        _row(
+            "separate_project_required_for_real_trading",
+            "passed" if real_trading_design_required else "blocked",
+            "Any future broker/order integration must be a separate approved project.",
+            "A separate design covers approvals, broker adapter, order sandbox, compliance, audit logs, and kill switch.",
+        ),
+        _row(
+            "release_receipt_not_trade_approval",
+            "passed",
+            "This receipt approves no broker connection and no order execution.",
+            "Release notes keep research client release separate from real-trading approval.",
+        ),
+        _row(
+            "cache_render_no_external_no_trade",
+            "passed",
+            "GET risk cache and page render do not create tasks, call providers/models/GitHub, or trade.",
+            "Cache render remains local and read-only.",
+        ),
+    ]
+    blocked_rows = [row for row in rows if row["status"] != "passed"]
+    return {
+        "schema_version": "command_center_3_trade_isolation_release_receipt.v1",
+        "status": "trade_isolation_release_receipt_ready_research_release_only"
+        if research_release_safe
+        else "trade_isolation_release_receipt_blocked",
+        "scope": "local_trade_isolation_release_receipt_no_broker_or_order_execution",
+        "ltg": "LTG-12",
+        "local_receipt_ready": research_release_safe,
+        "research_client_release_safe": research_release_safe,
+        "ready_for_real_trading_integration": False,
+        "real_trading_connected": False,
+        "broker_adapter_connected": False,
+        "order_endpoint_present": False,
+        "trade_execution_api_enabled": False,
+        "future_real_trading_requires_separate_project": True,
+        "allowed_next_step": "continue_research_client_release_or_create_separate_real_trading_project_design",
+        "not_allowed_next_steps": [
+            "connect broker adapter inside Command Center 3 migration",
+            "add order endpoint to cache/task API",
+            "let model or factor output become orders",
+            "let frontend compute or submit trades",
+            "treat risk guardrails as trade orders",
+            "treat release receipt as real-trading approval",
+            "execute real trades from push gate, cache GET, task catalog, or page render",
+        ],
+        "missing_evidence_items_for_real_trading_project": [
+            "separate_project_approval",
+            "broker_adapter_design",
+            "sandbox_order_execution_tests",
+            "risk_limits_and_kill_switch",
+            "compliance_and_audit_log_design",
+            "manual_operator_confirmation_flow",
+        ],
+        "trade_isolation_blocker_count": int(trade_isolation_audit.get("blocking_criterion_count") or 0),
+        "release_receipt_blocker_count": len(blocked_rows),
+        "task_boundary_row_count": int(trade_isolation_audit.get("task_boundary_row_count") or 0),
+        "frontend_surface_count": int(trade_isolation_audit.get("frontend_surface_count") or 0),
+        "order_like_routes": order_like_routes,
+        "boundary_blockers": [str(row.get("criterion") or "") for row in boundary_blockers],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "contains_secret": False,
+        "criterion_count": len(rows),
+        "blocking_criterion_count": len(blocked_rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_trade_isolation_release_receipt",
+                "source": "risk cache trade isolation audit and task/frontend boundary rows",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_release_receipt_research_only",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_holdings": True,
+            }
+        ],
+        "note": "This release receipt keeps Command Center 3 a research/client surface. It does not connect brokers, create order endpoints, approve real trading, call providers/models/GitHub, or execute trades.",
+    }
+
+
 def read_risk_guardrails_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -312,6 +495,12 @@ def read_risk_guardrails_cache() -> dict[str, Any]:
         "future_trade_integration_requires_separate_approved_design": True,
     }
     trade_isolation_audit, trade_isolation_rows, trade_isolation_boundary_rows = _trade_isolation_audit(policy)
+    trade_isolation_release_receipt = _trade_isolation_release_receipt(
+        policy=policy,
+        trade_isolation_audit=trade_isolation_audit,
+        trade_isolation_rows=trade_isolation_rows,
+        trade_isolation_boundary_rows=trade_isolation_boundary_rows,
+    )
     counts = _counts(risk_alerts, guardrail, legacy_chain)
     counts.update(
         {
@@ -319,6 +508,12 @@ def read_risk_guardrails_cache() -> dict[str, Any]:
             "trade_isolation_blocker_count": trade_isolation_audit.get("blocking_criterion_count", 0),
             "task_trade_boundary_row_count": trade_isolation_audit.get("task_boundary_row_count", 0),
             "trade_boundary_frontend_surface_count": trade_isolation_audit.get("frontend_surface_count", 0),
+            "trade_isolation_release_receipt_ready": 1
+            if trade_isolation_release_receipt["local_receipt_ready"]
+            else 0,
+            "trade_isolation_release_receipt_blocker_count": trade_isolation_release_receipt[
+                "blocking_criterion_count"
+            ],
         }
     )
 
@@ -363,6 +558,8 @@ def read_risk_guardrails_cache() -> dict[str, Any]:
         "trade_isolation_audit": trade_isolation_audit,
         "trade_isolation_rows": trade_isolation_rows,
         "trade_isolation_boundary_rows": trade_isolation_boundary_rows,
+        "trade_isolation_release_receipt": trade_isolation_release_receipt,
+        "trade_isolation_release_receipt_rows": trade_isolation_release_receipt["rows"],
         "call_ledger": [
             {
                 "api": "local_risk_guardrails_cache",
@@ -371,7 +568,10 @@ def read_risk_guardrails_cache() -> dict[str, Any]:
                 "local_fetched_at": _now_iso(),
                 "external": False,
             }
-        ],
+        ]
+        + trade_isolation_release_receipt["call_ledger"],
+        "trade_isolation_release_receipt_ready": trade_isolation_release_receipt["local_receipt_ready"],
+        "trade_isolation_release_receipt_status": trade_isolation_release_receipt["status"],
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,

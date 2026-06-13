@@ -34,6 +34,7 @@ export default function RiskGuardrails() {
   const recovery = (cache.strategy_prerequisite_recovery_ledger as Record<string, unknown> | undefined) ?? {};
   const budget = (cache.position_risk_budget as Record<string, unknown> | undefined) ?? {};
   const tradeIsolationAudit = (cache.trade_isolation_audit as Record<string, unknown> | undefined) ?? {};
+  const tradeIsolationReleaseReceipt = (cache.trade_isolation_release_receipt as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
@@ -62,6 +63,8 @@ export default function RiskGuardrails() {
           { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
           { label: "交易隔离审计", value: tradeIsolationAudit.status as string | undefined, tone: tradeIsolationAudit.status === "trade_isolation_ready" ? "good" : "warn" },
           { label: "交易隔离阻断", value: counts.trade_isolation_blocker_count as number | undefined, tone: Number(counts.trade_isolation_blocker_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "release receipt", value: tradeIsolationReleaseReceipt.local_receipt_ready === true ? "research only" : "review", tone: tradeIsolationReleaseReceipt.local_receipt_ready === true ? "good" : "warn" },
+          { label: "release blockers", value: tradeIsolationReleaseReceipt.blocking_criterion_count ?? counts.trade_isolation_release_receipt_blocker_count, tone: Number(tradeIsolationReleaseReceipt.blocking_criterion_count ?? counts.trade_isolation_release_receipt_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "POST 边界行", value: counts.task_trade_boundary_row_count as number | undefined },
           { label: "边界页面", value: counts.trade_boundary_frontend_surface_count as number | undefined },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
@@ -152,6 +155,19 @@ export default function RiskGuardrails() {
         <DataLineageTable rows={rows(cache.trade_isolation_boundary_rows)} />
       </PacketCard>
 
+      <PacketCard title="交易隔离 release receipt" subtitle="LTG-12 研究客户端发布收据；不批准真实交易、不接入券商、不创建订单接口" status={String(tradeIsolationReleaseReceipt.status ?? "trade_isolation_release_receipt_ready_research_release_only")}>
+        <p>schema_version: {String(tradeIsolationReleaseReceipt.schema_version ?? "command_center_3_trade_isolation_release_receipt.v1")}</p>
+        <p>scope: {String(tradeIsolationReleaseReceipt.scope ?? "local_trade_isolation_release_receipt_no_broker_or_order_execution")}</p>
+        <p>research_client_release_safe / ready_for_real_trading_integration: {String(tradeIsolationReleaseReceipt.research_client_release_safe ?? true)} / {String(tradeIsolationReleaseReceipt.ready_for_real_trading_integration ?? false)}</p>
+        <p>real_trading_connected / broker_adapter_connected / order_endpoint_present / trade_execution_api_enabled: {String(tradeIsolationReleaseReceipt.real_trading_connected ?? false)} / {String(tradeIsolationReleaseReceipt.broker_adapter_connected ?? false)} / {String(tradeIsolationReleaseReceipt.order_endpoint_present ?? false)} / {String(tradeIsolationReleaseReceipt.trade_execution_api_enabled ?? false)}</p>
+        <p>future_real_trading_requires_separate_project: {String(tradeIsolationReleaseReceipt.future_real_trading_requires_separate_project ?? true)}</p>
+        <p>allowed_next_step: {String(tradeIsolationReleaseReceipt.allowed_next_step ?? "continue_research_client_release_or_create_separate_real_trading_project_design")}</p>
+        <p>not_allowed_next_steps: {Array.isArray(tradeIsolationReleaseReceipt.not_allowed_next_steps) ? tradeIsolationReleaseReceipt.not_allowed_next_steps.join(" / ") : "connect broker adapter inside Command Center 3 migration / add order endpoint to cache/task API / let model or factor output become orders / treat release receipt as real-trading approval"}</p>
+        <p>missing_evidence_items_for_real_trading_project: {Array.isArray(tradeIsolationReleaseReceipt.missing_evidence_items_for_real_trading_project) ? tradeIsolationReleaseReceipt.missing_evidence_items_for_real_trading_project.join(" / ") : "separate_project_approval / broker_adapter_design / sandbox_order_execution_tests / risk_limits_and_kill_switch"}</p>
+        <DataLineageTable rows={rows(cache.trade_isolation_release_receipt_rows)} />
+        <DataLineageTable rows={rows(tradeIsolationReleaseReceipt.call_ledger)} />
+      </PacketCard>
+
       <PacketCard title="调用血缘" subtitle="local_risk_guardrails_cache；不外联、不写回" status="lineage">
         <DataLineageTable rows={payloadCallLedger} />
       </PacketCard>
@@ -166,6 +182,7 @@ export default function RiskGuardrails() {
 
       <PacketCard title="原始 risk guardrails cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
         <JsonDetails title="risk guardrails cache raw" data={cache} />
+        <JsonDetails title="trade isolation release receipt raw" data={tradeIsolationReleaseReceipt} />
       </PacketCard>
     </>
   );

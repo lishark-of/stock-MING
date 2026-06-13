@@ -907,6 +907,7 @@ Add release gate readiness audit
 - Automatic real trading is not connected.
 - Multiple packets and APIs declare `does_not_execute_trades` and `does_not_modify_strategy_action`.
 - `GET /api/risk/cache` now exposes `trade_isolation_audit`, `trade_isolation_rows`, and `trade_isolation_boundary_rows`: a cache-only audit of risk policy, task catalog POST route boundaries, and frontend no-trade/no-action visibility.
+- `GET /api/risk/cache` now exposes `trade_isolation_release_receipt` and rows: a local LTG-12 release receipt that allows research-client release only while keeping `ready_for_real_trading_integration=false`, `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, and `future_real_trading_requires_separate_project=true`.
 - `scripts/trade_isolation_contract.py` is now part of the local push gate. It reads only local risk cache, task catalog, frontend source contracts, and the push-gate script, then keeps `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, and `trade_execution_api_enabled=false` auditable.
 
 ### Gaps
@@ -914,6 +915,7 @@ Add release gate readiness audit
 - Future productionization could accidentally blur research and execution boundaries.
 - Any eventual trading integration would need a separate project, separate approvals, and separate safety design.
 - The audit proves current Command Center 3 cache/task/frontend contracts, not a future broker/order integration design.
+- The release receipt is not real-trading approval; it only records that the current research client remains isolated from broker/order execution.
 - The push-gate contract is local and static; it blocks accidental boundary regression but does not prove broker integration safety, simulated trading, order routing, or production trade compliance.
 
 ### Implementation Phases
@@ -921,7 +923,8 @@ Add release gate readiness audit
 1. Keep all current 3.0 migration work research/client-side only.
 2. Preserve action mutation guards in cache, task, frontend, model, factor, storage, and worker paths.
 3. Add tests whenever a new route or task can affect decision-adjacent data.
-4. Keep the local trade-isolation push-gate contract updated whenever task routes, risk cache policy, packet registry boundaries, or frontend task controls change.
+4. Keep `trade_isolation_release_receipt` current so release candidates can state research-client safety without implying broker/order approval.
+5. Keep the local trade-isolation push-gate contract updated whenever task routes, risk cache policy, packet registry boundaries, or frontend task controls change.
 
 ### Acceptance Criteria
 
@@ -929,7 +932,8 @@ Add release gate readiness audit
 - Research/factor/model/cache/frontend paths cannot mutate `strategy action`.
 - Any future trade integration is explicitly out of this roadmap unless a separate approved design exists.
 - `trade_isolation_audit.status=trade_isolation_ready`, with zero blockers and all known POST routes covered by the task catalog.
-- `scripts/trade_isolation_contract.py` passes in the local push gate while reporting `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, `does_not_modify_holdings=true`, and `future_real_trading_requires_separate_project=true`.
+- `trade_isolation_release_receipt.status=trade_isolation_release_receipt_ready_research_release_only`, with `allowed_next_step=continue_research_client_release_or_create_separate_real_trading_project_design` and not-allowed shortcuts blocking broker adapters, order endpoints, model/factor-to-order paths, frontend trade submission, and treating the receipt as real-trading approval.
+- `scripts/trade_isolation_contract.py` passes in the local push gate while reporting `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, `does_not_modify_holdings=true`, `trade_isolation_release_receipt_ready=true`, and `future_real_trading_requires_separate_project=true`.
 
 ### Forbidden
 
@@ -937,6 +941,7 @@ Add release gate readiness audit
 - Do not execute real trades.
 - Do not let model or factor output become orders.
 - Do not treat the local trade-isolation contract as approval to connect real broker/order execution; it only proves current isolation remains intact.
+- Do not treat `trade_isolation_release_receipt` as approval to connect broker/order execution; it only proves the current research client stays isolated.
 
 ### Recommended Commit Message
 
