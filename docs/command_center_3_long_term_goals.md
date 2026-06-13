@@ -81,14 +81,15 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Data Health now exposes a cache-only freshness acceptance matrix for premarket, intraday, closing auction, post-16:30, weekend/holiday, missing `trade_cal`, provider delay grace, and stale/expired/historical/unknown boundaries.
 - Data Health now also exposes a local synthetic long-window sample validation that runs the actual freshness gate across premarket, intraday, closing auction, post-16:30, provider grace, holiday cluster, long-weekend, and missing-today scenarios.
 - Data Health now separately validates an existing local `trade_cal` Parquet artifact through the storage/DuckDB cache path: schema columns, date window, open/closed rows, current-date coverage, latest completed trading day, and freshness gate context are visible without refreshing providers.
+- Data Health now exposes `current_evidence_freshness_qa_contract`, a local cache-only QA contract that separates current evidence from historical/research samples and keeps stale / expired / historical / unknown / future-unavailable rows out of current decision surfaces.
 
 ### Gaps
 
 - Full A-share trading-calendar production acceptance is not complete.
 - Needs provider-backed long-window `trade_cal` acceptance evidence beyond the local artifact check.
 - Needs holiday, weekend, post-close data availability, and most recent completed trading day acceptance.
-- Needs stronger separation between historical samples and current evidence.
-- The acceptance matrix is a contract, the synthetic sample is a fixture, and the local Parquet validation is a physical artifact check; none of them call Tushare on page render.
+- Needs provider-backed acceptance that proves the local artifact was produced and refreshed through the explicit task/storage pipeline, not merely present on disk.
+- The acceptance matrix is a contract, the synthetic sample is a fixture, the local Parquet validation is a physical artifact check, and the current-evidence QA contract is a boundary contract; none of them call Tushare on page render.
 
 ### Implementation Phases
 
@@ -107,12 +108,14 @@ Current local LTG work must not be treated as shared baseline until tests, build
 - Data Health shows the acceptance matrix without calling Tushare/DeepSeek/GitHub or modifying `strategy action`.
 - Data Health shows synthetic long-window sample results separately from real `trade_cal` validation, with `trade_cal_long_window_validation_done=false` until provider-backed acceptance is complete.
 - Data Health shows local `trade_cal` Parquet validation separately from the synthetic fixture; when missing or too short, blockers remain visible and production acceptance stays pending.
+- Data Health shows `current_evidence_freshness_qa_contract` and rows: current evidence requires expected trade date, data date alignment, freshness state eligibility, historical sample separation, provider-backed acceptance pending state, and decision-surface isolation.
 
 ### Forbidden
 
 - Do not silently treat unknown freshness as current evidence.
 - Do not let stale / expired / historical rows modify `strategy action`.
 - Do not hide fallback calendar state.
+- Do not treat synthetic samples, local matrix rows, or local artifact checks as provider-backed production acceptance.
 
 ### Recommended Commit Message
 

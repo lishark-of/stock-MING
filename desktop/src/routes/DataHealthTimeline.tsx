@@ -34,6 +34,7 @@ export default function DataHealthTimeline() {
   const freshnessAcceptance = (cache.freshness_acceptance_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessSample = (cache.freshness_long_window_sample_validation as Record<string, unknown> | undefined) ?? {};
   const tradeCalPhysical = (cache.trade_cal_physical_validation as Record<string, unknown> | undefined) ?? {};
+  const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -60,6 +61,9 @@ export default function DataHealthTimeline() {
           { label: "本地 trade_cal", value: tradeCalPhysical.status as string | undefined, tone: tradeCalPhysical.local_trade_cal_physical_validation_done === true ? "good" : "warn" },
           { label: "物理验收", value: tradeCalPhysical.trade_cal_long_window_validation_done === true ? "通过" : "待验收", tone: tradeCalPhysical.trade_cal_long_window_validation_done === true ? "good" : "neutral" },
           { label: "trade_cal 行数", value: tradeCalPhysical.local_trade_cal_row_count as number | undefined },
+          { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
+          { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
+          { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
           { label: "样本类型", value: freshnessSample.fixture_is_synthetic === true ? "fixture" : "unknown", tone: freshnessSample.fixture_is_synthetic === true ? "warn" : "neutral" },
           { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -103,6 +107,13 @@ export default function DataHealthTimeline() {
         <p>不合格数据不能进入 composite score、support factors、evidence preview、next-session bridge preview 或 strategy action。</p>
         <DataLineageTable rows={objectRow(freshnessAcceptance)} />
         <DataLineageTable rows={rows(cache.freshness_acceptance_matrix)} />
+      </PacketCard>
+
+      <PacketCard title="当前证据 Freshness QA" subtitle="current_evidence_freshness_qa_contract；锁定当前证据和历史样本边界" status={String(currentEvidenceFreshness.status ?? "current_evidence_qa")}>
+        <p>当前证据必须有 expected trade date，且 data date 与 expected trade date 对齐；stale、expired、historical、unknown 和 future-unavailable 只能作为 research-only 展示。</p>
+        <p>synthetic sample、历史样本、本地 trade_cal 文件验收都不能替代 provider-backed trade_cal 长窗口验收，也不能把数据送入 composite score、support factors、evidence preview、next-session bridge preview 或 strategy action。</p>
+        <DataLineageTable rows={objectRow(currentEvidenceFreshness)} />
+        <DataLineageTable rows={rows(cache.current_evidence_freshness_qa_rows)} />
       </PacketCard>
 
       <PacketCard title="Trade_cal 本地文件验收" subtitle="只读已有 Parquet/DuckDB cache；不是页面启动外联" status={String(tradeCalPhysical.status ?? "local_trade_cal_validation")}>

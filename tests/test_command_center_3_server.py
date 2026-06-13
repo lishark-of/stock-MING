@@ -6985,6 +6985,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         summary = packet["freshness_acceptance_summary"]
         sample = packet["freshness_long_window_sample_validation"]
         physical = packet["trade_cal_physical_validation"]
+        current_evidence = packet["current_evidence_freshness_qa_contract"]
+        current_evidence_rows = {
+            row["criterion"]: row for row in packet["current_evidence_freshness_qa_rows"]
+        }
         sample_rows = {row["scenario_id"]: row for row in packet["freshness_long_window_sample_rows"]}
         rows_by_id = {row["scenario_id"]: row for row in matrix}
 
@@ -7010,6 +7014,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["freshness_long_window_sample_failed_count"], 0)
         self.assertEqual(packet["counts"]["trade_cal_physical_validation_row_count"], 5)
         self.assertGreater(packet["counts"]["trade_cal_physical_validation_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
+        self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(sample["status"], "local_sample_validation_passed")
         self.assertEqual(sample["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
         self.assertTrue(sample["local_sample_validation_done"])
@@ -7034,10 +7040,53 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["trade_cal_physical_validation_calls_trade_cal_provider"])
         self.assertTrue(packet["policy"]["trade_cal_physical_validation_reads_local_rows"])
         self.assertFalse(packet["policy"]["trade_cal_physical_validation_writes_files"])
+        self.assertTrue(packet["policy"]["current_evidence_freshness_qa_is_local_contract"])
+        self.assertTrue(packet["policy"]["current_evidence_requires_expected_trade_date"])
+        self.assertTrue(packet["policy"]["historical_samples_are_research_only"])
+        self.assertTrue(packet["policy"]["provider_backed_trade_cal_acceptance_still_pending"])
+        self.assertEqual(current_evidence["schema_version"], "data_health_current_evidence_freshness_qa.v1")
+        self.assertEqual(
+            current_evidence["status"],
+            "current_evidence_qa_ready_provider_trade_cal_acceptance_pending",
+        )
+        self.assertEqual(current_evidence["scope"], "local_cache_only_current_evidence_boundary_contract")
+        self.assertEqual(current_evidence["data_freshness_state"], "stale")
+        self.assertEqual(current_evidence["expected_trade_date"], "2026-06-12")
+        self.assertEqual(current_evidence["data_date"], "2026-06-11")
+        self.assertFalse(current_evidence["date_matches_expected_trade_date"])
+        self.assertEqual(current_evidence["current_evidence_candidate_status"], "research_only")
+        self.assertIn("data_date_does_not_match_expected_trade_date", current_evidence["current_evidence_blockers"])
+        self.assertIn("state_stale_research_only", current_evidence["current_evidence_blockers"])
+        self.assertIn("provider_backed_trade_cal_acceptance_pending", current_evidence["current_evidence_blockers"])
+        self.assertFalse(current_evidence["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(current_evidence["provider_refresh_called_by_validation"])
+        self.assertTrue(current_evidence["historical_samples_are_research_only"])
+        self.assertTrue(current_evidence["stale_expired_historical_unknown_are_research_only"])
+        self.assertTrue(current_evidence["blocks_composite_score"])
+        self.assertTrue(current_evidence["blocks_support_factors"])
+        self.assertTrue(current_evidence["blocks_evidence_preview"])
+        self.assertTrue(current_evidence["blocks_next_session_bridge_preview"])
+        self.assertTrue(current_evidence["does_not_execute_trades"])
+        self.assertTrue(current_evidence["does_not_modify_strategy_action"])
+        self.assertFalse(current_evidence["external_calls_triggered"])
+        self.assertEqual(current_evidence_rows["expected_trade_date_required"]["status"], "passed")
+        self.assertEqual(current_evidence_rows["current_data_date_matches_expected"]["status"], "research_only")
+        self.assertEqual(current_evidence_rows["freshness_state_allows_current_evidence"]["status"], "research_only")
+        self.assertEqual(current_evidence_rows["historical_sample_separation"]["status"], "enforced")
+        self.assertEqual(
+            current_evidence_rows["provider_backed_trade_cal_acceptance"]["status"],
+            "pending_provider_backed_acceptance",
+        )
         self.assertEqual(response["call_ledger"][0]["freshness_long_window_sample_scenario_count"], 9)
         self.assertEqual(response["call_ledger"][0]["freshness_long_window_sample_status"], "local_sample_validation_passed")
         self.assertEqual(response["call_ledger"][0]["trade_cal_physical_validation_status"], "local_trade_cal_dataset_missing")
         self.assertFalse(response["call_ledger"][0]["trade_cal_physical_validation_done"])
+        self.assertEqual(
+            response["call_ledger"][0]["current_evidence_freshness_qa_status"],
+            "current_evidence_qa_ready_provider_trade_cal_acceptance_pending",
+        )
+        self.assertEqual(response["call_ledger"][0]["current_evidence_candidate_status"], "research_only")
+        self.assertEqual(response["call_ledger"][0]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(sample_rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
         self.assertTrue(sample_rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
         self.assertEqual(sample_rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")

@@ -377,6 +377,197 @@ def _freshness_acceptance_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _date_text_from_mapping(mapping: Mapping[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = mapping.get(key)
+        if value in (None, "", {}, []):
+            continue
+        parsed = _parse_cal_date(value)
+        if parsed is not None:
+            return parsed.isoformat()
+        return _safe_text(value, limit=40)
+    return ""
+
+
+def _current_evidence_freshness_qa_contract(
+    data_freshness: Mapping[str, Any],
+    freshness_sample: Mapping[str, Any],
+    trade_cal_physical: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    state = _safe_text(
+        data_freshness.get("state")
+        or data_freshness.get("freshness_state")
+        or data_freshness.get("status")
+        or "unknown",
+        limit=80,
+    ).lower()
+    expected_trade_date = _date_text_from_mapping(
+        data_freshness,
+        "expected_trade_date",
+        "expected_data_date",
+        "expected_date",
+    )
+    data_date = _date_text_from_mapping(
+        data_freshness,
+        "data_date",
+        "latest_data_date",
+        "latest_trade_date",
+        "trade_date",
+        "as_of_date",
+    )
+    full_fresh_states = {"fresh"}
+    grace_states = {"provider_delay_grace"}
+    research_only_states = {"stale", "expired", "historical", "unknown", "missing", "future_unavailable"}
+    date_matches_expected = bool(expected_trade_date and data_date and expected_trade_date == data_date)
+    state_allows_current = state in full_fresh_states or state in grace_states
+    full_current_evidence_ready = bool(date_matches_expected and state in full_fresh_states)
+    grace_current_evidence_ready = bool(date_matches_expected and state in grace_states)
+    candidate_status = (
+        "current_evidence_ready"
+        if full_current_evidence_ready
+        else "bounded_grace_audited_not_full_fresh"
+        if grace_current_evidence_ready
+        else "research_only"
+    )
+    blockers: list[str] = []
+    if not expected_trade_date:
+        blockers.append("expected_trade_date_missing")
+    if not data_date:
+        blockers.append("data_date_missing")
+    if expected_trade_date and data_date and expected_trade_date != data_date:
+        blockers.append("data_date_does_not_match_expected_trade_date")
+    if not state_allows_current:
+        blockers.append(f"state_{state or 'unknown'}_research_only")
+    blockers.append("provider_backed_trade_cal_acceptance_pending")
+
+    base = {
+        "acceptance_contract": "current_evidence_freshness_qa",
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "current_evidence_requires_expected_trade_date": True,
+        "historical_samples_are_research_only": True,
+        "stale_expired_historical_unknown_are_research_only": True,
+        "blocks_composite_score": True,
+        "blocks_support_factors": True,
+        "blocks_evidence_preview": True,
+        "blocks_next_session_bridge_preview": True,
+    }
+    rows = [
+        {
+            **base,
+            "criterion": "expected_trade_date_required",
+            "status": "passed" if expected_trade_date else "blocked",
+            "detail": "current evidence must carry expected_trade_date or expected_data_date",
+            "observed_value": expected_trade_date or "missing",
+        },
+        {
+            **base,
+            "criterion": "current_data_date_matches_expected",
+            "status": "passed" if date_matches_expected else "research_only",
+            "detail": "data_date must match expected_trade_date before a row can be treated as current evidence",
+            "expected_trade_date": expected_trade_date or "missing",
+            "data_date": data_date or "missing",
+        },
+        {
+            **base,
+            "criterion": "freshness_state_allows_current_evidence",
+            "status": "passed"
+            if state in full_fresh_states
+            else "bounded_grace"
+            if state in grace_states
+            else "research_only",
+            "detail": "fresh is eligible; provider_delay_grace is audited separately; stale/expired/historical/unknown remain research-only",
+            "observed_state": state,
+        },
+        {
+            **base,
+            "criterion": "stale_expired_historical_unknown_boundary",
+            "status": "enforced",
+            "detail": "bad or historical freshness states cannot enter current decision surfaces",
+            "research_only_states": sorted(research_only_states),
+        },
+        {
+            **base,
+            "criterion": "historical_sample_separation",
+            "status": "enforced",
+            "detail": "synthetic samples, long-window fixtures, and historical rows stay separate from current evidence",
+            "synthetic_sample_status": freshness_sample.get("status"),
+            "synthetic_sample_is_fixture": bool(freshness_sample.get("fixture_is_synthetic")),
+            "local_trade_cal_validation_status": trade_cal_physical.get("status"),
+        },
+        {
+            **base,
+            "criterion": "decision_surface_isolation",
+            "status": "enforced",
+            "detail": "blocked rows cannot enter composite_score, support_factors, evidence preview, next_session_bridge.preview, or strategy action",
+            "blocked_surfaces": [
+                "composite_score",
+                "support_factors",
+                "evidence_preview",
+                "next_session_bridge.preview",
+                "strategy_action",
+            ],
+        },
+        {
+            **base,
+            "criterion": "provider_backed_trade_cal_acceptance",
+            "status": "pending_provider_backed_acceptance",
+            "detail": "local matrix, fixture, and Parquet artifact checks do not prove provider-backed trade_cal acceptance",
+            "local_trade_cal_artifact_validation_done": bool(
+                trade_cal_physical.get("local_trade_cal_physical_validation_done")
+            ),
+            "provider_backed_long_window_acceptance_done": False,
+            "provider_refresh_called_by_validation": False,
+        },
+        {
+            **base,
+            "criterion": "external_and_trade_boundary",
+            "status": "enforced",
+            "detail": "GET data health cache never calls providers, models, GitHub, or trading chains",
+        },
+    ]
+    contract = {
+        "schema_version": "data_health_current_evidence_freshness_qa.v1",
+        "status": "current_evidence_qa_ready_provider_trade_cal_acceptance_pending",
+        "scope": "local_cache_only_current_evidence_boundary_contract",
+        "data_freshness_state": state,
+        "expected_trade_date": expected_trade_date or None,
+        "data_date": data_date or None,
+        "date_matches_expected_trade_date": date_matches_expected,
+        "current_evidence_candidate_status": candidate_status,
+        "current_evidence_blockers": blockers,
+        "current_evidence_blocker_count": len(blockers),
+        "row_count": len(rows),
+        "local_trade_cal_artifact_validation_done": bool(
+            trade_cal_physical.get("local_trade_cal_physical_validation_done")
+        ),
+        "synthetic_sample_validation_done": bool(freshness_sample.get("local_sample_validation_done")),
+        "provider_backed_long_window_acceptance_done": False,
+        "provider_refresh_called_by_validation": False,
+        "current_evidence_requires_expected_trade_date": True,
+        "historical_samples_are_research_only": True,
+        "stale_expired_historical_unknown_are_research_only": True,
+        "blocks_composite_score": True,
+        "blocks_support_factors": True,
+        "blocks_evidence_preview": True,
+        "blocks_next_session_bridge_preview": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "note": "This is a local QA contract for current-evidence boundaries; it does not refresh trade_cal or prove provider-backed production acceptance.",
+    }
+    return contract, rows
+
+
 def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
@@ -507,6 +698,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     freshness_long_window_sample_rows = _as_list(freshness_long_window_sample_validation.get("rows"))
     trade_cal_physical_validation = _local_trade_cal_physical_validation()
     trade_cal_physical_validation_rows = _as_list(trade_cal_physical_validation.get("rows"))
+    current_evidence_freshness_qa_contract, current_evidence_freshness_qa_rows = (
+        _current_evidence_freshness_qa_contract(
+            data_freshness,
+            freshness_long_window_sample_validation,
+            trade_cal_physical_validation,
+        )
+    )
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -569,6 +767,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_acceptance_matrix",
             "freshness_long_window_sample_validation",
             "trade_cal_physical_validation",
+            "current_evidence_freshness_qa_contract",
         ],
         "summary": visibility_summary.get("summary")
         or visibility_summary.get("headline")
@@ -590,6 +789,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "freshness_long_window_sample_rows": freshness_long_window_sample_rows,
         "trade_cal_physical_validation": trade_cal_physical_validation,
         "trade_cal_physical_validation_rows": trade_cal_physical_validation_rows,
+        "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
+        "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "timeline_rows": timeline_rows,
         "recovery_action_rows": recovery_action_rows,
         "provider_rows": provider_rows,
@@ -609,6 +810,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_long_window_sample_failed_count": int(freshness_long_window_sample_validation.get("failed_count") or 0),
             "trade_cal_physical_validation_row_count": len(trade_cal_physical_validation_rows),
             "trade_cal_physical_validation_blocker_count": int(trade_cal_physical_validation.get("blocker_count") or 0),
+            "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
+            "current_evidence_freshness_qa_blocker_count": int(
+                current_evidence_freshness_qa_contract.get("current_evidence_blocker_count") or 0
+            ),
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -640,6 +845,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "real_trade_cal_long_window_validation_done": bool(
                 trade_cal_physical_validation.get("trade_cal_long_window_validation_done")
             ),
+            "current_evidence_freshness_qa_is_local_contract": True,
+            "current_evidence_requires_expected_trade_date": True,
+            "historical_samples_are_research_only": True,
+            "provider_backed_trade_cal_acceptance_still_pending": True,
         },
         "call_ledger": [
             {
@@ -659,6 +868,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 ),
                 "trade_cal_physical_validation_blocker_count": int(
                     trade_cal_physical_validation.get("blocker_count") or 0
+                ),
+                "current_evidence_freshness_qa_status": current_evidence_freshness_qa_contract.get("status"),
+                "current_evidence_candidate_status": current_evidence_freshness_qa_contract.get(
+                    "current_evidence_candidate_status"
+                ),
+                "current_evidence_freshness_qa_blocker_count": int(
+                    current_evidence_freshness_qa_contract.get("current_evidence_blocker_count") or 0
                 ),
                 "call_status": "cache_read" if snapshot else "cache_missing",
                 "local_fetched_at": _now_iso(),
@@ -682,6 +898,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "本页不调用 Tushare、AkShare、yfinance、Supabase、DeepSeek 或 GitHub。",
             "freshness 长窗口样本验收只使用本地 synthetic trade_cal fixture，不代表真实 Tushare trade_cal 长窗口验收完成。",
             "trade_cal 本地文件验收只读取已有 Parquet/DuckDB cache；不会刷新 provider，缺失或覆盖不足时仍保持待验收。",
+            "current evidence freshness QA 只固定当前证据/历史样本边界；provider-backed trade_cal 长窗口验收仍需后续按钮任务证明。",
         ],
     }
     if status == "cache_missing":
