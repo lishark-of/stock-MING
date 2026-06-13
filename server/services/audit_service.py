@@ -50,6 +50,7 @@ CANDIDATE_RADAR_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_cont
 STORAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "storage_contract.py"
 WORKER_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "worker_contract.py"
 TAURI_DESKTOP_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tauri_desktop_contract.py"
+STREAMLIT_LEGACY_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "streamlit_legacy_contract.py"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
@@ -444,6 +445,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     storage_script = _read_local_text(STORAGE_CONTRACT_PATH)
     worker_script = _read_local_text(WORKER_CONTRACT_PATH)
     tauri_desktop_script = _read_local_text(TAURI_DESKTOP_CONTRACT_PATH)
+    streamlit_legacy_script = _read_local_text(STREAMLIT_LEGACY_CONTRACT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
@@ -493,6 +495,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "storage_contract_exists": STORAGE_CONTRACT_PATH.exists() and bool(storage_script),
         "worker_contract_exists": WORKER_CONTRACT_PATH.exists() and bool(worker_script),
         "tauri_desktop_contract_exists": TAURI_DESKTOP_CONTRACT_PATH.exists() and bool(tauri_desktop_script),
+        "streamlit_legacy_contract_exists": STREAMLIT_LEGACY_CONTRACT_PATH.exists() and bool(streamlit_legacy_script),
         "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
         "motion_browser_qa_runbook_exists": MOTION_BROWSER_QA_RUNBOOK_PATH.exists() and bool(motion_browser_qa_runbook),
         "secret_keyword_review_contract_exists": SECRET_KEYWORD_REVIEW_CONTRACT_PATH.exists() and bool(secret_keyword_review_script),
@@ -518,6 +521,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "worker_contract_step": "scripts/worker_contract.py" in script and "Worker contract" in script,
         "tauri_desktop_contract_step": "scripts/tauri_desktop_contract.py" in script
         and "Tauri desktop contract" in script,
+        "streamlit_legacy_contract_step": "scripts/streamlit_legacy_contract.py" in script
+        and "Streamlit legacy contract" in script,
         "secret_keyword_review_contract_step": "scripts/secret_keyword_review_contract.py" in script
         and "Secret keyword review contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
@@ -613,6 +618,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "tushare_adapter" not in tauri_desktop_script
         and "deepseek_adapter" not in tauri_desktop_script
         and "api.github.com" not in tauri_desktop_script,
+        "streamlit_legacy_contract_is_local": "command_center_3_streamlit_legacy_contract.v1" in streamlit_legacy_script
+        and "local_streamlit_legacy_contract_not_streamlit_execution" in streamlit_legacy_script
+        and "ordinary_workflow_exit_complete" in streamlit_legacy_script
+        and "full_streamlit_removal_ready" in streamlit_legacy_script
+        and "streamlit_fallback_retained" in streamlit_legacy_script
+        and "does_not_open_streamlit" in streamlit_legacy_script
+        and "does_not_execute_trades" in streamlit_legacy_script
+        and "tushare_adapter" not in streamlit_legacy_script
+        and "deepseek_adapter" not in streamlit_legacy_script
+        and "api.github.com" not in streamlit_legacy_script,
         "generated_artifact_scan_step": "artifact_scan" in script and "git ls-files" in script,
         "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
         "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
@@ -674,6 +689,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "tauri_desktop_contract_exists",
             "tauri_desktop_contract_step",
             "tauri_desktop_contract_is_local",
+            "streamlit_legacy_contract_exists",
+            "streamlit_legacy_contract_step",
+            "streamlit_legacy_contract_is_local",
             "motion_viewport_qa_contract_exists",
             "motion_viewport_qa_contract_step",
             "motion_viewport_qa_contract_is_local_static",
@@ -861,6 +879,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "tauri_desktop_contract_is_local",
             checks["tauri_desktop_contract_is_local"],
             evidence="contract keeps LTG-09 Tauri preflight/runtime/offline/package QA separate from build execution, packaged runtime validation, signing/notarization, and production desktop completion",
+        ),
+        _release_gate_row(
+            "streamlit_legacy_contract_exists",
+            checks["streamlit_legacy_contract_exists"],
+            evidence=_relative_path(STREAMLIT_LEGACY_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "streamlit_legacy_contract_step",
+            checks["streamlit_legacy_contract_step"],
+            evidence="push gate runs scripts/streamlit_legacy_contract.py after Tauri desktop and before motion QA",
+        ),
+        _release_gate_row(
+            "streamlit_legacy_contract_is_local",
+            checks["streamlit_legacy_contract_is_local"],
+            evidence="contract keeps LTG-10 legacy/admin/debug fallback, ordinary workflow blockers, no-feature-cut requirements, and no Streamlit execution separate from full retirement",
         ),
         _release_gate_row(
             "motion_viewport_qa_contract_exists",

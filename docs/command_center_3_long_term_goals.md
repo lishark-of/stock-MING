@@ -659,6 +659,7 @@ Package Command Center 3 Tauri desktop shell
 - Streamlit is marked `legacy/admin/debug`.
 - Legacy cache now exposes `primary_workflow_exit_audit`, `primary_workflow_exit_rows`, and `primary_workflow_route_rows`, making the ordinary-workflow exit status visible without opening Streamlit or running legacy tools.
 - Legacy cache now exposes `streamlit_fallback_dependency_contract` and `streamlit_fallback_dependency_rows`, separating Command Center 3 primary-ready routes, ordinary-flow partial fallback dependencies, and retained legacy/admin/debug dependencies. This is a local dependency contract only; it does not remove Streamlit fallback, open Streamlit, run legacy tools, create tasks, or call providers/models/GitHub.
+- `scripts/streamlit_legacy_contract.py` is now part of the local push gate. It validates legacy cache read-only policy, `legacy/admin/debug` marking, React/Tauri primary-entry policy, ordinary-workflow exit blockers, fallback dependency contract, no-feature-cut requirements, no Streamlit execution, no legacy tool execution, no task creation, no provider/model/GitHub calls, no trade, and no action mutation while `ordinary_workflow_exit_complete=false`.
 - It has not fully exited ordinary usage paths.
 
 ### Gaps
@@ -666,6 +667,7 @@ Package Command Center 3 Tauri desktop shell
 - React/Tauri does not yet cover every ordinary operation.
 - Some old tools still need Streamlit fallback.
 - `primary_workflow_exit_audit.status=ordinary_workflow_exit_partial_fallback_required` is expected until all ordinary workflows are proven in Command Center 3 and fallback removal is safe.
+- `scripts/streamlit_legacy_contract.py` is a local regression guard only; it does not remove Streamlit fallback, prove replacement parity, run old tools, open Streamlit, or complete ordinary-workflow exit.
 
 ### Implementation Phases
 
@@ -684,6 +686,7 @@ Package Command Center 3 Tauri desktop shell
 - Legacy strong-action protection remains.
 - `primary_workflow_exit_audit.ordinary_workflow_exit_complete=true` only when route coverage has no remaining Streamlit fallback dependencies and the migration checklist is clear.
 - `streamlit_fallback_dependency_contract.full_streamlit_removal_ready=true` only when ordinary fallback dependencies and retained admin/debug fallback dependencies are all cleared with replacement parity proven.
+- `scripts/streamlit_legacy_contract.py` passes in the local push gate while reporting `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, and `does_not_open_streamlit=true`.
 
 ### Forbidden
 
@@ -691,6 +694,7 @@ Package Command Center 3 Tauri desktop shell
 - Do not let legacy pages bypass freshness, model, or action guardrails.
 - Do not present Streamlit as the primary 3.0 surface.
 - Do not treat local exit audit as complete while status remains `ordinary_workflow_exit_partial_fallback_required`.
+- Do not treat `scripts/streamlit_legacy_contract.py` passing as Streamlit fallback removal, replacement parity, admin/debug retirement, or complete ordinary-workflow exit.
 
 ### Recommended Commit Message
 
@@ -714,6 +718,7 @@ Retire Streamlit from primary user workflow
 - `scripts/storage_contract.py` is now part of the local push gate. It validates LTG-05 Storage cache, schema/version preflights, dry-run packets, DuckDB query policy, artifact cleanup review, and storage task catalog gating remain local/no-write/no-provider/no-trade while physical storage production remains pending.
 - `scripts/worker_contract.py` is now part of the local push gate. It validates LTG-06 Worker cache, dispatch plans, production blocker audit, healthcheck QA, activation review, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while production worker activation remains pending.
 - `scripts/tauri_desktop_contract.py` is now part of the local push gate. It validates LTG-09 desktop preflight cache, runtime contract, backend-offline UX source contract, packaged runtime QA matrix, production blocker audit, no-build/no-runtime/no-config/no-log/no-provider/no-trade boundaries, and keeps production desktop package completion pending.
+- `scripts/streamlit_legacy_contract.py` is now part of the local push gate. It validates LTG-10 Legacy cache, ordinary-workflow exit audit, fallback dependency contract, React Legacy page boundaries, no-feature-cut requirements, no Streamlit execution, no legacy tool execution, no task creation, no-provider/no-model/no-GitHub/no-trade/no-action boundaries, and keeps Streamlit full retirement pending.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
@@ -734,6 +739,7 @@ Retire Streamlit from primary user workflow
 - Storage contract is present, but it is still a local preflight/dry-run guard; real physical schema validation, migration, manifest validation, partition migration, compaction, TTL refresh execution, and cleanup delete execution remain later LTG-05 acceptance phases.
 - Worker contract is present, but it is still a local no-process-start guard; real Celery/Redis startup, Redis broker health, synthetic healthcheck execution, cross-process controls, task log persistence, and scheduler production config remain later LTG-06 acceptance phases.
 - Tauri desktop contract is present, but it is still a local preflight/runtime/package-QA boundary guard; real `tauri dev`, repeatable `tauri build`, packaged runtime launch QA, config/log runtime validation, backend startup strategy acceptance, and macOS signing/notarization remain later LTG-09 acceptance phases.
+- Streamlit legacy contract is present, but it is still a local no-Streamlit-execution guard; real ordinary-flow parity, fallback removal, admin/debug retirement, and complete Streamlit exit remain later LTG-10 acceptance phases.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -765,6 +771,7 @@ Retire Streamlit from primary user workflow
 - Storage contract runs after Candidate Radar and before static motion QA, and keeps `production_storage_complete=false`, `schema_migration_executed=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, and `cache_ttl_refresh_executed=false` visible.
 - Worker contract runs after Storage and before static motion QA, and keeps `production_worker_complete=false`, `healthcheck_executed=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, and `scheduler_started=false` visible.
 - Tauri desktop contract runs after Worker and before static motion QA, and keeps `tauri_build_executed=false`, `packaged_runtime_qa_done=false`, `production_package_complete=false`, `does_not_run_tauri=true`, `does_not_run_npm=true`, and `does_not_run_cargo=true` visible.
+- Streamlit legacy contract runs after Tauri desktop and before static motion QA, and keeps `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, and `does_not_open_streamlit=true` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
