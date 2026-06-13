@@ -748,6 +748,214 @@ def _current_evidence_decision_surface_audit(
     return contract, rows
 
 
+CURRENT_EVIDENCE_PRODUCER_SPECS: tuple[dict[str, Any], ...] = (
+    {
+        "producer": "global_data_freshness",
+        "path_options": (("data_freshness",),),
+        "required": True,
+        "detail": "Global current-evidence freshness context used by Data Health and downstream pages.",
+    },
+    {
+        "producer": "factor_quant_hub",
+        "path_options": (
+            ("command_center_factor_quant_hub_packet", "data_freshness_gate"),
+            ("factor_quant_hub_packet", "data_freshness_gate"),
+        ),
+        "required": False,
+        "detail": "Factor Quant Hub freshness gate must expose expected date, latest data date, and freshness status when packet is present.",
+    },
+    {
+        "producer": "candidate_radar",
+        "path_options": (
+            ("command_center_3_candidate_radar_cache", "freshness_state"),
+            ("candidate_radar_packet", "freshness_state"),
+            ("radar_packet", "freshness_state"),
+        ),
+        "required": False,
+        "detail": "Candidate radar scans must carry freshness_state so radar candidates remain research-only when inputs are stale.",
+    },
+    {
+        "producer": "next_session_projection",
+        "path_options": (
+            ("command_center_next_session_projection_packet", "data_freshness"),
+            ("command_center_next_session_projection_packet", "data_freshness_gate"),
+            ("next_session_projection_packet", "data_freshness"),
+        ),
+        "required": False,
+        "detail": "Next-session projection evidence must declare freshness context before it can be treated as current evidence.",
+    },
+    {
+        "producer": "a_share_evidence_radar",
+        "path_options": (
+            ("command_center_evidence_radar_packet", "data_freshness"),
+            ("a_share_evidence_packet", "data_freshness"),
+            ("a_share_fact_lineage_summary", "data_freshness"),
+        ),
+        "required": False,
+        "detail": "Evidence radar and fact-lineage summaries need expected-date context when promoted to current evidence.",
+    },
+    {
+        "producer": "market_context",
+        "path_options": (
+            ("market_packet", "data_freshness"),
+            ("command_center_market_context_packet", "data_freshness"),
+            ("moneyflow_packet", "data_freshness"),
+        ),
+        "required": False,
+        "detail": "Market context packets must keep market data freshness visible instead of implying current evidence.",
+    },
+)
+
+
+def _mapping_at_path(root: Mapping[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
+    value: Any = root
+    for key in path:
+        if not isinstance(value, Mapping):
+            return {}
+        value = value.get(key)
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _first_mapping_at_paths(root: Mapping[str, Any], paths: tuple[tuple[str, ...], ...]) -> tuple[dict[str, Any], tuple[str, ...] | None, bool]:
+    packet_observed = False
+    for path in paths:
+        if path and isinstance(root.get(path[0]), Mapping):
+            packet_observed = True
+        mapping = _mapping_at_path(root, path)
+        if mapping:
+            return mapping, path, True
+    return {}, None, packet_observed
+
+
+def _producer_freshness_status(mapping: Mapping[str, Any]) -> str:
+    return _safe_text(
+        mapping.get("state")
+        or mapping.get("freshness_state")
+        or mapping.get("freshness_status")
+        or mapping.get("status")
+        or "",
+        limit=80,
+    ).lower()
+
+
+def _producer_coverage_row(spec: Mapping[str, Any], snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    path_options = tuple(tuple(str(part) for part in path) for path in spec.get("path_options") or ())
+    mapping, observed_path, mapping_observed = _first_mapping_at_paths(snapshot, path_options)
+    required = bool(spec.get("required"))
+    packet_observed = mapping_observed or (observed_path is not None) or any(
+        path and isinstance(snapshot.get(path[0]), Mapping) for path in path_options
+    )
+    expected_trade_date = _date_text_from_mapping(
+        mapping,
+        "expected_trade_date",
+        "expected_data_date",
+        "expected_date",
+    )
+    data_date = _date_text_from_mapping(
+        mapping,
+        "data_date",
+        "latest_data_date",
+        "latest_trade_date",
+        "trade_date",
+        "as_of_date",
+    )
+    state = _producer_freshness_status(mapping)
+    missing_fields: list[str] = []
+    if not expected_trade_date:
+        missing_fields.append("expected_trade_date")
+    if not data_date:
+        missing_fields.append("data_date")
+    if not state:
+        missing_fields.append("freshness_state")
+    date_matches = bool(expected_trade_date and data_date and expected_trade_date == data_date)
+    if not packet_observed and not required:
+        status = "not_observed"
+    elif not mapping_observed:
+        status = "blocked_freshness_contract_missing"
+    elif "expected_trade_date" in missing_fields:
+        status = "blocked_expected_trade_date_missing"
+    elif "data_date" in missing_fields:
+        status = "blocked_data_date_missing"
+    elif "freshness_state" in missing_fields:
+        status = "blocked_freshness_state_missing"
+    elif not date_matches:
+        status = "date_mismatch_research_only"
+    elif state in BAD_CURRENT_EVIDENCE_STATES:
+        status = "research_only_state_visible"
+    else:
+        status = "passed_read_only_contract"
+    return {
+        "producer": spec.get("producer"),
+        "status": status,
+        "detail": spec.get("detail"),
+        "observed_path": ".".join(observed_path or path_options[0]) if path_options else "",
+        "packet_observed": bool(packet_observed),
+        "freshness_mapping_observed": bool(mapping_observed),
+        "required_for_current_evidence": required,
+        "expected_trade_date_present": bool(expected_trade_date),
+        "data_date_present": bool(data_date),
+        "freshness_state_present": bool(state),
+        "expected_trade_date": expected_trade_date or None,
+        "data_date": data_date or None,
+        "date_matches_expected_trade_date": date_matches,
+        "freshness_state": state or None,
+        "missing_fields": missing_fields,
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "does_not_build_missing_packets": True,
+        "does_not_refresh_provider": True,
+        "does_not_rescore": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _current_evidence_producer_coverage_audit(
+    snapshot: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    rows = [_producer_coverage_row(spec, snapshot) for spec in CURRENT_EVIDENCE_PRODUCER_SPECS]
+    blocked_rows = [row for row in rows if str(row.get("status", "")).startswith("blocked_")]
+    observed_rows = [row for row in rows if row.get("packet_observed")]
+    passed_rows = [row for row in rows if row.get("status") == "passed_read_only_contract"]
+    contract = {
+        "schema_version": "data_health_current_evidence_producer_coverage.v1",
+        "status": "producer_freshness_coverage_ready_blockers_visible"
+        if blocked_rows
+        else "producer_freshness_coverage_ready_no_observed_blockers",
+        "scope": "local_snapshot_only_expected_date_field_coverage",
+        "producer_count": len(rows),
+        "observed_producer_count": len(observed_rows),
+        "passed_producer_count": len(passed_rows),
+        "blocked_producer_count": len(blocked_rows),
+        "blocked_producer_keys": [row["producer"] for row in blocked_rows],
+        "required_producer_keys": [
+            str(spec.get("producer")) for spec in CURRENT_EVIDENCE_PRODUCER_SPECS if spec.get("required")
+        ],
+        "all_observed_producers_have_expected_trade_date": all(
+            row.get("expected_trade_date_present") for row in observed_rows if row.get("freshness_mapping_observed")
+        ),
+        "not_observed_is_not_production_proof": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "does_not_build_missing_packets": True,
+        "does_not_refresh_provider": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This audits expected-date/freshness fields on visible local producers only; missing packets are not production proof.",
+    }
+    return contract, rows
+
+
 def _trade_cal_provider_acceptance_row(
     criterion: str,
     status: str,
@@ -1020,6 +1228,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             current_evidence_freshness_qa_contract,
         )
     )
+    current_evidence_producer_coverage_audit, current_evidence_producer_coverage_rows = (
+        _current_evidence_producer_coverage_audit(snapshot_map)
+    )
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -1085,6 +1296,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_runbook",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
+            "current_evidence_producer_coverage_audit",
         ],
         "summary": visibility_summary.get("summary")
         or visibility_summary.get("headline")
@@ -1112,6 +1324,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
         "current_evidence_decision_surface_rows": current_evidence_decision_surface_rows,
+        "current_evidence_producer_coverage_audit": current_evidence_producer_coverage_audit,
+        "current_evidence_producer_coverage_rows": current_evidence_producer_coverage_rows,
         "timeline_rows": timeline_rows,
         "recovery_action_rows": recovery_action_rows,
         "provider_rows": provider_rows,
@@ -1142,6 +1356,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_decision_surface_row_count": len(current_evidence_decision_surface_rows),
             "current_evidence_decision_surface_blocker_count": int(
                 current_evidence_decision_surface_audit.get("blocked_surface_count") or 0
+            ),
+            "current_evidence_producer_coverage_row_count": len(current_evidence_producer_coverage_rows),
+            "current_evidence_producer_coverage_blocker_count": int(
+                current_evidence_producer_coverage_audit.get("blocked_producer_count") or 0
             ),
         },
         "policy": {
@@ -1185,6 +1403,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_decision_surface_audit_is_local": True,
             "current_evidence_decision_surface_audit_rescores": False,
             "current_evidence_decision_surface_audit_mutates_action": False,
+            "current_evidence_producer_coverage_audit_is_local": True,
+            "current_evidence_producer_coverage_audit_builds_missing_packets": False,
+            "current_evidence_producer_coverage_requires_expected_trade_date": True,
         },
         "call_ledger": [
             {
@@ -1220,6 +1441,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "current_evidence_decision_surface_blocker_count": int(
                     current_evidence_decision_surface_audit.get("blocked_surface_count") or 0
                 ),
+                "current_evidence_producer_coverage_audit_status": current_evidence_producer_coverage_audit.get(
+                    "status"
+                ),
+                "current_evidence_producer_coverage_blocker_count": int(
+                    current_evidence_producer_coverage_audit.get("blocked_producer_count") or 0
+                ),
                 "call_status": "cache_read" if snapshot else "cache_missing",
                 "local_fetched_at": _now_iso(),
                 "external": False,
@@ -1245,6 +1472,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal provider-backed 长窗口验收必须通过显式 POST task 执行；runbook 只固定验收要求，不调用 Tushare。",
             "current evidence freshness QA 只固定当前证据/历史样本边界；provider-backed trade_cal 长窗口验收仍需后续按钮任务证明。",
             "decision-surface audit 只检查本地 snapshot 可见字段，不重新评分、不过滤 packet、不修改 action；缺失字段不等于生产验收完成。",
+            "producer coverage audit 只检查本地 snapshot 可见 producer 是否带 expected_trade_date、data_date 和 freshness_state；不构建缺失 packet。",
         ],
     }
     if status == "cache_missing":

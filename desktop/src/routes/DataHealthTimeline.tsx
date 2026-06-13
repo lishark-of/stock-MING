@@ -37,6 +37,7 @@ export default function DataHealthTimeline() {
   const tradeCalProviderRunbook = (cache.trade_cal_provider_acceptance_runbook as Record<string, unknown> | undefined) ?? {};
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
+  const producerCoverageAudit = (cache.current_evidence_producer_coverage_audit as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -70,6 +71,8 @@ export default function DataHealthTimeline() {
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
           { label: "可见面审计", value: decisionSurfaceAudit.status as string | undefined, tone: Number(counts.current_evidence_decision_surface_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "可见面 blockers", value: counts.current_evidence_decision_surface_blocker_count as number | undefined, tone: Number(counts.current_evidence_decision_surface_blocker_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "producer 覆盖", value: producerCoverageAudit.status as string | undefined, tone: Number(counts.current_evidence_producer_coverage_blocker_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "producer blockers", value: counts.current_evidence_producer_coverage_blocker_count as number | undefined, tone: Number(counts.current_evidence_producer_coverage_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "样本类型", value: freshnessSample.fixture_is_synthetic === true ? "fixture" : "unknown", tone: freshnessSample.fixture_is_synthetic === true ? "warn" : "neutral" },
           { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -127,6 +130,13 @@ export default function DataHealthTimeline() {
         <p>如果当前证据是 research-only，但可见面仍有 score/support/preview 值，会列为 blocker；本页不会过滤 packet、不会重算分数、不会修改 strategy action。</p>
         <DataLineageTable rows={objectRow(decisionSurfaceAudit)} />
         <DataLineageTable rows={rows(cache.current_evidence_decision_surface_rows)} />
+      </PacketCard>
+
+      <PacketCard title="当前证据 Producer 覆盖" subtitle="current_evidence_producer_coverage_audit；检查 expected_trade_date / data_date / freshness_state 字段" status={String(producerCoverageAudit.status ?? "producer_coverage")}>
+        <p>只读检查 data_freshness、Factor Quant Hub、下一票雷达、次日图谱、A 股证据雷达和市场环境等本地可见 producer；缺失 producer 标记 not_observed，不当作生产验收完成。</p>
+        <p>已观察到的 producer 必须显式带 expected_trade_date、data_date 和 freshness_state；本页不会构建缺失 packet、不会刷新 provider、不会修改 action。</p>
+        <DataLineageTable rows={objectRow(producerCoverageAudit)} />
+        <DataLineageTable rows={rows(cache.current_evidence_producer_coverage_rows)} />
       </PacketCard>
 
       <PacketCard title="Trade_cal 本地文件验收" subtitle="只读已有 Parquet/DuckDB cache；不是页面启动外联" status={String(tradeCalPhysical.status ?? "local_trade_cal_validation")}>

@@ -7604,6 +7604,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         physical = packet["trade_cal_physical_validation"]
         current_evidence = packet["current_evidence_freshness_qa_contract"]
         decision_surface = packet["current_evidence_decision_surface_audit"]
+        producer_coverage = packet["current_evidence_producer_coverage_audit"]
         provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
         provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
         current_evidence_rows = {
@@ -7611,6 +7612,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         }
         decision_surface_rows = {
             row["surface"]: row for row in packet["current_evidence_decision_surface_rows"]
+        }
+        producer_coverage_rows = {
+            row["producer"]: row for row in packet["current_evidence_producer_coverage_rows"]
         }
         sample_rows = {row["scenario_id"]: row for row in packet["freshness_long_window_sample_rows"]}
         rows_by_id = {row["scenario_id"]: row for row in matrix}
@@ -7643,6 +7647,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_row_count"], 5)
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["current_evidence_producer_coverage_row_count"], 6)
+        self.assertEqual(packet["counts"]["current_evidence_producer_coverage_blocker_count"], 0)
         self.assertEqual(sample["status"], "local_sample_validation_passed")
         self.assertEqual(sample["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
         self.assertTrue(sample["local_sample_validation_done"])
@@ -7679,6 +7685,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["current_evidence_decision_surface_audit_is_local"])
         self.assertFalse(packet["policy"]["current_evidence_decision_surface_audit_rescores"])
         self.assertFalse(packet["policy"]["current_evidence_decision_surface_audit_mutates_action"])
+        self.assertTrue(packet["policy"]["current_evidence_producer_coverage_audit_is_local"])
+        self.assertFalse(packet["policy"]["current_evidence_producer_coverage_audit_builds_missing_packets"])
+        self.assertTrue(packet["policy"]["current_evidence_producer_coverage_requires_expected_trade_date"])
         self.assertEqual(current_evidence["schema_version"], "data_health_current_evidence_freshness_qa.v1")
         self.assertEqual(
             current_evidence["status"],
@@ -7721,6 +7730,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(decision_surface_rows["support_factors"]["status"], "not_observed")
         self.assertEqual(decision_surface_rows["next_session_bridge.preview"]["status"], "not_observed")
         self.assertEqual(decision_surface_rows["strategy_action"]["status"], "not_observed")
+        self.assertEqual(producer_coverage["schema_version"], "data_health_current_evidence_producer_coverage.v1")
+        self.assertEqual(producer_coverage["status"], "producer_freshness_coverage_ready_no_observed_blockers")
+        self.assertEqual(producer_coverage["scope"], "local_snapshot_only_expected_date_field_coverage")
+        self.assertEqual(producer_coverage["producer_count"], 6)
+        self.assertEqual(producer_coverage["observed_producer_count"], 1)
+        self.assertEqual(producer_coverage["blocked_producer_count"], 0)
+        self.assertTrue(producer_coverage["not_observed_is_not_production_proof"])
+        self.assertTrue(producer_coverage["does_not_build_missing_packets"])
+        self.assertFalse(producer_coverage["external_calls_triggered"])
+        self.assertEqual(producer_coverage_rows["global_data_freshness"]["status"], "date_mismatch_research_only")
+        self.assertEqual(producer_coverage_rows["global_data_freshness"]["expected_trade_date"], "2026-06-12")
+        self.assertEqual(producer_coverage_rows["global_data_freshness"]["data_date"], "2026-06-11")
+        self.assertEqual(producer_coverage_rows["factor_quant_hub"]["status"], "not_observed")
+        self.assertEqual(producer_coverage_rows["candidate_radar"]["status"], "not_observed")
         self.assertEqual(provider_runbook["schema_version"], "data_health_trade_cal_provider_acceptance_runbook.v1")
         self.assertEqual(provider_runbook["status"], "trade_cal_provider_acceptance_runbook_ready_execution_pending")
         self.assertEqual(provider_runbook["scope"], "local_provider_acceptance_runbook_not_provider_execution")
@@ -7767,6 +7790,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "decision_surface_audit_ready_no_observed_blockers",
         )
         self.assertEqual(response["call_ledger"][0]["current_evidence_decision_surface_blocker_count"], 0)
+        self.assertEqual(
+            response["call_ledger"][0]["current_evidence_producer_coverage_audit_status"],
+            "producer_freshness_coverage_ready_no_observed_blockers",
+        )
+        self.assertEqual(response["call_ledger"][0]["current_evidence_producer_coverage_blocker_count"], 0)
         self.assertEqual(sample_rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
         self.assertTrue(sample_rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
         self.assertEqual(sample_rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")
@@ -7794,6 +7822,70 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertFalse(row["deepseek_called"])
             self.assertFalse(row["github_called"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+    def test_data_health_producer_coverage_audit_exposes_missing_expected_trade_date(self):
+        self._with_parquet_root()
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "fresh",
+                    "expected_trade_date": "2026-06-12",
+                    "data_date": "2026-06-12",
+                },
+                "command_center_factor_quant_hub_packet": {
+                    "data_freshness_gate": {
+                        "status": "fresh",
+                        "expected_data_date": "2026-06-12",
+                        "latest_data_date": "2026-06-12",
+                    }
+                },
+                "command_center_3_candidate_radar_cache": {
+                    "freshness_state": {
+                        "state": "fresh",
+                        "data_date": "2026-06-12",
+                    }
+                },
+                "command_center_next_session_projection_packet": {
+                    "data_freshness": {
+                        "state": "fresh",
+                        "expected_trade_date": "2026-06-12",
+                        "data_date": "2026-06-11",
+                    }
+                },
+            }
+        )
+
+        response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        audit = packet["current_evidence_producer_coverage_audit"]
+        rows = {row["producer"]: row for row in packet["current_evidence_producer_coverage_rows"]}
+        self.assertEqual(audit["schema_version"], "data_health_current_evidence_producer_coverage.v1")
+        self.assertEqual(audit["status"], "producer_freshness_coverage_ready_blockers_visible")
+        self.assertEqual(audit["producer_count"], 6)
+        self.assertEqual(audit["observed_producer_count"], 4)
+        self.assertEqual(audit["blocked_producer_count"], 1)
+        self.assertEqual(audit["blocked_producer_keys"], ["candidate_radar"])
+        self.assertFalse(audit["all_observed_producers_have_expected_trade_date"])
+        self.assertTrue(audit["does_not_build_missing_packets"])
+        self.assertFalse(audit["external_calls_triggered"])
+        self.assertFalse(audit["tushare_called"])
+        self.assertFalse(audit["deepseek_called"])
+        self.assertFalse(audit["github_called"])
+        self.assertEqual(rows["global_data_freshness"]["status"], "passed_read_only_contract")
+        self.assertEqual(rows["factor_quant_hub"]["status"], "passed_read_only_contract")
+        self.assertEqual(rows["candidate_radar"]["status"], "blocked_expected_trade_date_missing")
+        self.assertEqual(rows["candidate_radar"]["missing_fields"], ["expected_trade_date"])
+        self.assertEqual(rows["next_session_projection"]["status"], "date_mismatch_research_only")
+        self.assertEqual(rows["a_share_evidence_radar"]["status"], "not_observed")
+        self.assertEqual(rows["market_context"]["status"], "not_observed")
+        self.assertEqual(packet["counts"]["current_evidence_producer_coverage_blocker_count"], 1)
+        self.assertEqual(
+            response["call_ledger"][0]["current_evidence_producer_coverage_audit_status"],
+            "producer_freshness_coverage_ready_blockers_visible",
+        )
+        self.assertEqual(response["call_ledger"][0]["current_evidence_producer_coverage_blocker_count"], 1)
 
     def test_data_health_decision_surface_audit_exposes_research_only_surface_blockers(self):
         self._with_parquet_root()
