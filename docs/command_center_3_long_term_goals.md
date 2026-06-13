@@ -758,6 +758,7 @@ Keep real trading isolated from Command Center 3 automation
 - Candidate radar packets now expose `fast_scan_readiness_audit` and `fast_scan_readiness_rows`, proving the local quick/watchlist/custom scan contract is cache/task based, page render does not scan, legacy/provider/freshness gaps are visible, and full-pool/deep-scan remain pending rather than silently downgraded.
 - Candidate radar packets now expose `fast_scan_runtime_budget_contract` and `fast_scan_runtime_budget_rows`: local sync display is capped, local pool input normalization has a fixed budget, large universes must move to worker execution, and truncation is reported as a visible gap instead of being hidden.
 - Candidate radar packets now expose `no_feature_loss_acceptance_contract` and `no_feature_loss_acceptance_rows`: this aggregates page-render/cache boundaries, local scan modes, legacy signal groups, legacy output fields, provider/freshness gaps, runtime budget, browser performance trace status, full-pool/deep-scan execution status, provider-backed acceptance, and trade/action isolation. It makes the local no-feature-loss QA surface visible but keeps `production_radar_replacement_complete=false`.
+- Candidate radar packets now expose `replacement_gap_triage_contract` and `replacement_gap_triage_rows`: this locally classifies legacy-radar retirement gaps into critical, pending, blocking, and passed rows across legacy signal groups, output fields, provider coverage, freshness, previous-cache delta clarity, browser visual QA, performance trace, full/deep worker execution, provider-backed acceptance, and trade/action isolation. It keeps `legacy_retirement_ready=false` while any blocking gap remains.
 - Candidate radar packets now expose `result_delta_clarity_contract`, `result_delta_clarity_rows`, and `previous_cache_diff_rows`: candidate counts, display truncation, skipped reasons, provider gaps, freshness state, scan mode transitions, local-pool skips, and full/deep boundaries are visible without rescoring, refreshing providers, timers, browser QA, or trade/action mutation. When a previous SQLite radar packet exists, local scan tasks compute added/removed/rank/score/status deltas; when no previous packet exists, the missing baseline remains explicit.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 
@@ -770,6 +771,7 @@ Keep real trading isolated from Command Center 3 automation
 - The deep-scan readiness plan is not deep scan execution and does not prove legacy radar replacement.
 - Browser performance trace and packaged runtime UI responsiveness validation are still pending; the current runtime budget is a static/local contract.
 - The no-feature-loss acceptance contract is local QA; it does not prove browser performance, real full-pool/deep-scan execution, or provider-backed parity acceptance.
+- The replacement gap triage contract is local blocker classification; it does not execute full-pool/deep-scan, provider-backed acceptance, browser visual QA, or performance traces.
 - The result-delta clarity contract is local QA; previous-cache diff is only complete when a prior persisted radar packet exists, and it still does not prove browser visual QA or production radar replacement.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
 - Need parity acceptance before removing any Streamlit fallback.
@@ -795,6 +797,7 @@ Keep real trading isolated from Command Center 3 automation
 - Deep-scan plan lists no-feature-loss parity rows, required signal rows, freshness, worker blockers, and trade/model boundaries without executing deep scan or calling DeepSeek.
 - `fast_scan_readiness_audit.local_fast_scan_ready=true` only when page-render, local task, legacy gap, provider gap, freshness, last-cache, full-pool, deep-scan and trade boundaries are all visible.
 - `no_feature_loss_acceptance_contract.local_no_feature_loss_contract_ready=true` only means the local QA surface is visible; `production_radar_replacement_complete` remains false until browser performance, real full-pool/deep-scan execution, and provider-backed parity acceptance are complete.
+- `replacement_gap_triage_contract.local_triage_ready=true` only means blockers to retiring the legacy radar are classified and visible; `legacy_retirement_ready` must remain false while critical/provider/freshness/browser/performance/full-pool/deep-scan/provider-backed gaps remain.
 - `production_radar_replacement_complete` remains false until real full-pool/deep-scan execution and provider-backed parity acceptance are complete.
 - `result_delta_clarity_contract.local_result_delta_clarity_ready=true` means result-change cues are visible; `previous_cache_diff_done=true` is allowed only after comparing against a previous persisted radar packet, while `browser_visual_delta_qa_done=false` must remain explicit until browser visual QA is run.
 - Radar output does not become a buy instruction and does not modify `strategy action`.
@@ -807,6 +810,7 @@ Keep real trading isolated from Command Center 3 automation
 - Do not reduce legacy radar signal coverage without marking the gap.
 - Do not hide candidate display truncation or local pool input truncation.
 - Do not treat `no_feature_loss_acceptance_contract` as proof of production radar replacement.
+- Do not treat `replacement_gap_triage_contract` as proof of legacy radar retirement readiness unless `legacy_retirement_ready=true` and every blocking gap is resolved by direct evidence.
 - Do not treat `result_delta_clarity_contract` as browser visual QA or production radar replacement. Do not treat previous-cache diff as complete unless `previous_cache_diff_done=true` and `previous_cache_diff_rows` are present.
 - Do not call Tushare/DeepSeek/GitHub from GET cache or render.
 - Do not treat candidates as trade instructions.

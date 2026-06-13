@@ -1944,6 +1944,243 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view["policy"] = policy
     view["no_feature_loss_acceptance_contract"] = contract
     view["no_feature_loss_acceptance_rows"] = rows
+    view = _attach_replacement_gap_triage_contract(view)
+    return view
+
+
+def _replacement_gap_triage_row(
+    gap_key: str,
+    category: str,
+    severity: str,
+    status: str,
+    *,
+    passed: bool,
+    blocks_legacy_retirement: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "gap_key": gap_key,
+        "category": category,
+        "severity": severity,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_legacy_retirement": bool(blocks_legacy_retirement and not passed),
+        "user_visible": True,
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _replacement_gap_triage_rows(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+    counts = _as_dict(packet.get("counts"))
+    policy = _as_dict(packet.get("policy"))
+    coverage = _as_dict(packet.get("scan_coverage"))
+    coverage_detail = _as_dict(packet.get("coverage_detail_summary"))
+    parity = _as_dict(packet.get("legacy_parity_inventory"))
+    no_loss = _as_dict(packet.get("no_feature_loss_acceptance_contract"))
+    result_delta = _as_dict(packet.get("result_delta_clarity_contract"))
+    freshness = _as_dict(packet.get("freshness_state"))
+    full_pool_plan = _as_dict(packet.get("full_pool_scan_plan"))
+    deep_scan_plan = _as_dict(packet.get("deep_scan_plan"))
+    output_total = int(parity.get("output_contract_field_count") or len(_as_list(packet.get("legacy_output_contract_rows"))))
+    output_mapped = int(parity.get("output_contract_mapped_count") or counts.get("legacy_output_mapped_count") or 0)
+    missing_signal_count = int(coverage.get("missing_signal_group_count") or 0)
+    provider_gap_count = int(coverage_detail.get("provider_blocked_group_count") or 0) + int(
+        coverage_detail.get("stale_input_group_count") or 0
+    ) + int(coverage_detail.get("missing_provider_data_group_count") or 0)
+    freshness_state = str(freshness.get("state") or "unknown").lower()
+    freshness_ready = freshness.get("source") != "missing" and freshness_state not in {
+        "stale",
+        "expired",
+        "historical",
+        "unknown",
+    }
+    full_pool_done = bool(full_pool_plan.get("full_pool_scan_done") is True)
+    deep_scan_done = bool(deep_scan_plan.get("deep_scan_done") is True)
+    previous_diff_done = bool(result_delta.get("previous_cache_diff_done") is True)
+    browser_delta_done = bool(result_delta.get("browser_visual_delta_qa_done") is True)
+    return [
+        _replacement_gap_triage_row(
+            "page_render_zero_scan_guardrail",
+            "guardrail",
+            "info",
+            "passed" if policy.get("does_not_scan_market") is True else "blocked",
+            passed=policy.get("does_not_scan_market") is True,
+            blocks_legacy_retirement=True,
+            evidence="GET cache and React render remain read-only and do not start a broad scan.",
+            next_action="Keep all future radar scans behind explicit task buttons.",
+        ),
+        _replacement_gap_triage_row(
+            "legacy_signal_group_mapping",
+            "legacy_parity",
+            "critical" if missing_signal_count else "ok",
+            "gap_reported" if missing_signal_count else "passed",
+            passed=missing_signal_count == 0,
+            blocks_legacy_retirement=True,
+            evidence=f"missing_signal_group_count={missing_signal_count}",
+            next_action="Map missing legacy radar signal groups or keep Streamlit fallback available.",
+        ),
+        _replacement_gap_triage_row(
+            "legacy_output_contract_mapping",
+            "legacy_parity",
+            "critical" if output_total and output_mapped < output_total else "ok",
+            "gap_reported" if output_total and output_mapped < output_total else "passed",
+            passed=bool(output_total and output_mapped >= output_total),
+            blocks_legacy_retirement=True,
+            evidence=f"output_mapped={output_mapped}; output_total={output_total}",
+            next_action="Preserve every legacy output field or explicitly show it as missing before retirement.",
+        ),
+        _replacement_gap_triage_row(
+            "provider_signal_coverage",
+            "provider_acceptance",
+            "critical" if provider_gap_count else "ok",
+            "gap_reported" if provider_gap_count else "passed",
+            passed=provider_gap_count == 0,
+            blocks_legacy_retirement=True,
+            evidence=f"provider_gap_count={provider_gap_count}",
+            next_action="Validate provider-backed radar signals through future explicit provider tasks.",
+        ),
+        _replacement_gap_triage_row(
+            "current_freshness_gate",
+            "freshness",
+            "critical" if not freshness_ready else "ok",
+            "research_only_reported" if not freshness_ready else "passed",
+            passed=freshness_ready,
+            blocks_legacy_retirement=True,
+            evidence=f"freshness={freshness.get('source') or 'missing'}:{freshness.get('state') or 'unknown'}",
+            next_action="Require current trade-calendar freshness before treating candidates as current evidence.",
+        ),
+        _replacement_gap_triage_row(
+            "previous_cache_delta_clarity",
+            "result_delta",
+            "pending" if not previous_diff_done else "ok",
+            "pending_previous_cache_diff" if not previous_diff_done else "passed",
+            passed=previous_diff_done,
+            blocks_legacy_retirement=False,
+            evidence=f"previous_cache_diff_done={previous_diff_done}; changed={result_delta.get('candidate_changed_count')}",
+            next_action="Keep previous-cache diff visible when a persisted prior radar packet exists.",
+        ),
+        _replacement_gap_triage_row(
+            "browser_visual_delta_qa",
+            "visual_qa",
+            "blocking_pending",
+            "pending_visual_qa" if not browser_delta_done else "passed",
+            passed=browser_delta_done,
+            blocks_legacy_retirement=True,
+            evidence=f"browser_visual_delta_qa_done={browser_delta_done}",
+            next_action="Run viewport visual QA so result changes are visible without overlap or occlusion.",
+        ),
+        _replacement_gap_triage_row(
+            "browser_performance_trace",
+            "performance",
+            "blocking_pending",
+            "pending_perf_trace",
+            passed=False,
+            blocks_legacy_retirement=True,
+            evidence="Browser performance trace is not executed by the local cache contract.",
+            next_action="Run desktop/mobile trace validation before claiming the radar is stall-free in production.",
+        ),
+        _replacement_gap_triage_row(
+            "full_pool_worker_execution",
+            "worker_pipeline",
+            "blocking_pending" if not full_pool_done else "ok",
+            "pending_worker_execution" if not full_pool_done else "passed",
+            passed=full_pool_done,
+            blocks_legacy_retirement=True,
+            evidence=f"full_pool_scan_done={full_pool_done}",
+            next_action="Implement worker-backed full-pool execution without page-load scanning.",
+        ),
+        _replacement_gap_triage_row(
+            "deep_scan_execution",
+            "worker_pipeline",
+            "blocking_pending" if not deep_scan_done else "ok",
+            "pending_worker_execution" if not deep_scan_done else "passed",
+            passed=deep_scan_done,
+            blocks_legacy_retirement=True,
+            evidence=f"deep_scan_done={deep_scan_done}; deepseek_called={bool(deep_scan_plan.get('deepseek_called') is True)}",
+            next_action="Implement deep scan as a guarded task; keep DeepSeek manual/button gated.",
+        ),
+        _replacement_gap_triage_row(
+            "provider_backed_acceptance",
+            "provider_acceptance",
+            "blocking_pending",
+            "pending_provider_acceptance",
+            passed=False,
+            blocks_legacy_retirement=True,
+            evidence=f"provider_backed_acceptance_done={bool(no_loss.get('provider_backed_acceptance_done') is True)}",
+            next_action="Run provider-backed radar parity acceptance only after the Tushare task pipeline is ready.",
+        ),
+        _replacement_gap_triage_row(
+            "trade_action_isolation",
+            "safety",
+            "ok",
+            "passed" if packet.get("does_not_modify_strategy_action") is True and packet.get("does_not_execute_trades") is True else "blocked",
+            passed=packet.get("does_not_modify_strategy_action") is True and packet.get("does_not_execute_trades") is True,
+            blocks_legacy_retirement=True,
+            evidence="Radar candidates remain research-only and do not mutate action, holdings, or orders.",
+            next_action="Keep candidate radar isolated from trading integration.",
+        ),
+    ]
+
+
+def _attach_replacement_gap_triage_contract(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    rows = _replacement_gap_triage_rows(view)
+    blocking_rows = [row for row in rows if row.get("blocks_legacy_retirement")]
+    critical_rows = [row for row in rows if row.get("severity") == "critical"]
+    pending_rows = [row for row in rows if "pending" in str(row.get("severity") or row.get("status") or "")]
+    legacy_retirement_ready = not blocking_rows
+    contract = {
+        "schema_version": "candidate_radar_replacement_gap_triage.v1",
+        "status": (
+            "replacement_gap_triage_ready_for_legacy_retirement"
+            if legacy_retirement_ready
+            else "replacement_gap_triage_local_ready_legacy_retirement_blocked"
+        ),
+        "scope": "local_replacement_gap_triage_not_production_radar_replacement",
+        "ltg": "LTG-13",
+        "local_triage_ready": True,
+        "legacy_retirement_ready": legacy_retirement_ready,
+        "production_radar_replacement_complete": False,
+        "legacy_fallback_required": not legacy_retirement_ready,
+        "row_count": len(rows),
+        "blocking_gap_count": len(blocking_rows),
+        "critical_gap_count": len(critical_rows),
+        "pending_gap_count": len(pending_rows),
+        "blocking_gap_keys": [str(row.get("gap_key")) for row in blocking_rows],
+        "critical_gap_keys": [str(row.get("gap_key")) for row in critical_rows],
+        "high_priority_next_actions": [str(row.get("next_action")) for row in blocking_rows[:5]],
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This triage makes the blockers to retiring the legacy next-ticket radar visible. It is not full-pool execution, provider-backed acceptance, browser visual QA, or production replacement.",
+    }
+    counts = dict(_as_dict(view.get("counts")))
+    counts["replacement_gap_triage_row_count"] = contract["row_count"]
+    counts["replacement_gap_triage_blocking_count"] = contract["blocking_gap_count"]
+    counts["replacement_gap_triage_critical_count"] = contract["critical_gap_count"]
+    counts["replacement_gap_triage_pending_count"] = contract["pending_gap_count"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["replacement_gap_triage_contract_is_local"] = True
+    policy["replacement_gap_triage_is_not_production_replacement"] = True
+    policy["legacy_radar_retirement_blocked_by_triage"] = not legacy_retirement_ready
+    view["counts"] = counts
+    view["policy"] = policy
+    view["replacement_gap_triage_contract"] = contract
+    view["replacement_gap_triage_rows"] = rows
     return view
 
 
