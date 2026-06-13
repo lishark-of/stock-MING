@@ -70,6 +70,7 @@ export default function FactorQuantHub() {
   const factorTestQuality = factorTests.quality_summary ?? {};
   const factorTestAcceptance = factorTests.acceptance_contract ?? {};
   const factorTestStorageQuery = factorTests.storage_query_consumption ?? {};
+  const factorTestLocalDataset = factorTests.local_dataset_sample_evidence ?? {};
   const factorTestSmallPool = factorTests.small_pool_acceptance ?? {};
   const factorTestProductionValidation = factorTests.production_validation_qa_contract ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
@@ -108,6 +109,8 @@ export default function FactorQuantHub() {
   const factorTestWindowRows = objectRows((factorTests.window_summary ?? factorTestQuality.window_summary ?? {}) as Record<string, unknown>, "window_metric");
   const factorTestStorageQueryRows = objectRows(factorTestStorageQuery as Record<string, unknown>, "storage_query_contract");
   const factorTestStorageQueryTableRows = toRows(factorTests.storage_query_consumption_rows);
+  const factorTestLocalDatasetRows = objectRows(factorTestLocalDataset as Record<string, unknown>, "local_dataset_sample");
+  const factorTestLocalDatasetCriterionRows = toRows(factorTests.local_dataset_sample_evidence_rows);
   const factorTestSmallPoolRows = objectRows(factorTestSmallPool as Record<string, unknown>, "small_pool_acceptance");
   const factorTestSmallPoolCriterionRows = toRows(factorTests.small_pool_acceptance_rows);
   const factorTestProductionValidationRows = objectRows(factorTestProductionValidation as Record<string, unknown>, "production_validation");
@@ -209,6 +212,10 @@ export default function FactorQuantHub() {
           { label: "storage query", value: factorTestStorageQuery.status ?? "missing", tone: factorTestStorageQuery.external_calls_triggered === true ? "bad" : "neutral" },
           { label: "storage query rows", value: factorTestStorageQuery.returned_row_count ?? 0 },
           { label: "storage query metrics", value: factorTestStorageQuery.metrics_computed_from_storage_query === true ? "会计算" : "不计算", tone: factorTestStorageQuery.metrics_computed_from_storage_query === true ? "bad" : "good" },
+          { label: "local dataset sample", value: factorTestLocalDataset.status ?? "missing", tone: factorTestLocalDataset.production_factor_test_validation_complete === true ? "bad" : "warn" },
+          { label: "sample tickers", value: factorTestLocalDataset.unique_factor_ticker_count ?? 0, tone: Number(factorTestLocalDataset.unique_factor_ticker_count ?? 0) >= 5 ? "good" : "warn" },
+          { label: "usable factor rows", value: factorTestLocalDataset.usable_factor_value_count ?? 0, tone: Number(factorTestLocalDataset.usable_factor_value_count ?? 0) >= 100 ? "good" : "warn" },
+          { label: "dataset sample metrics", value: factorTestLocalDataset.metrics_computed_from_local_dataset === true ? "会计算" : "不计算", tone: factorTestLocalDataset.metrics_computed_from_local_dataset === true ? "bad" : "good" },
           { label: "small pool audit", value: factorTestSmallPool.status ?? "missing", tone: factorTestSmallPool.status === "local_small_pool_acceptance_ready" ? "good" : "warn" },
           { label: "local small pool", value: factorTestSmallPool.local_light_observation_acceptance_done === true ? "ready" : "pending", tone: factorTestSmallPool.local_light_observation_acceptance_done === true ? "good" : "warn" },
           { label: "real small pool", value: factorTestSmallPool.real_small_pool_validation_done === true ? "完成" : "未完成", tone: factorTestSmallPool.real_small_pool_validation_done === true ? "bad" : "good" },
@@ -357,6 +364,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">Factor Test Lab 只消费 factor_values DuckDB 查询合同、投影列和分页元信息；不把查询样本当作生产 IC 验收，不进入 strategy action。</p>
       <DataLineageTable rows={factorTestStorageQueryTableRows} />
       <DataLineageTable rows={factorTestStorageQueryRows} />
+      <h3>Factor Test 本地样本证据审计</h3>
+      <p className="risk-note">local_dataset_sample_evidence 只统计本地 Parquet 样本是否足够做后续真实小股票池研究；不从本地查询行计算 IC / Rank IC / ICIR，不代表 provider-backed 或生产级 Factor Test 验收完成。</p>
+      <DataLineageTable rows={factorTestLocalDatasetCriterionRows} />
+      <DataLineageTable rows={factorTestLocalDatasetRows} />
       <h3>Factor Test 小股票池验收</h3>
       <p className="risk-note">small_pool_acceptance 只审计本地 light observations 的 IC / Rank IC / ICIR / 分组收益 / 成本 / 回撤 / 中性 IC / 样本外与偏差检查；不把 storage query rows 当指标样本，不代表真实小股票池或全市场生产验收。</p>
       <DataLineageTable rows={factorTestSmallPoolCriterionRows} />

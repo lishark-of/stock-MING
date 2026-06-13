@@ -128,8 +128,10 @@ def build_contract() -> dict[str, Any]:
     state_names = {str(row.get("research_state") or "") for row in state_rows if isinstance(row, dict)}
 
     storage_query = factor_service._factor_test_storage_query_consumption(now)
+    local_dataset_sample = factor_service._factor_test_local_dataset_sample_evidence(now)
     factor_tests = dict(research_packet)
     factor_tests["storage_query_consumption"] = storage_query
+    factor_tests["local_dataset_sample_evidence"] = local_dataset_sample
     production_qa = factor_service._factor_test_production_validation_qa_contract(factor_tests, now)
     production_rows = {
         str(row.get("criterion") or ""): row
@@ -138,6 +140,7 @@ def build_contract() -> dict[str, Any]:
     }
     cache_packet = factor_service.read_factor_quant_cache()
     cache_factor_tests = _dict(cache_packet.get("factor_tests"))
+    cache_local_dataset_sample = _dict(cache_factor_tests.get("local_dataset_sample_evidence"))
     cache_production_qa = _dict(cache_factor_tests.get("production_validation_qa_contract"))
     cache_call_ledger = _list(cache_packet.get("call_ledger"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
@@ -213,6 +216,23 @@ def build_contract() -> dict[str, Any]:
             "DuckDB/factor_values query consumption must remain local metadata and must not compute metrics, refresh providers, write files, or enter strategy action.",
         ),
         _row(
+            "local_dataset_sample_evidence_is_not_validation",
+            local_dataset_sample.get("schema_version") == "factor_test_local_dataset_sample_evidence.v1"
+            and local_dataset_sample.get("scope") == "local_parquet_sample_sufficiency_audit_not_metric_validation"
+            and local_dataset_sample.get("metrics_computed_from_local_dataset") is False
+            and local_dataset_sample.get("storage_query_rows_used_as_metrics") is False
+            and local_dataset_sample.get("real_small_pool_validation_done") is False
+            and local_dataset_sample.get("provider_backed_small_pool_validation_done") is False
+            and local_dataset_sample.get("full_market_validation_done") is False
+            and local_dataset_sample.get("production_factor_test_validation_complete") is False
+            and local_dataset_sample.get("writes_parquet_on_get") is False
+            and local_dataset_sample.get("auto_refresh_on_get") is False
+            and _flag_false(local_dataset_sample, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and local_dataset_sample.get("does_not_execute_trades") is True
+            and local_dataset_sample.get("does_not_modify_strategy_action") is True,
+            "Local Parquet sample evidence may count sufficiency only; it must not compute metrics or become provider-backed/full-market validation.",
+        ),
+        _row(
             "production_validation_qa_stays_pending",
             production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
             and production_qa.get("status") == "production_validation_qa_contract_ready_provider_execution_pending"
@@ -243,6 +263,16 @@ def build_contract() -> dict[str, Any]:
             "GET factor cache must remain local/read-only and expose Factor Test Lab production QA as pending, not production complete.",
         ),
         _row(
+            "cache_get_exposes_local_dataset_sample_boundary",
+            cache_local_dataset_sample.get("schema_version") == "factor_test_local_dataset_sample_evidence.v1"
+            and cache_local_dataset_sample.get("metrics_computed_from_local_dataset") is False
+            and cache_local_dataset_sample.get("provider_backed_small_pool_validation_done") is False
+            and cache_local_dataset_sample.get("production_factor_test_validation_complete") is False
+            and _flag_false(cache_local_dataset_sample, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and any(_dict(row).get("api") == "local_factor_test_local_dataset_sample_evidence" for row in cache_call_ledger),
+            "GET factor cache must expose local dataset sample sufficiency as a boundary audit with its own local call ledger.",
+        ),
+        _row(
             "push_gate_runs_contract_after_tushare",
             "scripts/factor_test_lab_contract.py" in push_gate_script
             and "Factor Test Lab contract" in push_gate_script
@@ -256,6 +286,7 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_factor_test_lab_contract.v1" in this_script
             and "local_factor_test_lab_contract_no_provider_execution" in this_script
             and "provider_backed_small_pool_validation_done" in this_script
+            and "local_dataset_sample_evidence_is_not_validation" in this_script
             and "production_factor_test_validation_complete" in this_script
             and "does_not_execute_trades" in this_script
             and ("request" + "s") not in this_script
@@ -294,6 +325,8 @@ def build_contract() -> dict[str, Any]:
             "production_qa_pending_count": production_qa.get("pending_criterion_count"),
             "cache_production_qa_status": cache_production_qa.get("status"),
             "storage_query_status": storage_query.get("status"),
+            "local_dataset_sample_status": local_dataset_sample.get("status"),
+            "cache_local_dataset_sample_status": cache_local_dataset_sample.get("status"),
             "cache_call_ledger_count": len(cache_call_ledger),
         },
         "rows": rows,

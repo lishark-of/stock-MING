@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import math
 from pathlib import Path
 from typing import Any
 
@@ -44,18 +45,21 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet = _attach_factor_universe_execution_readiness(packet)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
+    packet, local_dataset_ledger = _attach_factor_test_local_dataset_sample_evidence(packet, now)
     packet, production_validation_ledger = _attach_factor_test_production_validation_qa_contract(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
-    packet["call_ledger"] = cache_ledger + storage_query_ledger + production_validation_ledger + list(existing_ledger)
+    packet["call_ledger"] = cache_ledger + storage_query_ledger + local_dataset_ledger + production_validation_ledger + list(existing_ledger)
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
+    local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
-    packet["warnings"] = [cache_warning, storage_query_warning] + [
+    owned_warnings = {cache_warning, storage_query_warning, local_dataset_warning}
+    packet["warnings"] = [cache_warning, storage_query_warning, local_dataset_warning] + [
         item
         for item in existing_warnings
-        if item not in {cache_warning, storage_query_warning}
+        if item not in owned_warnings
     ]
     return packet
 
@@ -389,6 +393,286 @@ def _attach_factor_test_storage_query_consumption(packet: dict[str, Any], now: s
         factor_tests["acceptance_contract"] = acceptance
     packet["factor_tests"] = factor_tests
     return packet, list(consumption.get("call_ledger") or [])
+
+
+def _factor_test_local_dataset_sample_evidence(now: str) -> dict[str, Any]:
+    sample_limit = 1000
+    dataset_names = ("factor_values", "daily", "daily_basic", "moneyflow", "trade_cal")
+    datasets: dict[str, dict[str, Any]] = {}
+    for dataset in dataset_names:
+        try:
+            datasets[dataset] = storage_service.parquet_dataset_status(dataset, limit=sample_limit)
+        except Exception as exc:
+            datasets[dataset] = {
+                "status": "read_failed",
+                "dataset": dataset,
+                "row_count": 0,
+                "metadata": {},
+                "query": {"rows": []},
+                "error_message_safe": str(exc).splitlines()[0][:240],
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+
+    factor_packet = datasets.get("factor_values") or {}
+    factor_rows = _storage_query_rows(factor_packet)
+    factor_row_count = _storage_total_or_returned_row_count(factor_packet)
+    unique_tickers = sorted({str(row.get("ts_code") or "") for row in factor_rows if str(row.get("ts_code") or "").strip()})
+    unique_trade_dates = sorted({str(row.get("trade_date") or "") for row in factor_rows if str(row.get("trade_date") or "").strip()})
+    unique_factor_keys = sorted({str(row.get("factor_key") or "") for row in factor_rows if str(row.get("factor_key") or "").strip()})
+    usable_factor_values = [
+        row
+        for row in factor_rows
+        if _is_finite_number(row.get("raw_value"))
+        and str(row.get("data_status") or "").lower() not in {"missing", "expired", "stale", "historical", "unknown"}
+    ]
+    forward_return_keys = {"forward_return", "forward_return_1d", "forward_return_5d", "future_return", "label_return"}
+    forward_return_sample_count = sum(
+        1
+        for row in factor_rows
+        if any(_is_finite_number(row.get(key)) for key in forward_return_keys)
+    )
+    market_rows = [
+        {
+            "dataset": name,
+            "status": packet.get("status") or "missing",
+            "row_count": _storage_total_or_returned_row_count(packet),
+            "returned_row_count": int(packet.get("row_count") or 0),
+            "metadata_row_count": _metadata_row_count(packet),
+        }
+        for name, packet in datasets.items()
+        if name != "factor_values"
+    ]
+    market_dataset_ready_count = sum(1 for row in market_rows if row["status"] == "ready" and row["row_count"] > 0)
+    latest_factor_trade_date = unique_trade_dates[-1] if unique_trade_dates else None
+
+    def _row(
+        criterion: str,
+        status: str,
+        evidence: str,
+        next_action: str,
+        *,
+        required: bool = True,
+    ) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": status == "passed",
+            "required_for_real_small_pool_validation": required,
+            "blocks_real_small_pool_validation": bool(required and status != "passed"),
+            "evidence": evidence,
+            "next_action": next_action,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "factor_values_dataset_present",
+            "passed" if factor_packet.get("status") == "ready" and factor_row_count > 0 else "blocked",
+            f"factor_values_status={factor_packet.get('status')}; row_count={factor_row_count}; returned_sample={len(factor_rows)}",
+            "Run a future button-gated local/provider-backed research sample task before computing production Factor Test metrics.",
+        ),
+        _row(
+            "market_datasets_present",
+            "passed" if market_dataset_ready_count == len(market_rows) else "blocked",
+            f"ready_market_dataset_count={market_dataset_ready_count}/{len(market_rows)}; rows={market_rows}",
+            "Populate daily, daily_basic, moneyflow, and trade_cal through approved task pipelines before small-pool validation.",
+        ),
+        _row(
+            "small_pool_ticker_count",
+            "passed" if len(unique_tickers) >= 5 else "blocked",
+            f"unique_factor_ticker_count={len(unique_tickers)}; required>=5",
+            "Collect at least a small cross-section of tickers before treating the sample as real small-pool research.",
+        ),
+        _row(
+            "sample_window_depth",
+            "passed" if len(unique_trade_dates) >= 20 else "blocked",
+            f"unique_factor_trade_date_count={len(unique_trade_dates)}; required>=20",
+            "Collect a deeper trade-date window before validating rolling IC, decay, and out-of-sample behavior.",
+        ),
+        _row(
+            "usable_factor_values",
+            "passed" if len(usable_factor_values) >= 100 else "blocked",
+            f"usable_factor_value_count={len(usable_factor_values)}; required>=100; factor_key_count={len(unique_factor_keys)}",
+            "Keep missing/stale/historical rows out of metric samples and build enough usable factor values first.",
+        ),
+        _row(
+            "forward_return_sample",
+            "passed" if forward_return_sample_count > 0 else "blocked",
+            f"forward_return_sample_count={forward_return_sample_count}",
+            "Add explicit forward-return labels in a future research task before computing IC from local datasets.",
+        ),
+        _row(
+            "provider_backed_sample",
+            "pending_provider_validation",
+            "No provider-backed small-pool sample is executed by GET factor cache.",
+            "Run a future explicit POST task with call_ledger before marking provider-backed small-pool validation done.",
+        ),
+        _row(
+            "storage_query_not_metric_source",
+            "passed",
+            "Local dataset rows are counted for sufficiency only; no IC, Rank IC, ICIR, group return, or action is computed from them.",
+            "Keep this evidence as a readiness audit until a separate research task builds validated metric samples.",
+        ),
+        _row(
+            "trade_action_isolation",
+            "passed",
+            "Local dataset sample evidence does not execute trades, mutate action, or modify next-session projection.",
+            "Preserve Factor Test outputs as research-only unless a separate approved trading design exists.",
+        ),
+        _row(
+            "external_call_boundary",
+            "passed",
+            "This evidence reads local Parquet/DuckDB contracts only and does not call Tushare, DeepSeek, or GitHub.",
+            "Keep provider-backed refresh and explanation calls behind explicit POST task or button gates.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_real_small_pool_validation"]]
+    local_sufficiency_blocking_rows = [
+        row for row in blocking_rows if row["criterion"] != "provider_backed_sample"
+    ]
+    pending_rows = [row for row in rows if str(row["status"]).startswith("pending")]
+    local_dataset_sample_available = factor_packet.get("status") == "ready" and factor_row_count > 0
+    status = (
+        "local_dataset_sample_ready_research_only_provider_validation_pending"
+        if local_dataset_sample_available and not local_sufficiency_blocking_rows
+        else (
+            "local_dataset_sample_blocked_not_enough_data"
+            if local_dataset_sample_available
+            else "local_dataset_sample_missing"
+        )
+    )
+    return {
+        "schema_version": "factor_test_local_dataset_sample_evidence.v1",
+        "status": status,
+        "scope": "local_parquet_sample_sufficiency_audit_not_metric_validation",
+        "created_at": now,
+        "sample_limit_per_dataset": sample_limit,
+        "dataset_count": len(datasets),
+        "factor_values_status": factor_packet.get("status") or "missing",
+        "factor_values_row_count": factor_row_count,
+        "factor_values_returned_sample_count": len(factor_rows),
+        "unique_factor_ticker_count": len(unique_tickers),
+        "unique_factor_trade_date_count": len(unique_trade_dates),
+        "factor_key_count": len(unique_factor_keys),
+        "usable_factor_value_count": len(usable_factor_values),
+        "forward_return_sample_count": forward_return_sample_count,
+        "market_dataset_ready_count": market_dataset_ready_count,
+        "market_dataset_count": len(market_rows),
+        "market_dataset_rows": market_rows,
+        "latest_factor_trade_date": latest_factor_trade_date,
+        "local_dataset_sample_available": local_dataset_sample_available,
+        "local_dataset_sample_sufficiency_done": local_dataset_sample_available and not local_sufficiency_blocking_rows,
+        "metrics_computed_from_local_dataset": False,
+        "storage_query_rows_used_as_metrics": False,
+        "real_small_pool_validation_done": False,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_only": True,
+        "cache_get_writes_files": False,
+        "writes_parquet_on_get": False,
+        "auto_refresh_on_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "criterion_count": len(rows),
+        "pending_criterion_count": len(pending_rows),
+        "blocking_criterion_count": len(blocking_rows),
+        "passed_criterion_count": len(rows) - len(blocking_rows),
+        "blocking_criteria": [str(row["criterion"]) for row in blocking_rows],
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_test_local_dataset_sample_evidence",
+                "request_params_safe": {
+                    "datasets": list(dataset_names),
+                    "sample_limit_per_dataset": sample_limit,
+                    "scope": "local_parquet_sample_sufficiency_audit_not_metric_validation",
+                    "provider_backed_small_pool_validation_done": False,
+                    "production_factor_test_validation_complete": False,
+                },
+                "row_count": factor_row_count,
+                "data_date": latest_factor_trade_date,
+                "local_fetched_at": now,
+                "call_status": status,
+                "error_message_safe": str(factor_packet.get("error_message_safe") or "")[:240],
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This local evidence counts dataset sufficiency only. It does not compute production Factor Test metrics, call providers, or prove real small-pool/full-market validation.",
+    }
+
+
+def _attach_factor_test_local_dataset_sample_evidence(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    evidence = _factor_test_local_dataset_sample_evidence(now)
+    factor_tests["local_dataset_sample_evidence"] = evidence
+    factor_tests["local_dataset_sample_evidence_rows"] = list(evidence.get("rows") or [])
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(existing_test_ledger) + list(evidence.get("call_ledger") or [])
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    if acceptance:
+        acceptance = dict(acceptance)
+        acceptance["local_dataset_sample_evidence_ready"] = True
+        acceptance["local_dataset_sample_available"] = evidence["local_dataset_sample_available"]
+        acceptance["local_dataset_sample_sufficiency_done"] = evidence["local_dataset_sample_sufficiency_done"]
+        acceptance["local_dataset_sample_metrics_computed"] = False
+        acceptance["local_dataset_rows_used_as_metrics"] = False
+        acceptance["real_small_pool_validation_done"] = False
+        acceptance["provider_backed_small_pool_validation_done"] = False
+        acceptance["full_market_validation_done"] = False
+        factor_tests["acceptance_contract"] = acceptance
+    packet["factor_tests"] = factor_tests
+    return packet, list(evidence.get("call_ledger") or [])
+
+
+def _storage_query_rows(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    query = packet.get("query") if isinstance(packet.get("query"), dict) else {}
+    rows = query.get("rows") if isinstance(query.get("rows"), list) else []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _metadata_row_count(packet: dict[str, Any]) -> int:
+    metadata = packet.get("metadata") if isinstance(packet.get("metadata"), dict) else {}
+    try:
+        return int(metadata.get("row_count_metadata") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _storage_total_or_returned_row_count(packet: dict[str, Any]) -> int:
+    metadata_count = _metadata_row_count(packet)
+    if metadata_count:
+        return metadata_count
+    try:
+        return int(packet.get("row_count") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_finite_number(value: Any) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def _factor_test_production_validation_qa_contract(factor_tests: dict[str, Any], now: str) -> dict[str, Any]:

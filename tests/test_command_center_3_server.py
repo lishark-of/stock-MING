@@ -4979,6 +4979,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_factor_test_validation_complete", script)
         self.assertIn("small_pool_acceptance_is_local_only", script)
         self.assertIn("storage_query_consumption_is_not_metric_source", script)
+        self.assertIn("local_dataset_sample_evidence_is_not_validation", script)
         self.assertIn("production_validation_qa_stays_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
@@ -5017,8 +5018,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("small_pool_acceptance_is_local_only", criteria)
         self.assertIn("research_states_stay_isolated", criteria)
         self.assertIn("storage_query_consumption_is_not_metric_source", criteria)
+        self.assertIn("local_dataset_sample_evidence_is_not_validation", criteria)
         self.assertIn("production_validation_qa_stays_pending", criteria)
         self.assertIn("cache_get_factor_boundary", criteria)
+        self.assertIn("cache_get_exposes_local_dataset_sample_boundary", criteria)
 
     def test_factor_universe_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_universe_contract.py")
@@ -10045,6 +10048,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("GET /api/factor-quant/cache", factor["warnings"][0])
         self.assertIn("local_parquet_factor_values", {item.get("api") for item in factor["call_ledger"]})
         self.assertIn("local_factor_test_storage_query_consumption", {item.get("api") for item in factor["call_ledger"]})
+        self.assertIn("local_factor_test_local_dataset_sample_evidence", {item.get("api") for item in factor["call_ledger"]})
         self.assertEqual(factor["data"]["factor_values_storage"]["dataset"], "factor_values")
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
         storage_query = factor["data"]["factor_tests"]["storage_query_consumption"]
@@ -10067,6 +10071,32 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(storage_query["does_not_modify_strategy_action"])
         self.assertEqual(storage_query["call_ledger"][0]["api"], "local_factor_test_storage_query_consumption")
         self.assert_local_ledger_boundary(storage_query["call_ledger"][0])
+        local_dataset_sample = factor["data"]["factor_tests"]["local_dataset_sample_evidence"]
+        self.assertEqual(local_dataset_sample["schema_version"], "factor_test_local_dataset_sample_evidence.v1")
+        self.assertEqual(local_dataset_sample["scope"], "local_parquet_sample_sufficiency_audit_not_metric_validation")
+        self.assertIn(
+            local_dataset_sample["status"],
+            {"local_dataset_sample_missing", "local_dataset_sample_blocked_not_enough_data"},
+        )
+        self.assertFalse(local_dataset_sample["metrics_computed_from_local_dataset"])
+        self.assertFalse(local_dataset_sample["storage_query_rows_used_as_metrics"])
+        self.assertFalse(local_dataset_sample["real_small_pool_validation_done"])
+        self.assertFalse(local_dataset_sample["provider_backed_small_pool_validation_done"])
+        self.assertFalse(local_dataset_sample["full_market_validation_done"])
+        self.assertFalse(local_dataset_sample["production_factor_test_validation_complete"])
+        self.assertFalse(local_dataset_sample["external_calls_triggered"])
+        self.assertFalse(local_dataset_sample["tushare_called"])
+        self.assertFalse(local_dataset_sample["deepseek_called"])
+        self.assertFalse(local_dataset_sample["github_called"])
+        self.assertTrue(local_dataset_sample["does_not_execute_trades"])
+        self.assertTrue(local_dataset_sample["does_not_modify_strategy_action"])
+        self.assertEqual(local_dataset_sample["call_ledger"][0]["api"], "local_factor_test_local_dataset_sample_evidence")
+        self.assert_local_ledger_boundary(local_dataset_sample["call_ledger"][0])
+        sample_criteria = {row["criterion"] for row in factor["data"]["factor_tests"]["local_dataset_sample_evidence_rows"]}
+        self.assertIn("factor_values_dataset_present", sample_criteria)
+        self.assertIn("forward_return_sample", sample_criteria)
+        self.assertIn("provider_backed_sample", sample_criteria)
+        self.assertIn("trade_action_isolation", sample_criteria)
         small_pool = factor["data"]["factor_tests"]["small_pool_acceptance"]
         self.assertEqual(small_pool["schema_version"], "factor_test_small_pool_acceptance.v1")
         self.assertEqual(small_pool["status"], "local_small_pool_acceptance_blocked")
@@ -10114,6 +10144,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_contract_consumed"], True)
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_metrics_computed"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_enters_strategy_action"])
+        self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["local_dataset_sample_evidence_ready"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["local_dataset_sample_sufficiency_done"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["local_dataset_sample_metrics_computed"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["local_dataset_rows_used_as_metrics"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["local_light_observation_acceptance_done"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_rows_used_as_metrics"])
         self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["production_validation_qa_contract_ready"])
