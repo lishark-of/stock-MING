@@ -157,6 +157,10 @@ def build_contract() -> dict[str, Any]:
     response_rows = _rows_by_criterion(
         cache_packet.get("deepseek_response_format_review_rows") or response_review.get("rows")
     )
+    activation_receipt = _dict(cache_packet.get("deepseek_production_activation_receipt"))
+    activation_rows = _rows_by_criterion(
+        cache_packet.get("deepseek_production_activation_rows") or activation_receipt.get("rows")
+    )
     catalog = task_service.build_task_catalog()
     task = _deepseek_task(catalog)
     task_strategy = _dict(task.get("deepseek_model_strategy"))
@@ -322,6 +326,39 @@ def build_contract() -> dict[str, Any]:
             "DeepSeek explanation must remain behind explicit POST/task controls, centralized model strategy, call ledger, dedupe, and no-trade/no-action boundaries.",
         ),
         _row(
+            "production_activation_receipt_guides_next_safe_step",
+            activation_receipt.get("schema_version") == "deepseek_production_activation_receipt.v1"
+            and activation_receipt.get("status") == "deepseek_activation_receipt_ready_provider_benchmark_pending"
+            and activation_receipt.get("scope") == "local_deepseek_production_activation_receipt_no_model_call"
+            and activation_receipt.get("local_activation_receipt_ready") is True
+            and activation_receipt.get("manual_explanation_ready") is True
+            and activation_receipt.get("provider_benchmark_done") is False
+            and activation_receipt.get("larger_benchmark_done") is False
+            and activation_receipt.get("provider_response_format_enforced") is False
+            and activation_receipt.get("retry_repair_policy_ready") is False
+            and activation_receipt.get("bounded_retry_repair_ready") is False
+            and activation_receipt.get("token_budget_cost_evidence_complete") is False
+            and activation_receipt.get("auto_after_task_production_ready") is False
+            and activation_receipt.get("production_deepseek_explanation_complete") is False
+            and activation_receipt.get("provider_model_called_by_receipt") is False
+            and activation_receipt.get("cache_get_external_calls") is False
+            and activation_receipt.get("receipt_external_calls_triggered") is False
+            and _flag_false(activation_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+            and activation_receipt.get("does_not_execute_trades") is True
+            and activation_receipt.get("does_not_modify_strategy_action") is True
+            and activation_receipt.get("does_not_override_numeric_values") is True
+            and activation_receipt.get("does_not_output_strategy_action") is True
+            and "explicit_provider_benchmark" in str(activation_receipt.get("allowed_next_step") or "")
+            and "sanitizer as provider benchmark" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "auto_after_task default-on promotion" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "provider benchmark JSON success rate > 90%" in _list(activation_receipt.get("missing_evidence"))
+            and {"provider_benchmark_required", "provider_response_format_enforcement_required", "bounded_retry_repair_required", "token_budget_cost_evidence_required", "auto_after_task_activation_required"}.issubset(set(activation_rows))
+            and activation_rows.get("manual_default_off_governance_ready", {}).get("passed") is True
+            and activation_rows.get("provider_benchmark_required", {}).get("passed") is False
+            and activation_rows.get("no_get_or_render_model_call_boundary", {}).get("passed") is True,
+            "DeepSeek production activation receipt must point to explicit provider benchmark/response-format/retry/cost review while keeping production completion false.",
+        ),
+        _row(
             "push_gate_runs_deepseek_contract_after_factor_lab",
             "scripts/deepseek_governance_contract.py" in push_gate_script
             and "DeepSeek governance contract" in push_gate_script
@@ -334,6 +371,7 @@ def build_contract() -> dict[str, Any]:
             "script_is_local_no_model_or_provider_execution",
             "command_center_3_deepseek_governance_contract.v1" in this_script
             and "local_deepseek_governance_contract_no_model_call" in this_script
+            and "deepseek_production_activation_receipt.v1" in this_script
             and "provider_benchmark_done" in this_script
             and "production_deepseek_explanation_complete" in this_script
             and "response_format_enforced" in this_script
@@ -361,6 +399,7 @@ def build_contract() -> dict[str, Any]:
         "response_format_enforced": False,
         "retry_repair_policy_ready": False,
         "auto_after_task_production_ready": False,
+        "deepseek_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "production_deepseek_explanation_complete": False,
         "sanitizer_only": True,
         "cache_only": True,
@@ -387,6 +426,9 @@ def build_contract() -> dict[str, Any]:
             "json_production_blockers": json_audit.get("production_blockers"),
             "response_format_status": response_review.get("status"),
             "response_format_production_blockers": response_review.get("production_blockers"),
+            "activation_receipt_status": activation_receipt.get("status"),
+            "activation_receipt_allowed_next_step": activation_receipt.get("allowed_next_step"),
+            "activation_receipt_blockers": activation_receipt.get("blockers"),
             "task_backend": task.get("current_backend"),
             "task_button_gated": task.get("button_gated"),
         },

@@ -91,6 +91,7 @@ export default function FactorQuantHub() {
   const deepseekValidation = packet.deepseek_validation_summary ?? {};
   const deepseekJsonStability = packet.deepseek_json_stability_audit ?? {};
   const deepseekResponseFormatReview = packet.deepseek_response_format_review_contract ?? {};
+  const deepseekProductionActivationReceipt = packet.deepseek_production_activation_receipt ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
   const scoreChartRows = toRows(scoreChart.bucket_rows);
@@ -98,6 +99,8 @@ export default function FactorQuantHub() {
   const deepseekValidationRows = objectRows(deepseekValidation as Record<string, unknown>, "deepseek_validation");
   const deepseekJsonStabilityRows = toRows(packet.deepseek_json_stability_rows);
   const deepseekResponseFormatReviewRows = toRows(packet.deepseek_response_format_review_rows);
+  const deepseekProductionActivationRows = toRows(packet.deepseek_production_activation_rows);
+  const deepseekProductionActivationReceiptRows = objectRows(deepseekProductionActivationReceipt as Record<string, unknown>, "deepseek_activation_receipt");
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
   const universeExecutionReadinessRows = objectRows(universeExecutionReadiness as Record<string, unknown>, "universe_execution_readiness");
@@ -286,6 +289,9 @@ export default function FactorQuantHub() {
           { label: "DS benchmark", value: deepseekJsonStability.larger_benchmark_done === true ? "完成" : "未完成", tone: deepseekJsonStability.larger_benchmark_done === true ? "good" : "warn" },
           { label: "DS response_format", value: deepseekJsonStability.response_format_enforced === true ? "强约束" : "未强约束", tone: deepseekJsonStability.response_format_enforced === true ? "good" : "warn" },
           { label: "DS auto ready", value: deepseekJsonStability.auto_after_task_production_ready === true ? "ready" : "blocked", tone: deepseekJsonStability.auto_after_task_production_ready === true ? "good" : "warn" },
+          { label: "DS activation", value: deepseekProductionActivationReceipt.status ?? "missing", tone: deepseekProductionActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "DS provider benchmark", value: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "完成" : "未完成", tone: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "good" : "warn" },
+          { label: "DS activation blockers", value: deepseekProductionActivationReceipt.blocking_criterion_count ?? 0, tone: Number(deepseekProductionActivationReceipt.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" },
           { label: "Tushare failure QA", value: tushareFailureModeQa.status ?? "missing", tone: tushareFailureModeQa.status === "failure_mode_qa_blocked" ? "bad" : "warn" },
           { label: "failure modes", value: tushareFailureModeQa.observed_mode_count ?? 0 },
@@ -371,6 +377,22 @@ export default function FactorQuantHub() {
       </PacketCard>
       <h3>DeepSeek response format review rows</h3>
       <DataLineageTable rows={deepseekResponseFormatReviewRows} />
+      <PacketCard title="DeepSeek production activation receipt" subtitle="下一步生产解释验收收据；不调用模型、不把 sanitizer 当 provider benchmark">
+        <p>status: {String(deepseekProductionActivationReceipt.status ?? "missing")}</p>
+        <p>local_activation_receipt_ready: {String(deepseekProductionActivationReceipt.local_activation_receipt_ready ?? false)}</p>
+        <p>allowed_next_step: {String(deepseekProductionActivationReceipt.allowed_next_step ?? "explicit_provider_benchmark_then_response_format_enforcement_retry_repair_cost_review")}</p>
+        <p>provider_benchmark_done: {String(deepseekProductionActivationReceipt.provider_benchmark_done ?? false)}</p>
+        <p>provider_response_format_enforced: {String(deepseekProductionActivationReceipt.provider_response_format_enforced ?? false)}</p>
+        <p>bounded_retry_repair_ready: {String(deepseekProductionActivationReceipt.bounded_retry_repair_ready ?? false)}</p>
+        <p>token_budget_cost_evidence_complete: {String(deepseekProductionActivationReceipt.token_budget_cost_evidence_complete ?? false)}</p>
+        <p>auto_after_task_production_ready: {String(deepseekProductionActivationReceipt.auto_after_task_production_ready ?? false)}</p>
+        <p>production_deepseek_explanation_complete: {String(deepseekProductionActivationReceipt.production_deepseek_explanation_complete ?? false)}</p>
+        <p>provider_model_called_by_receipt: {String(deepseekProductionActivationReceipt.provider_model_called_by_receipt ?? false)}</p>
+      </PacketCard>
+      <h3>DeepSeek production activation rows</h3>
+      <p className="risk-note">activation receipt 只允许后续显式 provider benchmark、response_format 强约束、retry/repair 和 cost review；GET cache 和页面渲染仍不调用 DeepSeek，不覆盖数值或 action。</p>
+      <DataLineageTable rows={deepseekProductionActivationRows} />
+      <DataLineageTable rows={deepseekProductionActivationReceiptRows} />
       <h3>因子库</h3>
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>

@@ -78,7 +78,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold, dry-runs, query policy, and push-gate contract exist | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, healthcheck QA contract, and push-gate contract exist | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
-| LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, local JSON stability audit, response-format review, and push-gate contract exist; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
+| LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, local JSON stability audit, response-format review, activation receipt, and push-gate contract exist; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local release artifact detection; packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
@@ -581,6 +581,7 @@ Enable production-ready worker task orchestration
 - sanitizer is effective.
 - Factor Quant Hub now exposes a local `deepseek_json_stability_audit` that compares the 75% mini-benchmark baseline with the >90% production target, checks prompt/schema/token-budget/read-only boundaries, and marks automatic production explanation as blocked until larger benchmark and response-format enforcement are proven.
 - Factor Quant Hub now exposes `deepseek_response_format_review_contract`: a local response-format / retry-repair review contract that verifies JSON-object prompt instruction, six whitelisted top-level fields, parse-failure discard behavior, illegal-field sanitization, no numeric/action overwrite, token budget visibility, GET/render no-model-call boundaries, and default-off auto-after-task governance. It keeps provider-level response format enforcement, bounded retry/repair policy, larger benchmark, and production automation blocked.
+- Factor Quant Hub now exposes `deepseek_production_activation_receipt` and rows: a local LTG-07 next-step receipt that ties manual/default-off governance, sanitizer whitelist, JSON stability audit, response-format review, provider benchmark blockers, provider response_format blockers, bounded retry/repair blockers, token/cost evidence, auto_after_task activation, no GET/render model call, and no numeric/action overwrite into one checklist. It keeps `production_deepseek_explanation_complete=false`.
 - `scripts/deepseek_governance_contract.py` is now part of the local push gate. It validates manual/default-off governance, sanitizer whitelist behavior, parse-failed discard, JSON stability blockers, response-format review blockers, button-gated task catalog, centralized model strategy, no-model-call, no-secret, no-trade, and no-action boundaries while production automatic explanation remains pending.
 - Current state is suitable for manual explanation, not automatic production calling.
 
@@ -593,6 +594,7 @@ Enable production-ready worker task orchestration
 - `auto_after_task` needs conservative production governance.
 - `deepseek_json_stability_audit.status=manual_ready_production_blocked` is a local sanitizer/prompt contract, not a real model benchmark pass.
 - `deepseek_response_format_review_contract.status=response_format_review_ready_provider_enforcement_pending` is a local review contract; it does not prove provider-level response format enforcement, retry/repair execution, or larger benchmark success.
+- `deepseek_production_activation_receipt.status=deepseek_activation_receipt_ready_provider_benchmark_pending` is a local activation receipt; it does not call DeepSeek, does not prove provider benchmark, does not enforce provider response_format, does not prove bounded retry/repair, and does not make `auto_after_task` production-ready.
 - The DeepSeek governance push-gate contract is still a local guard only; provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, and production auto-after-task readiness remain pending.
 
 ### Implementation Phases
@@ -613,7 +615,8 @@ Enable production-ready worker task orchestration
 - Failure does not pollute local results.
 - `deepseek_json_stability_audit` must show `production_ready=true` only after JSON success rate exceeds 90%, larger benchmark is complete, and response format is enforced.
 - `deepseek_response_format_review_contract` must keep `production_ready=false` until provider-level response format enforcement, bounded retry/repair policy, and larger benchmark evidence are all proven.
-- `scripts/deepseek_governance_contract.py` passes in the local push gate while reporting `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false`.
+- `deepseek_production_activation_receipt` must keep `provider_benchmark_done=false`, `provider_response_format_enforced=false`, `bounded_retry_repair_ready=false`, `token_budget_cost_evidence_complete=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false` until the explicit provider-backed acceptance sequence is complete.
+- `scripts/deepseek_governance_contract.py` passes in the local push gate while reporting `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, `deepseek_production_activation_receipt_ready=true`, and `production_deepseek_explanation_complete=false`.
 - GET cache and React render must keep `model_call_status=not_called`.
 
 ### Forbidden
@@ -623,6 +626,7 @@ Enable production-ready worker task orchestration
 - Do not let model output overwrite prices, positions, factor values, operation zones, or action.
 - Do not treat local sanitizer/prompt audit as production automatic explanation readiness.
 - Do not treat response-format review as provider-level response format enforcement or production benchmark completion.
+- Do not treat `deepseek_production_activation_receipt` as provider benchmark success, provider response_format enforcement, bounded retry/repair readiness, token-cost production proof, `auto_after_task` production readiness, or production DeepSeek explanation completion.
 - Do not treat `scripts/deepseek_governance_contract.py` passing as real provider benchmark success, provider response-format enforcement, bounded retry/repair readiness, auto-after-task production readiness, or production DeepSeek explanation completion.
 
 ### Recommended Commit Message

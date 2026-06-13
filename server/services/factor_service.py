@@ -57,6 +57,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet = _attach_factor_universe_execution_readiness(packet)
     packet, universe_execution_receipt_ledger = _attach_factor_universe_execution_readiness_receipt(packet, now)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
+    packet, deepseek_activation_ledger = _attach_deepseek_production_activation_receipt(packet, now)
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
     packet, local_dataset_ledger = _attach_factor_test_local_dataset_sample_evidence(packet, now)
     packet, production_validation_ledger = _attach_factor_test_production_validation_qa_contract(packet, now)
@@ -69,6 +70,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         cache_ledger
         + universe_rank_ledger
         + universe_execution_receipt_ledger
+        + deepseek_activation_ledger
         + storage_query_ledger
         + local_dataset_ledger
         + production_validation_ledger
@@ -79,6 +81,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
     universe_rank_warning = "Factor Universe rank/zscore dry-run 只读本地 factor_values 样本；样本不足时保持 blocked，不代表 full-pool 生产研究完成。"
     universe_execution_receipt_warning = "Factor Universe execution readiness receipt 只说明下一步显式 worker batch 是否可进入；不会运行 full-pool、rank/zscore、中性化或 provider 验收。"
+    deepseek_activation_warning = "DeepSeek production activation receipt 只汇总下一步生产解释验收缺口；不会调用模型，不代表 provider benchmark、response_format 强约束或 auto_after_task 生产完成。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
     provider_blocker_warning = "Factor Test provider validation blocker audit 只汇总真实小股票池/全市场验收缺口；不会调用 provider、不会计算交易信号。"
@@ -88,6 +91,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         cache_warning,
         universe_rank_warning,
         universe_execution_receipt_warning,
+        deepseek_activation_warning,
         storage_query_warning,
         local_dataset_warning,
         provider_blocker_warning,
@@ -97,6 +101,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         cache_warning,
         universe_rank_warning,
         universe_execution_receipt_warning,
+        deepseek_activation_warning,
         storage_query_warning,
         local_dataset_warning,
         provider_blocker_warning,
@@ -634,6 +639,204 @@ def _attach_deepseek_json_stability_audit(
     hub["deepseek_response_format_review_contract"] = response_format_review
     hub["deepseek_response_format_review_rows"] = response_format_review["rows"]
     return hub
+
+
+def _deepseek_activation_row(criterion: str, status: str, passed: bool, evidence: str) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "evidence": evidence,
+        "deepseek_called": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _deepseek_production_activation_call_ledger(receipt: dict[str, Any], now: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_deepseek_production_activation_receipt",
+            "request_params_safe": {
+                "status": receipt.get("status"),
+                "allowed_next_step": receipt.get("allowed_next_step"),
+                "provider_benchmark_done": receipt.get("provider_benchmark_done"),
+                "production_deepseek_explanation_complete": receipt.get("production_deepseek_explanation_complete"),
+            },
+            "row_count": len(receipt.get("rows") or []),
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": "activation_receipt_ready_provider_benchmark_pending",
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+
+
+def _attach_deepseek_production_activation_receipt(
+    hub: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    governance = hub.get("deepseek_explain_governance") if isinstance(hub.get("deepseek_explain_governance"), dict) else {}
+    validation = hub.get("deepseek_validation_summary") if isinstance(hub.get("deepseek_validation_summary"), dict) else {}
+    json_audit = hub.get("deepseek_json_stability_audit") if isinstance(hub.get("deepseek_json_stability_audit"), dict) else {}
+    response_review = (
+        hub.get("deepseek_response_format_review_contract")
+        if isinstance(hub.get("deepseek_response_format_review_contract"), dict)
+        else {}
+    )
+
+    local_governance_ready = (
+        governance.get("mode") in {"manual_only", "disabled"}
+        and governance.get("manual_task_allowed") is True
+        and governance.get("auto_after_task") is False
+        and governance.get("configured_auto_after_task") is False
+        and governance.get("cache_reads_never_call_deepseek") is True
+        and governance.get("react_render_never_calls_deepseek") is True
+        and validation.get("model_call_status") == "not_called"
+    )
+    sanitizer_ready = (
+        validation.get("validation_mode") == "local_sanitizer_only"
+        and validation.get("does_not_override_numeric_values") is True
+        and validation.get("does_not_output_strategy_action") is True
+    )
+    json_local_ready = (
+        json_audit.get("schema_version") == "factor_deepseek_json_stability_audit.v1"
+        and json_audit.get("manual_explanation_ready") is True
+        and json_audit.get("production_ready") is False
+    )
+    response_local_ready = (
+        response_review.get("schema_version") == "factor_deepseek_response_format_review_contract.v1"
+        and response_review.get("local_response_format_review_ready") is True
+        and response_review.get("production_ready") is False
+    )
+
+    rows = [
+        _deepseek_activation_row(
+            "manual_default_off_governance_ready",
+            "passed_manual_default_off",
+            local_governance_ready,
+            "manual_only/disabled governance is visible; cache reads and React render do not call DeepSeek.",
+        ),
+        _deepseek_activation_row(
+            "sanitizer_whitelist_ready",
+            "passed_sanitizer_whitelist",
+            sanitizer_ready,
+            "Only whitelisted explanation fields may survive; numeric, action, price, position, and operation-zone fields remain blocked.",
+        ),
+        _deepseek_activation_row(
+            "local_json_stability_audit_ready",
+            "passed_local_audit_production_blocked",
+            json_local_ready,
+            "Local JSON stability audit is present and still blocks production automation.",
+        ),
+        _deepseek_activation_row(
+            "response_format_review_ready",
+            "passed_local_review_provider_enforcement_pending",
+            response_local_ready,
+            "Local response-format review is ready, while provider-level response_format enforcement remains pending.",
+        ),
+        _deepseek_activation_row(
+            "provider_benchmark_required",
+            "pending_provider_benchmark",
+            False,
+            "A larger provider-backed benchmark with JSON success rate above 90% is still required.",
+        ),
+        _deepseek_activation_row(
+            "provider_response_format_enforcement_required",
+            "pending_provider_response_format",
+            False,
+            "Provider response_format/json_schema enforcement must be proven with real responses before production promotion.",
+        ),
+        _deepseek_activation_row(
+            "bounded_retry_repair_required",
+            "pending_retry_repair",
+            False,
+            "Bounded retry/repair behavior must be implemented and evaluated before auto explanation can be production-ready.",
+        ),
+        _deepseek_activation_row(
+            "token_budget_cost_evidence_required",
+            "pending_token_budget",
+            False,
+            "Token/cost budget evidence must be durable and predictable across benchmark samples.",
+        ),
+        _deepseek_activation_row(
+            "auto_after_task_activation_required",
+            "pending_auto_after_task_activation",
+            False,
+            "auto_after_task must remain default-off until provider benchmark, response-format enforcement, retry/repair, and cost evidence pass.",
+        ),
+        _deepseek_activation_row(
+            "no_get_or_render_model_call_boundary",
+            "passed_no_get_or_render_model_call",
+            True,
+            "The receipt is built from cache state only and does not call DeepSeek from GET cache or React render.",
+        ),
+        _deepseek_activation_row(
+            "no_numeric_action_overwrite_boundary",
+            "passed_no_numeric_action_overwrite",
+            True,
+            "DeepSeek output cannot overwrite prices, positions, factor values, operation zones, or strategy action.",
+        ),
+    ]
+
+    blockers = [row["criterion"] for row in rows if not row["passed"]]
+    receipt = {
+        "schema_version": "deepseek_production_activation_receipt.v1",
+        "status": "deepseek_activation_receipt_ready_provider_benchmark_pending",
+        "scope": "local_deepseek_production_activation_receipt_no_model_call",
+        "ltg": "LTG-07",
+        "local_activation_receipt_ready": local_governance_ready and sanitizer_ready and json_local_ready and response_local_ready,
+        "manual_explanation_ready": bool(json_audit.get("manual_explanation_ready") or response_review.get("manual_explanation_ready")),
+        "provider_benchmark_done": False,
+        "larger_benchmark_done": False,
+        "provider_response_format_enforced": False,
+        "response_format_enforced": False,
+        "retry_repair_policy_ready": False,
+        "bounded_retry_repair_ready": False,
+        "token_budget_cost_evidence_complete": False,
+        "auto_after_task_production_ready": False,
+        "production_deepseek_explanation_complete": False,
+        "allowed_next_step": "explicit_provider_benchmark_then_response_format_enforcement_retry_repair_cost_review",
+        "not_allowed_next_steps": [
+            "GET cache model call",
+            "React render model call",
+            "sanitizer as provider benchmark",
+            "local JSON audit as production completion",
+            "response-format review as provider enforcement",
+            "auto_after_task default-on promotion",
+            "DeepSeek numeric/action overwrite",
+        ],
+        "missing_evidence": [
+            "provider benchmark JSON success rate > 90%",
+            "provider response_format/json_schema enforcement evidence",
+            "bounded retry/repair evaluation",
+            "token budget and cost evidence",
+            "durable provider call ledger evidence",
+            "manual promotion review for auto_after_task",
+        ],
+        "blocking_criterion_count": len(blockers),
+        "blockers": blockers,
+        "provider_model_called_by_receipt": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "receipt_external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "rows": rows,
+    }
+    ledger = _deepseek_production_activation_call_ledger(receipt, now)
+    receipt["call_ledger"] = ledger
+    hub["deepseek_production_activation_receipt"] = receipt
+    hub["deepseek_production_activation_rows"] = rows
+    return hub, ledger
 
 
 def _factor_universe_cache_part(hub: dict[str, Any]) -> dict[str, Any]:

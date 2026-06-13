@@ -6314,6 +6314,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("parse_failed_output_is_discarded_and_hashable", script)
         self.assertIn("json_stability_audit_blocks_production_auto", script)
         self.assertIn("response_format_review_is_local_not_provider_enforcement", script)
+        self.assertIn("production_activation_receipt_guides_next_safe_step", script)
+        self.assertIn("deepseek_production_activation_receipt.v1", script)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
@@ -6341,6 +6343,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["response_format_enforced"])
         self.assertFalse(payload["retry_repair_policy_ready"])
         self.assertFalse(payload["auto_after_task_production_ready"])
+        self.assertTrue(payload["deepseek_production_activation_receipt_ready"])
         self.assertFalse(payload["production_deepseek_explanation_complete"])
         self.assertTrue(payload["sanitizer_only"])
         self.assertTrue(payload["cache_only"])
@@ -6363,6 +6366,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["response_format_status"],
             "response_format_review_ready_provider_enforcement_pending",
         )
+        self.assertEqual(
+            payload["observed"]["activation_receipt_status"],
+            "deepseek_activation_receipt_ready_provider_benchmark_pending",
+        )
+        self.assertIn("explicit_provider_benchmark", payload["observed"]["activation_receipt_allowed_next_step"])
         self.assertEqual(payload["observed"]["task_backend"], "guarded_prompt_or_payload_sanitizer")
         self.assertTrue(payload["observed"]["task_button_gated"])
         criteria = {row["criterion"] for row in payload["rows"]}
@@ -6371,6 +6379,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("parse_failed_output_is_discarded_and_hashable", criteria)
         self.assertIn("json_stability_audit_blocks_production_auto", criteria)
         self.assertIn("response_format_review_is_local_not_provider_enforcement", criteria)
+        self.assertIn("production_activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("local_builders_match_cache_governance_boundaries", criteria)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", criteria)
 
@@ -13023,6 +13032,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         json_audit_rows = {row["criterion"]: row for row in factor["data"]["deepseek_json_stability_rows"]}
         response_format_review = factor["data"]["deepseek_response_format_review_contract"]
         response_format_rows = {row["criterion"]: row for row in factor["data"]["deepseek_response_format_review_rows"]}
+        activation_receipt = factor["data"]["deepseek_production_activation_receipt"]
+        activation_rows = {row["criterion"]: row for row in factor["data"]["deepseek_production_activation_rows"]}
         self.assertFalse(factor["data"]["deepseek_called"])
         self.assertEqual(explanation["payload"]["summary"], "整理摘要")
         self.assertIn("price", explanation["ignored_keys"])
@@ -13083,6 +13094,36 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(response_format_rows["provider_response_format_enforced"]["passed"])
         self.assertFalse(response_format_rows["retry_repair_policy_ready"]["passed"])
         self.assertTrue(response_format_rows["cache_render_no_model_call"]["passed"])
+        self.assertEqual(activation_receipt["schema_version"], "deepseek_production_activation_receipt.v1")
+        self.assertEqual(activation_receipt["status"], "deepseek_activation_receipt_ready_provider_benchmark_pending")
+        self.assertEqual(activation_receipt["scope"], "local_deepseek_production_activation_receipt_no_model_call")
+        self.assertTrue(activation_receipt["local_activation_receipt_ready"])
+        self.assertTrue(activation_receipt["manual_explanation_ready"])
+        self.assertFalse(activation_receipt["provider_benchmark_done"])
+        self.assertFalse(activation_receipt["larger_benchmark_done"])
+        self.assertFalse(activation_receipt["provider_response_format_enforced"])
+        self.assertFalse(activation_receipt["bounded_retry_repair_ready"])
+        self.assertFalse(activation_receipt["token_budget_cost_evidence_complete"])
+        self.assertFalse(activation_receipt["auto_after_task_production_ready"])
+        self.assertFalse(activation_receipt["production_deepseek_explanation_complete"])
+        self.assertIn("explicit_provider_benchmark", activation_receipt["allowed_next_step"])
+        self.assertIn("sanitizer as provider benchmark", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("provider benchmark JSON success rate > 90%", activation_receipt["missing_evidence"])
+        self.assertFalse(activation_receipt["provider_model_called_by_receipt"])
+        self.assertFalse(activation_receipt["external_calls_triggered"])
+        self.assertFalse(activation_receipt["deepseek_called"])
+        self.assertFalse(activation_receipt["tushare_called"])
+        self.assertFalse(activation_receipt["github_called"])
+        self.assertTrue(activation_receipt["does_not_execute_trades"])
+        self.assertTrue(activation_receipt["does_not_modify_strategy_action"])
+        self.assertEqual(activation_rows["manual_default_off_governance_ready"]["status"], "passed_manual_default_off")
+        self.assertFalse(activation_rows["provider_benchmark_required"]["passed"])
+        self.assertFalse(activation_rows["provider_response_format_enforcement_required"]["passed"])
+        self.assertFalse(activation_rows["bounded_retry_repair_required"]["passed"])
+        self.assertFalse(activation_rows["token_budget_cost_evidence_required"]["passed"])
+        self.assertTrue(activation_rows["no_get_or_render_model_call_boundary"]["passed"])
+        self.assertEqual(activation_receipt["call_ledger"][0]["api"], "local_deepseek_production_activation_receipt")
+        self.assertIn("local_deepseek_production_activation_receipt", {item.get("api") for item in factor["data"]["call_ledger"]})
         self.assertEqual(
             factor["data"]["deepseek_explain_governance"]["json_stability_audit_status"],
             "manual_ready_production_blocked",
