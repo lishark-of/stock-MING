@@ -118,6 +118,7 @@ write_release_readiness_report() {
 - worker_contract: passed_local_contract_worker_activation_pending
 - tauri_desktop_contract: passed_local_contract_package_validation_pending
 - streamlit_legacy_contract: passed_local_contract_retirement_pending
+- trade_isolation_contract: passed_local_contract_real_trading_disconnected
 - motion_viewport_qa_contract: passed_static_contract_visual_run_pending
 - motion_browser_qa_runbook: passed_runbook_execution_pending
 - diff_whitespace_check: passed
@@ -157,6 +158,7 @@ run_step "Storage contract" "$PYTHON_BIN" scripts/storage_contract.py
 run_step "Worker contract" "$PYTHON_BIN" scripts/worker_contract.py
 run_step "Tauri desktop contract" "$PYTHON_BIN" scripts/tauri_desktop_contract.py
 run_step "Streamlit legacy contract" "$PYTHON_BIN" scripts/streamlit_legacy_contract.py
+run_step "Trade isolation contract" "$PYTHON_BIN" scripts/trade_isolation_contract.py
 run_step "Motion viewport QA contract" "$PYTHON_BIN" scripts/motion_viewport_qa_contract.py
 run_step "Motion browser QA runbook" "$PYTHON_BIN" scripts/motion_browser_qa_runbook.py
 run_step "Diff whitespace check" git diff --check

@@ -51,6 +51,7 @@ STORAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "storage_contract.py"
 WORKER_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "worker_contract.py"
 TAURI_DESKTOP_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tauri_desktop_contract.py"
 STREAMLIT_LEGACY_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "streamlit_legacy_contract.py"
+TRADE_ISOLATION_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "trade_isolation_contract.py"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
@@ -446,6 +447,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     worker_script = _read_local_text(WORKER_CONTRACT_PATH)
     tauri_desktop_script = _read_local_text(TAURI_DESKTOP_CONTRACT_PATH)
     streamlit_legacy_script = _read_local_text(STREAMLIT_LEGACY_CONTRACT_PATH)
+    trade_isolation_script = _read_local_text(TRADE_ISOLATION_CONTRACT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
@@ -496,6 +498,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "worker_contract_exists": WORKER_CONTRACT_PATH.exists() and bool(worker_script),
         "tauri_desktop_contract_exists": TAURI_DESKTOP_CONTRACT_PATH.exists() and bool(tauri_desktop_script),
         "streamlit_legacy_contract_exists": STREAMLIT_LEGACY_CONTRACT_PATH.exists() and bool(streamlit_legacy_script),
+        "trade_isolation_contract_exists": TRADE_ISOLATION_CONTRACT_PATH.exists() and bool(trade_isolation_script),
         "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
         "motion_browser_qa_runbook_exists": MOTION_BROWSER_QA_RUNBOOK_PATH.exists() and bool(motion_browser_qa_runbook),
         "secret_keyword_review_contract_exists": SECRET_KEYWORD_REVIEW_CONTRACT_PATH.exists() and bool(secret_keyword_review_script),
@@ -523,6 +526,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Tauri desktop contract" in script,
         "streamlit_legacy_contract_step": "scripts/streamlit_legacy_contract.py" in script
         and "Streamlit legacy contract" in script,
+        "trade_isolation_contract_step": "scripts/trade_isolation_contract.py" in script
+        and "Trade isolation contract" in script,
         "secret_keyword_review_contract_step": "scripts/secret_keyword_review_contract.py" in script
         and "Secret keyword review contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
@@ -628,6 +633,17 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "tushare_adapter" not in streamlit_legacy_script
         and "deepseek_adapter" not in streamlit_legacy_script
         and "api.github.com" not in streamlit_legacy_script,
+        "trade_isolation_contract_is_local": "command_center_3_trade_isolation_contract.v1" in trade_isolation_script
+        and "local_trade_isolation_contract_no_broker_or_order_execution" in trade_isolation_script
+        and "real_trading_connected" in trade_isolation_script
+        and "broker_adapter_connected" in trade_isolation_script
+        and "order_endpoint_present" in trade_isolation_script
+        and "trade_execution_api_enabled" in trade_isolation_script
+        and "future_real_trading_requires_separate_project" in trade_isolation_script
+        and "does_not_execute_trades" in trade_isolation_script
+        and "tushare_adapter" not in trade_isolation_script
+        and "deepseek_adapter" not in trade_isolation_script
+        and "api.github.com" not in trade_isolation_script,
         "generated_artifact_scan_step": "artifact_scan" in script and "git ls-files" in script,
         "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
         "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
@@ -692,6 +708,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "streamlit_legacy_contract_exists",
             "streamlit_legacy_contract_step",
             "streamlit_legacy_contract_is_local",
+            "trade_isolation_contract_exists",
+            "trade_isolation_contract_step",
+            "trade_isolation_contract_is_local",
             "motion_viewport_qa_contract_exists",
             "motion_viewport_qa_contract_step",
             "motion_viewport_qa_contract_is_local_static",
@@ -894,6 +913,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "streamlit_legacy_contract_is_local",
             checks["streamlit_legacy_contract_is_local"],
             evidence="contract keeps LTG-10 legacy/admin/debug fallback, ordinary workflow blockers, no-feature-cut requirements, and no Streamlit execution separate from full retirement",
+        ),
+        _release_gate_row(
+            "trade_isolation_contract_exists",
+            checks["trade_isolation_contract_exists"],
+            evidence=_relative_path(TRADE_ISOLATION_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "trade_isolation_contract_step",
+            checks["trade_isolation_contract_step"],
+            evidence="push gate runs scripts/trade_isolation_contract.py after Streamlit legacy and before motion QA",
+        ),
+        _release_gate_row(
+            "trade_isolation_contract_is_local",
+            checks["trade_isolation_contract_is_local"],
+            evidence="contract keeps LTG-12 real trading, broker/order execution, holdings mutation, and action mutation separate from research/cache/task UI",
         ),
         _release_gate_row(
             "motion_viewport_qa_contract_exists",

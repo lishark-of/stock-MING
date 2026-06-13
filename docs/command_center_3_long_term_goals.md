@@ -719,6 +719,7 @@ Retire Streamlit from primary user workflow
 - `scripts/worker_contract.py` is now part of the local push gate. It validates LTG-06 Worker cache, dispatch plans, production blocker audit, healthcheck QA, activation review, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while production worker activation remains pending.
 - `scripts/tauri_desktop_contract.py` is now part of the local push gate. It validates LTG-09 desktop preflight cache, runtime contract, backend-offline UX source contract, packaged runtime QA matrix, production blocker audit, no-build/no-runtime/no-config/no-log/no-provider/no-trade boundaries, and keeps production desktop package completion pending.
 - `scripts/streamlit_legacy_contract.py` is now part of the local push gate. It validates LTG-10 Legacy cache, ordinary-workflow exit audit, fallback dependency contract, React Legacy page boundaries, no-feature-cut requirements, no Streamlit execution, no legacy tool execution, no task creation, no-provider/no-model/no-GitHub/no-trade/no-action boundaries, and keeps Streamlit full retirement pending.
+- `scripts/trade_isolation_contract.py` is now part of the local push gate. It validates LTG-12 risk cache trade-isolation audit, task catalog no-order/no-trade route boundaries, frontend no-trade/no-action visibility, no broker/order execution path, and future real-trading separation while real trading remains disconnected.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
@@ -740,6 +741,7 @@ Retire Streamlit from primary user workflow
 - Worker contract is present, but it is still a local no-process-start guard; real Celery/Redis startup, Redis broker health, synthetic healthcheck execution, cross-process controls, task log persistence, and scheduler production config remain later LTG-06 acceptance phases.
 - Tauri desktop contract is present, but it is still a local preflight/runtime/package-QA boundary guard; real `tauri dev`, repeatable `tauri build`, packaged runtime launch QA, config/log runtime validation, backend startup strategy acceptance, and macOS signing/notarization remain later LTG-09 acceptance phases.
 - Streamlit legacy contract is present, but it is still a local no-Streamlit-execution guard; real ordinary-flow parity, fallback removal, admin/debug retirement, and complete Streamlit exit remain later LTG-10 acceptance phases.
+- Trade isolation contract is present, but it is still a local no-broker/no-order guard; it proves current Command Center 3 research/cache/task/frontend boundaries, not a future real-trading integration design or broker acceptance.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -772,6 +774,7 @@ Retire Streamlit from primary user workflow
 - Worker contract runs after Storage and before static motion QA, and keeps `production_worker_complete=false`, `healthcheck_executed=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, and `scheduler_started=false` visible.
 - Tauri desktop contract runs after Worker and before static motion QA, and keeps `tauri_build_executed=false`, `packaged_runtime_qa_done=false`, `production_package_complete=false`, `does_not_run_tauri=true`, `does_not_run_npm=true`, and `does_not_run_cargo=true` visible.
 - Streamlit legacy contract runs after Tauri desktop and before static motion QA, and keeps `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, and `does_not_open_streamlit=true` visible.
+- Trade isolation contract runs after Streamlit legacy and before static motion QA, and keeps `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, and `future_real_trading_requires_separate_project=true` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
@@ -793,18 +796,21 @@ Add release gate readiness audit
 - Automatic real trading is not connected.
 - Multiple packets and APIs declare `does_not_execute_trades` and `does_not_modify_strategy_action`.
 - `GET /api/risk/cache` now exposes `trade_isolation_audit`, `trade_isolation_rows`, and `trade_isolation_boundary_rows`: a cache-only audit of risk policy, task catalog POST route boundaries, and frontend no-trade/no-action visibility.
+- `scripts/trade_isolation_contract.py` is now part of the local push gate. It reads only local risk cache, task catalog, frontend source contracts, and the push-gate script, then keeps `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, and `trade_execution_api_enabled=false` auditable.
 
 ### Gaps
 
 - Future productionization could accidentally blur research and execution boundaries.
 - Any eventual trading integration would need a separate project, separate approvals, and separate safety design.
 - The audit proves current Command Center 3 cache/task/frontend contracts, not a future broker/order integration design.
+- The push-gate contract is local and static; it blocks accidental boundary regression but does not prove broker integration safety, simulated trading, order routing, or production trade compliance.
 
 ### Implementation Phases
 
 1. Keep all current 3.0 migration work research/client-side only.
 2. Preserve action mutation guards in cache, task, frontend, model, factor, storage, and worker paths.
 3. Add tests whenever a new route or task can affect decision-adjacent data.
+4. Keep the local trade-isolation push-gate contract updated whenever task routes, risk cache policy, packet registry boundaries, or frontend task controls change.
 
 ### Acceptance Criteria
 
@@ -812,12 +818,14 @@ Add release gate readiness audit
 - Research/factor/model/cache/frontend paths cannot mutate `strategy action`.
 - Any future trade integration is explicitly out of this roadmap unless a separate approved design exists.
 - `trade_isolation_audit.status=trade_isolation_ready`, with zero blockers and all known POST routes covered by the task catalog.
+- `scripts/trade_isolation_contract.py` passes in the local push gate while reporting `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, `does_not_modify_holdings=true`, and `future_real_trading_requires_separate_project=true`.
 
 ### Forbidden
 
 - Do not connect broker/order APIs in ordinary migration work.
 - Do not execute real trades.
 - Do not let model or factor output become orders.
+- Do not treat the local trade-isolation contract as approval to connect real broker/order execution; it only proves current isolation remains intact.
 
 ### Recommended Commit Message
 
