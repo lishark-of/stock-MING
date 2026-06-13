@@ -62,7 +62,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode for small scope | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold and factor_values write path | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback and preflight | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
-| LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance and sanitizer; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
+| LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, and local JSON stability audit; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | initial/maturing chart contract | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
@@ -410,6 +410,7 @@ Enable production-ready worker task orchestration
 - pro real call succeeded once.
 - mini-benchmark ran 8 calls with 75% JSON success.
 - sanitizer is effective.
+- Factor Quant Hub now exposes a local `deepseek_json_stability_audit` that compares the 75% mini-benchmark baseline with the >90% production target, checks prompt/schema/token-budget/read-only boundaries, and marks automatic production explanation as blocked until larger benchmark and response-format enforcement are proven.
 - Current state is suitable for manual explanation, not automatic production calling.
 
 ### Gaps
@@ -419,6 +420,7 @@ Enable production-ready worker task orchestration
 - Response format enforcement is incomplete.
 - Token budget strategy is incomplete.
 - `auto_after_task` needs conservative production governance.
+- `deepseek_json_stability_audit.status=manual_ready_production_blocked` is a local sanitizer/prompt contract, not a real model benchmark pass.
 
 ### Implementation Phases
 
@@ -426,6 +428,7 @@ Enable production-ready worker task orchestration
 2. Tighten response format and retry/repair policy.
 3. Track token budget and model choice per purpose.
 4. Keep automatic explanation disabled unless explicitly enabled and bounded.
+5. Promote `deepseek_json_stability_audit` from local readiness to real benchmark evidence only after provider-backed samples meet the target.
 
 ### Acceptance Criteria
 
@@ -435,12 +438,15 @@ Enable production-ready worker task orchestration
 - No numeric overwrite.
 - Token cost is predictable and auditable.
 - Failure does not pollute local results.
+- `deepseek_json_stability_audit` must show `production_ready=true` only after JSON success rate exceeds 90%, larger benchmark is complete, and response format is enforced.
+- GET cache and React render must keep `model_call_status=not_called`.
 
 ### Forbidden
 
 - Do not call DeepSeek on page render or GET cache.
 - Do not use DeepSeek as a data source.
 - Do not let model output overwrite prices, positions, factor values, operation zones, or action.
+- Do not treat local sanitizer/prompt audit as production automatic explanation readiness.
 
 ### Recommended Commit Message
 

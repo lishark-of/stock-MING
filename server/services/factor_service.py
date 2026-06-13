@@ -41,6 +41,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     now = _now_iso()
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
+    packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
@@ -77,6 +78,49 @@ def _deepseek_explain_governance(*, payload: Any = None) -> dict[str, Any]:
         "does_not_override_numeric_values": True,
         "does_not_modify_strategy_action": True,
     }
+
+
+def _attach_deepseek_json_stability_audit(
+    hub: dict[str, Any],
+    *,
+    prompt_preview: dict[str, Any] | None = None,
+    validation_summary: dict[str, Any] | None = None,
+    governance: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    governance = dict(governance or _deepseek_explain_governance())
+    hub["deepseek_explain_governance"] = governance
+    prompt_preview = prompt_preview or _deepseek_prompt_preview(hub)
+    explanation = hub.get("deepseek_explanation") if isinstance(hub.get("deepseek_explanation"), dict) else {
+        "status": "not_called",
+        "parse_failed": False,
+        "model_call_status": "not_called",
+        "token_estimate": 0,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+    }
+    model_strategy = _deepseek_model_strategy("factor_explain")
+    if validation_summary is None:
+        validation_summary = hub.get("deepseek_validation_summary") if isinstance(hub.get("deepseek_validation_summary"), dict) else None
+    if validation_summary is None:
+        validation_summary = _deepseek_validation_summary(
+            explanation=explanation,
+            prompt_preview=prompt_preview,
+            model_strategy=model_strategy,
+        )
+    audit = factor_research.build_factor_deepseek_json_stability_audit(
+        prompt_preview=prompt_preview,
+        validation_summary=validation_summary,
+        governance=governance,
+    )
+    governance["json_stability_audit_status"] = audit["status"]
+    governance["json_manual_explanation_ready"] = audit["manual_explanation_ready"]
+    governance["json_production_ready"] = audit["production_ready"]
+    governance["json_auto_after_task_ready"] = audit["auto_after_task_production_ready"]
+    hub["deepseek_explain_governance"] = governance
+    hub["deepseek_validation_summary"] = validation_summary
+    hub["deepseek_json_stability_audit"] = audit
+    hub["deepseek_json_stability_rows"] = audit["rows"]
+    return hub
 
 
 def _factor_universe_cache_part(hub: dict[str, Any]) -> dict[str, Any]:
@@ -916,6 +960,7 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
             hub["deepseek_explain_governance"] = governance
             hub["deepseek_explanation_cache_key"] = cache_key
             hub["deepseek_explanation_cache_hit"] = True
+            hub = _attach_deepseek_json_stability_audit(hub, governance=governance)
             update_task_status(task["task_id"], status="running", progress=0.75, current_step="deepseek_explanation_cache_hit", call_ledger=call_ledger)
             SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
             return update_task_status(
@@ -976,6 +1021,12 @@ def run_factor_deepseek_explanation_task(payload: Any = None) -> dict[str, Any]:
             explanation=explanation,
             prompt_preview=prompt_preview,
             model_strategy=model_strategy,
+        )
+        hub = _attach_deepseek_json_stability_audit(
+            hub,
+            prompt_preview=prompt_preview,
+            validation_summary=hub["deepseek_validation_summary"],
+            governance=governance,
         )
         hub["deepseek_model_strategy"] = model_strategy
         hub["deepseek_called"] = False

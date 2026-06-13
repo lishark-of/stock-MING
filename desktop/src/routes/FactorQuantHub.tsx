@@ -76,11 +76,13 @@ export default function FactorQuantHub() {
   const deepseek = packet.deepseek_explanation ?? {};
   const deepseekGovernance = packet.deepseek_explain_governance ?? {};
   const deepseekValidation = packet.deepseek_validation_summary ?? {};
+  const deepseekJsonStability = packet.deepseek_json_stability_audit ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
   const scoreChartRows = toRows(scoreChart.bucket_rows);
   const scoreChartContractRows = objectRows(scoreChartContract as Record<string, unknown>, "chart_contract");
   const deepseekValidationRows = objectRows(deepseekValidation as Record<string, unknown>, "deepseek_validation");
+  const deepseekJsonStabilityRows = toRows(packet.deepseek_json_stability_rows);
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
   const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
@@ -214,6 +216,12 @@ export default function FactorQuantHub() {
           { label: "DS model call", value: deepseekValidation.model_call_status ?? "not_called", tone: deepseekValidation.model_call_status === "not_called" ? "good" : "warn" },
           { label: "DS invalid discarded", value: deepseekValidation.invalid_output_discarded === true ? "是" : "否", tone: deepseekValidation.invalid_output_discarded === true ? "warn" : "good" },
           { label: "DS token estimate", value: deepseek.token_estimate ?? 0 },
+          { label: "DS JSON audit", value: deepseekJsonStability.status ?? "missing", tone: deepseekJsonStability.production_ready === true ? "good" : "warn" },
+          { label: "DS JSON target", value: deepseekJsonStability.required_json_success_rate ?? 0.9 },
+          { label: "DS JSON last", value: deepseekJsonStability.last_known_mini_benchmark_success_rate ?? 0.75, tone: deepseekJsonStability.production_ready === true ? "good" : "warn" },
+          { label: "DS benchmark", value: deepseekJsonStability.larger_benchmark_done === true ? "完成" : "未完成", tone: deepseekJsonStability.larger_benchmark_done === true ? "good" : "warn" },
+          { label: "DS response_format", value: deepseekJsonStability.response_format_enforced === true ? "强约束" : "未强约束", tone: deepseekJsonStability.response_format_enforced === true ? "good" : "warn" },
+          { label: "DS auto ready", value: deepseekJsonStability.auto_after_task_production_ready === true ? "ready" : "blocked", tone: deepseekJsonStability.auto_after_task_production_ready === true ? "good" : "warn" },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" }
         ]}
       />
@@ -261,6 +269,18 @@ export default function FactorQuantHub() {
       </PacketCard>
       <h3>DeepSeek 解释校验</h3>
       <DataLineageTable rows={deepseekValidationRows} />
+      <PacketCard title="DeepSeek JSON 稳定性审计" subtitle="本地 sanitizer/prompt 合同；不调用模型">
+        <p>status: {String(deepseekJsonStability.status ?? "missing")}</p>
+        <p>scope: {String(deepseekJsonStability.scope ?? "local_sanitizer_prompt_contract_not_model_call")}</p>
+        <p>required_json_success_rate: {String(deepseekJsonStability.required_json_success_rate ?? 0.9)}</p>
+        <p>last_known_mini_benchmark_success_rate: {String(deepseekJsonStability.last_known_mini_benchmark_success_rate ?? 0.75)}</p>
+        <p>larger_benchmark_done: {String(deepseekJsonStability.larger_benchmark_done ?? false)}</p>
+        <p>response_format_enforced: {String(deepseekJsonStability.response_format_enforced ?? false)}</p>
+        <p>auto_after_task_production_ready: {String(deepseekJsonStability.auto_after_task_production_ready ?? false)}</p>
+        <p>model_call_status: {String(deepseekJsonStability.model_call_status ?? "not_called")}</p>
+      </PacketCard>
+      <h3>DeepSeek JSON 稳定性审计明细</h3>
+      <DataLineageTable rows={deepseekJsonStabilityRows} />
       <h3>因子库</h3>
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>

@@ -7074,11 +7074,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         factor = self.client.get("/api/factor-quant/cache").json()
         self.assertTrue(factor["ok"])
         explanation = factor["data"]["deepseek_explanation"]
+        json_audit = factor["data"]["deepseek_json_stability_audit"]
+        json_audit_rows = {row["criterion"]: row for row in factor["data"]["deepseek_json_stability_rows"]}
         self.assertFalse(factor["data"]["deepseek_called"])
         self.assertEqual(explanation["payload"]["summary"], "整理摘要")
         self.assertIn("price", explanation["ignored_keys"])
         self.assertIn("strategy_action", explanation["ignored_keys"])
         self.assertIn("factor_values", explanation["ignored_keys"])
+        self.assertEqual(json_audit["status"], "manual_ready_production_blocked")
+        self.assertEqual(json_audit["scope"], "local_sanitizer_prompt_contract_not_model_call")
+        self.assertTrue(json_audit["manual_explanation_ready"])
+        self.assertFalse(json_audit["production_ready"])
+        self.assertFalse(json_audit["auto_after_task_production_ready"])
+        self.assertEqual(json_audit["required_json_success_rate"], 0.9)
+        self.assertEqual(json_audit["last_known_mini_benchmark_success_rate"], 0.75)
+        self.assertFalse(json_audit["larger_benchmark_done"])
+        self.assertFalse(json_audit["response_format_enforced"])
+        self.assertEqual(json_audit["model_call_status"], "not_called")
+        self.assertFalse(json_audit["deepseek_called"])
+        self.assertIn("json_success_rate_threshold", json_audit["production_blockers"])
+        self.assertIn("larger_benchmark_done", json_audit["production_blockers"])
+        self.assertIn("response_format_enforced", json_audit["production_blockers"])
+        self.assertTrue(json_audit_rows["allowed_top_level_schema"]["passed"])
+        self.assertTrue(json_audit_rows["auto_after_task_default_off"]["passed"])
+        self.assertFalse(json_audit_rows["json_success_rate_threshold"]["passed"])
+        self.assertFalse(json_audit_rows["response_format_enforced"]["passed"])
+        self.assertEqual(
+            factor["data"]["deepseek_explain_governance"]["json_stability_audit_status"],
+            "manual_ready_production_blocked",
+        )
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
         self.assertTrue(factor["data"]["next_session_bridge"]["does_not_modify_action"])
 

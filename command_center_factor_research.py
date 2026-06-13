@@ -31,6 +31,9 @@ DEEPSEEK_EXPLANATION_ALLOWED_KEYS = {
     "missing_data_notes",
     "discipline_notes",
 }
+DEEPSEEK_JSON_STABILITY_REQUIRED_SUCCESS_RATE = 0.90
+DEEPSEEK_JSON_STABILITY_LAST_KNOWN_SUCCESS_RATE = 0.75
+DEEPSEEK_JSON_STABILITY_LAST_KNOWN_SAMPLE_SIZE = 8
 SCORE_EXCLUDED_FACTOR_KEYS = {"chokepoint_method_hint", "serenity_method_source"}
 FRESHNESS_MAX_AGE_DAYS = 7
 FRESHNESS_STALE_MAX_AGE_DAYS = 30
@@ -3166,6 +3169,150 @@ def build_factor_deepseek_explanation_prompt(hub_packet: Any) -> dict:
         "allowed_top_level_keys": sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS),
         "enters_deepseek_prompt": True,
         "does_not_include_full_packet": True,
+    }
+
+
+def build_factor_deepseek_json_stability_audit(
+    *,
+    prompt_preview: Any = None,
+    validation_summary: Any = None,
+    governance: Any = None,
+    response_format_enforced: bool = False,
+    larger_benchmark_done: bool = False,
+    last_known_success_rate: float = DEEPSEEK_JSON_STABILITY_LAST_KNOWN_SUCCESS_RATE,
+    last_known_sample_size: int = DEEPSEEK_JSON_STABILITY_LAST_KNOWN_SAMPLE_SIZE,
+) -> dict:
+    prompt = _as_mapping(prompt_preview)
+    validation = _as_mapping(validation_summary)
+    governance_map = _as_mapping(governance)
+    allowed_keys = sorted(str(key) for key in (prompt.get("allowed_top_level_keys") or DEEPSEEK_EXPLANATION_ALLOWED_KEYS))
+    required_keys = sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS)
+    prompt_token_estimate = int(prompt.get("token_estimate") or validation.get("prompt_token_estimate") or 0)
+    output_token_estimate = int(validation.get("output_token_estimate") or 0)
+    model_call_status = str(validation.get("model_call_status") or "not_called")
+    ignored_key_count = int(validation.get("ignored_key_count") or 0)
+    parse_failed = bool(validation.get("parse_failed"))
+    invalid_output_discarded = bool(validation.get("invalid_output_discarded")) or parse_failed
+    configured_auto = bool(governance_map.get("configured_auto_after_task"))
+    auto_after_task = bool(governance_map.get("auto_after_task"))
+    success_rate_gap = max(0.0, DEEPSEEK_JSON_STABILITY_REQUIRED_SUCCESS_RATE - float(last_known_success_rate))
+
+    rows = [
+        {
+            "criterion": "allowed_top_level_schema",
+            "status": "passed" if allowed_keys == required_keys else "blocked",
+            "passed": allowed_keys == required_keys,
+            "evidence": ",".join(allowed_keys),
+            "production_blocker": False,
+        },
+        {
+            "criterion": "illegal_fields_discarded",
+            "status": "covered_by_sanitizer",
+            "passed": True,
+            "evidence": f"ignored_key_count={ignored_key_count}",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "parse_failed_does_not_pollute_packet",
+            "status": "passed" if (not parse_failed or invalid_output_discarded) else "blocked",
+            "passed": not parse_failed or invalid_output_discarded,
+            "evidence": f"parse_failed={parse_failed}; invalid_output_discarded={invalid_output_discarded}",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "numeric_and_action_overwrite_blocked",
+            "status": "passed" if validation.get("does_not_override_numeric_values") is not False and validation.get("does_not_output_strategy_action") is not False else "blocked",
+            "passed": validation.get("does_not_override_numeric_values") is not False and validation.get("does_not_output_strategy_action") is not False,
+            "evidence": "sanitizer keeps explanation-only fields",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "token_budget_estimate_present",
+            "status": "passed" if prompt_token_estimate > 0 else "blocked",
+            "passed": prompt_token_estimate > 0,
+            "evidence": f"prompt={prompt_token_estimate}; output={output_token_estimate}",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "model_call_not_triggered_by_audit",
+            "status": "passed" if model_call_status == "not_called" else "blocked",
+            "passed": model_call_status == "not_called",
+            "evidence": f"model_call_status={model_call_status}",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "cache_and_render_never_call_model",
+            "status": "passed" if governance_map.get("cache_reads_never_call_deepseek") is not False and governance_map.get("react_render_never_calls_deepseek") is not False else "blocked",
+            "passed": governance_map.get("cache_reads_never_call_deepseek") is not False and governance_map.get("react_render_never_calls_deepseek") is not False,
+            "evidence": "GET cache and React render are read-only boundaries",
+            "production_blocker": False,
+        },
+        {
+            "criterion": "auto_after_task_default_off",
+            "status": "passed" if not configured_auto and not auto_after_task else "blocked",
+            "passed": not configured_auto and not auto_after_task,
+            "evidence": f"configured_auto_after_task={configured_auto}; auto_after_task={auto_after_task}",
+            "production_blocker": bool(configured_auto or auto_after_task),
+        },
+        {
+            "criterion": "json_success_rate_threshold",
+            "status": "blocked" if float(last_known_success_rate) < DEEPSEEK_JSON_STABILITY_REQUIRED_SUCCESS_RATE else "passed",
+            "passed": float(last_known_success_rate) >= DEEPSEEK_JSON_STABILITY_REQUIRED_SUCCESS_RATE,
+            "evidence": f"last_known={last_known_success_rate:.2f}; required={DEEPSEEK_JSON_STABILITY_REQUIRED_SUCCESS_RATE:.2f}; sample_size={last_known_sample_size}",
+            "production_blocker": float(last_known_success_rate) < DEEPSEEK_JSON_STABILITY_REQUIRED_SUCCESS_RATE,
+        },
+        {
+            "criterion": "larger_benchmark_done",
+            "status": "passed" if larger_benchmark_done else "blocked",
+            "passed": bool(larger_benchmark_done),
+            "evidence": "larger representative benchmark is required before automatic production explanation",
+            "production_blocker": not larger_benchmark_done,
+        },
+        {
+            "criterion": "response_format_enforced",
+            "status": "passed" if response_format_enforced else "blocked",
+            "passed": bool(response_format_enforced),
+            "evidence": "prompt asks for JSON, but provider-level response_format enforcement is not yet proven",
+            "production_blocker": not response_format_enforced,
+        },
+    ]
+    safety_rows = [row for row in rows if not row.get("production_blocker")]
+    safety_passed = all(bool(row.get("passed")) for row in safety_rows)
+    production_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    production_ready = safety_passed and not production_blockers
+    if not safety_passed:
+        status = "local_json_safety_blocked"
+    elif production_ready:
+        status = "production_auto_ready"
+    else:
+        status = "manual_ready_production_blocked"
+    return {
+        "schema_version": "factor_deepseek_json_stability_audit.v1",
+        "status": status,
+        "scope": "local_sanitizer_prompt_contract_not_model_call",
+        "manual_explanation_ready": safety_passed,
+        "production_ready": production_ready,
+        "auto_after_task_production_ready": production_ready and not auto_after_task,
+        "required_json_success_rate": DEEPSEEK_JSON_STABILITY_REQUIRED_SUCCESS_RATE,
+        "last_known_mini_benchmark_success_rate": float(last_known_success_rate),
+        "last_known_mini_benchmark_sample_size": int(last_known_sample_size),
+        "json_success_rate_gap": round(success_rate_gap, 4),
+        "larger_benchmark_done": bool(larger_benchmark_done),
+        "response_format_enforced": bool(response_format_enforced),
+        "prompt_only_json_instruction": "JSON object" in str(prompt.get("user_prompt") or ""),
+        "prompt_token_estimate": prompt_token_estimate,
+        "output_token_estimate": output_token_estimate,
+        "token_budget_estimate_present": prompt_token_estimate > 0,
+        "model_call_status": model_call_status,
+        "deepseek_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "production_blockers": production_blockers,
+        "rows": rows,
     }
 
 

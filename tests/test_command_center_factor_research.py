@@ -1229,6 +1229,58 @@ class CommandCenterFactorResearchTests(unittest.TestCase):
         self.assertGreater(prompt["token_estimate"], 0)
         self.assertTrue(prompt["does_not_include_full_packet"])
 
+    def test_deepseek_json_stability_audit_blocks_automatic_production_until_benchmark_ready(self):
+        hub = factor_research.build_factor_quant_hub_packet(mode="cache_only")
+        prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)
+        sanitized = factor_research.sanitize_factor_deepseek_explanation(
+            {"summary": "只解释", "strategy_action": "buy", "price": 99},
+            model_used=DEEPSEEK_MODEL_DEFAULTS["factor_explain"],
+            input_hash=prompt["input_hash"],
+        )
+        audit = factor_research.build_factor_deepseek_json_stability_audit(
+            prompt_preview=prompt,
+            validation_summary={
+                "model_call_status": "not_called",
+                "prompt_token_estimate": prompt["token_estimate"],
+                "output_token_estimate": sanitized["token_estimate"],
+                "parse_failed": sanitized["parse_failed"],
+                "ignored_key_count": len(sanitized["ignored_keys"]),
+                "invalid_output_discarded": False,
+                "does_not_override_numeric_values": sanitized["does_not_override_numeric_values"],
+                "does_not_output_strategy_action": sanitized["does_not_output_strategy_action"],
+            },
+            governance={
+                "mode": "manual_only",
+                "auto_after_task": False,
+                "configured_auto_after_task": False,
+                "cache_reads_never_call_deepseek": True,
+                "react_render_never_calls_deepseek": True,
+            },
+        )
+        rows = {row["criterion"]: row for row in audit["rows"]}
+
+        self.assertEqual(audit["status"], "manual_ready_production_blocked")
+        self.assertTrue(audit["manual_explanation_ready"])
+        self.assertFalse(audit["production_ready"])
+        self.assertFalse(audit["auto_after_task_production_ready"])
+        self.assertEqual(audit["required_json_success_rate"], 0.9)
+        self.assertEqual(audit["last_known_mini_benchmark_success_rate"], 0.75)
+        self.assertEqual(audit["last_known_mini_benchmark_sample_size"], 8)
+        self.assertFalse(audit["larger_benchmark_done"])
+        self.assertFalse(audit["response_format_enforced"])
+        self.assertEqual(audit["model_call_status"], "not_called")
+        self.assertFalse(audit["deepseek_called"])
+        self.assertIn("json_success_rate_threshold", audit["production_blockers"])
+        self.assertIn("larger_benchmark_done", audit["production_blockers"])
+        self.assertIn("response_format_enforced", audit["production_blockers"])
+        self.assertTrue(rows["allowed_top_level_schema"]["passed"])
+        self.assertTrue(rows["illegal_fields_discarded"]["passed"])
+        self.assertTrue(rows["numeric_and_action_overwrite_blocked"]["passed"])
+        self.assertTrue(rows["auto_after_task_default_off"]["passed"])
+        self.assertFalse(rows["json_success_rate_threshold"]["passed"])
+        self.assertFalse(rows["larger_benchmark_done"]["passed"])
+        self.assertFalse(rows["response_format_enforced"]["passed"])
+
     def test_deepseek_sanitizer_parse_failed_keeps_hashes_and_allowed_schema(self):
         sanitized = factor_research.sanitize_factor_deepseek_explanation(
             "不是 JSON",
