@@ -539,6 +539,7 @@ Stabilize DeepSeek pro explanation benchmark
 - ECharts initial and maturing chart contracts exist.
 - Current display includes latest close, reference lines, operation zones, data credibility, and DeepSeek status.
 - The cache payload now exposes `interaction_readiness_audit` and `interaction_readiness_rows` so hover/click evidence, reference-line source display, operation-zone guardrails, position-conflict visibility, DeepSeek status visibility, read-only frontend boundaries, and Streamlit parity gaps are auditable.
+- `scripts/next_session_map_contract.py` is now part of the local push gate. It validates the exact ECharts payload, interaction readiness, reference/zone/position/DeepSeek visibility, GET cache envelope, button-gated local task, and React API-client/read-only boundaries while keeping `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false`.
 
 ### Gaps
 
@@ -547,6 +548,7 @@ Stabilize DeepSeek pro explanation benchmark
 - Operation zone details are visible through guardrail rows, but full legacy interaction comparison is incomplete.
 - Position conflict visualization is present, but clarity can still be improved.
 - Full parity with legacy Streamlit chart is incomplete.
+- The Next-session map push-gate contract is local only; browser visual QA, performance trace, Streamlit parity, and production replacement remain pending.
 
 ### Implementation Phases
 
@@ -560,6 +562,7 @@ Stabilize DeepSeek pro explanation benchmark
 - Missing cache state is clear.
 - Available cache renders a complete chart.
 - `interaction_readiness_audit` distinguishes ready contracts, blockers, and parity-pending items.
+- `scripts/next_session_map_contract.py` passes while reporting `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false`.
 - Frontend does not compute action.
 - Frontend does not mutate price, position, or `operation_zones`.
 - `production_replacement_complete` remains false until legacy parity is actually complete.
@@ -569,6 +572,7 @@ Stabilize DeepSeek pro explanation benchmark
 - Do not calculate trade action in React.
 - Do not rewrite backend packet values in the chart layer.
 - Do not hide freshness or credibility warnings.
+- Do not treat `scripts/next_session_map_contract.py` passing as browser visual QA, performance trace, Streamlit parity, or production ECharts replacement completion.
 
 ### Recommended Commit Message
 
@@ -696,6 +700,7 @@ Retire Streamlit from primary user workflow
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness contracts remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
 - `scripts/deepseek_governance_contract.py` is now part of the local push gate. It validates LTG-07 manual/default-off governance, sanitizer whitelist, parse-failed discard, JSON stability blockers, response-format review blockers, button gating, model strategy, no-model-call, no-secret, no-trade, and no-action boundaries while provider-backed benchmark and production automatic explanation remain pending.
+- `scripts/next_session_map_contract.py` is now part of the local push gate. It validates LTG-08 exact ECharts payload, interaction readiness, reference/zone/position/DeepSeek visibility, current GET cache envelope, button-gated local task, React API-client/read-only display, no-browser, no-provider, no-trade, and no-action boundaries while browser visual QA, performance trace, Streamlit parity, and production replacement remain pending.
 - `scripts/candidate_radar_contract.py` is now part of the local push gate. It validates LTG-13 Candidate Radar cache reads, local quick-scan task gating, full-pool/deep-scan plan-only boundaries, no-feature-loss QA, replacement-gap triage, result-delta clarity, and no-trade/no-action boundaries while production radar replacement remains pending.
 - `scripts/storage_contract.py` is now part of the local push gate. It validates LTG-05 Storage cache, schema/version preflights, dry-run packets, DuckDB query policy, artifact cleanup review, and storage task catalog gating remain local/no-write/no-provider/no-trade while physical storage production remains pending.
 - `scripts/worker_contract.py` is now part of the local push gate. It validates LTG-06 Worker cache, dispatch plans, production blocker audit, healthcheck QA, activation review, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while production worker activation remains pending.
@@ -713,6 +718,7 @@ Retire Streamlit from primary user workflow
 - Tushare acceptance contract is present, but it is still a local matrix/readiness guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
 - Factor Test Lab contract is present, but it is still a local research-boundary guard; real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
 - DeepSeek governance contract is present, but it is still a local sanitizer/response-format/no-model-call guard; real provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, and production auto-after-task readiness remain later LTG-07 acceptance phases.
+- Next-session map contract is present, but it is still a local no-browser/no-provider guard; browser visual QA, performance trace, Streamlit parity, and production ECharts replacement remain later LTG-08 acceptance phases.
 - Candidate Radar contract is present, but it is still a local replacement-boundary guard; real full-pool/deep-scan execution, provider-backed parity acceptance, browser performance trace, and visual QA remain later LTG-13 acceptance phases.
 - Storage contract is present, but it is still a local preflight/dry-run guard; real physical schema validation, migration, manifest validation, partition migration, compaction, TTL refresh execution, and cleanup delete execution remain later LTG-05 acceptance phases.
 - Worker contract is present, but it is still a local no-process-start guard; real Celery/Redis startup, Redis broker health, synthetic healthcheck execution, cross-process controls, task log persistence, and scheduler production config remain later LTG-06 acceptance phases.
@@ -740,8 +746,9 @@ Retire Streamlit from primary user workflow
 - Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
 - Tushare acceptance contract runs after Data Health and before static UI QA, and keeps `provider_backed_acceptance_done=false` / `production_tushare_pipeline_complete=false` visible.
 - Factor Test Lab contract runs after Tushare acceptance and before static UI QA, and keeps `provider_backed_small_pool_validation_done=false` / `production_factor_test_validation_complete=false` visible.
-- DeepSeek governance contract runs after Factor Test Lab and before Candidate Radar, and keeps `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false` visible.
-- Candidate Radar contract runs after DeepSeek governance and before static motion QA, and keeps `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, and `deep_scan_done=false` visible.
+- DeepSeek governance contract runs after Factor Test Lab and before Next-session map, and keeps `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false` visible.
+- Next-session map contract runs after DeepSeek governance and before Candidate Radar, and keeps `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false` visible.
+- Candidate Radar contract runs after Next-session map and before static motion QA, and keeps `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, and `deep_scan_done=false` visible.
 - Storage contract runs after Candidate Radar and before static motion QA, and keeps `production_storage_complete=false`, `schema_migration_executed=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, and `cache_ttl_refresh_executed=false` visible.
 - Worker contract runs after Storage and before static motion QA, and keeps `production_worker_complete=false`, `healthcheck_executed=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, and `scheduler_started=false` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.

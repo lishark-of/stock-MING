@@ -111,6 +111,7 @@ write_release_readiness_report() {
 - tushare_acceptance_contract: passed_local_contract_provider_execution_pending
 - factor_test_lab_contract: passed_local_contract_provider_execution_pending
 - deepseek_governance_contract: passed_local_contract_provider_benchmark_pending
+- next_session_map_contract: passed_local_contract_streamlit_parity_pending
 - candidate_radar_contract: passed_local_contract_replacement_pending
 - storage_contract: passed_local_contract_physical_migration_pending
 - worker_contract: passed_local_contract_worker_activation_pending
@@ -146,6 +147,7 @@ run_step "Data Health freshness contract" "$PYTHON_BIN" scripts/data_health_fres
 run_step "Tushare acceptance contract" "$PYTHON_BIN" scripts/tushare_acceptance_contract.py
 run_step "Factor Test Lab contract" "$PYTHON_BIN" scripts/factor_test_lab_contract.py
 run_step "DeepSeek governance contract" "$PYTHON_BIN" scripts/deepseek_governance_contract.py
+run_step "Next-session map contract" "$PYTHON_BIN" scripts/next_session_map_contract.py
 run_step "Candidate Radar contract" "$PYTHON_BIN" scripts/candidate_radar_contract.py
 run_step "Storage contract" "$PYTHON_BIN" scripts/storage_contract.py
 run_step "Worker contract" "$PYTHON_BIN" scripts/worker_contract.py
