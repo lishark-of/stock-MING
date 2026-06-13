@@ -33,6 +33,7 @@ export default function RiskGuardrails() {
   const legacy = (cache.legacy_decision_chain_summary as Record<string, unknown> | undefined) ?? {};
   const recovery = (cache.strategy_prerequisite_recovery_ledger as Record<string, unknown> | undefined) ?? {};
   const budget = (cache.position_risk_budget as Record<string, unknown> | undefined) ?? {};
+  const tradeIsolationAudit = (cache.trade_isolation_audit as Record<string, unknown> | undefined) ?? {};
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
@@ -59,6 +60,10 @@ export default function RiskGuardrails() {
           { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
           { label: "修改持仓", value: cache.does_not_modify_holdings === false ? "可能" : "不会", tone: cache.does_not_modify_holdings === false ? "bad" : "good" },
           { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "交易隔离审计", value: tradeIsolationAudit.status as string | undefined, tone: tradeIsolationAudit.status === "trade_isolation_ready" ? "good" : "warn" },
+          { label: "交易隔离阻断", value: counts.trade_isolation_blocker_count as number | undefined, tone: Number(counts.trade_isolation_blocker_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "POST 边界行", value: counts.task_trade_boundary_row_count as number | undefined },
+          { label: "边界页面", value: counts.trade_boundary_frontend_surface_count as number | undefined },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length }
         ]}
@@ -128,6 +133,23 @@ export default function RiskGuardrails() {
         <p>不会调用 Tushare、DeepSeek 或 GitHub；不执行真实交易；不自动下单；不修改 strategy action；不清除风险标记。</p>
         <p>local_risk_guardrails_cache 只读取 risk_alerts、execution_guardrail_overview、legacy_decision_chain_summary 等本地字段。</p>
         <DataLineageTable rows={[policy]} />
+      </PacketCard>
+
+      <PacketCard title="交易隔离审计" subtitle="trade_isolation_audit：本地 task catalog + 前端边界合同，不接入券商或订单接口" status={String(tradeIsolationAudit.status ?? "missing")}>
+        <p>schema_version: {String(tradeIsolationAudit.schema_version ?? "--")}</p>
+        <p>scope: {String(tradeIsolationAudit.scope ?? "command_center_3_cache_task_frontend_contract")}</p>
+        <p>known_post_route_count: {String(tradeIsolationAudit.known_post_route_count ?? 0)}</p>
+        <p>no_automatic_order_path_in_task_catalog: {String(tradeIsolationAudit.no_automatic_order_path_in_task_catalog ?? false)}</p>
+        <p>research_paths_cannot_mutate_strategy_action: {String(tradeIsolationAudit.research_paths_cannot_mutate_strategy_action ?? false)}</p>
+        <p>future_trade_integration_out_of_roadmap: {String(tradeIsolationAudit.future_trade_integration_out_of_roadmap ?? true)}</p>
+      </PacketCard>
+
+      <PacketCard title="交易隔离检查项" subtitle="trade_isolation_rows；任务目录、POST 路由、前端边界和未来交易隔离要求" status="trade_isolation_rows">
+        <DataLineageTable rows={rows(cache.trade_isolation_rows)} />
+      </PacketCard>
+
+      <PacketCard title="交易隔离边界行" subtitle="trade_isolation_boundary_rows；task/lifecycle routes 与前端页面边界清单" status="trade_isolation_boundary_rows">
+        <DataLineageTable rows={rows(cache.trade_isolation_boundary_rows)} />
       </PacketCard>
 
       <PacketCard title="调用血缘" subtitle="local_risk_guardrails_cache；不外联、不写回" status="lineage">

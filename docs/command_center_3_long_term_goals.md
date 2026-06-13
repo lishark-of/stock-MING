@@ -639,11 +639,13 @@ Add release gate readiness audit
 
 - Automatic real trading is not connected.
 - Multiple packets and APIs declare `does_not_execute_trades` and `does_not_modify_strategy_action`.
+- `GET /api/risk/cache` now exposes `trade_isolation_audit`, `trade_isolation_rows`, and `trade_isolation_boundary_rows`: a cache-only audit of risk policy, task catalog POST route boundaries, and frontend no-trade/no-action visibility.
 
 ### Gaps
 
 - Future productionization could accidentally blur research and execution boundaries.
 - Any eventual trading integration would need a separate project, separate approvals, and separate safety design.
+- The audit proves current Command Center 3 cache/task/frontend contracts, not a future broker/order integration design.
 
 ### Implementation Phases
 
@@ -656,6 +658,7 @@ Add release gate readiness audit
 - No automatic order path exists.
 - Research/factor/model/cache/frontend paths cannot mutate `strategy action`.
 - Any future trade integration is explicitly out of this roadmap unless a separate approved design exists.
+- `trade_isolation_audit.status=trade_isolation_ready`, with zero blockers and all known POST routes covered by the task catalog.
 
 ### Forbidden
 
