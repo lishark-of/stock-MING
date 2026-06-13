@@ -135,6 +135,8 @@ def build_contract() -> dict[str, Any]:
     production_qa = factor_service._factor_test_production_validation_qa_contract(factor_tests, now)
     factor_tests["production_validation_qa_contract"] = production_qa
     provider_blocker_audit = factor_service._factor_test_provider_validation_blocker_audit(factor_tests, now)
+    factor_tests["provider_validation_blocker_audit"] = provider_blocker_audit
+    provider_sample_receipt = factor_service._factor_test_provider_sample_readiness_receipt(factor_tests, now)
     production_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(production_qa.get("rows"))
@@ -145,6 +147,7 @@ def build_contract() -> dict[str, Any]:
     cache_local_dataset_sample = _dict(cache_factor_tests.get("local_dataset_sample_evidence"))
     cache_production_qa = _dict(cache_factor_tests.get("production_validation_qa_contract"))
     cache_provider_blocker_audit = _dict(cache_factor_tests.get("provider_validation_blocker_audit"))
+    cache_provider_sample_receipt = _dict(cache_factor_tests.get("provider_sample_readiness_receipt"))
     cache_call_ledger = _list(cache_packet.get("call_ledger"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/factor_test_lab_contract.py")
@@ -272,6 +275,33 @@ def build_contract() -> dict[str, Any]:
             "Provider validation blocker audit must centralize remaining real small-pool/full-market blockers without provider calls or metric promotion.",
         ),
         _row(
+            "provider_sample_readiness_receipt_is_local",
+            provider_sample_receipt.get("schema_version") == "factor_test_provider_sample_readiness_receipt.v1"
+            and provider_sample_receipt.get("scope") == "local_factor_test_provider_sample_readiness_receipt_no_provider_execution"
+            and provider_sample_receipt.get("local_receipt_ready") is True
+            and provider_sample_receipt.get("provider_backed_small_pool_validation_done") is False
+            and provider_sample_receipt.get("full_market_validation_done") is False
+            and provider_sample_receipt.get("production_factor_test_validation_complete") is False
+            and provider_sample_receipt.get("provider_refresh_called_by_receipt") is False
+            and provider_sample_receipt.get("cache_get_external_calls") is False
+            and provider_sample_receipt.get("receipt_external_calls_triggered") is False
+            and provider_sample_receipt.get("tushare_called_by_receipt") is False
+            and provider_sample_receipt.get("deepseek_called") is False
+            and provider_sample_receipt.get("github_called") is False
+            and provider_sample_receipt.get("does_not_execute_trades") is True
+            and provider_sample_receipt.get("does_not_modify_strategy_action") is True
+            and "GET /api/factor-quant/cache provider refresh" in provider_sample_receipt.get("not_allowed_next_steps", [])
+            and "storage query rows as IC metrics" in provider_sample_receipt.get("not_allowed_next_steps", [])
+            and "local light metrics as provider acceptance" in provider_sample_receipt.get("not_allowed_next_steps", [])
+            and provider_sample_receipt.get("allowed_next_step")
+            in {
+                "complete_local_dataset_sample_and_forward_returns",
+                "explicit_post_task_factor_test_provider_small_pool_acceptance",
+                "review_prior_factor_test_provider_evidence",
+            },
+            "Provider sample readiness receipt may choose the next safe LTG-03 step, but it must stay local and cannot promote local metrics or QA rows.",
+        ),
+        _row(
             "cache_get_factor_boundary",
             cache_packet.get("mode") == "light"
             and cache_production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
@@ -281,11 +311,27 @@ def build_contract() -> dict[str, Any]:
             and cache_provider_blocker_audit.get("schema_version") == "factor_test_provider_validation_blocker_audit.v1"
             and cache_provider_blocker_audit.get("provider_validation_ready") is False
             and cache_provider_blocker_audit.get("production_factor_test_validation_complete") is False
+            and cache_provider_sample_receipt.get("schema_version") == "factor_test_provider_sample_readiness_receipt.v1"
+            and cache_provider_sample_receipt.get("provider_backed_small_pool_validation_done") is False
+            and cache_provider_sample_receipt.get("production_factor_test_validation_complete") is False
+            and cache_provider_sample_receipt.get("provider_refresh_called_by_receipt") is False
             and _flag_false(cache_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and cache_packet.get("does_not_execute_trades") is True
             and cache_packet.get("does_not_modify_strategy_action") is True
             and any(_dict(row).get("api") == "local_factor_test_production_validation_qa_contract" for row in cache_call_ledger),
             "GET factor cache must remain local/read-only and expose Factor Test Lab production QA as pending, not production complete.",
+        ),
+        _row(
+            "cache_get_exposes_provider_sample_receipt_boundary",
+            cache_provider_sample_receipt.get("schema_version") == "factor_test_provider_sample_readiness_receipt.v1"
+            and cache_provider_sample_receipt.get("scope") == "local_factor_test_provider_sample_readiness_receipt_no_provider_execution"
+            and cache_provider_sample_receipt.get("provider_backed_small_pool_validation_done") is False
+            and cache_provider_sample_receipt.get("production_factor_test_validation_complete") is False
+            and cache_provider_sample_receipt.get("receipt_external_calls_triggered") is False
+            and cache_provider_sample_receipt.get("tushare_called_by_receipt") is False
+            and cache_provider_sample_receipt.get("does_not_execute_trades") is True
+            and any(_dict(row).get("api") == "local_factor_test_provider_sample_readiness_receipt" for row in cache_call_ledger),
+            "GET factor cache must expose the provider small-pool readiness receipt as a local boundary with its own call ledger.",
         ),
         _row(
             "cache_get_exposes_local_dataset_sample_boundary",
@@ -312,6 +358,7 @@ def build_contract() -> dict[str, Any]:
             and "local_factor_test_lab_contract_no_provider_execution" in this_script
             and "provider_backed_small_pool_validation_done" in this_script
             and "provider_validation_blocker_audit_stays_pending" in this_script
+            and "provider_sample_readiness_receipt_is_local" in this_script
             and "local_dataset_sample_evidence_is_not_validation" in this_script
             and "production_factor_test_validation_complete" in this_script
             and "does_not_execute_trades" in this_script
@@ -351,8 +398,11 @@ def build_contract() -> dict[str, Any]:
             "production_qa_pending_count": production_qa.get("pending_criterion_count"),
             "provider_blocker_status": provider_blocker_audit.get("status"),
             "provider_blocker_count": provider_blocker_audit.get("production_blocker_count"),
+            "provider_sample_receipt_status": provider_sample_receipt.get("status"),
+            "provider_sample_receipt_allowed_next_step": provider_sample_receipt.get("allowed_next_step"),
             "cache_production_qa_status": cache_production_qa.get("status"),
             "cache_provider_blocker_status": cache_provider_blocker_audit.get("status"),
+            "cache_provider_sample_receipt_status": cache_provider_sample_receipt.get("status"),
             "storage_query_status": storage_query.get("status"),
             "local_dataset_sample_status": local_dataset_sample.get("status"),
             "cache_local_dataset_sample_status": cache_local_dataset_sample.get("status"),

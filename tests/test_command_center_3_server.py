@@ -12065,6 +12065,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("local_factor_test_storage_query_consumption", {item.get("api") for item in factor["call_ledger"]})
         self.assertIn("local_factor_test_local_dataset_sample_evidence", {item.get("api") for item in factor["call_ledger"]})
         self.assertIn("local_factor_test_provider_validation_blocker_audit", {item.get("api") for item in factor["call_ledger"]})
+        self.assertIn("local_factor_test_provider_sample_readiness_receipt", {item.get("api") for item in factor["call_ledger"]})
         self.assertEqual(factor["data"]["factor_values_storage"]["dataset"], "factor_values")
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
         storage_query = factor["data"]["factor_tests"]["storage_query_consumption"]
@@ -12183,6 +12184,42 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(blocker_rows["provider_backed_small_pool_sample"]["status"], "pending_provider_backed_sample")
         self.assertEqual(blocker_rows["full_market_validation"]["status"], "pending_full_market_validation")
         self.assertEqual(blocker_rows["trade_action_isolation"]["status"], "passed_trade_action_isolation")
+        provider_sample_receipt = factor["data"]["factor_tests"]["provider_sample_readiness_receipt"]
+        self.assertEqual(provider_sample_receipt["schema_version"], "factor_test_provider_sample_readiness_receipt.v1")
+        self.assertEqual(
+            provider_sample_receipt["scope"],
+            "local_factor_test_provider_sample_readiness_receipt_no_provider_execution",
+        )
+        self.assertTrue(provider_sample_receipt["local_receipt_ready"])
+        self.assertEqual(
+            provider_sample_receipt["status"],
+            "provider_small_pool_receipt_blocked_local_sample_or_contract",
+        )
+        self.assertEqual(
+            provider_sample_receipt["allowed_next_step"],
+            "complete_local_dataset_sample_and_forward_returns",
+        )
+        self.assertIn("GET /api/factor-quant/cache provider refresh", provider_sample_receipt["not_allowed_next_steps"])
+        self.assertIn("storage query rows as IC metrics", provider_sample_receipt["not_allowed_next_steps"])
+        self.assertIn("local light metrics as provider acceptance", provider_sample_receipt["not_allowed_next_steps"])
+        self.assertFalse(provider_sample_receipt["ready_for_explicit_provider_small_pool_task"])
+        self.assertFalse(provider_sample_receipt["provider_backed_small_pool_validation_done"])
+        self.assertFalse(provider_sample_receipt["production_factor_test_validation_complete"])
+        self.assertFalse(provider_sample_receipt["provider_refresh_called_by_receipt"])
+        self.assertFalse(provider_sample_receipt["cache_get_external_calls"])
+        self.assertFalse(provider_sample_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(provider_sample_receipt["tushare_called_by_receipt"])
+        self.assertFalse(provider_sample_receipt["deepseek_called"])
+        self.assertFalse(provider_sample_receipt["github_called"])
+        self.assertTrue(provider_sample_receipt["does_not_execute_trades"])
+        self.assertTrue(provider_sample_receipt["does_not_modify_strategy_action"])
+        self.assertGreater(provider_sample_receipt["blocked_readiness_count"], 0)
+        receipt_criteria = {row["criterion"] for row in factor["data"]["factor_tests"]["provider_sample_readiness_rows"]}
+        self.assertIn("button_gated_post_task_boundary", receipt_criteria)
+        self.assertIn("local_dataset_sample_sufficient", receipt_criteria)
+        self.assertIn("provider_backed_sample_evidence_ticket", receipt_criteria)
+        self.assertEqual(provider_sample_receipt["call_ledger"][0]["api"], "local_factor_test_provider_sample_readiness_receipt")
+        self.assert_local_ledger_boundary(provider_sample_receipt["call_ledger"][0])
         self.assertEqual(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_contract_consumed"], True)
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_metrics_computed"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_enters_strategy_action"])
@@ -12194,7 +12231,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_rows_used_as_metrics"])
         self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["production_validation_qa_contract_ready"])
         self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["provider_validation_blocker_audit_ready"])
+        self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["provider_sample_readiness_receipt_ready"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_validation_ready"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["ready_for_explicit_provider_small_pool_task"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["full_market_validation_done"])

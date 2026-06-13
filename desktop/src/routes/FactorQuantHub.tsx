@@ -75,6 +75,7 @@ export default function FactorQuantHub() {
   const factorTestSmallPool = factorTests.small_pool_acceptance ?? {};
   const factorTestProductionValidation = factorTests.production_validation_qa_contract ?? {};
   const factorTestProviderValidationBlocker = factorTests.provider_validation_blocker_audit ?? {};
+  const factorTestProviderSampleReadinessReceipt = factorTests.provider_sample_readiness_receipt ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
@@ -124,6 +125,8 @@ export default function FactorQuantHub() {
   const factorTestProductionValidationCriterionRows = toRows(factorTests.production_validation_qa_rows);
   const factorTestProviderValidationBlockerRows = objectRows(factorTestProviderValidationBlocker as Record<string, unknown>, "provider_validation_blocker");
   const factorTestProviderValidationBlockerCriterionRows = toRows(factorTests.provider_validation_blocker_rows);
+  const factorTestProviderSampleReadinessRows = objectRows(factorTestProviderSampleReadinessReceipt as Record<string, unknown>, "provider_sample_readiness");
+  const factorTestProviderSampleReadinessCriterionRows = toRows(factorTests.provider_sample_readiness_rows);
   const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
   const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
   const tushareRequestParameterQaRows = objectRows(tushareRequestParameterQa as Record<string, unknown>, "request_parameter_contract");
@@ -240,6 +243,8 @@ export default function FactorQuantHub() {
           { label: "factor test production", value: factorTestProductionValidation.production_factor_test_validation_complete === true ? "完成" : "未完成", tone: factorTestProductionValidation.production_factor_test_validation_complete === true ? "good" : "warn" },
           { label: "provider blockers", value: factorTestProviderValidationBlocker.production_blocker_count ?? 0, tone: Number(factorTestProviderValidationBlocker.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "provider validation", value: factorTestProviderValidationBlocker.provider_validation_ready === true ? "ready" : "blocked", tone: factorTestProviderValidationBlocker.provider_validation_ready === true ? "good" : "warn" },
+          { label: "provider receipt", value: factorTestProviderSampleReadinessReceipt.status ?? "missing", tone: factorTestProviderSampleReadinessReceipt.ready_for_explicit_provider_small_pool_task === true ? "good" : "warn" },
+          { label: "receipt blockers", value: factorTestProviderSampleReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(factorTestProviderSampleReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
           { label: "state contract", value: factorTestAcceptance.status ?? "missing", tone: factorTestAcceptance.all_result_states_are_research_only === false ? "bad" : "good" },
@@ -405,6 +410,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_validation_blocker_audit 只汇总真实小股票池、multi-window、成本/中性/偏差控制、full-market 和交易隔离缺口；不调用 Tushare/DeepSeek/GitHub，不从本地样本计算生产 IC，不把 ready 当生产完成。</p>
       <DataLineageTable rows={factorTestProviderValidationBlockerCriterionRows} />
       <DataLineageTable rows={factorTestProviderValidationBlockerRows} />
+      <h3>Factor Test provider 小股票池准入回执</h3>
+      <p className="risk-note">provider_sample_readiness_receipt 只说明下一步是否可以进入显式 POST 小股票池 provider 验收；它不调用 provider，不把本地样本、light metrics、QA rows 或 blocker audit 提升为生产验收。</p>
+      <DataLineageTable rows={factorTestProviderSampleReadinessCriterionRows} />
+      <DataLineageTable rows={factorTestProviderSampleReadinessRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>
