@@ -43,6 +43,7 @@ SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_freshness_contract.py"
 TUSHARE_ACCEPTANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_acceptance_contract.py"
 FACTOR_TEST_LAB_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_test_lab_contract.py"
+DEEPSEEK_GOVERNANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "deepseek_governance_contract.py"
 CANDIDATE_RADAR_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_contract.py"
 STORAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "storage_contract.py"
 WORKER_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "worker_contract.py"
@@ -433,6 +434,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     data_health_freshness_script = _read_local_text(DATA_HEALTH_FRESHNESS_CONTRACT_PATH)
     tushare_acceptance_script = _read_local_text(TUSHARE_ACCEPTANCE_CONTRACT_PATH)
     factor_test_lab_script = _read_local_text(FACTOR_TEST_LAB_CONTRACT_PATH)
+    deepseek_governance_script = _read_local_text(DEEPSEEK_GOVERNANCE_CONTRACT_PATH)
     candidate_radar_script = _read_local_text(CANDIDATE_RADAR_CONTRACT_PATH)
     storage_script = _read_local_text(STORAGE_CONTRACT_PATH)
     worker_script = _read_local_text(WORKER_CONTRACT_PATH)
@@ -474,6 +476,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(tushare_acceptance_script),
         "factor_test_lab_contract_exists": FACTOR_TEST_LAB_CONTRACT_PATH.exists()
         and bool(factor_test_lab_script),
+        "deepseek_governance_contract_exists": DEEPSEEK_GOVERNANCE_CONTRACT_PATH.exists()
+        and bool(deepseek_governance_script),
         "candidate_radar_contract_exists": CANDIDATE_RADAR_CONTRACT_PATH.exists()
         and bool(candidate_radar_script),
         "storage_contract_exists": STORAGE_CONTRACT_PATH.exists() and bool(storage_script),
@@ -491,6 +495,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Tushare acceptance contract" in script,
         "factor_test_lab_contract_step": "scripts/factor_test_lab_contract.py" in script
         and "Factor Test Lab contract" in script,
+        "deepseek_governance_contract_step": "scripts/deepseek_governance_contract.py" in script
+        and "DeepSeek governance contract" in script,
         "candidate_radar_contract_step": "scripts/candidate_radar_contract.py" in script
         and "Candidate Radar contract" in script,
         "storage_contract_step": "scripts/storage_contract.py" in script and "Storage contract" in script,
@@ -528,6 +534,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "does_not_execute_trades" in factor_test_lab_script
         and "tushare_adapter" not in factor_test_lab_script
         and "api.github.com" not in factor_test_lab_script,
+        "deepseek_governance_contract_is_local": "command_center_3_deepseek_governance_contract.v1" in deepseek_governance_script
+        and "local_deepseek_governance_contract_no_model_call" in deepseek_governance_script
+        and "provider_benchmark_done" in deepseek_governance_script
+        and "production_deepseek_explanation_complete" in deepseek_governance_script
+        and "response_format_enforced" in deepseek_governance_script
+        and "does_not_execute_trades" in deepseek_governance_script
+        and "tushare_adapter" not in deepseek_governance_script
+        and "deepseek_adapter" not in deepseek_governance_script
+        and "deepseek.chat" not in deepseek_governance_script
+        and "api.github.com" not in deepseek_governance_script,
         "candidate_radar_contract_is_local": "command_center_3_candidate_radar_contract.v1" in candidate_radar_script
         and "local_candidate_radar_contract_no_provider_execution" in candidate_radar_script
         and "production_radar_replacement_complete" in candidate_radar_script
@@ -592,6 +608,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "factor_test_lab_contract_exists",
             "factor_test_lab_contract_step",
             "factor_test_lab_contract_is_local",
+            "deepseek_governance_contract_exists",
+            "deepseek_governance_contract_step",
+            "deepseek_governance_contract_is_local",
             "candidate_radar_contract_exists",
             "candidate_radar_contract_step",
             "candidate_radar_contract_is_local",
@@ -683,6 +702,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "factor_test_lab_contract_is_local",
             checks["factor_test_lab_contract_is_local"],
             evidence="contract keeps LTG-03 light metrics, small-pool readiness, and production QA separate from provider-backed/full-market validation",
+        ),
+        _release_gate_row(
+            "deepseek_governance_contract_exists",
+            checks["deepseek_governance_contract_exists"],
+            evidence=_relative_path(DEEPSEEK_GOVERNANCE_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "deepseek_governance_contract_step",
+            checks["deepseek_governance_contract_step"],
+            evidence="push gate runs scripts/deepseek_governance_contract.py after Factor Test Lab and before Candidate Radar",
+        ),
+        _release_gate_row(
+            "deepseek_governance_contract_is_local",
+            checks["deepseek_governance_contract_is_local"],
+            evidence="contract keeps LTG-07 manual/sanitizer governance separate from provider benchmark, response_format enforcement, retry/repair, and production automatic explanation",
         ),
         _release_gate_row(
             "candidate_radar_contract_exists",

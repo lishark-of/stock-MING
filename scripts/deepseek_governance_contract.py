@@ -1,0 +1,423 @@
+#!/usr/bin/env python3
+"""Validate the local LTG-07 DeepSeek governance contract.
+
+This push-gate guard never calls a model. It keeps manual explanation,
+sanitizer, JSON-stability audit, response-format review, token-budget display,
+button gating, and default-off automation separate from production DeepSeek
+automatic explanation readiness.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import command_center_factor_research as factor_research  # noqa: E402
+from server.services import factor_service, task_service  # noqa: E402
+
+
+REQUIRED_ALLOWED_KEYS = {
+    "summary",
+    "support_notes",
+    "suppress_notes",
+    "conflict_notes",
+    "missing_data_notes",
+    "discipline_notes",
+}
+REQUIRED_JSON_BLOCKERS = {
+    "json_success_rate_threshold",
+    "larger_benchmark_done",
+    "response_format_enforced",
+}
+REQUIRED_RESPONSE_FORMAT_BLOCKERS = {
+    "provider_response_format_enforced",
+    "retry_repair_policy_ready",
+    "larger_benchmark_required",
+}
+REQUIRED_JSON_ROWS = {
+    "allowed_top_level_schema",
+    "illegal_fields_discarded",
+    "parse_failed_does_not_pollute_packet",
+    "numeric_and_action_overwrite_blocked",
+    "token_budget_estimate_present",
+    "model_call_not_triggered_by_audit",
+    "cache_and_render_never_call_model",
+    "auto_after_task_default_off",
+    "json_success_rate_threshold",
+    "larger_benchmark_done",
+    "response_format_enforced",
+}
+REQUIRED_RESPONSE_FORMAT_ROWS = {
+    "json_object_instruction_present",
+    "allowed_top_level_keys_exact",
+    "provider_response_format_enforced",
+    "retry_repair_policy_ready",
+    "parse_failed_discard_policy",
+    "illegal_fields_sanitized",
+    "numeric_and_action_overwrite_blocked",
+    "token_budget_visible",
+    "cache_render_no_model_call",
+    "auto_after_task_default_off",
+    "larger_benchmark_required",
+}
+
+
+def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": "passed" if passed else "blocked",
+        "passed": bool(passed),
+        "evidence": evidence,
+    }
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _flag_false(contract: dict[str, Any], *keys: str) -> bool:
+    return all(contract.get(key) is False for key in keys)
+
+
+def _read_script(path: str) -> str:
+    try:
+        return (PROJECT_ROOT / path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _rows_by_criterion(rows: Any) -> dict[str, dict[str, Any]]:
+    return {
+        str(row.get("criterion") or ""): row
+        for row in _list(rows)
+        if isinstance(row, dict)
+    }
+
+
+def _deepseek_task(catalog: dict[str, Any]) -> dict[str, Any]:
+    for task in _list(catalog.get("tasks")):
+        if isinstance(task, dict) and task.get("task_type") == "run_deepseek_factor_explanation":
+            return task
+    return {}
+
+
+def _local_prompt_preview() -> dict[str, Any]:
+    return {
+        "input_hash": "local-deepseek-governance-contract",
+        "json_object_instruction_present": True,
+        "allowed_top_level_keys": sorted(REQUIRED_ALLOWED_KEYS),
+        "token_estimate": 320,
+        "user_prompt": "Return one JSON object with only the allowed explanation fields.",
+    }
+
+
+def _local_validation_summary(sanitized: dict[str, Any], prompt_preview: dict[str, Any]) -> dict[str, Any]:
+    ignored = _list(sanitized.get("ignored_keys"))
+    return {
+        "status": sanitized.get("status") or "success",
+        "validation_mode": "local_sanitizer_only",
+        "model_call_status": "not_called",
+        "input_hash": prompt_preview.get("input_hash"),
+        "output_hash": sanitized.get("output_hash") or "",
+        "prompt_token_estimate": prompt_preview.get("token_estimate") or 0,
+        "output_token_estimate": sanitized.get("token_estimate") or 0,
+        "parse_failed": bool(sanitized.get("parse_failed")),
+        "allowed_top_level_keys": prompt_preview.get("allowed_top_level_keys") or [],
+        "ignored_key_count": len(ignored),
+        "ignored_keys": sorted(str(key) for key in ignored),
+        "invalid_output_discarded": bool(sanitized.get("parse_failed")),
+        "does_not_override_numeric_values": sanitized.get("does_not_override_numeric_values") is not False,
+        "does_not_output_strategy_action": sanitized.get("does_not_output_strategy_action") is not False,
+        "does_not_modify_strategy_action": True,
+        "external_calls_triggered": False,
+        "deepseek_called": False,
+        "contains_secret": False,
+    }
+
+
+def build_contract() -> dict[str, Any]:
+    cache_packet = factor_service.read_factor_quant_cache()
+    governance = _dict(cache_packet.get("deepseek_explain_governance"))
+    validation = _dict(cache_packet.get("deepseek_validation_summary"))
+    json_audit = _dict(cache_packet.get("deepseek_json_stability_audit"))
+    json_rows = _rows_by_criterion(cache_packet.get("deepseek_json_stability_rows") or json_audit.get("rows"))
+    response_review = _dict(cache_packet.get("deepseek_response_format_review_contract"))
+    response_rows = _rows_by_criterion(
+        cache_packet.get("deepseek_response_format_review_rows") or response_review.get("rows")
+    )
+    catalog = task_service.build_task_catalog()
+    task = _deepseek_task(catalog)
+    task_strategy = _dict(task.get("deepseek_model_strategy"))
+
+    sample_payload = {
+        "summary": "只解释因子，不生成交易动作。",
+        "support_notes": ["支持项"],
+        "suppress_notes": ["压制项"],
+        "conflict_notes": ["冲突项"],
+        "missing_data_notes": ["缺口项"],
+        "discipline_notes": ["纪律项"],
+        "strategy_action": "buy",
+        "price": 99.9,
+        "factor_values": {"momentum": 1.2},
+        "operation_zones": ["danger"],
+        "position": "full",
+    }
+    sanitized = factor_research.sanitize_factor_deepseek_explanation(
+        sample_payload,
+        model_used=str(governance.get("model") or ""),
+        input_hash="local-deepseek-governance-contract",
+    )
+    malformed = factor_research.sanitize_factor_deepseek_explanation(
+        "not json and not useful",
+        model_used=str(governance.get("model") or ""),
+        input_hash="local-parse-failed-contract",
+    )
+    prompt_preview = _local_prompt_preview()
+    local_validation = _local_validation_summary(sanitized, prompt_preview)
+    local_json_audit = factor_research.build_factor_deepseek_json_stability_audit(
+        prompt_preview=prompt_preview,
+        validation_summary=local_validation,
+        governance=governance,
+    )
+    local_response_review = factor_research.build_factor_deepseek_response_format_review_contract(
+        prompt_preview=prompt_preview,
+        validation_summary=local_validation,
+        governance=governance,
+        json_stability_audit=local_json_audit,
+    )
+    push_gate_script = _read_script("scripts/push_gate_3_0.sh")
+    this_script = _read_script("scripts/deepseek_governance_contract.py")
+
+    rows = [
+        _row(
+            "cache_get_governance_is_manual_default_no_model_call",
+            cache_packet.get("mode") == "light"
+            and governance.get("mode") in {"manual_only", "disabled"}
+            and governance.get("manual_task_allowed") is True
+            and governance.get("auto_after_task") is False
+            and governance.get("configured_auto_after_task") is False
+            and governance.get("cache_reads_never_call_deepseek") is True
+            and governance.get("react_render_never_calls_deepseek") is True
+            and governance.get("does_not_override_numeric_values") is True
+            and governance.get("does_not_modify_strategy_action") is True
+            and validation.get("validation_mode") == "local_sanitizer_only"
+            and validation.get("model_call_status") == "not_called"
+            and _flag_false(validation, "external_calls_triggered", "deepseek_called")
+            and _flag_false(cache_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and cache_packet.get("does_not_execute_trades") is True
+            and cache_packet.get("does_not_modify_strategy_action") is True,
+            "GET factor cache must show manual/default-off DeepSeek governance without model calls, provider calls, trades, or action mutation.",
+        ),
+        _row(
+            "sanitizer_whitelist_discards_action_numeric_fields",
+            sanitized.get("status") == "success"
+            and sanitized.get("parse_failed") is False
+            and set(_dict(sanitized.get("payload")).keys()) == REQUIRED_ALLOWED_KEYS
+            and {"strategy_action", "price", "factor_values", "operation_zones", "position"}.issubset(
+                set(str(key) for key in _list(sanitized.get("ignored_keys")))
+            )
+            and sanitized.get("does_not_override_numeric_values") is True
+            and sanitized.get("does_not_output_strategy_action") is True
+            and sanitized.get("output_hash")
+            and int(sanitized.get("token_estimate") or 0) > 0,
+            "Sanitizer must keep only six explanation fields and discard action, price, position, factor value, and operation-zone fields.",
+        ),
+        _row(
+            "parse_failed_output_is_discarded_and_hashable",
+            malformed.get("status") == "parse_failed"
+            and malformed.get("parse_failed") is True
+            and set(_dict(malformed.get("payload")).keys()) == REQUIRED_ALLOWED_KEYS
+            and malformed.get("does_not_override_numeric_values") is True
+            and malformed.get("does_not_output_strategy_action") is True
+            and malformed.get("output_hash")
+            and int(malformed.get("token_estimate") or 0) > 0,
+            "Malformed text must become parse_failed with a whitelisted empty payload, safe hash, token estimate, and no overwrite/action permissions.",
+        ),
+        _row(
+            "json_stability_audit_blocks_production_auto",
+            json_audit.get("schema_version") == "factor_deepseek_json_stability_audit.v1"
+            and json_audit.get("status") == "manual_ready_production_blocked"
+            and json_audit.get("scope") == "local_sanitizer_prompt_contract_not_model_call"
+            and json_audit.get("manual_explanation_ready") is True
+            and json_audit.get("production_ready") is False
+            and json_audit.get("auto_after_task_production_ready") is False
+            and float(json_audit.get("last_known_mini_benchmark_success_rate") or 0) < float(
+                json_audit.get("required_json_success_rate") or 0.9
+            )
+            and json_audit.get("larger_benchmark_done") is False
+            and json_audit.get("response_format_enforced") is False
+            and REQUIRED_JSON_BLOCKERS.issubset(set(_list(json_audit.get("production_blockers"))))
+            and REQUIRED_JSON_ROWS.issubset(set(json_rows))
+            and json_audit.get("model_call_status") == "not_called"
+            and _flag_false(json_audit, "external_calls_triggered", "deepseek_called", "tushare_called", "github_called")
+            and json_audit.get("does_not_execute_trades") is True
+            and json_audit.get("does_not_modify_strategy_action") is True,
+            "JSON stability audit may prove local manual safety, but production automation stays blocked until >90% benchmark, larger sample, and provider response format are proven.",
+        ),
+        _row(
+            "response_format_review_is_local_not_provider_enforcement",
+            response_review.get("schema_version") == "factor_deepseek_response_format_review_contract.v1"
+            and response_review.get("status") == "response_format_review_ready_provider_enforcement_pending"
+            and response_review.get("scope") == "local_response_format_review_no_model_call"
+            and response_review.get("local_response_format_review_ready") is True
+            and response_review.get("manual_explanation_ready") is True
+            and response_review.get("production_ready") is False
+            and response_review.get("provider_response_format_enforced") is False
+            and response_review.get("retry_repair_policy_ready") is False
+            and response_review.get("larger_benchmark_done") is False
+            and response_review.get("auto_after_task_production_ready") is False
+            and response_review.get("model_call_status") == "not_called"
+            and response_review.get("allowed_key_count") == len(REQUIRED_ALLOWED_KEYS)
+            and set(_list(response_review.get("allowed_top_level_keys"))) == REQUIRED_ALLOWED_KEYS
+            and REQUIRED_RESPONSE_FORMAT_BLOCKERS.issubset(set(_list(response_review.get("production_blockers"))))
+            and REQUIRED_RESPONSE_FORMAT_ROWS.issubset(set(response_rows))
+            and _flag_false(response_review, "external_calls_triggered", "deepseek_called", "tushare_called", "github_called", "contains_secret")
+            and response_review.get("does_not_execute_trades") is True
+            and response_review.get("does_not_modify_strategy_action") is True
+            and response_review.get("does_not_override_numeric_values") is True
+            and response_review.get("does_not_output_strategy_action") is True,
+            "Response-format review is a local contract; provider response_format, bounded retry/repair, and larger benchmark remain production blockers.",
+        ),
+        _row(
+            "local_builders_match_cache_governance_boundaries",
+            local_json_audit.get("manual_explanation_ready") is True
+            and local_json_audit.get("production_ready") is False
+            and local_json_audit.get("model_call_status") == "not_called"
+            and REQUIRED_JSON_BLOCKERS.issubset(set(_list(local_json_audit.get("production_blockers"))))
+            and local_response_review.get("local_response_format_review_ready") is True
+            and local_response_review.get("production_ready") is False
+            and local_response_review.get("model_call_status") == "not_called"
+            and REQUIRED_RESPONSE_FORMAT_BLOCKERS.issubset(set(_list(local_response_review.get("production_blockers")))),
+            "Direct local audit builders must agree with cache governance: manual explanation ready, production automatic explanation blocked, and no model call.",
+        ),
+        _row(
+            "deepseek_task_is_button_gated_and_config_driven",
+            task.get("route") == "POST /api/factor-quant/deepseek-explain"
+            and task.get("button_gated") is True
+            and task.get("current_backend") == "guarded_prompt_or_payload_sanitizer"
+            and task.get("external_call_policy") == "governed_manual_or_auto_after_task_deepseek_capable_current_no_model_call"
+            and task.get("default_explanation_mode") == "manual_only"
+            and task.get("auto_after_task_default") is False
+            and task.get("call_ledger_required") is True
+            and task.get("same_input_hash_deduplicated") is True
+            and task.get("does_not_hardcode_deepseek_model") is True
+            and task.get("does_not_execute_trades") is True
+            and task.get("does_not_modify_strategy_action") is True
+            and task_strategy.get("purpose") == "factor_explain"
+            and task_strategy.get("does_not_hardcode_model") is True
+            and task_strategy.get("external_call_on_cache_read") is False
+            and task_strategy.get("contains_secret") is False,
+            "DeepSeek explanation must remain behind explicit POST/task controls, centralized model strategy, call ledger, dedupe, and no-trade/no-action boundaries.",
+        ),
+        _row(
+            "push_gate_runs_deepseek_contract_after_factor_lab",
+            "scripts/deepseek_governance_contract.py" in push_gate_script
+            and "DeepSeek governance contract" in push_gate_script
+            and "deepseek_governance_contract: passed_local_contract_provider_benchmark_pending" in push_gate_script
+            and push_gate_script.find('run_step "Factor Test Lab contract"') < push_gate_script.find('run_step "DeepSeek governance contract"')
+            and push_gate_script.find('run_step "DeepSeek governance contract"') < push_gate_script.find('run_step "Candidate Radar contract"'),
+            "Push gate must run LTG-07 DeepSeek governance after Factor Test Lab and before Candidate Radar.",
+        ),
+        _row(
+            "script_is_local_no_model_or_provider_execution",
+            "command_center_3_deepseek_governance_contract.v1" in this_script
+            and "local_deepseek_governance_contract_no_model_call" in this_script
+            and "provider_benchmark_done" in this_script
+            and "production_deepseek_explanation_complete" in this_script
+            and "response_format_enforced" in this_script
+            and "does_not_execute_trades" in this_script
+            and ("request" + "s") not in this_script
+            and ("ht" + "tpx") not in this_script
+            and ("deepseek" + "_adapter") not in this_script
+            and ("deepseek" + ".chat") not in this_script
+            and ("deepseek" + ".com") not in this_script
+            and ("api.github" + ".com") not in this_script
+            and ("tushare" + "_adapter") not in this_script,
+            "The push-gate contract script must stay local and must not import provider clients, model adapters, or network libraries.",
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if not row["passed"]]
+    return {
+        "schema_version": "command_center_3_deepseek_governance_contract.v1",
+        "status": "deepseek_governance_contract_passed" if not blockers else "deepseek_governance_contract_blocked",
+        "scope": "local_deepseek_governance_contract_no_model_call",
+        "ltg": "LTG-07/LTG-11",
+        "contract_ready": not blockers,
+        "manual_explanation_ready": True,
+        "provider_benchmark_done": False,
+        "larger_benchmark_done": False,
+        "response_format_enforced": False,
+        "retry_repair_policy_ready": False,
+        "auto_after_task_production_ready": False,
+        "production_deepseek_explanation_complete": False,
+        "sanitizer_only": True,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "row_count": len(rows),
+        "blocking_criterion_count": len(blockers),
+        "blockers": blockers,
+        "observed": {
+            "governance_mode": governance.get("mode"),
+            "configured_auto_after_task": governance.get("configured_auto_after_task"),
+            "auto_after_task": governance.get("auto_after_task"),
+            "model_call_status": validation.get("model_call_status"),
+            "json_audit_status": json_audit.get("status"),
+            "json_success_rate": json_audit.get("last_known_mini_benchmark_success_rate"),
+            "json_required_success_rate": json_audit.get("required_json_success_rate"),
+            "json_production_blockers": json_audit.get("production_blockers"),
+            "response_format_status": response_review.get("status"),
+            "response_format_production_blockers": response_review.get("production_blockers"),
+            "task_backend": task.get("current_backend"),
+            "task_button_gated": task.get("button_gated"),
+        },
+        "rows": rows,
+        "note": "This is a local push-gate contract. Real provider-backed DeepSeek benchmark, provider response_format enforcement, bounded retry/repair, and production automatic explanation remain pending.",
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate local LTG-07 DeepSeek governance contracts.")
+    parser.add_argument("--json", action="store_true", help="Print the full contract as JSON.")
+    args = parser.parse_args()
+
+    contract = build_contract()
+    if args.json:
+        print(json.dumps(contract, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(f"deepseek_governance_contract: {contract['status']}")
+        print(
+            "rows: {row_count}; blockers: {blocking_criterion_count}; "
+            "provider_benchmark_done: false; response_format_enforced: false; "
+            "production_deepseek_explanation_complete: false".format(**contract)
+        )
+        print(
+            "external_calls_triggered: false; tushare_called: false; "
+            "deepseek_called: false; github_called: false; does_not_execute_trades: true"
+        )
+        if contract["blockers"]:
+            print("blockers: " + ", ".join(contract["blockers"]))
+    return 0 if contract["contract_ready"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
