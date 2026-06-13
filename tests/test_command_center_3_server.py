@@ -4681,6 +4681,29 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("start_date", sample_plan_rows["trade_calendar"]["required_context_groups"])
         self.assertIn("open_and_closed_calendar_rows", sample_plan_rows["trade_calendar"]["required_success_evidence"])
         self.assertIn("provider_target_sample_plan_scope", persisted["api_validation_matrix_policy"])
+        gap_audit = persisted["provider_evidence_gap_audit"]
+        gap_rows = {row["target"]: row for row in persisted["provider_evidence_gap_rows"]}
+        self.assertEqual(gap_audit["schema_version"], "tushare_provider_evidence_gap_audit.v1")
+        self.assertEqual(gap_audit["status"], "provider_evidence_gaps_pending")
+        self.assertEqual(gap_audit["scope"], "local_provider_evidence_gap_ledger_no_provider_execution")
+        self.assertEqual(gap_audit["target_count"], 7)
+        self.assertEqual(gap_audit["target_with_gap_count"], 7)
+        self.assertGreater(gap_audit["gap_blocker_count"], 0)
+        self.assertFalse(gap_audit["provider_backed_acceptance_done"])
+        self.assertFalse(gap_audit["production_tushare_pipeline_complete"])
+        self.assertFalse(gap_audit["full_interface_acceptance_done"])
+        self.assertFalse(gap_audit["audit_external_calls_triggered"])
+        self.assertFalse(gap_audit["tushare_called_by_audit"])
+        self.assertTrue(gap_audit["does_not_execute_trades"])
+        self.assertTrue(gap_audit["does_not_modify_strategy_action"])
+        self.assertEqual(gap_rows["trade_calendar"]["gap_status"], "matrix_only_gap_pending")
+        self.assertIn("target_api_selection_missing", gap_rows["trade_calendar"]["gap_blockers"])
+        self.assertFalse(gap_rows["trade_calendar"]["provider_backed_acceptance_done"])
+        self.assertIn("provider_evidence_gap_scope", persisted["api_validation_matrix_policy"])
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_evidence_gap_calls_provider"])
+        self.assertTrue(persisted["api_validation_matrix_policy"]["provider_evidence_gaps_pending"])
+        self.assertEqual(persisted["provider_evidence_gap_status"], "provider_evidence_gaps_pending")
+        self.assertEqual(persisted["provider_evidence_gap_target_with_gap_count"], 7)
 
     def test_tushare_refresh_task_validates_trade_calendar_and_extended_apis_without_false_parquet_claims(self):
         db_path = self._with_meta_store()
@@ -4885,6 +4908,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("trade_date", sample_plan_rows["dragon_tiger"]["missing_context_groups"])
         self.assertIn("top_inst_trade_date_rows_or_valid_empty", sample_plan_rows["dragon_tiger"]["required_success_evidence"])
         self.assertEqual(sample_plan_rows["trade_calendar"]["provider_sample_acceptance_status"], "provider_execution_pending")
+        gap_audit = persisted["provider_evidence_gap_audit"]
+        gap_rows = {row["target"]: row for row in persisted["provider_evidence_gap_rows"]}
+        self.assertEqual(gap_audit["schema_version"], "tushare_provider_evidence_gap_audit.v1")
+        self.assertEqual(gap_audit["status"], "provider_evidence_gaps_pending")
+        self.assertEqual(gap_audit["target_count"], 7)
+        self.assertEqual(gap_audit["target_with_gap_count"], 7)
+        self.assertFalse(gap_audit["provider_backed_acceptance_done"])
+        self.assertFalse(gap_audit["production_tushare_pipeline_complete"])
+        self.assertFalse(gap_audit["audit_external_calls_triggered"])
+        self.assertFalse(gap_audit["tushare_called_by_audit"])
+        self.assertEqual(gap_rows["trade_calendar"]["gap_status"], "provider_acceptance_gap_pending")
+        self.assertIn("failure_mode_evidence_missing", gap_rows["trade_calendar"]["gap_blockers"])
+        self.assertEqual(gap_rows["limit_emotion"]["gap_status"], "failed_or_blocked_evidence_gap_pending")
+        self.assertIn("limit_cpt_list", gap_rows["limit_emotion"]["failed_or_blocked_apis"])
+        self.assertEqual(gap_rows["chip_distribution"]["gap_status"], "matrix_only_gap_pending")
+        self.assertIn("target_api_selection_missing", gap_rows["chip_distribution"]["gap_blockers"])
+        self.assertEqual(gap_rows["financial_disclosure"]["gap_status"], "partial_selection_gap_pending")
+        self.assertIn("forecast", gap_rows["financial_disclosure"]["missing_required_apis"])
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -5022,6 +5063,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["provider_acceptance_promotion_status"], "provider_acceptance_promotion_pending")
         self.assertGreater(persisted["provider_acceptance_promotion_blocker_count"], 0)
         self.assertFalse(persisted["provider_acceptance_promotion_ready"])
+        gap_audit = persisted["provider_evidence_gap_audit"]
+        gap_rows = {row["target"]: row for row in persisted["provider_evidence_gap_rows"]}
+        self.assertEqual(gap_audit["status"], "provider_evidence_gaps_pending")
+        self.assertEqual(gap_audit["target_count"], 7)
+        self.assertEqual(gap_audit["target_with_gap_count"], 7)
+        self.assertFalse(gap_audit["provider_backed_acceptance_done"])
+        self.assertFalse(gap_audit["production_tushare_pipeline_complete"])
+        self.assertFalse(gap_audit["audit_external_calls_triggered"])
+        self.assertFalse(gap_audit["tushare_called_by_audit"])
+        self.assertIn("provider_promotion_not_ready", gap_rows["trade_calendar"]["gap_blockers"])
+        self.assertEqual(gap_rows["margin_financing"]["gap_status"], "failed_or_blocked_evidence_gap_pending")
+        self.assertIn("margin_detail", gap_rows["margin_financing"]["failed_or_blocked_apis"])
+        self.assertIn("non_empty_success_sample_missing", gap_rows["margin_financing"]["gap_blockers"])
 
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
@@ -5701,12 +5755,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["provider_readiness_status"], "provider_acceptance_pending")
         self.assertEqual(payload["observed"]["provider_promotion_status"], "provider_acceptance_promotion_pending")
         self.assertGreater(payload["observed"]["provider_promotion_blocker_count"], 0)
+        self.assertEqual(payload["observed"]["provider_evidence_gap_status"], "provider_evidence_gaps_pending")
+        self.assertEqual(payload["observed"]["provider_evidence_gap_target_with_gap_count"], payload["target_group_count"])
+        self.assertGreater(payload["observed"]["provider_evidence_gap_blocker_count"], 0)
+        self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("post_task_catalog_button_gate", criteria)
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
         self.assertIn("target_sample_plan_is_plan_only", criteria)
         self.assertIn("provider_readiness_stays_pending", criteria)
         self.assertIn("provider_promotion_audit_stays_local_pending", criteria)
+        self.assertIn("provider_evidence_gap_audit_is_local_pending", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")
@@ -6930,6 +6989,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["refresh_tushare_facts"]["request_parameter_qa_is_provider_acceptance"])
         self.assertIn("target-domain sample windows", by_type["refresh_tushare_facts"]["provider_target_sample_plan_contract"])
         self.assertFalse(by_type["refresh_tushare_facts"]["provider_target_sample_plan_is_provider_acceptance"])
+        self.assertIn("local target-domain evidence gap ledger", by_type["refresh_tushare_facts"]["provider_evidence_gap_audit_contract"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["provider_evidence_gap_audit_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
@@ -6945,6 +7006,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["refresh_factor_data"]["request_parameter_qa_is_provider_acceptance"])
         self.assertIn("provider_target_sample_plan_contract", by_type["refresh_factor_data"]["provider_target_sample_plan_contract"])
         self.assertFalse(by_type["refresh_factor_data"]["provider_target_sample_plan_is_provider_acceptance"])
+        self.assertIn("provider_evidence_gap_audit", by_type["refresh_factor_data"]["provider_evidence_gap_audit_contract"])
+        self.assertFalse(by_type["refresh_factor_data"]["provider_evidence_gap_audit_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_factor_data"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])

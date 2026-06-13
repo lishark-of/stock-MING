@@ -1142,6 +1142,171 @@ def _provider_acceptance_promotion_audit(
     }
 
 
+def _provider_evidence_gap_row(
+    *,
+    target: str,
+    label: str,
+    apis: list[str],
+    selected_apis: list[str],
+    missing_required_apis: list[str],
+    missing_call_ledger_apis: list[str],
+    non_empty_success_apis: list[str],
+    validated_empty_apis: list[str],
+    failed_or_blocked_apis: list[str],
+    validation_readiness: str,
+    sample_plan_status: str,
+    promotion_ready: bool,
+    failure_mode_evidence_done: bool,
+    required_success_evidence: list[str],
+    required_failure_evidence: list[str],
+) -> dict[str, Any]:
+    blockers: list[str] = []
+    if not selected_apis:
+        blockers.append("target_api_selection_missing")
+    if missing_required_apis:
+        blockers.append("target_api_selection_incomplete")
+    if missing_call_ledger_apis:
+        blockers.append("call_ledger_evidence_missing")
+    if not non_empty_success_apis:
+        blockers.append("non_empty_success_sample_missing")
+    if validation_readiness != "validated":
+        blockers.append("target_validation_not_complete")
+    if sample_plan_status != "ready_to_execute_provider_sample":
+        blockers.append("provider_sample_plan_not_ready")
+    if not failure_mode_evidence_done:
+        blockers.append("failure_mode_evidence_missing")
+    if not promotion_ready:
+        blockers.append("provider_promotion_not_ready")
+    if not blockers:
+        gap_status = "provider_evidence_gap_review_ready"
+    elif not selected_apis:
+        gap_status = "matrix_only_gap_pending"
+    elif missing_required_apis:
+        gap_status = "partial_selection_gap_pending"
+    elif missing_call_ledger_apis:
+        gap_status = "call_ledger_gap_pending"
+    elif failed_or_blocked_apis:
+        gap_status = "failed_or_blocked_evidence_gap_pending"
+    elif not non_empty_success_apis:
+        gap_status = "non_empty_sample_gap_pending"
+    else:
+        gap_status = "provider_acceptance_gap_pending"
+    return {
+        "target": target,
+        "label": label,
+        "apis": apis,
+        "selected_apis": selected_apis,
+        "missing_required_apis": missing_required_apis,
+        "missing_call_ledger_apis": missing_call_ledger_apis,
+        "non_empty_success_apis": non_empty_success_apis,
+        "validated_empty_apis": validated_empty_apis,
+        "failed_or_blocked_apis": failed_or_blocked_apis,
+        "validation_readiness": validation_readiness,
+        "sample_plan_status": sample_plan_status,
+        "gap_status": gap_status,
+        "gap_blockers": blockers,
+        "gap_blocker_count": len(blockers),
+        "required_success_evidence": required_success_evidence,
+        "required_failure_evidence": required_failure_evidence,
+        "provider_promotion_ready": promotion_ready,
+        "failure_mode_evidence_done": failure_mode_evidence_done,
+        "provider_backed_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "audit_external_calls_triggered": False,
+        "tushare_called_by_audit": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _provider_evidence_gap_audit(
+    *,
+    api_validation_rows: list[dict[str, Any]],
+    validation_target_rows: list[dict[str, Any]],
+    provider_target_sample_plan_contract: dict[str, Any],
+    provider_acceptance_promotion_audit: dict[str, Any],
+    call_ledger: list[dict[str, Any]],
+) -> dict[str, Any]:
+    validation_by_api = {str(row.get("api") or ""): row for row in api_validation_rows}
+    target_by_key = {str(row.get("target") or ""): row for row in validation_target_rows}
+    sample_plan_by_target = {
+        str(row.get("target") or ""): row for row in provider_target_sample_plan_contract.get("rows", [])
+    }
+    ledger_by_api = {str(row.get("api") or ""): row for row in call_ledger}
+    promotion_ready = bool(provider_acceptance_promotion_audit.get("promotion_ready"))
+    failure_mode_evidence_done = bool(provider_acceptance_promotion_audit.get("failure_mode_evidence_done"))
+
+    rows: list[dict[str, Any]] = []
+    for target_key, label, apis in VALIDATION_TARGET_GROUPS:
+        target_apis = list(apis)
+        api_rows = [validation_by_api[api] for api in target_apis if api in validation_by_api]
+        selected_apis = [str(row.get("api")) for row in api_rows if row.get("selected")]
+        missing_required_apis = [api for api in target_apis if api not in selected_apis]
+        missing_call_ledger_apis = [
+            api for api in selected_apis if api not in ledger_by_api or not validation_by_api.get(api, {}).get("called")
+        ]
+        non_empty_success_apis = [
+            str(row.get("api"))
+            for row in api_rows
+            if row.get("call_status") == "success" and int(row.get("row_count") or 0) > 0
+        ]
+        validated_empty_apis = [str(row.get("api")) for row in api_rows if row.get("call_status") == "empty"]
+        failed_or_blocked_apis = [
+            str(row.get("api"))
+            for row in api_rows
+            if row.get("call_status") == "failed" or str(row.get("call_status") or "").startswith("blocked_")
+        ]
+        target_row = target_by_key.get(target_key, {})
+        sample_plan_row = sample_plan_by_target.get(target_key, {})
+        rows.append(
+            _provider_evidence_gap_row(
+                target=target_key,
+                label=label,
+                apis=target_apis,
+                selected_apis=selected_apis,
+                missing_required_apis=missing_required_apis,
+                missing_call_ledger_apis=missing_call_ledger_apis,
+                non_empty_success_apis=non_empty_success_apis,
+                validated_empty_apis=validated_empty_apis,
+                failed_or_blocked_apis=failed_or_blocked_apis,
+                validation_readiness=str(target_row.get("readiness") or "unknown"),
+                sample_plan_status=str(sample_plan_row.get("provider_sample_plan_status") or "unknown"),
+                promotion_ready=promotion_ready,
+                failure_mode_evidence_done=failure_mode_evidence_done,
+                required_success_evidence=list(sample_plan_row.get("required_success_evidence") or []),
+                required_failure_evidence=list(sample_plan_row.get("required_failure_evidence") or []),
+            )
+        )
+
+    target_with_gap_count = sum(1 for row in rows if int(row.get("gap_blocker_count") or 0) > 0)
+    gap_blocker_count = sum(int(row.get("gap_blocker_count") or 0) for row in rows)
+    return {
+        "schema_version": "tushare_provider_evidence_gap_audit.v1",
+        "status": "provider_evidence_gaps_cleared_for_review" if target_with_gap_count == 0 else "provider_evidence_gaps_pending",
+        "scope": "local_provider_evidence_gap_ledger_no_provider_execution",
+        "target_count": len(rows),
+        "target_with_gap_count": target_with_gap_count,
+        "gap_blocker_count": gap_blocker_count,
+        "provider_promotion_ready": promotion_ready,
+        "failure_mode_evidence_done": failure_mode_evidence_done,
+        "provider_backed_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "full_interface_acceptance_done": False,
+        "cache_get_external_calls": False,
+        "audit_external_calls_triggered": False,
+        "tushare_called_by_audit": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "note": "This audit is a local target-domain evidence gap ledger. It does not call Tushare and cannot promote provider-backed full-interface acceptance by itself.",
+    }
+
+
 def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     safe = _safe_payload(payload)
     if "ticker" in safe and "ts_code" not in safe:
@@ -1638,6 +1803,13 @@ def run_tushare_refresh_task(
         provider_acceptance_readiness_audit=provider_acceptance_readiness_audit,
         call_ledger=call_ledger,
     )
+    provider_evidence_gap_audit = _provider_evidence_gap_audit(
+        api_validation_rows=api_validation_rows,
+        validation_target_rows=validation_target_rows,
+        provider_target_sample_plan_contract=provider_target_sample_plan_contract,
+        provider_acceptance_promotion_audit=provider_acceptance_promotion_audit,
+        call_ledger=call_ledger,
+    )
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -1680,6 +1852,9 @@ def run_tushare_refresh_task(
         "provider_acceptance_promotion_audit": provider_acceptance_promotion_audit,
         "provider_acceptance_promotion_rows": provider_acceptance_promotion_audit["rows"],
         "provider_acceptance_promotion_status": provider_acceptance_promotion_audit["status"],
+        "provider_evidence_gap_audit": provider_evidence_gap_audit,
+        "provider_evidence_gap_rows": provider_evidence_gap_audit["rows"],
+        "provider_evidence_gap_status": provider_evidence_gap_audit["status"],
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
@@ -1688,6 +1863,7 @@ def run_tushare_refresh_task(
             "acceptance_audit_scope": "api_acceptance_audit 只审计 call_ledger 语义和安全边界，不发起 provider 调用。",
             "provider_acceptance_readiness_scope": "provider_acceptance_readiness_audit 只汇总生产验收阻断项；不把 fake/local/matrix 证据当 provider-backed acceptance。",
             "provider_acceptance_promotion_scope": "provider_acceptance_promotion_audit 只读已有 call_ledger；没有显式 full-interface provider-backed evidence 不允许提升。",
+            "provider_evidence_gap_scope": "provider_evidence_gap_audit 只读本地 call_ledger/target/sample-plan/promotion 证据，列出目标域缺口；不调用 provider，不提升验收。",
             "failure_mode_qa_scope": "failure_mode_qa_contract 只分类现有 call_ledger 的 empty/permission/parse/missing-param/provider-error 状态；不发起 provider 调用。",
             "request_parameter_qa_scope": "request_parameter_qa_contract 只审计安全参数、ts_code 预检和日期上下文字段；不发起 provider 调用。",
             "provider_target_sample_plan_scope": "provider_target_sample_plan_contract 只声明未来真实样本验收所需目标域、接口、窗口上下文和证据；不发起 provider 调用。",
@@ -1699,6 +1875,8 @@ def run_tushare_refresh_task(
             "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
             "provider_acceptance_promotion_ready": provider_acceptance_promotion_audit["promotion_ready"],
             "provider_acceptance_promotion_calls_provider": False,
+            "provider_evidence_gap_calls_provider": False,
+            "provider_evidence_gaps_pending": provider_evidence_gap_audit["target_with_gap_count"] > 0,
             "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -1724,6 +1902,9 @@ def run_tushare_refresh_task(
         "provider_acceptance_promotion_blocker_count": provider_acceptance_promotion_audit["blocking_criterion_count"],
         "provider_acceptance_promotion_ready": provider_acceptance_promotion_audit["promotion_ready"],
         "provider_acceptance_promotion_evidence_row_count": provider_acceptance_promotion_audit["provider_evidence_row_count"],
+        "provider_evidence_gap_target_count": provider_evidence_gap_audit["target_count"],
+        "provider_evidence_gap_target_with_gap_count": provider_evidence_gap_audit["target_with_gap_count"],
+        "provider_evidence_gap_blocker_count": provider_evidence_gap_audit["gap_blocker_count"],
         "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
         "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
         "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in call_ledger),

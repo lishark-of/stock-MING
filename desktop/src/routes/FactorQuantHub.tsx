@@ -78,6 +78,7 @@ export default function FactorQuantHub() {
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
   const tushareProviderPromotionAudit = packet.provider_acceptance_promotion_audit ?? {};
+  const tushareProviderEvidenceGapAudit = packet.provider_evidence_gap_audit ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -127,6 +128,8 @@ export default function FactorQuantHub() {
   const tushareProviderTargetSamplePlanCriterionRows = toRows(packet.provider_target_sample_plan_rows);
   const tushareProviderPromotionAuditRows = objectRows(tushareProviderPromotionAudit as Record<string, unknown>, "provider_promotion_audit");
   const tushareProviderPromotionCriterionRows = toRows(packet.provider_acceptance_promotion_rows);
+  const tushareProviderEvidenceGapAuditRows = objectRows(tushareProviderEvidenceGapAudit as Record<string, unknown>, "provider_evidence_gap_audit");
+  const tushareProviderEvidenceGapRows = toRows(packet.provider_evidence_gap_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -427,6 +430,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_acceptance_promotion_audit 只读按钮任务已有 call_ledger；matrix、local QA、fake adapter 样本和 readiness audit 都不能单独提升 provider-backed 全接口验收。</p>
       <DataLineageTable rows={tushareProviderPromotionCriterionRows} />
       <DataLineageTable rows={tushareProviderPromotionAuditRows} />
+      <h3>Tushare provider 证据缺口台账</h3>
+      <p className="risk-note">provider_evidence_gap_audit 只读本地 call_ledger、目标域计划和提升审计，逐目标域显示缺失的真实 provider 证据；它不调用 Tushare，也不把缺口清单当生产验收。</p>
+      <DataLineageTable rows={tushareProviderEvidenceGapRows} />
+      <DataLineageTable rows={tushareProviderEvidenceGapAuditRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>

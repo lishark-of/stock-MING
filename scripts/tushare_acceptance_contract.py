@@ -30,6 +30,7 @@ CONTRACT_KEYS = [
     "provider_target_sample_plan_contract",
     "provider_acceptance_readiness_audit",
     "provider_acceptance_promotion_audit",
+    "provider_evidence_gap_audit",
 ]
 
 
@@ -86,6 +87,13 @@ def build_contract() -> dict[str, Any]:
         provider_acceptance_readiness_audit=provider_readiness,
         call_ledger=call_ledger,
     )
+    provider_evidence_gap = tushare_task_service._provider_evidence_gap_audit(
+        api_validation_rows=validation_rows,
+        validation_target_rows=validation_target_rows,
+        provider_target_sample_plan_contract=target_sample_plan,
+        provider_acceptance_promotion_audit=provider_promotion,
+        call_ledger=call_ledger,
+    )
 
     refresh_catalog = _catalog_by_type("refresh_tushare_facts")
     factor_refresh_catalog = _catalog_by_type("refresh_factor_data")
@@ -100,6 +108,7 @@ def build_contract() -> dict[str, Any]:
     matrix_only_rows = [row for row in validation_rows if row.get("validation_scope") == "capability_matrix_only"]
     target_matrix_only_rows = [row for row in validation_target_rows if row.get("readiness") == "matrix_only"]
     readiness_criteria = {row.get("criterion") for row in provider_readiness.get("rows", [])}
+    provider_evidence_gap_rows = provider_evidence_gap.get("rows", [])
 
     default_selection = tushare_task_service._selected_apis({}, tushare_task_service.CORE_REFRESH_APIS)
     calendar_selection = tushare_task_service._selected_apis(
@@ -247,6 +256,31 @@ def build_contract() -> dict[str, Any]:
             "Provider promotion audit must stay local/read-only and cannot promote matrix/local QA into provider-backed acceptance.",
         ),
         _row(
+            "provider_evidence_gap_audit_is_local_pending",
+            provider_evidence_gap.get("schema_version") == "tushare_provider_evidence_gap_audit.v1"
+            and provider_evidence_gap.get("scope") == "local_provider_evidence_gap_ledger_no_provider_execution"
+            and provider_evidence_gap.get("status") == "provider_evidence_gaps_pending"
+            and provider_evidence_gap.get("target_count") == len(tushare_task_service.VALIDATION_TARGET_GROUPS)
+            and provider_evidence_gap.get("target_with_gap_count") == provider_evidence_gap.get("target_count")
+            and int(provider_evidence_gap.get("gap_blocker_count") or 0) > 0
+            and provider_evidence_gap.get("provider_backed_acceptance_done") is False
+            and provider_evidence_gap.get("production_tushare_pipeline_complete") is False
+            and provider_evidence_gap.get("full_interface_acceptance_done") is False
+            and _flag_false(
+                provider_evidence_gap,
+                "cache_get_external_calls",
+                "audit_external_calls_triggered",
+                "tushare_called_by_audit",
+                "deepseek_called",
+                "github_called",
+            )
+            and provider_evidence_gap.get("does_not_execute_trades") is True
+            and provider_evidence_gap.get("does_not_modify_strategy_action") is True
+            and all(row.get("gap_status") == "matrix_only_gap_pending" for row in provider_evidence_gap_rows)
+            and all(row.get("provider_backed_acceptance_done") is False for row in provider_evidence_gap_rows),
+            "Provider evidence gap audit must stay a local target-domain gap ledger and cannot call Tushare or promote acceptance.",
+        ),
+        _row(
             "target_groups_matrix_only",
             len(target_matrix_only_rows) == len(tushare_task_service.VALIDATION_TARGET_GROUPS)
             and all(row.get("does_not_claim_unselected_apis_verified") is True for row in target_matrix_only_rows)
@@ -316,6 +350,9 @@ def build_contract() -> dict[str, Any]:
             "provider_readiness_blocker_count": provider_readiness.get("production_blocker_count"),
             "provider_promotion_status": provider_promotion.get("status"),
             "provider_promotion_blocker_count": provider_promotion.get("blocking_criterion_count"),
+            "provider_evidence_gap_status": provider_evidence_gap.get("status"),
+            "provider_evidence_gap_target_with_gap_count": provider_evidence_gap.get("target_with_gap_count"),
+            "provider_evidence_gap_blocker_count": provider_evidence_gap.get("gap_blocker_count"),
             "target_sample_plan_ready_count": target_sample_plan.get("ready_to_execute_target_count"),
             "target_sample_plan_pending_count": target_sample_plan.get("pending_or_blocked_target_count"),
         },
