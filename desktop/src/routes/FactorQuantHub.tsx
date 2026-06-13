@@ -71,6 +71,7 @@ export default function FactorQuantHub() {
   const factorTestAcceptance = factorTests.acceptance_contract ?? {};
   const factorTestStorageQuery = factorTests.storage_query_consumption ?? {};
   const factorTestSmallPool = factorTests.small_pool_acceptance ?? {};
+  const factorTestProductionValidation = factorTests.production_validation_qa_contract ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -103,6 +104,8 @@ export default function FactorQuantHub() {
   const factorTestStorageQueryTableRows = toRows(factorTests.storage_query_consumption_rows);
   const factorTestSmallPoolRows = objectRows(factorTestSmallPool as Record<string, unknown>, "small_pool_acceptance");
   const factorTestSmallPoolCriterionRows = toRows(factorTests.small_pool_acceptance_rows);
+  const factorTestProductionValidationRows = objectRows(factorTestProductionValidation as Record<string, unknown>, "production_validation");
+  const factorTestProductionValidationCriterionRows = toRows(factorTests.production_validation_qa_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -194,6 +197,9 @@ export default function FactorQuantHub() {
           { label: "small pool audit", value: factorTestSmallPool.status ?? "missing", tone: factorTestSmallPool.status === "local_small_pool_acceptance_ready" ? "good" : "warn" },
           { label: "local small pool", value: factorTestSmallPool.local_light_observation_acceptance_done === true ? "ready" : "pending", tone: factorTestSmallPool.local_light_observation_acceptance_done === true ? "good" : "warn" },
           { label: "real small pool", value: factorTestSmallPool.real_small_pool_validation_done === true ? "完成" : "未完成", tone: factorTestSmallPool.real_small_pool_validation_done === true ? "bad" : "good" },
+          { label: "production QA", value: factorTestProductionValidation.status ?? "missing", tone: factorTestProductionValidation.production_factor_test_validation_complete === true ? "good" : "warn" },
+          { label: "provider small pool", value: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "完成" : "未完成", tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn" },
+          { label: "factor test production", value: factorTestProductionValidation.production_factor_test_validation_complete === true ? "完成" : "未完成", tone: factorTestProductionValidation.production_factor_test_validation_complete === true ? "good" : "warn" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
           { label: "state contract", value: factorTestAcceptance.status ?? "missing", tone: factorTestAcceptance.all_result_states_are_research_only === false ? "bad" : "good" },
@@ -316,6 +322,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">small_pool_acceptance 只审计本地 light observations 的 IC / Rank IC / ICIR / 分组收益 / 成本 / 回撤 / 中性 IC / 样本外与偏差检查；不把 storage query rows 当指标样本，不代表真实小股票池或全市场生产验收。</p>
       <DataLineageTable rows={factorTestSmallPoolCriterionRows} />
       <DataLineageTable rows={factorTestSmallPoolRows} />
+      <h3>Factor Test 生产验证 QA 契约</h3>
+      <p className="risk-note">production_validation_qa_contract 只定义后续真实小股票池、多周期、多窗口、成本、中性稳定性和偏差控制验收；当前不跑 provider-backed 样本、不跑 full-market、不进入 strategy action。</p>
+      <DataLineageTable rows={factorTestProductionValidationCriterionRows} />
+      <DataLineageTable rows={factorTestProductionValidationRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>

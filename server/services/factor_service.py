@@ -44,10 +44,11 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet = _attach_factor_universe_execution_readiness(packet)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
+    packet, production_validation_ledger = _attach_factor_test_production_validation_qa_contract(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
-    packet["call_ledger"] = cache_ledger + storage_query_ledger + list(existing_ledger)
+    packet["call_ledger"] = cache_ledger + storage_query_ledger + production_validation_ledger + list(existing_ledger)
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
@@ -377,6 +378,191 @@ def _attach_factor_test_storage_query_consumption(packet: dict[str, Any], now: s
         factor_tests["acceptance_contract"] = acceptance
     packet["factor_tests"] = factor_tests
     return packet, list(consumption.get("call_ledger") or [])
+
+
+def _factor_test_production_validation_qa_contract(factor_tests: dict[str, Any], now: str) -> dict[str, Any]:
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    small_pool = factor_tests.get("small_pool_acceptance") if isinstance(factor_tests.get("small_pool_acceptance"), dict) else {}
+    storage_query = factor_tests.get("storage_query_consumption") if isinstance(factor_tests.get("storage_query_consumption"), dict) else {}
+
+    def _row(
+        criterion: str,
+        status: str,
+        evidence: str,
+        next_action: str,
+        *,
+        required: bool = True,
+    ) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": status == "passed",
+            "required_for_production_validation": required,
+            "blocks_production_validation": bool(required and status != "passed"),
+            "evidence": evidence,
+            "next_action": next_action,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    local_light_ready = bool(small_pool.get("local_light_observation_acceptance_done"))
+    storage_query_safe = bool(
+        storage_query.get("query_result_contract_consumed")
+        and not storage_query.get("metrics_computed_from_storage_query")
+        and not storage_query.get("storage_query_enters_strategy_action")
+    )
+    state_contract_safe = bool(
+        acceptance.get("all_result_states_are_research_only", True)
+        and acceptance.get("research_pass_is_not_trade_signal", True)
+        and not acceptance.get("enters_core_action", False)
+    )
+    rows = [
+        _row(
+            "local_light_metrics_readiness",
+            "passed" if local_light_ready else "blocked",
+            f"small_pool_status={small_pool.get('status')}; local_light_observation_acceptance_done={local_light_ready}",
+            "Keep local light metrics visible, but do not claim provider-backed small-pool validation from this result.",
+        ),
+        _row(
+            "provider_backed_small_pool_sample",
+            "pending_provider_validation",
+            "No provider-backed target sample has been validated in this cache read.",
+            "Run a future button-gated provider-backed small-pool validation task with call_ledger and safe failure states.",
+        ),
+        _row(
+            "multi_horizon_forward_returns",
+            "pending_research_validation",
+            "Current light metrics do not prove multi-horizon forward-return stability.",
+            "Validate multiple forward-return horizons before promoting Factor Test Lab to production research.",
+        ),
+        _row(
+            "rolling_window_ic_icir",
+            "pending_research_validation",
+            "Current local packet does not prove rolling IC / Rank IC / ICIR across windows.",
+            "Add rolling-window IC/ICIR validation on provider-backed small pools or full universes.",
+        ),
+        _row(
+            "out_of_sample_decay",
+            "pending_research_validation",
+            "Current local readiness does not prove out-of-sample stability or recent decay.",
+            "Add sample split and recent-decay acceptance before production validation.",
+        ),
+        _row(
+            "transaction_cost_assumptions",
+            "pending_research_validation",
+            "Cost-adjusted light metrics are not a production-grade transaction cost model.",
+            "Validate turnover, slippage, fees, and cost-after-return assumptions on target samples.",
+        ),
+        _row(
+            "neutralization_stability",
+            "pending_research_validation",
+            "Industry and market-cap neutral stability needs larger provider-backed samples.",
+            "Validate neutral IC stability across industry and size buckets.",
+        ),
+        _row(
+            "pit_lookahead_survivorship_controls",
+            "pending_research_validation",
+            "Current local contract does not prove point-in-time, lookahead, or survivorship controls on real samples.",
+            "Add PIT/lookahead/survivorship checks to the future validation task.",
+        ),
+        _row(
+            "storage_query_not_metric_source",
+            "passed" if storage_query_safe else "blocked",
+            "storage query contract is consumed without computing metrics or entering strategy action.",
+            "Keep storage query rows as metadata until explicit research sample construction is implemented.",
+        ),
+        _row(
+            "state_transition_research_only",
+            "passed" if state_contract_safe else "blocked",
+            "research_pass/watchlist/disabled/invalid/not_enough_data remain research labels.",
+            "Preserve research-only state transitions and prevent promotion into action or evidence execution paths.",
+        ),
+        _row(
+            "trade_action_isolation",
+            "passed",
+            "Factor Test Lab validation contract does not execute trades, mutate action, or modify next-session projection.",
+            "Keep any future factor validation outputs outside strategy action unless a separate approved trading design exists.",
+        ),
+        _row(
+            "external_call_boundary",
+            "passed",
+            "GET factor cache builds this QA contract locally and does not call Tushare, DeepSeek, or GitHub.",
+            "Future provider-backed validation must be button/task gated and recorded in call_ledger.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_production_validation"]]
+    pending_rows = [row for row in rows if str(row["status"]).startswith("pending")]
+    return {
+        "schema_version": "factor_test_production_validation_qa_contract.v1",
+        "status": "production_validation_qa_contract_ready_provider_execution_pending",
+        "scope": "local_factor_test_validation_contract_not_provider_backed_execution",
+        "created_at": now,
+        "criterion_count": len(rows),
+        "pending_criterion_count": len(pending_rows),
+        "blocking_criterion_count": len(blocking_rows),
+        "passed_criterion_count": len(rows) - len(blocking_rows),
+        "blocking_criteria": [str(row["criterion"]) for row in blocking_rows],
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "local_light_observation_acceptance_done": local_light_ready,
+        "storage_query_contract_consumed": bool(storage_query.get("query_result_contract_consumed")),
+        "storage_query_rows_used_as_metrics": False,
+        "state_transition_research_only": state_contract_safe,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_test_production_validation_qa_contract",
+                "request_params_safe": {
+                    "scope": "local_factor_test_validation_contract_not_provider_backed_execution",
+                    "provider_backed_small_pool_validation_done": False,
+                    "full_market_validation_done": False,
+                    "production_factor_test_validation_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": None,
+                "local_fetched_at": now,
+                "call_status": "contract_ready_provider_execution_pending",
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This QA contract makes future production Factor Test Lab validation explicit. It does not run provider-backed samples, full-market research, external calls, or trade actions.",
+    }
+
+
+def _attach_factor_test_production_validation_qa_contract(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    contract = _factor_test_production_validation_qa_contract(factor_tests, now)
+    factor_tests["production_validation_qa_contract"] = contract
+    factor_tests["production_validation_qa_rows"] = list(contract.get("rows") or [])
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(existing_test_ledger) + list(contract.get("call_ledger") or [])
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    if acceptance:
+        acceptance = dict(acceptance)
+        acceptance["production_validation_qa_contract_ready"] = True
+        acceptance["production_factor_test_validation_complete"] = False
+        acceptance["provider_backed_small_pool_validation_done"] = False
+        acceptance["full_market_validation_done"] = False
+        factor_tests["acceptance_contract"] = acceptance
+    packet["factor_tests"] = factor_tests
+    return packet, list(contract.get("call_ledger") or [])
 
 
 def _factor_universe_mode_from_payload(payload: Any) -> str:

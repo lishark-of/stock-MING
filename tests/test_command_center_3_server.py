@@ -7671,11 +7671,50 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(small_pool["full_market_validation_done"])
         self.assertFalse(small_pool["external_calls_triggered"])
         self.assertEqual(factor["data"]["factor_tests"]["small_pool_acceptance_rows"][0]["criterion"], "local_light_observations_present")
+        production_validation = factor["data"]["factor_tests"]["production_validation_qa_contract"]
+        self.assertEqual(production_validation["schema_version"], "factor_test_production_validation_qa_contract.v1")
+        self.assertEqual(
+            production_validation["status"],
+            "production_validation_qa_contract_ready_provider_execution_pending",
+        )
+        self.assertEqual(
+            production_validation["scope"],
+            "local_factor_test_validation_contract_not_provider_backed_execution",
+        )
+        self.assertFalse(production_validation["provider_backed_small_pool_validation_done"])
+        self.assertFalse(production_validation["full_market_validation_done"])
+        self.assertFalse(production_validation["production_factor_test_validation_complete"])
+        self.assertFalse(production_validation["storage_query_rows_used_as_metrics"])
+        self.assertFalse(production_validation["external_calls_triggered"])
+        self.assertFalse(production_validation["tushare_called"])
+        self.assertFalse(production_validation["deepseek_called"])
+        self.assertFalse(production_validation["github_called"])
+        self.assertTrue(production_validation["does_not_execute_trades"])
+        self.assertTrue(production_validation["does_not_modify_strategy_action"])
+        self.assertTrue(production_validation["does_not_modify_core_action"])
+        self.assertTrue(production_validation["does_not_enter_evidence_effects"])
+        self.assertTrue(production_validation["does_not_enter_next_session_projection"])
+        self.assertGreater(production_validation["pending_criterion_count"], 0)
+        validation_criteria = {row["criterion"] for row in factor["data"]["factor_tests"]["production_validation_qa_rows"]}
+        self.assertIn("provider_backed_small_pool_sample", validation_criteria)
+        self.assertIn("multi_horizon_forward_returns", validation_criteria)
+        self.assertIn("rolling_window_ic_icir", validation_criteria)
+        self.assertIn("transaction_cost_assumptions", validation_criteria)
+        self.assertIn("neutralization_stability", validation_criteria)
+        self.assertIn("trade_action_isolation", validation_criteria)
+        self.assertIn(
+            "local_factor_test_production_validation_qa_contract",
+            {item.get("api") for item in factor["call_ledger"]},
+        )
         self.assertEqual(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_contract_consumed"], True)
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_metrics_computed"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_enters_strategy_action"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["local_light_observation_acceptance_done"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_rows_used_as_metrics"])
+        self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["production_validation_qa_contract_ready"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["full_market_validation_done"])
         self.assertEqual(factor["data"]["factor_tests"]["storage_query_consumption_rows"][0]["dataset"], "factor_values")
 
     def test_factor_universe_research_plan_endpoint_is_local_read_plan(self):

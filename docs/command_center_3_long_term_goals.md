@@ -58,7 +58,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 |---|---|---|---|---|---|
 | LTG-01 | A 股交易日历级 freshness 生产化 | `done_real` MVP, still needs production validation | All current evidence is gated by expected trade date | P1 | stale / expired / historical / unknown data cannot enter score, support, evidence preview, or action. |
 | LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock` | All selected interfaces run through task pipeline with call ledger | P2 | Each interface has real target samples, safe failure states, and no false verified claims. |
-| LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
+| LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production QA contract visible; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold and factor_values write path | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, and healthcheck QA contract | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
@@ -183,6 +183,7 @@ Validate extended Tushare refresh task pipeline
 - React displays the state contract and explicitly marks `research_pass` as a research label, not a trade signal.
 - GET factor cache now attaches a read-only `factor_values` DuckDB query consumption contract for Factor Test Lab: typed projection, query result contract, cursor page info, and local query lineage are visible without computing production IC metrics from the query rows.
 - Factor Test Lab packets now expose `small_pool_acceptance`: a local light-observation readiness audit for IC / Rank IC / ICIR, group return, cost, drawdown, neutral IC, sample split/decay, and PIT/lookahead/survivorship checks. This audit does not treat storage query rows as metric samples and does not prove real small-pool or full-market production validation.
+- Factor Test Lab packets now expose `production_validation_qa_contract`: a local QA contract for future provider-backed small-pool validation, multi-horizon forward returns, rolling IC/ICIR, out-of-sample decay, production cost assumptions, neutralization stability, PIT/lookahead/survivorship controls, storage-query boundaries, research-only state transitions, and trade/action isolation. It does not run provider-backed samples, full-market research, external calls, or trade actions.
 
 ### Gaps
 
@@ -192,6 +193,7 @@ Validate extended Tushare refresh task pipeline
 - Industry and market-cap neutral stability needs larger samples.
 - The research-state contract and DuckDB query consumption contract are local/light-mode governance and do not prove full-market validation.
 - The small-pool acceptance audit is a local readiness contract; provider-backed small-pool samples are still pending.
+- The production validation QA contract is visible, but all provider-backed / full-market production validation remains pending.
 
 ### Implementation Phases
 
@@ -199,6 +201,7 @@ Validate extended Tushare refresh task pipeline
 2. Add multiple forward-return horizons and rolling windows.
 3. Add production cost assumptions and turnover diagnostics.
 4. Add factor state transitions: `research_pass`, `watchlist`, `disabled`, `invalid`, `not_enough_data`.
+5. Keep `production_validation_qa_contract` current until provider-backed validation tasks can prove completion.
 
 ### Acceptance Criteria
 
@@ -210,6 +213,7 @@ Validate extended Tushare refresh task pipeline
 - All result states remain research-only and do not enter `core_action`, `evidence_effects`, `next_session_projection`, or frontend-computed action.
 - DuckDB query consumption remains local/read-only, does not write Parquet on GET, does not call providers, and does not convert query rows into trade signals or production IC acceptance.
 - `small_pool_acceptance.status=local_small_pool_acceptance_ready` only means local light observations satisfy the readiness checklist; `real_small_pool_validation_done` and `full_market_validation_done` must remain false until provider-backed samples are validated.
+- `production_validation_qa_contract.production_factor_test_validation_complete=false` until provider-backed small-pool samples, multi-horizon/rolling-window validation, cost assumptions, neutralization stability, bias controls, and trade/action isolation are all verified.
 
 ### Forbidden
 
@@ -218,6 +222,7 @@ Validate extended Tushare refresh task pipeline
 - Do not compute action in frontend.
 - Do not treat storage query consumption as real small-pool, full-market, or production factor validation.
 - Do not treat local small-pool readiness as real provider-backed production validation.
+- Do not treat `production_validation_qa_contract` as execution evidence; it is a QA checklist until future button/task validation proves the rows.
 
 ### Recommended Commit Message
 
