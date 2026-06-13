@@ -34,6 +34,8 @@ export default function CallLedgerAudit() {
   const releaseGateAudit = (cache.release_gate_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const releaseGateRows = rows(cache.release_gate_readiness_rows);
   const releaseGateWorkflowRows = rows(cache.release_gate_workflow_rows);
+  const releaseGatePushReceipt = (cache.release_gate_push_readiness_receipt as Record<string, unknown> | undefined) ?? {};
+  const releaseGatePushRows = rows(cache.release_gate_push_readiness_rows);
   const ciNotificationTriage = (cache.ci_notification_triage_contract as Record<string, unknown> | undefined) ?? {};
   const ciNotificationTriageRows = rows(cache.ci_notification_triage_rows);
   const motionClarityAudit = (cache.motion_clarity_audit as Record<string, unknown> | undefined) ?? {};
@@ -108,6 +110,9 @@ export default function CallLedgerAudit() {
           { label: "gate blockers", value: counts.release_gate_blocker_count as number | undefined, tone: Number(counts.release_gate_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "gate checks", value: counts.release_gate_check_count as number | undefined },
           { label: "workflow files", value: counts.release_gate_workflow_count as number | undefined },
+          { label: "push receipt", value: releaseGatePushReceipt.status as string | undefined, tone: releaseGatePushReceipt.local_receipt_ready === true ? "good" : "warn" },
+          { label: "push pending", value: counts.push_readiness_pending_evidence_count as number | undefined, tone: Number(counts.push_readiness_pending_evidence_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "remote known", value: counts.push_readiness_remote_status_known === true ? "yes" : "no", tone: counts.push_readiness_remote_status_known === true ? "good" : "warn" },
           { label: "CI mail triage", value: ciNotificationTriage.status as string | undefined, tone: ciNotificationTriage.remote_actions_status_known === true ? "good" : "warn" },
           { label: "remote log needed", value: counts.ci_notification_pending_remote_evidence_count as number | undefined, tone: Number(counts.ci_notification_pending_remote_evidence_count ?? 0) > 0 ? "warn" : "good" },
           { label: "motion clarity", value: motionClarityAudit.status as string | undefined, tone: motionClarityAudit.static_ready === true ? "good" : "warn" },
@@ -211,6 +216,20 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="CI mirror static inventory" subtitle="只读列出 .github/workflows；不调用 GitHub API" status="ci_static_inventory">
         <DataLineageTable rows={releaseGateWorkflowRows} />
+      </PacketCard>
+
+      <PacketCard title="Push readiness receipt" subtitle="release_gate_push_readiness_receipt：本地收据，只选择显式 gate/push/远端复核路径" status={String(releaseGatePushReceipt.status ?? "missing")}>
+        <p>scope: {String(releaseGatePushReceipt.scope ?? "local_push_readiness_receipt_no_command_or_github_api")}</p>
+        <p>ready_for_explicit_local_gate_then_push: {String(releaseGatePushReceipt.ready_for_explicit_local_gate_then_push === true)}</p>
+        <p>allowed_next_step: {String(releaseGatePushReceipt.allowed_next_step ?? "run_scripts_push_gate_3_0_then_git_push_then_inspect_remote_actions_if_needed")}</p>
+        <p>fresh_local_gate_run_observed: {String(releaseGatePushReceipt.fresh_local_gate_run_observed === true)}；remote_actions_status_known: {String(releaseGatePushReceipt.remote_actions_status_known === true)}</p>
+        <p>latest_remote_run_verified_green: {String(releaseGatePushReceipt.latest_remote_run_verified_green === true)}</p>
+        <p>local_gate_pass_is_not_ci_status: {String(releaseGatePushReceipt.local_gate_pass_is_not_ci_status === true)}；static_ci_mirror_is_not_ci_status: {String(releaseGatePushReceipt.static_ci_mirror_is_not_ci_status === true)}</p>
+        <p>can_clear_failure_email_without_matching_head_and_logs: {String(releaseGatePushReceipt.can_clear_failure_email_without_matching_head_and_logs === true)}</p>
+        <p>did_not_push: {String(releaseGatePushReceipt.did_not_push !== false)}；github_api_called: {String(releaseGatePushReceipt.github_api_called === true)}</p>
+        <p>该收据不运行 push gate、不调用 GitHub、不推送代码；它把本地 gate、push 和远端 Actions 复核保持为三个独立步骤。</p>
+        <DataLineageTable rows={[releaseGatePushReceipt]} />
+        <DataLineageTable rows={releaseGatePushRows} />
       </PacketCard>
 
       <PacketCard title="CI failure email triage" subtitle="ci_notification_triage_contract：本地分流失败邮件，不读取 GitHub run 日志" status={String(ciNotificationTriage.status ?? "missing")}>

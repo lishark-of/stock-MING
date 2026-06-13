@@ -829,12 +829,14 @@ Retire Streamlit from primary user workflow
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
 - `GET /api/audit/cache` now exposes `release_gate_readiness_audit`, `release_gate_readiness_rows`, and local workflow inventory. This is a static local contract check for `scripts/push_gate_3_0.sh`, not a CI status check and not production completion proof.
+- `GET /api/audit/cache` now exposes `release_gate_push_readiness_receipt` and `release_gate_push_readiness_rows`: a local-only receipt that selects the safe sequence `run_scripts_push_gate_3_0_then_git_push_then_inspect_remote_actions_if_needed`. It keeps fresh local gate output, matching remote Actions status, latest green run evidence, and periodic allowlist review as separate evidence items.
 - `GET /api/audit/cache` now also exposes `ci_notification_triage_contract` and `ci_notification_triage_rows`: a local-only triage contract for GitHub Actions failure emails. It separates local push-gate readiness, static CI mirror presence, stale-email risk, and the remote failed step/log evidence still required from the Actions run page. It does not call GitHub API, fetch workflow logs, or prove the remote run is green.
 - `.github/workflows/command-center-3-push-gate.yml` now mirrors the local push gate by creating `.venv`, installing desktop dependencies, and running `scripts/push_gate_3_0.sh` with `PYTHON_BIN=.venv/bin/python`.
 
 ### Gaps
 
 - CI mirror workflow exists, but remote CI status is still not local proof until a pushed run is inspected; current audit only proves static workflow presence.
+- Push readiness receipt is local and static: `local_receipt_ready=true` means the explicit gate/push/remote-review path is well defined, not that the gate has just run or that the latest remote run is green.
 - CI failure email triage is visible, but it only tells the user which remote evidence is required: matching commit/head, failed step name, and safe log excerpt. It cannot dismiss a failure email or mark CI green without that remote run evidence.
 - Push gate still needs periodic review of false-positive allowlists; current audit keeps `false_positive_allowlist_review_pending` visible.
 - Structured keyword review is present, but it is still a local classification contract; periodic human allowlist review and remote CI evidence remain separate.
