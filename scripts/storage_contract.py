@@ -37,6 +37,7 @@ REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_artifact_cleanup_dry_run",
     "run_storage_schema_validation_dry_run",
     "run_storage_dataset_version_manifest_dry_run",
+    "run_storage_dataset_version_manifest_write",
     "run_storage_partition_migration_dry_run",
     "run_storage_compaction_dry_run",
     "run_storage_cache_ttl_dry_run",
@@ -333,11 +334,16 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_storage_schema_validation_dry_run"].get("writes_parquet_on_post") is False
             and task_rows["run_storage_dataset_version_manifest_dry_run"].get("writes_manifest_on_post") is False
             and task_rows["run_storage_dataset_version_manifest_dry_run"].get("manifest_write_executed") is False
+            and task_rows["run_storage_dataset_version_manifest_write"].get("writes_manifest_on_post") is True
+            and task_rows["run_storage_dataset_version_manifest_write"].get("requires_confirm_manifest_write") is True
+            and task_rows["run_storage_dataset_version_manifest_write"].get("writes_parquet_on_post") is False
+            and task_rows["run_storage_dataset_version_manifest_write"].get("reads_row_payloads") is False
+            and task_rows["run_storage_dataset_version_manifest_write"].get("cache_get_external_calls") is False
             and task_rows["run_storage_partition_migration_dry_run"].get("partition_migration_executed") is False
             and task_rows["run_storage_compaction_dry_run"].get("physical_compaction_executed") is False
             and task_rows["run_storage_cache_ttl_dry_run"].get("refresh_executed") is False
             and task_rows["run_storage_artifact_cleanup_dry_run"].get("delete_files_on_post") is False,
-            "Storage dry-run tasks must be button-gated local pipelines with no external sources, no writes, no refresh, and no delete execution.",
+            "Storage tasks must be button-gated local pipelines; dry-runs stay no-write while the manifest writer is explicit, confirm-gated, manifest-only, no-provider, no-Parquet, and no-trade.",
         ),
         _row(
             "push_gate_runs_storage_contract_after_candidate",
@@ -377,6 +383,7 @@ def build_contract() -> dict[str, Any]:
             dataset_version_manifest_evidence.get("dataset_version_manifest_validated")
         ),
         "dataset_version_manifest_dry_run_writes_manifest": False,
+        "dataset_version_manifest_write_task_available": True,
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,

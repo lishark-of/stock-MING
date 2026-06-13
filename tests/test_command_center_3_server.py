@@ -1399,6 +1399,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("schema_migration_preflight", controls_by_key)
         self.assertIn("dataset_version_manifest_evidence", controls_by_key)
         self.assertIn("dataset_version_manifest_dry_run", controls_by_key)
+        self.assertIn("dataset_version_manifest_write", controls_by_key)
         self.assertIn("schema_validation_dry_run", controls_by_key)
         self.assertIn("partition_migration_dry_run", controls_by_key)
         self.assertIn("parquet_partitioning", controls_by_key)
@@ -1411,6 +1412,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(controls_by_key["dataset_version_policy"]["status"], "policy_ready")
         self.assertEqual(controls_by_key["dataset_version_manifest_evidence"]["status"], "read_only_evidence_ready")
         self.assertEqual(controls_by_key["dataset_version_manifest_dry_run"]["status"], "button_gated_ready")
+        self.assertEqual(controls_by_key["dataset_version_manifest_write"]["status"], "button_gated_ready")
         self.assertEqual(controls_by_key["schema_migration_preflight"]["status"], "preflight_ready")
         self.assertEqual(controls_by_key["schema_validation_dry_run"]["status"], "button_gated_ready")
         self.assertEqual(controls_by_key["partition_migration_dry_run"]["status"], "button_gated_ready")
@@ -1443,6 +1445,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(overview["production_readiness"]["dataset_version_manifest_dry_run_writes_manifest"])
         self.assertFalse(overview["production_readiness"]["dataset_version_manifest_dry_run_writes_parquet"])
         self.assertFalse(overview["production_readiness"]["dataset_version_manifest_dry_run_reads_parquet_payloads"])
+        self.assertEqual(
+            overview["production_readiness"]["dataset_version_manifest_write_route"],
+            "POST /api/storage/dataset-version-manifest/write",
+        )
+        self.assertTrue(overview["production_readiness"]["dataset_version_manifest_write_button_gated"])
+        self.assertTrue(overview["production_readiness"]["dataset_version_manifest_write_requires_confirm"])
+        self.assertTrue(overview["production_readiness"]["dataset_version_manifest_write_writes_manifest"])
+        self.assertFalse(overview["production_readiness"]["dataset_version_manifest_write_writes_parquet"])
+        self.assertFalse(overview["production_readiness"]["dataset_version_manifest_write_reads_parquet_payloads"])
+        self.assertFalse(overview["production_readiness"]["dataset_version_manifest_write_external_calls"])
         self.assertEqual(overview["production_readiness"]["dataset_version_manifest_write_executed_count"], 0)
         self.assertEqual(overview["production_readiness"]["schema_migration_policy"], "preflight_only_no_physical_migration_on_get")
         self.assertEqual(overview["production_readiness"]["schema_migration_preflight_status"], "preflight_ready")
@@ -2023,6 +2035,110 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
+    def test_storage_dataset_version_manifest_write_task_requires_confirm_and_validates_local_manifest(self):
+        db_path = self._with_meta_store()
+        root = self._with_parquet_root()
+        manifest_path = root / "_dataset_versions.json"
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        blocked = storage_service.run_storage_dataset_version_manifest_write_task(
+            {"source": "unit_test", "api_key": "SHOULD_DROP"}
+        )
+
+        self.assertEqual(blocked["task_type"], "run_storage_dataset_version_manifest_write")
+        self.assertEqual(blocked["status"], "failed")
+        self.assertEqual(blocked["current_step"], "storage_dataset_version_manifest_write_blocked")
+        self.assertEqual(blocked["output_packet_key"], "command_center_3_storage_dataset_version_manifest_write_packet")
+        self.assertEqual(blocked["call_ledger"][0]["api"], "local_storage_dataset_version_manifest_write")
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse(blocked["external_calls_triggered"])
+        self.assertFalse(blocked["tushare_called"])
+        self.assertFalse(blocked["deepseek_called"])
+        self.assertFalse(blocked["github_called"])
+        self.assertTrue(blocked["does_not_execute_trades"])
+        self.assertTrue(blocked["does_not_modify_strategy_action"])
+        self.assertNotIn("api_key", blocked["payload_safe"])
+
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task = storage_service.run_storage_dataset_version_manifest_write_task(
+            {"source": "unit_test", "confirm_manifest_write": True, "token": "SHOULD_DROP"}
+        )
+
+        self.assertEqual(task["task_type"], "run_storage_dataset_version_manifest_write")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "storage_dataset_version_manifest_write_completed")
+        self.assertEqual(task["output_packet_key"], "command_center_3_storage_dataset_version_manifest_write_packet")
+        self.assertTrue(manifest_path.exists())
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["schema_version"], "command_center_3_dataset_versions_manifest.v1")
+        self.assertEqual(manifest["generated_by"], "storage_dataset_version_manifest_write_task")
+        self.assertEqual(manifest["write_policy"], "button_gated_local_manifest_only")
+        self.assertEqual(set(manifest["datasets"]), set(storage_service.CANONICAL_PARQUET_DATASETS))
+        self.assertEqual(manifest["datasets"]["daily"]["schema_version"], "storage.daily.v1")
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_3_storage_dataset_version_manifest_write_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["schema_version"], "command_center_3_storage_dataset_version_manifest_write.v1")
+        self.assertEqual(persisted["status"], "manifest_write_completed_validated")
+        self.assertTrue(persisted["manifest_write_executed"])
+        self.assertTrue(persisted["manifest_written_on_post"])
+        self.assertFalse(persisted["manifest_written_on_get"])
+        self.assertFalse(persisted["writes_parquet"])
+        self.assertFalse(persisted["reads_parquet_payloads"])
+        self.assertFalse(persisted["reads_env_files"])
+        self.assertTrue(persisted["post_write_manifest_validated"])
+        self.assertEqual(persisted["post_write_validated_dataset_count"], 6)
+        self.assertFalse(persisted["production_storage_complete"])
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertNotIn("SHOULD_DROP", json.dumps({"task": task, "packet": persisted, "manifest": manifest}, ensure_ascii=False))
+
+        evidence = storage_service.storage_dataset_version_manifest_evidence_audit()
+        self.assertEqual(evidence["status"], "manifest_validation_ready_local_only")
+        self.assertTrue(evidence["dataset_version_manifest_validated"])
+        self.assertEqual(evidence["validated_dataset_count"], 6)
+        self.assertFalse(evidence["manifest_written_on_get"])
+        self.assertFalse(evidence["cache_get_writes_files"])
+        self.assertFalse(evidence["cache_get_reads_parquet_payloads"])
+
+    def test_storage_dataset_version_manifest_write_endpoint_is_button_gated_local_task(self):
+        self._with_meta_store()
+        root = self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).post(
+            "/api/storage/dataset-version-manifest/write",
+            json={"source": "api_test", "confirm_manifest_write": True, "api_key": "SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertIn("task_id", response["data"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_storage_dataset_version_manifest_write")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "storage_dataset_version_manifest_write_completed")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_storage_dataset_version_manifest_write")
+        self.assertTrue((root / "_dataset_versions.json").exists())
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
     def test_storage_cache_ttl_marks_fresh_local_dataset(self):
         if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
             self.skipTest("pyarrow/pandas parquet dependency missing")
@@ -2282,6 +2398,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_dry_run_writes_manifest"])
         self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_dry_run_writes_parquet"])
         self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_dry_run_reads_parquet_payloads"])
+        self.assertEqual(
+            catalog["production_readiness"]["dataset_version_manifest_write_route"],
+            "POST /api/storage/dataset-version-manifest/write",
+        )
+        self.assertTrue(catalog["production_readiness"]["dataset_version_manifest_write_button_gated"])
+        self.assertTrue(catalog["production_readiness"]["dataset_version_manifest_write_requires_confirm"])
+        self.assertTrue(catalog["production_readiness"]["dataset_version_manifest_write_writes_manifest"])
+        self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_write_writes_parquet"])
+        self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_write_reads_parquet_payloads"])
+        self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_write_external_calls"])
         self.assertEqual(catalog["production_readiness"]["schema_migration_policy"], "preflight_only_no_physical_migration_on_get")
         self.assertEqual(catalog["production_readiness"]["schema_validation_dry_run_route"], "POST /api/storage/schema-validation/dry-run")
         self.assertTrue(catalog["production_readiness"]["schema_validation_dry_run_button_gated"])
@@ -6242,7 +6368,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 17)
+        self.assertEqual(catalog["task_count"], 18)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -6261,7 +6387,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 17)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 18)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -6272,8 +6398,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 19)
-        self.assertEqual(route_coverage["task_creation_route_count"], 17)
+        self.assertEqual(route_coverage["known_post_route_count"], 20)
+        self.assertEqual(route_coverage["task_creation_route_count"], 18)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -6282,11 +6408,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 17)
+        self.assertEqual(implementation_status["task_count"], 18)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 14)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 15)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 15)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 16)
         self.assertEqual(implementation_status["external_capable_task_count"], 5)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -6306,6 +6432,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_artifact_cleanup_dry_run",
                 "run_storage_schema_validation_dry_run",
                 "run_storage_dataset_version_manifest_dry_run",
+                "run_storage_dataset_version_manifest_write",
                 "run_storage_partition_migration_dry_run",
                 "run_storage_compaction_dry_run",
                 "run_storage_cache_ttl_dry_run",
@@ -6326,6 +6453,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_artifact_cleanup_dry_run",
                 "run_storage_schema_validation_dry_run",
                 "run_storage_dataset_version_manifest_dry_run",
+                "run_storage_dataset_version_manifest_write",
                 "run_storage_partition_migration_dry_run",
                 "run_storage_compaction_dry_run",
                 "run_storage_cache_ttl_dry_run",
@@ -6574,6 +6702,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_storage_dataset_version_manifest_dry_run"]["manifest_write_executed"])
         self.assertFalse(by_type["run_storage_dataset_version_manifest_dry_run"]["production_storage_complete"])
         self.assertTrue(by_type["run_storage_dataset_version_manifest_dry_run"]["call_ledger_required"])
+        self.assertEqual(by_type["run_storage_dataset_version_manifest_write"]["route"], "POST /api/storage/dataset-version-manifest/write")
+        self.assertEqual(by_type["run_storage_dataset_version_manifest_write"]["current_backend"], "local_cache_pipeline")
+        self.assertEqual(by_type["run_storage_dataset_version_manifest_write"]["possible_external_sources"], [])
+        self.assertEqual(
+            by_type["run_storage_dataset_version_manifest_write"]["external_call_policy"],
+            "local_manifest_write_only_no_external_call",
+        )
+        self.assertEqual(
+            by_type["run_storage_dataset_version_manifest_write"]["manifest_policy"],
+            "button_gated_local_manifest_write_no_parquet_payload_read",
+        )
+        self.assertFalse(by_type["run_storage_dataset_version_manifest_write"]["cache_get_external_calls"])
+        self.assertTrue(by_type["run_storage_dataset_version_manifest_write"]["writes_manifest_on_post"])
+        self.assertFalse(by_type["run_storage_dataset_version_manifest_write"]["writes_parquet_on_post"])
+        self.assertFalse(by_type["run_storage_dataset_version_manifest_write"]["reads_row_payloads"])
+        self.assertFalse(by_type["run_storage_dataset_version_manifest_write"]["reads_env_files"])
+        self.assertTrue(by_type["run_storage_dataset_version_manifest_write"]["requires_confirm_manifest_write"])
+        self.assertFalse(by_type["run_storage_dataset_version_manifest_write"]["production_storage_complete"])
+        self.assertTrue(by_type["run_storage_dataset_version_manifest_write"]["call_ledger_required"])
         self.assertEqual(by_type["run_storage_partition_migration_dry_run"]["route"], "POST /api/storage/partition-migration/dry-run")
         self.assertEqual(by_type["run_storage_partition_migration_dry_run"]["current_backend"], "local_cache_pipeline")
         self.assertEqual(by_type["run_storage_partition_migration_dry_run"]["possible_external_sources"], [])
@@ -6648,6 +6795,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/storage/artifact-hygiene/dry-run", discovered_routes)
         self.assertIn("POST /api/storage/schema-validation/dry-run", discovered_routes)
         self.assertIn("POST /api/storage/dataset-version-manifest/dry-run", discovered_routes)
+        self.assertIn("POST /api/storage/dataset-version-manifest/write", discovered_routes)
         self.assertIn("POST /api/storage/partition-migration/dry-run", discovered_routes)
         self.assertIn("POST /api/storage/compaction/dry-run", discovered_routes)
         self.assertIn("POST /api/storage/cache-ttl/dry-run", discovered_routes)
@@ -6670,16 +6818,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 14)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 15)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 15)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 16)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 14)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 15)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 15)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 16)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -6688,6 +6836,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_candidate_radar_deep_scan_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_schema_validation_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_dataset_version_manifest_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_storage_dataset_version_manifest_write", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_partition_migration_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_compaction_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_cache_ttl_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -6829,6 +6978,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_by_task["run_storage_artifact_cleanup_dry_run"]["future_queue"], "local_maintenance")
         self.assertEqual(dispatch_by_task["run_storage_schema_validation_dry_run"]["future_queue"], "local_maintenance")
         self.assertEqual(dispatch_by_task["run_storage_dataset_version_manifest_dry_run"]["future_queue"], "local_maintenance")
+        self.assertEqual(dispatch_by_task["run_storage_dataset_version_manifest_write"]["future_queue"], "local_maintenance")
         self.assertEqual(dispatch_by_task["run_storage_partition_migration_dry_run"]["future_queue"], "local_maintenance")
         self.assertEqual(dispatch_by_task["run_storage_compaction_dry_run"]["future_queue"], "local_maintenance")
         self.assertEqual(dispatch_by_task["run_storage_cache_ttl_dry_run"]["future_queue"], "local_maintenance")
@@ -6872,9 +7022,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 14)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 15)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 15)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 16)
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])
@@ -6938,9 +7088,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 14)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 15)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 15)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 16)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 5)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -6971,9 +7121,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 14)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 15)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 15)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 16)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -6982,6 +7132,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_candidate_radar_deep_scan_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_schema_validation_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_dataset_version_manifest_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_storage_dataset_version_manifest_write", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_partition_migration_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_compaction_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_cache_ttl_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -8003,7 +8154,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 17)
+        self.assertEqual(task_catalog["data"]["task_count"], 18)
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/scan-quick", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -8012,6 +8163,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("POST /api/storage/artifact-hygiene/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/schema-validation/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/dataset-version-manifest/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn("POST /api/storage/dataset-version-manifest/write", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/partition-migration/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/compaction/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/cache-ttl/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])

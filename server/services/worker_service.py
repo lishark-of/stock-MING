@@ -99,6 +99,7 @@ def _queue_for_task_type(task_type: str) -> str:
         "run_storage_artifact_cleanup_dry_run",
         "run_storage_schema_validation_dry_run",
         "run_storage_dataset_version_manifest_dry_run",
+        "run_storage_dataset_version_manifest_write",
         "run_storage_partition_migration_dry_run",
         "run_storage_compaction_dry_run",
         "run_storage_cache_ttl_dry_run",
