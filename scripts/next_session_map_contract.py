@@ -71,7 +71,7 @@ def _read_script(path: str) -> str:
 
 def _rows_by_key(rows: Any) -> dict[str, dict[str, Any]]:
     return {
-        str(row.get("key") or row.get("criterion") or ""): row
+        str(row.get("key") or row.get("criterion") or row.get("activation_key") or ""): row
         for row in _list(rows)
         if isinstance(row, dict)
     }
@@ -154,8 +154,25 @@ def _build_exact_sample_packet() -> dict[str, Any]:
             packet_service.SQLITE_META_PATH = original_meta
 
 
+def _build_exact_service_packet() -> dict[str, Any]:
+    original_snapshot = packet_service.SNAPSHOT_CACHE_PATH
+    original_meta = packet_service.SQLITE_META_PATH
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        snapshot_path = temp_path / "command_center_latest.json"
+        snapshot_path.write_text(json.dumps(_synthetic_next_session_snapshot(), ensure_ascii=False), encoding="utf-8")
+        packet_service.SNAPSHOT_CACHE_PATH = snapshot_path
+        packet_service.SQLITE_META_PATH = temp_path / "meta.sqlite"
+        try:
+            return next_session_service.read_next_session_cache()
+        finally:
+            packet_service.SNAPSHOT_CACHE_PATH = original_snapshot
+            packet_service.SQLITE_META_PATH = original_meta
+
+
 def build_contract() -> dict[str, Any]:
     exact_packet = _build_exact_sample_packet()
+    exact_service_packet = _build_exact_service_packet()
     exact_chart = _dict(exact_packet.get("chart_payload"))
     chart_contract = _dict(exact_chart.get("chart_contract"))
     interaction_contract = _dict(chart_contract.get("interaction_contract"))
@@ -170,6 +187,8 @@ def build_contract() -> dict[str, Any]:
     zone_rows = [row for row in _list(exact_chart.get("zone_interaction_rows")) if isinstance(row, dict)]
     position_conflict = _dict(exact_chart.get("position_conflict"))
     data_trust = _dict(exact_chart.get("data_trust_summary"))
+    activation_receipt = _dict(exact_service_packet.get("next_session_replacement_activation_receipt"))
+    activation_rows = _rows_by_key(exact_service_packet.get("next_session_replacement_activation_rows"))
 
     current_cache = next_session_service.read_next_session_cache()
     current_ledger = [row for row in _list(current_cache.get("call_ledger")) if isinstance(row, dict)]
@@ -264,6 +283,38 @@ def build_contract() -> dict[str, Any]:
             "Current GET next-session cache envelope must stay local/read-only even when the exact packet is missing.",
         ),
         _row(
+            "replacement_activation_receipt_guides_next_safe_step",
+            activation_receipt.get("schema_version") == "next_session_replacement_activation_receipt.v1"
+            and activation_receipt.get("status") == "next_session_activation_receipt_ready_replacement_blocked"
+            and activation_receipt.get("scope") == "local_next_session_replacement_activation_receipt_no_browser_no_provider"
+            and activation_receipt.get("local_activation_receipt_ready") is True
+            and activation_receipt.get("production_replacement_complete") is False
+            and activation_receipt.get("streamlit_parity_complete") is False
+            and activation_receipt.get("browser_visual_qa_done") is False
+            and activation_receipt.get("browser_performance_trace_done") is False
+            and activation_receipt.get("durable_ci_evidence_complete") is False
+            and activation_receipt.get("allowed_next_step")
+            == "explicit_streamlit_parity_browser_visual_performance_review_then_replacement_promotion"
+            and set(activation_receipt.get("missing_evidence_items") or []).issuperset(
+                {"streamlit_parity_review", "browser_visual_qa", "browser_performance_trace", "durable_ci_or_release_evidence"}
+            )
+            and _dict(activation_rows.get("exact_echarts_payload_ready")).get("status") == "passed"
+            and _dict(activation_rows.get("interaction_readiness_ready")).get("status") == "passed"
+            and _dict(activation_rows.get("reference_zone_context_visible")).get("status") == "passed"
+            and _dict(activation_rows.get("frontend_read_only_boundary")).get("status") == "passed"
+            and _dict(activation_rows.get("streamlit_parity_review_required")).get("status") == "pending_streamlit_parity_review"
+            and _dict(activation_rows.get("browser_visual_qa_required")).get("status") == "pending_browser_visual_qa"
+            and _dict(activation_rows.get("browser_performance_trace_required")).get("status")
+            == "pending_browser_performance_trace"
+            and _dict(activation_rows.get("durable_ci_or_release_evidence_required")).get("status")
+            == "pending_durable_evidence"
+            and _flag_false(activation_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and activation_receipt.get("does_not_execute_trades") is True
+            and activation_receipt.get("does_not_modify_strategy_action") is True
+            and activation_receipt.get("does_not_modify_operation_zones") is True,
+            "Replacement activation receipt must guide Streamlit parity, browser QA, performance trace, and durable evidence without claiming production replacement.",
+        ),
+        _row(
             "next_session_task_is_button_gated_local_cache_pipeline",
             task.get("route") == "POST /api/next-session/generate"
             and task.get("button_gated") is True
@@ -311,6 +362,7 @@ def build_contract() -> dict[str, Any]:
             "script_is_local_no_browser_or_provider_execution",
             "command_center_3_next_session_map_contract.v1" in this_script
             and "local_next_session_map_contract_no_browser_no_provider" in this_script
+            and "next_session_replacement_activation_receipt.v1" in this_script
             and "production_replacement_complete" in this_script
             and "streamlit_parity_complete" in this_script
             and "browser_visual_qa_done" in this_script
@@ -336,6 +388,7 @@ def build_contract() -> dict[str, Any]:
         "production_replacement_complete": False,
         "browser_visual_qa_done": False,
         "browser_performance_trace_done": False,
+        "replacement_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -355,6 +408,8 @@ def build_contract() -> dict[str, Any]:
             "interaction_blocking_count": interaction_audit.get("blocking_count"),
             "streamlit_parity_complete": interaction_audit.get("streamlit_parity_complete"),
             "production_replacement_complete": interaction_audit.get("production_replacement_complete"),
+            "replacement_activation_receipt_status": activation_receipt.get("status"),
+            "replacement_activation_production_blocker_count": activation_receipt.get("production_blocker_count"),
             "historical_point_count": series_counts.get("historical_points"),
             "scenario_series_count": series_counts.get("scenario_series"),
             "reference_line_count": series_counts.get("reference_lines"),

@@ -801,6 +801,59 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["chart_summary"]["production_replacement_complete"])
         self.assertFalse(packet["chart_summary"]["frontend_computes_trade_action"])
         self.assertIn("前端不得修改 strategy action", " ".join(contract["guardrails"]))
+        service_packet = next_session_service.read_next_session_cache()
+        receipt = service_packet["next_session_replacement_activation_receipt"]
+        self.assertEqual(receipt["schema_version"], "next_session_replacement_activation_receipt.v1")
+        self.assertEqual(receipt["scope"], "local_next_session_replacement_activation_receipt_no_browser_no_provider")
+        self.assertEqual(receipt["status"], "next_session_activation_receipt_ready_replacement_blocked")
+        self.assertTrue(receipt["local_activation_receipt_ready"])
+        self.assertFalse(receipt["production_replacement_complete"])
+        self.assertFalse(receipt["streamlit_parity_complete"])
+        self.assertFalse(receipt["browser_visual_qa_done"])
+        self.assertFalse(receipt["browser_performance_trace_done"])
+        self.assertFalse(receipt["durable_ci_evidence_complete"])
+        self.assertTrue(receipt["frontend_render_only"])
+        self.assertEqual(
+            receipt["allowed_next_step"],
+            "explicit_streamlit_parity_browser_visual_performance_review_then_replacement_promotion",
+        )
+        self.assertIn("streamlit_parity_review", receipt["missing_evidence_items"])
+        self.assertIn("browser_visual_qa", receipt["missing_evidence_items"])
+        self.assertIn("browser_performance_trace", receipt["missing_evidence_items"])
+        self.assertIn("durable_ci_or_release_evidence", receipt["missing_evidence_items"])
+        self.assertIn("treat_interaction_readiness_as_streamlit_parity", receipt["not_allowed_next_steps"])
+        self.assertIn("use_frontend_to_compute_action_or_modify_operation_zones", receipt["not_allowed_next_steps"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertTrue(receipt["does_not_modify_operation_zones"])
+        self.assertTrue(receipt["opens_no_browser"])
+        self.assertTrue(receipt["writes_no_artifacts"])
+        self.assertGreater(receipt["production_blocker_count"], 0)
+        self.assertGreater(receipt["missing_evidence_count"], 0)
+        rows = {row["activation_key"]: row for row in service_packet["next_session_replacement_activation_rows"]}
+        self.assertEqual(rows["exact_echarts_payload_ready"]["status"], "passed")
+        self.assertEqual(rows["interaction_readiness_ready"]["status"], "passed")
+        self.assertEqual(rows["reference_zone_context_visible"]["status"], "passed")
+        self.assertEqual(rows["frontend_read_only_boundary"]["status"], "passed")
+        self.assertEqual(rows["streamlit_parity_review_required"]["status"], "pending_streamlit_parity_review")
+        self.assertEqual(rows["browser_visual_qa_required"]["status"], "pending_browser_visual_qa")
+        self.assertEqual(rows["browser_performance_trace_required"]["status"], "pending_browser_performance_trace")
+        self.assertEqual(rows["durable_ci_or_release_evidence_required"]["status"], "pending_durable_evidence")
+        self.assertEqual(rows["production_replacement_stays_blocked"]["status"], "passed")
+        self.assertTrue(service_packet["next_session_activation_receipt_ready"])
+        self.assertEqual(
+            service_packet["next_session_activation_production_blocker_count"],
+            receipt["production_blocker_count"],
+        )
+        self.assertEqual(
+            service_packet["next_session_activation_missing_evidence_count"],
+            receipt["missing_evidence_count"],
+        )
+        self.assertEqual(service_packet["call_ledger"][0]["api"], "local_next_session_cache")
 
     def test_next_session_cache_exact_packet_without_chart_model_still_has_contract(self):
         self._with_snapshot_cache(
@@ -6332,8 +6385,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("streamlit_parity_complete", script)
         self.assertIn("production_replacement_complete", script)
         self.assertIn("browser_visual_qa_done", script)
+        self.assertIn("next_session_replacement_activation_receipt.v1", script)
         self.assertIn("exact_echarts_payload_has_complete_chart_contract", script)
         self.assertIn("interaction_readiness_is_ready_but_parity_pending", script)
+        self.assertIn("replacement_activation_receipt_guides_next_safe_step", script)
         self.assertIn("chart_contract_is_read_only_no_external_no_action", script)
         self.assertIn("current_get_cache_envelope_is_read_only", script)
         self.assertIn("react_echarts_frontend_uses_api_client_and_read_only_display", script)
@@ -6365,6 +6420,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["production_replacement_complete"])
         self.assertFalse(payload["browser_visual_qa_done"])
         self.assertFalse(payload["browser_performance_trace_done"])
+        self.assertTrue(payload["replacement_activation_receipt_ready"])
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -6377,6 +6433,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["interaction_blocking_count"], 0)
         self.assertFalse(payload["observed"]["streamlit_parity_complete"])
         self.assertFalse(payload["observed"]["production_replacement_complete"])
+        self.assertEqual(
+            payload["observed"]["replacement_activation_receipt_status"],
+            "next_session_activation_receipt_ready_replacement_blocked",
+        )
+        self.assertGreater(payload["observed"]["replacement_activation_production_blocker_count"], 0)
         self.assertGreaterEqual(payload["observed"]["historical_point_count"], 2)
         self.assertGreaterEqual(payload["observed"]["scenario_series_count"], 1)
         self.assertGreaterEqual(payload["observed"]["reference_line_count"], 4)
@@ -6388,6 +6449,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("chart_contract_is_read_only_no_external_no_action", criteria)
         self.assertIn("reference_zone_position_deepseek_status_are_visible", criteria)
         self.assertIn("current_get_cache_envelope_is_read_only", criteria)
+        self.assertIn("replacement_activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("next_session_task_is_button_gated_local_cache_pipeline", criteria)
         self.assertIn("react_echarts_frontend_uses_api_client_and_read_only_display", criteria)
 

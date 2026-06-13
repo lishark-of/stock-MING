@@ -70,6 +70,8 @@ export default function NextSessionMap() {
   const chartContractCounts = chartContract?.series_counts as Record<string, unknown> | undefined;
   const chartMaturity = (chartPayload?.chart_maturity as Record<string, unknown> | undefined) ?? {};
   const interactionReadinessAudit = (chartPayload?.interaction_readiness_audit as Record<string, unknown> | undefined) ?? {};
+  const replacementActivation = (packet.next_session_replacement_activation_receipt as Record<string, unknown> | undefined) ?? {};
+  const replacementActivationRows = rowsFromArray(packet.next_session_replacement_activation_rows);
   const latestCloseAnchor = (chartPayload?.latest_close_anchor as Record<string, unknown> | undefined) ?? {};
   const dataTrustSummary = (chartPayload?.data_trust_summary as Record<string, unknown> | undefined) ?? {};
   const positionConflict = (chartPayload?.position_conflict as Record<string, unknown> | undefined) ?? {};
@@ -157,6 +159,9 @@ export default function NextSessionMap() {
           { label: "交互审计", value: String(interactionReadinessAudit.status ?? chartSummary.interaction_readiness_status ?? "missing"), tone: interactionReadinessAudit.status === "interaction_blocked" ? "bad" : "warn" },
           { label: "交互阻断", value: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0), tone: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0) ? "bad" : "good" },
           { label: "Streamlit parity", value: interactionReadinessAudit.streamlit_parity_complete === true ? "完成" : "待验收", tone: interactionReadinessAudit.streamlit_parity_complete === true ? "good" : "warn" },
+          { label: "替代激活收据", value: String(replacementActivation.status ?? "missing"), tone: replacementActivation.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "替代阻断", value: Number(replacementActivation.production_blocker_count ?? 0), tone: Number(replacementActivation.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "缺失证据", value: Number(replacementActivation.missing_evidence_count ?? 0), tone: Number(replacementActivation.missing_evidence_count ?? 0) > 0 ? "warn" : "good" },
           { label: "路径锚定", value: `${String(chartMaturity.scenario_anchored_count ?? chartSummary.scenario_anchored_count ?? 0)}/${String(chartMaturity.scenario_anchor_count ?? 0)}` },
           { label: "最新 close", value: String(latestCloseAnchor.price ?? "--") },
           { label: "持仓冲突", value: positionConflict.has_conflict === true ? "有" : "无", tone: positionConflict.has_conflict === true ? "bad" : "good" },
@@ -174,6 +179,12 @@ export default function NextSessionMap() {
       <h3>ECharts 交互成熟度审计</h3>
       <DataLineageTable rows={[interactionReadinessAudit]} />
       <DataLineageTable rows={interactionReadinessRows} />
+      <h3>ECharts 生产替代激活收据</h3>
+      <p className="risk-note">next_session_replacement_activation_receipt 只把 Streamlit parity、浏览器视觉 QA、性能 trace、durable evidence 和只读边界串成下一步清单；它不运行浏览器、不调用 provider/model、不证明生产替代完成。</p>
+      <p>allowed_next_step: {String(replacementActivation.allowed_next_step ?? "explicit_streamlit_parity_browser_visual_performance_review_then_replacement_promotion")}</p>
+      <p>production_replacement_complete: {String(replacementActivation.production_replacement_complete === true)}；browser_visual_qa_done: {String(replacementActivation.browser_visual_qa_done === true)}；browser_performance_trace_done: {String(replacementActivation.browser_performance_trace_done === true)}</p>
+      <DataLineageTable rows={[replacementActivation]} />
+      <DataLineageTable rows={replacementActivationRows} />
       <h3>ECharts 图表数据合同</h3>
       <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>
