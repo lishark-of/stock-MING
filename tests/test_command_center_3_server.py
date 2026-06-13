@@ -1343,6 +1343,79 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(route_rows["candidate_radar_quick_scan"]["coverage_status"], "partial_migrated")
         self.assertTrue(route_rows["candidate_radar_quick_scan"]["still_needs_streamlit_fallback"])
         self.assertEqual(route_rows["legacy_admin_debug_tools"]["coverage_status"], "fallback_retained")
+        self.assertIn("streamlit_retirement_readiness_receipt", packet)
+        retirement_receipt = packet["streamlit_retirement_readiness_receipt"]
+        retirement_rows = {row["criterion"]: row for row in packet["streamlit_retirement_readiness_rows"]}
+        self.assertEqual(retirement_receipt["schema_version"], "streamlit_retirement_readiness_receipt.v1")
+        self.assertEqual(
+            retirement_receipt["scope"],
+            "local_streamlit_retirement_readiness_receipt_no_streamlit_execution",
+        )
+        self.assertEqual(retirement_receipt["status"], "streamlit_retirement_receipt_ready_fallback_blocked")
+        self.assertTrue(retirement_receipt["local_receipt_ready"])
+        self.assertFalse(retirement_receipt["ready_for_ordinary_primary_exit_review"])
+        self.assertFalse(retirement_receipt["ready_for_full_streamlit_retirement_review"])
+        self.assertFalse(retirement_receipt["ordinary_workflow_exit_complete"])
+        self.assertFalse(retirement_receipt["streamlit_fallback_removal_ready"])
+        self.assertFalse(retirement_receipt["full_streamlit_removal_ready"])
+        self.assertTrue(retirement_receipt["streamlit_fallback_retained"])
+        self.assertEqual(
+            retirement_receipt["allowed_next_step"],
+            "explicit_replacement_parity_review_then_streamlit_fallback_retirement_review",
+        )
+        self.assertIn("GET /api/legacy/cache opens Streamlit", retirement_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/legacy/cache runs legacy tools", retirement_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/legacy/cache creates tasks", retirement_receipt["not_allowed_next_steps"])
+        self.assertIn("page render retires Streamlit fallback", retirement_receipt["not_allowed_next_steps"])
+        self.assertIn(
+            "delete app.py before replacement parity or explicit retirement decision",
+            retirement_receipt["not_allowed_next_steps"],
+        )
+        self.assertIn("treat local receipt as Streamlit retirement completion", retirement_receipt["not_allowed_next_steps"])
+        self.assertEqual(
+            retirement_receipt["ordinary_fallback_dependency_count"],
+            exit_audit["ordinary_workflow_still_needs_fallback_count"],
+        )
+        self.assertIn("candidate_radar_quick_scan", retirement_receipt["ordinary_blocking_workflows"])
+        self.assertIn("legacy_admin_debug_tools", retirement_receipt["full_removal_blocking_workflows"])
+        self.assertFalse(retirement_receipt["streamlit_opened_by_receipt"])
+        self.assertFalse(retirement_receipt["legacy_tools_run_by_receipt"])
+        self.assertFalse(retirement_receipt["tasks_created_by_receipt"])
+        self.assertFalse(retirement_receipt["fallback_removed_by_receipt"])
+        self.assertFalse(retirement_receipt["app_py_deleted_by_receipt"])
+        self.assertFalse(retirement_receipt["provider_model_task_dispatched_by_receipt"])
+        self.assertFalse(retirement_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(retirement_receipt["external_calls_triggered"])
+        self.assertFalse(retirement_receipt["tushare_called"])
+        self.assertFalse(retirement_receipt["deepseek_called"])
+        self.assertFalse(retirement_receipt["github_called"])
+        self.assertFalse(retirement_receipt["contains_secret"])
+        self.assertTrue(retirement_receipt["does_not_open_streamlit"])
+        self.assertTrue(retirement_receipt["does_not_run_legacy_tools"])
+        self.assertTrue(retirement_receipt["does_not_create_tasks"])
+        self.assertTrue(retirement_receipt["does_not_execute_trades"])
+        self.assertTrue(retirement_receipt["does_not_modify_strategy_action"])
+        self.assertTrue(retirement_receipt["does_not_modify_holdings"])
+        self.assertIn("local_exit_contracts_visible", retirement_rows)
+        self.assertIn("ordinary_fallback_dependencies_visible", retirement_rows)
+        self.assertIn("candidate_radar_retirement_dependency_visible", retirement_rows)
+        self.assertIn("legacy_admin_debug_retained_until_replacement", retirement_rows)
+        self.assertIn("full_streamlit_retirement_boundary", retirement_rows)
+        self.assertEqual(
+            retirement_receipt["call_ledger"][0]["api"],
+            "local_streamlit_retirement_readiness_receipt",
+        )
+        self.assertFalse(retirement_receipt["call_ledger"][0]["external"])
+        self.assertIn("local_streamlit_retirement_readiness_receipt", {row["api"] for row in packet["call_ledger"]})
+        self.assertTrue(packet["streamlit_retirement_readiness_receipt_ready"])
+        self.assertEqual(
+            packet["streamlit_retirement_readiness_receipt_status"],
+            retirement_receipt["status"],
+        )
+        self.assertEqual(
+            packet["counts"]["streamlit_retirement_readiness_blocker_count"],
+            retirement_receipt["blocking_criterion_count"],
+        )
         self.assertEqual(packet["counts"]["primary_workflow_route_count"], exit_audit["ordinary_workflow_route_count"])
         self.assertEqual(packet["counts"]["primary_workflow_fallback_count"], exit_audit["ordinary_workflow_still_needs_fallback_count"])
         self.assertFalse(packet["external_calls_triggered"])
@@ -6667,6 +6740,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("streamlit_marked_legacy_not_primary", script)
         self.assertIn("primary_exit_audit_keeps_fallback_required", script)
         self.assertIn("fallback_dependency_contract_keeps_retirement_pending", script)
+        self.assertIn("retirement_readiness_receipt_allows_only_explicit_review", script)
         self.assertIn("react_legacy_page_displays_boundaries", script)
         self.assertIn("legacy_startup_does_not_autocreate_or_autoexternal", script)
         self.assertIn("push_gate_runs_streamlit_contract_after_tauri", script)
@@ -6696,6 +6770,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["legacy_fallback_required"])
         self.assertTrue(payload["feature_parity_required_before_removal"])
         self.assertTrue(payload["no_feature_cut_allowed"])
+        self.assertTrue(payload["streamlit_retirement_readiness_receipt_ready"])
+        self.assertEqual(
+            payload["streamlit_retirement_readiness_receipt_status"],
+            "streamlit_retirement_receipt_ready_fallback_blocked",
+        )
         self.assertTrue(payload["cache_only"])
         self.assertTrue(payload["does_not_open_streamlit"])
         self.assertTrue(payload["does_not_run_legacy_tools"])
@@ -6724,11 +6803,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreater(payload["observed"]["full_streamlit_removal_blocker_count"], 0)
         self.assertIn("candidate_radar_quick_scan", payload["observed"]["ordinary_blocking_workflows"])
         self.assertIn("legacy_admin_debug_tools", payload["observed"]["full_removal_blocking_workflows"])
+        self.assertEqual(
+            payload["observed"]["retirement_receipt_status"],
+            "streamlit_retirement_receipt_ready_fallback_blocked",
+        )
+        self.assertGreater(payload["observed"]["retirement_receipt_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["retirement_receipt_allowed_next_step"],
+            "explicit_replacement_parity_review_then_streamlit_fallback_retirement_review",
+        )
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("legacy_cache_is_read_only", criteria)
         self.assertIn("streamlit_marked_legacy_not_primary", criteria)
         self.assertIn("primary_exit_audit_keeps_fallback_required", criteria)
         self.assertIn("fallback_dependency_contract_keeps_retirement_pending", criteria)
+        self.assertIn("retirement_readiness_receipt_allows_only_explicit_review", criteria)
         self.assertIn("react_legacy_page_displays_boundaries", criteria)
         self.assertIn("legacy_startup_does_not_autocreate_or_autoexternal", criteria)
         self.assertIn("push_gate_runs_streamlit_contract_after_tauri", criteria)

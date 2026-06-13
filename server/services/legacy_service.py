@@ -417,6 +417,216 @@ def _streamlit_fallback_dependency_contract(route_rows: list[dict[str, Any]]) ->
     }
 
 
+def _streamlit_retirement_readiness_receipt(
+    *,
+    primary_workflow_exit_audit: Mapping[str, Any],
+    fallback_dependency_contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    exit_blocker_count = int(primary_workflow_exit_audit.get("blocker_count") or 0)
+    ordinary_fallback_count = int(
+        primary_workflow_exit_audit.get("ordinary_workflow_still_needs_fallback_count") or 0
+    )
+    full_removal_blocker_count = int(fallback_dependency_contract.get("full_streamlit_removal_blocker_count") or 0)
+    ordinary_blocking_workflows = [
+        str(item) for item in _as_list(fallback_dependency_contract.get("ordinary_blocking_workflows"))
+    ]
+    full_removal_blocking_workflows = [
+        str(item) for item in _as_list(fallback_dependency_contract.get("full_removal_blocking_workflows"))
+    ]
+    local_receipt_ready = (
+        primary_workflow_exit_audit.get("schema_version") == "streamlit_primary_workflow_exit_audit.v1"
+        and fallback_dependency_contract.get("schema_version") == "streamlit_fallback_dependency_contract.v1"
+        and primary_workflow_exit_audit.get("scope")
+        == "local_legacy_policy_and_route_inventory_not_streamlit_execution"
+        and fallback_dependency_contract.get("scope") == "local_route_dependency_contract_not_streamlit_execution"
+        and primary_workflow_exit_audit.get("does_not_open_streamlit") is True
+        and primary_workflow_exit_audit.get("does_not_run_legacy_tools") is True
+        and fallback_dependency_contract.get("does_not_open_streamlit") is True
+        and fallback_dependency_contract.get("does_not_run_legacy_tools") is True
+        and fallback_dependency_contract.get("no_feature_cut_allowed") is True
+    )
+    ordinary_exit_ready = bool(
+        local_receipt_ready
+        and primary_workflow_exit_audit.get("ordinary_workflow_exit_complete") is True
+        and fallback_dependency_contract.get("ordinary_primary_exit_ready") is True
+        and ordinary_fallback_count == 0
+    )
+    full_retirement_ready = bool(
+        ordinary_exit_ready
+        and fallback_dependency_contract.get("full_streamlit_removal_ready") is True
+        and full_removal_blocker_count == 0
+    )
+
+    def _row(criterion: str, status: str, detail: str, required_evidence: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": status == "passed",
+            "retirement_blocker": status != "passed",
+            "detail": detail,
+            "required_evidence": required_evidence,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_open_streamlit": True,
+            "does_not_run_legacy_tools": True,
+            "does_not_create_tasks": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "local_exit_contracts_visible",
+            "passed" if local_receipt_ready else "blocked",
+            "Legacy cache exposes primary workflow exit audit and fallback dependency contract.",
+            "GET /api/legacy/cache includes exit audit, fallback contract, rows, policy, and call ledger.",
+        ),
+        _row(
+            "react_tauri_primary_entry_declared",
+            "passed" if primary_workflow_exit_audit.get("react_tauri_primary_entry") is True else "blocked",
+            "React/Vite/Tauri + FastAPI is the official primary entry; Streamlit is not.",
+            "Primary entry policy stays visible in legacy cache and LegacyTools page.",
+        ),
+        _row(
+            "ordinary_fallback_dependencies_visible",
+            "blocked" if ordinary_fallback_count > 0 else "passed",
+            f"{ordinary_fallback_count} ordinary workflow fallback dependency item(s) remain.",
+            "All ordinary workflows have Command Center 3 parity and no longer need Streamlit fallback.",
+        ),
+        _row(
+            "candidate_radar_retirement_dependency_visible",
+            "blocked" if "candidate_radar_quick_scan" in ordinary_blocking_workflows else "passed",
+            f"ordinary_blocking_workflows={ordinary_blocking_workflows}",
+            "Candidate Radar full-pool/deep-scan/provider/browser acceptance clears legacy fallback dependency.",
+        ),
+        _row(
+            "legacy_admin_debug_retained_until_replacement",
+            "blocked" if "legacy_admin_debug_tools" in full_removal_blocking_workflows else "passed",
+            f"full_removal_blocking_workflows={full_removal_blocking_workflows}",
+            "Admin/debug/fallback workflows are replaced or explicitly retired without feature cuts.",
+        ),
+        _row(
+            "no_feature_cut_boundary",
+            "passed" if fallback_dependency_contract.get("no_feature_cut_allowed") is True else "blocked",
+            "Streamlit cannot be removed by cutting ordinary or admin/debug capabilities.",
+            "Every removed fallback has replacement parity or an explicit retirement decision.",
+        ),
+        _row(
+            "cache_render_does_not_open_streamlit",
+            "passed",
+            "Receipt is generated from local cache metadata only; render does not open Streamlit.",
+            "No Streamlit process, legacy tool execution, task creation, provider/model/GitHub call, or trade occurs on cache/render.",
+        ),
+        _row(
+            "ordinary_exit_completion_boundary",
+            "blocked" if not ordinary_exit_ready else "passed",
+            f"ordinary_exit_ready={ordinary_exit_ready}; exit_blocker_count={exit_blocker_count}",
+            "ordinary_workflow_exit_complete=true only after route coverage and fallback dependencies are clear.",
+        ),
+        _row(
+            "full_streamlit_retirement_boundary",
+            "blocked" if not full_retirement_ready else "passed",
+            f"full_retirement_ready={full_retirement_ready}; full_removal_blocker_count={full_removal_blocker_count}",
+            "full_streamlit_removal_ready=true only after ordinary and admin/debug fallback blockers are cleared.",
+        ),
+        _row(
+            "trade_action_isolation_boundary",
+            "passed",
+            "Retirement receipt cannot execute trades, mutate holdings, or modify strategy action.",
+            "Legacy retirement work remains separate from broker/order execution and strategy action mutation.",
+        ),
+    ]
+    blocked_rows = [row for row in rows if row["status"] != "passed"]
+    status = (
+        "streamlit_retirement_receipt_ready_full_retirement_review"
+        if full_retirement_ready
+        else "streamlit_retirement_receipt_ready_ordinary_exit_review"
+        if ordinary_exit_ready
+        else "streamlit_retirement_receipt_ready_fallback_blocked"
+        if local_receipt_ready
+        else "streamlit_retirement_receipt_blocked_local_contract"
+    )
+    return {
+        "schema_version": "streamlit_retirement_readiness_receipt.v1",
+        "status": status,
+        "scope": "local_streamlit_retirement_readiness_receipt_no_streamlit_execution",
+        "ltg": "LTG-10",
+        "local_receipt_ready": bool(local_receipt_ready),
+        "ready_for_ordinary_primary_exit_review": ordinary_exit_ready,
+        "ready_for_full_streamlit_retirement_review": full_retirement_ready,
+        "ordinary_workflow_exit_complete": False,
+        "streamlit_fallback_removal_ready": False,
+        "full_streamlit_removal_ready": False,
+        "streamlit_fallback_retained": True,
+        "allowed_next_step": "explicit_replacement_parity_review_then_streamlit_fallback_retirement_review",
+        "not_allowed_next_steps": [
+            "GET /api/legacy/cache opens Streamlit",
+            "GET /api/legacy/cache runs legacy tools",
+            "GET /api/legacy/cache creates tasks",
+            "page render retires Streamlit fallback",
+            "mark ordinary_workflow_exit_complete without zero ordinary fallback dependencies",
+            "mark full_streamlit_removal_ready while admin/debug fallback remains",
+            "delete app.py before replacement parity or explicit retirement decision",
+            "treat local receipt as Streamlit retirement completion",
+        ],
+        "missing_evidence_items": [
+            "ordinary_route_parity_acceptance",
+            "candidate_radar_full_pool_deep_scan_acceptance",
+            "provider_backed_radar_parity_acceptance",
+            "browser_performance_visual_acceptance",
+            "admin_debug_replacement_or_retirement_decision",
+            "fallback_removal_change_review",
+        ],
+        "exit_blocker_count": exit_blocker_count,
+        "ordinary_fallback_dependency_count": ordinary_fallback_count,
+        "full_streamlit_removal_blocker_count": full_removal_blocker_count,
+        "ordinary_blocking_workflows": ordinary_blocking_workflows,
+        "full_removal_blocking_workflows": full_removal_blocking_workflows,
+        "streamlit_opened_by_receipt": False,
+        "legacy_tools_run_by_receipt": False,
+        "tasks_created_by_receipt": False,
+        "fallback_removed_by_receipt": False,
+        "app_py_deleted_by_receipt": False,
+        "provider_model_task_dispatched_by_receipt": False,
+        "receipt_external_calls_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_create_tasks": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "contains_secret": False,
+        "criterion_count": len(rows),
+        "blocking_criterion_count": len(blocked_rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_streamlit_retirement_readiness_receipt",
+                "source": "legacy bridge local exit and fallback contracts",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_retirement_readiness_receipt",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_open_streamlit": True,
+                "does_not_run_legacy_tools": True,
+                "does_not_create_tasks": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This receipt selects the next safe LTG-10 review step only. It does not open Streamlit, run legacy tools, create tasks, remove fallback, delete app.py, call providers/models/GitHub, execute trades, or mark retirement complete.",
+    }
+
+
 def read_legacy_bridge_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -490,6 +700,10 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         snapshot_available=bool(snapshot),
     )
     fallback_dependency_contract = _streamlit_fallback_dependency_contract(primary_workflow_exit_audit["route_rows"])
+    retirement_readiness_receipt = _streamlit_retirement_readiness_receipt(
+        primary_workflow_exit_audit=primary_workflow_exit_audit,
+        fallback_dependency_contract=fallback_dependency_contract,
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -532,6 +746,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "primary_workflow_route_rows": primary_workflow_exit_audit["route_rows"],
         "streamlit_fallback_dependency_contract": fallback_dependency_contract,
         "streamlit_fallback_dependency_rows": fallback_dependency_contract["rows"],
+        "streamlit_retirement_readiness_receipt": retirement_readiness_receipt,
+        "streamlit_retirement_readiness_rows": retirement_readiness_receipt["rows"],
         "counts": {
             **checklist_counts,
             "migration_item_count": len(migration_items),
@@ -551,6 +767,10 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "streamlit_fallback_dependency_count": fallback_dependency_contract["full_streamlit_removal_blocker_count"],
             "ordinary_fallback_dependency_count": fallback_dependency_contract["ordinary_fallback_dependency_count"],
             "admin_debug_fallback_retained_count": fallback_dependency_contract["admin_debug_fallback_retained_count"],
+            "streamlit_retirement_readiness_receipt_ready": 1 if retirement_readiness_receipt["local_receipt_ready"] else 0,
+            "streamlit_retirement_readiness_blocker_count": retirement_readiness_receipt[
+                "blocking_criterion_count"
+            ],
         },
         "policy": policy,
         "call_ledger": [
@@ -562,7 +782,10 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
                 "local_fetched_at": _now_iso(),
                 "external": False,
             }
-        ],
+        ]
+        + retirement_readiness_receipt["call_ledger"],
+        "streamlit_retirement_readiness_receipt_ready": retirement_readiness_receipt["local_receipt_ready"],
+        "streamlit_retirement_readiness_receipt_status": retirement_readiness_receipt["status"],
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,

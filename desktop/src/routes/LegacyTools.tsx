@@ -61,6 +61,8 @@ export default function LegacyTools() {
   const primaryWorkflowRouteRows = rows(cache.primary_workflow_route_rows);
   const fallbackDependencyContract = (cache.streamlit_fallback_dependency_contract as Record<string, unknown> | undefined) ?? {};
   const fallbackDependencyRows = rows(cache.streamlit_fallback_dependency_rows);
+  const streamlitRetirementReadinessReceipt = (cache.streamlit_retirement_readiness_receipt as Record<string, unknown> | undefined) ?? {};
+  const streamlitRetirementReadinessRows = rows(cache.streamlit_retirement_readiness_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const empty = !loading && !error && !Object.keys(cache).length;
@@ -92,6 +94,8 @@ export default function LegacyTools() {
             { label: "exit blockers", value: primaryExitAudit.blocker_count as number | undefined, tone: Number(primaryExitAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
             { label: "fallback deps", value: fallbackDependencyContract.full_streamlit_removal_blocker_count ?? counts.streamlit_fallback_dependency_count, tone: Number(fallbackDependencyContract.full_streamlit_removal_blocker_count ?? counts.streamlit_fallback_dependency_count ?? 0) > 0 ? "warn" : "good" },
             { label: "ordinary deps", value: fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count, tone: Number(fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count ?? 0) > 0 ? "warn" : "good" },
+            { label: "retirement receipt", value: streamlitRetirementReadinessReceipt.local_receipt_ready === true ? "ready" : "review", tone: streamlitRetirementReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
+            { label: "retirement blockers", value: streamlitRetirementReadinessReceipt.blocking_criterion_count ?? counts.streamlit_retirement_readiness_blocker_count, tone: Number(streamlitRetirementReadinessReceipt.blocking_criterion_count ?? counts.streamlit_retirement_readiness_blocker_count ?? 0) > 0 ? "warn" : "good" },
             { label: "普通主流程", value: "迁往 React/Tauri", tone: "good" },
             { label: "自动外联", value: "禁止", tone: "good" },
             { label: "真实交易", value: "禁止", tone: "good" },
@@ -146,6 +150,24 @@ export default function LegacyTools() {
         <DataLineageTable rows={fallbackDependencyRows} />
       </PacketCard>
 
+      <PacketCard title="Streamlit retirement readiness receipt" subtitle="LTG-10 下一步收据；只能进入显式 parity / fallback retirement review" status={String(streamlitRetirementReadinessReceipt.status ?? "streamlit_retirement_receipt_ready_fallback_blocked")}>
+        <p>schema_version: {String(streamlitRetirementReadinessReceipt.schema_version ?? "streamlit_retirement_readiness_receipt.v1")}</p>
+        <p>scope: {String(streamlitRetirementReadinessReceipt.scope ?? "local_streamlit_retirement_readiness_receipt_no_streamlit_execution")}</p>
+        <p>local_receipt_ready: {String(streamlitRetirementReadinessReceipt.local_receipt_ready ?? true)}</p>
+        <p>ready_for_ordinary_primary_exit_review / ready_for_full_streamlit_retirement_review: {String(streamlitRetirementReadinessReceipt.ready_for_ordinary_primary_exit_review ?? false)} / {String(streamlitRetirementReadinessReceipt.ready_for_full_streamlit_retirement_review ?? false)}</p>
+        <p>ordinary_workflow_exit_complete / full_streamlit_removal_ready: {String(streamlitRetirementReadinessReceipt.ordinary_workflow_exit_complete ?? false)} / {String(streamlitRetirementReadinessReceipt.full_streamlit_removal_ready ?? false)}</p>
+        <p>streamlit_fallback_retained: {String(streamlitRetirementReadinessReceipt.streamlit_fallback_retained ?? true)}</p>
+        <p>allowed_next_step: {String(streamlitRetirementReadinessReceipt.allowed_next_step ?? "explicit_replacement_parity_review_then_streamlit_fallback_retirement_review")}</p>
+        <p>ordinary_blocking_workflows: {Array.isArray(streamlitRetirementReadinessReceipt.ordinary_blocking_workflows) ? streamlitRetirementReadinessReceipt.ordinary_blocking_workflows.join(" / ") : "candidate_radar_quick_scan"}</p>
+        <p>full_removal_blocking_workflows: {Array.isArray(streamlitRetirementReadinessReceipt.full_removal_blocking_workflows) ? streamlitRetirementReadinessReceipt.full_removal_blocking_workflows.join(" / ") : "legacy_admin_debug_tools"}</p>
+        <p>streamlit_opened_by_receipt / legacy_tools_run_by_receipt / tasks_created_by_receipt: {String(streamlitRetirementReadinessReceipt.streamlit_opened_by_receipt ?? false)} / {String(streamlitRetirementReadinessReceipt.legacy_tools_run_by_receipt ?? false)} / {String(streamlitRetirementReadinessReceipt.tasks_created_by_receipt ?? false)}</p>
+        <p>fallback_removed_by_receipt / app_py_deleted_by_receipt: {String(streamlitRetirementReadinessReceipt.fallback_removed_by_receipt ?? false)} / {String(streamlitRetirementReadinessReceipt.app_py_deleted_by_receipt ?? false)}</p>
+        <p>receipt_external_calls_triggered / tushare_called / deepseek_called / github_called: {String(streamlitRetirementReadinessReceipt.receipt_external_calls_triggered ?? false)} / {String(streamlitRetirementReadinessReceipt.tushare_called ?? false)} / {String(streamlitRetirementReadinessReceipt.deepseek_called ?? false)} / {String(streamlitRetirementReadinessReceipt.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(streamlitRetirementReadinessReceipt.not_allowed_next_steps) ? streamlitRetirementReadinessReceipt.not_allowed_next_steps.join(" / ") : "GET /api/legacy/cache opens Streamlit / page render retires Streamlit fallback / delete app.py before replacement parity or explicit retirement decision / treat local receipt as Streamlit retirement completion"}</p>
+        <DataLineageTable rows={streamlitRetirementReadinessRows} />
+        <DataLineageTable rows={rows(streamlitRetirementReadinessReceipt.call_ledger)} />
+      </PacketCard>
+
       <PacketCard title="允许用途" subtitle="回退和调试可保留，普通主流程逐步迁出" status="guarded">
         <DataLineageTable rows={LEGACY_ALLOWED_USES} />
       </PacketCard>
@@ -196,6 +218,7 @@ export default function LegacyTools() {
 
       <PacketCard title="原始 legacy bridge cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
         <JsonDetails title="legacy bridge cache raw" data={cache} />
+        <JsonDetails title="streamlit retirement readiness receipt raw" data={streamlitRetirementReadinessReceipt} />
       </PacketCard>
     </>
   );

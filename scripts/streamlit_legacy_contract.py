@@ -44,6 +44,18 @@ REQUIRED_ROUTE_WORKFLOWS = {
     "candidate_radar_quick_scan",
     "legacy_admin_debug_tools",
 }
+REQUIRED_RETIREMENT_RECEIPT_CRITERIA = {
+    "local_exit_contracts_visible",
+    "react_tauri_primary_entry_declared",
+    "ordinary_fallback_dependencies_visible",
+    "candidate_radar_retirement_dependency_visible",
+    "legacy_admin_debug_retained_until_replacement",
+    "no_feature_cut_boundary",
+    "cache_render_does_not_open_streamlit",
+    "ordinary_exit_completion_boundary",
+    "full_streamlit_retirement_boundary",
+    "trade_action_isolation_boundary",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -87,6 +99,11 @@ def build_contract() -> dict[str, Any]:
         row for row in _list(packet.get("streamlit_fallback_dependency_rows")) if isinstance(row, dict)
     ]
     dependency_classes = {str(row.get("dependency_class") or "") for row in fallback_rows}
+    retirement_receipt = _dict(packet.get("streamlit_retirement_readiness_receipt"))
+    retirement_receipt_rows = [
+        row for row in _list(packet.get("streamlit_retirement_readiness_rows")) if isinstance(row, dict)
+    ]
+    retirement_receipt_criteria = {str(row.get("criterion") or "") for row in retirement_receipt_rows}
     source_summary = _dict(exit_audit.get("source_summary"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     route_source = _read_script("desktop/src/routes/LegacyTools.tsx")
@@ -167,11 +184,70 @@ def build_contract() -> dict[str, Any]:
             "Fallback dependency contract must keep no-feature-cut and retained-admin/debug blockers visible before removal.",
         ),
         _row(
+            "retirement_readiness_receipt_allows_only_explicit_review",
+            retirement_receipt.get("schema_version") == "streamlit_retirement_readiness_receipt.v1"
+            and retirement_receipt.get("status")
+            in {
+                "streamlit_retirement_receipt_ready_fallback_blocked",
+                "streamlit_retirement_receipt_ready_ordinary_exit_review",
+                "streamlit_retirement_receipt_ready_full_retirement_review",
+            }
+            and retirement_receipt.get("scope")
+            == "local_streamlit_retirement_readiness_receipt_no_streamlit_execution"
+            and retirement_receipt.get("local_receipt_ready") is True
+            and retirement_receipt.get("ready_for_ordinary_primary_exit_review") is False
+            and retirement_receipt.get("ready_for_full_streamlit_retirement_review") is False
+            and retirement_receipt.get("ordinary_workflow_exit_complete") is False
+            and retirement_receipt.get("streamlit_fallback_removal_ready") is False
+            and retirement_receipt.get("full_streamlit_removal_ready") is False
+            and retirement_receipt.get("streamlit_fallback_retained") is True
+            and retirement_receipt.get("allowed_next_step")
+            == "explicit_replacement_parity_review_then_streamlit_fallback_retirement_review"
+            and REQUIRED_RETIREMENT_RECEIPT_CRITERIA.issubset(retirement_receipt_criteria)
+            and "GET /api/legacy/cache opens Streamlit" in _list(retirement_receipt.get("not_allowed_next_steps"))
+            and "GET /api/legacy/cache runs legacy tools" in _list(retirement_receipt.get("not_allowed_next_steps"))
+            and "GET /api/legacy/cache creates tasks" in _list(retirement_receipt.get("not_allowed_next_steps"))
+            and "page render retires Streamlit fallback" in _list(retirement_receipt.get("not_allowed_next_steps"))
+            and "delete app.py before replacement parity or explicit retirement decision"
+            in _list(retirement_receipt.get("not_allowed_next_steps"))
+            and "treat local receipt as Streamlit retirement completion"
+            in _list(retirement_receipt.get("not_allowed_next_steps"))
+            and int(retirement_receipt.get("ordinary_fallback_dependency_count") or 0) > 0
+            and int(retirement_receipt.get("full_streamlit_removal_blocker_count") or 0) > 0
+            and "candidate_radar_quick_scan" in set(retirement_receipt.get("ordinary_blocking_workflows") or [])
+            and "legacy_admin_debug_tools" in set(retirement_receipt.get("full_removal_blocking_workflows") or [])
+            and retirement_receipt.get("streamlit_opened_by_receipt") is False
+            and retirement_receipt.get("legacy_tools_run_by_receipt") is False
+            and retirement_receipt.get("tasks_created_by_receipt") is False
+            and retirement_receipt.get("fallback_removed_by_receipt") is False
+            and retirement_receipt.get("app_py_deleted_by_receipt") is False
+            and retirement_receipt.get("provider_model_task_dispatched_by_receipt") is False
+            and retirement_receipt.get("receipt_external_calls_triggered") is False
+            and _flag_false(retirement_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and retirement_receipt.get("does_not_open_streamlit") is True
+            and retirement_receipt.get("does_not_run_legacy_tools") is True
+            and retirement_receipt.get("does_not_create_tasks") is True
+            and retirement_receipt.get("does_not_execute_trades") is True
+            and retirement_receipt.get("does_not_modify_strategy_action") is True
+            and retirement_receipt.get("does_not_modify_holdings") is True
+            and retirement_receipt.get("contains_secret") is False
+            and _list(retirement_receipt.get("call_ledger"))
+            and _dict(_list(retirement_receipt.get("call_ledger"))[0]).get("api")
+            == "local_streamlit_retirement_readiness_receipt"
+            and _dict(_list(retirement_receipt.get("call_ledger"))[0]).get("external") is False
+            and packet.get("streamlit_retirement_readiness_receipt_ready") is True
+            and packet.get("streamlit_retirement_readiness_receipt_status")
+            == retirement_receipt.get("status"),
+            "Streamlit retirement readiness receipt may select the next explicit parity/retirement review, but it must not open Streamlit, run legacy tools, create tasks, remove fallback, delete app.py, call providers, trade, or claim completion.",
+        ),
+        _row(
             "react_legacy_page_displays_boundaries",
             "Legacy / Admin / Debug" in route_source
             and "Streamlit 2.0 保留为 legacy" in route_source
             and "ordinary_workflow_exit_complete" in route_source
             and "streamlit_fallback_removal_ready" in route_source
+            and "streamlitRetirementReadinessReceipt" in route_source
+            and "Streamlit retirement readiness receipt" in route_source
             and "Streamlit fallback 依赖契约" in route_source
             and "普通主流程" in route_source
             and "真实交易" in route_source
@@ -207,6 +283,7 @@ def build_contract() -> dict[str, Any]:
             and "ordinary_workflow_exit_complete" in this_script
             and "full_streamlit_removal_ready" in this_script
             and "streamlit_fallback_retained" in this_script
+            and "streamlit_retirement_readiness_receipt.v1" in this_script
             and "does_not_open_streamlit" in this_script
             and "does_not_execute_trades" in this_script
             and ("import " + "streamlit") not in this_script
@@ -236,6 +313,8 @@ def build_contract() -> dict[str, Any]:
         "legacy_fallback_required": True,
         "feature_parity_required_before_removal": True,
         "no_feature_cut_allowed": True,
+        "streamlit_retirement_readiness_receipt_ready": retirement_receipt.get("local_receipt_ready") is True,
+        "streamlit_retirement_readiness_receipt_status": retirement_receipt.get("status"),
         "cache_only": True,
         "does_not_open_streamlit": True,
         "does_not_run_legacy_tools": True,
@@ -265,6 +344,9 @@ def build_contract() -> dict[str, Any]:
             ),
             "ordinary_blocking_workflows": fallback_contract.get("ordinary_blocking_workflows"),
             "full_removal_blocking_workflows": fallback_contract.get("full_removal_blocking_workflows"),
+            "retirement_receipt_status": retirement_receipt.get("status"),
+            "retirement_receipt_blocker_count": retirement_receipt.get("blocking_criterion_count"),
+            "retirement_receipt_allowed_next_step": retirement_receipt.get("allowed_next_step"),
             "checklist_pending_count": exit_audit.get("checklist_pending_count"),
             "checklist_done_count": exit_audit.get("checklist_done_count"),
         },

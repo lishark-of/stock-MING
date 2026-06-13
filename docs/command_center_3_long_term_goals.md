@@ -759,6 +759,7 @@ Package Command Center 3 Tauri desktop shell
 - Streamlit is marked `legacy/admin/debug`.
 - Legacy cache now exposes `primary_workflow_exit_audit`, `primary_workflow_exit_rows`, and `primary_workflow_route_rows`, making the ordinary-workflow exit status visible without opening Streamlit or running legacy tools.
 - Legacy cache now exposes `streamlit_fallback_dependency_contract` and `streamlit_fallback_dependency_rows`, separating Command Center 3 primary-ready routes, ordinary-flow partial fallback dependencies, and retained legacy/admin/debug dependencies. This is a local dependency contract only; it does not remove Streamlit fallback, open Streamlit, run legacy tools, create tasks, or call providers/models/GitHub.
+- Legacy cache now exposes `streamlit_retirement_readiness_receipt` and rows: a local LTG-10 next-step receipt that summarizes primary-exit blockers, fallback dependencies, ordinary blocking workflows, admin/debug retained blockers, no-feature-cut requirements, and the only allowed next step: explicit replacement parity review followed by Streamlit fallback retirement review. It keeps `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, and `streamlit_fallback_retained=true`.
 - `scripts/streamlit_legacy_contract.py` is now part of the local push gate. It validates legacy cache read-only policy, `legacy/admin/debug` marking, React/Tauri primary-entry policy, ordinary-workflow exit blockers, fallback dependency contract, no-feature-cut requirements, no Streamlit execution, no legacy tool execution, no task creation, no provider/model/GitHub calls, no trade, and no action mutation while `ordinary_workflow_exit_complete=false`.
 - It has not fully exited ordinary usage paths.
 
@@ -767,6 +768,7 @@ Package Command Center 3 Tauri desktop shell
 - React/Tauri does not yet cover every ordinary operation.
 - Some old tools still need Streamlit fallback.
 - `primary_workflow_exit_audit.status=ordinary_workflow_exit_partial_fallback_required` is expected until all ordinary workflows are proven in Command Center 3 and fallback removal is safe.
+- `streamlit_retirement_readiness_receipt.status=streamlit_retirement_receipt_ready_fallback_blocked` is expected while Candidate Radar parity, full-pool/deep-scan acceptance, provider-backed parity, browser/performance QA, and admin/debug replacement or retirement decisions remain incomplete.
 - `scripts/streamlit_legacy_contract.py` is a local regression guard only; it does not remove Streamlit fallback, prove replacement parity, run old tools, open Streamlit, or complete ordinary-workflow exit.
 
 ### Implementation Phases
@@ -774,9 +776,10 @@ Package Command Center 3 Tauri desktop shell
 1. Identify ordinary user workflows still depending on Streamlit.
 2. Migrate those workflows to React/Tauri + FastAPI.
 3. Keep `streamlit_fallback_dependency_contract` current so every fallback dependency has a removal criterion and no feature-cut boundary.
-4. Keep Streamlit for debug/admin/fallback only.
-5. Preserve old-module guards.
-6. Promote `primary_workflow_exit_audit` to complete only after route coverage has no fallback blockers and legacy removal is safe.
+4. Keep `streamlit_retirement_readiness_receipt` current so the next explicit parity/retirement review is visible without deleting fallback or marking completion.
+5. Keep Streamlit for debug/admin/fallback only.
+6. Preserve old-module guards.
+7. Promote `primary_workflow_exit_audit` to complete only after route coverage has no fallback blockers and legacy removal is safe.
 
 ### Acceptance Criteria
 
@@ -786,7 +789,8 @@ Package Command Center 3 Tauri desktop shell
 - Legacy strong-action protection remains.
 - `primary_workflow_exit_audit.ordinary_workflow_exit_complete=true` only when route coverage has no remaining Streamlit fallback dependencies and the migration checklist is clear.
 - `streamlit_fallback_dependency_contract.full_streamlit_removal_ready=true` only when ordinary fallback dependencies and retained admin/debug fallback dependencies are all cleared with replacement parity proven.
-- `scripts/streamlit_legacy_contract.py` passes in the local push gate while reporting `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, and `does_not_open_streamlit=true`.
+- Streamlit retirement readiness receipt rows are visible in UI, `allowed_next_step=explicit_replacement_parity_review_then_streamlit_fallback_retirement_review`, and `not_allowed_next_steps` explicitly blocks GET cache opening Streamlit, running legacy tools, creating tasks, page render retiring fallback, deleting `app.py`, or treating the receipt as retirement completion.
+- `scripts/streamlit_legacy_contract.py` passes in the local push gate while reporting `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, `streamlit_retirement_readiness_receipt_ready=true`, and `does_not_open_streamlit=true`.
 
 ### Forbidden
 
@@ -794,6 +798,7 @@ Package Command Center 3 Tauri desktop shell
 - Do not let legacy pages bypass freshness, model, or action guardrails.
 - Do not present Streamlit as the primary 3.0 surface.
 - Do not treat local exit audit as complete while status remains `ordinary_workflow_exit_partial_fallback_required`.
+- Do not treat `streamlit_retirement_readiness_receipt` as fallback removal, `app.py` deletion, replacement parity, admin/debug retirement, or complete Streamlit exit.
 - Do not treat `scripts/streamlit_legacy_contract.py` passing as Streamlit fallback removal, replacement parity, admin/debug retirement, or complete ordinary-workflow exit.
 
 ### Recommended Commit Message
