@@ -288,6 +288,13 @@ export function postCandidateRadarDeepScanPlan(payload: Record<string, unknown> 
   });
 }
 
+export function postCandidateRadarBrowserQaReview(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/browser-qa-review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getRiskGuardrailsCache() {
   return request<Record<string, unknown>>("/api/risk/cache");
 }

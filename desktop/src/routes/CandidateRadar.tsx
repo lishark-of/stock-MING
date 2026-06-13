@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -61,6 +61,11 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchBrowserQaReview = () =>
+    void postCandidateRadarBrowserQaReview({ review_scope: "candidate_route_browser_qa_local_artifact" }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -79,6 +84,7 @@ export default function CandidateRadar() {
   const candidatePriorityExplanation = (cache.candidate_priority_explanation_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaRunbook = (cache.candidate_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaEvidence = (cache.candidate_browser_qa_evidence_summary as Record<string, unknown> | undefined) ?? {};
+  const browserQaReview = (cache.candidate_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
@@ -105,6 +111,7 @@ export default function CandidateRadar() {
   const browserQaRunbookRows = rows(cache.candidate_browser_qa_runbook_rows);
   const browserQaMatrixRows = rows(cache.candidate_browser_qa_matrix_rows);
   const browserQaEvidenceRows = rows(cache.candidate_browser_qa_evidence_rows);
+  const browserQaReviewRows = rows(cache.candidate_browser_qa_review_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
@@ -158,6 +165,8 @@ export default function CandidateRadar() {
           { label: "radar QA evidence", value: String(browserQaEvidence.status ?? "missing"), tone: browserQaEvidence.local_browser_qa_evidence_found === true ? "good" : "warn" },
           { label: "radar QA rows", value: counts.candidate_browser_qa_evidence_row_count as number | undefined },
           { label: "QA review rows", value: counts.candidate_browser_qa_evidence_review_required_count as number | undefined, tone: Number(counts.candidate_browser_qa_evidence_review_required_count ?? 0) ? "warn" : "good" },
+          { label: "QA review", value: String(browserQaReview.status ?? "missing"), tone: browserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
+          { label: "review blockers", value: counts.candidate_browser_qa_review_blocking_count as number | undefined, tone: Number(counts.candidate_browser_qa_review_blocking_count ?? 0) ? "warn" : "good" },
           { label: "added", value: counts.result_delta_added_count as number | undefined },
           { label: "removed", value: counts.result_delta_removed_count as number | undefined },
           { label: "rank delta", value: counts.result_delta_rank_changed_count as number | undefined },
@@ -342,6 +351,9 @@ export default function CandidateRadar() {
       </PacketCard>
 
       <PacketCard title="候选雷达浏览器 QA 证据" subtitle="candidate_browser_qa_evidence_summary；只读本地 ignored runner 报告，不打开浏览器、不提交截图" status={String(browserQaEvidence.status ?? "missing")}>
+        <div className="actions">
+          <button onClick={launchBrowserQaReview}>审查 browser QA 本地证据</button>
+        </div>
         <p>local_browser_qa_evidence_found: {String(browserQaEvidence.local_browser_qa_evidence_found === true)}</p>
         <p>candidate_visual_qa_evidence_passed: {String(browserQaEvidence.candidate_visual_qa_evidence_passed === true)}</p>
         <p>candidate_browser_performance_evidence_passed: {String(browserQaEvidence.candidate_browser_performance_evidence_passed === true)}</p>
@@ -352,6 +364,17 @@ export default function CandidateRadar() {
         <p>该证据只说明本机显式 browser runner 的 `#candidates` 路由结果；不会启动服务、不会打开浏览器、不会调用 provider/model/GitHub，也不能替代 full-pool/deep-scan/provider-backed 验收。</p>
         <DataLineageTable rows={objectRow(browserQaEvidence)} />
         <DataLineageTable rows={browserQaEvidenceRows} />
+      </PacketCard>
+
+      <PacketCard title="候选雷达 browser QA 审查" subtitle="candidate_browser_qa_review_contract；POST 按钮门控，只审查本地 ignored artifact" status={String(browserQaReview.status ?? "missing")}>
+        <p>explicit_review_task_done: {String(browserQaReview.explicit_review_task_done === true)}</p>
+        <p>local_browser_qa_review_ready: {String(browserQaReview.local_browser_qa_review_ready === true)}</p>
+        <p>blocking_review_count: {String(browserQaReview.blocking_review_count ?? 0)}</p>
+        <p>default_motion_passed: {String(browserQaReview.default_motion_passed === true)}；reduced_motion_passed: {String(browserQaReview.reduced_motion_passed === true)}</p>
+        <p>production_radar_replacement_complete: {String(browserQaReview.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(browserQaReview.legacy_retirement_ready === true)}</p>
+        <p>browser QA review 不运行浏览器、不写 artifact、不提交截图；即使本地审查 ready，也不能解除 full-pool/deep-scan/provider-backed 阻断项。</p>
+        <DataLineageTable rows={objectRow(browserQaReview)} />
+        <DataLineageTable rows={browserQaReviewRows} />
       </PacketCard>
 
       <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>

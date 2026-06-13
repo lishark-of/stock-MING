@@ -2035,6 +2035,159 @@ def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[
     return summary, candidate_rows
 
 
+def _candidate_browser_qa_review_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    evidence: str,
+    blocks_review: bool = False,
+    blocks_production: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "evidence": evidence,
+        "blocks_review": bool(blocks_review and not passed),
+        "blocks_production": bool(blocks_production),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _candidate_browser_qa_review_contract(
+    evidence_summary: Mapping[str, Any],
+    evidence_rows: list[dict[str, Any]],
+    *,
+    explicit_review: bool = False,
+    task_id: str | None = None,
+    reviewed_at: str | None = None,
+) -> dict[str, Any]:
+    viewport_names = {str(row.get("viewport") or "") for row in evidence_rows}
+    required_viewports = {"desktop", "laptop", "tablet", "mobile"}
+    evidence_found = evidence_summary.get("local_browser_qa_evidence_found") is True
+    review_rows = [
+        _candidate_browser_qa_review_row(
+            "explicit_post_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            passed=explicit_review,
+            evidence="POST /api/candidate-radar/browser-qa-review creates the review record; GET cache only previews local evidence.",
+            blocks_review=True,
+            blocks_production=True,
+        ),
+        _candidate_browser_qa_review_row(
+            "candidate_route_evidence_available",
+            "passed" if evidence_found else "pending_local_report",
+            passed=evidence_found,
+            evidence="candidate_browser_qa_evidence_summary found ignored local runner rows for #candidates.",
+            blocks_review=True,
+        ),
+        _candidate_browser_qa_review_row(
+            "candidate_viewport_matrix_complete",
+            "passed" if required_viewports.issubset(viewport_names) else "pending_viewports",
+            passed=required_viewports.issubset(viewport_names),
+            evidence="desktop/laptop/tablet/mobile candidate rows must all be present in local runner evidence.",
+            blocks_review=True,
+        ),
+        _candidate_browser_qa_review_row(
+            "visual_evidence_passed",
+            "passed" if evidence_summary.get("candidate_visual_qa_evidence_passed") is True else "pending_visual_review",
+            passed=evidence_summary.get("candidate_visual_qa_evidence_passed") is True,
+            evidence="All candidate route rows must report visual_qa_complete and zero review rows.",
+            blocks_review=True,
+        ),
+        _candidate_browser_qa_review_row(
+            "performance_evidence_passed",
+            "passed" if evidence_summary.get("candidate_browser_performance_evidence_passed") is True else "pending_performance_review",
+            passed=evidence_summary.get("candidate_browser_performance_evidence_passed") is True,
+            evidence="All candidate route rows must include performance traces within local budgets and no long tasks.",
+            blocks_review=True,
+        ),
+        _candidate_browser_qa_review_row(
+            "default_and_reduced_motion_coverage",
+            "passed"
+            if evidence_summary.get("default_motion_passed") is True
+            and evidence_summary.get("reduced_motion_passed") is True
+            else "pending_reduced_or_default_motion",
+            passed=evidence_summary.get("default_motion_passed") is True
+            and evidence_summary.get("reduced_motion_passed") is True,
+            evidence="Both default-motion and reduced-motion candidate route passes are required before motion evidence can be reviewed as complete.",
+            blocks_review=True,
+        ),
+        _candidate_browser_qa_review_row(
+            "ignored_artifact_policy_preserved",
+            "passed" if evidence_summary.get("reads_ignored_local_reports_only") is True else "blocked_artifact_policy",
+            passed=evidence_summary.get("reads_ignored_local_reports_only") is True,
+            evidence="Review reads only ignored local reports and does not commit screenshots, videos, or JSON artifacts.",
+            blocks_review=True,
+        ),
+        _candidate_browser_qa_review_row(
+            "production_replacement_stays_blocked",
+            "passed",
+            passed=True,
+            evidence="Browser QA review cannot override full-pool/deep-scan/provider-backed acceptance blockers.",
+            blocks_review=False,
+            blocks_production=True,
+        ),
+    ]
+    blocking_review_rows = [row for row in review_rows if row.get("blocks_review") is True]
+    local_review_ready = explicit_review and not blocking_review_rows
+    status = "candidate_browser_qa_review_ready_local_artifact" if local_review_ready else "candidate_browser_qa_review_pending"
+    return {
+        "schema_version": "candidate_radar_browser_qa_review.v1",
+        "status": status,
+        "scope": "button_gated_local_candidate_browser_qa_review_no_browser_execution",
+        "ltg": "LTG-13/LTG-14",
+        "explicit_review_task_done": bool(explicit_review),
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "local_browser_qa_review_ready": local_review_ready,
+        "local_browser_qa_evidence_found": evidence_found,
+        "candidate_route": "#candidates",
+        "required_viewports": sorted(required_viewports),
+        "observed_viewports": sorted(viewport for viewport in viewport_names if viewport),
+        "review_required_count": evidence_summary.get("review_required_count", 0),
+        "evidence_row_count": len(evidence_rows),
+        "review_row_count": len(review_rows),
+        "blocking_review_count": len(blocking_review_rows),
+        "blocking_review_keys": [str(row.get("criterion")) for row in blocking_review_rows],
+        "default_motion_passed": evidence_summary.get("default_motion_passed") is True,
+        "reduced_motion_passed": evidence_summary.get("reduced_motion_passed") is True,
+        "candidate_visual_qa_evidence_passed": evidence_summary.get("candidate_visual_qa_evidence_passed") is True,
+        "candidate_browser_performance_evidence_passed": evidence_summary.get(
+            "candidate_browser_performance_evidence_passed"
+        )
+        is True,
+        "rows": review_rows,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "reads_ignored_local_reports_only": True,
+        "screenshots_are_not_tracked": True,
+        "report_artifacts_are_not_tracked": True,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This review promotes local browser QA evidence only to a button-gated local review state. It does not execute browser QA, call providers, or complete production radar replacement.",
+    }
+
+
 def _fast_scan_readiness_row(
     criterion: str,
     status: str,
@@ -3670,6 +3823,10 @@ def _build_candidate_radar_packet(
         candidate_browser_qa_matrix_rows,
     ) = _candidate_browser_qa_runbook_contract()
     candidate_browser_qa_evidence_summary, candidate_browser_qa_evidence_rows = _candidate_browser_qa_evidence_summary()
+    candidate_browser_qa_review_contract = _candidate_browser_qa_review_contract(
+        candidate_browser_qa_evidence_summary,
+        candidate_browser_qa_evidence_rows,
+    )
     counts["fast_scan_runtime_budget_row_count"] = fast_scan_runtime_budget_contract["row_count"]
     counts["candidate_browser_qa_runbook_row_count"] = candidate_browser_qa_runbook_contract["row_count"]
     counts["candidate_browser_qa_matrix_count"] = candidate_browser_qa_runbook_contract["qa_matrix_count"]
@@ -3685,6 +3842,8 @@ def _build_candidate_radar_packet(
     counts["candidate_browser_qa_performance_evidence_passed"] = candidate_browser_qa_evidence_summary[
         "candidate_browser_performance_evidence_passed"
     ]
+    counts["candidate_browser_qa_review_blocking_count"] = candidate_browser_qa_review_contract["blocking_review_count"]
+    counts["candidate_browser_qa_review_ready"] = candidate_browser_qa_review_contract["local_browser_qa_review_ready"]
     fast_scan_readiness_rows = _fast_scan_readiness_rows(
         mode=mode,
         scan_mode=scan_mode,
@@ -3788,6 +3947,8 @@ def _build_candidate_radar_packet(
         "candidate_browser_qa_matrix_rows": candidate_browser_qa_matrix_rows,
         "candidate_browser_qa_evidence_summary": candidate_browser_qa_evidence_summary,
         "candidate_browser_qa_evidence_rows": candidate_browser_qa_evidence_rows,
+        "candidate_browser_qa_review_contract": candidate_browser_qa_review_contract,
+        "candidate_browser_qa_review_rows": candidate_browser_qa_review_contract["rows"],
         "fast_scan_readiness_audit": fast_scan_readiness_audit,
         "fast_scan_readiness_rows": fast_scan_readiness_rows,
         "result_delta_clarity_contract": result_delta_clarity_contract,
@@ -3875,6 +4036,9 @@ def _build_candidate_radar_packet(
             "candidate_browser_qa_evidence_does_not_write_artifacts": True,
             "candidate_browser_qa_evidence_is_not_production_replacement": True,
             "candidate_browser_qa_evidence_found": candidate_browser_qa_evidence_summary["local_browser_qa_evidence_found"],
+            "candidate_browser_qa_review_is_button_gated": True,
+            "candidate_browser_qa_review_does_not_open_browser": True,
+            "candidate_browser_qa_review_is_not_production_replacement": True,
             "candidate_rows_capped_for_ui": bool(candidate_display_truncated_count),
             "large_universe_requires_worker": coverage["coverage_detail_summary"]["large_universe_requires_worker"],
             "fast_scan_readiness_audit_is_local": True,
@@ -3932,6 +4096,17 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     row_count = len(_as_list(packet.get("candidate_rows")))
     persisted_scan_mode = str(packet.get("scan_mode") or "local_scan")
     candidate_browser_qa_evidence_summary, candidate_browser_qa_evidence_rows = _candidate_browser_qa_evidence_summary()
+    persisted_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    explicit_review_done = persisted_review.get("explicit_review_task_done") is True
+    candidate_browser_qa_review_contract = _candidate_browser_qa_review_contract(
+        candidate_browser_qa_evidence_summary,
+        candidate_browser_qa_evidence_rows,
+        explicit_review=explicit_review_done,
+        task_id=str(persisted_review.get("task_id") or packet.get("task_id") or "") if explicit_review_done else None,
+        reviewed_at=str(persisted_review.get("reviewed_at") or packet.get("candidate_browser_qa_review_completed_at") or "")
+        if explicit_review_done
+        else None,
+    )
     cache_row = _candidate_call_ledger_row(
         api="local_candidate_radar_cache",
         source_snapshot="sqlite_meta_candidate_radar_packet",
@@ -3947,6 +4122,8 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["call_ledger"] = [cache_row] + [row for row in existing_ledger if isinstance(row, dict)]
     view["candidate_browser_qa_evidence_summary"] = candidate_browser_qa_evidence_summary
     view["candidate_browser_qa_evidence_rows"] = candidate_browser_qa_evidence_rows
+    view["candidate_browser_qa_review_contract"] = candidate_browser_qa_review_contract
+    view["candidate_browser_qa_review_rows"] = candidate_browser_qa_review_contract["rows"]
     counts = _as_dict(view.get("counts"))
     counts["candidate_browser_qa_evidence_report_count"] = candidate_browser_qa_evidence_summary["candidate_report_count"]
     counts["candidate_browser_qa_evidence_row_count"] = candidate_browser_qa_evidence_summary["row_count"]
@@ -3959,6 +4136,8 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     counts["candidate_browser_qa_performance_evidence_passed"] = candidate_browser_qa_evidence_summary[
         "candidate_browser_performance_evidence_passed"
     ]
+    counts["candidate_browser_qa_review_blocking_count"] = candidate_browser_qa_review_contract["blocking_review_count"]
+    counts["candidate_browser_qa_review_ready"] = candidate_browser_qa_review_contract["local_browser_qa_review_ready"]
     view["counts"] = counts
     policy = _as_dict(view.get("policy"))
     policy["candidate_browser_qa_evidence_reads_local_artifact_only"] = True
@@ -3966,6 +4145,9 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     policy["candidate_browser_qa_evidence_does_not_write_artifacts"] = True
     policy["candidate_browser_qa_evidence_is_not_production_replacement"] = True
     policy["candidate_browser_qa_evidence_found"] = candidate_browser_qa_evidence_summary["local_browser_qa_evidence_found"]
+    policy["candidate_browser_qa_review_is_button_gated"] = True
+    policy["candidate_browser_qa_review_does_not_open_browser"] = True
+    policy["candidate_browser_qa_review_is_not_production_replacement"] = True
     view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
@@ -4264,4 +4446,100 @@ def run_candidate_deep_scan_plan_task(payload: Any = None) -> dict[str, Any]:
         current_step="candidate_radar_deep_scan_plan_ready",
         call_ledger=[ledger],
         warning="candidate_radar_deep_scan_plan_ready_no_external_call",
+    ) or task
+
+
+def run_candidate_browser_qa_review_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_candidate_radar_browser_qa_review",
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_browser_qa_review_queued",
+        warnings=[
+            "候选雷达 browser QA review 只读取本地 ignored runner 报告；不会打开浏览器、不会启动服务、不会调用 Tushare/DeepSeek/GitHub。",
+            "review 结果只代表本地 artifact 审查状态；不代表 full-pool/deep-scan/provider-backed 验收或 production radar replacement。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_candidate_browser_qa_evidence",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_candidate_radar_cache()
+    evidence_summary = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
+    evidence_rows = [row for row in _as_list(packet.get("candidate_browser_qa_evidence_rows")) if isinstance(row, dict)]
+    reviewed_at = _now_iso()
+    review_contract = _candidate_browser_qa_review_contract(
+        evidence_summary,
+        evidence_rows,
+        explicit_review=True,
+        task_id=task["task_id"],
+        reviewed_at=reviewed_at,
+    )
+    request_params_safe = {
+        "review_scope": "candidate_route_browser_qa_local_artifact",
+        "candidate_route": "#candidates",
+        "external_sources_allowed": False,
+        "opens_no_browser": True,
+        "writes_no_artifacts": True,
+        "production_radar_replacement_complete": False,
+    }
+    request_params_safe.update(
+        {
+            key: payload_safe.get(key)
+            for key in ("review_note", "reviewer")
+            if payload_safe.get(key) is not None
+        }
+    )
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_browser_qa_review",
+        source_snapshot=".stock_ming_3/motion_qa",
+        row_count=len(review_contract.get("rows") or []),
+        call_status=review_contract["status"],
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["candidate_browser_qa_review_completed_at"] = reviewed_at
+    packet["candidate_browser_qa_review_contract"] = review_contract
+    packet["candidate_browser_qa_review_rows"] = review_contract["rows"]
+    counts = _as_dict(packet.get("counts"))
+    counts["candidate_browser_qa_review_blocking_count"] = review_contract["blocking_review_count"]
+    counts["candidate_browser_qa_review_ready"] = review_contract["local_browser_qa_review_ready"]
+    packet["counts"] = counts
+    policy = _as_dict(packet.get("policy"))
+    policy["candidate_browser_qa_review_is_button_gated"] = True
+    policy["candidate_browser_qa_review_does_not_open_browser"] = True
+    policy["candidate_browser_qa_review_is_not_production_replacement"] = True
+    packet["policy"] = policy
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "候选雷达 browser QA review 只审查本地 ignored artifact；不打开浏览器、不提交截图、不调用 provider、不完成生产雷达替代。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "browser QA review" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "browser_qa_review_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_browser_qa_review_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_browser_qa_review_storage_write_failed",
+            error_message_safe="candidate_radar_browser_qa_review_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_browser_qa_review_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_browser_qa_review_ready",
+        call_ledger=[ledger],
+        warning="candidate_radar_browser_qa_review_ready_no_external_call",
     ) or task

@@ -27,6 +27,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_quick_scan",
     "run_candidate_radar_full_pool_plan",
     "run_candidate_radar_deep_scan_plan",
+    "run_candidate_radar_browser_qa_review",
 }
 REQUIRED_NO_FEATURE_LOSS_GAPS = {
     "browser_performance_trace_pending",
@@ -118,6 +119,7 @@ def build_contract() -> dict[str, Any]:
     result_delta = _dict(cache_packet.get("result_delta_clarity_contract"))
     priority_explanation = _dict(cache_packet.get("candidate_priority_explanation_contract"))
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
+    browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
     task_rows = _task_catalog_rows()
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
@@ -151,8 +153,14 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_full_pool_plan"].get("full_pool_scan_done") is False
             and task_rows["run_candidate_radar_deep_scan_plan"].get("route") == "POST /api/candidate-radar/deep-scan-plan"
             and task_rows["run_candidate_radar_deep_scan_plan"].get("plan_only") is True
-            and task_rows["run_candidate_radar_deep_scan_plan"].get("deep_scan_done") is False,
-            "Candidate radar scan modes must stay button-gated local tasks; full-pool/deep-scan entries are plan-only.",
+            and task_rows["run_candidate_radar_deep_scan_plan"].get("deep_scan_done") is False
+            and task_rows["run_candidate_radar_browser_qa_review"].get("route")
+            == "POST /api/candidate-radar/browser-qa-review"
+            and task_rows["run_candidate_radar_browser_qa_review"].get("browser_qa_review_only") is True
+            and task_rows["run_candidate_radar_browser_qa_review"].get("opens_browser") is False
+            and task_rows["run_candidate_radar_browser_qa_review"].get("writes_artifacts") is False
+            and task_rows["run_candidate_radar_browser_qa_review"].get("production_radar_replacement_complete") is False,
+            "Candidate radar scan modes must stay button-gated local tasks; full-pool/deep-scan entries are plan-only and browser QA review reads local artifacts only.",
         ),
         _row(
             "fast_scan_readiness_is_local_pending",
@@ -325,6 +333,29 @@ def build_contract() -> dict[str, Any]:
             "Candidate Radar browser QA evidence may read ignored local reports for #candidates, but it must not open a browser, write artifacts, call providers, or mark production replacement complete.",
         ),
         _row(
+            "candidate_browser_qa_review_is_button_gated_not_production",
+            browser_qa_review.get("schema_version") == "candidate_radar_browser_qa_review.v1"
+            and browser_qa_review.get("scope") == "button_gated_local_candidate_browser_qa_review_no_browser_execution"
+            and browser_qa_review.get("opens_no_browser") is True
+            and browser_qa_review.get("starts_no_servers") is True
+            and browser_qa_review.get("writes_no_artifacts") is True
+            and browser_qa_review.get("reads_ignored_local_reports_only") is True
+            and browser_qa_review.get("production_radar_replacement_complete") is False
+            and browser_qa_review.get("legacy_retirement_ready") is False
+            and browser_qa_review.get("full_pool_scan_done") is False
+            and browser_qa_review.get("deep_scan_done") is False
+            and browser_qa_review.get("provider_backed_acceptance_done") is False
+            and _flag_false(browser_qa_review, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and browser_qa_review.get("does_not_execute_trades") is True
+            and browser_qa_review.get("does_not_modify_strategy_action") is True
+            and policy.get("candidate_browser_qa_review_is_button_gated") is True
+            and policy.get("candidate_browser_qa_review_does_not_open_browser") is True
+            and policy.get("candidate_browser_qa_review_is_not_production_replacement") is True
+            and "postCandidateRadarBrowserQaReview" in candidate_frontend
+            and "candidate_browser_qa_review_contract" in candidate_frontend,
+            "Candidate Radar browser QA review must be POST/button-gated and must not execute browser QA or complete production radar replacement.",
+        ),
+        _row(
             "plan_packet_preserves_pending_boundaries",
             _dict(plan_packet.get("full_pool_scan_plan")).get("full_pool_scan_done") is False
             and _dict(plan_packet.get("deep_scan_plan")).get("deep_scan_done") is False
@@ -379,6 +410,7 @@ def build_contract() -> dict[str, Any]:
         "browser_visual_delta_qa_done": False,
         "candidate_browser_qa_runbook_ready": _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("local_runbook_ready") is True,
         "candidate_browser_qa_evidence_found": browser_qa_evidence.get("local_browser_qa_evidence_found") is True,
+        "candidate_browser_qa_review_ready": browser_qa_review.get("local_browser_qa_review_ready") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -405,6 +437,8 @@ def build_contract() -> dict[str, Any]:
             "candidate_browser_qa_evidence_status": browser_qa_evidence.get("status"),
             "candidate_browser_qa_evidence_row_count": browser_qa_evidence.get("row_count"),
             "candidate_browser_qa_evidence_review_required_count": browser_qa_evidence.get("review_required_count"),
+            "candidate_browser_qa_review_status": browser_qa_review.get("status"),
+            "candidate_browser_qa_review_blocking_count": browser_qa_review.get("blocking_review_count"),
             "full_pool_plan_blocker_count": full_pool_plan.get("blocking_issue_count"),
             "deep_scan_plan_blocker_count": deep_scan_plan.get("blocking_issue_count"),
         },

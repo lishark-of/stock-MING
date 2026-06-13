@@ -34,3 +34,9 @@ def plan_candidate_radar_full_pool(payload: dict[str, Any] | None = None) -> dic
 def plan_candidate_radar_deep_scan(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_deep_scan_plan_task(payload)
     return task_envelope(task)
+
+
+@router.post("/browser-qa-review")
+def review_candidate_radar_browser_qa(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_browser_qa_review_task(payload)
+    return task_envelope(task)
