@@ -2977,6 +2977,79 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("GET /api/candidate-radar/cache", cache_view["warnings"][0])
         self.assertFalse(cache_view["external_calls_triggered"])
 
+    def test_candidate_radar_quick_scan_computes_previous_cache_diff_when_available(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        SQLiteMetaStore(candidate_service.SQLITE_META_PATH).write_packet(
+            candidate_service.PACKET_KEY,
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "schema_version": candidate_service.SCHEMA_VERSION,
+                "mode": "quick_cache_scan",
+                "cache_source": "quick_cache_scan_task",
+                "scan_mode": "quick_cache_scan",
+                "candidate_rows": [
+                    {"rank": 1, "ticker": "002837.SZ", "name": "英维克", "score": 47, "action_state": "只观察"},
+                    {"rank": 2, "ticker": "002008.SZ", "name": "大族激光", "score": 20, "action_state": "只观察"},
+                ],
+                "result_delta_clarity_contract": {"candidate_delta_signature": "previous-safe-signature"},
+                "external_calls_triggered": False,
+            },
+        )
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "next_ticket_candidates": [
+                    {"rank": 1, "ticker": "002008.SZ", "name": "大族激光", "score": 30, "action_state": "只观察"},
+                    {"rank": 2, "ticker": "300750.SZ", "name": "宁德时代", "score": 60, "action_state": "待验证"},
+                ],
+            }
+        )
+
+        task = candidate_service.run_candidate_quick_scan_task({"scan_mode": "quick_cache_scan"})
+
+        self.assertEqual(task["status"], "success")
+        persisted = SQLiteMetaStore(candidate_service.SQLITE_META_PATH).read_packet(candidate_service.PACKET_KEY)
+        result_delta = persisted["result_delta_clarity_contract"]
+        result_delta_rows = {row["criterion"]: row for row in persisted["result_delta_clarity_rows"]}
+        self.assertEqual(result_delta["status"], "result_delta_clarity_local_ready_browser_qa_pending")
+        self.assertTrue(result_delta["previous_cache_available"])
+        self.assertTrue(result_delta["previous_cache_diff_done"])
+        self.assertEqual(result_delta["previous_candidate_count"], 2)
+        self.assertEqual(result_delta["candidate_added_count"], 1)
+        self.assertEqual(result_delta["candidate_removed_count"], 1)
+        self.assertEqual(result_delta["candidate_rank_changed_count"], 1)
+        self.assertEqual(result_delta["candidate_score_changed_count"], 1)
+        self.assertEqual(result_delta["production_pending_count"], 1)
+        self.assertEqual(result_delta_rows["previous_cache_diff_pending"]["status"], "completed_previous_cache_diff")
+        self.assertEqual(result_delta_rows["browser_visual_delta_qa_pending"]["status"], "pending_visual_qa")
+        self.assertIn("300750.SZ", result_delta["added_tickers"])
+        self.assertIn("002837.SZ", result_delta["removed_tickers"])
+        self.assertIn("002008.SZ", result_delta["rank_changed_tickers"])
+        diff_by_type = {row["change_type"]: row for row in persisted["previous_cache_diff_rows"]}
+        self.assertEqual(diff_by_type["added"]["ticker"], "300750.SZ")
+        self.assertEqual(diff_by_type["removed"]["ticker"], "002837.SZ")
+        self.assertEqual(diff_by_type["updated"]["ticker"], "002008.SZ")
+        self.assertTrue(diff_by_type["updated"]["rank_changed"])
+        self.assertTrue(diff_by_type["updated"]["score_changed"])
+        self.assertEqual(persisted["counts"]["result_delta_added_count"], 1)
+        self.assertEqual(persisted["counts"]["result_delta_removed_count"], 1)
+        self.assertEqual(persisted["counts"]["result_delta_rank_changed_count"], 1)
+        self.assertEqual(persisted["counts"]["result_delta_score_changed_count"], 1)
+        self.assertTrue(persisted["policy"]["result_delta_clarity_previous_cache_diff_done"])
+        self.assertTrue(persisted["policy"]["result_delta_clarity_previous_cache_diff_is_local"])
+        self.assertFalse(persisted["policy"]["result_delta_clarity_is_not_previous_cache_diff"])
+        self.assertTrue(persisted["policy"]["result_delta_clarity_is_not_browser_visual_qa"])
+        self.assertFalse(result_delta["external_calls_triggered"])
+        self.assertFalse(result_delta["tushare_called"])
+        self.assertFalse(result_delta["deepseek_called"])
+        self.assertFalse(result_delta["github_called"])
+        self.assertTrue(result_delta["does_not_execute_trades"])
+        self.assertTrue(result_delta["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(persisted, ensure_ascii=False))
+
     def test_candidate_radar_full_pool_plan_task_records_blockers_without_scan(self):
         from storage.sqlite_meta import SQLiteMetaStore
 
@@ -4993,6 +5066,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(by_type["run_candidate_radar_quick_scan"]["runtime_budget_contract_visible"])
         self.assertTrue(by_type["run_candidate_radar_quick_scan"]["result_delta_clarity_contract_visible"])
         self.assertFalse(by_type["run_candidate_radar_quick_scan"]["result_delta_clarity_is_previous_cache_diff"])
+        self.assertTrue(by_type["run_candidate_radar_quick_scan"]["result_delta_clarity_previous_cache_diff_supported"])
+        self.assertTrue(by_type["run_candidate_radar_quick_scan"]["result_delta_clarity_previous_cache_diff_requires_persisted_cache"])
         self.assertFalse(by_type["run_candidate_radar_quick_scan"]["result_delta_clarity_is_browser_visual_qa"])
         self.assertEqual(by_type["run_candidate_radar_quick_scan"]["sync_candidate_display_limit"], 120)
         self.assertEqual(by_type["run_candidate_radar_quick_scan"]["local_pool_input_limit"], 50)
@@ -5011,6 +5086,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_candidate_radar_full_pool_plan"]["full_pool_validation_done"])
         self.assertTrue(by_type["run_candidate_radar_full_pool_plan"]["result_delta_clarity_contract_visible"])
         self.assertFalse(by_type["run_candidate_radar_full_pool_plan"]["result_delta_clarity_is_previous_cache_diff"])
+        self.assertTrue(by_type["run_candidate_radar_full_pool_plan"]["result_delta_clarity_previous_cache_diff_supported"])
+        self.assertTrue(by_type["run_candidate_radar_full_pool_plan"]["result_delta_clarity_previous_cache_diff_requires_persisted_cache"])
         self.assertFalse(by_type["run_candidate_radar_full_pool_plan"]["result_delta_clarity_is_browser_visual_qa"])
         self.assertTrue(by_type["run_candidate_radar_full_pool_plan"]["worker_task_consumption_plan_ready"])
         self.assertFalse(by_type["run_candidate_radar_full_pool_plan"]["cache_get_external_calls"])
@@ -5032,6 +5109,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_candidate_radar_deep_scan_plan"]["deep_scan_validation_done"])
         self.assertTrue(by_type["run_candidate_radar_deep_scan_plan"]["result_delta_clarity_contract_visible"])
         self.assertFalse(by_type["run_candidate_radar_deep_scan_plan"]["result_delta_clarity_is_previous_cache_diff"])
+        self.assertTrue(by_type["run_candidate_radar_deep_scan_plan"]["result_delta_clarity_previous_cache_diff_supported"])
+        self.assertTrue(by_type["run_candidate_radar_deep_scan_plan"]["result_delta_clarity_previous_cache_diff_requires_persisted_cache"])
         self.assertFalse(by_type["run_candidate_radar_deep_scan_plan"]["result_delta_clarity_is_browser_visual_qa"])
         self.assertTrue(by_type["run_candidate_radar_deep_scan_plan"]["worker_task_consumption_plan_ready"])
         self.assertFalse(by_type["run_candidate_radar_deep_scan_plan"]["cache_get_external_calls"])

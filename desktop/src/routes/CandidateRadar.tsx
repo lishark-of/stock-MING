@@ -95,6 +95,7 @@ export default function CandidateRadar() {
   const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
+  const previousCacheDiffRows = rows(cache.previous_cache_diff_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
@@ -138,6 +139,10 @@ export default function CandidateRadar() {
           { label: "delta clarity", value: String(resultDeltaClarity.status ?? "missing"), tone: resultDeltaClarity.local_result_delta_clarity_ready === true ? "good" : "warn" },
           { label: "delta gaps", value: counts.result_delta_clarity_visible_gap_count as number | undefined, tone: Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "warn" : "good" },
           { label: "delta pending", value: counts.result_delta_clarity_pending_count as number | undefined, tone: Number(counts.result_delta_clarity_pending_count ?? 0) ? "warn" : "good" },
+          { label: "prev diff", value: resultDeltaClarity.previous_cache_diff_done === true ? "done" : "pending", tone: resultDeltaClarity.previous_cache_diff_done === true ? "good" : "warn" },
+          { label: "added", value: counts.result_delta_added_count as number | undefined },
+          { label: "removed", value: counts.result_delta_removed_count as number | undefined },
+          { label: "rank delta", value: counts.result_delta_rank_changed_count as number | undefined },
           { label: "full replacement", value: fastScanReadinessAudit.production_radar_replacement_complete === true ? "完成" : "未完成", tone: fastScanReadinessAudit.production_radar_replacement_complete === true ? "bad" : "good" },
           { label: "universe", value: coverageDetail.universe_size as number | undefined },
           { label: "input rows", value: coverageDetail.candidate_input_count as number | undefined },
@@ -275,14 +280,16 @@ export default function CandidateRadar() {
         <DataLineageTable rows={noFeatureLossAcceptanceRows} />
       </PacketCard>
 
-      <PacketCard title="雷达结果变化清晰度" subtitle="result_delta_clarity_contract；只展示当前结果变化线索，不做 previous-cache diff 或浏览器视觉验收" status={String(resultDeltaClarity.status ?? "missing")}>
+      <PacketCard title="雷达结果变化清晰度" subtitle="result_delta_clarity_contract；有上一版持久化 cache 时执行本地 previous-cache diff，浏览器视觉验收仍需单独跑" status={String(resultDeltaClarity.status ?? "missing")}>
         <p>local_result_delta_clarity_ready: {String(resultDeltaClarity.local_result_delta_clarity_ready ?? false)}</p>
         <p>previous_cache_diff_done: {String(resultDeltaClarity.previous_cache_diff_done ?? false)}</p>
         <p>browser_visual_delta_qa_done: {String(resultDeltaClarity.browser_visual_delta_qa_done ?? false)}</p>
         <p>candidate_delta_signature: {String(resultDeltaClarity.candidate_delta_signature ?? "--")}</p>
-        <p>候选数量、截断、跳过原因、provider gap、freshness、scan mode 和 full/deep 边界必须可见；previous-cache diff 与浏览器视觉 QA 仍是 pending，不能当生产雷达替代完成。</p>
+        <p>previous_candidate_count: {String(resultDeltaClarity.previous_candidate_count ?? 0)}；added: {String(resultDeltaClarity.candidate_added_count ?? 0)}；removed: {String(resultDeltaClarity.candidate_removed_count ?? 0)}；rank_changed: {String(resultDeltaClarity.candidate_rank_changed_count ?? 0)}</p>
+        <p>候选数量、截断、跳过原因、provider gap、freshness、scan mode、上一版 diff 和 full/deep 边界必须可见；浏览器视觉 QA 仍是 pending，不能当生产雷达替代完成。</p>
         <DataLineageTable rows={objectRow(resultDeltaClarity)} />
         <DataLineageTable rows={resultDeltaClarityRows} />
+        <DataLineageTable rows={previousCacheDiffRows} />
       </PacketCard>
 
       <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>

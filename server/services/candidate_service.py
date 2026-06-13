@@ -1991,6 +1991,142 @@ def _candidate_delta_signature(candidate_rows: list[dict[str, Any]]) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
 
+def _delta_candidate_key(row: Mapping[str, Any], fallback_index: int) -> str:
+    key = _first_non_empty(row, ["ticker", "ts_code", "code", "stock_code", "symbol"])
+    return _safe_text(key, limit=32).upper() or f"ROW-{fallback_index}"
+
+
+def _delta_candidate_map(candidate_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    mapped: dict[str, dict[str, Any]] = {}
+    for index, row in enumerate(candidate_rows[:FAST_SCAN_DISPLAY_CANDIDATE_LIMIT], start=1):
+        key = _delta_candidate_key(row, index)
+        if key in mapped:
+            continue
+        mapped[key] = {
+            "ticker": key,
+            "rank": row.get("rank") or index,
+            "score": row.get("score"),
+            "status_label": row.get("status_label"),
+            "action_state": row.get("action_state"),
+        }
+    return mapped
+
+
+def _previous_candidate_rows_from_packet(previous_packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows = [dict(row) for row in _as_list(previous_packet.get("candidate_rows")) if isinstance(row, Mapping)]
+    if rows:
+        return rows[:FAST_SCAN_DISPLAY_CANDIDATE_LIMIT]
+    candidates = _as_list(previous_packet.get("candidates"))
+    return _candidate_rows(candidates)
+
+
+def _previous_cache_candidate_diff(
+    previous_packet: Mapping[str, Any] | None,
+    candidate_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    previous_available = isinstance(previous_packet, Mapping) and bool(previous_packet)
+    previous_rows = _previous_candidate_rows_from_packet(previous_packet or {}) if previous_available else []
+    current_map = _delta_candidate_map(candidate_rows)
+    previous_map = _delta_candidate_map(previous_rows)
+    current_keys = list(current_map.keys())
+    previous_keys = list(previous_map.keys())
+    added = [key for key in current_keys if key not in previous_map]
+    removed = [key for key in previous_keys if key not in current_map]
+    shared = [key for key in current_keys if key in previous_map]
+    rank_changed = [key for key in shared if current_map[key].get("rank") != previous_map[key].get("rank")]
+    score_changed = [key for key in shared if current_map[key].get("score") != previous_map[key].get("score")]
+    status_changed = [
+        key
+        for key in shared
+        if current_map[key].get("status_label") != previous_map[key].get("status_label")
+        or current_map[key].get("action_state") != previous_map[key].get("action_state")
+    ]
+    diff_rows: list[dict[str, Any]] = []
+    for key in added[:30]:
+        diff_rows.append(
+            {
+                "change_type": "added",
+                "ticker": key,
+                "previous_rank": None,
+                "current_rank": current_map[key].get("rank"),
+                "previous_score": None,
+                "current_score": current_map[key].get("score"),
+                "user_visible": True,
+            }
+        )
+    for key in removed[:30]:
+        diff_rows.append(
+            {
+                "change_type": "removed",
+                "ticker": key,
+                "previous_rank": previous_map[key].get("rank"),
+                "current_rank": None,
+                "previous_score": previous_map[key].get("score"),
+                "current_score": None,
+                "user_visible": True,
+            }
+        )
+    for key in sorted(set(rank_changed + score_changed + status_changed))[:30]:
+        diff_rows.append(
+            {
+                "change_type": "updated",
+                "ticker": key,
+                "previous_rank": previous_map[key].get("rank"),
+                "current_rank": current_map[key].get("rank"),
+                "previous_score": previous_map[key].get("score"),
+                "current_score": current_map[key].get("score"),
+                "rank_changed": key in rank_changed,
+                "score_changed": key in score_changed,
+                "status_changed": key in status_changed,
+                "user_visible": True,
+            }
+        )
+    for row in diff_rows:
+        row.update(
+            {
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+            }
+        )
+    changed_count = len(added) + len(removed) + len(set(rank_changed + score_changed + status_changed))
+    previous_signature = str(_as_dict(previous_packet or {}).get("result_delta_clarity_contract", {}).get("candidate_delta_signature") or "")
+    return {
+        "previous_cache_available": previous_available,
+        "previous_cache_diff_done": previous_available,
+        "previous_scan_mode": _safe_text(_as_dict(previous_packet or {}).get("scan_mode"), limit=40),
+        "previous_cache_source": _safe_text(_as_dict(previous_packet or {}).get("cache_source"), limit=60),
+        "previous_candidate_delta_signature": previous_signature or _candidate_delta_signature(previous_rows),
+        "previous_candidate_count": len(previous_rows),
+        "candidate_added_count": len(added),
+        "candidate_removed_count": len(removed),
+        "candidate_rank_changed_count": len(rank_changed),
+        "candidate_score_changed_count": len(score_changed),
+        "candidate_status_changed_count": len(status_changed),
+        "candidate_unchanged_count": max(0, len(shared) - len(set(rank_changed + score_changed + status_changed))),
+        "candidate_changed_count": changed_count,
+        "added_tickers": added[:20],
+        "removed_tickers": removed[:20],
+        "rank_changed_tickers": rank_changed[:20],
+        "score_changed_tickers": score_changed[:20],
+        "status_changed_tickers": status_changed[:20],
+        "diff_rows": diff_rows,
+        "diff_row_count": len(diff_rows),
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
 def _result_delta_clarity_contract(
     *,
     scan_mode: str,
@@ -2003,6 +2139,7 @@ def _result_delta_clarity_contract(
     local_pool_audit: Mapping[str, Any],
     full_pool_scan_plan: Mapping[str, Any],
     deep_scan_plan: Mapping[str, Any],
+    previous_packet: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
     freshness_state = _as_dict(coverage.get("freshness_state"))
@@ -2012,6 +2149,8 @@ def _result_delta_clarity_contract(
     truncated_count = int(runtime_budget_contract.get("candidate_display_truncated_count") or 0)
     full_pool_plan_ready = full_pool_scan_plan.get("status") == "full_pool_plan_ready"
     deep_scan_plan_ready = deep_scan_plan.get("status") == "deep_scan_plan_ready"
+    previous_diff = _previous_cache_candidate_diff(previous_packet, candidate_rows)
+    previous_diff_done = bool(previous_diff.get("previous_cache_diff_done"))
     rows = [
         _result_delta_clarity_row(
             "candidate_count_and_mix_visible",
@@ -2087,10 +2226,15 @@ def _result_delta_clarity_contract(
         ),
         _result_delta_clarity_row(
             "previous_cache_diff_pending",
-            "pending_previous_cache_diff",
-            passed=False,
-            evidence="Current contract exposes result-change cues from the current packet only; previous persisted packet diff remains future work.",
-            production_pending=True,
+            "completed_previous_cache_diff" if previous_diff_done else "pending_previous_cache_diff",
+            passed=previous_diff_done,
+            evidence=(
+                f"previous_available={previous_diff.get('previous_cache_available')}; "
+                f"added={previous_diff.get('candidate_added_count')}; removed={previous_diff.get('candidate_removed_count')}; "
+                f"rank_changed={previous_diff.get('candidate_rank_changed_count')}; score_changed={previous_diff.get('candidate_score_changed_count')}"
+            ),
+            gap_visible=bool(previous_diff.get("candidate_changed_count")),
+            production_pending=not previous_diff_done,
         ),
         _result_delta_clarity_row(
             "browser_visual_delta_qa_pending",
@@ -2112,13 +2256,41 @@ def _result_delta_clarity_contract(
     local_ready = not local_blockers
     return {
         "schema_version": "candidate_radar_result_delta_clarity.v1",
-        "status": "result_delta_clarity_local_ready_previous_diff_pending" if local_ready else "result_delta_clarity_blocked",
-        "scope": "local_result_delta_visibility_contract_not_previous_cache_diff_or_browser_visual_qa",
+        "status": (
+            "result_delta_clarity_local_ready_browser_qa_pending"
+            if local_ready and previous_diff_done
+            else "result_delta_clarity_local_ready_previous_diff_pending"
+            if local_ready
+            else "result_delta_clarity_blocked"
+        ),
+        "scope": (
+            "local_result_delta_visibility_and_previous_cache_diff_not_browser_visual_qa"
+            if previous_diff_done
+            else "local_result_delta_visibility_contract_not_previous_cache_diff_or_browser_visual_qa"
+        ),
         "ltg": "LTG-13/LTG-14",
         "scan_mode": scan_mode,
         "candidate_delta_signature": _candidate_delta_signature(candidate_rows),
         "local_result_delta_clarity_ready": local_ready,
-        "previous_cache_diff_done": False,
+        "previous_cache_available": bool(previous_diff.get("previous_cache_available")),
+        "previous_cache_diff_done": previous_diff_done,
+        "previous_scan_mode": previous_diff.get("previous_scan_mode"),
+        "previous_cache_source": previous_diff.get("previous_cache_source"),
+        "previous_candidate_delta_signature": previous_diff.get("previous_candidate_delta_signature"),
+        "previous_candidate_count": previous_diff.get("previous_candidate_count"),
+        "candidate_added_count": previous_diff.get("candidate_added_count"),
+        "candidate_removed_count": previous_diff.get("candidate_removed_count"),
+        "candidate_rank_changed_count": previous_diff.get("candidate_rank_changed_count"),
+        "candidate_score_changed_count": previous_diff.get("candidate_score_changed_count"),
+        "candidate_status_changed_count": previous_diff.get("candidate_status_changed_count"),
+        "candidate_unchanged_count": previous_diff.get("candidate_unchanged_count"),
+        "candidate_changed_count": previous_diff.get("candidate_changed_count"),
+        "added_tickers": previous_diff.get("added_tickers"),
+        "removed_tickers": previous_diff.get("removed_tickers"),
+        "rank_changed_tickers": previous_diff.get("rank_changed_tickers"),
+        "score_changed_tickers": previous_diff.get("score_changed_tickers"),
+        "status_changed_tickers": previous_diff.get("status_changed_tickers"),
+        "previous_cache_diff_row_count": previous_diff.get("diff_row_count"),
         "browser_visual_delta_qa_done": False,
         "production_radar_replacement_complete": False,
         "candidate_count": len(candidate_rows),
@@ -2142,7 +2314,8 @@ def _result_delta_clarity_contract(
         "does_not_modify_strategy_action": True,
         "candidate_is_not_buy_instruction": True,
         "rows": rows,
-        "note": "This contract makes candidate result-change cues visible without rescoring, provider refreshes, timers, previous-cache diff execution, browser QA, or trade/action mutation.",
+        "previous_cache_diff_rows": previous_diff.get("diff_rows") or [],
+        "note": "This contract makes candidate result-change cues visible without rescoring, provider refreshes, timers, browser QA, or trade/action mutation. When a previous persisted packet exists, it also computes a local previous-cache diff.",
     }
 
 
@@ -2679,6 +2852,7 @@ def _build_candidate_radar_packet(
     local_pool_skipped_rows: list[dict[str, Any]] | None = None,
     full_pool_scan_plan: Mapping[str, Any] | None = None,
     deep_scan_plan: Mapping[str, Any] | None = None,
+    previous_packet: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     raw_snapshot = snapshot if isinstance(snapshot, Mapping) else {}
     safe_snapshot = _safe_value(snapshot)
@@ -2780,6 +2954,7 @@ def _build_candidate_radar_packet(
         local_pool_audit=local_pool_audit or {},
         full_pool_scan_plan=plan,
         deep_scan_plan=deep_plan,
+        previous_packet=previous_packet,
     )
     if plan:
         counts["full_pool_plan_blocking_issue_count"] = plan.get("blocking_issue_count")
@@ -2796,6 +2971,11 @@ def _build_candidate_radar_packet(
     counts["result_delta_clarity_visible_gap_count"] = result_delta_clarity_contract["visible_gap_count"]
     counts["result_delta_clarity_pending_count"] = result_delta_clarity_contract["production_pending_count"]
     counts["result_delta_clarity_row_count"] = result_delta_clarity_contract["row_count"]
+    counts["result_delta_previous_candidate_count"] = result_delta_clarity_contract["previous_candidate_count"]
+    counts["result_delta_added_count"] = result_delta_clarity_contract["candidate_added_count"]
+    counts["result_delta_removed_count"] = result_delta_clarity_contract["candidate_removed_count"]
+    counts["result_delta_rank_changed_count"] = result_delta_clarity_contract["candidate_rank_changed_count"]
+    counts["result_delta_score_changed_count"] = result_delta_clarity_contract["candidate_score_changed_count"]
 
     if candidate_rows:
         status = "ready"
@@ -2841,6 +3021,7 @@ def _build_candidate_radar_packet(
         "fast_scan_readiness_rows": fast_scan_readiness_rows,
         "result_delta_clarity_contract": result_delta_clarity_contract,
         "result_delta_clarity_rows": result_delta_clarity_contract["rows"],
+        "previous_cache_diff_rows": result_delta_clarity_contract["previous_cache_diff_rows"],
         "provider_coverage_rows": coverage["provider_coverage_rows"],
         "degraded_mode_rows": coverage["degraded_mode_rows"],
         "local_candidate_pool_audit": dict(local_pool_audit or _as_dict(snapshot_map.get("local_candidate_pool_audit"))),
@@ -2917,7 +3098,9 @@ def _build_candidate_radar_packet(
             "fast_scan_readiness_audit_is_local": True,
             "fast_scan_readiness_is_not_full_replacement": True,
             "result_delta_clarity_contract_is_local": True,
-            "result_delta_clarity_is_not_previous_cache_diff": True,
+            "result_delta_clarity_previous_cache_diff_done": bool(result_delta_clarity_contract["previous_cache_diff_done"]),
+            "result_delta_clarity_previous_cache_diff_is_local": bool(result_delta_clarity_contract["previous_cache_diff_done"]),
+            "result_delta_clarity_is_not_previous_cache_diff": not bool(result_delta_clarity_contract["previous_cache_diff_done"]),
             "result_delta_clarity_is_not_browser_visual_qa": True,
         },
         "call_ledger": [
@@ -3000,7 +3183,13 @@ def read_candidate_radar_cache() -> dict[str, Any]:
         or str(persisted.get("scan_mode") or "") in LOCAL_POOL_SCAN_MODES
     ):
         return _cache_view_from_persisted(persisted)
-    return _build_candidate_radar_packet(snapshot, mode="cache_only", cache_source="snapshot", scan_mode="cache_only")
+    return _build_candidate_radar_packet(
+        snapshot,
+        mode="cache_only",
+        cache_source="snapshot",
+        scan_mode="cache_only",
+        previous_packet=persisted,
+    )
 
 
 def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
@@ -3036,6 +3225,7 @@ def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
         "local_pool_scan": scan_mode in LOCAL_POOL_SCAN_MODES,
     }
     snapshot = packet_service.load_snapshot_cache()
+    previous_packet = _read_persisted_packet()
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
     scan_snapshot: Mapping[str, Any] = snapshot
@@ -3058,6 +3248,7 @@ def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
         request_params_safe=request_params_safe,
         local_pool_audit=local_pool_audit,
         local_pool_skipped_rows=local_pool_skipped_rows,
+        previous_packet=previous_packet,
     )
     task_scan_label = "quick_scan" if scan_mode == "quick_cache_scan" else scan_mode
     ledger_api = "local_candidate_radar_quick_scan" if scan_mode == "quick_cache_scan" else f"local_candidate_radar_{scan_mode}"
@@ -3122,6 +3313,7 @@ def run_candidate_full_pool_plan_task(payload: Any = None) -> dict[str, Any]:
     )
     payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
     snapshot = packet_service.load_snapshot_cache()
+    previous_packet = _read_persisted_packet()
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
     now = _now_iso()
@@ -3142,6 +3334,7 @@ def run_candidate_full_pool_plan_task(payload: Any = None) -> dict[str, Any]:
         scan_mode="full_pool_plan",
         request_params_safe=request_params_safe,
         full_pool_scan_plan=plan,
+        previous_packet=previous_packet,
     )
     ledger = _candidate_call_ledger_row(
         api="local_candidate_radar_full_pool_plan",
@@ -3203,6 +3396,7 @@ def run_candidate_deep_scan_plan_task(payload: Any = None) -> dict[str, Any]:
     )
     payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
     snapshot = packet_service.load_snapshot_cache()
+    previous_packet = _read_persisted_packet()
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
     now = _now_iso()
@@ -3224,6 +3418,7 @@ def run_candidate_deep_scan_plan_task(payload: Any = None) -> dict[str, Any]:
         scan_mode="deep_scan_plan",
         request_params_safe=request_params_safe,
         deep_scan_plan=plan,
+        previous_packet=previous_packet,
     )
     ledger = _candidate_call_ledger_row(
         api="local_candidate_radar_deep_scan_plan",
