@@ -50,6 +50,14 @@ REQUIRED_PROMOTION_BLOCKERS = {
     "full_pool_execution_complete",
     "deep_scan_execution_complete",
 }
+REQUIRED_ACTIVATION_BLOCKERS = {
+    "production_promotion_blocked_visible",
+    "full_pool_worker_execution_required",
+    "deep_scan_worker_execution_required",
+    "provider_backed_acceptance_required",
+    "browser_visual_performance_review_required",
+    "legacy_retirement_stays_blocked",
+}
 CANDIDATE_BROWSER_QA_RUNBOOK_PATH = "scripts/candidate_radar_browser_qa_runbook.py"
 
 
@@ -128,6 +136,12 @@ def build_contract() -> dict[str, Any]:
     promotion_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(cache_packet.get("candidate_radar_promotion_blocker_rows"))
+        if isinstance(row, dict)
+    }
+    activation_receipt = _dict(cache_packet.get("candidate_radar_production_activation_receipt"))
+    activation_rows = {
+        str(row.get("activation_key") or ""): row
+        for row in _list(cache_packet.get("candidate_radar_production_activation_rows"))
         if isinstance(row, dict)
     }
     quick_receipt = _dict(cache_packet.get("quick_scan_execution_receipt"))
@@ -306,6 +320,39 @@ def build_contract() -> dict[str, Any]:
             "Quick-scan receipt must make local scan coverage, limits, gaps, and production blockers visible without becoming production replacement evidence.",
         ),
         _row(
+            "activation_receipt_guides_next_safe_step",
+            activation_receipt.get("schema_version") == "candidate_radar_production_activation_receipt.v1"
+            and activation_receipt.get("status") == "candidate_radar_activation_receipt_ready_production_blocked"
+            and activation_receipt.get("scope") == "local_candidate_radar_activation_receipt_no_execution_or_provider_call"
+            and activation_receipt.get("local_activation_receipt_ready") is True
+            and activation_receipt.get("production_radar_replacement_complete") is False
+            and activation_receipt.get("legacy_retirement_ready") is False
+            and activation_receipt.get("full_pool_scan_done") is False
+            and activation_receipt.get("deep_scan_done") is False
+            and activation_receipt.get("provider_backed_acceptance_done") is False
+            and activation_receipt.get("durable_ci_evidence_complete") is False
+            and activation_receipt.get("candidate_is_not_buy_instruction") is True
+            and activation_receipt.get("allowed_next_step")
+            == "explicit_worker_full_pool_and_deep_scan_acceptance_then_provider_backed_parity_and_browser_review"
+            and int(activation_receipt.get("production_blocker_count") or 0) >= len(REQUIRED_ACTIVATION_BLOCKERS)
+            and REQUIRED_ACTIVATION_BLOCKERS.issubset(set(activation_receipt.get("production_blockers") or []))
+            and all(_dict(activation_rows.get(key)).get("production_blocker") is True for key in REQUIRED_ACTIVATION_BLOCKERS)
+            and _flag_false(activation_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and activation_receipt.get("does_not_execute_trades") is True
+            and activation_receipt.get("does_not_modify_strategy_action") is True
+            and policy.get("candidate_radar_activation_receipt_is_local") is True
+            and policy.get("candidate_radar_activation_receipt_is_not_production_replacement") is True
+            and policy.get("candidate_radar_activation_requires_worker_provider_browser_evidence") is True
+            and any(
+                _dict(row).get("api") == "local_candidate_radar_production_activation_receipt"
+                for row in _list(cache_packet.get("call_ledger"))
+            )
+            and "candidate_radar_production_activation_receipt" in candidate_frontend
+            and "candidate_radar_production_activation_rows" in candidate_frontend
+            and "雷达生产化激活收据" in candidate_frontend,
+            "Activation receipt must point to the next safe worker/provider/browser acceptance step while keeping production replacement, legacy retirement, external calls, and buy-signal claims blocked.",
+        ),
+        _row(
             "result_delta_clarity_is_local_not_visual_qa",
             result_delta.get("schema_version") == "candidate_radar_result_delta_clarity.v1"
             and result_delta.get("local_result_delta_clarity_ready") is True
@@ -474,6 +521,7 @@ def build_contract() -> dict[str, Any]:
             and "production_radar_replacement_complete" in this_script
             and "legacy_retirement_ready" in this_script
             and "candidate_radar_quick_scan_receipt.v1" in this_script
+            and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -500,6 +548,7 @@ def build_contract() -> dict[str, Any]:
         "candidate_browser_qa_runbook_ready": _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("local_runbook_ready") is True,
         "candidate_browser_qa_evidence_found": browser_qa_evidence.get("local_browser_qa_evidence_found") is True,
         "candidate_browser_qa_review_ready": browser_qa_review.get("local_browser_qa_review_ready") is True,
+        "candidate_radar_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -524,6 +573,9 @@ def build_contract() -> dict[str, Any]:
             "promotion_blocking_count": promotion_audit.get("blocking_promotion_count"),
             "quick_scan_receipt_status": quick_receipt.get("status"),
             "quick_scan_receipt_production_blocker_count": quick_receipt.get("production_blocker_count"),
+            "activation_receipt_status": activation_receipt.get("status"),
+            "activation_receipt_production_blocker_count": activation_receipt.get("production_blocker_count"),
+            "activation_receipt_pending_evidence_count": activation_receipt.get("pending_evidence_count"),
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),
             "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),

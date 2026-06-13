@@ -6404,6 +6404,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_is_not_buy_instruction", script)
         self.assertIn("no_feature_loss_is_local_not_replacement", script)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", script)
+        self.assertIn("activation_receipt_guides_next_safe_step", script)
+        self.assertIn("candidate_radar_production_activation_receipt.v1", script)
         self.assertIn("priority_explanation_is_local_not_trade_signal", script)
         self.assertIn("full_pool_plan_is_plan_only", script)
         self.assertIn("deep_scan_plan_is_plan_only", script)
@@ -6437,6 +6439,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_browser_qa_runbook_ready"])
         self.assertIn("candidate_browser_qa_evidence_found", payload)
         self.assertIn("candidate_browser_qa_review_ready", payload)
+        self.assertTrue(payload["candidate_radar_activation_receipt_ready"])
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -6475,10 +6478,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIsNotNone(payload["observed"]["candidate_browser_qa_review_blocking_count"])
         self.assertIsNotNone(payload["observed"]["full_pool_plan_blocker_count"])
         self.assertIsNotNone(payload["observed"]["deep_scan_plan_blocker_count"])
+        self.assertEqual(
+            payload["observed"]["activation_receipt_status"],
+            "candidate_radar_activation_receipt_ready_production_blocked",
+        )
+        self.assertGreater(payload["observed"]["activation_receipt_production_blocker_count"], 0)
+        self.assertGreater(payload["observed"]["activation_receipt_pending_evidence_count"], 0)
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("cache_get_is_read_only_no_scan", criteria)
         self.assertIn("no_feature_loss_is_local_not_replacement", criteria)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", criteria)
+        self.assertIn("activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("result_delta_clarity_is_local_not_visual_qa", criteria)
         self.assertIn("priority_explanation_is_local_not_trade_signal", criteria)
         self.assertIn("full_pool_plan_is_plan_only", criteria)
@@ -10031,6 +10041,54 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["candidate_radar_promotion_provider_blocker_count"], promotion["provider_acceptance_blocker_count"])
         self.assertEqual(packet["counts"]["candidate_radar_promotion_worker_blocker_count"], promotion["worker_execution_blocker_count"])
         self.assertEqual(packet["counts"]["candidate_radar_promotion_browser_blocker_count"], promotion["browser_evidence_blocker_count"])
+        activation = packet["candidate_radar_production_activation_receipt"]
+        activation_rows = {row["activation_key"]: row for row in packet["candidate_radar_production_activation_rows"]}
+        self.assertEqual(activation["schema_version"], "candidate_radar_production_activation_receipt.v1")
+        self.assertEqual(activation["status"], "candidate_radar_activation_receipt_ready_production_blocked")
+        self.assertEqual(activation["scope"], "local_candidate_radar_activation_receipt_no_execution_or_provider_call")
+        self.assertTrue(activation["local_activation_receipt_ready"])
+        self.assertFalse(activation["production_radar_replacement_complete"])
+        self.assertFalse(activation["legacy_retirement_ready"])
+        self.assertTrue(activation["legacy_fallback_required"])
+        self.assertFalse(activation["full_pool_scan_done"])
+        self.assertFalse(activation["deep_scan_done"])
+        self.assertFalse(activation["provider_backed_acceptance_done"])
+        self.assertFalse(activation["durable_ci_evidence_complete"])
+        self.assertTrue(activation["candidate_is_not_buy_instruction"])
+        self.assertEqual(
+            activation["allowed_next_step"],
+            "explicit_worker_full_pool_and_deep_scan_acceptance_then_provider_backed_parity_and_browser_review",
+        )
+        self.assertIn("full_pool_worker_execution_evidence", activation["missing_evidence_items"])
+        self.assertIn("deep_scan_worker_execution_evidence", activation["missing_evidence_items"])
+        self.assertIn("provider_backed_parity_call_ledger", activation["missing_evidence_items"])
+        self.assertIn("browser_visual_performance_review", activation["missing_evidence_items"])
+        self.assertIn("legacy_retirement_acceptance", activation["missing_evidence_items"])
+        self.assertGreater(activation["production_blocker_count"], 0)
+        self.assertGreater(activation["pending_evidence_count"], 0)
+        self.assertEqual(activation_rows["local_quick_scan_receipt_ready"]["status"], "passed")
+        self.assertEqual(activation_rows["no_feature_loss_surface_ready"]["status"], "passed")
+        self.assertEqual(activation_rows["production_promotion_blocked_visible"]["status"], "passed")
+        self.assertEqual(activation_rows["full_pool_worker_execution_required"]["status"], "pending_worker_execution")
+        self.assertEqual(activation_rows["deep_scan_worker_execution_required"]["status"], "pending_worker_execution")
+        self.assertEqual(activation_rows["provider_backed_acceptance_required"]["status"], "pending_provider_acceptance")
+        self.assertIn(
+            activation_rows["browser_visual_performance_review_required"]["status"],
+            {"pending_browser_review", "reviewed_local_artifact"},
+        )
+        self.assertEqual(activation_rows["trade_action_isolation_preserved"]["status"], "passed")
+        self.assertFalse(activation["external_calls_triggered"])
+        self.assertFalse(activation["tushare_called"])
+        self.assertFalse(activation["deepseek_called"])
+        self.assertFalse(activation["github_called"])
+        self.assertTrue(activation["does_not_execute_trades"])
+        self.assertTrue(activation["does_not_modify_strategy_action"])
+        self.assertTrue(packet["policy"]["candidate_radar_activation_receipt_is_local"])
+        self.assertTrue(packet["policy"]["candidate_radar_activation_receipt_is_not_production_replacement"])
+        self.assertTrue(packet["policy"]["candidate_radar_activation_requires_worker_provider_browser_evidence"])
+        self.assertEqual(packet["counts"]["candidate_radar_activation_blocker_count"], activation["production_blocker_count"])
+        self.assertEqual(packet["counts"]["candidate_radar_activation_pending_evidence_count"], activation["pending_evidence_count"])
+        self.assertTrue(any(row["api"] == "local_candidate_radar_production_activation_receipt" for row in packet["call_ledger"]))
         receipt = packet["quick_scan_execution_receipt"]
         receipt_rows = {row["receipt_key"]: row for row in packet["quick_scan_execution_receipt_rows"]}
         self.assertEqual(receipt["schema_version"], "candidate_radar_quick_scan_receipt.v1")

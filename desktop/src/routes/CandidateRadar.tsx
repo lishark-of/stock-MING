@@ -82,6 +82,7 @@ export default function CandidateRadar() {
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
   const replacementGapTriage = (cache.replacement_gap_triage_contract as Record<string, unknown> | undefined) ?? {};
   const promotionBlockerAudit = (cache.candidate_radar_promotion_blocker_audit as Record<string, unknown> | undefined) ?? {};
+  const activationReceipt = (cache.candidate_radar_production_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
   const candidatePriorityExplanation = (cache.candidate_priority_explanation_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaRunbook = (cache.candidate_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
@@ -109,6 +110,7 @@ export default function CandidateRadar() {
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
   const replacementGapTriageRows = rows(cache.replacement_gap_triage_rows);
   const promotionBlockerRows = rows(cache.candidate_radar_promotion_blocker_rows);
+  const activationReceiptRows = rows(cache.candidate_radar_production_activation_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
   const previousCacheDiffRows = rows(cache.previous_cache_diff_rows);
   const candidatePriorityExplanationRows = rows(cache.candidate_priority_explanation_rows);
@@ -167,6 +169,9 @@ export default function CandidateRadar() {
           { label: "promotion blockers", value: counts.candidate_radar_promotion_blocking_count as number | undefined, tone: Number(counts.candidate_radar_promotion_blocking_count ?? 0) ? "warn" : "good" },
           { label: "provider blockers", value: counts.candidate_radar_promotion_provider_blocker_count as number | undefined, tone: Number(counts.candidate_radar_promotion_provider_blocker_count ?? 0) ? "warn" : "good" },
           { label: "worker blockers", value: counts.candidate_radar_promotion_worker_blocker_count as number | undefined, tone: Number(counts.candidate_radar_promotion_worker_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "activation receipt", value: String(activationReceipt.status ?? "missing"), tone: activationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "activation blockers", value: counts.candidate_radar_activation_blocker_count as number | undefined, tone: Number(counts.candidate_radar_activation_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "activation pending", value: counts.candidate_radar_activation_pending_evidence_count as number | undefined, tone: Number(counts.candidate_radar_activation_pending_evidence_count ?? 0) ? "warn" : "good" },
           { label: "delta clarity", value: String(resultDeltaClarity.status ?? "missing"), tone: resultDeltaClarity.local_result_delta_clarity_ready === true ? "good" : "warn" },
           { label: "delta gaps", value: counts.result_delta_clarity_visible_gap_count as number | undefined, tone: Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "warn" : "good" },
           { label: "delta pending", value: counts.result_delta_clarity_pending_count as number | undefined, tone: Number(counts.result_delta_clarity_pending_count ?? 0) ? "warn" : "good" },
@@ -349,6 +354,17 @@ export default function CandidateRadar() {
         <p>此审计只读本地 cache 和合同，把 full-pool、deep-scan、provider-backed、browser QA、freshness 与交易隔离的生产阻断项集中显示；它不会运行扫描、不会调用 provider/model、不会解除旧雷达 fallback。</p>
         <DataLineageTable rows={objectRow(promotionBlockerAudit)} />
         <DataLineageTable rows={promotionBlockerRows} />
+      </PacketCard>
+
+      <PacketCard title="雷达生产化激活收据" subtitle="candidate_radar_production_activation_receipt；统一说明下一步可执行验收和仍缺的生产证据" status={String(activationReceipt.status ?? "missing")}>
+        <p>local_activation_receipt_ready: {String(activationReceipt.local_activation_receipt_ready === true)}</p>
+        <p>allowed_next_step: {String(activationReceipt.allowed_next_step ?? "--")}</p>
+        <p>production_radar_replacement_complete: {String(activationReceipt.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(activationReceipt.legacy_retirement_ready === true)}</p>
+        <p>full_pool_scan_done: {String(activationReceipt.full_pool_scan_done === true)}；deep_scan_done: {String(activationReceipt.deep_scan_done === true)}；provider_backed_acceptance_done: {String(activationReceipt.provider_backed_acceptance_done === true)}</p>
+        <p>pending_evidence_count: {String(activationReceipt.pending_evidence_count ?? 0)}；production_blocker_count: {String(activationReceipt.production_blocker_count ?? 0)}</p>
+        <p>此收据只把 full-pool worker、deep-scan worker、provider-backed parity、browser visual/performance 和 legacy retirement 证据串成下一步清单；它不会运行扫描、不会调用 provider/model、不会把候选变成买入指令。</p>
+        <DataLineageTable rows={objectRow(activationReceipt)} />
+        <DataLineageTable rows={activationReceiptRows} />
       </PacketCard>
 
       <PacketCard title="雷达结果变化清晰度" subtitle="result_delta_clarity_contract；有上一版持久化 cache 时执行本地 previous-cache diff，浏览器视觉验收仍需单独跑" status={String(resultDeltaClarity.status ?? "missing")}>

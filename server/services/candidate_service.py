@@ -2831,6 +2831,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view["no_feature_loss_acceptance_rows"] = rows
     view = _attach_replacement_gap_triage_contract(view)
     view = _attach_candidate_radar_promotion_blocker_audit(view)
+    view = _attach_candidate_radar_production_activation_receipt(view)
     return view
 
 
@@ -3293,6 +3294,256 @@ def _attach_candidate_radar_promotion_blocker_audit(packet: Mapping[str, Any]) -
     view["policy"] = policy
     view["candidate_radar_promotion_blocker_audit"] = contract
     view["candidate_radar_promotion_blocker_rows"] = rows
+    return view
+
+
+def _activation_receipt_row(
+    activation_key: str,
+    category: str,
+    status: str,
+    *,
+    local_ready: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "activation_key": activation_key,
+        "category": category,
+        "status": status,
+        "local_ready": bool(local_ready),
+        "production_blocker": bool(production_blocker),
+        "user_visible": True,
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _candidate_radar_production_activation_receipt(
+    packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    quick_receipt = _as_dict(packet.get("quick_scan_execution_receipt"))
+    no_loss = _as_dict(packet.get("no_feature_loss_acceptance_contract"))
+    replacement = _as_dict(packet.get("replacement_gap_triage_contract"))
+    promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
+    priority_explanation = _as_dict(packet.get("candidate_priority_explanation_contract"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    full_pool_plan = _as_dict(packet.get("full_pool_scan_plan"))
+    deep_scan_plan = _as_dict(packet.get("deep_scan_plan"))
+    policy = _as_dict(packet.get("policy"))
+    full_pool_done = full_pool_plan.get("full_pool_scan_done") is True
+    deep_scan_done = deep_scan_plan.get("deep_scan_done") is True
+    provider_acceptance_done = promotion.get("provider_backed_acceptance_done") is True
+    browser_review_ready = browser_review.get("local_browser_qa_review_ready") is True
+    trade_guard_ready = (
+        packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("candidate_is_not_buy_instruction") is not False
+    )
+    rows = [
+        _activation_receipt_row(
+            "local_quick_scan_receipt_ready",
+            "local_fast_path",
+            "passed" if quick_receipt.get("local_quick_scan_receipt_ready") is True else "blocked",
+            local_ready=quick_receipt.get("local_quick_scan_receipt_ready") is True,
+            production_blocker=False,
+            evidence=f"quick_status={quick_receipt.get('status')}; blockers={quick_receipt.get('local_blocker_count')}",
+            next_action="Keep cache/quick/watchlist/custom scan receipt visible before comparing candidates.",
+        ),
+        _activation_receipt_row(
+            "no_feature_loss_surface_ready",
+            "feature_parity",
+            "passed" if no_loss.get("local_no_feature_loss_contract_ready") is True else "blocked",
+            local_ready=no_loss.get("local_no_feature_loss_contract_ready") is True,
+            production_blocker=False,
+            evidence=f"no_loss_status={no_loss.get('status')}; visible_gaps={no_loss.get('visible_gap_count')}",
+            next_action="Keep legacy signal, output, provider, freshness, and runtime gaps visible.",
+        ),
+        _activation_receipt_row(
+            "production_promotion_blocked_visible",
+            "promotion_boundary",
+            "passed" if promotion.get("local_promotion_audit_ready") is True else "blocked",
+            local_ready=promotion.get("local_promotion_audit_ready") is True,
+            production_blocker=promotion.get("promotion_ready") is not True,
+            evidence=f"promotion_ready={promotion.get('promotion_ready')}; blockers={promotion.get('blocking_promotion_count')}",
+            next_action="Use the blocker audit as the promotion checklist; do not treat it as promotion evidence.",
+        ),
+        _activation_receipt_row(
+            "full_pool_worker_execution_required",
+            "worker_pipeline",
+            "completed" if full_pool_done else "pending_worker_execution",
+            local_ready=True,
+            production_blocker=not full_pool_done,
+            evidence=f"full_pool_scan_done={full_pool_done}; plan_status={full_pool_plan.get('status')}",
+            next_action="Run future explicit worker-backed full-pool execution without page-render scanning.",
+        ),
+        _activation_receipt_row(
+            "deep_scan_worker_execution_required",
+            "worker_pipeline",
+            "completed" if deep_scan_done else "pending_worker_execution",
+            local_ready=True,
+            production_blocker=not deep_scan_done,
+            evidence=f"deep_scan_done={deep_scan_done}; plan_status={deep_scan_plan.get('status')}",
+            next_action="Run future guarded deep scan as a task; keep model/provider calls explicitly gated.",
+        ),
+        _activation_receipt_row(
+            "provider_backed_acceptance_required",
+            "provider_acceptance",
+            "completed" if provider_acceptance_done else "pending_provider_acceptance",
+            local_ready=True,
+            production_blocker=not provider_acceptance_done,
+            evidence=f"provider_backed_acceptance_done={provider_acceptance_done}",
+            next_action="Validate provider-backed radar parity only through explicit acceptance tasks.",
+        ),
+        _activation_receipt_row(
+            "browser_visual_performance_review_required",
+            "browser_qa",
+            "reviewed_local_artifact" if browser_review_ready else "pending_browser_review",
+            local_ready=True,
+            production_blocker=True,
+            evidence=f"local_browser_qa_review_ready={browser_review_ready}; durable_ci_evidence_complete=false",
+            next_action="Promote only durable visual and performance evidence after explicit review.",
+        ),
+        _activation_receipt_row(
+            "legacy_retirement_stays_blocked",
+            "legacy_retirement",
+            "blocked" if replacement.get("legacy_retirement_ready") is not True else "ready_for_review",
+            local_ready=True,
+            production_blocker=replacement.get("legacy_retirement_ready") is not True,
+            evidence=f"legacy_retirement_ready={replacement.get('legacy_retirement_ready')}; blocking_gaps={replacement.get('blocking_gap_count')}",
+            next_action="Keep Streamlit fallback until full/deep/provider/browser evidence clears the retirement gate.",
+        ),
+        _activation_receipt_row(
+            "priority_explanation_research_only",
+            "research_boundary",
+            "passed"
+            if priority_explanation.get("priority_explanation_is_not_trade_signal") is True
+            else "blocked",
+            local_ready=priority_explanation.get("priority_explanation_is_not_trade_signal") is True,
+            production_blocker=False,
+            evidence=f"cached_rank_preserved={priority_explanation.get('cached_rank_preserved')}; rescore={priority_explanation.get('does_not_recompute_score') is not True}",
+            next_action="Keep candidate priority explanations as cache-rank explanations, not trade signals.",
+        ),
+        _activation_receipt_row(
+            "trade_action_isolation_preserved",
+            "safety",
+            "passed" if trade_guard_ready else "blocked",
+            local_ready=trade_guard_ready,
+            production_blocker=not trade_guard_ready,
+            evidence="Candidate Radar remains isolated from action, holdings, orders, and broker paths.",
+            next_action="Keep radar promotion separate from any future trading integration.",
+        ),
+        _activation_receipt_row(
+            "no_external_calls_from_receipt",
+            "safety",
+            "passed"
+            if policy.get("does_not_call_tushare") is True
+            and policy.get("does_not_call_deepseek") is True
+            and policy.get("does_not_call_github") is True
+            else "blocked",
+            local_ready=policy.get("does_not_call_tushare") is True
+            and policy.get("does_not_call_deepseek") is True
+            and policy.get("does_not_call_github") is True,
+            production_blocker=False,
+            evidence="Activation receipt is computed from the local packet and does not invoke providers, models, or remote services.",
+            next_action="Preserve GET/cache/render no-provider boundaries and keep external-capable work POST gated.",
+        ),
+    ]
+    local_blockers = [row["activation_key"] for row in rows if not row.get("local_ready")]
+    production_blockers = [row["activation_key"] for row in rows if row.get("production_blocker")]
+    missing_evidence_items = [
+        key
+        for key, done in {
+            "full_pool_worker_execution_evidence": full_pool_done,
+            "deep_scan_worker_execution_evidence": deep_scan_done,
+            "provider_backed_parity_call_ledger": provider_acceptance_done,
+            "browser_visual_performance_review": False,
+            "durable_ci_or_packaged_runtime_evidence": False,
+            "legacy_retirement_acceptance": replacement.get("legacy_retirement_ready") is True,
+        }.items()
+        if not done
+    ]
+    local_ready = not local_blockers
+    contract = {
+        "schema_version": "candidate_radar_production_activation_receipt.v1",
+        "status": (
+            "candidate_radar_activation_receipt_ready_production_blocked"
+            if local_ready
+            else "candidate_radar_activation_receipt_blocked"
+        ),
+        "scope": "local_candidate_radar_activation_receipt_no_execution_or_provider_call",
+        "ltg": "LTG-13",
+        "local_activation_receipt_ready": local_ready,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "full_pool_scan_done": full_pool_done,
+        "deep_scan_done": deep_scan_done,
+        "provider_backed_acceptance_done": provider_acceptance_done,
+        "browser_visual_performance_reviewed": False,
+        "durable_ci_evidence_complete": False,
+        "candidate_is_not_buy_instruction": True,
+        "allowed_next_step": "explicit_worker_full_pool_and_deep_scan_acceptance_then_provider_backed_parity_and_browser_review",
+        "not_allowed_next_steps": [
+            "treat quick scan as production radar replacement",
+            "treat full_pool_plan as full_pool_scan_done",
+            "treat deep_scan_plan as deep_scan_done",
+            "promote local browser artifact without explicit review",
+            "call Tushare/DeepSeek/GitHub from GET cache or render",
+            "treat candidates as buy instructions",
+            "modify strategy action",
+        ],
+        "missing_evidence_items": missing_evidence_items,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "pending_evidence_count": len(missing_evidence_items),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This receipt only organizes the remaining activation evidence. It does not execute full-pool/deep-scan work, call providers/models, promote browser artifacts, retire legacy radar, or complete production replacement.",
+    }
+    return contract, rows
+
+
+def _attach_candidate_radar_production_activation_receipt(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    contract, rows = _candidate_radar_production_activation_receipt(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_activation_receipt_ready"] = contract["local_activation_receipt_ready"]
+    counts["candidate_radar_activation_blocker_count"] = contract["production_blocker_count"]
+    counts["candidate_radar_activation_pending_evidence_count"] = contract["pending_evidence_count"]
+    counts["candidate_radar_activation_row_count"] = contract["row_count"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_activation_receipt_is_local"] = True
+    policy["candidate_radar_activation_receipt_is_not_production_replacement"] = True
+    policy["candidate_radar_activation_requires_worker_provider_browser_evidence"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_production_activation_receipt",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=contract["status"],
+        )
+    )
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["candidate_radar_production_activation_receipt"] = contract
+    view["candidate_radar_production_activation_rows"] = rows
     return view
 
 
