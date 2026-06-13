@@ -56,6 +56,106 @@ VALIDATION_TARGET_GROUPS = (
     ("financial_disclosure", "财务披露", FINANCIAL_DISCLOSURE_REFRESH_APIS),
     ("hard_risk", "硬风险公告", HARD_RISK_REFRESH_APIS),
 )
+PROVIDER_TARGET_SAMPLE_REQUIREMENTS = {
+    "trade_calendar": {
+        "sample_window": "long_window_covering_open_closed_rows_weekends_holidays_and_latest_completed_session",
+        "context_groups": (("start_date",), ("end_date",)),
+        "required_success_evidence": (
+            "open_and_closed_calendar_rows",
+            "latest_completed_trade_date_resolved",
+            "holiday_and_weekend_boundary_covered",
+        ),
+        "required_failure_evidence": (
+            "empty_window_distinguished",
+            "parse_failure_safe",
+            "fallback_calendar_warning_visible",
+        ),
+    },
+    "margin_financing": {
+        "sample_window": "target_stock_trade_date_or_start_end_window",
+        "context_groups": (("ts_code",), ("trade_date", "start_date"), ("trade_date", "end_date")),
+        "required_success_evidence": (
+            "target_stock_margin_rows_or_valid_empty_window",
+            "row_count_and_data_date_recorded",
+            "permission_state_distinguished",
+        ),
+        "required_failure_evidence": (
+            "permission_denied_distinguished",
+            "empty_window_distinguished",
+            "missing_ts_code_preflight_blocked",
+        ),
+    },
+    "dragon_tiger": {
+        "sample_window": "target_stock_trade_date_with_top_list_and_top_inst_cross_check",
+        "context_groups": (("ts_code",), ("trade_date",)),
+        "required_success_evidence": (
+            "top_list_trade_date_rows_or_valid_empty",
+            "top_inst_trade_date_rows_or_valid_empty",
+            "institution_seat_result_semantics_visible",
+        ),
+        "required_failure_evidence": (
+            "permission_denied_distinguished",
+            "empty_window_distinguished",
+            "parse_failure_safe",
+        ),
+    },
+    "limit_emotion": {
+        "sample_window": "target_stock_limit_window_with_limit_type_where_supported",
+        "context_groups": (("ts_code",), ("trade_date", "start_date"), ("trade_date", "end_date")),
+        "required_success_evidence": (
+            "stk_limit_rows_or_valid_empty",
+            "limit_list_d_rows_or_valid_empty",
+            "limit_cpt_list_rows_or_valid_empty",
+        ),
+        "required_failure_evidence": (
+            "limit_type_or_empty_window_distinguished",
+            "permission_denied_distinguished",
+            "parse_failure_safe",
+        ),
+    },
+    "chip_distribution": {
+        "sample_window": "target_stock_chip_window_with_cyq_perf_and_cyq_chips",
+        "context_groups": (("ts_code",), ("trade_date", "start_date"), ("trade_date", "end_date")),
+        "required_success_evidence": (
+            "cyq_perf_rows_or_valid_empty",
+            "cyq_chips_rows_or_valid_empty",
+            "chip_date_context_recorded",
+        ),
+        "required_failure_evidence": (
+            "permission_denied_distinguished",
+            "empty_window_distinguished",
+            "parse_failure_safe",
+        ),
+    },
+    "financial_disclosure": {
+        "sample_window": "target_stock_announcement_or_period_window_for_forecast_and_fina_indicator",
+        "context_groups": (("ts_code",), ("ann_date", "period", "start_date"), ("ann_date", "period", "end_date")),
+        "required_success_evidence": (
+            "forecast_rows_or_valid_empty",
+            "fina_indicator_rows_or_valid_empty",
+            "announcement_or_period_context_recorded",
+        ),
+        "required_failure_evidence": (
+            "permission_denied_distinguished",
+            "empty_window_distinguished",
+            "parse_failure_safe",
+        ),
+    },
+    "hard_risk": {
+        "sample_window": "target_stock_announcement_float_pledge_and_survival_windows",
+        "context_groups": (("ts_code",), ("ann_date", "float_date", "trade_date", "end_date", "start_date")),
+        "required_success_evidence": (
+            "announcement_rows_or_valid_empty",
+            "holder_float_pledge_rows_or_valid_empty",
+            "survival_status_rows_or_valid_empty",
+        ),
+        "required_failure_evidence": (
+            "permission_denied_distinguished",
+            "empty_window_distinguished",
+            "parse_failure_safe",
+        ),
+    },
+}
 PARQUET_DATASETS = {
     "daily": "daily",
     "daily_basic": "daily_basic",
@@ -980,6 +1080,143 @@ def _request_parameter_qa_contract(selected_apis: Iterable[str], payload: Any) -
     }
 
 
+def _provider_target_sample_plan_contract(
+    *,
+    selected_apis: Iterable[str],
+    payload: Any,
+    api_validation_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    selected_set = set(selected_apis)
+    validation_by_api = {str(row.get("api") or ""): row for row in api_validation_rows}
+    safe_payload = _safe_payload(payload)
+    if "ticker" in safe_payload and "ts_code" not in safe_payload:
+        safe_payload["ts_code"] = safe_payload["ticker"]
+    if "symbol" in safe_payload and "ts_code" not in safe_payload:
+        safe_payload["ts_code"] = safe_payload["symbol"]
+    provided_context_fields = sorted(
+        key
+        for key, value in safe_payload.items()
+        if key in {"ts_code", "trade_date", "start_date", "end_date", "ann_date", "period", "float_date", "limit_type"}
+        and value not in (None, "")
+    )
+
+    rows: list[dict[str, Any]] = []
+    for target_key, label, apis in VALIDATION_TARGET_GROUPS:
+        requirement = PROVIDER_TARGET_SAMPLE_REQUIREMENTS[target_key]
+        target_apis = list(apis)
+        selected_target_apis = [api for api in target_apis if api in selected_set]
+        missing_target_apis = [api for api in target_apis if api not in selected_set]
+        target_validation_rows = [validation_by_api[api] for api in target_apis if api in validation_by_api]
+        selected_rows = [row for row in target_validation_rows if row.get("selected")]
+        called_rows = [row for row in selected_rows if row.get("called")]
+        non_empty_success_rows = [
+            row
+            for row in selected_rows
+            if row.get("call_status") == "success" and int(row.get("row_count") or 0) > 0
+        ]
+        empty_or_failed_rows = [
+            row
+            for row in selected_rows
+            if row.get("call_status") in {"empty", "failed"} or str(row.get("call_status") or "").startswith("blocked_")
+        ]
+        missing_required_rows = [
+            row
+            for row in selected_rows
+            if str(row.get("call_status") or "").startswith("blocked_missing_")
+            or row.get("failure_mode") == "missing_required_parameter"
+        ]
+        missing_context_groups = [
+            " or ".join(group)
+            for group in requirement["context_groups"]
+            if not any(field in provided_context_fields for field in group)
+        ]
+        if not selected_target_apis:
+            plan_status = "matrix_only_plan_pending"
+            plan_meaning = "本次没有选择该目标域接口；只展示未来 provider 样本验收计划。"
+        elif missing_target_apis:
+            plan_status = "partial_selection_plan_pending"
+            plan_meaning = "只选择了该目标域部分接口；未来真实验收必须覆盖该目标域全部接口。"
+        elif missing_required_rows:
+            plan_status = "blocked_missing_required_params"
+            plan_meaning = "本次选择存在 ts_code 等必需参数缺口；不能进入真实 provider 样本验收。"
+        elif missing_context_groups:
+            plan_status = "sample_window_context_pending"
+            plan_meaning = "接口已选择且必需预检参数安全，但还缺真实样本窗口上下文。"
+        else:
+            plan_status = "ready_to_execute_provider_sample"
+            plan_meaning = "本地计划认为该目标域具备未来按钮任务验收所需参数上下文；仍需真实 provider-backed 样本证明。"
+        rows.append(
+            {
+                "target": target_key,
+                "label": label,
+                "apis": target_apis,
+                "selected_apis": selected_target_apis,
+                "missing_target_apis": missing_target_apis,
+                "sample_window": requirement["sample_window"],
+                "required_context_groups": [" or ".join(group) for group in requirement["context_groups"]],
+                "provided_context_fields": provided_context_fields,
+                "missing_context_groups": missing_context_groups,
+                "required_success_evidence": list(requirement["required_success_evidence"]),
+                "required_failure_evidence": list(requirement["required_failure_evidence"]),
+                "called_api_count": len(called_rows),
+                "non_empty_success_api_count": len(non_empty_success_rows),
+                "empty_or_failed_api_count": len(empty_or_failed_rows),
+                "missing_required_param_api_count": len(missing_required_rows),
+                "all_target_apis_selected": not missing_target_apis and bool(selected_target_apis),
+                "provider_sample_plan_status": plan_status,
+                "provider_sample_plan_meaning": plan_meaning,
+                "provider_backed_acceptance_done": False,
+                "provider_sample_acceptance_status": "provider_execution_pending",
+                "production_tushare_pipeline_complete": False,
+                "cache_get_external_calls": False,
+                "plan_external_calls_triggered": False,
+                "tushare_called_by_plan": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+
+    status_counts: dict[str, int] = {}
+    for row in rows:
+        row_status = str(row.get("provider_sample_plan_status") or "unknown")
+        status_counts[row_status] = status_counts.get(row_status, 0) + 1
+    ready_count = status_counts.get("ready_to_execute_provider_sample", 0)
+    blocked_count = sum(
+        status_counts.get(key, 0)
+        for key in (
+            "matrix_only_plan_pending",
+            "partial_selection_plan_pending",
+            "blocked_missing_required_params",
+            "sample_window_context_pending",
+        )
+    )
+    return {
+        "schema_version": "tushare_provider_target_sample_plan_contract.v1",
+        "status": "local_plan_ready_provider_execution_pending",
+        "scope": "local_target_sample_plan_not_provider_call",
+        "target_count": len(rows),
+        "ready_to_execute_target_count": ready_count,
+        "pending_or_blocked_target_count": blocked_count,
+        "status_counts": status_counts,
+        "selected_api_count": len(selected_set),
+        "declared_api_count": len(REFRESH_API_SPECS),
+        "provider_backed_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "plan_external_calls_triggered": False,
+        "tushare_called_by_plan": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "Provider target sample plan declares future real Tushare sample requirements only. It does not call Tushare and does not prove provider-backed acceptance.",
+    }
+
+
 def _rows_from_data(data: Any) -> list[dict[str, Any]]:
     if data is None:
         return []
@@ -1206,6 +1443,11 @@ def run_tushare_refresh_task(
     api_acceptance_audit = _api_acceptance_audit(api_validation_rows, call_ledger)
     failure_mode_qa_contract = _failure_mode_qa_contract(api_validation_rows, call_ledger)
     request_parameter_qa_contract = _request_parameter_qa_contract(selected_apis, payload)
+    provider_target_sample_plan_contract = _provider_target_sample_plan_contract(
+        selected_apis=selected_apis,
+        payload=payload,
+        api_validation_rows=api_validation_rows,
+    )
     provider_acceptance_readiness_audit = _provider_acceptance_readiness_audit(
         api_validation_rows=api_validation_rows,
         validation_target_rows=validation_target_rows,
@@ -1244,6 +1486,9 @@ def run_tushare_refresh_task(
         "request_parameter_qa_contract": request_parameter_qa_contract,
         "request_parameter_qa_rows": request_parameter_qa_contract["rows"],
         "request_parameter_qa_status": request_parameter_qa_contract["status"],
+        "provider_target_sample_plan_contract": provider_target_sample_plan_contract,
+        "provider_target_sample_plan_rows": provider_target_sample_plan_contract["rows"],
+        "provider_target_sample_plan_status": provider_target_sample_plan_contract["status"],
         "provider_acceptance_readiness_audit": provider_acceptance_readiness_audit,
         "provider_acceptance_readiness_rows": provider_acceptance_readiness_audit["rows"],
         "provider_acceptance_readiness_status": provider_acceptance_readiness_audit["status"],
@@ -1256,6 +1501,7 @@ def run_tushare_refresh_task(
             "provider_acceptance_readiness_scope": "provider_acceptance_readiness_audit 只汇总生产验收阻断项；不把 fake/local/matrix 证据当 provider-backed acceptance。",
             "failure_mode_qa_scope": "failure_mode_qa_contract 只分类现有 call_ledger 的 empty/permission/parse/missing-param/provider-error 状态；不发起 provider 调用。",
             "request_parameter_qa_scope": "request_parameter_qa_contract 只审计安全参数、ts_code 预检和日期上下文字段；不发起 provider 调用。",
+            "provider_target_sample_plan_scope": "provider_target_sample_plan_contract 只声明未来真实样本验收所需目标域、接口、窗口上下文和证据；不发起 provider 调用。",
             "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
             "cache_get_external_calls": False,
             "button_gated_external_calls_only": True,
@@ -1281,6 +1527,8 @@ def run_tushare_refresh_task(
         "request_parameter_qa_missing_required_count": request_parameter_qa_contract["missing_required_preflight_api_count"],
         "request_parameter_qa_unsafe_param_count": request_parameter_qa_contract["unsafe_request_param_api_count"],
         "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
+        "provider_target_sample_plan_ready_count": provider_target_sample_plan_contract["ready_to_execute_target_count"],
+        "provider_target_sample_plan_pending_count": provider_target_sample_plan_contract["pending_or_blocked_target_count"],
         "provider_acceptance_production_blocker_count": provider_acceptance_readiness_audit["production_blocker_count"],
         "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
         "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],

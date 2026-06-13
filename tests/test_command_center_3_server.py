@@ -3709,6 +3709,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["api_validation_target_summary"]["matrix_only_target_count"], 7)
         self.assertEqual(persisted["api_validation_target_summary"]["validated_target_count"], 0)
         self.assertEqual(persisted["api_validation_matrix_policy"]["call_ledger_required_fields"][0], "api")
+        sample_plan = persisted["provider_target_sample_plan_contract"]
+        sample_plan_rows = {row["target"]: row for row in persisted["provider_target_sample_plan_rows"]}
+        self.assertEqual(sample_plan["schema_version"], "tushare_provider_target_sample_plan_contract.v1")
+        self.assertEqual(sample_plan["status"], "local_plan_ready_provider_execution_pending")
+        self.assertEqual(sample_plan["scope"], "local_target_sample_plan_not_provider_call")
+        self.assertEqual(sample_plan["target_count"], 7)
+        self.assertEqual(sample_plan["ready_to_execute_target_count"], 0)
+        self.assertEqual(sample_plan["pending_or_blocked_target_count"], 7)
+        self.assertFalse(sample_plan["provider_backed_acceptance_done"])
+        self.assertFalse(sample_plan["production_tushare_pipeline_complete"])
+        self.assertFalse(sample_plan["plan_external_calls_triggered"])
+        self.assertFalse(sample_plan["tushare_called_by_plan"])
+        self.assertEqual(sample_plan_rows["trade_calendar"]["provider_sample_plan_status"], "matrix_only_plan_pending")
+        self.assertIn("start_date", sample_plan_rows["trade_calendar"]["required_context_groups"])
+        self.assertIn("open_and_closed_calendar_rows", sample_plan_rows["trade_calendar"]["required_success_evidence"])
+        self.assertIn("provider_target_sample_plan_scope", persisted["api_validation_matrix_policy"])
 
     def test_tushare_refresh_task_validates_trade_calendar_and_extended_apis_without_false_parquet_claims(self):
         db_path = self._with_meta_store()
@@ -3894,6 +3910,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(request_rows["top_list"]["missing_required_preflight_params"], [])
         self.assertEqual(request_rows["daily"]["status"], "matrix_only")
         self.assertFalse(request_rows["daily"]["request_params_safe_has_secret_key"])
+        sample_plan = persisted["provider_target_sample_plan_contract"]
+        sample_plan_rows = {row["target"]: row for row in persisted["provider_target_sample_plan_rows"]}
+        self.assertEqual(sample_plan["status"], "local_plan_ready_provider_execution_pending")
+        self.assertEqual(sample_plan["ready_to_execute_target_count"], 3)
+        self.assertEqual(sample_plan["pending_or_blocked_target_count"], 4)
+        self.assertFalse(sample_plan["provider_backed_acceptance_done"])
+        self.assertFalse(sample_plan["production_tushare_pipeline_complete"])
+        self.assertFalse(sample_plan["cache_get_external_calls"])
+        self.assertFalse(sample_plan["plan_external_calls_triggered"])
+        self.assertEqual(sample_plan_rows["trade_calendar"]["provider_sample_plan_status"], "ready_to_execute_provider_sample")
+        self.assertEqual(sample_plan_rows["margin_financing"]["provider_sample_plan_status"], "ready_to_execute_provider_sample")
+        self.assertEqual(sample_plan_rows["limit_emotion"]["provider_sample_plan_status"], "ready_to_execute_provider_sample")
+        self.assertEqual(sample_plan_rows["dragon_tiger"]["provider_sample_plan_status"], "sample_window_context_pending")
+        self.assertEqual(sample_plan_rows["financial_disclosure"]["provider_sample_plan_status"], "partial_selection_plan_pending")
+        self.assertEqual(sample_plan_rows["hard_risk"]["provider_sample_plan_status"], "partial_selection_plan_pending")
+        self.assertEqual(sample_plan_rows["chip_distribution"]["provider_sample_plan_status"], "matrix_only_plan_pending")
+        self.assertIn("trade_date", sample_plan_rows["dragon_tiger"]["missing_context_groups"])
+        self.assertIn("top_inst_trade_date_rows_or_valid_empty", sample_plan_rows["dragon_tiger"]["required_success_evidence"])
+        self.assertEqual(sample_plan_rows["trade_calendar"]["provider_sample_acceptance_status"], "provider_execution_pending")
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -3998,6 +4033,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(request_rows["daily"]["qa_external_calls_triggered"])
         self.assertEqual(request_rows["trade_cal"]["status"], "request_params_safe")
         self.assertIn("start_date", request_rows["trade_cal"]["provided_date_context_params"])
+        sample_plan = persisted["provider_target_sample_plan_contract"]
+        sample_plan_rows = {row["target"]: row for row in persisted["provider_target_sample_plan_rows"]}
+        self.assertEqual(sample_plan["status"], "local_plan_ready_provider_execution_pending")
+        self.assertEqual(sample_plan["ready_to_execute_target_count"], 1)
+        self.assertEqual(sample_plan["pending_or_blocked_target_count"], 6)
+        self.assertFalse(sample_plan["provider_backed_acceptance_done"])
+        self.assertFalse(sample_plan["production_tushare_pipeline_complete"])
+        self.assertFalse(sample_plan["plan_external_calls_triggered"])
+        self.assertEqual(sample_plan_rows["trade_calendar"]["provider_sample_plan_status"], "ready_to_execute_provider_sample")
+        self.assertEqual(sample_plan_rows["margin_financing"]["provider_sample_plan_status"], "blocked_missing_required_params")
+        self.assertEqual(sample_plan_rows["dragon_tiger"]["provider_sample_plan_status"], "blocked_missing_required_params")
+        self.assertEqual(sample_plan_rows["chip_distribution"]["provider_sample_plan_status"], "blocked_missing_required_params")
+        self.assertGreater(sample_plan_rows["hard_risk"]["missing_required_param_api_count"], 0)
+        self.assertEqual(sample_plan_rows["hard_risk"]["provider_sample_acceptance_status"], "provider_execution_pending")
 
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
@@ -4748,6 +4797,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("ts_code preflight", by_type["refresh_tushare_facts"]["request_parameter_qa_contract"])
         self.assertIn("date context params", by_type["refresh_tushare_facts"]["request_parameter_qa_contract"])
         self.assertFalse(by_type["refresh_tushare_facts"]["request_parameter_qa_is_provider_acceptance"])
+        self.assertIn("target-domain sample windows", by_type["refresh_tushare_facts"]["provider_target_sample_plan_contract"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["provider_target_sample_plan_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
@@ -4761,6 +4812,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["refresh_factor_data"]["failure_mode_qa_is_provider_acceptance"])
         self.assertIn("request_parameter_qa_contract", by_type["refresh_factor_data"]["request_parameter_qa_contract"])
         self.assertFalse(by_type["refresh_factor_data"]["request_parameter_qa_is_provider_acceptance"])
+        self.assertIn("provider_target_sample_plan_contract", by_type["refresh_factor_data"]["provider_target_sample_plan_contract"])
+        self.assertFalse(by_type["refresh_factor_data"]["provider_target_sample_plan_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_factor_data"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])

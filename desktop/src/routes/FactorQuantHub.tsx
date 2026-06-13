@@ -74,6 +74,7 @@ export default function FactorQuantHub() {
   const factorTestProductionValidation = factorTests.production_validation_qa_contract ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
+  const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -112,6 +113,8 @@ export default function FactorQuantHub() {
   const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
   const tushareRequestParameterQaRows = objectRows(tushareRequestParameterQa as Record<string, unknown>, "request_parameter_contract");
   const tushareRequestParameterCriterionRows = toRows(packet.request_parameter_qa_rows);
+  const tushareProviderTargetSamplePlanRows = objectRows(tushareProviderTargetSamplePlan as Record<string, unknown>, "target_sample_plan");
+  const tushareProviderTargetSamplePlanCriterionRows = toRows(packet.provider_target_sample_plan_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -248,7 +251,10 @@ export default function FactorQuantHub() {
           { label: "failure unsafe rows", value: tushareFailureModeQa.unsafe_row_count ?? 0, tone: Number(tushareFailureModeQa.unsafe_row_count ?? 0) > 0 ? "bad" : "good" },
           { label: "Tushare param QA", value: tushareRequestParameterQa.status ?? "missing", tone: tushareRequestParameterQa.status === "request_parameter_qa_blocked" ? "bad" : "warn" },
           { label: "missing params", value: tushareRequestParameterQa.missing_required_preflight_api_count ?? 0, tone: Number(tushareRequestParameterQa.missing_required_preflight_api_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "param unsafe rows", value: tushareRequestParameterQa.unsafe_request_param_api_count ?? 0, tone: Number(tushareRequestParameterQa.unsafe_request_param_api_count ?? 0) > 0 ? "bad" : "good" }
+          { label: "param unsafe rows", value: tushareRequestParameterQa.unsafe_request_param_api_count ?? 0, tone: Number(tushareRequestParameterQa.unsafe_request_param_api_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "Tushare sample plan", value: tushareProviderTargetSamplePlan.status ?? "missing", tone: tushareProviderTargetSamplePlan.provider_backed_acceptance_done === true ? "good" : "warn" },
+          { label: "sample plan ready", value: tushareProviderTargetSamplePlan.ready_to_execute_target_count ?? 0, tone: Number(tushareProviderTargetSamplePlan.ready_to_execute_target_count ?? 0) > 0 ? "warn" : "neutral" },
+          { label: "sample plan pending", value: tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0, tone: Number(tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0) > 0 ? "warn" : "good" }
         ]}
       />
       <EChartPanel option={option} />
@@ -369,6 +375,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">request_parameter_qa_contract 只审计按钮任务的安全参数、ts_code 预检阻断、日期上下文字段和 matrix-only 边界；date context 可见不等于 provider-backed 接口验收完成。</p>
       <DataLineageTable rows={tushareRequestParameterCriterionRows} />
       <DataLineageTable rows={tushareRequestParameterQaRows} />
+      <h3>Tushare 目标样本计划</h3>
+      <p className="risk-note">provider_target_sample_plan_contract 只声明后续真实验收的目标域、必选接口、样本窗口、成功证据和失败证据；ready_to_execute_provider_sample 也只是计划就绪，不等于 provider-backed acceptance。</p>
+      <DataLineageTable rows={tushareProviderTargetSamplePlanCriterionRows} />
+      <DataLineageTable rows={tushareProviderTargetSamplePlanRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>
