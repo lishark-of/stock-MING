@@ -71,6 +71,7 @@ export default function CandidateRadar() {
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
   const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
   const scanExecutionSummary = (cache.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
+  const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
@@ -87,6 +88,7 @@ export default function CandidateRadar() {
   const legacyOutputRows = rows(cache.legacy_output_contract_rows);
   const scanModeRows = rows(cache.scan_mode_status_rows);
   const scanAcceptanceRows = rows(cache.scan_acceptance_rows);
+  const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
@@ -121,6 +123,9 @@ export default function CandidateRadar() {
           { label: "待验证", value: counts.verify_count as number | undefined },
           { label: "scan mode", value: String(cache.scan_mode ?? "--") },
           { label: "scan family", value: String(scanExecutionSummary.scan_family ?? "--") },
+          { label: "fast readiness", value: String(fastScanReadinessAudit.status ?? "missing"), tone: fastScanReadinessAudit.local_fast_scan_ready === true ? "good" : "warn" },
+          { label: "fast blockers", value: counts.fast_scan_readiness_blocker_count as number | undefined, tone: Number(counts.fast_scan_readiness_blocker_count ?? 0) ? "bad" : "good" },
+          { label: "full replacement", value: fastScanReadinessAudit.production_radar_replacement_complete === true ? "完成" : "未完成", tone: fastScanReadinessAudit.production_radar_replacement_complete === true ? "bad" : "good" },
           { label: "universe", value: coverageDetail.universe_size as number | undefined },
           { label: "覆盖组", value: scanCoverage.mapped_signal_group_count as number | undefined },
           { label: "缺口组", value: scanCoverage.missing_signal_group_count as number | undefined, tone: scanCoverage.missing_signal_group_count ? "warn" : "good" },
@@ -220,6 +225,16 @@ export default function CandidateRadar() {
         <p>scan_acceptance_rows 把 provider gap、freshness、local pool、full-pool 和交易隔离逐项展示。</p>
         <DataLineageTable rows={objectRow(scanExecutionSummary)} />
         <DataLineageTable rows={scanAcceptanceRows} />
+      </PacketCard>
+
+      <PacketCard title="快扫 readiness 审计" subtitle="fast_scan_readiness_audit / rows；证明本地快扫不阻塞、不静默降能，但不代表 full-pool/deep-scan 完成" status={String(fastScanReadinessAudit.status ?? "missing")}>
+        <p>local_fast_scan_ready: {String(fastScanReadinessAudit.local_fast_scan_ready ?? false)}</p>
+        <p>production_radar_replacement_complete: {String(fastScanReadinessAudit.production_radar_replacement_complete ?? false)}</p>
+        <p>provider_backed_acceptance_done: {String(fastScanReadinessAudit.provider_backed_acceptance_done ?? false)}</p>
+        <p>full_pool_scan_done: {String(fastScanReadinessAudit.full_pool_scan_done ?? false)}</p>
+        <p>deep_scan_done: {String(fastScanReadinessAudit.deep_scan_done ?? false)}</p>
+        <DataLineageTable rows={objectRow(fastScanReadinessAudit)} />
+        <DataLineageTable rows={fastScanReadinessRows} />
       </PacketCard>
 
       <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>

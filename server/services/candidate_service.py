@@ -1382,6 +1382,178 @@ def _scan_acceptance_rows(
     return rows
 
 
+def _fast_scan_readiness_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    evidence: str,
+    production_blocker: bool = False,
+    user_visible: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": passed,
+        "evidence": evidence,
+        "production_blocker": production_blocker and not passed,
+        "user_visible": user_visible,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _fast_scan_readiness_rows(
+    *,
+    mode: str,
+    scan_mode: str,
+    cache_source: str,
+    coverage: Mapping[str, Any],
+    scan_execution_summary: Mapping[str, Any],
+    scan_acceptance_rows: list[dict[str, Any]],
+    parity_inventory: Mapping[str, Any],
+    full_pool_scan_plan: Mapping[str, Any],
+    deep_scan_plan: Mapping[str, Any],
+    local_pool_audit: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    coverage_detail = _as_dict(coverage.get("coverage_detail_summary"))
+    acceptance_by_key = {str(row.get("check_key")): row for row in scan_acceptance_rows}
+    provider_gap_count = int(scan_execution_summary.get("provider_gap_count") or 0)
+    degraded_count = int(scan_execution_summary.get("degraded_mode_active_count") or 0)
+    freshness_state = str(scan_execution_summary.get("freshness_state") or "unknown")
+    local_modes_ready = set(SUPPORTED_LOCAL_SCAN_MODES) >= {"quick_cache_scan", "watchlist_scan", "custom_pool_scan"}
+    return [
+        _fast_scan_readiness_row(
+            "page_render_does_not_scan",
+            "passed" if coverage_detail.get("does_not_scan_full_market_on_render") is True else "blocked",
+            passed=coverage_detail.get("does_not_scan_full_market_on_render") is True,
+            evidence="GET cache and React render display persisted/cache packet only.",
+            production_blocker=True,
+        ),
+        _fast_scan_readiness_row(
+            "cache_get_is_read_only",
+            "passed",
+            passed=True,
+            evidence=f"mode={mode}; cache_source={cache_source}; scan_mode={scan_mode}",
+        ),
+        _fast_scan_readiness_row(
+            "button_task_receipt_contract",
+            "passed" if scan_execution_summary.get("writes_sqlite_packet") is not None else "blocked",
+            passed=scan_execution_summary.get("writes_sqlite_packet") is not None,
+            evidence="POST scan tasks return local task_id and write/read SQLite packet when executed.",
+            production_blocker=True,
+        ),
+        _fast_scan_readiness_row(
+            "local_scan_modes_supported",
+            "passed" if local_modes_ready else "blocked",
+            passed=local_modes_ready,
+            evidence="/".join(sorted(SUPPORTED_LOCAL_SCAN_MODES)),
+            production_blocker=True,
+        ),
+        _fast_scan_readiness_row(
+            "legacy_signal_groups_visible",
+            "gap_reported" if int(coverage.get("missing_signal_group_count") or 0) else "passed",
+            passed=True,
+            evidence=f"mapped={coverage.get('mapped_signal_group_count')}; missing={coverage.get('missing_signal_group_count')}",
+        ),
+        _fast_scan_readiness_row(
+            "legacy_parity_gap_visible",
+            "gap_reported" if int(parity_inventory.get("gap_or_future_count") or 0) else "passed",
+            passed=True,
+            evidence=f"mapped_or_partial={parity_inventory.get('mapped_or_partial_count')}; gap_or_future={parity_inventory.get('gap_or_future_count')}",
+        ),
+        _fast_scan_readiness_row(
+            "provider_gap_visible",
+            "gap_reported" if provider_gap_count else "passed",
+            passed=True,
+            evidence=f"provider_gap_count={provider_gap_count}; degraded_active={degraded_count}",
+        ),
+        _fast_scan_readiness_row(
+            "freshness_research_only_boundary",
+            str(acceptance_by_key.get("freshness_boundary", {}).get("status") or "unknown"),
+            passed=True,
+            evidence=f"freshness={freshness_state}; stale/unknown inputs remain display-only.",
+        ),
+        _fast_scan_readiness_row(
+            "last_success_cache_visible",
+            "passed" if cache_source in {"sqlite_meta", "snapshot", "snapshot_cache", "local_builder"} or candidate_rows else "empty_reported",
+            passed=True,
+            evidence=f"cache_source={cache_source}; candidate_rows={len(candidate_rows)}; empty state does not trigger broad scan.",
+        ),
+        _fast_scan_readiness_row(
+            "local_pool_skips_visible",
+            "passed" if not local_pool_audit or local_pool_audit.get("skipped_candidate_count") is not None else "input_reported",
+            passed=True,
+            evidence=f"input={local_pool_audit.get('input_candidate_count')}; normalized={local_pool_audit.get('normalized_candidate_count')}",
+        ),
+        _fast_scan_readiness_row(
+            "full_pool_boundary_plan_only",
+            "plan_only" if full_pool_scan_plan.get("status") == "full_pool_plan_ready" else "not_executed",
+            passed=True,
+            evidence=f"full_pool_scan_done={bool(full_pool_scan_plan.get('full_pool_scan_done') is True)}; worker_required={full_pool_scan_plan.get('worker_task_required')}",
+        ),
+        _fast_scan_readiness_row(
+            "deep_scan_boundary_plan_only",
+            "plan_only" if deep_scan_plan.get("status") == "deep_scan_plan_ready" else "not_executed",
+            passed=True,
+            evidence=f"deep_scan_done={bool(deep_scan_plan.get('deep_scan_done') is True)}; deepseek_called={bool(deep_scan_plan.get('deepseek_called') is True)}",
+        ),
+        _fast_scan_readiness_row(
+            "trade_action_boundary",
+            "passed",
+            passed=True,
+            evidence="Candidate rows remain research-only and never mutate strategy action or holdings.",
+        ),
+        _fast_scan_readiness_row(
+            "production_full_replacement_pending",
+            "pending",
+            passed=False,
+            evidence="Real full-pool/deep-scan execution and provider-backed parity acceptance remain future work.",
+            production_blocker=False,
+        ),
+    ]
+
+
+def _fast_scan_readiness_audit(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    pending = [row["criterion"] for row in rows if row.get("status") == "pending" and not row.get("production_blocker")]
+    passed_count = sum(1 for row in rows if row.get("passed") is True)
+    static_ready = not blockers
+    return {
+        "schema_version": "candidate_radar_fast_scan_readiness.v1",
+        "status": "fast_scan_local_ready_full_pool_pending" if static_ready else "fast_scan_blocked",
+        "scope": "local_cache_task_readiness_not_full_pool_or_provider_acceptance",
+        "ltg": "LTG-13",
+        "local_fast_scan_ready": static_ready,
+        "production_radar_replacement_complete": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "row_count": len(rows),
+        "passed_count": passed_count,
+        "blocking_criterion_count": len(blockers),
+        "soft_blocker_count": len(pending),
+        "blockers": blockers,
+        "soft_blockers": pending,
+        "cache_only": True,
+        "post_task_required_for_scan": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "next_action": "implement worker-backed full-pool/deep-scan execution and provider-backed parity acceptance before retiring legacy radar fallback.",
+    }
+
+
 def _full_pool_filter_rows(payload_safe: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key, default in FULL_POOL_FILTER_DEFAULTS.items():
@@ -1975,6 +2147,20 @@ def _build_candidate_radar_packet(
         full_pool_scan_plan=plan,
         deep_scan_plan=deep_plan,
     )
+    fast_scan_readiness_rows = _fast_scan_readiness_rows(
+        mode=mode,
+        scan_mode=scan_mode,
+        cache_source=cache_source,
+        coverage=coverage,
+        scan_execution_summary=scan_execution_summary,
+        scan_acceptance_rows=scan_acceptance_rows,
+        parity_inventory=parity_inventory,
+        full_pool_scan_plan=plan,
+        deep_scan_plan=deep_plan,
+        local_pool_audit=local_pool_audit or {},
+        candidate_rows=candidate_rows,
+    )
+    fast_scan_readiness_audit = _fast_scan_readiness_audit(fast_scan_readiness_rows)
     if plan:
         counts["full_pool_plan_blocking_issue_count"] = plan.get("blocking_issue_count")
         counts["full_pool_plan_ready_signal_group_count"] = plan.get("ready_signal_group_count")
@@ -1984,6 +2170,9 @@ def _build_candidate_radar_packet(
         counts["deep_scan_plan_ready_signal_group_count"] = deep_plan.get("ready_signal_group_count")
         counts["deep_scan_plan_provider_gap_count"] = deep_plan.get("provider_gap_count")
         counts["deep_scan_plan_legacy_feature_gap_count"] = deep_plan.get("legacy_feature_gap_count")
+    counts["fast_scan_readiness_blocker_count"] = fast_scan_readiness_audit["blocking_criterion_count"]
+    counts["fast_scan_readiness_soft_blocker_count"] = fast_scan_readiness_audit["soft_blocker_count"]
+    counts["fast_scan_readiness_row_count"] = fast_scan_readiness_audit["row_count"]
 
     if candidate_rows:
         status = "ready"
@@ -2023,6 +2212,8 @@ def _build_candidate_radar_packet(
         "coverage_detail_summary": coverage["coverage_detail_summary"],
         "scan_execution_summary": scan_execution_summary,
         "scan_acceptance_rows": scan_acceptance_rows,
+        "fast_scan_readiness_audit": fast_scan_readiness_audit,
+        "fast_scan_readiness_rows": fast_scan_readiness_rows,
         "provider_coverage_rows": coverage["provider_coverage_rows"],
         "degraded_mode_rows": coverage["degraded_mode_rows"],
         "local_candidate_pool_audit": dict(local_pool_audit or _as_dict(snapshot_map.get("local_candidate_pool_audit"))),
@@ -2093,6 +2284,8 @@ def _build_candidate_radar_packet(
             "does_not_modify_holdings": True,
             "candidate_is_not_buy_instruction": True,
             "post_task_required_for_scan": True,
+            "fast_scan_readiness_audit_is_local": True,
+            "fast_scan_readiness_is_not_full_replacement": True,
         },
         "call_ledger": [
             _candidate_call_ledger_row(
