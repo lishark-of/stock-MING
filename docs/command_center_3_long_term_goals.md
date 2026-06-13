@@ -783,11 +783,13 @@ Retire Streamlit from primary user workflow
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
 - `GET /api/audit/cache` now exposes `release_gate_readiness_audit`, `release_gate_readiness_rows`, and local workflow inventory. This is a static local contract check for `scripts/push_gate_3_0.sh`, not a CI status check and not production completion proof.
+- `GET /api/audit/cache` now also exposes `ci_notification_triage_contract` and `ci_notification_triage_rows`: a local-only triage contract for GitHub Actions failure emails. It separates local push-gate readiness, static CI mirror presence, stale-email risk, and the remote failed step/log evidence still required from the Actions run page. It does not call GitHub API, fetch workflow logs, or prove the remote run is green.
 - `.github/workflows/command-center-3-push-gate.yml` now mirrors the local push gate by creating `.venv`, installing desktop dependencies, and running `scripts/push_gate_3_0.sh` with `PYTHON_BIN=.venv/bin/python`.
 
 ### Gaps
 
 - CI mirror workflow exists, but remote CI status is still not local proof until a pushed run is inspected; current audit only proves static workflow presence.
+- CI failure email triage is visible, but it only tells the user which remote evidence is required: matching commit/head, failed step name, and safe log excerpt. It cannot dismiss a failure email or mark CI green without that remote run evidence.
 - Push gate still needs periodic review of false-positive allowlists; current audit keeps `false_positive_allowlist_review_pending` visible.
 - Structured keyword review is present, but it is still a local classification contract; periodic human allowlist review and remote CI evidence remain separate.
 - Tushare acceptance contract is present, but it is still a local matrix/readiness guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
@@ -835,12 +837,15 @@ Retire Streamlit from primary user workflow
 - Streamlit legacy contract runs after Tauri desktop and before static motion QA, and keeps `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, and `does_not_open_streamlit=true` visible.
 - Trade isolation contract runs after Streamlit legacy and before static motion QA, and keeps `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, and `future_real_trading_requires_separate_project=true` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
+- `ci_notification_triage_contract.status=ci_notification_triage_ready_remote_logs_required` is visible in the audit cache, while `remote_actions_status_known=false`, `remote_failure_logs_available=false`, `latest_remote_run_verified_green=false`, and `can_dismiss_failure_email_without_matching_head_and_logs=false` remain explicit until the failed Actions run is inspected.
 
 ### Forbidden
 
 - Do not bypass failing tests.
 - Do not use `git add .`.
 - Do not push without user confirmation.
+- Do not treat a local push-gate pass, static CI mirror, old email notification, or CI triage contract as proof that the latest remote Actions run passed.
+- Do not fetch GitHub Actions logs from cache APIs or page render.
 
 ### Recommended Commit Message
 

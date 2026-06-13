@@ -34,6 +34,8 @@ export default function CallLedgerAudit() {
   const releaseGateAudit = (cache.release_gate_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const releaseGateRows = rows(cache.release_gate_readiness_rows);
   const releaseGateWorkflowRows = rows(cache.release_gate_workflow_rows);
+  const ciNotificationTriage = (cache.ci_notification_triage_contract as Record<string, unknown> | undefined) ?? {};
+  const ciNotificationTriageRows = rows(cache.ci_notification_triage_rows);
   const motionClarityAudit = (cache.motion_clarity_audit as Record<string, unknown> | undefined) ?? {};
   const motionClarityRows = rows(cache.motion_clarity_rows);
   const motionProductionQa = (cache.motion_production_qa_contract as Record<string, unknown> | undefined) ?? {};
@@ -104,6 +106,8 @@ export default function CallLedgerAudit() {
           { label: "gate blockers", value: counts.release_gate_blocker_count as number | undefined, tone: Number(counts.release_gate_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "gate checks", value: counts.release_gate_check_count as number | undefined },
           { label: "workflow files", value: counts.release_gate_workflow_count as number | undefined },
+          { label: "CI mail triage", value: ciNotificationTriage.status as string | undefined, tone: ciNotificationTriage.remote_actions_status_known === true ? "good" : "warn" },
+          { label: "remote log needed", value: counts.ci_notification_pending_remote_evidence_count as number | undefined, tone: Number(counts.ci_notification_pending_remote_evidence_count ?? 0) > 0 ? "warn" : "good" },
           { label: "motion clarity", value: motionClarityAudit.status as string | undefined, tone: motionClarityAudit.static_ready === true ? "good" : "warn" },
           { label: "motion blockers", value: counts.motion_clarity_blocker_count as number | undefined, tone: Number(counts.motion_clarity_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "motion visual QA", value: motionClarityAudit.visual_qa_complete === true ? "完成" : "待验收", tone: motionClarityAudit.visual_qa_complete === true ? "good" : "warn" },
@@ -201,6 +205,19 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="CI mirror static inventory" subtitle="只读列出 .github/workflows；不调用 GitHub API" status="ci_static_inventory">
         <DataLineageTable rows={releaseGateWorkflowRows} />
+      </PacketCard>
+
+      <PacketCard title="CI failure email triage" subtitle="ci_notification_triage_contract：本地分流失败邮件，不读取 GitHub run 日志" status={String(ciNotificationTriage.status ?? "missing")}>
+        <p>scope: {String(ciNotificationTriage.scope ?? "local_ci_failure_email_triage_no_github_api")}</p>
+        <p>local_gate_ready: {String(ciNotificationTriage.local_gate_ready ?? false)}；ci_mirror_ready: {String(ciNotificationTriage.ci_mirror_ready ?? false)}</p>
+        <p>remote_actions_status_known: {String(ciNotificationTriage.remote_actions_status_known === true)}；remote_failure_logs_available: {String(ciNotificationTriage.remote_failure_logs_available === true)}</p>
+        <p>remote_logs_required_for_root_cause: {String(ciNotificationTriage.remote_logs_required_for_root_cause === true)}</p>
+        <p>can_dismiss_failure_email_without_matching_head_and_logs: {String(ciNotificationTriage.can_dismiss_failure_email_without_matching_head_and_logs === true)}</p>
+        <p>requires_failed_step_name: {String(ciNotificationTriage.requires_failed_step_name === true)}；requires_failed_log_excerpt: {String(ciNotificationTriage.requires_failed_log_excerpt === true)}</p>
+        <p>local_pass_is_not_ci_status: {String(ciNotificationTriage.local_pass_is_not_ci_status === true)}；old_email_may_be_stale: {String(ciNotificationTriage.old_email_may_be_stale === true)}</p>
+        <p>该分流只读本地 workflow 和 push gate 合同；失败邮件的根因仍必须用 Actions 页面里的失败步骤名和日志片段确认。</p>
+        <DataLineageTable rows={[ciNotificationTriage]} />
+        <DataLineageTable rows={ciNotificationTriageRows} />
       </PacketCard>
 
       <PacketCard title="Motion clarity readiness" subtitle="LTG-14：只读静态审计 React/CSS 动效边界，不代表浏览器视觉验收完成" status={String(motionClarityAudit.status ?? "missing")}>

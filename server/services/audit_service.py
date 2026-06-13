@@ -37,6 +37,7 @@ from server.services import (
 PACKET_KEY = "command_center_3_call_ledger_audit_cache"
 SCHEMA_VERSION = "call_ledger_audit_cache.v1"
 RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
+CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION = "command_center_3_ci_notification_triage.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
@@ -1119,6 +1120,120 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     return audit, rows, workflow_rows
 
 
+def _ci_notification_triage_contract(
+    release_gate_readiness_audit: Mapping[str, Any],
+    release_gate_workflow_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    push_gate_workflow = next(
+        (
+            row
+            for row in release_gate_workflow_rows
+            if str(row.get("workflow") or "").endswith("command-center-3-push-gate.yml")
+        ),
+        {},
+    )
+    local_gate_ready = release_gate_readiness_audit.get("local_gate_ready") is True
+    ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
+    workflow_declared = bool(push_gate_workflow)
+    workflow_mirrors_local_gate = bool(push_gate_workflow.get("mirrors_local_push_gate"))
+    workflow_calls_github_api = bool(push_gate_workflow.get("github_api_call_detected"))
+    remote_logs_required = True
+    remote_actions_status_known = False
+    rows = [
+        _release_gate_row(
+            "email_notification_is_remote_ci_signal",
+            True,
+            evidence="GitHub Actions failure email is a remote workflow signal, not local worktree status.",
+            production_blocker=False,
+        ),
+        _release_gate_row(
+            "local_gate_contract_available",
+            local_gate_ready,
+            evidence=f"release_gate_status={release_gate_readiness_audit.get('status')}",
+        ),
+        _release_gate_row(
+            "push_gate_workflow_declared",
+            workflow_declared,
+            evidence=push_gate_workflow.get("workflow") or ".github/workflows/command-center-3-push-gate.yml",
+        ),
+        _release_gate_row(
+            "push_gate_workflow_mirrors_local_script",
+            workflow_mirrors_local_gate,
+            evidence=f"mirrors_local_push_gate={workflow_mirrors_local_gate}; contains_smoke_step={push_gate_workflow.get('contains_smoke_step')}",
+        ),
+        _release_gate_row(
+            "remote_run_logs_required_for_failure_root_cause",
+            False,
+            evidence="The cache does not call GitHub API or fetch remote run logs; failed step/log text must be supplied from the Actions run page.",
+            production_blocker=False,
+            status_override="pending_remote_log",
+        ),
+        _release_gate_row(
+            "local_pass_does_not_clear_remote_ci_failure",
+            True,
+            evidence="A local push gate pass narrows risk but cannot prove the remote runner status.",
+            production_blocker=False,
+        ),
+        _release_gate_row(
+            "old_email_does_not_prove_current_head_failed",
+            True,
+            evidence="Compare email commit sha/date with current HEAD and remote HEAD before treating the notification as current.",
+            production_blocker=False,
+        ),
+        _release_gate_row(
+            "ci_triage_calls_no_github_api",
+            not workflow_calls_github_api,
+            evidence="triage reads local workflow inventory only; it does not use gh, GraphQL, api.github.com, or workflow logs.",
+        ),
+        _release_gate_row(
+            "provider_trade_boundaries_preserved",
+            True,
+            evidence="CI notification triage does not call providers, run models, refresh data, or execute trades.",
+            production_blocker=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row.get("production_blocker")]
+    pending_rows = [row for row in rows if str(row.get("status") or "").startswith("pending")]
+    status = (
+        "ci_notification_triage_ready_remote_logs_required"
+        if not blocking_rows
+        else "ci_notification_triage_blocked"
+    )
+    contract = {
+        "schema_version": CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_ci_failure_email_triage_no_github_api",
+        "local_gate_ready": local_gate_ready,
+        "ci_mirror_ready": ci_mirror_ready,
+        "push_gate_workflow_declared": workflow_declared,
+        "push_gate_workflow": push_gate_workflow.get("workflow") or ".github/workflows/command-center-3-push-gate.yml",
+        "remote_actions_status_known": remote_actions_status_known,
+        "remote_failure_logs_available": False,
+        "remote_logs_required_for_root_cause": remote_logs_required,
+        "can_dismiss_failure_email_without_matching_head_and_logs": False,
+        "latest_remote_run_verified_green": False,
+        "old_email_may_be_stale": True,
+        "local_pass_is_not_ci_status": True,
+        "requires_failed_step_name": True,
+        "requires_failed_log_excerpt": True,
+        "row_count": len(rows),
+        "pending_remote_evidence_count": len(pending_rows),
+        "blocking_criterion_count": len(blocking_rows),
+        "blockers": [row["criterion"] for row in blocking_rows],
+        "pending_remote_evidence": [row["criterion"] for row in pending_rows],
+        "external_calls_triggered": False,
+        "provider_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "github_api_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This is local CI-notification triage. It explains what evidence is needed, but it does not fetch GitHub Actions logs or prove the remote run is green.",
+    }
+    return contract, rows
+
+
 def _motion_source(path: str) -> str:
     return _read_local_text(DESKTOP_SRC_DIR / path)
 
@@ -1957,6 +2072,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     model_strategy_rows = _model_strategy_rows()
     get_route_coverage = _get_route_coverage(endpoint_rows)
     release_gate_readiness_audit, release_gate_readiness_rows, release_gate_workflow_rows = _release_gate_readiness_audit()
+    ci_notification_triage_contract, ci_notification_triage_rows = _ci_notification_triage_contract(
+        release_gate_readiness_audit,
+        release_gate_workflow_rows,
+    )
     motion_clarity_audit, motion_clarity_rows = _motion_clarity_readiness_audit()
     motion_production_qa_contract, motion_production_qa_rows = _motion_production_qa_contract(
         motion_clarity_audit,
@@ -2009,6 +2128,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_readiness_audit": release_gate_readiness_audit,
         "release_gate_readiness_rows": release_gate_readiness_rows,
         "release_gate_workflow_rows": release_gate_workflow_rows,
+        "ci_notification_triage_contract": ci_notification_triage_contract,
+        "ci_notification_triage_rows": ci_notification_triage_rows,
         "motion_clarity_audit": motion_clarity_audit,
         "motion_clarity_rows": motion_clarity_rows,
         "motion_production_qa_contract": motion_production_qa_contract,
@@ -2051,6 +2172,14 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete") is True,
             "release_gate_ci_mirror_ready": release_gate_readiness_audit.get("ci_mirror_ready") is True,
             "release_gate_workflow_count": release_gate_readiness_audit.get("workflow_count", 0),
+            "ci_notification_triage_ready": ci_notification_triage_contract.get("status")
+            == "ci_notification_triage_ready_remote_logs_required",
+            "ci_notification_pending_remote_evidence_count": ci_notification_triage_contract.get(
+                "pending_remote_evidence_count",
+                0,
+            ),
+            "ci_notification_remote_status_known": ci_notification_triage_contract.get("remote_actions_status_known")
+            is True,
             "motion_clarity_check_count": motion_clarity_audit.get("row_count", 0),
             "motion_clarity_static_ready": motion_clarity_audit.get("static_ready") is True,
             "motion_clarity_blocker_count": motion_clarity_audit.get("blocking_criterion_count", 0),
@@ -2094,6 +2223,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_audit_runs_no_commands": True,
             "release_gate_audit_calls_no_github_api": True,
             "release_gate_local_ready_is_not_ci_status": True,
+            "ci_notification_triage_is_local": True,
+            "ci_notification_triage_calls_no_github_api": True,
+            "ci_notification_requires_remote_logs": True,
+            "ci_notification_local_pass_is_not_remote_green": True,
             "motion_clarity_audit_is_static": True,
             "motion_clarity_audit_runs_no_commands": True,
             "motion_clarity_static_ready_is_not_visual_qa": True,
@@ -2119,6 +2252,13 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "release_gate_status": release_gate_readiness_audit.get("status"),
                 "release_gate_local_ready": release_gate_readiness_audit.get("local_gate_ready"),
                 "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete"),
+                "ci_notification_triage_status": ci_notification_triage_contract.get("status"),
+                "ci_notification_remote_logs_required": ci_notification_triage_contract.get(
+                    "remote_logs_required_for_root_cause"
+                ),
+                "ci_notification_remote_actions_status_known": ci_notification_triage_contract.get(
+                    "remote_actions_status_known"
+                ),
                 "motion_clarity_status": motion_clarity_audit.get("status"),
                 "motion_clarity_static_ready": motion_clarity_audit.get("static_ready"),
                 "motion_clarity_visual_qa_complete": motion_clarity_audit.get("visual_qa_complete"),
@@ -2154,6 +2294,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "审计页只展示 cache/task 边界，不刷新数据、不运行回测、不执行真实交易、不修改 strategy action。",
             "发现 missing_call_ledger 只代表该本地 cache 返回包没有附带调用血缘，不代表自动外联。",
             "release_gate_readiness_audit 只读解析本地脚本和 workflow；local_gate_ready 不是 CI 状态，也不是生产完成证明。",
+            "ci_notification_triage_contract 只解释失败邮件需要的远端日志证据；不调用 GitHub API，也不证明远端 run 已变绿。",
             "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
             "motion_production_qa_contract 是本地生产验收清单；不运行浏览器视觉 QA 或性能 trace。",
             "motion_browser_qa_review_contract 只记录显式本地 artifact 审查；不运行浏览器、不创建 CI 证据、不完成生产动效。",

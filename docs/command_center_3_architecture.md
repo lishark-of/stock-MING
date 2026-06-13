@@ -146,6 +146,8 @@ DEEPSEEK_DEFAULT_MODEL=deepseek-v4-pro
 - `server/services/model_strategy_service.py` 提供统一模型策略引用 helper；task catalog、DeepSeek-capable local stub、Factor Quant Hub 的 guarded explanation task 都复用该 helper 写入审计字段。
 - React 的 `ModelStrategy.tsx` 和 `TaskCatalog.tsx` 只读展示模型用途、配置键、非硬编码状态和 `contains_secret=false`；通用 `DataLineageTable` 会把嵌套 `call_ledger` / `request_params_safe` 以 JSON 形式展开，避免审计信息被显示成 `[object Object]`。
 
+`/api/audit/cache` 还输出 `ci_notification_triage_contract` 与 `ci_notification_triage_rows`，用于处理 GitHub Actions 失败邮件：它只读本地 push gate/workflow 合同，要求匹配 commit/head、失败步骤名和安全日志片段后才能判断远端根因；不调用 GitHub API、不读取 workflow logs、不证明最新远端 run 已经变绿。`local_gate_ready`、`ci_mirror_ready`、旧邮件通知和本地 triage ready 都不能替代远端 Actions run 证据。
+
 ### Desktop
 
 启动：
