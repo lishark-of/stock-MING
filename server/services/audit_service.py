@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from config import get_deepseek_model_strategy
+from storage.sqlite_meta import SQLiteMetaStore
 from server.services import (
     candidate_service,
     data_capability_service,
@@ -38,6 +39,7 @@ SCHEMA_VERSION = "call_ledger_audit_cache.v1"
 RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_freshness_contract.py"
@@ -1809,6 +1811,139 @@ def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[st
     return contract, rows
 
 
+def _motion_browser_qa_review_row(
+    criterion: str,
+    passed: bool,
+    *,
+    status: str | None = None,
+    evidence: str,
+    blocks_review: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status or ("passed" if passed else "blocked"),
+        "passed": bool(passed),
+        "blocks_review": bool(blocks_review and not passed),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_motion_complete": False,
+    }
+
+
+def _motion_browser_qa_review_contract(
+    evidence_contract: Mapping[str, Any],
+    evidence_rows: list[dict[str, Any]],
+    *,
+    explicit_review: bool = False,
+    task_id: str | None = None,
+    reviewed_at: str | None = None,
+) -> dict[str, Any]:
+    report_count = int(evidence_contract.get("report_count") or 0)
+    passing_report_count = int(evidence_contract.get("passing_report_count") or 0)
+    rows = [
+        _motion_browser_qa_review_row(
+            "explicit_post_review_task_done",
+            explicit_review,
+            evidence="Motion browser QA evidence must be reviewed through POST /api/audit/motion-browser-qa-review.",
+        ),
+        _motion_browser_qa_review_row(
+            "local_browser_qa_evidence_exists",
+            report_count > 0,
+            evidence="At least one ignored .stock_ming_3/motion_qa report is available for review.",
+        ),
+        _motion_browser_qa_review_row(
+            "default_and_reduced_motion_coverage",
+            evidence_contract.get("default_motion_passed") is True
+            and evidence_contract.get("reduced_motion_passed") is True,
+            evidence="Both default-motion and reduced-motion runner reports must pass before local review can be ready.",
+        ),
+        _motion_browser_qa_review_row(
+            "visual_qa_evidence_passed",
+            evidence_contract.get("visual_qa_complete") is True,
+            evidence="Local ignored reports must show all pinned route/viewport visual checks passed.",
+        ),
+        _motion_browser_qa_review_row(
+            "performance_evidence_passed",
+            evidence_contract.get("browser_performance_verified") is True,
+            evidence="Local ignored reports must show route, layout-shift, long-task, and candidate-radar budgets passed.",
+        ),
+        _motion_browser_qa_review_row(
+            "artifact_policy_preserved",
+            evidence_contract.get("screenshots_are_not_tracked") is True
+            and evidence_contract.get("report_artifacts_are_not_tracked") is True,
+            evidence="Screenshots and JSON reports must remain ignored local artifacts, not tracked release evidence.",
+        ),
+        _motion_browser_qa_review_row(
+            "production_motion_completion_stays_blocked",
+            evidence_contract.get("production_motion_complete") is False,
+            evidence="Local artifact review must not mark production_motion_complete=true.",
+        ),
+        _motion_browser_qa_review_row(
+            "review_starts_no_browser_or_services",
+            True,
+            evidence="The POST review reads summarized local artifact evidence only; it does not open browsers or start services.",
+            blocks_review=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["blocks_review"]]
+    review_ready = not blockers
+    return {
+        "schema_version": "command_center_3_motion_browser_qa_review.v1",
+        "status": "motion_browser_qa_review_ready_local_artifact"
+        if review_ready
+        else "motion_browser_qa_review_pending",
+        "scope": "button_gated_local_motion_browser_qa_review_no_browser_execution",
+        "ltg": "LTG-14",
+        "explicit_review_task_done": bool(explicit_review),
+        "review_task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "local_browser_qa_review_ready": review_ready,
+        "review_report_count": report_count,
+        "passing_report_count": passing_report_count,
+        "default_motion_passed": evidence_contract.get("default_motion_passed") is True,
+        "reduced_motion_passed": evidence_contract.get("reduced_motion_passed") is True,
+        "visual_qa_complete": evidence_contract.get("visual_qa_complete") is True,
+        "browser_performance_verified": evidence_contract.get("browser_performance_verified") is True,
+        "production_motion_complete": False,
+        "browser_visual_qa_promoted": False,
+        "browser_performance_promoted": False,
+        "ci_evidence_complete": False,
+        "review_row_count": len(rows),
+        "blocking_review_count": len(blockers),
+        "blockers": blockers,
+        "evidence_row_count": len(evidence_rows),
+        "cache_only": True,
+        "button_gated": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "reads_ignored_local_reports_only": True,
+        "screenshots_are_not_tracked": evidence_contract.get("screenshots_are_not_tracked") is True,
+        "report_artifacts_are_not_tracked": evidence_contract.get("report_artifacts_are_not_tracked") is True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "note": "This review records an explicit local artifact review only. It does not run browser QA, create CI evidence, or complete production motion.",
+    }
+
+
+def _read_persisted_audit_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PACKET_KEY)
+    except Exception:
+        return {}
+    return packet if isinstance(packet, dict) else {}
+
+
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
@@ -1831,6 +1966,17 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         _motion_browser_qa_runbook_contract()
     )
     motion_browser_qa_evidence_contract, motion_browser_qa_evidence_rows = _motion_browser_qa_evidence_contract()
+    persisted_packet = _read_persisted_audit_packet()
+    persisted_review = _as_dict(persisted_packet.get("motion_browser_qa_review_contract"))
+    review_was_explicit = persisted_review.get("explicit_review_task_done") is True
+    motion_browser_qa_review_contract = _motion_browser_qa_review_contract(
+        motion_browser_qa_evidence_contract,
+        motion_browser_qa_evidence_rows,
+        explicit_review=review_was_explicit,
+        task_id=str(persisted_review.get("review_task_id") or "") or None,
+        reviewed_at=str(persisted_review.get("reviewed_at") or "") or None,
+    )
+    motion_browser_qa_review_rows = _as_list(motion_browser_qa_review_contract.get("rows"))
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -1872,6 +2018,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "motion_browser_qa_matrix_rows": motion_browser_qa_matrix_rows,
         "motion_browser_qa_evidence_contract": motion_browser_qa_evidence_contract,
         "motion_browser_qa_evidence_rows": motion_browser_qa_evidence_rows,
+        "motion_browser_qa_review_contract": motion_browser_qa_review_contract,
+        "motion_browser_qa_review_rows": motion_browser_qa_review_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -1921,6 +2069,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_browser_qa_reduced_motion_passed": motion_browser_qa_evidence_contract.get("reduced_motion_passed") is True,
             "motion_browser_qa_evidence_visual_complete": motion_browser_qa_evidence_contract.get("visual_qa_complete") is True,
             "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified") is True,
+            "motion_browser_qa_review_ready": motion_browser_qa_review_contract.get("local_browser_qa_review_ready") is True,
+            "motion_browser_qa_review_blocking_count": motion_browser_qa_review_contract.get("blocking_review_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -1953,6 +2103,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_browser_qa_runbook_is_not_browser_execution": True,
             "motion_browser_qa_evidence_is_local_ignored_artifact_summary": True,
             "motion_browser_qa_evidence_is_not_production_completion": True,
+            "motion_browser_qa_review_is_button_gated": True,
+            "motion_browser_qa_review_does_not_open_browser": True,
+            "motion_browser_qa_review_is_not_production_completion": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -1977,6 +2130,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_browser_qa_evidence_status": motion_browser_qa_evidence_contract.get("status"),
                 "motion_browser_qa_evidence_visual_complete": motion_browser_qa_evidence_contract.get("visual_qa_complete"),
                 "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified"),
+                "motion_browser_qa_review_status": motion_browser_qa_review_contract.get("status"),
+                "motion_browser_qa_review_ready": motion_browser_qa_review_contract.get("local_browser_qa_review_ready"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -2001,6 +2156,110 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_readiness_audit 只读解析本地脚本和 workflow；local_gate_ready 不是 CI 状态，也不是生产完成证明。",
             "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
             "motion_production_qa_contract 是本地生产验收清单；不运行浏览器视觉 QA 或性能 trace。",
+            "motion_browser_qa_review_contract 只记录显式本地 artifact 审查；不运行浏览器、不创建 CI 证据、不完成生产动效。",
         ],
     }
     return _json_safe(packet)
+
+
+def run_motion_browser_qa_review_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_motion_browser_qa_review",
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="motion_browser_qa_review_queued",
+        warnings=[
+            "Motion browser QA review 只读取本地 ignored runner 报告摘要；不会打开浏览器、不会启动服务、不会调用 Tushare/DeepSeek/GitHub。",
+            "review 结果只代表本地 artifact 审查状态；不代表 CI evidence 或 production motion complete。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_motion_browser_qa_evidence",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_call_ledger_audit_cache()
+    evidence_contract = _as_dict(packet.get("motion_browser_qa_evidence_contract"))
+    evidence_rows = [row for row in _as_list(packet.get("motion_browser_qa_evidence_rows")) if isinstance(row, dict)]
+    reviewed_at = _now_iso()
+    review_contract = _motion_browser_qa_review_contract(
+        evidence_contract,
+        evidence_rows,
+        explicit_review=True,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    request_params_safe = {
+        "review_scope": "motion_browser_qa_local_artifact",
+        "external_sources_allowed": False,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "production_motion_complete": False,
+    }
+    request_params_safe.update(
+        {
+            key: payload_safe.get(key)
+            for key in ("review_note", "reviewer")
+            if payload_safe.get(key) is not None
+        }
+    )
+    ledger = {
+        "api": "local_motion_browser_qa_review",
+        "source": ".stock_ming_3/motion_qa",
+        "row_count": len(review_contract.get("rows") or []),
+        "call_status": review_contract["status"],
+        "request_params_safe": request_params_safe,
+        "local_fetched_at": reviewed_at,
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    packet["motion_browser_qa_review_completed_at"] = reviewed_at
+    packet["motion_browser_qa_review_contract"] = review_contract
+    packet["motion_browser_qa_review_rows"] = review_contract["rows"]
+    counts = _as_dict(packet.get("counts"))
+    counts["motion_browser_qa_review_ready"] = review_contract["local_browser_qa_review_ready"]
+    counts["motion_browser_qa_review_blocking_count"] = review_contract["blocking_review_count"]
+    packet["counts"] = counts
+    policy = _as_dict(packet.get("policy"))
+    policy["motion_browser_qa_review_is_button_gated"] = True
+    policy["motion_browser_qa_review_does_not_open_browser"] = True
+    policy["motion_browser_qa_review_is_not_production_completion"] = True
+    packet["policy"] = policy
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "Motion browser QA review 只审查本地 ignored artifact；不打开浏览器、不提交截图、不调用 provider、不完成 production motion。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "browser QA review" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "motion_browser_qa_review_storage_write_failed"
+        ledger["error_message_safe"] = "motion_browser_qa_review_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="motion_browser_qa_review_storage_write_failed",
+            error_message_safe="motion_browser_qa_review_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="motion_browser_qa_review_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="motion_browser_qa_review_ready",
+        call_ledger=[ledger],
+        warning="motion_browser_qa_review_ready_no_external_call",
+    ) or task

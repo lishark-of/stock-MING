@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { getAuditCache } from "../api/client";
+import { getAuditCache, postMotionBrowserQaReview } from "../api/client";
+import type { TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -14,6 +16,7 @@ export default function CallLedgerAudit() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
+  const [reviewReceipt, setReviewReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   useEffect(() => {
     void getAuditCache().then((res) => {
@@ -40,6 +43,8 @@ export default function CallLedgerAudit() {
   const motionBrowserQaMatrixRows = rows(cache.motion_browser_qa_matrix_rows);
   const motionBrowserQaEvidence = (cache.motion_browser_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
   const motionBrowserQaEvidenceRows = rows(cache.motion_browser_qa_evidence_rows);
+  const motionBrowserQaReview = (cache.motion_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
+  const motionBrowserQaReviewRows = rows(cache.motion_browser_qa_review_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -51,6 +56,18 @@ export default function CallLedgerAudit() {
     { kind: "guarded_local", count: taskImplementation.guarded_local_task_count, task_types: Array.isArray(taskImplementation.guarded_local_task_types) ? (taskImplementation.guarded_local_task_types as unknown[]).join(" / ") : "" },
     { kind: "external_capable", count: taskImplementation.external_capable_task_count, task_types: Array.isArray(taskImplementation.external_capable_task_types) ? (taskImplementation.external_capable_task_types as unknown[]).join(" / ") : "" }
   ];
+
+  async function launchMotionBrowserQaReview() {
+    const response = await postMotionBrowserQaReview({
+      review_scope: "motion_browser_qa_local_artifact",
+      review_note: "button_gated_local_review_only"
+    });
+    setReviewReceipt(response);
+    const refreshed = await getAuditCache();
+    setCacheEnvelopeLedger(refreshed.call_ledger ?? []);
+    setCacheEnvelopeWarnings(refreshed.warnings ?? []);
+    setCache(refreshed.data);
+  }
 
   return (
     <>
@@ -97,6 +114,8 @@ export default function CallLedgerAudit() {
           { label: "motion QA matrix", value: counts.motion_browser_qa_matrix_count as number | undefined },
           { label: "motion budgets", value: counts.motion_browser_qa_performance_budget_count as number | undefined },
           { label: "motion evidence", value: motionBrowserQaEvidence.status as string | undefined, tone: motionBrowserQaEvidence.visual_qa_complete === true ? "good" : "warn" },
+          { label: "motion QA review", value: motionBrowserQaReview.status as string | undefined, tone: motionBrowserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
+          { label: "review blockers", value: counts.motion_browser_qa_review_blocking_count as number | undefined, tone: Number(counts.motion_browser_qa_review_blocking_count ?? 0) > 0 ? "warn" : "good" },
           { label: "browser reports", value: counts.motion_browser_qa_evidence_report_count as number | undefined },
           { label: "reduced pass", value: counts.motion_browser_qa_reduced_motion_passed === true ? "yes" : "pending", tone: counts.motion_browser_qa_reduced_motion_passed === true ? "good" : "warn" },
           { label: "audit envelope ledger", value: callLedger.length },
@@ -228,8 +247,25 @@ export default function CallLedgerAudit() {
         <p>production_motion_complete: {String(motionBrowserQaEvidence.production_motion_complete === true)}</p>
         <p>artifact_root: {String(motionBrowserQaEvidence.artifact_root ?? ".stock_ming_3/motion_qa")}</p>
         <p>该证据来自显式本地浏览器 QA；报告和截图必须保持 ignored，不等于 CI 状态或生产动效完成。</p>
+        <button type="button" onClick={launchMotionBrowserQaReview}>审查 motion browser QA 本地证据</button>
+        {reviewReceipt ? <TaskLaunchReceipt receipt={reviewReceipt} /> : null}
         <DataLineageTable rows={[motionBrowserQaEvidence]} />
         <DataLineageTable rows={motionBrowserQaEvidenceRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion browser QA review" subtitle="motion_browser_qa_review_contract：POST 按钮门控，只审查本地 ignored artifact" status={String(motionBrowserQaReview.status ?? "missing")}>
+        <p>scope: {String(motionBrowserQaReview.scope ?? "button_gated_local_motion_browser_qa_review_no_browser_execution")}</p>
+        <p>explicit_review_task_done: {String(motionBrowserQaReview.explicit_review_task_done === true)}</p>
+        <p>local_browser_qa_review_ready: {String(motionBrowserQaReview.local_browser_qa_review_ready === true)}</p>
+        <p>blocking_review_count: {String(motionBrowserQaReview.blocking_review_count ?? 0)}</p>
+        <p>default_motion_passed: {String(motionBrowserQaReview.default_motion_passed === true)}；reduced_motion_passed: {String(motionBrowserQaReview.reduced_motion_passed === true)}</p>
+        <p>visual_qa_complete: {String(motionBrowserQaReview.visual_qa_complete === true)}；browser_performance_verified: {String(motionBrowserQaReview.browser_performance_verified === true)}</p>
+        <p>production_motion_complete: {String(motionBrowserQaReview.production_motion_complete === true)}</p>
+        <p>browser_visual_qa_promoted: {String(motionBrowserQaReview.browser_visual_qa_promoted === true)}；browser_performance_promoted: {String(motionBrowserQaReview.browser_performance_promoted === true)}</p>
+        <p>ci_evidence_complete: {String(motionBrowserQaReview.ci_evidence_complete === true)}</p>
+        <p>Motion browser QA review 不运行浏览器、不写 artifact、不提交截图；即使本地审查 ready，也不能解除 CI evidence、browser visual promotion、performance promotion 或 production motion completion 阻断项。</p>
+        <DataLineageTable rows={[motionBrowserQaReview]} />
+        <DataLineageTable rows={motionBrowserQaReviewRows} />
       </PacketCard>
 
       <div className="grid">

@@ -187,6 +187,13 @@ export function getAuditCache() {
   return request<Record<string, unknown>>("/api/audit/cache");
 }
 
+export function postMotionBrowserQaReview(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/audit/motion-browser-qa-review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getLegacyBridgeCache() {
   return request<Record<string, unknown>>("/api/legacy/cache");
 }
