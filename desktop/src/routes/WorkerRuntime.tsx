@@ -31,6 +31,9 @@ export default function WorkerRuntime() {
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (productionReadiness.production_blocker_audit as Record<string, unknown> | undefined) ?? ((cache.worker_production_blocker_audit as Record<string, unknown> | undefined) ?? {});
   const workerHealthcheckQa = (productionReadiness.worker_healthcheck_qa_contract as Record<string, unknown> | undefined) ?? ((cache.worker_healthcheck_qa_contract as Record<string, unknown> | undefined) ?? {});
+  const workerActivationReview =
+    (productionReadiness.worker_activation_review_contract as Record<string, unknown> | undefined) ??
+    ((cache.worker_activation_review_contract as Record<string, unknown> | undefined) ?? {});
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -73,6 +76,8 @@ export default function WorkerRuntime() {
           { label: "dispatch queues", value: counts.dispatch_plan_queue_count as number | undefined },
           { label: "worker blockers", value: productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count, tone: Number(productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count ?? 0) > 0 ? "warn" : "good" },
           { label: "healthcheck pending", value: workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count, tone: Number(workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "activation blockers", value: workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count, tone: Number(workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "activation ready", value: workerActivationReview.activation_ready === true ? "是" : "否", tone: workerActivationReview.activation_ready === true ? "bad" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
@@ -169,6 +174,17 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(productionReadiness.worker_healthcheck_qa_rows ?? cache.worker_healthcheck_qa_rows)} />
       </PacketCard>
 
+      <PacketCard title="Worker activation review" subtitle="生产 worker 启用前的人工作业合同；不启动 Celery、不 ping Redis、不派发任务" status={String(workerActivationReview.status ?? "worker_activation_review_ready_activation_pending")}>
+        <p>schema_version: {String(workerActivationReview.schema_version ?? "worker_activation_review_contract.v1")}</p>
+        <p>review_policy: {String(workerActivationReview.review_policy ?? "manual_activation_required_after_blocker_and_healthcheck_review")}</p>
+        <p>activation_ready / production_worker_complete: {String(workerActivationReview.activation_ready ?? false)} / {String(workerActivationReview.production_worker_complete ?? false)}</p>
+        <p>manual_activation_required / healthcheck_required_before_activation: {String(workerActivationReview.manual_activation_required ?? true)} / {String(workerActivationReview.healthcheck_required_before_activation ?? true)}</p>
+        <p>activation_blocker_count / operator_action_required_count: {String(workerActivationReview.activation_blocker_count ?? 0)} / {String(workerActivationReview.operator_action_required_count ?? 0)}</p>
+        <p>worker_started_by_cache_api / redis_pinged_by_cache_api / scheduler_started_by_cache_api: {String(workerActivationReview.worker_started_by_cache_api ?? false)} / {String(workerActivationReview.redis_pinged_by_cache_api ?? false)} / {String(workerActivationReview.scheduler_started_by_cache_api ?? false)}</p>
+        <p>task_dispatched_by_cache_api / cache_get_external_calls: {String(workerActivationReview.task_dispatched_by_cache_api ?? false)} / {String(workerActivationReview.cache_get_external_calls ?? false)}</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_activation_review_rows ?? cache.worker_activation_review_rows)} />
+      </PacketCard>
+
       <PacketCard title="Worker 模块" subtitle="worker.tasks_* 和 scheduler scaffold；只读文件/模块可见性" status="modules">
         <DataLineageTable rows={rows(cache.worker_module_rows)} />
       </PacketCard>
@@ -194,6 +210,7 @@ export default function WorkerRuntime() {
 
       <PacketCard title="原始 worker runtime cache payload" subtitle="调试用 JSON；不含 token/key/Redis URL" status="safe">
         <JsonDetails title="worker runtime cache raw" data={cache} />
+        <JsonDetails title="worker activation review raw" data={workerActivationReview} />
       </PacketCard>
     </>
   );

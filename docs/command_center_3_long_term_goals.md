@@ -392,6 +392,7 @@ Productionize Command Center 3 storage datasets
 - Worker runtime now exposes a read-only dispatch plan matrix: every task has a future queue, local fallback state, Redis/Celery preconditions, retry/cancel/lock/dedupe/log requirements, and scheduler/external-call boundaries.
 - Worker runtime now exposes `worker_production_blocker_audit`: a read-only blocker audit for Redis package/config, Celery package/worker start, stub task migration, queue contracts, button gating, call ledger requirements, scheduler default-off, cache GET no-dispatch, and local-only retry/cancel/lock/dedupe/log controls. It does not start Celery, ping Redis, start APScheduler, or dispatch tasks.
 - Worker runtime now exposes `worker_healthcheck_qa_contract`: a static QA matrix for the future explicit production worker healthcheck. It lists Celery process visibility, Redis broker reachability, synthetic task round trip, cross-process retry/cancel, scheduler default-off, provider/model no-autoschedule, task log persistence, external-call boundary, and secret redaction. It does not execute the healthcheck, start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
+- Worker runtime now exposes `worker_activation_review_contract`: a manual activation review contract for production worker enablement. It lists production blocker review, Redis broker configuration, Celery manual start, synthetic healthcheck, cross-process controls, task log persistence, scheduler default-off, provider/model isolation, local fallback rollback, and secret redaction. It keeps `activation_ready=false` and `production_worker_complete=false`; it does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
 - Celery/Redis are not production enabled.
 
 ### Gaps
@@ -423,6 +424,7 @@ Productionize Command Center 3 storage datasets
 - Worker not started state is visible in UI.
 - Production blocker rows are visible in UI, and `production_worker_complete` remains false until a future explicit worker health check proves Celery/Redis startup outside GET cache.
 - Worker healthcheck QA rows are visible in UI, and `healthcheck_executed` remains false until a future synthetic/local worker healthcheck is explicitly run.
+- Worker activation review rows are visible in UI, and `activation_ready=false` until production blockers are resolved and an explicit synthetic/local worker healthcheck proves readiness.
 - Real Tushare/DeepSeek scheduling is never automatic.
 - Failures include `error_message_safe`.
 
@@ -432,6 +434,7 @@ Productionize Command Center 3 storage datasets
 - Do not auto-schedule real provider/model tasks.
 - Do not report preflight as production worker completion.
 - Do not report blocker audit as production worker completion.
+- Do not report activation review as worker startup, healthcheck execution, or production worker completion.
 
 ### Recommended Commit Message
 
