@@ -61,7 +61,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production QA contract visible; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold, dry-runs, query policy, and push-gate contract exist | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
-| LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, and healthcheck QA contract | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
+| LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, healthcheck QA contract, and push-gate contract exist | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, and local JSON stability audit; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local release artifact detection; packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
@@ -419,6 +419,7 @@ Productionize Command Center 3 storage datasets
 - Worker runtime now exposes `worker_production_blocker_audit`: a read-only blocker audit for Redis package/config, Celery package/worker start, stub task migration, queue contracts, button gating, call ledger requirements, scheduler default-off, cache GET no-dispatch, and local-only retry/cancel/lock/dedupe/log controls. It does not start Celery, ping Redis, start APScheduler, or dispatch tasks.
 - Worker runtime now exposes `worker_healthcheck_qa_contract`: a static QA matrix for the future explicit production worker healthcheck. It lists Celery process visibility, Redis broker reachability, synthetic task round trip, cross-process retry/cancel, scheduler default-off, provider/model no-autoschedule, task log persistence, external-call boundary, and secret redaction. It does not execute the healthcheck, start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
 - Worker runtime now exposes `worker_activation_review_contract`: a manual activation review contract for production worker enablement. It lists production blocker review, Redis broker configuration, Celery manual start, synthetic healthcheck, cross-process controls, task log persistence, scheduler default-off, provider/model isolation, local fallback rollback, and secret redaction. It keeps `activation_ready=false` and `production_worker_complete=false`; it does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
+- `scripts/worker_contract.py` is now part of the local push gate. It validates worker cache, dispatch plan, production blocker audit, healthcheck QA, activation review, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while `production_worker_complete=false`.
 - Celery/Redis are not production enabled.
 
 ### Gaps
@@ -430,6 +431,7 @@ Productionize Command Center 3 storage datasets
 - Concurrency locks.
 - Task log persistence.
 - Scheduler production config.
+- The Worker push-gate contract is still a local guard only; real Celery/Redis process startup, broker reachability, cross-process controls, synthetic healthcheck execution, and scheduler production enablement remain pending.
 
 ### Implementation Phases
 
@@ -451,6 +453,7 @@ Productionize Command Center 3 storage datasets
 - Production blocker rows are visible in UI, and `production_worker_complete` remains false until a future explicit worker health check proves Celery/Redis startup outside GET cache.
 - Worker healthcheck QA rows are visible in UI, and `healthcheck_executed` remains false until a future synthetic/local worker healthcheck is explicitly run.
 - Worker activation review rows are visible in UI, and `activation_ready=false` until production blockers are resolved and an explicit synthetic/local worker healthcheck proves readiness.
+- `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, and `scheduler_started=false`.
 - Real Tushare/DeepSeek scheduling is never automatic.
 - Failures include `error_message_safe`.
 
@@ -461,6 +464,7 @@ Productionize Command Center 3 storage datasets
 - Do not report preflight as production worker completion.
 - Do not report blocker audit as production worker completion.
 - Do not report activation review as worker startup, healthcheck execution, or production worker completion.
+- Do not report `scripts/worker_contract.py` passing as Celery/Redis worker startup, broker health, synthetic healthcheck execution, cross-process task controls, scheduler production config, or production worker completion.
 
 ### Recommended Commit Message
 
@@ -689,6 +693,7 @@ Retire Streamlit from primary user workflow
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
 - `scripts/candidate_radar_contract.py` is now part of the local push gate. It validates LTG-13 Candidate Radar cache reads, local quick-scan task gating, full-pool/deep-scan plan-only boundaries, no-feature-loss QA, replacement-gap triage, result-delta clarity, and no-trade/no-action boundaries while production radar replacement remains pending.
 - `scripts/storage_contract.py` is now part of the local push gate. It validates LTG-05 Storage cache, schema/version preflights, dry-run packets, DuckDB query policy, artifact cleanup review, and storage task catalog gating remain local/no-write/no-provider/no-trade while physical storage production remains pending.
+- `scripts/worker_contract.py` is now part of the local push gate. It validates LTG-06 Worker cache, dispatch plans, production blocker audit, healthcheck QA, activation review, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while production worker activation remains pending.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
@@ -704,6 +709,7 @@ Retire Streamlit from primary user workflow
 - Factor Test Lab contract is present, but it is still a local research-boundary guard; real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
 - Candidate Radar contract is present, but it is still a local replacement-boundary guard; real full-pool/deep-scan execution, provider-backed parity acceptance, browser performance trace, and visual QA remain later LTG-13 acceptance phases.
 - Storage contract is present, but it is still a local preflight/dry-run guard; real physical schema validation, migration, manifest validation, partition migration, compaction, TTL refresh execution, and cleanup delete execution remain later LTG-05 acceptance phases.
+- Worker contract is present, but it is still a local no-process-start guard; real Celery/Redis startup, Redis broker health, synthetic healthcheck execution, cross-process controls, task log persistence, and scheduler production config remain later LTG-06 acceptance phases.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -730,6 +736,7 @@ Retire Streamlit from primary user workflow
 - Factor Test Lab contract runs after Tushare acceptance and before static UI QA, and keeps `provider_backed_small_pool_validation_done=false` / `production_factor_test_validation_complete=false` visible.
 - Candidate Radar contract runs after Factor Test Lab and before static motion QA, and keeps `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, and `deep_scan_done=false` visible.
 - Storage contract runs after Candidate Radar and before static motion QA, and keeps `production_storage_complete=false`, `schema_migration_executed=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, and `cache_ttl_refresh_executed=false` visible.
+- Worker contract runs after Storage and before static motion QA, and keeps `production_worker_complete=false`, `healthcheck_executed=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, and `scheduler_started=false` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
