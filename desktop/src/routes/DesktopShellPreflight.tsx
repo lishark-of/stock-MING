@@ -33,12 +33,14 @@ export default function DesktopShellPreflight() {
   const backendOfflineUxContract = (cache.backend_offline_ux_contract as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (cache.production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const packagedRuntimeQaContract = (cache.packaged_runtime_qa_contract as Record<string, unknown> | undefined) ?? {};
+  const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const productionLaunchPlan = rows(cache.production_launch_plan);
   const productionRuntimeRows = rows(cache.production_runtime_contract_rows);
   const backendOfflineUxRows = rows(cache.backend_offline_ux_rows);
   const productionBlockerRows = rows(cache.production_blocker_rows);
   const packagedRuntimeQaRows = rows(cache.packaged_runtime_qa_rows);
+  const productionPackageReadinessReceiptRows = rows(cache.production_package_readiness_receipt_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -72,6 +74,8 @@ export default function DesktopShellPreflight() {
           { label: "packaged offline UX", value: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "verified" : "pending", tone: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "good" : "warn" },
           { label: "packaged QA", value: packagedRuntimeQaContract.status as string | undefined, tone: packagedRuntimeQaContract.packaged_runtime_validated === true ? "good" : "warn" },
           { label: "pending QA", value: packagedRuntimeQaContract.pending_qa_count as number | undefined, tone: Number(packagedRuntimeQaContract.pending_qa_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "receipt ready", value: productionPackageReadinessReceipt.local_receipt_ready === true ? "yes" : "review", tone: productionPackageReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
+          { label: "receipt blockers", value: productionPackageReadinessReceipt.blocking_criterion_count ?? counts.production_package_readiness_receipt_blocker_count, tone: Number(productionPackageReadinessReceipt.blocking_criterion_count ?? counts.production_package_readiness_receipt_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "package blockers", value: productionBlockerAudit.blocker_count as number | undefined, tone: Number(productionBlockerAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
@@ -161,6 +165,22 @@ export default function DesktopShellPreflight() {
         <DataLineageTable rows={packagedRuntimeQaRows} />
       </PacketCard>
 
+      <PacketCard title="Tauri production package readiness receipt" subtitle="LTG-09 下一步收据；只允许显式 build / packaged runtime QA review" status={String(productionPackageReadinessReceipt.status ?? "tauri_package_readiness_receipt_ready_build_pending")}>
+        <p>schema_version: {String(productionPackageReadinessReceipt.schema_version ?? "tauri_production_package_readiness_receipt.v1")}</p>
+        <p>scope: {String(productionPackageReadinessReceipt.scope ?? "local_tauri_production_package_readiness_receipt_no_build_or_runtime_execution")}</p>
+        <p>local_receipt_ready / ready_for_explicit_tauri_build: {String(productionPackageReadinessReceipt.local_receipt_ready ?? true)} / {String(productionPackageReadinessReceipt.ready_for_explicit_tauri_build ?? true)}</p>
+        <p>ready_for_packaged_runtime_qa / ready_for_production_package_promotion: {String(productionPackageReadinessReceipt.ready_for_packaged_runtime_qa ?? false)} / {String(productionPackageReadinessReceipt.ready_for_production_package_promotion ?? false)}</p>
+        <p>allowed_next_step: {String(productionPackageReadinessReceipt.allowed_next_step ?? "explicit_tauri_build_then_packaged_runtime_qa_review")}</p>
+        <p>production_package_complete: {String(productionPackageReadinessReceipt.production_package_complete ?? false)}</p>
+        <p>tauri_build_executed_by_receipt / npm_or_cargo_executed_by_receipt: {String(productionPackageReadinessReceipt.tauri_build_executed_by_receipt ?? false)} / {String(productionPackageReadinessReceipt.npm_or_cargo_executed_by_receipt ?? false)}</p>
+        <p>tauri_runtime_started_by_receipt / packaged_app_opened_by_receipt / fastapi_started_by_receipt: {String(productionPackageReadinessReceipt.tauri_runtime_started_by_receipt ?? false)} / {String(productionPackageReadinessReceipt.packaged_app_opened_by_receipt ?? false)} / {String(productionPackageReadinessReceipt.fastapi_started_by_receipt ?? false)}</p>
+        <p>config_values_read_by_receipt / log_files_written_by_receipt: {String(productionPackageReadinessReceipt.config_values_read_by_receipt ?? false)} / {String(productionPackageReadinessReceipt.log_files_written_by_receipt ?? false)}</p>
+        <p>receipt_external_calls_triggered / tushare_called / deepseek_called / github_called: {String(productionPackageReadinessReceipt.receipt_external_calls_triggered ?? false)} / {String(productionPackageReadinessReceipt.tushare_called ?? false)} / {String(productionPackageReadinessReceipt.deepseek_called ?? false)} / {String(productionPackageReadinessReceipt.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(productionPackageReadinessReceipt.not_allowed_next_steps) ? productionPackageReadinessReceipt.not_allowed_next_steps.join(" / ") : "GET /api/desktop/preflight-cache npm build / GET /api/desktop/preflight-cache tauri build / GET /api/desktop/preflight-cache packaged app launch / release artifact detection as packaged runtime QA / preflight receipt as production package completion"}</p>
+        <DataLineageTable rows={productionPackageReadinessReceiptRows} />
+        <DataLineageTable rows={rows(productionPackageReadinessReceipt.call_ledger)} />
+      </PacketCard>
+
       <PacketCard title="FastAPI 地址合同" subtitle="前端只连接本地 FastAPI，不保存 token/key" status={String(apiBaseInfo.is_localhost === true ? "localhost" : "review")}>
         <DataLineageTable rows={Object.entries(apiBaseInfo).map(([field, value]) => ({ field, value: String(value) }))} />
       </PacketCard>
@@ -187,6 +207,7 @@ export default function DesktopShellPreflight() {
 
       <PacketCard title="原始 desktop preflight cache payload" subtitle="调试用 JSON；不含 token/key" status="safe">
         <JsonDetails title="desktop shell preflight raw" data={cache} />
+        <JsonDetails title="tauri production package readiness receipt raw" data={productionPackageReadinessReceipt} />
       </PacketCard>
     </>
   );

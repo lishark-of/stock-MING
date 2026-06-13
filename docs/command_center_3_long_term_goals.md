@@ -690,7 +690,8 @@ Mature ECharts next-session operation map interactions
 - React API client now returns a safe `backend_offline_or_unreachable` envelope when local FastAPI is unavailable, and `BackendOfflineNotice` surfaces a clear offline state with display-safe API base text, without calling providers, models, GitHub, or trades.
 - Desktop preflight now exposes `backend_offline_ux_contract` and `backend_offline_ux_rows` as a static frontend source audit; packaged runtime offline UX validation remains pending.
 - Desktop preflight now exposes `packaged_runtime_qa_contract` and `packaged_runtime_qa_rows`, a static package QA matrix for release artifact QA, backend startup strategy, packaged offline UX, config/log runtime paths, signing/notarization, startup external-call boundary, and secret bundle boundary.
-- `scripts/tauri_desktop_contract.py` is now part of the local push gate. It validates desktop preflight cache, production runtime contract, backend-offline UX source contract, packaged runtime QA matrix, production blocker audit, frontend secret boundary, and no-build/no-runtime/no-config/no-log/no-provider/no-trade boundaries while `production_package_complete=false`.
+- Desktop preflight now exposes `production_package_readiness_receipt`: a local next-step receipt that ties production readiness, runtime contract, artifact detection, backend-offline UX source contract, blocker audit, and packaged QA matrix into one LTG-09 checkpoint. It can mark `ready_for_explicit_tauri_build=true`, but keeps `production_package_complete=false`, `tauri_build_executed_by_receipt=false`, `npm_or_cargo_executed_by_receipt=false`, `tauri_runtime_started_by_receipt=false`, `packaged_app_opened_by_receipt=false`, `fastapi_started_by_receipt=false`, `config_values_read_by_receipt=false`, and `log_files_written_by_receipt=false`.
+- `scripts/tauri_desktop_contract.py` is now part of the local push gate. It validates desktop preflight cache, production runtime contract, backend-offline UX source contract, packaged runtime QA matrix, production blocker audit, production package readiness receipt, frontend secret boundary, and no-build/no-runtime/no-config/no-log/no-provider/no-trade boundaries while `production_package_complete=false`.
 - Production package is incomplete.
 
 ### Gaps
@@ -707,6 +708,7 @@ Mature ECharts next-session operation map interactions
 - `tauri_build_artifact.status=artifact_detected` means a local release binary exists; it is not sidecar/offline UX/signing/notarization proof and the artifact remains ignored by git.
 - `backend_offline_ux_contract.status=frontend_offline_notice_ready_packaged_runtime_validation_pending` means the React source path is ready, but the packaged app has not been opened and validated offline.
 - `production_blocker_audit.status=production_package_blocked` is expected until build artifact QA, backend startup strategy, packaged offline UX, config/log runtime behavior, and macOS signing/notarization are validated.
+- `production_package_readiness_receipt.status=tauri_package_readiness_receipt_ready_build_pending` or `tauri_package_readiness_receipt_ready_packaged_qa_pending` only clarifies the next safe explicit step. It does not run `npm`, `cargo`, Tauri, packaged app, FastAPI, config reads, log writes, provider/model calls, or production package promotion.
 - `scripts/tauri_desktop_contract.py` is a local regression guard only; it does not run Tauri dev/build, open a packaged app, prove signing/notarization, read config values, write logs, or complete production desktop acceptance.
 
 ### Implementation Phases
@@ -714,8 +716,9 @@ Mature ECharts next-session operation map interactions
 1. Stabilize `tauri dev` on supported local machines.
 2. Define and validate FastAPI startup strategy: sidecar or explicit manual process.
 3. Add production package build and artifact checks.
-4. Validate config/log location behavior in packaged runtime without exposing secrets.
-5. Validate packaged-runtime backend-offline UI and macOS signing/notarization flow.
+4. Keep `production_package_readiness_receipt` current so the next explicit build/package-QA step is visible without converting preflight into production completion evidence.
+5. Validate config/log location behavior in packaged runtime without exposing secrets.
+6. Validate packaged-runtime backend-offline UI and macOS signing/notarization flow.
 
 ### Acceptance Criteria
 
@@ -727,7 +730,8 @@ Mature ECharts next-session operation map interactions
 - Local config and token/key are not exposed to frontend.
 - `production_runtime_contract` declares config/log paths, startup strategy, and frontend secret boundary without reading config values, writing log files, starting FastAPI, or calling providers/models.
 - `production_blocker_audit.package_ready=true` only after repeatable build artifact QA is verified, backend startup strategy is settled, config/log paths are validated in packaged runtime, packaged-runtime offline UX is validated, and signing/notarization is addressed.
-- `scripts/tauri_desktop_contract.py` passes in the local push gate while reporting `tauri_build_executed=false`, `packaged_runtime_qa_done=false`, `production_package_complete=false`, `does_not_run_tauri=true`, `does_not_run_npm=true`, and `does_not_run_cargo=true`.
+- Production package readiness receipt rows are visible in UI, `allowed_next_step=explicit_tauri_build_then_packaged_runtime_qa_review`, and `not_allowed_next_steps` explicitly blocks GET cache npm/cargo/Tauri build, packaged app launch, FastAPI autostart, release-artifact detection as runtime QA, and preflight receipt as production package completion.
+- `scripts/tauri_desktop_contract.py` passes in the local push gate while reporting `tauri_build_executed=false`, `packaged_runtime_qa_done=false`, `production_package_complete=false`, `does_not_run_tauri=true`, `does_not_run_npm=true`, `does_not_run_cargo=true`, and `production_package_readiness_receipt_ready=true`.
 
 ### Forbidden
 
@@ -738,6 +742,7 @@ Mature ECharts next-session operation map interactions
 - Do not claim `backend_offline_ux_contract` as packaged runtime offline validation.
 - Do not claim `packaged_runtime_qa_contract` as packaged runtime validation; it is a static QA matrix.
 - Do not claim `production_blocker_audit` as production package completion while status remains `production_package_blocked`.
+- Do not claim `production_package_readiness_receipt` as build execution, packaged app launch, FastAPI startup, config/log runtime validation, signing/notarization, packaged runtime QA, or production package completion.
 - Do not claim `scripts/tauri_desktop_contract.py` passing as Tauri build execution, packaged runtime QA, signing/notarization, or production package completion.
 - Do not auto-call providers/models during app startup.
 

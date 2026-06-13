@@ -37,6 +37,19 @@ REQUIRED_PACKAGED_QA_CRITERIA = {
     "startup_external_call_boundary",
     "secret_bundle_boundary",
 }
+REQUIRED_PACKAGE_READINESS_RECEIPT_CRITERIA = {
+    "local_tauri_contracts_visible",
+    "explicit_build_task_boundary",
+    "artifact_detection_not_runtime_qa",
+    "packaged_runtime_qa_pending",
+    "backend_startup_strategy_pending",
+    "backend_offline_packaged_ux_pending",
+    "config_log_runtime_validation_pending",
+    "signing_notarization_pending",
+    "startup_external_call_boundary",
+    "secret_bundle_boundary",
+    "production_completion_evidence_ticket",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -80,6 +93,9 @@ def build_contract() -> dict[str, Any]:
     blocker_criteria = {str(row.get("criterion") or "") for row in blocker_rows}
     qa_rows = [row for row in _list(packet.get("packaged_runtime_qa_rows")) if isinstance(row, dict)]
     qa_criteria = {str(row.get("criterion") or "") for row in qa_rows}
+    readiness_receipt = _dict(packet.get("production_package_readiness_receipt"))
+    readiness_receipt_rows = [row for row in _list(packet.get("production_package_readiness_receipt_rows")) if isinstance(row, dict)]
+    readiness_receipt_criteria = {str(row.get("criterion") or "") for row in readiness_receipt_rows}
     build_artifact = _dict(packet.get("tauri_build_artifact"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     preflight_script = _read_script("scripts/check_tauri_env.sh")
@@ -182,6 +198,50 @@ def build_contract() -> dict[str, Any]:
             "Production blocker audit must keep sidecar/manual backend, offline UX, package QA, and signing/notarization blockers visible.",
         ),
         _row(
+            "production_readiness_receipt_allows_only_explicit_package_qa",
+            readiness_receipt.get("schema_version") == "tauri_production_package_readiness_receipt.v1"
+            and readiness_receipt.get("status")
+            in {
+                "tauri_package_readiness_receipt_ready_build_pending",
+                "tauri_package_readiness_receipt_ready_packaged_qa_pending",
+                "tauri_package_readiness_receipt_ready_for_promotion_review",
+            }
+            and readiness_receipt.get("scope") == "local_tauri_production_package_readiness_receipt_no_build_or_runtime_execution"
+            and readiness_receipt.get("local_receipt_ready") is True
+            and readiness_receipt.get("ready_for_explicit_tauri_build") is True
+            and readiness_receipt.get("ready_for_production_package_promotion") is False
+            and readiness_receipt.get("allowed_next_step") == "explicit_tauri_build_then_packaged_runtime_qa_review"
+            and REQUIRED_PACKAGE_READINESS_RECEIPT_CRITERIA.issubset(readiness_receipt_criteria)
+            and "GET /api/desktop/preflight-cache npm build" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and "GET /api/desktop/preflight-cache cargo build" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and "GET /api/desktop/preflight-cache tauri build" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and "GET /api/desktop/preflight-cache packaged app launch" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and "release artifact detection as packaged runtime QA" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and "preflight receipt as production package completion" in _list(readiness_receipt.get("not_allowed_next_steps"))
+            and readiness_receipt.get("production_package_complete") is False
+            and readiness_receipt.get("tauri_build_executed_by_receipt") is False
+            and readiness_receipt.get("npm_or_cargo_executed_by_receipt") is False
+            and readiness_receipt.get("tauri_runtime_started_by_receipt") is False
+            and readiness_receipt.get("packaged_app_opened_by_receipt") is False
+            and readiness_receipt.get("fastapi_started_by_receipt") is False
+            and readiness_receipt.get("config_values_read_by_receipt") is False
+            and readiness_receipt.get("log_files_written_by_receipt") is False
+            and readiness_receipt.get("provider_model_task_dispatched_by_receipt") is False
+            and readiness_receipt.get("receipt_external_calls_triggered") is False
+            and _flag_false(readiness_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and readiness_receipt.get("does_not_execute_trades") is True
+            and readiness_receipt.get("does_not_modify_strategy_action") is True
+            and readiness_receipt.get("contains_secret") is False
+            and _list(readiness_receipt.get("call_ledger"))
+            and _dict(_list(readiness_receipt.get("call_ledger"))[0]).get("api") == "local_tauri_production_package_readiness_receipt"
+            and _dict(_list(readiness_receipt.get("call_ledger"))[0]).get("external") is False
+            and policy.get("production_package_readiness_receipt_is_local") is True
+            and policy.get("production_package_readiness_receipt_is_not_build") is True
+            and policy.get("production_package_readiness_receipt_is_not_runtime_execution") is True
+            and policy.get("production_package_readiness_receipt_is_not_production_completion") is True,
+            "Tauri package readiness receipt may select the next explicit build/package-QA step, but it must not run build/runtime commands, read config, write logs, call providers, or claim production completion.",
+        ),
+        _row(
             "tauri_task_policy_does_not_run_build_or_runtime",
             "tauri_dev_command=cd desktop && npm run tauri dev" in preflight_script
             and "tauri_build_command=cd desktop && npm run tauri build" in preflight_script
@@ -249,6 +309,8 @@ def build_contract() -> dict[str, Any]:
         "tauri_build_executed": False,
         "packaged_runtime_qa_done": False,
         "signing_notarization_done": False,
+        "production_package_readiness_receipt_ready": readiness_receipt.get("local_receipt_ready") is True,
+        "production_package_readiness_receipt_status": readiness_receipt.get("status"),
         "cache_only": True,
         "does_not_run_tauri": True,
         "does_not_run_npm": True,
@@ -280,6 +342,9 @@ def build_contract() -> dict[str, Any]:
                 "backend_offline_ui_packaged_runtime_verified"
             ),
             "macos_signing_notarization_ready": blocker_audit.get("macos_signing_notarization_ready"),
+            "production_package_readiness_receipt_status": readiness_receipt.get("status"),
+            "production_package_readiness_receipt_blocker_count": readiness_receipt.get("blocking_criterion_count"),
+            "production_package_readiness_allowed_next_step": readiness_receipt.get("allowed_next_step"),
             "api_base_is_localhost": _dict(packet.get("api_base_info")).get("is_localhost"),
         },
         "rows": rows,

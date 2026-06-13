@@ -407,10 +407,75 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("macos_signing_notarization_qa", qa_rows)
         self.assertTrue(qa_rows["startup_external_call_boundary"]["passed"])
         self.assertTrue(qa_rows["secret_bundle_boundary"]["passed"])
+        self.assertIn("production_package_readiness_receipt", desktop)
+        readiness_receipt = desktop["production_package_readiness_receipt"]
+        readiness_rows = {row["criterion"]: row for row in desktop["production_package_readiness_receipt_rows"]}
+        self.assertEqual(readiness_receipt["schema_version"], "tauri_production_package_readiness_receipt.v1")
+        self.assertEqual(
+            readiness_receipt["scope"],
+            "local_tauri_production_package_readiness_receipt_no_build_or_runtime_execution",
+        )
+        self.assertTrue(readiness_receipt["local_receipt_ready"])
+        self.assertTrue(readiness_receipt["ready_for_explicit_tauri_build"])
+        self.assertEqual(
+            readiness_receipt["ready_for_packaged_runtime_qa"],
+            build_artifact["binary_exists"],
+        )
+        self.assertFalse(readiness_receipt["ready_for_production_package_promotion"])
+        self.assertEqual(
+            readiness_receipt["allowed_next_step"],
+            "explicit_tauri_build_then_packaged_runtime_qa_review",
+        )
+        self.assertIn("GET /api/desktop/preflight-cache npm build", readiness_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/desktop/preflight-cache cargo build", readiness_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/desktop/preflight-cache tauri build", readiness_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/desktop/preflight-cache packaged app launch", readiness_receipt["not_allowed_next_steps"])
+        self.assertIn("release artifact detection as packaged runtime QA", readiness_receipt["not_allowed_next_steps"])
+        self.assertIn("preflight receipt as production package completion", readiness_receipt["not_allowed_next_steps"])
+        self.assertFalse(readiness_receipt["production_package_complete"])
+        self.assertFalse(readiness_receipt["tauri_build_executed_by_receipt"])
+        self.assertFalse(readiness_receipt["npm_or_cargo_executed_by_receipt"])
+        self.assertFalse(readiness_receipt["tauri_runtime_started_by_receipt"])
+        self.assertFalse(readiness_receipt["packaged_app_opened_by_receipt"])
+        self.assertFalse(readiness_receipt["fastapi_started_by_receipt"])
+        self.assertFalse(readiness_receipt["config_values_read_by_receipt"])
+        self.assertFalse(readiness_receipt["log_files_written_by_receipt"])
+        self.assertFalse(readiness_receipt["provider_model_task_dispatched_by_receipt"])
+        self.assertFalse(readiness_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(readiness_receipt["external_calls_triggered"])
+        self.assertFalse(readiness_receipt["tushare_called"])
+        self.assertFalse(readiness_receipt["deepseek_called"])
+        self.assertFalse(readiness_receipt["github_called"])
+        self.assertFalse(readiness_receipt["contains_secret"])
+        self.assertTrue(readiness_receipt["does_not_execute_trades"])
+        self.assertTrue(readiness_receipt["does_not_modify_strategy_action"])
+        self.assertEqual(readiness_receipt["production_blocker_count"], blocker_audit["blocker_count"])
+        self.assertEqual(readiness_receipt["packaged_runtime_pending_qa_count"], qa_contract["pending_qa_count"])
+        self.assertEqual(readiness_receipt["tauri_build_artifact_detected"], build_artifact["binary_exists"])
+        self.assertIn("local_tauri_contracts_visible", readiness_rows)
+        self.assertIn("explicit_build_task_boundary", readiness_rows)
+        self.assertIn("packaged_runtime_qa_pending", readiness_rows)
+        self.assertIn("production_completion_evidence_ticket", readiness_rows)
+        self.assertEqual(
+            readiness_receipt["call_ledger"][0]["api"],
+            "local_tauri_production_package_readiness_receipt",
+        )
+        self.assertFalse(readiness_receipt["call_ledger"][0]["external"])
+        self.assertIn("local_tauri_production_package_readiness_receipt", {row["api"] for row in desktop["call_ledger"]})
+        self.assertTrue(desktop["policy"]["production_package_readiness_receipt_is_local"])
+        self.assertTrue(desktop["policy"]["production_package_readiness_receipt_is_not_build"])
+        self.assertTrue(desktop["policy"]["production_package_readiness_receipt_is_not_runtime_execution"])
+        self.assertTrue(desktop["policy"]["production_package_readiness_receipt_is_not_production_completion"])
         self.assertEqual(desktop["counts"]["packaged_runtime_qa_matrix_count"], qa_contract["qa_matrix_count"])
         self.assertEqual(desktop["counts"]["packaged_runtime_pending_qa_count"], qa_contract["pending_qa_count"])
+        self.assertEqual(
+            desktop["counts"]["production_package_readiness_receipt_blocker_count"],
+            readiness_receipt["blocking_criterion_count"],
+        )
         self.assertTrue(desktop["runtime"]["packaged_runtime_qa_contract_ready"])
         self.assertEqual(desktop["runtime"]["packaged_runtime_pending_qa_count"], qa_contract["pending_qa_count"])
+        self.assertTrue(desktop["runtime"]["production_package_readiness_receipt_ready"])
+        self.assertEqual(desktop["runtime"]["production_package_readiness_receipt_status"], readiness_receipt["status"])
         self.assertTrue(desktop["policy"]["packaged_runtime_qa_contract_is_static"])
         self.assertFalse(desktop["runtime"]["production_package_ready"])
         self.assertGreater(desktop["runtime"]["production_blocker_count"], 0)
@@ -6490,6 +6555,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("backend_offline_ux_is_source_contract_only", script)
         self.assertIn("packaged_runtime_qa_stays_pending", script)
         self.assertIn("production_blocker_audit_blocks_completion", script)
+        self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", script)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", script)
         self.assertIn("frontend_does_not_expose_secrets", script)
         self.assertIn("push_gate_runs_tauri_contract_after_worker", script)
@@ -6527,6 +6593,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["tauri_build_executed"])
         self.assertFalse(payload["packaged_runtime_qa_done"])
         self.assertFalse(payload["signing_notarization_done"])
+        self.assertTrue(payload["production_package_readiness_receipt_ready"])
+        self.assertIn(
+            payload["production_package_readiness_receipt_status"],
+            {
+                "tauri_package_readiness_receipt_ready_build_pending",
+                "tauri_package_readiness_receipt_ready_packaged_qa_pending",
+            },
+        )
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -6553,12 +6627,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["observed"]["tauri_package_build_attempted"])
         self.assertFalse(payload["observed"]["backend_offline_ui_packaged_runtime_verified"])
         self.assertFalse(payload["observed"]["macos_signing_notarization_ready"])
+        self.assertIn(
+            payload["observed"]["production_package_readiness_receipt_status"],
+            {
+                "tauri_package_readiness_receipt_ready_build_pending",
+                "tauri_package_readiness_receipt_ready_packaged_qa_pending",
+            },
+        )
+        self.assertGreater(payload["observed"]["production_package_readiness_receipt_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["production_package_readiness_allowed_next_step"],
+            "explicit_tauri_build_then_packaged_runtime_qa_review",
+        )
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("preflight_cache_is_read_only", criteria)
         self.assertIn("production_runtime_contract_is_policy_only", criteria)
         self.assertIn("backend_offline_ux_is_source_contract_only", criteria)
         self.assertIn("packaged_runtime_qa_stays_pending", criteria)
         self.assertIn("production_blocker_audit_blocks_completion", criteria)
+        self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", criteria)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", criteria)
         self.assertIn("frontend_does_not_expose_secrets", criteria)
         self.assertIn("push_gate_runs_tauri_contract_after_worker", criteria)

@@ -752,6 +752,200 @@ def _packaged_runtime_qa_contract(
     }
 
 
+def _tauri_production_readiness_receipt(
+    *,
+    production_readiness: dict[str, Any],
+    production_runtime_contract: dict[str, Any],
+    tauri_build_artifact: dict[str, Any],
+    backend_offline_ux_contract: dict[str, Any],
+    production_blocker_audit: dict[str, Any],
+    packaged_runtime_qa_contract: dict[str, Any],
+) -> dict[str, Any]:
+    blocker_count = int(production_blocker_audit.get("blocker_count") or 0)
+    pending_qa_count = int(packaged_runtime_qa_contract.get("pending_qa_count") or 0)
+    artifact_detected = bool(tauri_build_artifact.get("binary_exists"))
+    local_receipt_ready = (
+        production_readiness.get("scope") == "tauri_desktop_production_preflight"
+        and production_runtime_contract.get("schema_version") == "tauri_production_runtime_contract.v1"
+        and tauri_build_artifact.get("schema_version") == "tauri_build_artifact_detection.v1"
+        and backend_offline_ux_contract.get("schema_version") == "tauri_backend_offline_ux_contract.v1"
+        and production_blocker_audit.get("schema_version") == "tauri_production_package_blocker_audit.v1"
+        and packaged_runtime_qa_contract.get("schema_version") == "tauri_packaged_runtime_qa_contract.v1"
+        and production_runtime_contract.get("reads_config_values") is False
+        and production_runtime_contract.get("writes_log_files") is False
+        and tauri_build_artifact.get("build_command_executed_by_get_cache") is False
+        and packaged_runtime_qa_contract.get("npm_or_cargo_executed") is False
+    )
+    ready_for_explicit_tauri_build = bool(local_receipt_ready)
+    ready_for_packaged_runtime_qa = bool(local_receipt_ready and artifact_detected)
+    ready_for_production_package_promotion = bool(
+        local_receipt_ready and production_blocker_audit.get("package_ready") is True and pending_qa_count == 0
+    )
+
+    def _row(criterion: str, status: str, detail: str, required_evidence: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": status == "passed",
+            "production_blocker": status != "passed",
+            "detail": detail,
+            "required_evidence": required_evidence,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "local_tauri_contracts_visible",
+            "passed" if local_receipt_ready else "blocked",
+            "Desktop preflight exposes production readiness, runtime contract, artifact detection, offline UX contract, blocker audit, and packaged QA matrix.",
+            "All local desktop contracts remain visible in GET /api/desktop/preflight-cache.",
+        ),
+        _row(
+            "explicit_build_task_boundary",
+            "passed" if local_receipt_ready else "blocked",
+            "The next build step is manual/explicit; GET cache never runs npm, cargo, Tauri, or FastAPI.",
+            "Operator explicitly runs npm build / tauri build outside cache GET.",
+        ),
+        _row(
+            "artifact_detection_not_runtime_qa",
+            "blocked" if not artifact_detected else "passed",
+            f"release_artifact_status={tauri_build_artifact.get('status')}; artifact detection does not validate launch/runtime behavior.",
+            "A release artifact exists and is followed by packaged runtime QA.",
+        ),
+        _row(
+            "packaged_runtime_qa_pending",
+            "blocked" if pending_qa_count > 0 else "passed",
+            f"{pending_qa_count} packaged runtime QA item(s) remain pending.",
+            "Packaged app launch QA covers backend startup strategy, offline UX, config/log paths, signing/notarization, startup external-call boundary, and secret boundary.",
+        ),
+        _row(
+            "backend_startup_strategy_pending",
+            "blocked" if production_runtime_contract.get("manual_backend_launch_required") is True else "passed",
+            f"backend_startup_strategy={production_runtime_contract.get('backend_startup_strategy')}; sidecar autostart enabled={production_runtime_contract.get('backend_sidecar_autostart_enabled')}.",
+            "Production package acceptance chooses and validates manual FastAPI or sidecar startup strategy.",
+        ),
+        _row(
+            "backend_offline_packaged_ux_pending",
+            "blocked" if backend_offline_ux_contract.get("backend_offline_ui_packaged_runtime_verified") is False else "passed",
+            f"frontend_contract_ready={backend_offline_ux_contract.get('frontend_contract_ready')}; packaged_runtime_verified={backend_offline_ux_contract.get('backend_offline_ui_packaged_runtime_verified')}.",
+            "Open packaged runtime with backend offline and verify friendly local-only UX.",
+        ),
+        _row(
+            "config_log_runtime_validation_pending",
+            "blocked",
+            "Config/log paths are declared, but packaged runtime path behavior has not been validated.",
+            "Packaged runtime validates config/log paths without exposing token/key values or writing unsafe logs.",
+        ),
+        _row(
+            "signing_notarization_pending",
+            "blocked" if production_blocker_audit.get("macos_signing_notarization_ready") is False else "passed",
+            "macOS signing/notarization is not complete in current preflight.",
+            "Signing, notarization, and distribution artifact checks are completed or explicitly waived.",
+        ),
+        _row(
+            "startup_external_call_boundary",
+            "passed",
+            "Receipt does not start providers, models, GitHub probes, FastAPI, Tauri, or trading paths.",
+            "Startup QA preserves no Tushare/DeepSeek/GitHub/trade calls.",
+        ),
+        _row(
+            "secret_bundle_boundary",
+            "passed",
+            "Frontend package must not contain token/key material; backend/env remains the secret boundary.",
+            "Packaged artifact review confirms token/key are absent from frontend, logs, packet, and cache.",
+        ),
+        _row(
+            "production_completion_evidence_ticket",
+            "blocked",
+            "This receipt is next-step evidence only; production_package_complete remains false.",
+            "A future production package ticket proves build, packaged runtime QA, backend startup strategy, config/log behavior, signing/notarization, and safety boundaries.",
+        ),
+    ]
+    blocked_rows = [row for row in rows if row["status"] != "passed"]
+    status = (
+        "tauri_package_readiness_receipt_ready_for_promotion_review"
+        if ready_for_production_package_promotion
+        else "tauri_package_readiness_receipt_ready_packaged_qa_pending"
+        if ready_for_packaged_runtime_qa
+        else "tauri_package_readiness_receipt_ready_build_pending"
+        if ready_for_explicit_tauri_build
+        else "tauri_package_readiness_receipt_blocked_local_contract"
+    )
+    return {
+        "schema_version": "tauri_production_package_readiness_receipt.v1",
+        "status": status,
+        "scope": "local_tauri_production_package_readiness_receipt_no_build_or_runtime_execution",
+        "ltg": "LTG-09",
+        "local_receipt_ready": bool(local_receipt_ready),
+        "ready_for_explicit_tauri_build": ready_for_explicit_tauri_build,
+        "ready_for_packaged_runtime_qa": ready_for_packaged_runtime_qa,
+        "ready_for_production_package_promotion": ready_for_production_package_promotion,
+        "allowed_next_step": "explicit_tauri_build_then_packaged_runtime_qa_review",
+        "not_allowed_next_steps": [
+            "GET /api/desktop/preflight-cache npm build",
+            "GET /api/desktop/preflight-cache cargo build",
+            "GET /api/desktop/preflight-cache tauri build",
+            "GET /api/desktop/preflight-cache packaged app launch",
+            "GET /api/desktop/preflight-cache FastAPI autostart",
+            "release artifact detection as packaged runtime QA",
+            "preflight receipt as production package completion",
+        ],
+        "missing_evidence_items": [
+            "repeatable_tauri_build_log",
+            "packaged_app_launch_qa",
+            "backend_startup_strategy_acceptance",
+            "backend_offline_packaged_ux_evidence",
+            "config_log_runtime_path_evidence",
+            "macos_signing_notarization_evidence",
+            "frontend_secret_bundle_review",
+        ],
+        "production_blocker_count": blocker_count,
+        "packaged_runtime_pending_qa_count": pending_qa_count,
+        "tauri_build_artifact_detected": artifact_detected,
+        "production_package_complete": False,
+        "tauri_build_executed_by_receipt": False,
+        "npm_or_cargo_executed_by_receipt": False,
+        "tauri_runtime_started_by_receipt": False,
+        "packaged_app_opened_by_receipt": False,
+        "fastapi_started_by_receipt": False,
+        "config_values_read_by_receipt": False,
+        "log_files_written_by_receipt": False,
+        "provider_model_task_dispatched_by_receipt": False,
+        "receipt_external_calls_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "criterion_count": len(rows),
+        "blocking_criterion_count": len(blocked_rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tauri_production_package_readiness_receipt",
+                "source": "desktop preflight local contracts",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_readiness_receipt",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This receipt selects the next safe LTG-09 step only. It does not run npm, cargo, Tauri, packaged app, FastAPI, providers, models, GitHub probes, config reads, log writes, trades, or production package promotion.",
+    }
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -832,6 +1026,14 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         backend_offline_ux_contract=backend_offline_ux_contract,
         production_blocker_audit=production_blocker_audit,
     )
+    production_package_readiness_receipt = _tauri_production_readiness_receipt(
+        production_readiness=production_readiness,
+        production_runtime_contract=production_runtime_contract,
+        tauri_build_artifact=tauri_build_artifact,
+        backend_offline_ux_contract=backend_offline_ux_contract,
+        production_blocker_audit=production_blocker_audit,
+        packaged_runtime_qa_contract=packaged_runtime_qa_contract,
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -857,6 +1059,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "production_blocker_rows": production_blocker_audit["rows"],
         "packaged_runtime_qa_contract": packaged_runtime_qa_contract,
         "packaged_runtime_qa_rows": packaged_runtime_qa_contract["rows"],
+        "production_package_readiness_receipt": production_package_readiness_receipt,
+        "production_package_readiness_receipt_rows": production_package_readiness_receipt["rows"],
         "file_rows": file_rows,
         "command_rows": command_rows,
         "counts": {
@@ -866,6 +1070,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "command_ready_count": sum(1 for row in command_rows if row["available"]),
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
+            "production_package_readiness_receipt_ready": 1 if production_package_readiness_receipt["local_receipt_ready"] else 0,
+            "production_package_readiness_receipt_blocker_count": production_package_readiness_receipt["blocking_criterion_count"],
         },
         "runtime": {
             "node_ready": node_ready,
@@ -902,6 +1108,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "macos_signing_notarization_ready": production_blocker_audit["macos_signing_notarization_ready"],
             "packaged_runtime_qa_contract_ready": packaged_runtime_qa_contract["qa_contract_ready"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
+            "production_package_readiness_receipt_ready": production_package_readiness_receipt["local_receipt_ready"],
+            "production_package_readiness_receipt_status": production_package_readiness_receipt["status"],
+            "production_package_readiness_receipt_blocker_count": production_package_readiness_receipt["blocking_criterion_count"],
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -915,6 +1124,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "api_base_must_be_localhost": True,
             "production_runtime_contract_is_path_only": True,
             "packaged_runtime_qa_contract_is_static": True,
+            "production_package_readiness_receipt_is_local": True,
+            "production_package_readiness_receipt_is_not_build": True,
+            "production_package_readiness_receipt_is_not_runtime_execution": True,
+            "production_package_readiness_receipt_is_not_production_completion": True,
             "does_not_read_config_values": True,
             "does_not_write_log_files": True,
             "does_not_call_tushare": True,
@@ -933,7 +1146,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "call_status": "cache_read",
                 "external": False,
             }
-        ],
+        ]
+        + production_package_readiness_receipt["call_ledger"],
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
