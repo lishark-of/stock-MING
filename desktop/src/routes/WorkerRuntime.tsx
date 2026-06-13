@@ -59,6 +59,9 @@ export default function WorkerRuntime() {
   const workerSyntheticHealthcheck =
     (productionReadiness.worker_synthetic_healthcheck as Record<string, unknown> | undefined) ??
     ((cache.worker_synthetic_healthcheck as Record<string, unknown> | undefined) ?? {});
+  const workerProductionReadinessReceipt =
+    (productionReadiness.worker_production_readiness_receipt as Record<string, unknown> | undefined) ??
+    ((cache.worker_production_readiness_receipt as Record<string, unknown> | undefined) ?? {});
   const visibleHealthcheck = Object.keys(healthcheckResult).length ? healthcheckResult : workerSyntheticHealthcheck;
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
@@ -106,6 +109,8 @@ export default function WorkerRuntime() {
           { label: "synthetic check", value: visibleHealthcheck.synthetic_healthcheck_executed === true ? "已显式运行" : "未运行", tone: visibleHealthcheck.synthetic_healthcheck_executed === true ? "good" : "warn" },
           { label: "log blockers", value: workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count, tone: Number(workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation blockers", value: workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count, tone: Number(workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "receipt ready", value: workerProductionReadinessReceipt.local_receipt_ready === true ? "是" : "否", tone: workerProductionReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
+          { label: "receipt blockers", value: workerProductionReadinessReceipt.blocking_criterion_count ?? counts.worker_production_readiness_receipt_blocker_count, tone: Number(workerProductionReadinessReceipt.blocking_criterion_count ?? counts.worker_production_readiness_receipt_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation ready", value: workerActivationReview.activation_ready === true ? "是" : "否", tone: workerActivationReview.activation_ready === true ? "bad" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
@@ -241,6 +246,21 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(productionReadiness.worker_activation_review_rows ?? cache.worker_activation_review_rows)} />
       </PacketCard>
 
+      <PacketCard title="Worker production readiness receipt" subtitle="LTG-06 下一步收据；只允许显式 POST healthcheck 和人工 activation review" status={String(workerProductionReadinessReceipt.status ?? "worker_readiness_receipt_ready_synthetic_healthcheck_pending")}>
+        <p>schema_version: {String(workerProductionReadinessReceipt.schema_version ?? "worker_production_readiness_receipt.v1")}</p>
+        <p>scope: {String(workerProductionReadinessReceipt.scope ?? "local_worker_production_readiness_receipt_no_process_start")}</p>
+        <p>local_receipt_ready / ready_for_explicit_synthetic_healthcheck: {String(workerProductionReadinessReceipt.local_receipt_ready ?? true)} / {String(workerProductionReadinessReceipt.ready_for_explicit_synthetic_healthcheck ?? true)}</p>
+        <p>ready_for_manual_activation_review: {String(workerProductionReadinessReceipt.ready_for_manual_activation_review ?? false)}</p>
+        <p>allowed_next_step: {String(workerProductionReadinessReceipt.allowed_next_step ?? "explicit_post_worker_synthetic_healthcheck_then_manual_activation_review")}</p>
+        <p>production_worker_complete: {String(workerProductionReadinessReceipt.production_worker_complete ?? false)}</p>
+        <p>worker_started_by_receipt / redis_pinged_by_receipt / scheduler_started_by_receipt: {String(workerProductionReadinessReceipt.worker_started_by_receipt ?? false)} / {String(workerProductionReadinessReceipt.redis_pinged_by_receipt ?? false)} / {String(workerProductionReadinessReceipt.scheduler_started_by_receipt ?? false)}</p>
+        <p>task_dispatched_by_receipt / provider_model_task_dispatched_by_receipt: {String(workerProductionReadinessReceipt.task_dispatched_by_receipt ?? false)} / {String(workerProductionReadinessReceipt.provider_model_task_dispatched_by_receipt ?? false)}</p>
+        <p>receipt_external_calls_triggered / tushare_called_by_receipt / deepseek_called / github_called: {String(workerProductionReadinessReceipt.receipt_external_calls_triggered ?? false)} / {String(workerProductionReadinessReceipt.tushare_called_by_receipt ?? false)} / {String(workerProductionReadinessReceipt.deepseek_called ?? false)} / {String(workerProductionReadinessReceipt.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(workerProductionReadinessReceipt.not_allowed_next_steps) ? workerProductionReadinessReceipt.not_allowed_next_steps.join(" / ") : "GET /api/worker/cache worker process start / GET /api/worker/cache Redis ping / automatic Tushare/DeepSeek/GitHub task scheduling / readiness receipt as production worker completion"}</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_production_readiness_receipt_rows ?? cache.worker_production_readiness_receipt_rows)} />
+        <DataLineageTable rows={rows(workerProductionReadinessReceipt.call_ledger)} />
+      </PacketCard>
+
       <PacketCard title="Worker 模块" subtitle="worker.tasks_* 和 scheduler scaffold；只读文件/模块可见性" status="modules">
         <DataLineageTable rows={rows(cache.worker_module_rows)} />
       </PacketCard>
@@ -269,6 +289,7 @@ export default function WorkerRuntime() {
         <JsonDetails title="worker task log persistence raw" data={workerTaskLogPersistence} />
         <JsonDetails title="worker synthetic healthcheck raw" data={visibleHealthcheck} />
         <JsonDetails title="worker activation review raw" data={workerActivationReview} />
+        <JsonDetails title="worker production readiness receipt raw" data={workerProductionReadinessReceipt} />
       </PacketCard>
     </>
   );

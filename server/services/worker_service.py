@@ -1280,6 +1280,190 @@ def _worker_activation_review_contract(
     }
 
 
+def _worker_production_readiness_receipt(
+    *,
+    production_blocker_audit: dict[str, Any],
+    healthcheck_qa_contract: dict[str, Any],
+    task_log_persistence_audit: dict[str, Any],
+    synthetic_healthcheck: dict[str, Any],
+    activation_review_contract: dict[str, Any],
+    catalog: dict[str, Any],
+) -> dict[str, Any]:
+    known_post_routes = (catalog.get("route_coverage") or {}).get("known_post_routes") or []
+    route_button_gated = bool((catalog.get("policy") or {}).get("all_known_post_routes_button_gated"))
+    production_blocker_count = int(production_blocker_audit.get("blocking_criterion_count") or 0)
+    healthcheck_pending_count = int(healthcheck_qa_contract.get("pending_criterion_count") or 0)
+    task_log_blocker_count = int(task_log_persistence_audit.get("production_blocker_count") or 0)
+    activation_blocker_count = int(activation_review_contract.get("activation_blocker_count") or 0)
+    synthetic_executed = bool(synthetic_healthcheck.get("synthetic_healthcheck_executed") is True)
+    local_contract_ready = (
+        production_blocker_audit.get("schema_version") == "worker_production_blocker_audit.v1"
+        and healthcheck_qa_contract.get("schema_version") == "worker_healthcheck_qa_contract.v1"
+        and task_log_persistence_audit.get("schema_version") == "worker_task_log_persistence_audit.v1"
+        and synthetic_healthcheck.get("schema_version") == "worker_synthetic_healthcheck.v1"
+        and activation_review_contract.get("schema_version") == "worker_activation_review_contract.v1"
+        and "POST /api/worker/synthetic-healthcheck" in known_post_routes
+        and route_button_gated
+        and production_blocker_audit.get("cache_get_external_calls") is False
+        and healthcheck_qa_contract.get("cache_get_external_calls") is False
+        and task_log_persistence_audit.get("cache_get_writes_logs") is False
+        and activation_review_contract.get("cache_get_external_calls") is False
+    )
+    ready_for_explicit_synthetic_healthcheck = bool(local_contract_ready)
+    ready_for_manual_activation_review = bool(local_contract_ready and synthetic_executed and production_blocker_count == 0)
+
+    def _row(criterion: str, status: str, detail: str, required_evidence: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": status == "passed",
+            "blocks_production_worker": status != "passed",
+            "detail": detail,
+            "required_evidence": required_evidence,
+            "external_calls_triggered": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "local_worker_contracts_visible",
+            "passed" if local_contract_ready else "blocked",
+            "Worker cache exposes blocker audit, healthcheck QA, task-log audit, synthetic healthcheck state, activation review, and POST route coverage.",
+            "All local contracts and route coverage remain present in GET /api/worker/cache.",
+        ),
+        _row(
+            "explicit_post_synthetic_healthcheck_boundary",
+            "passed" if "POST /api/worker/synthetic-healthcheck" in known_post_routes and route_button_gated else "blocked",
+            "Synthetic healthcheck is visible only as an explicit POST route; GET cache may read the last packet but cannot run it.",
+            "Operator explicitly runs POST /api/worker/synthetic-healthcheck.",
+        ),
+        _row(
+            "cache_get_no_process_start_boundary",
+            "passed",
+            "GET cache does not start Celery, ping Redis, start APScheduler, dispatch tasks, or call providers/models/probes.",
+            "Keep all process and network proof in explicit future tasks.",
+        ),
+        _row(
+            "scheduler_default_off_boundary",
+            "passed" if activation_review_contract.get("scheduler_started_by_cache_api") is False else "blocked",
+            "Scheduler remains default-off and cache GET does not start it.",
+            "Future production scheduler design stays separately approved and explicitly enabled.",
+        ),
+        _row(
+            "provider_model_isolation_boundary",
+            "passed",
+            "Worker readiness receipt does not schedule Tushare, DeepSeek, GitHub, or real trading tasks.",
+            "Provider/model tasks stay button-gated with call_ledger.",
+        ),
+        _row(
+            "celery_redis_process_readiness_pending",
+            "blocked" if production_blocker_count > 0 else "passed",
+            f"{production_blocker_count} production worker blocker(s) remain in the blocker audit.",
+            "Manual Celery worker start, Redis broker proof, queue contract, and stub migration evidence.",
+        ),
+        _row(
+            "cross_process_task_controls_pending",
+            "blocked" if healthcheck_pending_count > 0 or task_log_blocker_count > 0 else "passed",
+            f"{healthcheck_pending_count} healthcheck QA item(s) and {task_log_blocker_count} task-log persistence item(s) remain pending.",
+            "Cross-process retry/cancel/lock/dedupe/task-log healthcheck evidence.",
+        ),
+        _row(
+            "manual_activation_review_pending",
+            "blocked" if activation_blocker_count > 0 or not ready_for_manual_activation_review else "passed",
+            f"{activation_blocker_count} activation blocker(s) remain; synthetic healthcheck executed={synthetic_executed}.",
+            "Manual activation review after blockers clear and explicit synthetic healthcheck passes.",
+        ),
+        _row(
+            "production_completion_evidence_ticket",
+            "blocked",
+            "This receipt is next-step evidence only; production_worker_complete remains false.",
+            "A future production worker evidence ticket must prove Celery/Redis runtime, cross-process controls, logs, scheduler default-off, and external-call isolation.",
+        ),
+    ]
+    blocked_rows = [row for row in rows if row["status"] != "passed"]
+    status = (
+        "worker_readiness_receipt_ready_activation_review_pending"
+        if ready_for_manual_activation_review
+        else "worker_readiness_receipt_ready_synthetic_healthcheck_pending"
+        if local_contract_ready
+        else "worker_readiness_receipt_blocked_local_contract"
+    )
+    return {
+        "schema_version": "worker_production_readiness_receipt.v1",
+        "status": status,
+        "scope": "local_worker_production_readiness_receipt_no_process_start",
+        "ltg": "LTG-06",
+        "local_receipt_ready": bool(local_contract_ready),
+        "ready_for_explicit_synthetic_healthcheck": ready_for_explicit_synthetic_healthcheck,
+        "ready_for_manual_activation_review": ready_for_manual_activation_review,
+        "allowed_next_step": "explicit_post_worker_synthetic_healthcheck_then_manual_activation_review",
+        "not_allowed_next_steps": [
+            "GET /api/worker/cache worker process start",
+            "GET /api/worker/cache Redis ping",
+            "GET /api/worker/cache scheduler start",
+            "GET /api/worker/cache task dispatch",
+            "automatic Tushare/DeepSeek/GitHub task scheduling",
+            "synthetic healthcheck as production worker completion",
+            "readiness receipt as production worker completion",
+        ],
+        "missing_evidence_items": [
+            "celery_worker_process_evidence",
+            "redis_broker_reachability_evidence",
+            "cross_process_retry_cancel_lock_dedupe_evidence",
+            "append_only_worker_task_log_evidence",
+            "scheduler_default_off_runtime_evidence",
+            "provider_model_no_autoschedule_evidence",
+        ],
+        "production_blocker_count": production_blocker_count,
+        "healthcheck_pending_count": healthcheck_pending_count,
+        "task_log_persistence_blocker_count": task_log_blocker_count,
+        "activation_blocker_count": activation_blocker_count,
+        "synthetic_healthcheck_executed": synthetic_executed,
+        "production_worker_complete": False,
+        "worker_started_by_receipt": False,
+        "celery_worker_started": False,
+        "redis_pinged_by_receipt": False,
+        "redis_pinged": False,
+        "scheduler_started_by_receipt": False,
+        "scheduler_started": False,
+        "task_dispatched_by_receipt": False,
+        "provider_model_task_dispatched_by_receipt": False,
+        "cache_get_external_calls": False,
+        "receipt_external_calls_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called_by_receipt": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "criterion_count": len(rows),
+        "blocking_criterion_count": len(blocked_rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_worker_production_readiness_receipt",
+                "source": "worker cache local contracts",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_readiness_receipt",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This receipt only chooses the next safe LTG-06 step. It does not start Celery, ping Redis, run healthcheck, start scheduler, dispatch tasks, call providers/models/probes, execute trades, modify strategy action, or prove production worker completion.",
+    }
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -1355,6 +1539,16 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     )
     production_readiness["worker_activation_review_contract"] = activation_review_contract
     production_readiness["worker_activation_review_rows"] = activation_review_contract["rows"]
+    production_readiness_receipt = _worker_production_readiness_receipt(
+        production_blocker_audit=production_blocker_audit,
+        healthcheck_qa_contract=healthcheck_qa_contract,
+        task_log_persistence_audit=task_log_persistence_audit,
+        synthetic_healthcheck=synthetic_healthcheck,
+        activation_review_contract=activation_review_contract,
+        catalog=catalog,
+    )
+    production_readiness["worker_production_readiness_receipt"] = production_readiness_receipt
+    production_readiness["worker_production_readiness_receipt_rows"] = production_readiness_receipt["rows"]
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
     manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
@@ -1432,6 +1626,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_synthetic_healthcheck_rows": synthetic_healthcheck.get("rows") or [],
         "worker_activation_review_contract": activation_review_contract,
         "worker_activation_review_rows": activation_review_contract["rows"],
+        "worker_production_readiness_receipt": production_readiness_receipt,
+        "worker_production_readiness_receipt_rows": production_readiness_receipt["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
         "dispatch_plan_rows": dispatch_plan_rows,
         "dispatch_plan_summary": {
@@ -1478,6 +1674,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_activation_review_step_count": activation_review_contract["review_step_count"],
             "worker_activation_blocker_count": activation_review_contract["activation_blocker_count"],
             "worker_activation_operator_action_count": activation_review_contract["operator_action_required_count"],
+            "worker_production_readiness_receipt_ready": 1 if production_readiness_receipt.get("local_receipt_ready") else 0,
+            "worker_production_readiness_receipt_blocker_count": production_readiness_receipt["blocking_criterion_count"],
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
             "dispatch_plan_task_count": len(dispatch_plan_rows),
@@ -1502,6 +1700,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_synthetic_healthcheck_requires_explicit_post": True,
             "cache_get_executes_synthetic_healthcheck": False,
             "worker_synthetic_healthcheck_is_not_production_complete": True,
+            "worker_production_readiness_receipt_is_local": True,
+            "worker_production_readiness_receipt_is_not_process_start": True,
+            "worker_production_readiness_receipt_is_not_production_completion": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
@@ -1515,7 +1716,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
                 "call_status": "cache_read",
                 "external": False,
             }
-        ],
+        ]
+        + production_readiness_receipt["call_ledger"],
         "external_calls_triggered": False,
         "redis_pinged": False,
         "tushare_called": False,
