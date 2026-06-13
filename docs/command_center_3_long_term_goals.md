@@ -69,7 +69,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
 | LTG-13 | 下一票雷达快扫生产化 | legacy radar exists; React cache page exists; quick/local scans plus full-pool/deep-scan readiness plans exist | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
-| LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer exists; chart/radar clarity is in progress | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
+| LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer plus static readiness audit exists; browser visual QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
 
@@ -746,15 +746,17 @@ Productionize non-blocking next-ticket radar scans
 - Next-session ECharts now has a short update clarity layer and respects reduced-motion preferences by disabling chart update animation.
 - Candidate radar now tags its primary result cluster with cache/coverage/blocker/degraded state so result transitions are visually easier to follow without recomputing candidates.
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
+- Call Ledger Audit now exposes `motion_clarity_audit` and `motion_clarity_rows`, a local static source audit for motion tokens, finite keyframes, reduced-motion CSS/runtime behavior, StateClarityRail usage, chart/radar clarity scopes, layout containment, no timer/RAF motion loops, and no provider invocation markers.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
 ### Gaps
 
 - Need deeper transitions for panel expansion, cache refresh, and later candidate-radar result deltas beyond the primary cluster and clarity rail.
 - Need broader chart motion verification so updates help users understand state changes instead of adding decoration.
-- Need broader viewport verification so animation never overlaps, occludes, or resizes critical text.
-- Need performance guardrails so later animation never reintroduces UI stalls.
+- Need browser viewport verification so animation never overlaps, occludes, or resizes critical text.
+- Need runtime performance traces so later animation never reintroduces UI stalls.
 - Need visual hierarchy that makes status, freshness, blockers, and candidate changes obvious.
+- `motion_clarity_static_ready_visual_qa_pending` is not production motion completion; it only proves static source guardrails.
 
 ### Implementation Phases
 
@@ -773,6 +775,8 @@ Productionize non-blocking next-ticket radar scans
 - No animation changes `strategy action`, price, position, or packet values.
 - Cache/task/radar clarity states are visible without using timers, requestAnimationFrame, provider refreshes, or frontend scoring.
 - Visual polish is additive and does not replace audit labels, warnings, or freshness state.
+- `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
+- `production_motion_complete` remains false until browser viewport and performance QA are complete.
 
 ### Forbidden
 

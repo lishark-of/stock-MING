@@ -31,6 +31,8 @@ export default function CallLedgerAudit() {
   const releaseGateAudit = (cache.release_gate_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const releaseGateRows = rows(cache.release_gate_readiness_rows);
   const releaseGateWorkflowRows = rows(cache.release_gate_workflow_rows);
+  const motionClarityAudit = (cache.motion_clarity_audit as Record<string, unknown> | undefined) ?? {};
+  const motionClarityRows = rows(cache.motion_clarity_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -78,6 +80,9 @@ export default function CallLedgerAudit() {
           { label: "gate blockers", value: counts.release_gate_blocker_count as number | undefined, tone: Number(counts.release_gate_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "gate checks", value: counts.release_gate_check_count as number | undefined },
           { label: "workflow files", value: counts.release_gate_workflow_count as number | undefined },
+          { label: "motion clarity", value: motionClarityAudit.status as string | undefined, tone: motionClarityAudit.static_ready === true ? "good" : "warn" },
+          { label: "motion blockers", value: counts.motion_clarity_blocker_count as number | undefined, tone: Number(counts.motion_clarity_blocker_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "motion visual QA", value: motionClarityAudit.visual_qa_complete === true ? "完成" : "待验收", tone: motionClarityAudit.visual_qa_complete === true ? "good" : "warn" },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -159,6 +164,18 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="CI mirror static inventory" subtitle="只读列出 .github/workflows；不调用 GitHub API" status="ci_static_inventory">
         <DataLineageTable rows={releaseGateWorkflowRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion clarity readiness" subtitle="LTG-14：只读静态审计 React/CSS 动效边界，不代表浏览器视觉验收完成" status={String(motionClarityAudit.status ?? "missing")}>
+        <p>scope: {String(motionClarityAudit.scope ?? "local_static_source_audit_not_browser_visual_qa")}</p>
+        <p>static_ready: {String(motionClarityAudit.static_ready ?? false)}</p>
+        <p>production_motion_complete: {String(motionClarityAudit.production_motion_complete ?? false)}</p>
+        <p>visual_qa_complete: {String(motionClarityAudit.visual_qa_complete ?? false)}</p>
+        <p>browser_performance_verified: {String(motionClarityAudit.browser_performance_verified ?? false)}</p>
+      </PacketCard>
+
+      <PacketCard title="Motion clarity checklist" subtitle="motion_clarity_rows：tokens、reduced-motion、finite animation、no timer loop、chart/radar clarity" status="motion_clarity_rows">
+        <DataLineageTable rows={motionClarityRows} />
       </PacketCard>
 
       <div className="grid">

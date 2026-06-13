@@ -36,10 +36,12 @@ from server.services import (
 PACKET_KEY = "command_center_3_call_ledger_audit_cache"
 SCHEMA_VERSION = "call_ledger_audit_cache.v1"
 RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
+MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
+DESKTOP_SRC_DIR = PROJECT_ROOT / "desktop" / "src"
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 
@@ -595,6 +597,190 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     return audit, rows, workflow_rows
 
 
+def _motion_source(path: str) -> str:
+    return _read_local_text(DESKTOP_SRC_DIR / path)
+
+
+def _motion_row(
+    criterion: str,
+    passed: bool,
+    *,
+    evidence: str,
+    production_blocker: bool = True,
+    status_override: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status_override or ("passed" if passed else "blocked"),
+        "passed": passed,
+        "evidence": evidence,
+        "production_blocker": production_blocker and not passed,
+    }
+
+
+def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    styles = _motion_source("styles.css")
+    app = _motion_source("App.tsx")
+    packet_card = _motion_source("components/PacketCard.tsx")
+    metric_grid = _motion_source("components/MetricGrid.tsx")
+    state_rail = _motion_source("components/StateClarityRail.tsx")
+    page_state = _motion_source("components/PageStateBanner.tsx")
+    task_panel = _motion_source("components/TaskStatusPanel.tsx")
+    task_receipt = _motion_source("components/TaskLaunchReceipt.tsx")
+    next_chart = _motion_source("components/NextSessionChart.tsx")
+    candidate_radar = _motion_source("routes/CandidateRadar.tsx")
+    audited_text = "\n".join(
+        [
+            styles,
+            app,
+            packet_card,
+            metric_grid,
+            state_rail,
+            page_state,
+            task_panel,
+            task_receipt,
+            next_chart,
+            candidate_radar,
+        ]
+    )
+    token_markers = (
+        "--motion-duration-fast",
+        "--motion-duration-panel",
+        "--motion-duration-route",
+        "--motion-duration-chart",
+        "--motion-duration-state",
+        "--motion-duration-clarity",
+        "--motion-ease-emphasized",
+    )
+    keyframe_markers = (
+        "@keyframes cc-route-reveal",
+        "@keyframes cc-surface-rise",
+        "@keyframes cc-state-clarity",
+        "@keyframes cc-chart-clarity",
+        "@keyframes cc-clarity-sweep",
+    )
+    task_polling_interval_is_bounded = "window.setInterval" in task_panel and "getTask(taskId)" in task_panel and "window.clearInterval" in task_panel
+    checks = {
+        "motion_tokens_present": all(marker in styles for marker in token_markers),
+        "finite_keyframes_present": all(marker in styles for marker in keyframe_markers),
+        "single_iteration_motion": "animation-iteration-count: 1;" in styles
+        and "animation-fill-mode: both" in styles,
+        "reduced_motion_css": "@media (prefers-reduced-motion: reduce)" in styles
+        and "animation-duration: 1ms !important" in styles
+        and "transition-duration: 1ms !important" in styles
+        and "transform: none !important" in styles,
+        "state_clarity_rail_present": "data-step-state={step.state}" in state_rail
+        and "StateClarityRail" in page_state
+        and "StateClarityRail" in task_panel
+        and "StateClarityRail" in task_receipt,
+        "route_and_surface_staging": "route-stage" in app
+        and 'key={route}' in app
+        and "motion-surface" in packet_card
+        and "motion-surface" in metric_grid,
+        "task_progress_motion_present": "task-panel--${task.status}" in task_panel
+        and "data-task-state={task.status}" in task_panel
+        and "task-progress" in task_panel
+        and "task-progress" in styles,
+        "chart_reduced_motion_runtime": "useReducedMotionPreference" in next_chart
+        and 'window.matchMedia("(prefers-reduced-motion: reduce)")' in next_chart
+        and "animation: !reducedMotion" in next_chart
+        and "animationDurationUpdate: reducedMotion ? 0 : 260" in next_chart,
+        "chart_clarity_scope": 'className="chart-refresh-frame"' in next_chart
+        and "data-chart-state={chartMotionState}" in next_chart
+        and ".chart-refresh-frame" in styles,
+        "radar_clarity_scope": "radarMotionState" in candidate_radar
+        and 'className="grid radar-result-cluster"' in candidate_radar
+        and "data-radar-state={radarMotionState}" in candidate_radar
+        and ".radar-result-cluster" in styles,
+        "layout_containment_guard": "contain: layout paint" in styles
+        and ".chart-refresh-frame" in styles
+        and ".state-clarity-rail" in styles,
+        "no_timer_or_raf_motion_loop": "setTimeout" not in audited_text
+        and "requestAnimationFrame" not in audited_text
+        and ("setInterval" not in audited_text or task_polling_interval_is_bounded),
+        "no_provider_call_markers": not _script_contains_any(
+            audited_text,
+            ("tushare_adapter", "deepseek.chat", "gh api", "api.github.com", "curl "),
+        ),
+        "visual_only_boundary_visible": "candidate radar visual state" in candidate_radar
+        and "trade guard" in candidate_radar
+        and "图谱交互说明" in next_chart,
+    }
+    rows = [
+        _motion_row("motion_tokens_present", checks["motion_tokens_present"], evidence=", ".join(token_markers)),
+        _motion_row("finite_keyframes_present", checks["finite_keyframes_present"], evidence=", ".join(keyframe_markers)),
+        _motion_row("single_iteration_motion", checks["single_iteration_motion"], evidence="animation-iteration-count: 1 + animation-fill-mode: both"),
+        _motion_row("reduced_motion_css", checks["reduced_motion_css"], evidence="prefers-reduced-motion disables transform and duration"),
+        _motion_row("state_clarity_rail_present", checks["state_clarity_rail_present"], evidence="PageStateBanner / TaskStatusPanel / TaskLaunchReceipt use StateClarityRail"),
+        _motion_row("route_and_surface_staging", checks["route_and_surface_staging"], evidence="route-stage + motion-surface"),
+        _motion_row("task_progress_motion_present", checks["task_progress_motion_present"], evidence="task status classes + progress transition"),
+        _motion_row("chart_reduced_motion_runtime", checks["chart_reduced_motion_runtime"], evidence="NextSessionChart runtime reduced-motion check"),
+        _motion_row("chart_clarity_scope", checks["chart_clarity_scope"], evidence="chart-refresh-frame and chartMotionState"),
+        _motion_row("radar_clarity_scope", checks["radar_clarity_scope"], evidence="radar-result-cluster and radarMotionState"),
+        _motion_row("layout_containment_guard", checks["layout_containment_guard"], evidence="contain: layout paint"),
+        _motion_row("no_timer_or_raf_motion_loop", checks["no_timer_or_raf_motion_loop"], evidence="no setTimeout/requestAnimationFrame motion loop; bounded setInterval is task polling only"),
+        _motion_row("no_provider_call_markers", checks["no_provider_call_markers"], evidence="audited motion files contain no provider invocation markers"),
+        _motion_row("visual_only_boundary_visible", checks["visual_only_boundary_visible"], evidence="motion state labels remain visual-only and trade guarded"),
+        _motion_row(
+            "desktop_mobile_viewport_visual_qa_pending",
+            False,
+            evidence="static source audit cannot prove overlap, occlusion, or perceived clarity across viewports",
+            production_blocker=False,
+            status_override="pending",
+        ),
+        _motion_row(
+            "browser_performance_trace_pending",
+            False,
+            evidence="static source audit cannot prove runtime frame stability under large packets",
+            production_blocker=False,
+            status_override="pending",
+        ),
+    ]
+    static_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    soft_blockers = [row["criterion"] for row in rows if row.get("status") == "pending" and not row.get("production_blocker")]
+    static_ready = not static_blockers
+    audit = {
+        "schema_version": MOTION_CLARITY_SCHEMA_VERSION,
+        "status": "motion_clarity_static_ready_visual_qa_pending" if static_ready else "motion_clarity_static_blocked",
+        "scope": "local_static_source_audit_not_browser_visual_qa",
+        "ltg": "LTG-14",
+        "static_ready": static_ready,
+        "production_motion_complete": False,
+        "visual_qa_complete": False,
+        "browser_performance_verified": False,
+        "row_count": len(rows),
+        "passed_count": len([row for row in rows if row.get("status") == "passed"]),
+        "blocking_criterion_count": len(static_blockers),
+        "soft_blocker_count": len(soft_blockers),
+        "blockers": static_blockers,
+        "soft_blockers": soft_blockers,
+        "audited_files": [
+            "desktop/src/styles.css",
+            "desktop/src/App.tsx",
+            "desktop/src/components/PacketCard.tsx",
+            "desktop/src/components/MetricGrid.tsx",
+            "desktop/src/components/StateClarityRail.tsx",
+            "desktop/src/components/PageStateBanner.tsx",
+            "desktop/src/components/TaskStatusPanel.tsx",
+            "desktop/src/components/TaskLaunchReceipt.tsx",
+            "desktop/src/components/NextSessionChart.tsx",
+            "desktop/src/routes/CandidateRadar.tsx",
+        ],
+        "cache_only": True,
+        "runs_no_commands": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_packets": True,
+        "next_action": "run browser viewport and performance QA before calling LTG-14 production motion complete.",
+        **checks,
+    }
+    return audit, rows
+
+
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
@@ -608,6 +794,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     model_strategy_rows = _model_strategy_rows()
     get_route_coverage = _get_route_coverage(endpoint_rows)
     release_gate_readiness_audit, release_gate_readiness_rows, release_gate_workflow_rows = _release_gate_readiness_audit()
+    motion_clarity_audit, motion_clarity_rows = _motion_clarity_readiness_audit()
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -640,6 +827,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_readiness_audit": release_gate_readiness_audit,
         "release_gate_readiness_rows": release_gate_readiness_rows,
         "release_gate_workflow_rows": release_gate_workflow_rows,
+        "motion_clarity_audit": motion_clarity_audit,
+        "motion_clarity_rows": motion_clarity_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -671,6 +860,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete") is True,
             "release_gate_ci_mirror_ready": release_gate_readiness_audit.get("ci_mirror_ready") is True,
             "release_gate_workflow_count": release_gate_readiness_audit.get("workflow_count", 0),
+            "motion_clarity_check_count": motion_clarity_audit.get("row_count", 0),
+            "motion_clarity_static_ready": motion_clarity_audit.get("static_ready") is True,
+            "motion_clarity_blocker_count": motion_clarity_audit.get("blocking_criterion_count", 0),
+            "motion_clarity_soft_blocker_count": motion_clarity_audit.get("soft_blocker_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -694,6 +887,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_audit_runs_no_commands": True,
             "release_gate_audit_calls_no_github_api": True,
             "release_gate_local_ready_is_not_ci_status": True,
+            "motion_clarity_audit_is_static": True,
+            "motion_clarity_audit_runs_no_commands": True,
+            "motion_clarity_static_ready_is_not_visual_qa": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -707,6 +903,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "release_gate_status": release_gate_readiness_audit.get("status"),
                 "release_gate_local_ready": release_gate_readiness_audit.get("local_gate_ready"),
                 "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete"),
+                "motion_clarity_status": motion_clarity_audit.get("status"),
+                "motion_clarity_static_ready": motion_clarity_audit.get("static_ready"),
+                "motion_clarity_visual_qa_complete": motion_clarity_audit.get("visual_qa_complete"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -729,6 +928,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "审计页只展示 cache/task 边界，不刷新数据、不运行回测、不执行真实交易、不修改 strategy action。",
             "发现 missing_call_ledger 只代表该本地 cache 返回包没有附带调用血缘，不代表自动外联。",
             "release_gate_readiness_audit 只读解析本地脚本和 workflow；local_gate_ready 不是 CI 状态，也不是生产完成证明。",
+            "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
         ],
     }
     return _json_safe(packet)
