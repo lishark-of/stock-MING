@@ -80,6 +80,7 @@ export default function FactorQuantHub() {
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
   const tushareProviderPromotionAudit = packet.provider_acceptance_promotion_audit ?? {};
   const tushareProviderEvidenceGapAudit = packet.provider_evidence_gap_audit ?? {};
+  const tushareProviderSampleReadinessReceipt = packet.provider_sample_readiness_receipt ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -133,6 +134,8 @@ export default function FactorQuantHub() {
   const tushareProviderPromotionCriterionRows = toRows(packet.provider_acceptance_promotion_rows);
   const tushareProviderEvidenceGapAuditRows = objectRows(tushareProviderEvidenceGapAudit as Record<string, unknown>, "provider_evidence_gap_audit");
   const tushareProviderEvidenceGapRows = toRows(packet.provider_evidence_gap_rows);
+  const tushareProviderSampleReadinessRows = objectRows(tushareProviderSampleReadinessReceipt as Record<string, unknown>, "provider_sample_readiness");
+  const tushareProviderSampleReadinessCriterionRows = toRows(packet.provider_sample_readiness_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -285,7 +288,9 @@ export default function FactorQuantHub() {
           { label: "sample plan pending", value: tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0, tone: Number(tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0) > 0 ? "warn" : "good" },
           { label: "Tushare promotion", value: tushareProviderPromotionAudit.status ?? "missing", tone: tushareProviderPromotionAudit.promotion_ready === true ? "good" : "warn" },
           { label: "promotion blockers", value: tushareProviderPromotionAudit.blocking_criterion_count ?? 0, tone: Number(tushareProviderPromotionAudit.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "provider evidence rows", value: tushareProviderPromotionAudit.provider_evidence_row_count ?? 0, tone: Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "warn" : "neutral" }
+          { label: "provider evidence rows", value: tushareProviderPromotionAudit.provider_evidence_row_count ?? 0, tone: Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "warn" : "neutral" },
+          { label: "sample receipt", value: tushareProviderSampleReadinessReceipt.status ?? "missing", tone: tushareProviderSampleReadinessReceipt.ready_for_explicit_provider_sample_task === true ? "good" : "warn" },
+          { label: "sample receipt blockers", value: tushareProviderSampleReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(tushareProviderSampleReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" }
         ]}
       />
       <EChartPanel option={option} />
@@ -443,6 +448,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_evidence_gap_audit 只读本地 call_ledger、目标域计划和提升审计，逐目标域显示缺失的真实 provider 证据；它不调用 Tushare，也不把缺口清单当生产验收。</p>
       <DataLineageTable rows={tushareProviderEvidenceGapRows} />
       <DataLineageTable rows={tushareProviderEvidenceGapAuditRows} />
+      <h3>Tushare provider 样本准入回执</h3>
+      <p className="risk-note">provider_sample_readiness_receipt 只说明下一步是否可以进入显式 POST 样本验收任务；它不调用 Tushare，不把 matrix、fake/local adapter、local QA 或 gap ledger 提升为生产验收。</p>
+      <DataLineageTable rows={tushareProviderSampleReadinessCriterionRows} />
+      <DataLineageTable rows={tushareProviderSampleReadinessRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>

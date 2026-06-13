@@ -31,6 +31,7 @@ CONTRACT_KEYS = [
     "provider_acceptance_readiness_audit",
     "provider_acceptance_promotion_audit",
     "provider_evidence_gap_audit",
+    "provider_sample_readiness_receipt",
 ]
 
 
@@ -93,6 +94,12 @@ def build_contract() -> dict[str, Any]:
         provider_target_sample_plan_contract=target_sample_plan,
         provider_acceptance_promotion_audit=provider_promotion,
         call_ledger=call_ledger,
+    )
+    provider_sample_receipt = tushare_task_service._provider_sample_readiness_receipt(
+        provider_target_sample_plan_contract=target_sample_plan,
+        provider_acceptance_readiness_audit=provider_readiness,
+        provider_acceptance_promotion_audit=provider_promotion,
+        provider_evidence_gap_audit=provider_evidence_gap,
     )
 
     refresh_catalog = _catalog_by_type("refresh_tushare_facts")
@@ -281,6 +288,32 @@ def build_contract() -> dict[str, Any]:
             "Provider evidence gap audit must stay a local target-domain gap ledger and cannot call Tushare or promote acceptance.",
         ),
         _row(
+            "provider_sample_readiness_receipt_is_local",
+            provider_sample_receipt.get("schema_version") == "tushare_provider_sample_readiness_receipt.v1"
+            and provider_sample_receipt.get("scope") == "local_provider_sample_readiness_receipt_no_provider_execution"
+            and provider_sample_receipt.get("status")
+            in {
+                "provider_sample_receipt_ready_execution_pending",
+                "provider_sample_receipt_ready_for_promotion_review",
+                "provider_sample_receipt_blocked",
+            }
+            and provider_sample_receipt.get("provider_backed_acceptance_done") is False
+            and provider_sample_receipt.get("production_tushare_pipeline_complete") is False
+            and provider_sample_receipt.get("full_interface_acceptance_done") is False
+            and "GET cache provider refresh" in provider_sample_receipt.get("not_allowed_next_steps", [])
+            and _flag_false(
+                provider_sample_receipt,
+                "cache_get_external_calls",
+                "receipt_external_calls_triggered",
+                "tushare_called_by_receipt",
+                "deepseek_called",
+                "github_called",
+            )
+            and provider_sample_receipt.get("does_not_execute_trades") is True
+            and provider_sample_receipt.get("does_not_modify_strategy_action") is True,
+            "Provider sample readiness receipt must stay local and only identify the next explicit POST sample step.",
+        ),
+        _row(
             "target_groups_matrix_only",
             len(target_matrix_only_rows) == len(tushare_task_service.VALIDATION_TARGET_GROUPS)
             and all(row.get("does_not_claim_unselected_apis_verified") is True for row in target_matrix_only_rows)
@@ -353,6 +386,11 @@ def build_contract() -> dict[str, Any]:
             "provider_evidence_gap_status": provider_evidence_gap.get("status"),
             "provider_evidence_gap_target_with_gap_count": provider_evidence_gap.get("target_with_gap_count"),
             "provider_evidence_gap_blocker_count": provider_evidence_gap.get("gap_blocker_count"),
+            "provider_sample_readiness_status": provider_sample_receipt.get("status"),
+            "provider_sample_ready_for_explicit_task": provider_sample_receipt.get(
+                "ready_for_explicit_provider_sample_task"
+            ),
+            "provider_sample_readiness_blocker_count": provider_sample_receipt.get("blocked_readiness_count"),
             "target_sample_plan_ready_count": target_sample_plan.get("ready_to_execute_target_count"),
             "target_sample_plan_pending_count": target_sample_plan.get("pending_or_blocked_target_count"),
         },

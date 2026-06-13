@@ -4704,6 +4704,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["api_validation_matrix_policy"]["provider_evidence_gaps_pending"])
         self.assertEqual(persisted["provider_evidence_gap_status"], "provider_evidence_gaps_pending")
         self.assertEqual(persisted["provider_evidence_gap_target_with_gap_count"], 7)
+        sample_receipt = persisted["provider_sample_readiness_receipt"]
+        sample_receipt_rows = {row["criterion"]: row for row in persisted["provider_sample_readiness_rows"]}
+        self.assertEqual(sample_receipt["schema_version"], "tushare_provider_sample_readiness_receipt.v1")
+        self.assertEqual(sample_receipt["status"], "provider_sample_receipt_blocked")
+        self.assertEqual(sample_receipt["scope"], "local_provider_sample_readiness_receipt_no_provider_execution")
+        self.assertFalse(sample_receipt["ready_for_explicit_provider_sample_task"])
+        self.assertEqual(sample_receipt["allowed_next_step"], "complete_target_sample_payload_and_selection")
+        self.assertIn("GET cache provider refresh", sample_receipt["not_allowed_next_steps"])
+        self.assertFalse(sample_receipt["provider_backed_acceptance_done"])
+        self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
+        self.assertFalse(sample_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(sample_receipt["tushare_called_by_receipt"])
+        self.assertTrue(sample_receipt["does_not_execute_trades"])
+        self.assertEqual(sample_receipt_rows["sample_plan_has_ready_targets"]["status"], "blocked_no_ready_target")
+        self.assertEqual(sample_receipt_rows["provider_promotion_evidence_ticket"]["status"], "pending_provider_execution_evidence")
+        self.assertEqual(sample_receipt_rows["matrix_and_local_qa_not_acceptance"]["status"], "enforced_not_provider_acceptance")
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_sample_readiness_receipt_calls_provider"])
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_sample_ready_for_explicit_task"])
+        self.assertEqual(persisted["provider_sample_readiness_status"], "provider_sample_receipt_blocked")
+        self.assertFalse(persisted["provider_sample_ready_for_explicit_task"])
+        self.assertGreater(persisted["provider_sample_readiness_blocker_count"], 0)
 
     def test_tushare_refresh_task_validates_trade_calendar_and_extended_apis_without_false_parquet_claims(self):
         db_path = self._with_meta_store()
@@ -4926,6 +4947,30 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_api_selection_missing", gap_rows["chip_distribution"]["gap_blockers"])
         self.assertEqual(gap_rows["financial_disclosure"]["gap_status"], "partial_selection_gap_pending")
         self.assertIn("forecast", gap_rows["financial_disclosure"]["missing_required_apis"])
+        sample_receipt = persisted["provider_sample_readiness_receipt"]
+        sample_receipt_rows = {row["criterion"]: row for row in persisted["provider_sample_readiness_rows"]}
+        self.assertEqual(sample_receipt["schema_version"], "tushare_provider_sample_readiness_receipt.v1")
+        self.assertEqual(sample_receipt["status"], "provider_sample_receipt_ready_execution_pending")
+        self.assertEqual(sample_receipt["scope"], "local_provider_sample_readiness_receipt_no_provider_execution")
+        self.assertTrue(sample_receipt["ready_for_explicit_provider_sample_task"])
+        self.assertEqual(sample_receipt["allowed_next_step"], "explicit_post_task_target_sample_acceptance")
+        self.assertEqual(sample_receipt["ready_target_count"], 3)
+        self.assertGreater(sample_receipt["pending_or_blocked_target_count"], 0)
+        self.assertIn("provider_promotion_not_ready", sample_receipt["missing_evidence_items"])
+        self.assertFalse(sample_receipt["provider_backed_acceptance_done"])
+        self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
+        self.assertFalse(sample_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(sample_receipt["tushare_called_by_receipt"])
+        self.assertTrue(sample_receipt["does_not_execute_trades"])
+        self.assertEqual(sample_receipt_rows["sample_plan_has_ready_targets"]["status"], "ready_for_explicit_provider_sample")
+        self.assertEqual(sample_receipt_rows["local_contracts_are_no_provider_call"]["status"], "passed_no_provider_call")
+        self.assertEqual(sample_receipt_rows["provider_evidence_gaps_visible"]["status"], "passed_gaps_visible")
+        self.assertEqual(sample_receipt_rows["provider_promotion_evidence_ticket"]["status"], "pending_provider_execution_evidence")
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_sample_readiness_receipt_calls_provider"])
+        self.assertTrue(persisted["api_validation_matrix_policy"]["provider_sample_ready_for_explicit_task"])
+        self.assertEqual(persisted["provider_sample_readiness_status"], "provider_sample_receipt_ready_execution_pending")
+        self.assertTrue(persisted["provider_sample_ready_for_explicit_task"])
+        self.assertGreater(persisted["provider_sample_readiness_blocker_count"], 0)
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -5076,6 +5121,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(gap_rows["margin_financing"]["gap_status"], "failed_or_blocked_evidence_gap_pending")
         self.assertIn("margin_detail", gap_rows["margin_financing"]["failed_or_blocked_apis"])
         self.assertIn("non_empty_success_sample_missing", gap_rows["margin_financing"]["gap_blockers"])
+        sample_receipt = persisted["provider_sample_readiness_receipt"]
+        sample_receipt_rows = {row["criterion"]: row for row in persisted["provider_sample_readiness_rows"]}
+        self.assertEqual(sample_receipt["status"], "provider_sample_receipt_ready_execution_pending")
+        self.assertTrue(sample_receipt["ready_for_explicit_provider_sample_task"])
+        self.assertEqual(sample_receipt["allowed_next_step"], "explicit_post_task_target_sample_acceptance")
+        self.assertEqual(sample_receipt["ready_target_count"], 1)
+        self.assertFalse(sample_receipt["provider_backed_acceptance_done"])
+        self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
+        self.assertEqual(sample_receipt_rows["sample_plan_has_ready_targets"]["status"], "ready_for_explicit_provider_sample")
+        self.assertEqual(sample_receipt_rows["provider_promotion_evidence_ticket"]["status"], "pending_provider_execution_evidence")
 
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
@@ -5167,7 +5222,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             provider_acceptance_readiness_audit=readiness,
             call_ledger=call_ledger,
         )
+        gap_audit = tushare_task_service._provider_evidence_gap_audit(
+            api_validation_rows=validation_rows,
+            validation_target_rows=validation_target_rows,
+            provider_target_sample_plan_contract=target_sample_plan,
+            provider_acceptance_promotion_audit=promotion,
+            call_ledger=call_ledger,
+        )
+        sample_receipt = tushare_task_service._provider_sample_readiness_receipt(
+            provider_target_sample_plan_contract=target_sample_plan,
+            provider_acceptance_readiness_audit=readiness,
+            provider_acceptance_promotion_audit=promotion,
+            provider_evidence_gap_audit=gap_audit,
+        )
         rows = {row["criterion"]: row for row in promotion["rows"]}
+        sample_receipt_rows = {row["criterion"]: row for row in sample_receipt["rows"]}
 
         self.assertEqual(promotion["schema_version"], "tushare_provider_acceptance_promotion_audit.v1")
         self.assertEqual(promotion["status"], "provider_acceptance_promotion_ready")
@@ -5182,6 +5251,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(rows["all_target_groups_validated"]["passed"])
         self.assertTrue(rows["explicit_provider_backed_acceptance_marker"]["passed"])
         self.assertTrue(rows["failure_mode_acceptance_evidence"]["passed"])
+        self.assertEqual(sample_receipt["schema_version"], "tushare_provider_sample_readiness_receipt.v1")
+        self.assertEqual(sample_receipt["status"], "provider_sample_receipt_ready_for_promotion_review")
+        self.assertTrue(sample_receipt["ready_for_explicit_provider_sample_task"])
+        self.assertEqual(sample_receipt["allowed_next_step"], "review_prior_full_interface_provider_evidence")
+        self.assertTrue(sample_receipt["provider_backed_acceptance_done"])
+        self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
+        self.assertFalse(sample_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(sample_receipt["tushare_called_by_receipt"])
+        self.assertEqual(sample_receipt["blocked_readiness_count"], 0)
+        self.assertEqual(sample_receipt_rows["provider_promotion_evidence_ticket"]["status"], "ready_for_promotion_review")
+        self.assertEqual(sample_receipt_rows["matrix_and_local_qa_not_acceptance"]["status"], "enforced_not_provider_acceptance")
 
     def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
         db_path = self._with_meta_store()
@@ -5723,6 +5803,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_sample_plan_is_plan_only", script)
         self.assertIn("provider_readiness_stays_pending", script)
         self.assertIn("provider_promotion_audit_stays_local_pending", script)
+        self.assertIn("provider_sample_readiness_receipt_is_local", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -5761,7 +5842,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["provider_evidence_gap_status"], "provider_evidence_gaps_pending")
         self.assertEqual(payload["observed"]["provider_evidence_gap_target_with_gap_count"], payload["target_group_count"])
         self.assertGreater(payload["observed"]["provider_evidence_gap_blocker_count"], 0)
+        self.assertEqual(payload["observed"]["provider_sample_readiness_status"], "provider_sample_receipt_blocked")
+        self.assertFalse(payload["observed"]["provider_sample_ready_for_explicit_task"])
+        self.assertGreater(payload["observed"]["provider_sample_readiness_blocker_count"], 0)
         self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
+        self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("post_task_catalog_button_gate", criteria)
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
@@ -5769,6 +5854,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_readiness_stays_pending", criteria)
         self.assertIn("provider_promotion_audit_stays_local_pending", criteria)
         self.assertIn("provider_evidence_gap_audit_is_local_pending", criteria)
+        self.assertIn("provider_sample_readiness_receipt_is_local", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")
