@@ -149,6 +149,7 @@ Harden A-share trading-calendar freshness production gate
 - Tushare refresh packets now expose `failure_mode_qa_contract`: a local call-ledger classifier for empty/no-record windows, permission denied, parse/invalid-result failures, missing required parameters, safe provider errors, and matrix-only unrequested APIs.
 - Tushare refresh packets now expose `request_parameter_qa_contract`: a local per-interface parameter contract for safe request params, `ts_code` preflight blocking, date context visibility, alias handling, and matrix-only boundaries.
 - Tushare refresh packets now expose `provider_target_sample_plan_contract`: a local target-domain sample plan for `trade_cal`, margin, dragon-tiger, limit/emotion, chip, financial disclosure, and hard-risk interfaces. It declares required APIs, sample windows, request context, success evidence, and failure evidence for future provider-backed acceptance.
+- `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It exercises only local matrix/readiness contract helpers and prevents matrix-only rows, failure-mode QA, request-parameter QA, target-sample plans, or provider-readiness audits from being mistaken for provider-backed production acceptance.
 
 ### Gaps
 
@@ -164,6 +165,7 @@ Harden A-share trading-calendar freshness production gate
 - `failure_mode_qa_contract.status=failure_mode_qa_ready_provider_acceptance_pending` proves failure modes are distinguishable in local call ledger rows; it does not prove real provider coverage or production acceptance.
 - `request_parameter_qa_contract.status=request_parameter_qa_ready_provider_acceptance_pending` proves local parameter contracts are visible and secret-safe; it does not prove that each interface has correct real provider windows.
 - `provider_target_sample_plan_contract.status=local_plan_ready_provider_execution_pending` proves the target sample acceptance plan is explicit; it does not execute Tushare or prove provider-backed samples.
+- The local Tushare acceptance push-gate contract is not a provider run; it only blocks regressions in button gating, matrix semantics, call-ledger requirements, pending provider acceptance flags, and no-trade/no-action boundaries.
 
 ### Implementation Phases
 
@@ -183,6 +185,7 @@ Harden A-share trading-calendar freshness production gate
 - `request_parameter_qa_contract` shows declared params, provided safe params, missing required preflight params, date context fields, alias handling, and provider acceptance requirements without storing token/key material.
 - `provider_target_sample_plan_contract` shows each target domain's required APIs, sample window, request context, success evidence, failure evidence, and ready/pending/blocker state without calling provider APIs.
 - `provider_acceptance_readiness_audit.provider_backed_acceptance_done=false` and `production_tushare_pipeline_complete=false` until real provider-backed full-interface acceptance is explicitly proven.
+- `scripts/tushare_acceptance_contract.py` passes in the push gate while still reporting `provider_backed_acceptance_done=false`, `production_tushare_pipeline_complete=false`, and `full_interface_acceptance_done=false`.
 - Tokens are never printed, stored in packets, or exposed to frontend.
 
 ### Forbidden
@@ -194,6 +197,7 @@ Harden A-share trading-calendar freshness production gate
 - Do not treat `request_parameter_qa_contract` as proof that all interface windows, periods, or announcement dates are provider-accepted.
 - Do not treat `provider_target_sample_plan_contract` or `ready_to_execute_provider_sample` rows as real provider-backed acceptance.
 - Do not treat `provider_acceptance_readiness_audit` as production completion while it reports `provider_acceptance_pending`.
+- Do not treat `scripts/tushare_acceptance_contract.py` passing as real Tushare provider acceptance; it is only a local push-gate regression guard.
 - Do not commit fetched data artifacts.
 
 ### Recommended Commit Message
@@ -673,6 +677,7 @@ Retire Streamlit from primary user workflow
 - Local test, frontend build, smoke, and diff checks are available.
 - `scripts/push_gate_3_0.sh` now codifies the local push gate: Python tests, desktop build, smoke, diff check, high-risk secret scan, generated artifact scan, and final clean-worktree check.
 - `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
+- `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness contracts remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
@@ -684,6 +689,7 @@ Retire Streamlit from primary user workflow
 - CI mirror workflow exists, but remote CI status is still not local proof until a pushed run is inspected; current audit only proves static workflow presence.
 - Push gate still needs periodic review of false-positive allowlists; current audit keeps `false_positive_allowlist_review_pending` visible.
 - Structured keyword review is present, but it is still a local classification contract; periodic human allowlist review and remote CI evidence remain separate.
+- Tushare acceptance contract is present, but it is still a local matrix/readiness guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -705,6 +711,7 @@ Retire Streamlit from primary user workflow
 - Ordinary keyword review contract runs after high-risk scan, emits no raw matched source lines, and keeps periodic allowlist review visible as pending.
 - Worktree is clean before push.
 - Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
+- Tushare acceptance contract runs after Data Health and before static UI QA, and keeps `provider_backed_acceptance_done=false` / `production_tushare_pipeline_complete=false` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
