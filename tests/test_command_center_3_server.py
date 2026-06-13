@@ -27,6 +27,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, packet_service, "SNAPSHOT_CACHE_PATH", original_path)
         return cache_path
 
+    def _with_candidate_motion_qa_root(self):
+        original_root = candidate_service.MOTION_QA_ARTIFACT_ROOT
+        temp_dir = tempfile.TemporaryDirectory()
+        candidate_service.MOTION_QA_ARTIFACT_ROOT = Path(temp_dir.name) / "motion_qa"
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, candidate_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
+        return candidate_service.MOTION_QA_ARTIFACT_ROOT
+
     def _with_meta_store(self):
         original_packet_path = packet_service.SQLITE_META_PATH
         original_factor_path = factor_service.SQLITE_META_PATH
@@ -5984,6 +5992,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("priority_explanation_is_local_not_trade_signal", script)
         self.assertIn("full_pool_plan_is_plan_only", script)
         self.assertIn("deep_scan_plan_is_plan_only", script)
+        self.assertIn("candidate_browser_qa_evidence_reader_is_local_artifact_only", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -6010,6 +6019,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["browser_performance_trace_done"])
         self.assertFalse(payload["browser_visual_delta_qa_done"])
         self.assertTrue(payload["candidate_browser_qa_runbook_ready"])
+        self.assertIn("candidate_browser_qa_evidence_found", payload)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -6032,6 +6042,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {"candidate_priority_explanation_ready", "candidate_priority_explanation_empty"},
         )
         self.assertIsNotNone(payload["observed"]["priority_explanation_gap_count"])
+        self.assertIn(
+            payload["observed"]["candidate_browser_qa_evidence_status"],
+            {
+                "candidate_browser_qa_evidence_pending",
+                "candidate_browser_qa_evidence_passed_local_artifact",
+                "candidate_browser_qa_evidence_review_required_local_artifact",
+            },
+        )
+        self.assertIsNotNone(payload["observed"]["candidate_browser_qa_evidence_row_count"])
         self.assertIsNotNone(payload["observed"]["full_pool_plan_blocker_count"])
         self.assertIsNotNone(payload["observed"]["deep_scan_plan_blocker_count"])
         criteria = {row["criterion"] for row in payload["rows"]}
@@ -6043,6 +6062,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("full_pool_plan_is_plan_only", criteria)
         self.assertIn("deep_scan_plan_is_plan_only", criteria)
         self.assertIn("candidate_browser_qa_runbook_is_local_execution_pending", criteria)
+        self.assertIn("candidate_browser_qa_evidence_reader_is_local_artifact_only", criteria)
 
     def test_candidate_radar_browser_qa_runbook_script_is_local_static(self):
         path = Path("scripts/candidate_radar_browser_qa_runbook.py")
@@ -8343,6 +8363,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(setattr, packet_service, "SNAPSHOT_CACHE_PATH", original_path)
         return cache_path
 
+    def _with_candidate_motion_qa_root(self):
+        original_root = candidate_service.MOTION_QA_ARTIFACT_ROOT
+        temp_dir = tempfile.TemporaryDirectory()
+        candidate_service.MOTION_QA_ARTIFACT_ROOT = Path(temp_dir.name) / "motion_qa"
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, candidate_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
+        return candidate_service.MOTION_QA_ARTIFACT_ROOT
+
     def _with_meta_store(self):
         original_packet_path = packet_service.SQLITE_META_PATH
         original_factor_path = factor_service.SQLITE_META_PATH
@@ -9323,6 +9351,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_browser_qa_runbook_ready"])
         self.assertTrue(packet["policy"]["candidate_browser_qa_is_not_visual_qa"])
         self.assertTrue(packet["policy"]["candidate_browser_qa_is_not_production_replacement"])
+        browser_qa_evidence = packet["candidate_browser_qa_evidence_summary"]
+        self.assertEqual(browser_qa_evidence["schema_version"], "candidate_radar_browser_qa_evidence.v1")
+        self.assertEqual(browser_qa_evidence["scope"], "local_candidate_radar_browser_qa_evidence_reader_no_browser_execution")
+        self.assertEqual(browser_qa_evidence["candidate_route"], "#candidates")
+        self.assertIn(
+            browser_qa_evidence["status"],
+            {
+                "candidate_browser_qa_evidence_pending",
+                "candidate_browser_qa_evidence_passed_local_artifact",
+                "candidate_browser_qa_evidence_review_required_local_artifact",
+            },
+        )
+        self.assertTrue(browser_qa_evidence["opens_no_browser"])
+        self.assertTrue(browser_qa_evidence["starts_no_servers"])
+        self.assertTrue(browser_qa_evidence["writes_no_artifacts"])
+        self.assertTrue(browser_qa_evidence["reads_ignored_local_reports_only"])
+        self.assertFalse(browser_qa_evidence["production_radar_replacement_complete"])
+        self.assertFalse(browser_qa_evidence["legacy_retirement_ready"])
+        self.assertFalse(browser_qa_evidence["external_calls_triggered"])
+        self.assertFalse(browser_qa_evidence["tushare_called"])
+        self.assertFalse(browser_qa_evidence["deepseek_called"])
+        self.assertFalse(browser_qa_evidence["github_called"])
+        self.assertTrue(browser_qa_evidence["does_not_execute_trades"])
+        self.assertTrue(browser_qa_evidence["does_not_modify_strategy_action"])
+        self.assertEqual(len(packet["candidate_browser_qa_evidence_rows"]), browser_qa_evidence["row_count"])
+        self.assertTrue(packet["policy"]["candidate_browser_qa_evidence_reads_local_artifact_only"])
+        self.assertTrue(packet["policy"]["candidate_browser_qa_evidence_does_not_open_browser"])
+        self.assertTrue(packet["policy"]["candidate_browser_qa_evidence_does_not_write_artifacts"])
+        self.assertTrue(packet["policy"]["candidate_browser_qa_evidence_is_not_production_replacement"])
         no_loss = packet["no_feature_loss_acceptance_contract"]
         self.assertEqual(no_loss["schema_version"], "candidate_radar_no_feature_loss_acceptance.v1")
         self.assertEqual(no_loss["status"], "no_feature_loss_acceptance_local_ready_production_pending")
@@ -9381,6 +9438,114 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(response["call_ledger"][0]["api"], "local_candidate_radar_cache")
         self.assertFalse(response["call_ledger"][0]["external"])
         self.assertIn("GET /api/candidate-radar/cache", response["warnings"][0])
+
+    def test_candidate_radar_reads_local_browser_qa_evidence_without_promoting_production(self):
+        artifact_root = self._with_candidate_motion_qa_root()
+        report_dir = artifact_root / "2026-06-13T10-00-00-000Z"
+        report_dir.mkdir(parents=True)
+        rows = []
+        for viewport, width, height in [
+            ("desktop", 1440, 900),
+            ("laptop", 1280, 800),
+            ("tablet", 834, 1112),
+            ("mobile", 390, 844),
+        ]:
+            rows.append(
+                {
+                    "route": "#candidates",
+                    "label": "Candidate Radar",
+                    "viewport": viewport,
+                    "width": width,
+                    "height": height,
+                    "url": "http://127.0.0.1:5173/#candidates",
+                    "status": "passed",
+                    "visual_qa_complete": True,
+                    "performance_trace_complete": True,
+                    "route_transition_observed_ms": 120,
+                    "route_transition_budget_ms": 500,
+                    "long_task_over_50ms_count": 0,
+                    "largest_motion_layout_shift": 0,
+                    "visible_element_count": 42,
+                    "audited_first_viewport_element_count": 20,
+                    "clipped_count": 0,
+                    "offscreen_count": 0,
+                    "screenshot_path": str(report_dir / f"candidates-{viewport}.png"),
+                }
+            )
+        (report_dir / "motion_browser_qa_report.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                    "status": "motion_browser_qa_passed",
+                    "scope": "explicit_local_browser_visual_performance_run",
+                    "run_id": "2026-06-13T10-00-00-000Z",
+                    "generated_at": "2026-06-13T10:00:00.000Z",
+                    "base_url": "http://127.0.0.1:5173",
+                    "artifact_root": ".stock_ming_3/motion_qa",
+                    "reduced_motion": False,
+                    "route_count": 5,
+                    "viewport_count": 4,
+                    "qa_matrix_count": 20,
+                    "passed_count": 20,
+                    "review_required_count": 0,
+                    "console_error_count": 0,
+                    "visual_qa_complete": True,
+                    "browser_performance_verified": True,
+                    "production_motion_complete": False,
+                    "performance_budgets": {"route_transition_observed_ms": 500},
+                    "rows": rows,
+                    "errors": [],
+                    "cache_only": True,
+                    "starts_no_servers": True,
+                    "local_urls_only": True,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "next_ticket_candidates": [
+                    {"rank": 1, "ticker": "002837.SZ", "name": "英维克", "score": 47, "action_state": "只观察"}
+                ],
+            }
+        )
+
+        packet = candidate_service.read_candidate_radar_cache()
+
+        evidence = packet["candidate_browser_qa_evidence_summary"]
+        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_passed_local_artifact")
+        self.assertTrue(evidence["local_browser_qa_evidence_found"])
+        self.assertEqual(evidence["candidate_viewport_row_count"], 4)
+        self.assertEqual(evidence["review_required_count"], 0)
+        self.assertTrue(evidence["candidate_visual_qa_evidence_passed"])
+        self.assertTrue(evidence["candidate_browser_performance_evidence_passed"])
+        self.assertTrue(evidence["visual_qa_complete"])
+        self.assertTrue(evidence["browser_performance_trace_done"])
+        self.assertFalse(evidence["production_radar_replacement_complete"])
+        self.assertFalse(evidence["legacy_retirement_ready"])
+        self.assertTrue(evidence["opens_no_browser"])
+        self.assertTrue(evidence["writes_no_artifacts"])
+        self.assertTrue(evidence["reads_ignored_local_reports_only"])
+        self.assertFalse(evidence["external_calls_triggered"])
+        self.assertTrue(evidence["does_not_execute_trades"])
+        self.assertTrue(evidence["does_not_modify_strategy_action"])
+        self.assertEqual(packet["counts"]["candidate_browser_qa_evidence_row_count"], 4)
+        self.assertEqual(packet["counts"]["candidate_browser_qa_evidence_review_required_count"], 0)
+        self.assertTrue(packet["counts"]["candidate_browser_qa_visual_evidence_passed"])
+        self.assertTrue(packet["counts"]["candidate_browser_qa_performance_evidence_passed"])
+        self.assertEqual(len(packet["candidate_browser_qa_evidence_rows"]), 4)
+        self.assertTrue(all(row["route"] == "#candidates" for row in packet["candidate_browser_qa_evidence_rows"]))
+        self.assertTrue(all(row["production_radar_replacement_complete"] is False for row in packet["candidate_browser_qa_evidence_rows"]))
+        self.assertFalse(packet["fast_scan_readiness_audit"]["production_radar_replacement_complete"])
+        self.assertFalse(packet["replacement_gap_triage_contract"]["legacy_retirement_ready"])
 
     def test_candidate_radar_quick_scan_endpoint_is_button_gated_local_cache_only(self):
         self._with_meta_store()

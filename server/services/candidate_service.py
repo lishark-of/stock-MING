@@ -14,10 +14,12 @@ from server.services import packet_service, task_service
 
 PACKET_KEY = "command_center_3_candidate_radar_cache"
 SCHEMA_VERSION = "candidate_radar_cache.v1"
-SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
-CANDIDATE_BROWSER_QA_RUNBOOK_PATH = Path(__file__).resolve().parents[2] / "scripts" / "candidate_radar_browser_qa_runbook.py"
-MOTION_BROWSER_QA_RUNNER_PATH = Path(__file__).resolve().parents[2] / "scripts" / "motion_browser_qa_runner.mjs"
-CANDIDATE_ROUTE_SOURCE_PATH = Path(__file__).resolve().parents[2] / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+CANDIDATE_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_browser_qa_runbook.py"
+MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
+MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
+CANDIDATE_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
 SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan"}
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan"}
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
@@ -1856,6 +1858,183 @@ def _candidate_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[
     return contract, rows, matrix_rows
 
 
+def _relative_project_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except Exception:
+        return str(path)
+
+
+def _read_candidate_browser_qa_report(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _candidate_browser_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any], report_path: Path) -> dict[str, Any]:
+    transition_observed = row.get("route_transition_observed_ms")
+    transition_budget = row.get("route_transition_budget_ms") or _as_dict(report.get("performance_budgets")).get(
+        "route_transition_observed_ms"
+    )
+    try:
+        transition_within_budget = float(transition_observed) <= float(transition_budget)
+    except Exception:
+        transition_within_budget = False
+    row_status = str(row.get("status") or "unknown")
+    long_task_count = int(row.get("long_task_over_50ms_count") or 0)
+    clipped_count = int(row.get("clipped_count") or 0)
+    offscreen_count = int(row.get("offscreen_count") or 0)
+    performance_trace_complete = row.get("performance_trace_complete") is True
+    visual_complete = row.get("visual_qa_complete") is True and row_status == "passed"
+    performance_passed = performance_trace_complete and transition_within_budget and long_task_count == 0
+    return {
+        "run_id": report.get("run_id") or report_path.parent.name,
+        "generated_at": report.get("generated_at"),
+        "reduced_motion": report.get("reduced_motion") is True,
+        "route": str(row.get("route") or ""),
+        "label": str(row.get("label") or "Candidate Radar"),
+        "viewport": str(row.get("viewport") or ""),
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "status": row_status,
+        "visual_qa_complete": visual_complete,
+        "performance_trace_complete": performance_trace_complete,
+        "performance_passed": performance_passed,
+        "route_transition_observed_ms": transition_observed,
+        "route_transition_budget_ms": transition_budget,
+        "long_task_over_50ms_count": long_task_count,
+        "largest_motion_layout_shift": row.get("largest_motion_layout_shift"),
+        "clipped_count": clipped_count,
+        "offscreen_count": offscreen_count,
+        "review_required": row_status != "passed" or not visual_complete or not performance_passed,
+        "artifact_report_path": _relative_project_path(report_path),
+        "screenshot_path": _safe_text(row.get("screenshot_path"), limit=240),
+        "reads_local_artifact_only": True,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    report_paths = (
+        sorted(MOTION_QA_ARTIFACT_ROOT.glob("*/motion_browser_qa_report.json"))
+        if MOTION_QA_ARTIFACT_ROOT.exists()
+        else []
+    )
+    candidate_rows: list[dict[str, Any]] = []
+    scanned_report_count = 0
+    valid_report_count = 0
+    candidate_report_count = 0
+    latest_report_path: str | None = None
+    latest_run_id: str | None = None
+    latest_generated_at: Any = None
+    for path in report_paths[-20:]:
+        scanned_report_count += 1
+        report = _read_candidate_browser_qa_report(path)
+        if not report:
+            continue
+        valid_report = (
+            report.get("schema_version") == "command_center_3_motion_browser_qa_result.v1"
+            and report.get("scope") == "explicit_local_browser_visual_performance_run"
+            and report.get("local_urls_only") is True
+            and report.get("starts_no_servers") is True
+            and report.get("external_calls_triggered") is False
+            and report.get("tushare_called") is False
+            and report.get("deepseek_called") is False
+            and report.get("github_called") is False
+            and report.get("does_not_execute_trades") is True
+            and report.get("does_not_modify_strategy_action") is True
+        )
+        if not valid_report:
+            continue
+        valid_report_count += 1
+        report_candidate_rows = [
+            row
+            for row in _as_list(report.get("rows"))
+            if isinstance(row, Mapping) and str(row.get("route") or "") == "#candidates"
+        ]
+        if not report_candidate_rows:
+            continue
+        candidate_report_count += 1
+        latest_report_path = _relative_project_path(path)
+        latest_run_id = str(report.get("run_id") or path.parent.name)
+        latest_generated_at = report.get("generated_at")
+        candidate_rows.extend(_candidate_browser_qa_evidence_row(report, row, path) for row in report_candidate_rows)
+
+    candidate_rows = candidate_rows[-16:]
+    row_count = len(candidate_rows)
+    review_required_count = sum(1 for row in candidate_rows if row.get("review_required") is True)
+    visual_passed_count = sum(1 for row in candidate_rows if row.get("visual_qa_complete") is True)
+    performance_passed_count = sum(1 for row in candidate_rows if row.get("performance_passed") is True)
+    default_motion_passed = any(row.get("reduced_motion") is False and row.get("review_required") is False for row in candidate_rows)
+    reduced_motion_passed = any(row.get("reduced_motion") is True and row.get("review_required") is False for row in candidate_rows)
+    local_evidence_found = row_count > 0
+    visual_passed = local_evidence_found and visual_passed_count == row_count and review_required_count == 0
+    performance_passed = local_evidence_found and performance_passed_count == row_count and review_required_count == 0
+    status = (
+        "candidate_browser_qa_evidence_passed_local_artifact"
+        if visual_passed and performance_passed
+        else "candidate_browser_qa_evidence_review_required_local_artifact"
+        if local_evidence_found
+        else "candidate_browser_qa_evidence_pending"
+    )
+    summary = {
+        "schema_version": "candidate_radar_browser_qa_evidence.v1",
+        "status": status,
+        "scope": "local_candidate_radar_browser_qa_evidence_reader_no_browser_execution",
+        "ltg": "LTG-13/LTG-14",
+        "artifact_root": ".stock_ming_3/motion_qa",
+        "local_browser_qa_evidence_found": local_evidence_found,
+        "scanned_report_count": scanned_report_count,
+        "valid_report_count": valid_report_count,
+        "candidate_report_count": candidate_report_count,
+        "candidate_route": "#candidates",
+        "candidate_viewport_row_count": row_count,
+        "review_required_count": review_required_count,
+        "visual_passed_count": visual_passed_count,
+        "performance_passed_count": performance_passed_count,
+        "default_motion_passed": default_motion_passed,
+        "reduced_motion_passed": reduced_motion_passed,
+        "candidate_visual_qa_evidence_passed": visual_passed,
+        "candidate_browser_performance_evidence_passed": performance_passed,
+        "visual_qa_complete": visual_passed,
+        "browser_performance_trace_done": performance_passed,
+        "browser_visual_delta_qa_done": visual_passed,
+        "latest_report_path": latest_report_path,
+        "latest_run_id": latest_run_id,
+        "latest_generated_at": latest_generated_at,
+        "row_count": row_count,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "reads_ignored_local_reports_only": True,
+        "screenshots_are_not_tracked": True,
+        "report_artifacts_are_not_tracked": True,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "cache_only": True,
+        "local_urls_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This reads ignored local motion browser QA reports for #candidates only. It does not open a browser, write artifacts, prove provider parity, or mark production radar replacement complete.",
+    }
+    return summary, candidate_rows
+
+
 def _fast_scan_readiness_row(
     criterion: str,
     status: str,
@@ -3490,10 +3669,22 @@ def _build_candidate_radar_packet(
         candidate_browser_qa_runbook_rows,
         candidate_browser_qa_matrix_rows,
     ) = _candidate_browser_qa_runbook_contract()
+    candidate_browser_qa_evidence_summary, candidate_browser_qa_evidence_rows = _candidate_browser_qa_evidence_summary()
     counts["fast_scan_runtime_budget_row_count"] = fast_scan_runtime_budget_contract["row_count"]
     counts["candidate_browser_qa_runbook_row_count"] = candidate_browser_qa_runbook_contract["row_count"]
     counts["candidate_browser_qa_matrix_count"] = candidate_browser_qa_runbook_contract["qa_matrix_count"]
     counts["candidate_browser_qa_blocking_phase_count"] = candidate_browser_qa_runbook_contract["blocking_phase_count"]
+    counts["candidate_browser_qa_evidence_report_count"] = candidate_browser_qa_evidence_summary["candidate_report_count"]
+    counts["candidate_browser_qa_evidence_row_count"] = candidate_browser_qa_evidence_summary["row_count"]
+    counts["candidate_browser_qa_evidence_review_required_count"] = candidate_browser_qa_evidence_summary[
+        "review_required_count"
+    ]
+    counts["candidate_browser_qa_visual_evidence_passed"] = candidate_browser_qa_evidence_summary[
+        "candidate_visual_qa_evidence_passed"
+    ]
+    counts["candidate_browser_qa_performance_evidence_passed"] = candidate_browser_qa_evidence_summary[
+        "candidate_browser_performance_evidence_passed"
+    ]
     fast_scan_readiness_rows = _fast_scan_readiness_rows(
         mode=mode,
         scan_mode=scan_mode,
@@ -3595,6 +3786,8 @@ def _build_candidate_radar_packet(
         "candidate_browser_qa_runbook_contract": candidate_browser_qa_runbook_contract,
         "candidate_browser_qa_runbook_rows": candidate_browser_qa_runbook_rows,
         "candidate_browser_qa_matrix_rows": candidate_browser_qa_matrix_rows,
+        "candidate_browser_qa_evidence_summary": candidate_browser_qa_evidence_summary,
+        "candidate_browser_qa_evidence_rows": candidate_browser_qa_evidence_rows,
         "fast_scan_readiness_audit": fast_scan_readiness_audit,
         "fast_scan_readiness_rows": fast_scan_readiness_rows,
         "result_delta_clarity_contract": result_delta_clarity_contract,
@@ -3677,6 +3870,11 @@ def _build_candidate_radar_packet(
             "candidate_browser_qa_runbook_ready": candidate_browser_qa_runbook_contract["local_runbook_ready"],
             "candidate_browser_qa_is_not_visual_qa": True,
             "candidate_browser_qa_is_not_production_replacement": True,
+            "candidate_browser_qa_evidence_reads_local_artifact_only": True,
+            "candidate_browser_qa_evidence_does_not_open_browser": True,
+            "candidate_browser_qa_evidence_does_not_write_artifacts": True,
+            "candidate_browser_qa_evidence_is_not_production_replacement": True,
+            "candidate_browser_qa_evidence_found": candidate_browser_qa_evidence_summary["local_browser_qa_evidence_found"],
             "candidate_rows_capped_for_ui": bool(candidate_display_truncated_count),
             "large_universe_requires_worker": coverage["coverage_detail_summary"]["large_universe_requires_worker"],
             "fast_scan_readiness_audit_is_local": True,
@@ -3733,6 +3931,7 @@ def _read_persisted_packet() -> dict[str, Any] | None:
 def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     row_count = len(_as_list(packet.get("candidate_rows")))
     persisted_scan_mode = str(packet.get("scan_mode") or "local_scan")
+    candidate_browser_qa_evidence_summary, candidate_browser_qa_evidence_rows = _candidate_browser_qa_evidence_summary()
     cache_row = _candidate_call_ledger_row(
         api="local_candidate_radar_cache",
         source_snapshot="sqlite_meta_candidate_radar_packet",
@@ -3746,6 +3945,28 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["read_only"] = True
     view["cache_source"] = "sqlite_meta"
     view["call_ledger"] = [cache_row] + [row for row in existing_ledger if isinstance(row, dict)]
+    view["candidate_browser_qa_evidence_summary"] = candidate_browser_qa_evidence_summary
+    view["candidate_browser_qa_evidence_rows"] = candidate_browser_qa_evidence_rows
+    counts = _as_dict(view.get("counts"))
+    counts["candidate_browser_qa_evidence_report_count"] = candidate_browser_qa_evidence_summary["candidate_report_count"]
+    counts["candidate_browser_qa_evidence_row_count"] = candidate_browser_qa_evidence_summary["row_count"]
+    counts["candidate_browser_qa_evidence_review_required_count"] = candidate_browser_qa_evidence_summary[
+        "review_required_count"
+    ]
+    counts["candidate_browser_qa_visual_evidence_passed"] = candidate_browser_qa_evidence_summary[
+        "candidate_visual_qa_evidence_passed"
+    ]
+    counts["candidate_browser_qa_performance_evidence_passed"] = candidate_browser_qa_evidence_summary[
+        "candidate_browser_performance_evidence_passed"
+    ]
+    view["counts"] = counts
+    policy = _as_dict(view.get("policy"))
+    policy["candidate_browser_qa_evidence_reads_local_artifact_only"] = True
+    policy["candidate_browser_qa_evidence_does_not_open_browser"] = True
+    policy["candidate_browser_qa_evidence_does_not_write_artifacts"] = True
+    policy["candidate_browser_qa_evidence_is_not_production_replacement"] = True
+    policy["candidate_browser_qa_evidence_found"] = candidate_browser_qa_evidence_summary["local_browser_qa_evidence_found"]
+    view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
     view["warnings"] = [first_warning] + [str(item) for item in warnings if item != first_warning]

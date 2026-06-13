@@ -117,6 +117,7 @@ def build_contract() -> dict[str, Any]:
     }
     result_delta = _dict(cache_packet.get("result_delta_clarity_contract"))
     priority_explanation = _dict(cache_packet.get("candidate_priority_explanation_contract"))
+    browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     policy = _dict(cache_packet.get("policy"))
     task_rows = _task_catalog_rows()
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
@@ -301,6 +302,29 @@ def build_contract() -> dict[str, Any]:
             "Candidate Radar browser QA runbook must stay local/static and keep visual/performance QA pending until an explicit browser pass.",
         ),
         _row(
+            "candidate_browser_qa_evidence_reader_is_local_artifact_only",
+            browser_qa_evidence.get("schema_version") == "candidate_radar_browser_qa_evidence.v1"
+            and browser_qa_evidence.get("scope") == "local_candidate_radar_browser_qa_evidence_reader_no_browser_execution"
+            and browser_qa_evidence.get("candidate_route") == "#candidates"
+            and browser_qa_evidence.get("opens_no_browser") is True
+            and browser_qa_evidence.get("starts_no_servers") is True
+            and browser_qa_evidence.get("writes_no_artifacts") is True
+            and browser_qa_evidence.get("reads_ignored_local_reports_only") is True
+            and browser_qa_evidence.get("production_radar_replacement_complete") is False
+            and browser_qa_evidence.get("legacy_retirement_ready") is False
+            and _flag_false(browser_qa_evidence, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and browser_qa_evidence.get("does_not_execute_trades") is True
+            and browser_qa_evidence.get("does_not_modify_strategy_action") is True
+            and browser_qa_evidence.get("candidate_is_not_buy_instruction") is True
+            and policy.get("candidate_browser_qa_evidence_reads_local_artifact_only") is True
+            and policy.get("candidate_browser_qa_evidence_does_not_open_browser") is True
+            and policy.get("candidate_browser_qa_evidence_does_not_write_artifacts") is True
+            and policy.get("candidate_browser_qa_evidence_is_not_production_replacement") is True
+            and "candidate_browser_qa_evidence_summary" in candidate_frontend
+            and "candidate_browser_qa_evidence_rows" in candidate_frontend,
+            "Candidate Radar browser QA evidence may read ignored local reports for #candidates, but it must not open a browser, write artifacts, call providers, or mark production replacement complete.",
+        ),
+        _row(
             "plan_packet_preserves_pending_boundaries",
             _dict(plan_packet.get("full_pool_scan_plan")).get("full_pool_scan_done") is False
             and _dict(plan_packet.get("deep_scan_plan")).get("deep_scan_done") is False
@@ -354,6 +378,7 @@ def build_contract() -> dict[str, Any]:
         "browser_performance_trace_done": False,
         "browser_visual_delta_qa_done": False,
         "candidate_browser_qa_runbook_ready": _dict(cache_packet.get("candidate_browser_qa_runbook_contract")).get("local_runbook_ready") is True,
+        "candidate_browser_qa_evidence_found": browser_qa_evidence.get("local_browser_qa_evidence_found") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -377,6 +402,9 @@ def build_contract() -> dict[str, Any]:
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),
             "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),
+            "candidate_browser_qa_evidence_status": browser_qa_evidence.get("status"),
+            "candidate_browser_qa_evidence_row_count": browser_qa_evidence.get("row_count"),
+            "candidate_browser_qa_evidence_review_required_count": browser_qa_evidence.get("review_required_count"),
             "full_pool_plan_blocker_count": full_pool_plan.get("blocking_issue_count"),
             "deep_scan_plan_blocker_count": deep_scan_plan.get("blocking_issue_count"),
         },

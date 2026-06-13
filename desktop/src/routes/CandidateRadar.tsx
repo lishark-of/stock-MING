@@ -78,6 +78,7 @@ export default function CandidateRadar() {
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
   const candidatePriorityExplanation = (cache.candidate_priority_explanation_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaRunbook = (cache.candidate_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
+  const browserQaEvidence = (cache.candidate_browser_qa_evidence_summary as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
@@ -103,6 +104,7 @@ export default function CandidateRadar() {
   const candidatePriorityExplanationRows = rows(cache.candidate_priority_explanation_rows);
   const browserQaRunbookRows = rows(cache.candidate_browser_qa_runbook_rows);
   const browserQaMatrixRows = rows(cache.candidate_browser_qa_matrix_rows);
+  const browserQaEvidenceRows = rows(cache.candidate_browser_qa_evidence_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
@@ -153,6 +155,9 @@ export default function CandidateRadar() {
           { label: "browser QA", value: String(browserQaRunbook.status ?? "missing"), tone: browserQaRunbook.local_runbook_ready === true ? "good" : "warn" },
           { label: "QA matrix", value: browserQaRunbook.qa_matrix_count as number | undefined },
           { label: "visual QA done", value: browserQaRunbook.visual_qa_complete === true ? "done" : "pending", tone: browserQaRunbook.visual_qa_complete === true ? "bad" : "good" },
+          { label: "radar QA evidence", value: String(browserQaEvidence.status ?? "missing"), tone: browserQaEvidence.local_browser_qa_evidence_found === true ? "good" : "warn" },
+          { label: "radar QA rows", value: counts.candidate_browser_qa_evidence_row_count as number | undefined },
+          { label: "QA review rows", value: counts.candidate_browser_qa_evidence_review_required_count as number | undefined, tone: Number(counts.candidate_browser_qa_evidence_review_required_count ?? 0) ? "warn" : "good" },
           { label: "added", value: counts.result_delta_added_count as number | undefined },
           { label: "removed", value: counts.result_delta_removed_count as number | undefined },
           { label: "rank delta", value: counts.result_delta_rank_changed_count as number | undefined },
@@ -334,6 +339,19 @@ export default function CandidateRadar() {
         <DataLineageTable rows={objectRow(browserQaRunbook)} />
         <DataLineageTable rows={browserQaRunbookRows} />
         <DataLineageTable rows={browserQaMatrixRows} />
+      </PacketCard>
+
+      <PacketCard title="候选雷达浏览器 QA 证据" subtitle="candidate_browser_qa_evidence_summary；只读本地 ignored runner 报告，不打开浏览器、不提交截图" status={String(browserQaEvidence.status ?? "missing")}>
+        <p>local_browser_qa_evidence_found: {String(browserQaEvidence.local_browser_qa_evidence_found === true)}</p>
+        <p>candidate_visual_qa_evidence_passed: {String(browserQaEvidence.candidate_visual_qa_evidence_passed === true)}</p>
+        <p>candidate_browser_performance_evidence_passed: {String(browserQaEvidence.candidate_browser_performance_evidence_passed === true)}</p>
+        <p>review_required_count: {String(browserQaEvidence.review_required_count ?? 0)}</p>
+        <p>latest_report_path: {String(browserQaEvidence.latest_report_path ?? "--")}</p>
+        <p>production_radar_replacement_complete: {String(browserQaEvidence.production_radar_replacement_complete === true)}</p>
+        <p>legacy_retirement_ready: {String(browserQaEvidence.legacy_retirement_ready === true)}</p>
+        <p>该证据只说明本机显式 browser runner 的 `#candidates` 路由结果；不会启动服务、不会打开浏览器、不会调用 provider/model/GitHub，也不能替代 full-pool/deep-scan/provider-backed 验收。</p>
+        <DataLineageTable rows={objectRow(browserQaEvidence)} />
+        <DataLineageTable rows={browserQaEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>
