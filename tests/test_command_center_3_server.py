@@ -10339,7 +10339,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
         provider_promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
         freshness_blocker_audit = packet["freshness_production_blocker_audit"]
+        readiness_receipt = packet["freshness_provider_acceptance_readiness_receipt"]
         freshness_blocker_rows = {row["phase"]: row for row in packet["freshness_production_blocker_rows"]}
+        readiness_rows = {row["criterion"]: row for row in packet["freshness_provider_acceptance_readiness_rows"]}
         provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
         provider_promotion_rows = {
             row["criterion"]: row for row in packet["trade_cal_provider_acceptance_promotion_rows"]
@@ -10385,6 +10387,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_evidence_row_count"], 0)
         self.assertEqual(packet["counts"]["freshness_production_blocker_row_count"], 8)
         self.assertGreater(packet["counts"]["freshness_production_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["freshness_provider_acceptance_readiness_row_count"], 7)
+        self.assertGreater(packet["counts"]["freshness_provider_acceptance_readiness_blocker_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_row_count"], 5)
@@ -10437,6 +10441,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["freshness_production_blocker_audit_is_local"])
         self.assertFalse(packet["policy"]["freshness_production_blocker_audit_calls_provider"])
         self.assertFalse(packet["policy"]["freshness_production_ready"])
+        self.assertTrue(packet["policy"]["freshness_provider_acceptance_readiness_receipt_is_local"])
+        self.assertFalse(packet["policy"]["freshness_provider_acceptance_readiness_receipt_calls_provider"])
+        self.assertTrue(packet["policy"]["freshness_provider_acceptance_ready_for_explicit_task"])
         self.assertEqual(
             freshness_blocker_audit["schema_version"],
             "data_health_freshness_production_blocker_audit.v1",
@@ -10456,6 +10463,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "pending_provider_acceptance",
         )
         self.assertTrue(freshness_blocker_rows["provider_backed_trade_cal_acceptance"]["production_blocker"])
+        self.assertEqual(
+            readiness_receipt["schema_version"],
+            "data_health_freshness_provider_acceptance_readiness_receipt.v1",
+        )
+        self.assertEqual(readiness_receipt["status"], "provider_acceptance_receipt_ready_execution_pending")
+        self.assertEqual(readiness_receipt["scope"], "local_readiness_receipt_no_provider_execution")
+        self.assertTrue(readiness_receipt["local_receipt_ready"])
+        self.assertTrue(readiness_receipt["ready_for_explicit_provider_task"])
+        self.assertEqual(readiness_receipt["allowed_next_step"], "explicit_post_task_trade_cal_provider_acceptance")
+        self.assertIn("GET /api/data-health/cache provider refresh", readiness_receipt["not_allowed_next_steps"])
+        self.assertFalse(readiness_receipt["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(readiness_receipt["production_freshness_gate_complete"])
+        self.assertFalse(readiness_receipt["provider_refresh_called_by_receipt"])
+        self.assertFalse(readiness_receipt["external_calls_triggered"])
+        self.assertFalse(readiness_receipt["tushare_called"])
+        self.assertTrue(readiness_receipt["does_not_execute_trades"])
+        self.assertIn("explicit_provider_call_ledger", readiness_receipt["missing_evidence_items"])
+        self.assertEqual(readiness_rows["explicit_post_task_route_ready"]["status"], "passed_static_policy")
+        self.assertEqual(readiness_rows["cache_and_render_do_not_call_provider"]["status"], "passed_no_provider_call")
+        self.assertEqual(readiness_rows["provider_evidence_ticket"]["status"], "pending_provider_execution_evidence")
+        self.assertEqual(readiness_rows["production_completion_boundary"]["status"], "enforced_not_complete")
         self.assertEqual(current_evidence["schema_version"], "data_health_current_evidence_freshness_qa.v1")
         self.assertEqual(
             current_evidence["status"],
@@ -10580,6 +10608,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(response["call_ledger"][0]["current_evidence_candidate_status"], "research_only")
         self.assertEqual(response["call_ledger"][0]["current_evidence_freshness_qa_blocker_count"], 3)
+        self.assertEqual(
+            response["call_ledger"][0]["freshness_provider_acceptance_readiness_receipt_status"],
+            "provider_acceptance_receipt_ready_execution_pending",
+        )
+        self.assertTrue(response["call_ledger"][0]["freshness_provider_acceptance_ready_for_explicit_task"])
+        self.assertGreater(response["call_ledger"][0]["freshness_provider_acceptance_readiness_blocker_count"], 0)
         self.assertEqual(
             response["call_ledger"][0]["current_evidence_decision_surface_audit_status"],
             "decision_surface_audit_ready_no_observed_blockers",
