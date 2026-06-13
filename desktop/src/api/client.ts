@@ -344,6 +344,13 @@ export function postStorageDatasetVersionManifestDryRun(payload: Record<string, 
   });
 }
 
+export function postStorageDatasetVersionManifestReview(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/dataset-version-manifest/review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postStorageDatasetVersionManifestWrite(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/storage/dataset-version-manifest/write", {
     method: "POST",

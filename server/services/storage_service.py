@@ -21,6 +21,7 @@ PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_mig
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
 DATASET_VERSION_MANIFEST_DRY_RUN_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_dry_run_packet"
+DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_review_packet"
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
 ARTIFACT_CLEANUP_REVIEW_SCHEMA_VERSION = "command_center_3_storage_artifact_cleanup_review_contract.v1"
@@ -880,6 +881,175 @@ def run_storage_dataset_version_manifest_dry_run_task(payload: Any = None) -> di
         else "storage_dataset_version_manifest_dry_run_completed_with_blockers",
         call_ledger=packet["call_ledger"],
         warning="storage_dataset_version_manifest_dry_run_completed_no_manifest_write_no_external_call",
+    ) or task
+
+
+def storage_dataset_version_manifest_review_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    dry_run = storage_dataset_version_manifest_dry_run_packet(task_id=task_id, payload_safe=payload_safe)
+    schema_acceptance = storage_schema_validation_acceptance_packet(task_id=task_id, payload_safe=payload_safe)
+    schema_by_dataset = {
+        str(row.get("dataset") or ""): row
+        for row in schema_acceptance.get("rows") or []
+        if isinstance(row, Mapping)
+    }
+    rows: list[dict[str, Any]] = []
+    for row in dry_run.get("rows") or []:
+        if not isinstance(row, Mapping):
+            continue
+        dataset = str(row.get("dataset") or "")
+        schema_row = schema_by_dataset.get(dataset, {})
+        schema_passed = schema_row.get("physical_schema_acceptance_passed") is True
+        manifest_ready = row.get("status") in {"would_add_dataset_version", "would_update_dataset_version", "already_current"}
+        review_ready = bool(schema_passed and manifest_ready)
+        if review_ready:
+            review_status = "review_ready_for_manual_manifest_write"
+        elif not schema_passed:
+            review_status = "review_blocked_schema_acceptance"
+        else:
+            review_status = "review_blocked_manifest_plan"
+        rows.append(
+            {
+                **dict(row),
+                "review_status": review_status,
+                "schema_acceptance_status": schema_row.get("acceptance_status") or "acceptance_missing",
+                "physical_schema_acceptance_passed": bool(schema_passed),
+                "manifest_plan_status": row.get("status"),
+                "manifest_change_required": bool(row.get("would_change_manifest")),
+                "manual_review_passed": review_ready,
+                "approved_for_manifest_write": review_ready,
+                "approved_for_production_promotion": False,
+                "manifest_write_executed": False,
+                "manifest_written_on_post": False,
+                "writes_parquet": False,
+                "reads_parquet_payloads": False,
+                "schema_migration_executed": False,
+                "production_storage_complete": False,
+            }
+        )
+    approved_count = sum(1 for row in rows if row.get("approved_for_manifest_write"))
+    blocked_count = len(rows) - approved_count
+    status = (
+        "manifest_review_ready_for_manual_write"
+        if rows and blocked_count == 0 and dry_run.get("manifest_write_plan_ready") is True
+        else "manifest_review_blocked"
+    )
+    return {
+        "schema_version": "command_center_3_storage_dataset_version_manifest_review.v1",
+        "packet_key": DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_manifest_review",
+        "scope": "dataset_version_manifest_review_before_write_and_promotion",
+        "manifest_path": dry_run.get("manifest_path"),
+        "dataset_count": len(rows),
+        "reviewed_dataset_count": len(rows),
+        "approved_dataset_count": approved_count,
+        "blocked_dataset_count": blocked_count,
+        "would_change_count": int(dry_run.get("would_change_count") or 0),
+        "status_counts": _count_values(row.get("review_status") for row in rows),
+        "rows": rows,
+        "source_dry_run_packet_key": DATASET_VERSION_MANIFEST_DRY_RUN_PACKET_KEY,
+        "source_dry_run_status": dry_run.get("status"),
+        "source_schema_acceptance_packet_key": SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY,
+        "source_schema_acceptance_status": schema_acceptance.get("status"),
+        "manifest_write_plan_ready": bool(dry_run.get("manifest_write_plan_ready")),
+        "schema_acceptance_passed_all": bool(schema_acceptance.get("status") == "schema_acceptance_passed_all_local_datasets"),
+        "manual_review_required_before_write": True,
+        "separate_write_task_required": True,
+        "separate_production_promotion_required": True,
+        "manifest_write_executed": False,
+        "manifest_written_on_post": False,
+        "manifest_written_on_get": False,
+        "cache_get_writes_files": False,
+        "post_review_writes_manifest": False,
+        "post_review_writes_parquet": False,
+        "post_review_reads_parquet_payloads": False,
+        "post_review_reads_env_files": False,
+        "schema_migration_executed": False,
+        "dataset_version_manifest_validated": False,
+        "production_storage_complete": False,
+        "request_params_safe": {
+            "source": (payload_safe or {}).get("source") or "storage_page_button",
+            "review": True,
+            "external_sources_allowed": False,
+            "write_manifest_allowed": False,
+            "write_parquet_allowed": False,
+        },
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_dataset_version_manifest_review",
+            endpoint="POST /api/storage/dataset-version-manifest/review",
+            status=status,
+            row_count=len(rows),
+            path=str(dry_run.get("manifest_path") or ""),
+        ),
+        "warnings": [
+            "POST /api/storage/dataset-version-manifest/review 只审查 dry-run 与 schema acceptance；不会写 _dataset_versions.json。",
+            "manifest review 不读取 Parquet 行 payload、不写 Parquet、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+
+
+def run_storage_dataset_version_manifest_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "review": True,
+        "external_sources_allowed": False,
+        "write_manifest_allowed": False,
+        "write_parquet_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_dataset_version_manifest_review",
+        output_packet_key=DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_dataset_version_manifest_review_queued",
+        warnings=[
+            "storage dataset version manifest review 只审查 dry-run 与 schema acceptance；不会写 _dataset_versions.json、不会读取 Parquet 行 payload、不会调用外部源。",
+            "本任务不代表生产 storage 完成；任何 manifest 写入仍需单独手动确认任务。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="reviewing_storage_dataset_version_manifest_plan",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_dataset_version_manifest_review_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_dataset_version_manifest_review_packet_persist_failed",
+            error_message_safe="storage_dataset_version_manifest_review_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_dataset_version_manifest_review_packet_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_dataset_version_manifest_review_completed"
+        if packet["status"] == "manifest_review_ready_for_manual_write"
+        else "storage_dataset_version_manifest_review_completed_with_blockers",
+        call_ledger=packet["call_ledger"],
+        warning="storage_dataset_version_manifest_review_completed_no_manifest_write_no_external_call",
     ) or task
 
 
@@ -2030,7 +2200,14 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "control": "dataset_version_manifest_dry_run",
             "status": "button_gated_ready",
             "current_coverage": "POST manifest dry-run can generate a proposed _dataset_versions.json and per-dataset change plan without writing files.",
-            "next_action": "review dry-run output before using the separately button-gated local manifest writer.",
+            "next_action": "run the button-gated manifest review before using the separately button-gated local manifest writer.",
+            "external_calls_triggered": False,
+        },
+        {
+            "control": "dataset_version_manifest_review",
+            "status": "button_gated_ready",
+            "current_coverage": "POST manifest review compares manifest dry-run rows with schema acceptance rows and records write/promotion blockers without writing files.",
+            "next_action": "only use the manifest writer after review rows are ready; keep production promotion separate from manifest write.",
             "external_calls_triggered": False,
         },
         {
@@ -2613,6 +2790,13 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "dataset_version_manifest_dry_run_writes_manifest": False,
         "dataset_version_manifest_dry_run_writes_parquet": False,
         "dataset_version_manifest_dry_run_reads_parquet_payloads": False,
+        "dataset_version_manifest_review_route": "POST /api/storage/dataset-version-manifest/review",
+        "dataset_version_manifest_review_button_gated": True,
+        "dataset_version_manifest_review_writes_manifest": False,
+        "dataset_version_manifest_review_writes_parquet": False,
+        "dataset_version_manifest_review_reads_parquet_payloads": False,
+        "dataset_version_manifest_review_external_calls": False,
+        "dataset_version_manifest_review_production_storage_complete": False,
         "dataset_version_manifest_write_route": "POST /api/storage/dataset-version-manifest/write",
         "dataset_version_manifest_write_button_gated": True,
         "dataset_version_manifest_write_requires_confirm": True,
@@ -2841,6 +3025,7 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         "dataset_version_policy_is_not_manifest_validation": True,
         "dataset_version_manifest_evidence_is_read_only": True,
         "dataset_version_manifest_dry_run_is_not_write": True,
+        "dataset_version_manifest_review_is_not_write": True,
         "dataset_version_manifest_evidence_status": readiness.get("dataset_version_manifest_evidence_status"),
         "dataset_version_manifest_evidence_validated": manifest_evidence_validated,
         "dataset_version_manifest_evidence_validated_count": manifest_evidence_count,

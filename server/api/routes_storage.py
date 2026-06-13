@@ -74,6 +74,12 @@ def run_storage_dataset_version_manifest_dry_run(payload: dict[str, Any] | None 
     return task_envelope(task)
 
 
+@router.post("/dataset-version-manifest/review")
+def run_storage_dataset_version_manifest_review(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_dataset_version_manifest_review_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/dataset-version-manifest/write")
 def run_storage_dataset_version_manifest_write(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_dataset_version_manifest_write_task(payload)

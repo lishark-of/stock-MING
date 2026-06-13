@@ -9,6 +9,7 @@ import {
   postStorageCacheTtlDryRun,
   postStorageCompactionDryRun,
   postStorageDatasetVersionManifestDryRun,
+  postStorageDatasetVersionManifestReview,
   postStorageDatasetVersionManifestWrite,
   postStoragePartitionMigrationDryRun,
   postStorageSchemaValidationAcceptance,
@@ -86,6 +87,8 @@ export default function StorageOverview() {
   const [schemaAcceptanceReceipt, setSchemaAcceptanceReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [manifestDryRunTaskId, setManifestDryRunTaskId] = useState("");
   const [manifestDryRunReceipt, setManifestDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [manifestReviewTaskId, setManifestReviewTaskId] = useState("");
+  const [manifestReviewReceipt, setManifestReviewReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [manifestWriteTaskId, setManifestWriteTaskId] = useState("");
   const [manifestWriteReceipt, setManifestWriteReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [partitionDryRunTaskId, setPartitionDryRunTaskId] = useState("");
@@ -157,6 +160,11 @@ export default function StorageOverview() {
     void postStorageDatasetVersionManifestDryRun({ source: "storage_overview_button" }).then((res) => {
       setManifestDryRunReceipt(res);
       if (res.ok) setManifestDryRunTaskId(res.data.task_id);
+    });
+  const launchManifestReview = () =>
+    void postStorageDatasetVersionManifestReview({ source: "storage_overview_button" }).then((res) => {
+      setManifestReviewReceipt(res);
+      if (res.ok) setManifestReviewTaskId(res.data.task_id);
     });
   const launchManifestWrite = () =>
     void postStorageDatasetVersionManifestWrite({ source: "storage_overview_button", confirm_manifest_write: true }).then((res) => {
@@ -555,15 +563,20 @@ export default function StorageOverview() {
         <p>manifest_written_on_get / cache_get_writes_files / reads_parquet_payloads: {String(datasetVersionManifestEvidence.manifest_written_on_get ?? false)} / {String(datasetVersionManifestEvidence.cache_get_writes_files ?? false)} / {String(datasetVersionManifestEvidence.cache_get_reads_parquet_payloads ?? false)}</p>
         <p>dataset_version_manifest_dry_run_route: {String(productionReadiness.dataset_version_manifest_dry_run_route ?? "POST /api/storage/dataset-version-manifest/dry-run")}</p>
         <p>dry_run writes_manifest / writes_parquet: {String(productionReadiness.dataset_version_manifest_dry_run_writes_manifest ?? false)} / {String(productionReadiness.dataset_version_manifest_dry_run_writes_parquet ?? false)}</p>
+        <p>dataset_version_manifest_review_route: {String(productionReadiness.dataset_version_manifest_review_route ?? "POST /api/storage/dataset-version-manifest/review")}</p>
+        <p>review writes_manifest / production_complete: {String(productionReadiness.dataset_version_manifest_review_writes_manifest ?? false)} / {String(productionReadiness.dataset_version_manifest_review_production_storage_complete ?? false)}</p>
         <p>dataset_version_manifest_write_route: {String(productionReadiness.dataset_version_manifest_write_route ?? "POST /api/storage/dataset-version-manifest/write")}</p>
         <p>write requires_confirm / writes_parquet: {String(productionReadiness.dataset_version_manifest_write_requires_confirm ?? true)} / {String(productionReadiness.dataset_version_manifest_write_writes_parquet ?? false)}</p>
         <p>status_counts: {JSON.stringify(datasetVersionManifestEvidenceStatusCounts)}</p>
         <div className="actions">
           <button onClick={launchManifestDryRun}>生成 dataset version manifest dry-run</button>
+          <button onClick={launchManifestReview}>审查 dataset version manifest</button>
           <button onClick={launchManifestWrite}>写入 dataset version manifest</button>
         </div>
         <TaskLaunchReceipt receipt={manifestDryRunReceipt} />
         <TaskStatusPanel taskId={manifestDryRunTaskId} onSuccess={refreshStorage} />
+        <TaskLaunchReceipt receipt={manifestReviewReceipt} />
+        <TaskStatusPanel taskId={manifestReviewTaskId} onSuccess={refreshStorage} />
         <TaskLaunchReceipt receipt={manifestWriteReceipt} />
         <TaskStatusPanel taskId={manifestWriteTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={datasetVersionManifestEvidenceRows} />
