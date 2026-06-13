@@ -773,6 +773,7 @@ Productionize non-blocking next-ticket radar scans
 - A first motion clarity layer exists for route staging, cards, metric tiles, task panels, progress state, focus rings, and reduced-motion fallback.
 - Navigation now exposes `aria-current` / `data-route-active` plus a finite active-route context sweep, and status badges expose `data-status-tone` plus a small visual tone dot so users can see current context and state without reading every label.
 - Cache/page state, task receipts, task status panels, and candidate-radar state now share a CSS-only `StateClarityRail` that makes accepted/running/blocked/done boundaries visible without timers, requestAnimationFrame, recomputation, or external calls.
+- Cache loading/error/empty states, task phase panels, and task creation receipts now expose a shared `state_change_confirmation` motion scope with finite `cc-phase-confirm` cues, so refresh and task transitions are visible without adding timers, provider calls, or recomputation.
 - Next-session ECharts now has a short update clarity layer and respects reduced-motion preferences by disabling chart update animation.
 - Candidate radar now tags its primary result cluster with cache/coverage/blocker/degraded state so result transitions are visually easier to follow without recomputing candidates.
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
@@ -781,7 +782,7 @@ Productionize non-blocking next-ticket radar scans
 
 ### Gaps
 
-- Need deeper transitions for panel expansion, cache refresh, and later candidate-radar result deltas beyond the primary cluster and clarity rail.
+- Need deeper transitions for panel expansion and later candidate-radar result deltas beyond the primary cluster, clarity rail, and static phase-confirm cue.
 - Need broader chart motion verification so updates help users understand state changes instead of adding decoration.
 - Need browser viewport verification so animation never overlaps, occludes, or resizes critical text.
 - Need runtime performance traces so later animation never reintroduces UI stalls.
@@ -805,6 +806,7 @@ Productionize non-blocking next-ticket radar scans
 - Motion does not trigger external calls or recomputation.
 - No animation changes `strategy action`, price, position, or packet values.
 - Cache/task/radar clarity states are visible without using timers, requestAnimationFrame, provider refreshes, or frontend scoring.
+- Cache/task phase confirmation cues are visible and audited as visual-only state changes.
 - Visual polish is additive and does not replace audit labels, warnings, or freshness state.
 - `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
 - `production_motion_complete` remains false until browser viewport and performance QA are complete.

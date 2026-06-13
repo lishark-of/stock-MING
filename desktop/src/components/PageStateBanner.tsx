@@ -16,7 +16,7 @@ export default function PageStateBanner({
 }) {
   if (loading) {
     return (
-      <div className="page-state page-state-loading motion-surface" data-page-state="loading">
+      <div className="page-state page-state-loading motion-surface" data-page-state="loading" data-motion-scope="cache_refresh_clarity" data-motion-purpose="state_change_confirmation">
         <strong>正在读取本地缓存...</strong>
         <p>默认只调用 GET cache API，不触发 Tushare、DeepSeek、GitHub 或真实交易。</p>
         <StateClarityRail
@@ -34,7 +34,7 @@ export default function PageStateBanner({
 
   if (error) {
     return (
-      <div className="page-state page-state-error motion-surface" data-page-state="error">
+      <div className="page-state page-state-error motion-surface" data-page-state="error" data-motion-scope="cache_refresh_clarity" data-motion-purpose="state_change_confirmation">
         <strong>缓存读取失败</strong>
         <BackendOfflineNotice error={error} />
         <p>{error}</p>
@@ -53,7 +53,7 @@ export default function PageStateBanner({
 
   if (empty) {
     return (
-      <div className="page-state page-state-empty motion-surface" data-page-state="empty">
+      <div className="page-state page-state-empty motion-surface" data-page-state="empty" data-motion-scope="cache_refresh_clarity" data-motion-purpose="state_change_confirmation">
         <strong>{emptyTitle}</strong>
         <p>{emptyDetail}</p>
         <StateClarityRail

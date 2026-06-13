@@ -322,6 +322,20 @@ textarea:focus {
   }
 }
 
+@keyframes cc-phase-confirm {
+  from {
+    opacity: 0;
+    transform: translateX(-110%);
+  }
+  42% {
+    opacity: 0.78;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -628,6 +642,31 @@ textarea:focus {
   padding: 10px;
 }
 
+.page-state {
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+}
+
+.page-state[data-motion-purpose="state_change_confirmation"]::after,
+.task-panel[data-motion-purpose="state_change_confirmation"]::after {
+  animation: cc-phase-confirm var(--motion-duration-focus) var(--motion-ease-emphasized) both;
+  animation-iteration-count: 1;
+  background: linear-gradient(90deg, transparent, var(--motion-phase-color, rgba(37, 99, 235, 0.18)), transparent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-110%);
+  z-index: 0;
+}
+
+.page-state > *,
+.task-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
 .chart-empty-state p {
   margin: 6px 0 0;
 }
@@ -687,16 +726,19 @@ textarea:focus {
 }
 
 .page-state-loading {
+  --motion-phase-color: rgba(37, 99, 235, 0.18);
   border-color: #bfdbfe;
 }
 
 .page-state-error {
+  --motion-phase-color: rgba(220, 38, 38, 0.15);
   background: #fef2f2;
   border-color: #fecaca;
   color: #991b1b;
 }
 
 .page-state-empty {
+  --motion-phase-color: rgba(245, 158, 11, 0.16);
   background: #fffbeb;
   border-color: #fde68a;
 }
@@ -772,8 +814,11 @@ textarea:focus {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+  isolation: isolate;
   margin: 12px 0;
+  overflow: hidden;
   padding: 12px;
+  position: relative;
   transition:
     background var(--motion-duration-panel) var(--motion-ease-standard),
     border-color var(--motion-duration-panel) var(--motion-ease-standard),
@@ -782,22 +827,26 @@ textarea:focus {
 
 .task-panel--pending,
 .task-panel--running {
+  --motion-phase-color: rgba(37, 99, 235, 0.18);
   background: #eff6ff;
   border-color: #bfdbfe;
 }
 
 .task-panel--success {
+  --motion-phase-color: rgba(22, 163, 74, 0.16);
   background: #f0fdf4;
   border-color: #bbf7d0;
 }
 
 .task-panel--failed,
 .task-panel--cancelled {
+  --motion-phase-color: rgba(220, 38, 38, 0.15);
   background: #fef2f2;
   border-color: #fecaca;
 }
 
 .task-panel--receipt {
+  --motion-phase-color: rgba(37, 99, 235, 0.16);
   border-color: #dbeafe;
 }
 
@@ -915,6 +964,8 @@ pre {
   .radar-result-cluster,
   .state-clarity-step,
   .state-clarity-step::after,
+  .page-state[data-motion-purpose="state_change_confirmation"]::after,
+  .task-panel[data-motion-purpose="state_change_confirmation"]::after,
   .sidebar button.nav-active,
   .sidebar button.nav-active::before,
   .sidebar button.nav-active::after,

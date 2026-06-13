@@ -668,6 +668,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "@keyframes cc-focus-settle",
         "@keyframes cc-context-sweep",
         "@keyframes cc-status-settle",
+        "@keyframes cc-phase-confirm",
     )
     task_polling_interval_is_bounded = "window.setInterval" in task_panel and "getTask(taskId)" in task_panel and "window.clearInterval" in task_panel
     checks = {
@@ -699,6 +700,18 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and "data-task-state={task.status}" in task_panel
         and "task-progress" in task_panel
         and "task-progress" in styles,
+        "task_phase_confirmation_cue": 'data-motion-scope="task_phase_clarity"' in task_panel
+        and 'data-motion-purpose="state_change_confirmation"' in task_panel
+        and '.task-panel[data-motion-purpose="state_change_confirmation"]::after' in styles
+        and "@keyframes cc-phase-confirm" in styles,
+        "task_receipt_confirmation_cue": 'data-motion-scope="task_receipt_clarity"' in task_receipt
+        and 'data-motion-purpose="state_change_confirmation"' in task_receipt
+        and "task-panel--receipt" in styles
+        and "@keyframes cc-phase-confirm" in styles,
+        "cache_refresh_confirmation_cue": 'data-motion-scope="cache_refresh_clarity"' in page_state
+        and 'data-motion-purpose="state_change_confirmation"' in page_state
+        and '.page-state[data-motion-purpose="state_change_confirmation"]::after' in styles
+        and "@keyframes cc-phase-confirm" in styles,
         "chart_reduced_motion_runtime": "useReducedMotionPreference" in next_chart
         and 'window.matchMedia("(prefers-reduced-motion: reduce)")' in next_chart
         and "animation: !reducedMotion" in next_chart
@@ -734,6 +747,9 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("navigation_context_cue", checks["navigation_context_cue"], evidence="aria-current + data-route-active + finite active-nav sweep"),
         _motion_row("status_badge_context_cue", checks["status_badge_context_cue"], evidence="status badges expose data-status-tone and visual dot cue"),
         _motion_row("task_progress_motion_present", checks["task_progress_motion_present"], evidence="task status classes + progress transition"),
+        _motion_row("task_phase_confirmation_cue", checks["task_phase_confirmation_cue"], evidence="task panels expose state_change_confirmation cue with finite cc-phase-confirm"),
+        _motion_row("task_receipt_confirmation_cue", checks["task_receipt_confirmation_cue"], evidence="task receipts expose state_change_confirmation cue with no task execution side effects"),
+        _motion_row("cache_refresh_confirmation_cue", checks["cache_refresh_confirmation_cue"], evidence="page cache states expose state_change_confirmation cue for loading/error/empty boundaries"),
         _motion_row("chart_reduced_motion_runtime", checks["chart_reduced_motion_runtime"], evidence="NextSessionChart runtime reduced-motion check"),
         _motion_row("chart_clarity_scope", checks["chart_clarity_scope"], evidence="chart-refresh-frame and chartMotionState"),
         _motion_row("radar_clarity_scope", checks["radar_clarity_scope"], evidence="radar-result-cluster and radarMotionState"),

@@ -106,7 +106,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   if (!task) {
     if (lookupError) {
       return (
-        <div className="task-panel task-panel--failed motion-surface" data-task-state="lookup_failed">
+        <div className="task-panel task-panel--failed motion-surface" data-task-state="lookup_failed" data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
           <div className="task-panel__head">
             <StatusBadge label={lookupError.error} tone="bad" />
             <span>{taskId}</span>
@@ -126,7 +126,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const cancellable = task.status === "pending" || task.status === "running";
 
   return (
-    <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status}>
+    <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
       <div className="task-panel__head">
         <StatusBadge label={task.status} tone={toneForStatus(task.status)} />
         <span>{task.task_type}</span>
