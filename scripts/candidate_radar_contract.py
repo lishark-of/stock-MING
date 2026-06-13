@@ -42,6 +42,14 @@ REQUIRED_REPLACEMENT_GAPS = {
     "deep_scan_execution",
     "provider_backed_acceptance",
 }
+REQUIRED_PROMOTION_BLOCKERS = {
+    "legacy_retirement_triage_clear",
+    "provider_signal_coverage_complete",
+    "browser_visual_and_performance_reviewed",
+    "runtime_budget_ready_not_perf_trace",
+    "full_pool_execution_complete",
+    "deep_scan_execution_complete",
+}
 CANDIDATE_BROWSER_QA_RUNBOOK_PATH = "scripts/candidate_radar_browser_qa_runbook.py"
 
 
@@ -114,6 +122,12 @@ def build_contract() -> dict[str, Any]:
     triage_rows = {
         str(row.get("gap_key") or ""): row
         for row in _list(cache_packet.get("replacement_gap_triage_rows"))
+        if isinstance(row, dict)
+    }
+    promotion_audit = _dict(cache_packet.get("candidate_radar_promotion_blocker_audit"))
+    promotion_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(cache_packet.get("candidate_radar_promotion_blocker_rows"))
         if isinstance(row, dict)
     }
     result_delta = _dict(cache_packet.get("result_delta_clarity_contract"))
@@ -216,6 +230,34 @@ def build_contract() -> dict[str, Any]:
             and all(_dict(triage_rows.get(key)).get("blocks_legacy_retirement") is True for key in REQUIRED_REPLACEMENT_GAPS)
             and _flag_false(triage, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
             "Replacement-gap triage must keep legacy radar retirement blocked until browser/performance/full/deep/provider gaps are resolved.",
+        ),
+        _row(
+            "promotion_blocker_audit_keeps_replacement_pending",
+            promotion_audit.get("schema_version") == "candidate_radar_promotion_blocker_audit.v1"
+            and promotion_audit.get("status") == "candidate_radar_promotion_blocked"
+            and promotion_audit.get("scope") == "local_candidate_radar_promotion_audit_not_production_execution"
+            and promotion_audit.get("local_promotion_audit_ready") is True
+            and promotion_audit.get("promotion_ready") is False
+            and promotion_audit.get("production_radar_replacement_complete") is False
+            and promotion_audit.get("legacy_retirement_ready") is False
+            and promotion_audit.get("full_pool_scan_done") is False
+            and promotion_audit.get("deep_scan_done") is False
+            and promotion_audit.get("provider_backed_acceptance_done") is False
+            and int(promotion_audit.get("blocking_promotion_count") or 0) > 0
+            and int(promotion_audit.get("provider_acceptance_blocker_count") or 0) > 0
+            and int(promotion_audit.get("worker_execution_blocker_count") or 0) > 0
+            and int(promotion_audit.get("browser_evidence_blocker_count") or 0) > 0
+            and all(_dict(promotion_rows.get(key)).get("blocks_promotion") is True for key in REQUIRED_PROMOTION_BLOCKERS)
+            and policy.get("candidate_radar_promotion_audit_is_local") is True
+            and policy.get("candidate_radar_promotion_audit_is_not_production_replacement") is True
+            and policy.get("candidate_radar_promotion_requires_provider_worker_browser_evidence") is True
+            and _flag_false(promotion_audit, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and promotion_audit.get("does_not_execute_trades") is True
+            and promotion_audit.get("does_not_modify_strategy_action") is True
+            and promotion_audit.get("candidate_is_not_buy_instruction") is True
+            and "candidate_radar_promotion_blocker_audit" in candidate_frontend
+            and "candidate_radar_promotion_blocker_rows" in candidate_frontend,
+            "Promotion blocker audit must keep Candidate Radar production replacement blocked until provider, worker, browser QA, freshness, and legacy retirement evidence are real.",
         ),
         _row(
             "result_delta_clarity_is_local_not_visual_qa",
@@ -431,6 +473,8 @@ def build_contract() -> dict[str, Any]:
             "no_feature_loss_production_blocker_count": no_loss.get("production_blocker_count"),
             "replacement_gap_status": triage.get("status"),
             "replacement_gap_blocking_count": triage.get("blocking_gap_count"),
+            "promotion_audit_status": promotion_audit.get("status"),
+            "promotion_blocking_count": promotion_audit.get("blocking_promotion_count"),
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),
             "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),

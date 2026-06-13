@@ -2598,6 +2598,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view["no_feature_loss_acceptance_contract"] = contract
     view["no_feature_loss_acceptance_rows"] = rows
     view = _attach_replacement_gap_triage_contract(view)
+    view = _attach_candidate_radar_promotion_blocker_audit(view)
     return view
 
 
@@ -2834,6 +2835,232 @@ def _attach_replacement_gap_triage_contract(packet: Mapping[str, Any]) -> dict[s
     view["policy"] = policy
     view["replacement_gap_triage_contract"] = contract
     view["replacement_gap_triage_rows"] = rows
+    return view
+
+
+def _promotion_blocker_row(
+    criterion: str,
+    category: str,
+    status: str,
+    *,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    blocks_promotion: bool = True,
+    evidence_kind: str = "local_contract",
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "category": category,
+        "status": status,
+        "passed": bool(passed),
+        "evidence_kind": evidence_kind,
+        "evidence": evidence,
+        "next_action": next_action,
+        "blocks_promotion": bool(blocks_promotion and not passed),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _candidate_radar_promotion_blocker_audit(packet: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    counts = _as_dict(packet.get("counts"))
+    no_loss = _as_dict(packet.get("no_feature_loss_acceptance_contract"))
+    replacement = _as_dict(packet.get("replacement_gap_triage_contract"))
+    result_delta = _as_dict(packet.get("result_delta_clarity_contract"))
+    browser_evidence = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    runtime_budget = _as_dict(packet.get("fast_scan_runtime_budget_contract"))
+    readiness = _as_dict(packet.get("fast_scan_readiness_audit"))
+    full_pool_plan = _as_dict(packet.get("full_pool_scan_plan"))
+    deep_scan_plan = _as_dict(packet.get("deep_scan_plan"))
+    coverage = _as_dict(packet.get("coverage_detail_summary"))
+    freshness = _as_dict(packet.get("freshness_state"))
+    candidate_count = int(counts.get("candidate_count") or 0)
+    freshness_state = str(freshness.get("state") or "unknown").lower()
+    freshness_ready = freshness.get("source") != "missing" and freshness_state not in {
+        "stale",
+        "expired",
+        "historical",
+        "unknown",
+    }
+    provider_gap_count = int(coverage.get("provider_blocked_group_count") or 0) + int(
+        coverage.get("stale_input_group_count") or 0
+    ) + int(coverage.get("missing_provider_data_group_count") or 0)
+    full_pool_done = full_pool_plan.get("full_pool_scan_done") is True
+    deep_scan_done = deep_scan_plan.get("deep_scan_done") is True
+    provider_acceptance_done = no_loss.get("provider_backed_acceptance_done") is True
+    browser_review_ready = browser_review.get("local_browser_qa_review_ready") is True
+    browser_visual_passed = browser_evidence.get("candidate_visual_qa_evidence_passed") is True
+    browser_perf_passed = browser_evidence.get("candidate_browser_performance_evidence_passed") is True
+    rows = [
+        _promotion_blocker_row(
+            "local_fast_scan_ready",
+            "local_readiness",
+            "passed" if readiness.get("local_fast_scan_ready") is True else "blocked",
+            passed=readiness.get("local_fast_scan_ready") is True,
+            evidence=f"fast_scan_status={readiness.get('status')}; candidate_count={candidate_count}",
+            next_action="Keep quick/watchlist/custom scan modes button-gated and cache-only.",
+            blocks_promotion=True,
+        ),
+        _promotion_blocker_row(
+            "no_feature_loss_local_contract_ready",
+            "feature_parity",
+            "passed" if no_loss.get("local_no_feature_loss_contract_ready") is True else "blocked",
+            passed=no_loss.get("local_no_feature_loss_contract_ready") is True,
+            evidence=f"local_blockers={no_loss.get('local_blocker_count')}; production_blockers={no_loss.get('production_blocker_count')}",
+            next_action="Keep no-feature-loss rows visible and close local blockers before production promotion.",
+            blocks_promotion=True,
+        ),
+        _promotion_blocker_row(
+            "legacy_retirement_triage_clear",
+            "legacy_parity",
+            "passed" if replacement.get("legacy_retirement_ready") is True else "blocked_legacy_retirement",
+            passed=replacement.get("legacy_retirement_ready") is True,
+            evidence=f"blocking_gap_count={replacement.get('blocking_gap_count')}; critical_gap_count={replacement.get('critical_gap_count')}",
+            next_action="Resolve legacy signal/output/provider/browser/full/deep blockers before retiring old radar fallback.",
+            blocks_promotion=True,
+        ),
+        _promotion_blocker_row(
+            "provider_signal_coverage_complete",
+            "provider_acceptance",
+            "passed" if provider_gap_count == 0 and provider_acceptance_done else "pending_provider_acceptance",
+            passed=provider_gap_count == 0 and provider_acceptance_done,
+            evidence=f"provider_gap_count={provider_gap_count}; provider_backed_acceptance_done={provider_acceptance_done}",
+            next_action="Run explicit provider-backed radar parity samples after Tushare interface validation is ready.",
+            blocks_promotion=True,
+            evidence_kind="provider_acceptance_required",
+        ),
+        _promotion_blocker_row(
+            "current_freshness_ready",
+            "freshness",
+            "passed" if freshness_ready else "research_only_freshness",
+            passed=freshness_ready,
+            evidence=f"freshness={freshness.get('source') or 'missing'}:{freshness.get('state') or 'unknown'}",
+            next_action="Require trade-calendar current evidence before production radar promotion.",
+            blocks_promotion=True,
+        ),
+        _promotion_blocker_row(
+            "browser_visual_and_performance_reviewed",
+            "browser_qa",
+            "passed" if browser_review_ready and browser_visual_passed and browser_perf_passed else "pending_browser_qa_review",
+            passed=browser_review_ready and browser_visual_passed and browser_perf_passed,
+            evidence=f"review_ready={browser_review_ready}; visual={browser_visual_passed}; performance={browser_perf_passed}",
+            next_action="Run and review ignored local browser QA evidence, then promote durable CI/browser evidence separately.",
+            blocks_promotion=True,
+            evidence_kind="browser_evidence_required",
+        ),
+        _promotion_blocker_row(
+            "result_delta_clarity_complete",
+            "result_delta",
+            "passed" if result_delta.get("previous_cache_diff_done") is True else "pending_previous_cache_diff",
+            passed=result_delta.get("previous_cache_diff_done") is True,
+            evidence=f"previous_cache_diff_done={result_delta.get('previous_cache_diff_done')}; visible_gap_count={result_delta.get('visible_gap_count')}",
+            next_action="Keep added/removed/rank/score delta rows visible when a previous radar packet exists.",
+            blocks_promotion=False,
+        ),
+        _promotion_blocker_row(
+            "runtime_budget_ready_not_perf_trace",
+            "performance",
+            "pending_browser_performance_trace"
+            if runtime_budget.get("browser_performance_trace_done") is not True
+            else "passed",
+            passed=runtime_budget.get("browser_performance_trace_done") is True,
+            evidence=f"browser_performance_trace_done={runtime_budget.get('browser_performance_trace_done')}; large_universe_worker_required={runtime_budget.get('large_universe_worker_required')}",
+            next_action="Use runtime budget as local guard only; browser trace remains required for production promotion.",
+            blocks_promotion=True,
+        ),
+        _promotion_blocker_row(
+            "full_pool_execution_complete",
+            "worker_pipeline",
+            "passed" if full_pool_done else "pending_worker_execution",
+            passed=full_pool_done,
+            evidence=f"full_pool_scan_done={full_pool_done}; worker_task_required={full_pool_plan.get('worker_task_required')}",
+            next_action="Implement worker-backed full-pool execution without page-render scanning.",
+            blocks_promotion=True,
+            evidence_kind="worker_execution_required",
+        ),
+        _promotion_blocker_row(
+            "deep_scan_execution_complete",
+            "worker_pipeline",
+            "passed" if deep_scan_done else "pending_worker_execution",
+            passed=deep_scan_done,
+            evidence=f"deep_scan_done={deep_scan_done}; deepseek_called={deep_scan_plan.get('deepseek_called') is True}",
+            next_action="Implement guarded deep scan with explicit model/provider gates and no action mutation.",
+            blocks_promotion=True,
+            evidence_kind="worker_execution_required",
+        ),
+        _promotion_blocker_row(
+            "trade_action_isolation_preserved",
+            "safety",
+            "passed" if packet.get("does_not_execute_trades") is True and packet.get("does_not_modify_strategy_action") is True else "blocked",
+            passed=packet.get("does_not_execute_trades") is True and packet.get("does_not_modify_strategy_action") is True,
+            evidence="Candidate Radar remains research-only and isolated from strategy action, holdings, orders, and broker paths.",
+            next_action="Keep production radar promotion separate from any future trading integration.",
+            blocks_promotion=True,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row.get("blocks_promotion")]
+    provider_rows = [row for row in rows if row.get("evidence_kind") == "provider_acceptance_required"]
+    worker_rows = [row for row in rows if row.get("evidence_kind") == "worker_execution_required"]
+    browser_rows = [row for row in rows if row.get("evidence_kind") == "browser_evidence_required"]
+    promotion_ready = not blocking_rows
+    contract = {
+        "schema_version": "candidate_radar_promotion_blocker_audit.v1",
+        "status": "candidate_radar_promotion_ready" if promotion_ready else "candidate_radar_promotion_blocked",
+        "scope": "local_candidate_radar_promotion_audit_not_production_execution",
+        "ltg": "LTG-13",
+        "local_promotion_audit_ready": True,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "promotion_ready": promotion_ready,
+        "row_count": len(rows),
+        "blocking_promotion_count": len(blocking_rows),
+        "provider_acceptance_blocker_count": len(provider_rows),
+        "worker_execution_blocker_count": len(worker_rows),
+        "browser_evidence_blocker_count": len(browser_rows),
+        "blocking_promotion_keys": [str(row.get("criterion")) for row in blocking_rows],
+        "high_priority_next_actions": [str(row.get("next_action")) for row in blocking_rows[:5]],
+        "full_pool_scan_done": full_pool_done,
+        "deep_scan_done": deep_scan_done,
+        "provider_backed_acceptance_done": provider_acceptance_done,
+        "browser_qa_review_ready": browser_review_ready,
+        "browser_visual_evidence_passed": browser_visual_passed,
+        "browser_performance_evidence_passed": browser_perf_passed,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This audit promotes no evidence by itself. It lists blockers that must be cleared before Candidate Radar can replace the legacy next-ticket radar without feature loss.",
+    }
+    return contract, rows
+
+
+def _attach_candidate_radar_promotion_blocker_audit(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    contract, rows = _candidate_radar_promotion_blocker_audit(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_promotion_blocking_count"] = contract["blocking_promotion_count"]
+    counts["candidate_radar_promotion_provider_blocker_count"] = contract["provider_acceptance_blocker_count"]
+    counts["candidate_radar_promotion_worker_blocker_count"] = contract["worker_execution_blocker_count"]
+    counts["candidate_radar_promotion_browser_blocker_count"] = contract["browser_evidence_blocker_count"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_promotion_audit_is_local"] = True
+    policy["candidate_radar_promotion_audit_is_not_production_replacement"] = True
+    policy["candidate_radar_promotion_requires_provider_worker_browser_evidence"] = True
+    view["counts"] = counts
+    view["policy"] = policy
+    view["candidate_radar_promotion_blocker_audit"] = contract
+    view["candidate_radar_promotion_blocker_rows"] = rows
     return view
 
 
