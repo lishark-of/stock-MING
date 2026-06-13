@@ -7128,10 +7128,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         release_gate = packet["release_gate_readiness_audit"]
         self.assertEqual(release_gate["schema_version"], "command_center_3_release_gate_readiness_audit.v1")
         self.assertEqual(release_gate["scope"], "local_static_push_gate_contract_not_ci_status")
-        self.assertEqual(release_gate["status"], "local_gate_ready_ci_mirror_pending")
+        self.assertEqual(release_gate["status"], "local_gate_ready_allowlist_review_pending")
         self.assertTrue(release_gate["local_gate_ready"])
         self.assertFalse(release_gate["release_gate_complete"])
-        self.assertFalse(release_gate["ci_mirror_ready"])
+        self.assertTrue(release_gate["ci_mirror_ready"])
         self.assertFalse(release_gate["provider_calls_triggered"])
         self.assertFalse(release_gate["external_calls_triggered"])
         self.assertFalse(release_gate["tushare_called"])
@@ -7153,7 +7153,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["clean_worktree_after_report"])
         self.assertTrue(release_gate["no_git_push"])
         self.assertTrue(release_gate["no_git_add_dot"])
-        self.assertIn("ci_mirror_not_proven", release_gate["blockers"])
+        self.assertNotIn("ci_mirror_not_proven", release_gate["blockers"])
         self.assertIn("false_positive_allowlist_review_pending", release_gate["soft_blockers"])
         release_gate_criteria = {row["criterion"] for row in packet["release_gate_readiness_rows"]}
         self.assertIn("python_unittest", release_gate_criteria)
@@ -7166,9 +7166,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("clean_worktree_after_report", release_gate_criteria)
         self.assertIn("no_git_push", release_gate_criteria)
         self.assertIn("no_git_add_dot", release_gate_criteria)
+        workflow_rows = {row["workflow"]: row for row in packet["release_gate_workflow_rows"]}
+        self.assertIn(".github/workflows/command-center-3-push-gate.yml", workflow_rows)
+        ci_workflow = workflow_rows[".github/workflows/command-center-3-push-gate.yml"]
+        self.assertEqual(ci_workflow["status"], "mirrors_push_gate")
+        self.assertTrue(ci_workflow["mirrors_local_push_gate"])
+        self.assertTrue(ci_workflow["contains_smoke_step"])
+        self.assertFalse(ci_workflow["github_api_call_detected"])
         self.assertGreaterEqual(packet["counts"]["release_gate_check_count"], 20)
         self.assertGreaterEqual(packet["counts"]["release_gate_workflow_count"], 0)
         self.assertTrue(packet["counts"]["release_gate_local_ready"])
+        self.assertTrue(packet["counts"]["release_gate_ci_mirror_ready"])
         self.assertFalse(packet["counts"]["release_gate_complete"])
         motion = packet["motion_clarity_audit"]
         self.assertEqual(motion["schema_version"], "command_center_3_motion_clarity_audit.v1")

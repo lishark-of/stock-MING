@@ -609,11 +609,12 @@ Retire Streamlit from primary user workflow
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `GET /api/audit/cache` now exposes `release_gate_readiness_audit`, `release_gate_readiness_rows`, and local workflow inventory. This is a static local contract check for `scripts/push_gate_3_0.sh`, not a CI status check and not production completion proof.
+- `.github/workflows/command-center-3-push-gate.yml` now mirrors the local push gate by creating `.venv`, installing desktop dependencies, and running `scripts/push_gate_3_0.sh` with `PYTHON_BIN=.venv/bin/python`.
 
 ### Gaps
 
-- CI status for all checks still may not mirror local gate; current audit reports `ci_mirror_not_proven`.
-- Push gate still needs CI mirroring and periodic review of false-positive allowlists; current audit keeps `false_positive_allowlist_review_pending` visible.
+- CI mirror workflow exists, but remote CI status is still not local proof until a pushed run is inspected; current audit only proves static workflow presence.
+- Push gate still needs periodic review of false-positive allowlists; current audit keeps `false_positive_allowlist_review_pending` visible.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -633,7 +634,7 @@ Retire Streamlit from primary user workflow
 - Secret scan and generated artifact scan are clean or explained.
 - Worktree is clean before push.
 - Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
-- `release_gate_readiness_audit.local_gate_ready=true` is visible in the audit cache, while `release_gate_complete` remains false until CI mirror and allowlist review are proven.
+- `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
 

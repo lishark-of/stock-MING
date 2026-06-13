@@ -560,15 +560,17 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
     soft_blockers = [row["criterion"] for row in rows if row.get("status") == "pending" and not row.get("production_blocker")]
     release_gate_complete = local_gate_ready and ci_mirror_ready and false_positive_allowlist_review_ready
+    if release_gate_complete:
+        release_gate_status = "release_gate_ready"
+    elif local_gate_ready and ci_mirror_ready:
+        release_gate_status = "local_gate_ready_allowlist_review_pending"
+    elif local_gate_ready:
+        release_gate_status = "local_gate_ready_ci_mirror_pending"
+    else:
+        release_gate_status = "local_gate_blocked"
     audit = {
         "schema_version": RELEASE_GATE_SCHEMA_VERSION,
-        "status": (
-            "release_gate_ready"
-            if release_gate_complete
-            else "local_gate_ready_ci_mirror_pending"
-            if local_gate_ready
-            else "local_gate_blocked"
-        ),
+        "status": release_gate_status,
         "scope": "local_static_push_gate_contract_not_ci_status",
         "local_gate_ready": local_gate_ready,
         "release_gate_complete": release_gate_complete,

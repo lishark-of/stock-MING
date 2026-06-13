@@ -1,0 +1,60 @@
+name: Command Center 3 Push Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: command-center-3-push-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  push-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements.txt
+
+      - name: Install desktop dependencies
+        run: |
+          cd desktop
+          npm ci
+
+      - name: Run Command Center 3 push gate
+        env:
+          PYTHON_BIN: .venv/bin/python
+        run: |
+          # scripts/push_gate_3_0.sh mirrors:
+          # -m unittest discover -s tests
+          # npm run build
+          # smoke_3_0.sh
+          # git diff --check
+          # secret_high_risk_scan
+          # artifact_scan
+          scripts/push_gate_3_0.sh
