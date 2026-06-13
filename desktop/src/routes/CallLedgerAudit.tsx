@@ -28,6 +28,9 @@ export default function CallLedgerAudit() {
   const getRouteCoverage = (cache.get_route_coverage as Record<string, unknown> | undefined) ?? {};
   const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? {};
   const taskImplementation = (cache.task_implementation_status as Record<string, unknown> | undefined) ?? {};
+  const releaseGateAudit = (cache.release_gate_readiness_audit as Record<string, unknown> | undefined) ?? {};
+  const releaseGateRows = rows(cache.release_gate_readiness_rows);
+  const releaseGateWorkflowRows = rows(cache.release_gate_workflow_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -69,6 +72,12 @@ export default function CallLedgerAudit() {
           { label: "missing ledger", value: counts.missing_call_ledger_count as number | undefined, tone: Number(counts.missing_call_ledger_count ?? 0) > 0 ? "warn" : "good" },
           { label: "model strategy purposes", value: counts.model_strategy_purpose_count as number | undefined },
           { label: "model cache外联", value: counts.model_strategy_cache_read_external_call_count as number | undefined, tone: Number(counts.model_strategy_cache_read_external_call_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "release gate", value: releaseGateAudit.status as string | undefined, tone: releaseGateAudit.local_gate_ready === true ? "good" : "warn" },
+          { label: "local gate ready", value: counts.release_gate_local_ready, tone: counts.release_gate_local_ready === true ? "good" : "warn" },
+          { label: "CI mirror", value: counts.release_gate_ci_mirror_ready, tone: counts.release_gate_ci_mirror_ready === true ? "good" : "warn" },
+          { label: "gate blockers", value: counts.release_gate_blocker_count as number | undefined, tone: Number(counts.release_gate_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "gate checks", value: counts.release_gate_check_count as number | undefined },
+          { label: "workflow files", value: counts.release_gate_workflow_count as number | undefined },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -132,6 +141,24 @@ export default function CallLedgerAudit() {
         <p>model_strategy_purpose_count: {String(counts.model_strategy_purpose_count ?? 0)}</p>
         <p>model_strategy_cache_read_external_call_count: {String(counts.model_strategy_cache_read_external_call_count ?? 0)}</p>
         <DataLineageTable rows={modelStrategyRows} />
+      </PacketCard>
+
+      <PacketCard title="Release gate readiness" subtitle="release_gate_readiness_audit：本地静态 push gate 合同，不代表 CI 状态" status={String(releaseGateAudit.status ?? "missing")}>
+        <p>scope: {String(releaseGateAudit.scope ?? "local_static_push_gate_contract_not_ci_status")}</p>
+        <p>local_gate_ready: {String(releaseGateAudit.local_gate_ready ?? false)}</p>
+        <p>release_gate_complete: {String(releaseGateAudit.release_gate_complete ?? false)}</p>
+        <p>ci_mirror_ready: {String(releaseGateAudit.ci_mirror_ready ?? false)}</p>
+        <p>ci_mirror_not_proven: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("ci_mirror_not_proven"))}</p>
+        <p>false_positive_allowlist_review_pending: {String(Array.isArray(releaseGateAudit.soft_blockers) && (releaseGateAudit.soft_blockers as unknown[]).includes("false_positive_allowlist_review_pending"))}</p>
+        <p>PUSH_GATE_REPORT_PATH local report is optional evidence, not production completion proof.</p>
+      </PacketCard>
+
+      <PacketCard title="Release gate checklist" subtitle="release_gate_readiness_rows：测试、build、smoke、安全扫描、artifact 扫描和 no-push 边界" status="release_gate_readiness_rows">
+        <DataLineageTable rows={releaseGateRows} />
+      </PacketCard>
+
+      <PacketCard title="CI mirror static inventory" subtitle="只读列出 .github/workflows；不调用 GitHub API" status="ci_static_inventory">
+        <DataLineageTable rows={releaseGateWorkflowRows} />
       </PacketCard>
 
       <div className="grid">

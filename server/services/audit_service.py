@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from config import get_deepseek_model_strategy
@@ -34,6 +35,11 @@ from server.services import (
 
 PACKET_KEY = "command_center_3_call_ledger_audit_cache"
 SCHEMA_VERSION = "call_ledger_audit_cache.v1"
+RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
+SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
+GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
 
@@ -344,6 +350,251 @@ def _model_strategy_rows() -> list[dict[str, Any]]:
     return rows
 
 
+def _read_local_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _relative_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _script_contains_any(script: str, markers: tuple[str, ...]) -> bool:
+    lower_script = script.lower()
+    return any(marker.lower() in lower_script for marker in markers)
+
+
+def _release_gate_row(
+    criterion: str,
+    passed: bool,
+    *,
+    evidence: str,
+    production_blocker: bool = True,
+    status_override: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status_override or ("passed" if passed else "blocked"),
+        "passed": passed,
+        "evidence": evidence,
+        "production_blocker": production_blocker and not passed,
+    }
+
+
+def _release_gate_workflow_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not GITHUB_WORKFLOWS_DIR.exists():
+        return rows
+    for path in sorted(GITHUB_WORKFLOWS_DIR.glob("*.y*ml")):
+        text = _read_local_text(path)
+        mirrors_push_gate = "push_gate_3_0.sh" in text or (
+            "-m unittest discover -s tests" in text and "npm run build" in text and "smoke_3_0.sh" in text
+        )
+        rows.append(
+            {
+                "workflow": _relative_path(path),
+                "status": "mirrors_push_gate" if mirrors_push_gate else "unrelated_or_partial",
+                "mirrors_local_push_gate": mirrors_push_gate,
+                "contains_unittest_step": "-m unittest discover -s tests" in text,
+                "contains_desktop_build_step": "npm run build" in text,
+                "contains_smoke_step": "smoke_3_0.sh" in text,
+                "contains_diff_check_step": "git diff --check" in text,
+                "contains_secret_scan_step": "secret_high_risk_scan" in text or "api_key|token|secret|password" in text,
+                "contains_artifact_scan_step": "artifact_scan" in text or "git ls-files" in text,
+                "github_api_call_detected": _script_contains_any(
+                    text,
+                    ("gh api", "api.github.com", "github/graphql", "curl https://api.github"),
+                ),
+                "external_calls_triggered": False,
+            }
+        )
+    return rows
+
+
+def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
+    smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
+    workflow_rows = _release_gate_workflow_rows()
+    provider_invocation_markers = (
+        "tushare_adapter",
+        "refresh-tushare",
+        "tushare.pro_api",
+        "ts.pro_api",
+        "deepseek_adapter",
+        "deepseek.chat",
+        "deepseek.com",
+        "gh api",
+        "api.github.com",
+        "github/graphql",
+        "curl https://api.github",
+    )
+    trade_invocation_markers = (
+        "execute_trade(",
+        "execute_trade ",
+        "place_order(",
+        "place_order ",
+        "broker.submit(",
+        "real_trading_enabled=true",
+        "live_order(",
+        "live_order ",
+    )
+    checks = {
+        "push_gate_script_exists": PUSH_GATE_SCRIPT_PATH.exists(),
+        "push_gate_script_executable": PUSH_GATE_SCRIPT_PATH.exists()
+        and bool(PUSH_GATE_SCRIPT_PATH.stat().st_mode & 0o111),
+        "smoke_script_exists": SMOKE_SCRIPT_PATH.exists() and bool(smoke_script),
+        "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
+        "refuses_missing_project_python": "Do not use system Python" in script and 'if [ ! -x "$PYTHON_BIN" ]' in script,
+        "python_unittest_step": "-m unittest discover -s tests" in script,
+        "desktop_build_step": "cd desktop && npm run build" in script,
+        "smoke_step": "scripts/smoke_3_0.sh" in script,
+        "diff_check_step": "git diff --check" in script,
+        "high_risk_secret_scan_step": "secret_high_risk_scan" in script and "high-risk secret value scan" in script,
+        "keyword_review_scan_step": "keyword scan for review" in script,
+        "generated_artifact_scan_step": "artifact_scan" in script and "git ls-files" in script,
+        "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
+        "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
+        and script.find('run_step "Release readiness report"') < script.find('run_step "Clean worktree check"'),
+        "no_git_push": "git push" not in script,
+        "no_git_add_dot": "git add ." not in script,
+        "does_not_call_tushare": not _script_contains_any(script, ("tushare_adapter", "refresh-tushare", "tushare.pro_api", "ts.pro_api")),
+        "does_not_call_deepseek": not _script_contains_any(script, ("deepseek_adapter", "deepseek.chat", "deepseek.com")),
+        "does_not_call_github_api": not _script_contains_any(
+            script,
+            ("gh api", "api.github.com", "github/graphql", "curl https://api.github"),
+        ),
+        "does_not_execute_trades": not _script_contains_any(script, trade_invocation_markers),
+        "does_not_invoke_external_providers": not _script_contains_any(script, provider_invocation_markers),
+    }
+    ci_mirror_ready = any(bool(row.get("mirrors_local_push_gate")) for row in workflow_rows)
+    false_positive_allowlist_review_ready = False
+    local_gate_ready = all(
+        bool(checks[key])
+        for key in (
+            "push_gate_script_exists",
+            "push_gate_script_executable",
+            "smoke_script_exists",
+            "uses_project_venv_python",
+            "refuses_missing_project_python",
+            "python_unittest_step",
+            "desktop_build_step",
+            "smoke_step",
+            "diff_check_step",
+            "high_risk_secret_scan_step",
+            "keyword_review_scan_step",
+            "generated_artifact_scan_step",
+            "release_report_step",
+            "clean_worktree_after_report",
+            "no_git_push",
+            "no_git_add_dot",
+            "does_not_call_tushare",
+            "does_not_call_deepseek",
+            "does_not_call_github_api",
+            "does_not_execute_trades",
+            "does_not_invoke_external_providers",
+        )
+    )
+    rows = [
+        _release_gate_row("push_gate_script_exists", checks["push_gate_script_exists"], evidence=_relative_path(PUSH_GATE_SCRIPT_PATH)),
+        _release_gate_row(
+            "push_gate_script_executable",
+            checks["push_gate_script_executable"],
+            evidence="script has executable bit",
+        ),
+        _release_gate_row("smoke_script_exists", checks["smoke_script_exists"], evidence=_relative_path(SMOKE_SCRIPT_PATH)),
+        _release_gate_row(
+            "uses_project_venv_python",
+            checks["uses_project_venv_python"],
+            evidence='PYTHON_BIN defaults to .venv/bin/python',
+        ),
+        _release_gate_row(
+            "refuses_missing_project_python",
+            checks["refuses_missing_project_python"],
+            evidence="missing project Python fails before tests",
+        ),
+        _release_gate_row("python_unittest", checks["python_unittest_step"], evidence="-m unittest discover -s tests"),
+        _release_gate_row("desktop_build", checks["desktop_build_step"], evidence="cd desktop && npm run build"),
+        _release_gate_row("command_center_3_smoke", checks["smoke_step"], evidence="scripts/smoke_3_0.sh"),
+        _release_gate_row("diff_whitespace_check", checks["diff_check_step"], evidence="git diff --check"),
+        _release_gate_row("high_risk_secret_scan", checks["high_risk_secret_scan_step"], evidence="secret_high_risk_scan"),
+        _release_gate_row("keyword_review_scan", checks["keyword_review_scan_step"], evidence="keyword scan for review"),
+        _release_gate_row("generated_artifact_scan", checks["generated_artifact_scan_step"], evidence="artifact_scan + git ls-files"),
+        _release_gate_row("release_readiness_report", checks["release_report_step"], evidence="PUSH_GATE_REPORT_PATH"),
+        _release_gate_row(
+            "clean_worktree_after_report",
+            checks["clean_worktree_after_report"],
+            evidence="Release readiness report runs before clean worktree check",
+        ),
+        _release_gate_row("no_git_push", checks["no_git_push"], evidence="script contains no git push"),
+        _release_gate_row("no_git_add_dot", checks["no_git_add_dot"], evidence="script contains no git add ."),
+        _release_gate_row("does_not_call_tushare", checks["does_not_call_tushare"], evidence="no provider invocation markers"),
+        _release_gate_row("does_not_call_deepseek", checks["does_not_call_deepseek"], evidence="no model invocation markers"),
+        _release_gate_row("does_not_call_github_api", checks["does_not_call_github_api"], evidence="no GitHub API markers"),
+        _release_gate_row("does_not_execute_trades", checks["does_not_execute_trades"], evidence="no live trade markers"),
+        _release_gate_row(
+            "local_gate_ready",
+            local_gate_ready,
+            evidence="local push gate contract is statically complete" if local_gate_ready else "local push gate contract has blockers",
+        ),
+        _release_gate_row(
+            "ci_mirror_not_proven",
+            ci_mirror_ready,
+            evidence=".github workflows do not mirror scripts/push_gate_3_0.sh" if not ci_mirror_ready else "CI mirrors local push gate",
+            status_override="pending" if not ci_mirror_ready else None,
+        ),
+        _release_gate_row(
+            "false_positive_allowlist_review_pending",
+            false_positive_allowlist_review_ready,
+            evidence="secret/artifact review allowlists still require periodic human review",
+            production_blocker=False,
+            status_override="pending",
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    soft_blockers = [row["criterion"] for row in rows if row.get("status") == "pending" and not row.get("production_blocker")]
+    release_gate_complete = local_gate_ready and ci_mirror_ready and false_positive_allowlist_review_ready
+    audit = {
+        "schema_version": RELEASE_GATE_SCHEMA_VERSION,
+        "status": (
+            "release_gate_ready"
+            if release_gate_complete
+            else "local_gate_ready_ci_mirror_pending"
+            if local_gate_ready
+            else "local_gate_blocked"
+        ),
+        "scope": "local_static_push_gate_contract_not_ci_status",
+        "local_gate_ready": local_gate_ready,
+        "release_gate_complete": release_gate_complete,
+        "ci_mirror_ready": ci_mirror_ready,
+        "ci_mirror_detected": ci_mirror_ready,
+        "false_positive_allowlist_review_ready": false_positive_allowlist_review_ready,
+        "provider_calls_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "github_api_called": False,
+        "does_not_execute_trades": checks["does_not_execute_trades"],
+        "does_not_modify_strategy_action": True,
+        "optional_report_is_local_only": checks["release_report_step"],
+        "report_path_must_not_be_tracked": True,
+        "workflow_count": len(workflow_rows),
+        "github_workflow_files": [str(row.get("workflow")) for row in workflow_rows],
+        "check_count": len(rows),
+        "blocking_criterion_count": len(blockers),
+        "soft_blocker_count": len(soft_blockers),
+        "blockers": blockers,
+        "soft_blockers": soft_blockers,
+        **checks,
+    }
+    return audit, rows, workflow_rows
+
+
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
@@ -356,6 +607,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     task_persistence_source_rows = _as_list(task_status_index.get("persistence_source_rows"))
     model_strategy_rows = _model_strategy_rows()
     get_route_coverage = _get_route_coverage(endpoint_rows)
+    release_gate_readiness_audit, release_gate_readiness_rows, release_gate_workflow_rows = _release_gate_readiness_audit()
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -385,6 +637,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "task_persistence": task_persistence,
         "task_persistence_source_rows": task_persistence_source_rows,
         "model_strategy_rows": model_strategy_rows,
+        "release_gate_readiness_audit": release_gate_readiness_audit,
+        "release_gate_readiness_rows": release_gate_readiness_rows,
+        "release_gate_workflow_rows": release_gate_workflow_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -409,6 +664,13 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "model_strategy_cache_read_external_call_count": sum(
                 1 for row in model_strategy_rows if row.get("external_call_on_cache_read")
             ),
+            "release_gate_check_count": release_gate_readiness_audit.get("check_count", 0),
+            "release_gate_blocker_count": release_gate_readiness_audit.get("blocking_criterion_count", 0),
+            "release_gate_soft_blocker_count": release_gate_readiness_audit.get("soft_blocker_count", 0),
+            "release_gate_local_ready": release_gate_readiness_audit.get("local_gate_ready") is True,
+            "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete") is True,
+            "release_gate_ci_mirror_ready": release_gate_readiness_audit.get("ci_mirror_ready") is True,
+            "release_gate_workflow_count": release_gate_readiness_audit.get("workflow_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -428,6 +690,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "reads_memory_and_sqlite_fallback": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
+            "release_gate_audit_is_static": True,
+            "release_gate_audit_runs_no_commands": True,
+            "release_gate_audit_calls_no_github_api": True,
+            "release_gate_local_ready_is_not_ci_status": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -438,6 +704,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "endpoint_count": len(endpoint_rows),
                 "known_get_route_count": get_route_coverage["known_get_route_count"],
                 "task_count": len(task_rows),
+                "release_gate_status": release_gate_readiness_audit.get("status"),
+                "release_gate_local_ready": release_gate_readiness_audit.get("local_gate_ready"),
+                "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -459,6 +728,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "GET /api/audit/cache 只读聚合本地 call_ledger；不会调用 Tushare、DeepSeek、GitHub 或 Redis。",
             "审计页只展示 cache/task 边界，不刷新数据、不运行回测、不执行真实交易、不修改 strategy action。",
             "发现 missing_call_ledger 只代表该本地 cache 返回包没有附带调用血缘，不代表自动外联。",
+            "release_gate_readiness_audit 只读解析本地脚本和 workflow；local_gate_ready 不是 CI 状态，也不是生产完成证明。",
         ],
     }
     return _json_safe(packet)
