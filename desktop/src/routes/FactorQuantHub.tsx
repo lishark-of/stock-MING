@@ -65,6 +65,7 @@ export default function FactorQuantHub() {
   const universeResearch = packet.universe_research_contract ?? {};
   const universeExecutionReadiness = packet.universe_execution_readiness_audit ?? {};
   const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
+  const universeLocalRankZscore = packet.universe_local_rank_zscore_dry_run ?? {};
   const factorLibrary = packet.factor_library ?? {};
   const factorTests = packet.factor_tests ?? {};
   const factorTestQuality = factorTests.quality_summary ?? {};
@@ -98,6 +99,9 @@ export default function FactorQuantHub() {
   const universeExecutionCriterionRows = toRows(packet.universe_execution_readiness_rows);
   const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
   const universeResearchDatasetRows = toRows(packet.universe_research_task_plan_rows);
+  const universeLocalRankZscoreRows = objectRows(universeLocalRankZscore as Record<string, unknown>, "local_rank_zscore");
+  const universeLocalRankZscoreCriterionRows = toRows(packet.universe_local_rank_zscore_rows);
+  const universeLocalRankZscorePreviewRows = toRows(packet.universe_local_rank_zscore_preview_rows);
   const factorTestRows = toRows(factorTests.items);
   const factorTestMetricRows = toRows(factorTests.metric_schema);
   const factorTestModeRows = toRows(factorTests.mode_plan);
@@ -203,6 +207,9 @@ export default function FactorQuantHub() {
           { label: "read plan datasets", value: universeResearchTaskPlan.dataset_count ?? 0 },
           { label: "plan full pool done", value: universeResearchTaskPlan.full_pool_validation_done === true ? "完成" : "未完成", tone: universeResearchTaskPlan.full_pool_validation_done === true ? "bad" : "good" },
           { label: "rank/zscore", value: universeExecutionReadiness.cross_sectional_rank_zscore_done === true ? "完成" : "未完成", tone: universeExecutionReadiness.cross_sectional_rank_zscore_done === true ? "good" : "warn" },
+          { label: "rank/zscore dry-run", value: universeLocalRankZscore.status ?? "missing", tone: universeLocalRankZscore.rank_zscore_dry_run_executed === true ? "good" : "warn" },
+          { label: "eligible groups", value: universeLocalRankZscore.eligible_group_count ?? 0, tone: Number(universeLocalRankZscore.eligible_group_count ?? 0) > 0 ? "good" : "warn" },
+          { label: "rank preview rows", value: universeLocalRankZscore.rank_zscore_preview_row_count ?? 0, tone: Number(universeLocalRankZscore.rank_zscore_preview_row_count ?? 0) > 0 ? "good" : "neutral" },
           { label: "neutralization", value: universeExecutionReadiness.neutralization_done === true ? "完成" : "未完成", tone: universeExecutionReadiness.neutralization_done === true ? "good" : "warn" },
           { label: "universe production", value: universeExecutionReadiness.production_factor_universe_complete === true ? "完成" : "未完成", tone: universeExecutionReadiness.production_factor_universe_complete === true ? "good" : "warn" },
           { label: "score band", value: score.score_band ?? "missing" },
@@ -353,6 +360,11 @@ export default function FactorQuantHub() {
       <p className="risk-note">universe_execution_readiness_audit 汇总 read-plan、storage 查询合同、worker 批量执行、rank/zscore、中性化和 full-pool 验收状态；read_plan_ready_execution_pending 不代表全市场研究生产完成。</p>
       <DataLineageTable rows={universeExecutionCriterionRows} />
       <DataLineageTable rows={universeExecutionReadinessRows} />
+      <h3>Factor Universe 本地 Rank/Zscore Dry-run</h3>
+      <p className="risk-note">universe_local_rank_zscore_dry_run 只读本地 factor_values 样本；样本不足时显示 blocked。预览行只用于 research，不代表 full-pool、provider-backed 或生产级 universe 研究完成，前端不计算 rank/zscore。</p>
+      <DataLineageTable rows={universeLocalRankZscoreCriterionRows} />
+      <DataLineageTable rows={universeLocalRankZscorePreviewRows} />
+      <DataLineageTable rows={universeLocalRankZscoreRows} />
       <h3>Factor Universe 任务化读取计划</h3>
       <p className="risk-note">universe_research_task_plan 由按钮任务生成；只读本地 storage 查询合同和分页元信息，不跑 full-pool 研究、不在页面渲染时读取全市场、不进入 strategy action。</p>
       <DataLineageTable rows={universeResearchDatasetRows} />

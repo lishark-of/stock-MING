@@ -74,6 +74,7 @@ def build_contract() -> dict[str, Any]:
     mode_rows = _list(hub.get("universe_research_mode_rows"))
     read_plan = factor_service._build_factor_universe_research_read_plan(payload, now)
     read_rows = _list(read_plan.get("storage_query_rows"))
+    rank_zscore_dry_run = factor_service._factor_universe_local_rank_zscore_dry_run(now)
 
     plan_contract = dict(base_contract)
     plan_contract.update(
@@ -195,6 +196,26 @@ def build_contract() -> dict[str, Any]:
             "Readiness may be local-ready, but worker batch, rank/zscore, neutralization, and full-pool validation must remain production blockers.",
         ),
         _row(
+            "local_rank_zscore_dry_run_is_research_only",
+            rank_zscore_dry_run.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
+            and rank_zscore_dry_run.get("scope") == "local_factor_values_rank_zscore_dry_run_not_full_pool_validation"
+            and rank_zscore_dry_run.get("metrics_are_research_only") is True
+            and rank_zscore_dry_run.get("cross_sectional_rank_zscore_done") is False
+            and rank_zscore_dry_run.get("neutralization_done") is False
+            and rank_zscore_dry_run.get("large_universe_pipeline_done") is False
+            and rank_zscore_dry_run.get("full_pool_validation_done") is False
+            and rank_zscore_dry_run.get("production_factor_universe_complete") is False
+            and rank_zscore_dry_run.get("page_render_starts_full_pool") is False
+            and rank_zscore_dry_run.get("frontend_computes_rank_zscore") is False
+            and rank_zscore_dry_run.get("partial_pool_is_full_market_proof") is False
+            and rank_zscore_dry_run.get("writes_parquet_on_get") is False
+            and rank_zscore_dry_run.get("auto_refresh_on_get") is False
+            and _flag_false(rank_zscore_dry_run, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and rank_zscore_dry_run.get("does_not_execute_trades") is True
+            and rank_zscore_dry_run.get("does_not_modify_strategy_action") is True,
+            "Local rank/zscore dry-run may only audit/preview local factor_values cross-sections and must not promote production universe flags.",
+        ),
+        _row(
             "task_catalog_is_button_gated_read_plan_only",
             universe_task.get("route") == "POST /api/factor-quant/universe-research-plan"
             and universe_task.get("button_gated") is True
@@ -221,6 +242,9 @@ def build_contract() -> dict[str, Any]:
             and "import { getFactorQuantCache, postTask" in factor_page
             and "launchTask(\"/api/factor-quant/universe-research-plan\"" in factor_page
             and "universe_execution_readiness_audit" in factor_page
+            and "universe_local_rank_zscore_dry_run" in factor_page
+            and "Factor Universe 本地 Rank/Zscore Dry-run" in factor_page
+            and "前端不计算 rank/zscore" in factor_page
             and "universe_research_task_plan" in factor_page
             and "frontend_computes_rank_zscore" in factor_page
             and "page_render_starts_full_pool" in factor_page
@@ -259,6 +283,7 @@ def build_contract() -> dict[str, Any]:
             and "production_factor_universe_complete" in this_script
             and "full_pool_validation_done" in this_script
             and "cross_sectional_rank_zscore_done" in this_script
+            and "local_rank_zscore_dry_run_is_research_only" in this_script
             and "does_not_execute_trades" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -283,6 +308,7 @@ def build_contract() -> dict[str, Any]:
         "custom_pool_pipeline_done": False,
         "full_pool_validation_done": False,
         "cross_sectional_rank_zscore_done": False,
+        "local_rank_zscore_dry_run_executed": bool(rank_zscore_dry_run.get("rank_zscore_dry_run_executed")),
         "neutralization_done": False,
         "factor_combination_research_done": False,
         "production_factor_universe_complete": False,
@@ -305,6 +331,8 @@ def build_contract() -> dict[str, Any]:
             "requested_universe_mode": read_plan.get("requested_universe_mode"),
             "read_plan_dataset_count": read_plan.get("dataset_count"),
             "storage_query_contract_count": read_plan.get("storage_query_contract_count"),
+            "rank_zscore_dry_run_status": rank_zscore_dry_run.get("status"),
+            "rank_zscore_eligible_group_count": rank_zscore_dry_run.get("eligible_group_count"),
             "readiness_status": readiness.get("status"),
             "readiness_production_blocker_count": readiness.get("production_blocker_count"),
             "task_backend": universe_task.get("current_backend"),

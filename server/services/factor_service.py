@@ -42,6 +42,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     now = _now_iso()
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
+    packet, universe_rank_ledger = _attach_factor_universe_local_rank_zscore_dry_run(packet, now)
     packet = _attach_factor_universe_execution_readiness(packet)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
@@ -50,18 +51,213 @@ def read_factor_quant_cache() -> dict[str, Any]:
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
-    packet["call_ledger"] = cache_ledger + storage_query_ledger + local_dataset_ledger + production_validation_ledger + list(existing_ledger)
+    packet["call_ledger"] = cache_ledger + universe_rank_ledger + storage_query_ledger + local_dataset_ledger + production_validation_ledger + list(existing_ledger)
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
+    universe_rank_warning = "Factor Universe rank/zscore dry-run 只读本地 factor_values 样本；样本不足时保持 blocked，不代表 full-pool 生产研究完成。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
-    owned_warnings = {cache_warning, storage_query_warning, local_dataset_warning}
-    packet["warnings"] = [cache_warning, storage_query_warning, local_dataset_warning] + [
+    owned_warnings = {cache_warning, universe_rank_warning, storage_query_warning, local_dataset_warning}
+    packet["warnings"] = [cache_warning, universe_rank_warning, storage_query_warning, local_dataset_warning] + [
         item
         for item in existing_warnings
         if item not in owned_warnings
     ]
     return packet
+
+
+def _factor_universe_local_rank_zscore_dry_run(now: str) -> dict[str, Any]:
+    sample_limit = 1000
+    factor_packet = storage_service.factor_values_status(limit=sample_limit)
+    factor_rows = _storage_query_rows(factor_packet)
+    usable_rows = [
+        row
+        for row in factor_rows
+        if str(row.get("ts_code") or "").strip()
+        and str(row.get("trade_date") or "").strip()
+        and str(row.get("factor_key") or "").strip()
+        and _is_finite_number(row.get("raw_value"))
+        and str(row.get("data_status") or "").lower() not in {"missing", "expired", "stale", "historical", "unknown"}
+    ]
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in usable_rows:
+        groups.setdefault((str(row.get("trade_date")), str(row.get("factor_key"))), []).append(row)
+    eligible_groups = {
+        key: rows
+        for key, rows in groups.items()
+        if len({str(row.get("ts_code")) for row in rows}) >= 5
+    }
+    preview_rows: list[dict[str, Any]] = []
+    for (trade_date, factor_key), rows in sorted(eligible_groups.items())[:3]:
+        values = [float(row.get("raw_value")) for row in rows]
+        mean_value = sum(values) / len(values)
+        variance = sum((value - mean_value) ** 2 for value in values) / len(values)
+        std_value = math.sqrt(variance)
+        sorted_rows = sorted(rows, key=lambda item: float(item.get("raw_value")))
+        denominator = max(len(sorted_rows) - 1, 1)
+        for index, row in enumerate(sorted_rows[:5]):
+            raw_value = float(row.get("raw_value"))
+            preview_rows.append(
+                {
+                    "trade_date": trade_date,
+                    "factor_key": factor_key,
+                    "ts_code": str(row.get("ts_code")),
+                    "rank_pct_preview": round(index / denominator, 6),
+                    "zscore_preview": round((raw_value - mean_value) / std_value, 6) if std_value else 0.0,
+                    "research_only_preview": True,
+                    "enters_strategy_action": False,
+                }
+            )
+    dry_run_executed = bool(eligible_groups)
+    unique_tickers = {str(row.get("ts_code")) for row in usable_rows}
+    unique_dates = {str(row.get("trade_date")) for row in usable_rows}
+    unique_factors = {str(row.get("factor_key")) for row in usable_rows}
+
+    def _row(criterion: str, status: str, evidence: str, next_action: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": status == "passed",
+            "blocks_full_pool_research": status != "passed",
+            "evidence": evidence,
+            "next_action": next_action,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "factor_values_local_sample_present",
+            "passed" if factor_packet.get("status") == "ready" and factor_rows else "blocked",
+            f"factor_values_status={factor_packet.get('status')}; returned_rows={len(factor_rows)}",
+            "Populate factor_values through approved local task/cache paths before rank/zscore dry-run.",
+        ),
+        _row(
+            "usable_cross_section_present",
+            "passed" if eligible_groups else "blocked",
+            f"eligible_trade_date_factor_groups={len(eligible_groups)}; usable_rows={len(usable_rows)}; unique_tickers={len(unique_tickers)}",
+            "Need at least five usable tickers per trade_date/factor_key group before local rank/zscore dry-run can execute.",
+        ),
+        _row(
+            "sample_window_visible",
+            "passed" if unique_dates and unique_factors else "blocked",
+            f"unique_trade_dates={len(unique_dates)}; factor_keys={len(unique_factors)}",
+            "Keep trade-date and factor-key coverage visible before promoting any universe research step.",
+        ),
+        _row(
+            "production_flags_stay_false",
+            "passed",
+            "cross_sectional_rank_zscore_done=false; full_pool_validation_done=false; production_factor_universe_complete=false",
+            "Only a future worker-backed/provider-backed validation may promote production universe flags.",
+        ),
+        _row(
+            "frontend_does_not_compute_rank_zscore",
+            "passed",
+            "React displays this dry-run contract only; rank/zscore preview, if present, is built server-side from local cache rows.",
+            "Keep rank/zscore out of page render and frontend action calculation paths.",
+        ),
+        _row(
+            "trade_action_isolation",
+            "passed",
+            "Local rank/zscore dry-run does not execute trades, mutate strategy action, or enter next-session projection.",
+            "Preserve universe research outputs as research-only evidence until a separately approved trading design exists.",
+        ),
+        _row(
+            "external_call_boundary",
+            "passed",
+            "Dry-run reads local factor_values storage cache only and does not call Tushare, DeepSeek, or GitHub.",
+            "Keep provider-backed universe validation behind explicit future POST task gates.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_full_pool_research"]]
+    status = "local_rank_zscore_dry_run_ready_research_only" if dry_run_executed else "local_rank_zscore_dry_run_blocked_not_enough_data"
+    return {
+        "schema_version": "factor_universe_local_rank_zscore_dry_run.v1",
+        "status": status,
+        "scope": "local_factor_values_rank_zscore_dry_run_not_full_pool_validation",
+        "created_at": now,
+        "dataset": "factor_values",
+        "sample_limit": sample_limit,
+        "storage_status": factor_packet.get("status") or "missing",
+        "returned_row_count": len(factor_rows),
+        "usable_row_count": len(usable_rows),
+        "unique_ticker_count": len(unique_tickers),
+        "unique_trade_date_count": len(unique_dates),
+        "factor_key_count": len(unique_factors),
+        "eligible_group_count": len(eligible_groups),
+        "rank_zscore_dry_run_executed": dry_run_executed,
+        "rank_zscore_preview_rows": preview_rows,
+        "rank_zscore_preview_row_count": len(preview_rows),
+        "metrics_are_research_only": True,
+        "cross_sectional_rank_zscore_done": False,
+        "neutralization_done": False,
+        "large_universe_pipeline_done": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "partial_pool_is_full_market_proof": False,
+        "cache_only": True,
+        "cache_get_writes_files": False,
+        "writes_parquet_on_get": False,
+        "auto_refresh_on_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "criterion_count": len(rows),
+        "blocking_criterion_count": len(blocking_rows),
+        "blocking_criteria": [str(row["criterion"]) for row in blocking_rows],
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_universe_rank_zscore_dry_run",
+                "request_params_safe": {
+                    "dataset": "factor_values",
+                    "sample_limit": sample_limit,
+                    "scope": "local_factor_values_rank_zscore_dry_run_not_full_pool_validation",
+                    "rank_zscore_dry_run_executed": dry_run_executed,
+                    "production_factor_universe_complete": False,
+                },
+                "row_count": len(usable_rows),
+                "data_date": max(unique_dates) if unique_dates else None,
+                "local_fetched_at": now,
+                "call_status": status,
+                "error_message_safe": str(factor_packet.get("error_message_safe") or "")[:240],
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This dry-run is local/research-only. It may preview rank/zscore only when a usable local cross-section exists, and it never marks full-pool or production universe validation complete.",
+    }
+
+
+def _attach_factor_universe_local_rank_zscore_dry_run(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    dry_run = _factor_universe_local_rank_zscore_dry_run(now)
+    packet["universe_local_rank_zscore_dry_run"] = dry_run
+    packet["universe_local_rank_zscore_rows"] = list(dry_run.get("rows") or [])
+    packet["universe_local_rank_zscore_preview_rows"] = list(dry_run.get("rank_zscore_preview_rows") or [])
+    contract = packet.get("universe_research_contract") if isinstance(packet.get("universe_research_contract"), dict) else {}
+    if contract:
+        contract = dict(contract)
+        contract["local_rank_zscore_dry_run_status"] = dry_run["status"]
+        contract["local_rank_zscore_dry_run_executed"] = dry_run["rank_zscore_dry_run_executed"]
+        contract["local_rank_zscore_preview_row_count"] = dry_run["rank_zscore_preview_row_count"]
+        contract["cross_sectional_rank_zscore_done"] = False
+        contract["full_sample_neutralization_done"] = False
+        contract["full_pool_validation_done"] = False
+        contract["production_factor_universe_complete"] = False
+        contract["frontend_computes_rank_zscore"] = False
+        packet["universe_research_contract"] = contract
+    return packet, list(dry_run.get("call_ledger") or [])
 
 
 def _attach_factor_universe_execution_readiness(packet: dict[str, Any]) -> dict[str, Any]:
